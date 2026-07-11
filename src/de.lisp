@@ -193,7 +193,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
   (setf *bar-client* cli)
   (pine.cell:defcell :bar-label "pine")
   (ignore-errors
-   (pine.source:start-niri-source
+   (pine.source:start-sources
     (pine.server:actor-system (pine.client:server-of cli))))
   (let ((window (make-application-window :application app))
         (area (make-drawing-area)))
