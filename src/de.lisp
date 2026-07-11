@@ -79,7 +79,12 @@ workspace is accented, the rest dim."
       :children (append (list (%text label :function-name) (%text "|" :comment))
                         (mapcar #'ws-node wss)
                         (list (%text "|" :comment) (%text name :default)
-                              (%text "|" :comment) (%text clock :string))))))
+                              (%text "|" :comment)
+                              (make-instance 'pine.layout:action
+                                :callback (lambda ()
+                                            (run-in-main-event-loop ()
+                                              (toggle-panel "calendar")))
+                                :child (%text clock :string)))))))
 
 (defparameter *bar-cols* 200)
 (defvar *bar-view* nil)
@@ -166,6 +171,135 @@ the root for hit-testing. Returns the cell vector."
                  (on-bar-click x y)))
       (widget-add-controller area click))
     (configure-bar window)
+    (register-panel app "calendar" #'calendar-panel :width 240 :height 120)
     (window-present window)
     (timeout-add 1000 (lambda () (widget-queue-draw area) t))
     window))
+
+
+;;;; Panels — layer-shell overlay surfaces rendering a widget tree to cells.
+;;;; Each is a second surface on the same substrate: a builder thunk -> node
+;;;; tree -> cells, painted by the shared painter, clicks through pine.eval. One
+;;;; panel shows at a time; toggling one closes the others.
+
+(defstruct panel name builder window area view root (cells #()) (count 0)
+                 (width 400) (height 320) (visible nil))
+
+(defvar *panels* (make-hash-table :test 'equal))
+(defvar *panels-by-area* (make-hash-table))
+
+(defun configure-panel (window)
+  "Anchor WINDOW as a bottom-left overlay layer-shell surface."
+  (ensure-layer-shell)
+  (let ((p (gobject-introspection-wrapper:object-pointer window)))
+    (%init p)
+    (%set-namespace p "pine-panel")
+    (%set-layer p 3)          ; overlay
+    (%set-anchor p 0 t)       ; left
+    (%set-anchor p 3 t)))     ; bottom
+
+(defun build-panel-cells (panel)
+  (let* ((root (funcall (panel-builder panel) *bar-client*))
+         (cols (max 10 (floor (panel-width panel) *bar-cell-w*)))
+         (lay (make-instance 'pine.layout:layout :root root :width cols)))
+    (setf (panel-root panel) root)
+    (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
+      (declare (ignore lines))
+      (setf (panel-cells panel) cells (panel-count panel) n)
+      cells)))
+
+(defun %ensure-metrics ()
+  (unless *bar-measured*
+    (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
+      (declare (ignore xb yb w h))
+      (when (plusp xadv) (setf *bar-cell-w* (/ xadv 10d0))))
+    (let ((fe (cairo:get-font-extents)))
+      (setf *bar-ascent* (cairo:font-ascent fe)
+            *bar-cell-h* (cairo:font-height fe)))
+    (setf *bar-measured* t)))
+
+(cffi:defcallback %panel-draw :void ((area :pointer) (cr :pointer)
+                                     (width :int) (height :int) (data :pointer))
+  (declare (ignore data))
+  (let ((panel (gethash (cffi:pointer-address area) *panels-by-area*)))
+    (when panel
+      (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
+                                            :width width :height height :pixel-based-p nil)))
+        (cairo:set-source-rgb 0.10d0 0.10d0 0.15d0)
+        (cairo:paint)
+        (cairo:select-font-face "monospace" :normal :normal)
+        (cairo:set-font-size *bar-font*)
+        (%ensure-metrics)
+        (if (panel-view panel)
+            (pine.cell:render-view (panel-view panel))
+            (build-panel-cells panel))
+        (pine.surface:paint-cell-grid (panel-cells panel) (panel-count panel)
+                                      *bar-cell-w* *bar-cell-h* *bar-ascent* 8d0)))))
+
+(defun on-panel-click (panel x y)
+  (let* ((col (floor (- x 8d0) *bar-cell-w*))
+         (line (floor y *bar-cell-h*))
+         (thunk (and (panel-root panel)
+                     (pine.layout:click-thunk (panel-root panel) line col))))
+    (when thunk (pine.eval:evaluate-thunk thunk :package (find-package :pine-user)))))
+
+(defun register-panel (app name builder &key (width 400) (height 320))
+  "Create a hidden overlay panel NAME whose content is BUILDER (a function of the
+client returning a node tree). Show it with toggle-panel."
+  (let* ((window (make-application-window :application app))
+         (area (make-drawing-area))
+         (panel (make-panel :name name :builder builder :window window :area area
+                            :width width :height height)))
+    (setf (drawing-area-content-width area) width
+          (drawing-area-content-height area) height
+          (drawing-area-draw-func area) (list (cffi:callback %panel-draw)
+                                              (cffi:null-pointer) (cffi:null-pointer))
+          (window-child window) area)
+    (setf (gethash (cffi:pointer-address
+                    (gobject-introspection-wrapper:object-pointer area))
+                   *panels-by-area*)
+          panel)
+    (setf (panel-view panel)
+          (pine.cell:make-view (lambda () (build-panel-cells panel))
+                               (lambda () (run-in-main-event-loop ()
+                                            (widget-queue-draw area)))))
+    (let ((click (make-gesture-click)))
+      (connect click "pressed"
+               (lambda (gesture n-press x y)
+                 (declare (ignore gesture n-press))
+                 (on-panel-click panel x y)))
+      (widget-add-controller area click))
+    (configure-panel window)
+    (setf (gethash name *panels*) panel)
+    panel))
+
+(defun show-panel (panel)
+  (window-present (panel-window panel))
+  (setf (panel-visible panel) t))
+
+(defun hide-panel (panel)
+  (setf (widget-visible-p (panel-window panel)) nil
+        (panel-visible panel) nil))
+
+(defun toggle-panel (name)
+  "Show panel NAME, hiding any other open panel. Must run on the UI thread."
+  (let ((panel (gethash name *panels*)))
+    (when panel
+      (if (panel-visible panel)
+          (hide-panel panel)
+          (progn
+            (maphash (lambda (k p)
+                       (declare (ignore k))
+                       (when (and (panel-visible p) (not (eq p panel)))
+                         (hide-panel p)))
+                     *panels*)
+            (show-panel panel))))))
+
+(defun calendar-panel (cli)
+  "Placeholder panel: today's date. Exercises the panel surface end to end."
+  (declare (ignore cli))
+  (multiple-value-bind (s m h d mo y) (decode-universal-time (get-universal-time))
+    (declare (ignore s m h))
+    (make-instance 'pine.layout:vstack :spacing 0
+      :children (list (%text (format nil "~4,'0d-~2,'0d-~2,'0d" y mo d) :function-name)
+                      (%text "calendar" :comment)))))
