@@ -185,17 +185,20 @@
    #:action #:callback
    #:list-node #:items #:item-fn #:max-visible
    #:grid #:cells #:col-widths
+   #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
    ;; layout container
    #:layout #:layout-root #:layout-buffer-name #:layout-state #:layout-width
    #:install-layout #:uninstall-layout #:buffer-layout #:layout-get
-   #:render-layout #:layout-lines #:render-node #:node-to-string
+   #:defwidget
+   #:render-layout #:render-layout-grid #:layout-lines #:render-node #:node-to-string
    ;; input
    #:input-string #:cursor-offset
    #:type-char-at-cursor #:delete-char-before-cursor
    #:kill-input #:kill-to-end #:kill-word-before-cursor
    #:set-input #:move-cursor #:cursor-to-start #:cursor-to-end
    #:confirm-input
-   ;; selection
+   ;; hit-testing + selection
+   #:node-at #:action-at #:click-thunk #:slider-value-at
    #:collect-selectables #:update-selection #:selected-node #:selection-move
    #:scroll-to-selection))
 

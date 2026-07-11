@@ -55,11 +55,34 @@
 (defclass list-node (node)
   ((items       :initarg :items       :accessor items       :initform nil)
    (item-fn     :initarg :item-fn     :accessor item-fn     :initform nil)
-   (max-visible :initarg :max-visible :accessor max-visible :initform nil)))
+   (max-visible :initarg :max-visible :accessor max-visible :initform nil)
+   ;; the item nodes produced at the last render, kept so hit-testing can reach
+   ;; them (item-fn builds them transiently otherwise).
+   (rendered    :accessor rendered    :initform nil)))
 
 (defclass grid (node)
   ((cells      :initarg :cells      :accessor cells      :initform nil)
    (col-widths :initarg :col-widths :accessor col-widths :initform nil)))
+
+(defclass slider (node)
+  ((value       :initarg :value       :accessor value       :initform 0)
+   (min-of      :initarg :min         :accessor min-of      :initform 0)
+   (max-of      :initarg :max         :accessor max-of      :initform 100)
+   (track       :initarg :track       :accessor track       :initform 16)
+   ;; on-change is a function of the new value; clicking/dragging at a column
+   ;; maps to a value and calls it.
+   (on-change   :initarg :on-change   :accessor on-change   :initform nil)
+   (filled-face :initarg :filled-face :accessor filled-face :initform :function-name)
+   (empty-face  :initarg :empty-face  :accessor empty-face  :initform :comment)))
+
+
+;;;; Widgets — a widget is a function of its arguments that returns a node
+;;;; tree. Reading reactive cells (pine.cell:cell-ref) in the body makes it
+;;;; re-render when those cells change, if rendered inside a reactive view.
+;;;; Widgets compose by calling one another. This is the eww defwidget analog.
+
+(defmacro defwidget (name (&rest args) &body body)
+  `(defun ,name (,@args) ,@body))
 
 
 ;;;; Scroll helper
@@ -88,11 +111,49 @@
   ((ctx-lines :initform nil :accessor ctx-lines)
    (current   :initform ""  :accessor current-line)
    (line-idx  :initform 0   :accessor line-idx)
-   (col       :initform 0   :accessor col)))
+   (col       :initform 0   :accessor col)
+   ;; current face designator, and the accumulated styled cells (reverse order)
+   ;; in the flat 10-slot format the surface painter expects.
+   (face      :initform nil :accessor ctx-face)
+   (cells     :initform nil :accessor ctx-cells)))
+
+(defun %hex-rgb (hex)
+  "The (values r g b) of a #rrggbb face colour, or a light default."
+  (if (and hex (>= (length hex) 7) (char= (char hex 0) #\#))
+      (values (parse-integer hex :start 1 :end 3 :radix 16)
+              (parse-integer hex :start 3 :end 5 :radix 16)
+              (parse-integer hex :start 5 :end 7 :radix 16))
+      (values 205 214 244)))
+
+(defun %face-cell-rgb (designator)
+  "(values fr fg fb br bg bb bold) for a face DESIGNATOR; bg -1 means none.
+Falls back to the default when no face (or no client to resolve it) exists."
+  (let ((f (and designator (ignore-errors (pine.buffer:find-face designator)))))
+    (if f
+        (multiple-value-bind (fr fg fb) (%hex-rgb (or (pine.buffer:fg f) "#cdd6f4"))
+          (if (pine.buffer:bg f)
+              (multiple-value-bind (br bg bb) (%hex-rgb (pine.buffer:bg f))
+                (values fr fg fb br bg bb (if (pine.buffer:bold f) 1 0)))
+              (values fr fg fb -1 -1 -1 (if (pine.buffer:bold f) 1 0))))
+        (values 205 214 244 -1 -1 -1 0))))
 
 (defun ctx-emit (ctx text)
+  (multiple-value-bind (fr fg fb br bg bb bold) (%face-cell-rgb (ctx-face ctx))
+    (loop for ch across text
+          for c from (col ctx)
+          do (push (list (line-idx ctx) c (char-code ch) fr fg fb br bg bb bold)
+                   (ctx-cells ctx))))
   (setf (current-line ctx) (concatenate 'string (current-line ctx) text))
   (incf (col ctx) (length text)))
+
+(defmacro with-face ((ctx node) &body body)
+  "Render BODY with CTX's current face taken from NODE's face slot (if any),
+restoring the previous face afterward."
+  (let ((old (gensym)) (c (gensym)))
+    `(let* ((,c ,ctx) (,old (ctx-face ,c)))
+       (setf (ctx-face ,c) (or (face ,node) ,old))
+       (unwind-protect (progn ,@body)
+         (setf (ctx-face ,c) ,old)))))
 
 (defun ctx-emit-char (ctx char)
   (ctx-emit ctx (string char)))
@@ -115,6 +176,21 @@
     (render-node (layout-root layout) ctx w)
     (ctx-finalize ctx)))
 
+(defun render-layout-grid (layout)
+  "Render LAYOUT to (values lines cell-vector slot-count). CELL-VECTOR is the
+flat 10-slot [row col code fr fg fb br bg bb bold] format the surface painter
+expects (bg -1 = none); SLOT-COUNT is 10 * number-of-cells, matching
+frame-cell-count so paint-cell-grid iterates it with `below n by 10'."
+  (let ((ctx (make-instance 'render-ctx)))
+    (render-node (layout-root layout) ctx (layout-width layout))
+    (let* ((cells (nreverse (ctx-cells ctx)))
+           (slots (* 10 (length cells)))
+           (vec (make-array slots)))
+      (loop for cell in cells for i from 0 by 10
+            do (loop for slot in cell for k from 0
+                     do (setf (svref vec (+ i k)) slot)))
+      (values (ctx-finalize ctx) vec slots))))
+
 (defun layout-lines (layout)
   (reduce (lambda (seq line) (fset:with-last seq line))
           (render-layout layout)
@@ -134,7 +210,7 @@
            (declare (ignore width))
            (with-node-bounds n ctx
                              (when (plusp (length (content n)))
-                               (ctx-emit ctx (content n)))))
+                               (with-face (ctx n) (ctx-emit ctx (content n))))))
 
 (defmethod render-node ((n separator) ctx width)
            (with-node-bounds n ctx
@@ -143,6 +219,7 @@
 (defmethod render-node ((n field) ctx width)
            (declare (ignore width))
            (with-node-bounds n ctx
+                             (with-face (ctx n)
                              (let* ((c (content n))
                                     (plen (prefix-length n)))
                                (when (plusp plen)
@@ -152,7 +229,7 @@
                                (when (< plen (length c))
                                  (ctx-emit ctx (subseq c plen)))
                                (multiple-value-bind (l col) (ctx-position ctx)
-                                                    (setf (input-end-line n) l (input-end-col n) col)))))
+                                                    (setf (input-end-line n) l (input-end-col n) col))))))
 
 (defmethod render-node ((n vstack) ctx width)
            (with-node-bounds n ctx
@@ -222,13 +299,16 @@
                              (let* ((is (items n))
                                     (mx (max-visible n))
                                     (fn (item-fn n))
-                                    (vis (if mx (subseq is 0 (min mx (length is))) is)))
+                                    (vis (if mx (subseq is 0 (min mx (length is))) is))
+                                    (kids nil))
                                (loop for (item . rest) on vis
                                      for idx from 0
                                      for ch = (funcall fn item idx)
                                      do (setf (parent ch) n)
+                                     (push ch kids)
                                      (render-node ch ctx width)
-                                     (when rest (ctx-newline ctx))))))
+                                     (when rest (ctx-newline ctx)))
+                               (setf (rendered n) (nreverse kids)))))
 
 (defmethod render-node ((n grid) ctx width)
            (declare (ignore width))
@@ -250,6 +330,31 @@
                                                       (setf (current-line ctx) (subseq ln 0 (min keep (length ln))))
                                                       (setf (col ctx) keep)))))))
                                      (when more (ctx-newline ctx))))))
+
+(defparameter +slider-filled+ (code-char #x2588)) ; full block
+(defparameter +slider-empty+  (code-char #x2500)) ; light horizontal
+
+(defmethod render-node ((n slider) ctx width)
+           (declare (ignore width))
+           (with-node-bounds n ctx
+                             (let* ((w (track n))
+                                    (span (max 1 (- (max-of n) (min-of n))))
+                                    (v (max 0 (min span (- (value n) (min-of n)))))
+                                    (fill (round (* (/ v span) w))))
+                               (loop for i from 0 below w
+                                     do (let ((old (ctx-face ctx)))
+                                          (setf (ctx-face ctx)
+                                                (if (< i fill) (filled-face n) (empty-face n)))
+                                          (ctx-emit ctx (string (if (< i fill)
+                                                                    +slider-filled+
+                                                                    +slider-empty+)))
+                                          (setf (ctx-face ctx) old))))))
+
+(defun slider-value-at (n col)
+  "The value a click at absolute COL maps to for rendered slider N."
+  (let* ((rel (max 0 (min (track n) (- col (start-col n)))))
+         (span (- (max-of n) (min-of n))))
+    (+ (min-of n) (round (* (/ rel (track n)) span)))))
 
 (defun node-to-string (n width)
   (when (and (typep n 'text-node) (null (face n)))
@@ -363,6 +468,51 @@
     (if (and (>= sel 0) (< sel (length filtered)))
         (nth sel filtered)
       (input-string layout))))
+
+
+;;;; Hit-testing — map a rendered (line col) to the node under it. Requires the
+;;;; tree to have been rendered (node bounds set).
+
+(defun %node-contains (n line col)
+  (and (<= (start-line n) line (end-line n))
+       (cond ((= (start-line n) (end-line n))
+              (and (<= (start-col n) col) (< col (end-col n))))
+             ((= line (start-line n)) (<= (start-col n) col))
+             ((= line (end-line n))   (< col (end-col n)))
+             (t t))))
+
+(defun node-at (node line col)
+  "The deepest action or selectable whose rendered bounds contain (LINE COL),
+or nil."
+  (labels ((walk (n)
+             (when n
+               (typecase n
+                 (action     (when (%node-contains n line col) (or (walk (child n)) n)))
+                 (selectable (when (%node-contains n line col) (or (walk (child n)) n)))
+                 (slider     (when (%node-contains n line col) n))
+                 (hstack (some #'walk (children n)))
+                 (vstack (some #'walk (children n)))
+                 (box    (walk (child n)))
+                 (grid   (some (lambda (row) (some #'walk row)) (cells n)))
+                 (list-node (some #'walk (rendered n)))
+                 (t nil)))))
+    (walk node)))
+
+(defun action-at (node line col)
+  "The callback of the action under (LINE COL), or nil."
+  (let ((hit (node-at node line col)))
+    (when (typep hit 'action) (callback hit))))
+
+(defun click-thunk (root line col)
+  "A nullary thunk to run for a click at (LINE COL) on rendered ROOT: an action's
+callback, or a slider's on-change applied to the column-mapped value. Nil if the
+point is over neither."
+  (let ((hit (node-at root line col)))
+    (typecase hit
+      (action (callback hit))
+      (slider (let ((fn (on-change hit)) (v (slider-value-at hit col)))
+                (when fn (lambda () (funcall fn v)))))
+      (t nil))))
 
 
 ;;;; Selection navigation

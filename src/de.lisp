@@ -46,10 +46,12 @@
 ;;;; are in-process closures (pine.layout:action), hit-tested by column -- no
 ;;;; nREPL, no eww-update string protocol.
 
-(defun %text (s) (make-instance 'pine.layout:text-node :content s))
+(defun %text (s &optional face)
+  (make-instance 'pine.layout:text-node :content s :face face))
 
 (defun ws-node (w)
-  "A clickable workspace glyph: focusing it runs niri in-process."
+  "A clickable workspace glyph: focusing it runs niri in-process. The focused
+workspace is accented, the rest dim."
   (make-instance 'pine.layout:action
     :callback (let ((idx (getf w :idx)))
                 (lambda ()
@@ -57,7 +59,10 @@
                     (uiop:launch-program
                      (list "niri" "msg" "action" "focus-workspace"
                            (princ-to-string idx))))))
-    :child (%text (format nil "~a~a" (getf w :idx) (if (getf w :focused) "*" "")))))
+    :child (%text (princ-to-string (getf w :idx))
+                  (cond ((getf w :urgent)  :constant)
+                        ((getf w :focused) :function-name)
+                        (t                 :comment)))))
 
 (defun %cell (name default)
   (let ((c (pine.cell:find-cell name))) (if c (pine.cell:cell-ref c) default)))
@@ -71,40 +76,34 @@
                   (declare (ignore s))
                   (format nil "~2,'0d:~2,'0d" h m))))
     (make-instance 'pine.layout:hstack :spacing 2
-      :children (append (list (%text label) (%text "|"))
+      :children (append (list (%text label :function-name) (%text "|" :comment))
                         (mapcar #'ws-node wss)
-                        (list (%text "|") (%text name) (%text "|") (%text clock))))))
+                        (list (%text "|" :comment) (%text name :default)
+                              (%text "|" :comment) (%text clock :string))))))
 
 (defparameter *bar-cols* 200)
 (defvar *bar-view* nil)
 (defvar *bar-root* nil)
-(defvar *bar-line* "")
+(defvar *bar-cells* #())
+(defvar *bar-count* 0)
 
-(defun build-bar-line (cli)
-  "The view thunk: build + render the bar tree, keep the root for hit-testing,
-return the text line."
+(defun build-bar-cells (cli)
+  "The view thunk: build + render the bar tree to a styled cell grid, keeping
+the root for hit-testing. Returns the cell vector."
   (let* ((root (bar-root cli))
          (lay (make-instance 'pine.layout:layout :root root :width *bar-cols*)))
-    (setf *bar-root* root
-          *bar-line* (or (first (pine.layout:render-layout lay)) ""))))
+    (setf *bar-root* root)
+    (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
+      (declare (ignore lines))
+      (setf *bar-cells* cells *bar-count* n)
+      cells)))
 
-(defun click-callback-at (node col)
-  "Callback of the pine.layout:action whose column span contains COL, or nil."
-  (typecase node
-    (pine.layout:action
-     (if (and (= 0 (pine.layout:start-line node))
-              (<= (pine.layout:start-col node) col)
-              (< col (pine.layout:end-col node)))
-         (pine.layout:callback node)
-         nil))
-    ((or pine.layout:hstack pine.layout:vstack)
-     (some (lambda (c) (click-callback-at c col)) (pine.layout:children node)))
-    (t nil)))
 
 
 ;;;; Drawing + input
 
 (defparameter *bar-cell-w* 9d0)   ; measured from the font on first paint
+(defparameter *bar-cell-h* 20d0)
 (defparameter *bar-font* 14d0)
 (defparameter *bar-ascent* 15d0)
 (defparameter *bar-x0* 8d0)
@@ -126,20 +125,23 @@ return the text line."
         (declare (ignore xb yb w h))
         (when (plusp xadv) (setf *bar-cell-w* (/ xadv 10d0))))
       (let ((fe (cairo:get-font-extents)))
-        (setf *bar-ascent* (cairo:font-ascent fe)))
+        (setf *bar-ascent* (cairo:font-ascent fe)
+              *bar-cell-h* (cairo:font-height fe)))
       (setf *bar-measured* t))
     (setf *bar-cols* (max 10 (floor width *bar-cell-w*)))
-    (let ((line (if *bar-view* (pine.cell:render-view *bar-view*) (build-bar-line *bar-client*))))
-      (cairo:set-source-rgb 0.80d0 0.84d0 0.96d0)
-      (cairo:move-to *bar-x0* *bar-ascent*)
-      (cairo:show-text line))))
+    ;; render-view runs the thunk (build-bar-cells) with cell tracking, so the
+    ;; bar re-subscribes to exactly the cells it read and redraws on change.
+    (if *bar-view* (pine.cell:render-view *bar-view*) (build-bar-cells *bar-client*))
+    (pine.surface:paint-cell-grid *bar-cells* *bar-count*
+                                  *bar-cell-w* *bar-cell-h* *bar-ascent* *bar-x0*)))
 
-(defun on-bar-click (x)
+(defun on-bar-click (x y)
   ;; run the handler off the UI thread through pine.eval, so a slow or broken
   ;; widget onclick can't hang or crash the bar (or the editor sharing the loop).
   (let* ((col (floor (- x *bar-x0*) *bar-cell-w*))
-         (cb (and *bar-root* (click-callback-at *bar-root* col))))
-    (when cb (pine.eval:evaluate-thunk cb :package (find-package :pine-user)))))
+         (line (floor y *bar-cell-h*))
+         (thunk (and *bar-root* (pine.layout:click-thunk *bar-root* line col))))
+    (when thunk (pine.eval:evaluate-thunk thunk :package (find-package :pine-user)))))
 
 (defun make-bar (app cli)
   (setf *bar-client* cli)
@@ -151,7 +153,7 @@ return the text line."
         (area (make-drawing-area)))
     (setf *bar-view*
           (pine.cell:make-view
-           (lambda () (build-bar-line cli))
+           (lambda () (build-bar-cells cli))
            (lambda () (run-in-main-event-loop () (widget-queue-draw area)))))
     (setf (drawing-area-content-height area) 22
           (drawing-area-draw-func area) (list (cffi:callback %bar-draw)
@@ -160,8 +162,8 @@ return the text line."
     (let ((click (make-gesture-click)))
       (connect click "pressed"
                (lambda (gesture n-press x y)
-                 (declare (ignore gesture n-press y))
-                 (on-bar-click x)))
+                 (declare (ignore gesture n-press))
+                 (on-bar-click x y)))
       (widget-add-controller area click))
     (configure-bar window)
     (window-present window)
