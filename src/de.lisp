@@ -104,31 +104,32 @@
 
 (defwidget sidebar-top ()
   (column :align :center :spacing 1
-    (icon *g-overview* :on-click (%sh "niri msg action toggle-overview") :face :comment)
+    (icon *g-overview* :on-click (%sh "niri msg action toggle-overview")
+                       :hint "Overview" :face :comment)
     (icon *g-search*   :on-click (%sh "cd ~ && setsid -f bb ~/.config/eww/niri-window-switch.bb")
-                       :face :comment)
+                       :hint "Search windows" :face :comment)
     (mapcar #'ws-item (%cell :workspaces nil))))
 
 (defwidget sidebar-apps ()
   (column :align :center :spacing 1
-    (icon *g-apps*  :on-click (%sh "setsid -f fuzzel"))
-    (icon *g-term*  :on-click (%sh "setsid -f alacritty"))
-    (icon *g-web*   :on-click (%sh "setsid -f google-chrome"))
-    (icon *g-files* :on-click (%sh "setsid -f nautilus"))
-    (icon *g-edit*  :on-click (%sh "cd ~ && emacsclient -c -n"))))
+    (icon *g-apps*  :on-click (%sh "setsid -f fuzzel")        :hint "Applications")
+    (icon *g-term*  :on-click (%sh "setsid -f alacritty")     :hint "Terminal")
+    (icon *g-web*   :on-click (%sh "setsid -f google-chrome") :hint "Browser")
+    (icon *g-files* :on-click (%sh "setsid -f nautilus")      :hint "Files")
+    (icon *g-edit*  :on-click (%sh "cd ~ && emacsclient -c -n") :hint "Editor")))
 
 (defwidget sidebar-tray ()
   (multiple-value-bind (s m h) (decode-universal-time (get-universal-time))
     (declare (ignore s))
     (column :align :center :spacing 1
-      (icon *g-vol*    :on-click (%toggle "audio")   :face :string)
-      (icon *g-media*  :on-click (%toggle "media")   :face :string)
-      (icon *g-net*    :on-click (%toggle "network") :face :string)
-      (button :on-click (%toggle "calendar")
+      (icon *g-vol*    :on-click (%toggle "audio")   :hint "Volume"  :face :string)
+      (icon *g-media*  :on-click (%toggle "media")   :hint "Media"   :face :string)
+      (icon *g-net*    :on-click (%toggle "network") :hint "Network" :face :string)
+      (button :on-click (%toggle "calendar") :hint "Calendar"
         (column :align :center
           (label (format nil "~2,'0d" h) :face :variable-param)
           (label (format nil "~2,'0d" m) :face :comment)))
-      (icon *g-system* :on-click (%toggle "ctl") :face :function-name))))
+      (icon *g-system* :on-click (%toggle "ctl") :hint "System" :face :function-name))))
 
 (defwidget sidebar ()
   (column :align :center
@@ -204,6 +205,14 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
          (thunk (and *bar-root* (pine.layout:click-thunk *bar-root* line col))))
     (when thunk (pine.eval:evaluate-thunk thunk :package (find-package :pine-user)))))
 
+(defun on-bar-motion (x y)
+  "Set the :hint cell to the hint of the widget under the pointer; the echo
+strip renders it."
+  (let* ((col (floor (- x *bar-x0*) *bar-cell-w*))
+         (line (floor y *bar-cell-h*))
+         (h (and *bar-root* (pine.layout:hint-at *bar-root* line col))))
+    (pine.source:set! :hint (or h ""))))
+
 (defun make-bar (app cli)
   (setf *bar-client* cli)
   (pine.cell:defcell :bar-label "pine")
@@ -226,14 +235,73 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
                  (declare (ignore gesture n-press))
                  (on-bar-click x y)))
       (widget-add-controller area click))
+    (let ((motion (make-event-controller-motion)))
+      (connect motion "motion"
+               (lambda (c x y) (declare (ignore c)) (on-bar-motion x y)))
+      (connect motion "leave"
+               (lambda (c) (declare (ignore c)) (pine.source:set! :hint "")))
+      (widget-add-controller area motion))
     (configure-bar window)
     (register-panel app "calendar" #'calendar-panel :width 240 :height 120)
     (register-panel app "audio" #'audio-panel :width 340 :height 120)
     (register-panel app "network" #'network-panel :width 420 :height 360)
     (register-panel app "media" #'media-panel :width 380 :height 200)
     (register-panel app "ctl" #'ctl-panel :width 400 :height 280)
+    (make-echo app)
     (window-present window)
     (timeout-add 1000 (lambda () (widget-queue-draw area) t))
+    window))
+
+;;;; The echo strip: a bottom full-width layer-shell surface that shows the
+;;;; :hint cell (set by hover). A second surface on the same substrate.
+
+(defvar *echo-cells* #())
+(defvar *echo-count* 0)
+
+(defwidget echo-bar ()
+  (label (%cell :hint "") :face :comment))
+
+(cffi:defcallback %echo-draw :void ((area :pointer) (cr :pointer)
+                                    (width :int) (height :int) (data :pointer))
+  (declare (ignore area data))
+  (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
+                                        :width width :height height :pixel-based-p nil)))
+    (cairo:set-source-rgb 0.09d0 0.09d0 0.14d0)
+    (cairo:paint)
+    (cairo:select-font-face pine.surface:*font-family* :normal :normal)
+    (cairo:set-font-size *bar-font*)
+    (%ensure-metrics)
+    (let ((lay (make-instance 'pine.layout:layout :root (echo-bar)
+                              :width (max 1 (floor width *bar-cell-w*)))))
+      (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
+        (declare (ignore lines))
+        (setf *echo-cells* cells *echo-count* n)))
+    (pine.surface:paint-cell-grid *echo-cells* *echo-count*
+                                  *bar-cell-w* *bar-cell-h* *bar-ascent* 8d0)))
+
+(defun configure-echo (window)
+  (ensure-layer-shell)
+  (let ((p (gobject-introspection-wrapper:object-pointer window)))
+    (%init p)
+    (%set-namespace p "pine-echo")
+    (%set-layer p 2)
+    (%set-anchor p 0 t)   ; left
+    (%set-anchor p 1 t)   ; right
+    (%set-anchor p 3 t)   ; bottom -> a full-width strip along the bottom edge
+    (%auto-zone p)))
+
+(defun make-echo (app)
+  (let ((window (make-application-window :application app))
+        (area (make-drawing-area)))
+    (setf (drawing-area-content-height area) 22
+          (drawing-area-draw-func area) (list (cffi:callback %echo-draw)
+                                              (cffi:null-pointer) (cffi:null-pointer))
+          (window-child window) area)
+    (pine.cell:cell-subscribe (pine.cell:defcell :hint "")
+                              (lambda () (run-in-main-event-loop ()
+                                           (widget-queue-draw area))))
+    (configure-echo window)
+    (window-present window)
     window))
 
 

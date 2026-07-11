@@ -16,6 +16,7 @@
   ((key-of  :initarg :key    :accessor key-of  :initform nil)
    (parent  :initarg :parent :accessor parent  :initform nil)
    (face    :initarg :face   :accessor face    :initform nil)
+   (hint    :initarg :hint   :accessor hint    :initform nil)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
    (start-col  :initform 0 :accessor start-col)
@@ -126,7 +127,8 @@ rest as children, dropping nils and splicing lists."
                :content (if (integerp glyph) (string (code-char glyph)) (string glyph))
                :face (getf props :face))))
     (if (getf props :on-click)
-        (make-instance 'action :callback (getf props :on-click) :child lbl)
+        (make-instance 'action :callback (getf props :on-click)
+                               :hint (getf props :hint) :child lbl)
         lbl)))
 
 (defun column (&rest args)
@@ -140,9 +142,9 @@ rest as children, dropping nils and splicing lists."
     (apply #'make-instance 'hstack :children kids props)))
 
 (defun button (&rest args)
-  "A clickable wrapper. (button :on-click thunk (label \"go\"))"
+  "A clickable wrapper. (button :on-click thunk :hint \"...\" (label \"go\"))"
   (multiple-value-bind (props kids) (%parse-args args)
-    (make-instance 'action :callback (getf props :on-click)
+    (make-instance 'action :callback (getf props :on-click) :hint (getf props :hint)
                            :face (getf props :face) :child (first kids))))
 
 (defun boxed (&rest args)
@@ -706,6 +708,11 @@ matching frame-cell-count so paint-cell-grid iterates it with `below n by 10'."
   "The callback of the action under (LINE COL), or nil."
   (let ((hit (node-at node line col)))
     (when (typep hit 'action) (callback hit))))
+
+(defun hint-at (root line col)
+  "The hover hint of the node under (LINE COL), or nil."
+  (let ((n (node-at root line col)))
+    (and n (hint n))))
 
 (defun click-thunk (root line col)
   "A nullary thunk for a click at (LINE COL) on arranged ROOT: an action's

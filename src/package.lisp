@@ -173,7 +173,7 @@
   (:use :cl)
   (:export
    ;; nodes
-   #:node #:key-of #:parent #:face #:expand-of
+   #:node #:key-of #:parent #:face #:hint #:expand-of
    #:start-line #:start-col #:end-line #:end-col
    #:text-node #:content
    #:separator #:sep-char
@@ -206,7 +206,7 @@
    #:set-input #:move-cursor #:cursor-to-start #:cursor-to-end
    #:confirm-input
    ;; hit-testing + selection
-   #:node-at #:action-at #:click-thunk #:slider-value-at
+   #:node-at #:action-at #:click-thunk #:slider-value-at #:hint-at
    #:collect-selectables #:update-selection #:selected-node #:selection-move
    #:scroll-to-selection))
 
