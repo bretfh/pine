@@ -23,6 +23,8 @@
 (defclass repl-mode (text-mode) ())
 (defclass terminal-mode (base-mode) ())
 
+(defclass overwrite-mode (minor-mode) ())
+
 ;;;; Registry (singletons keyed by keyword name) + global keymap
 
 (defvar *modes* (make-hash-table :test 'eq))
@@ -58,15 +60,60 @@
            :lisp-mode)
           (t nil))))
 
+;;;; Minor modes. Per-buffer, precedence-numbered (higher = more specific).
+;;;; The enabled set feeds both the active-keymap list and the synthesized
+;;;; dispatch class, so a minor mode augments via keymap bindings and via
+;;;; execute method combination (:before/:after transparent, :around opaque).
+
+(defun %minor-names (client)
+  (gethash (pine.client:current-buffer client)
+           (pine.client:buffer-minor-modes client)))
+
+(defun (setf %minor-names) (names client)
+  (setf (gethash (pine.client:current-buffer client)
+                 (pine.client:buffer-minor-modes client))
+        names))
+
+(defun buffer-minor-modes (client)
+  "Active minor-mode singletons for the current buffer, most specific first."
+  (stable-sort
+   (loop for name in (%minor-names client)
+         for m = (find-mode name)
+         when (typep m 'minor-mode) collect m)
+   #'> :key #'precedence))
+
+(defun minor-mode-enabled-p (client name)
+  (and (member name (%minor-names client)) t))
+
+(defun enable-minor-mode (client name)
+  (unless (typep (find-mode name) 'minor-mode)
+    (error "~s is not a minor mode" name))
+  (pushnew name (%minor-names client))
+  t)
+
+(defun disable-minor-mode (client name)
+  (setf (%minor-names client) (remove name (%minor-names client)))
+  nil)
+
+(defun toggle-minor-mode (client name)
+  (if (minor-mode-enabled-p client name)
+      (disable-minor-mode client name)
+      (enable-minor-mode client name)))
+
+(defun active-minor-mode-indicators (client)
+  (loop for m in (buffer-minor-modes client) collect (mode-indicator m)))
+
 ;;;; Active modes -> keymaps + a synthesized dispatch class
 
 (defun buffer-active-modes (client)
-  (declare (ignore client))
-  (list (current-buffer-mode)))
+  "Minor modes (most specific first) then the major mode. This is the
+superclass order of the synthesized dispatch class, so minor-mode methods
+run before the major mode's under CLOS method combination."
+  (append (buffer-minor-modes client) (list (current-buffer-mode))))
 
 (defun active-keymaps (client)
-  (declare (ignore client))
-  (list (mode-keymap (current-buffer-mode)) *global-keymap*))
+  (append (mapcar #'mode-keymap (buffer-minor-modes client))
+          (list (mode-keymap (current-buffer-mode)) *global-keymap*)))
 
 (defvar *dispatch-classes* (make-hash-table :test 'equal))
 

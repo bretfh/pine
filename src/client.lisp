@@ -27,6 +27,8 @@
    (current-buffer  :initarg :current-buffer  :accessor current-buffer  :initform nil)
    (buffer-modes    :initarg :buffer-modes    :accessor buffer-modes
                     :initform (make-hash-table :test 'eq))
+   (buffer-minor-modes :initarg :buffer-minor-modes :accessor buffer-minor-modes
+                    :initform (make-hash-table :test 'eq))
    (kill-ring       :initarg :kill-ring       :accessor kill-ring       :initform nil)
    (kill-ring-max   :initarg :kill-ring-max   :accessor kill-ring-max   :initform 60)
    (last-command    :initarg :last-command    :accessor last-command    :initform nil)
