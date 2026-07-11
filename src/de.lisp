@@ -60,6 +60,11 @@
   "A thunk that toggles panel NAME on the UI thread."
   (lambda () (run-in-main-event-loop () (toggle-panel name))))
 
+(defun %set-volume (v)
+  (ignore-errors
+    (uiop:launch-program
+     (list "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" (format nil "~a%" v)))))
+
 ;; nerd-font glyph codepoints (numeric so the source stays ASCII)
 (defparameter *g-overview* #xF02C1)
 (defparameter *g-search*   #x0F002)
@@ -69,6 +74,7 @@
 (defparameter *g-files*    #x0F07B)
 (defparameter *g-edit*     #x0F121)
 (defparameter *g-vol*      #x0F028)
+(defparameter *g-mute*     #x0F026)
 (defparameter *g-media*    #x0F001)
 (defparameter *g-net*      #x0F1EB)
 (defparameter *g-system*   #x0F007)
@@ -207,6 +213,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
       (widget-add-controller area click))
     (configure-bar window)
     (register-panel app "calendar" #'calendar-panel :width 240 :height 120)
+    (register-panel app "audio" #'audio-panel :width 340 :height 120)
     (window-present window)
     (timeout-add 1000 (lambda () (widget-queue-draw area) t))
     window))
@@ -337,3 +344,16 @@ client returning a node tree). Show it with toggle-panel."
     (column :align :center
       (label (format nil "~4,'0d-~2,'0d-~2,'0d" y mo d) :face :function-name)
       (label "calendar" :face :comment))))
+
+(defwidget audio-panel ()
+  "The audio panel, authored declaratively: header, mute toggle, a live volume
+slider whose on-change drives wpctl, and the percentage. Reads the :vol/:muted
+cells (fed by the audio source), so it re-renders when they change."
+  (let ((vol (%cell :vol 0)) (muted (%cell :muted nil)))
+    (column :spacing 1
+      (label "Audio" :face :function-name)
+      (row :spacing 1 :align :center
+        (button :on-click (%sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+          (icon (if muted *g-mute* *g-vol*) :face :string))
+        (meter :value vol :min 0 :max 100 :track 20 :on-change #'%set-volume)
+        (label (format nil "~3d%" vol) :face :comment)))))
