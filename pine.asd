@@ -10,7 +10,9 @@
                #:bordeaux-threads
                #:closer-mop
                #:cffi
-               #:cffi-libffi)
+               #:cffi-libffi
+               #:com.inuoe.jzon
+               #:pine/vt)
   :serial t
   :pathname "src/"
   :components
@@ -18,6 +20,7 @@
    (:file "key")
    (:file "keymap")
    (:file "server")
+   (:file "eval")
    (:file "actor")
    (:file "event")
    (:file "hooks")
@@ -25,6 +28,8 @@
    (:file "buffer")
    (:file "window")
    (:file "client")
+   (:file "cell")
+   (:file "sources")
    (:file "echo")
    (:file "command")
    (:file "variable")
@@ -34,7 +39,8 @@
    (:file "complete")
    (:file "prompt")
    (:file "file")
-   (:file "shell")
+   (:file "repl")
+   (:file "term")
    (:file "ts")
    (:file "render")
    (:file "editor")
@@ -62,4 +68,5 @@
   :serial t
   :pathname "src/"
   :components ((:file "surface")
+               (:file "de")
                (:file "gtk")))

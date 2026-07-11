@@ -112,7 +112,7 @@
    #:render-buffer-to-frame
    #:relayout))
 
-(defpackage :pine.shell
+(defpackage :pine.repl
   (:use :cl)
   (:export
    #:start-repl
@@ -137,16 +137,14 @@
 (defpackage :pine.term
   (:use :cl)
   (:export
-   #:terminal #:term-cols #:term-rows #:term-buffer
-   #:terminal-destroy
+   #:terminal #:terminal-term #:terminal-fd #:terminal-pid #:terminal-buffer
    #:open-terminal
    #:terminal-for-buffer
-   #:term-write #:key-bytes
-   #:gterm-text #:gterm-cursor-row-of #:gterm-cursor-col-of
-   #:resize-active-terminal #:terminal-visible-p
-   #:render-terminal-to-frame #:vec-to-list
-   #:ensure-pushframe #:push-frame-direct
-   #:with-gterm-cells))
+   #:term-write
+   #:gterm-text
+   #:drain-terminals
+   #:resize-active-terminal
+   #:terminal-dispatch))
 
 (defpackage :pine.mode
   (:use :cl)

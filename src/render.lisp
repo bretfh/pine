@@ -293,9 +293,80 @@ Returns the new cell offset."
               (pine.buffer:frame-cursor-col f) (length text))))
     off))
 
+(defun %term-rgb (plist key default)
+  "Resolve a terminal cell color to an (r g b) list. color-index-to-rgb
+returns a vector, SGR truecolor a 3-list."
+  (let ((c (getf plist key)))
+    (cond ((null c) default)
+          ((integerp c) (coerce (pine.vt:color-index-to-rgb c) 'list))
+          ((and (vectorp c) (= 3 (length c))) (coerce c 'list))
+          ((and (listp c) (= 3 (length c))) c)
+          (t default))))
+
+(defun render-terminal-cells (f w tobj)
+  "Fill the buffer area of F from the terminal's emulator grid. Returns off."
+  (declare (ignore w))
+  (let* ((term (pine.term:terminal-term tobj))
+         (cells (pine.buffer:frame-cells f))
+         (rows (min (pine.vt:term-height term)
+                    (max 1 (- (pine.buffer:frame-rows f) 2))))
+         (cols (min (pine.vt:term-width term) (pine.buffer:frame-cols f)))
+         (off 0))
+    (dotimes (y rows)
+      (multiple-value-bind (chars faces) (pine.vt:term-render-line term y)
+        (let ((cur nil))
+          (dotimes (x cols)
+            (let ((change (assoc x faces)))
+              (when change (setf cur (second change))))
+            (let ((fg (%term-rgb cur :fg '(205 214 244)))
+                  (bg (%term-rgb cur :bg nil)))
+              (setf (svref cells (+ off 0)) y
+                    (svref cells (+ off 1)) x
+                    (svref cells (+ off 2)) (char-code (char chars x))
+                    (svref cells (+ off 3)) (first fg)
+                    (svref cells (+ off 4)) (second fg)
+                    (svref cells (+ off 5)) (third fg)
+                    (svref cells (+ off 6)) (if bg (first bg) -1)
+                    (svref cells (+ off 7)) (if bg (second bg) -1)
+                    (svref cells (+ off 8)) (if bg (third bg) -1)
+                    (svref cells (+ off 9)) nil)
+              (incf off 10))))))
+    (setf (pine.buffer:frame-cursor-row f)
+          (max 0 (min (pine.vt:term-cursor-y term) (1- rows)))
+          (pine.buffer:frame-cursor-col f)
+          (max 0 (min (pine.vt:term-cursor-x term) (1- cols))))
+    off))
+
+(defun %snapshot-region (s)
+  "Normalized region (values start-line start-col end-line end-col) from the
+mark (buffer meta) and point, or nil when no mark is set."
+  (let ((ml (fset:@ (pine.buffer:meta s) :mark-line))
+        (mc (fset:@ (pine.buffer:meta s) :mark-col)))
+    (when (and ml mc)
+      (let ((pl (pine.buffer:point-line s)) (pc (pine.buffer:point-col s)))
+        (if (or (< ml pl) (and (= ml pl) (<= mc pc)))
+            (values ml mc pl pc)
+            (values pl pc ml mc))))))
+
+(defun %in-region-p (region line col)
+  (destructuring-bind (sl sc el ec) region
+    (cond ((or (< line sl) (> line el)) nil)
+          ((= sl el) (and (>= col sc) (< col ec)))
+          ((= line sl) (>= col sc))
+          ((= line el) (< col ec))
+          (t t))))
+
+(defparameter +selection-bg+ '(69 71 90))
+
 (defun render-buffer-to-frame (w)
   (let ((f (pine.client:frame (pine.client:current-client))))
     (pine.buffer:ensure-frame-cells f)
+    (let ((tobj (pine.term:terminal-for-buffer (pine.buffer:buffer-ref w))))
+      (when tobj
+        (let ((off (render-chrome f (render-terminal-cells f w tobj) w)))
+          (setf (pine.buffer:frame-cell-count f) off
+                (pine.buffer:frame-dirtyp f) t))
+        (return-from render-buffer-to-frame)))
     ;; SNAP is read once: a buffer switch can null it from the renderer thread
     ;; mid-paint, so treat a missing snapshot as an empty buffer (chrome still
     ;; paints) rather than dereferencing nil.
@@ -307,6 +378,8 @@ Returns the new cell offset."
            (hl (and s (pine.buffer:highlights s)))
            (hl-table (when hl
                        (build-highlight-table hl (pine.buffer:scroll-top w) (length dl))))
+           (region (when s (multiple-value-bind (sl sc el ec) (%snapshot-region s)
+                             (when sl (list sl sc el ec)))))
            (off 0))
       (when s
         (loop for d in dl
@@ -327,15 +400,17 @@ Returns the new cell offset."
                          for face = (when (and face-slots (< buf-col (length face-slots)))
                                       (aref face-slots buf-col))
                          for rgb = (face-rgb face)
+                         for bg = (when (and region (%in-region-p region buf-line-idx buf-col))
+                                    +selection-bg+)
                          do (setf (svref cells (+ off 0)) row
                                   (svref cells (+ off 1)) col
                                   (svref cells (+ off 2)) ch
                                   (svref cells (+ off 3)) (first rgb)
                                   (svref cells (+ off 4)) (second rgb)
                                   (svref cells (+ off 5)) (third rgb)
-                                  (svref cells (+ off 6)) -1
-                                  (svref cells (+ off 7)) -1
-                                  (svref cells (+ off 8)) -1
+                                  (svref cells (+ off 6)) (if bg (first bg) -1)
+                                  (svref cells (+ off 7)) (if bg (second bg) -1)
+                                  (svref cells (+ off 8)) (if bg (third bg) -1)
                                   (svref cells (+ off 9)) nil)
                             (incf off 10))))
         (setf (pine.buffer:frame-cursor-row f)

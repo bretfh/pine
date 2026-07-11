@@ -7,7 +7,7 @@ repl:
 	$(GUIX) sh -c '$(ENV) sbcl --eval "(asdf:load-system :pine)"'
 
 dev:
-	$(GUIX) sh -c '$(ENV) sbcl --eval "(asdf:load-system :pine/gtk)" --eval "(pine.gtk:run)"'
+	$(GUIX) sh -c '$(ENV) LD_PRELOAD="$$GUIX_ENVIRONMENT/lib/libgtk4-layer-shell.so" sbcl --eval "(asdf:load-system :pine/gtk)" --eval "(pine.gtk:run)"'
 
 check:
 	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine/gtk)" --eval "(princ :loaded)" --eval "(terpri)"'

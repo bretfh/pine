@@ -5,11 +5,12 @@
            #:execute #:call-command #:dispatch #:self-insert #:self-insert-key-p
            #:prefix-numeric-value #:this-command-key
            #:key-binding #:read-next-key
-           #:*minibuffer-handler*))
+           #:*minibuffer-handler* #:*terminal-handler*))
 
 (in-package #:pine.command)
 
 (defvar *minibuffer-handler* nil)
+(defvar *terminal-handler* nil)
 
 (defclass command ()
   ((name      :initarg :name      :reader command-name)
@@ -145,6 +146,10 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
       (setf (pine.client:pending-key-reader client) nil)
       (return-from dispatch (funcall reader key))))
   (when (and *minibuffer-handler* (funcall *minibuffer-handler* client key))
+    (return-from dispatch))
+  ;; in a terminal, keys go to the pty — unless a prefix (C-x ...) is pending.
+  (when (and *terminal-handler* (null (pine.client:pending-keys client))
+             (funcall *terminal-handler* client key))
     (return-from dispatch))
   (handler-case
       (let* ((pending (pine.client:pending-keys client))

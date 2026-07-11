@@ -136,7 +136,7 @@ run before the major mode's under CLOS method combination."
 
 (defmethod dispatch-message ((mode base-mode) self tag plist)
   (declare (ignore self))
-  (destructuring-bind (state undo subs hl) sento.actor:*state*
+  (destructuring-bind (state undo redo subs hl) sento.actor:*state*
     (case tag
       (:get-state (sento.actor:reply state))
       (:get-snapshot (sento.actor:reply (pine.buffer:state->snapshot state)))
@@ -146,104 +146,103 @@ run before the major mode's under CLOS method combination."
         (pine.buffer:buffer-local state (getf plist :key) (getf plist :default))))
       (:subscribe
        (let ((r (getf plist :renderer)))
-         (setf sento.actor:*state* (list state undo (adjoin r subs :test #'eq) hl))
+         (setf sento.actor:*state* (list state undo redo (adjoin r subs :test #'eq) hl))
          (sento.actor:tell r
            (list :snapshot :snapshot (pine.buffer:state->snapshot-with-hl state hl)))))
       (:unsubscribe
        (let ((r (getf plist :renderer)))
-         (setf sento.actor:*state* (list state undo (remove r subs :test #'eq) hl))))
+         (setf sento.actor:*state* (list state undo redo (remove r subs :test #'eq) hl))))
       (:highlights
        (let ((h (getf plist :highlights)))
-         (setf sento.actor:*state* (list state undo subs h))
+         (setf sento.actor:*state* (list state undo redo subs h))
          (pine.buffer:notify-subscribers subs state h)))
       (:undo
        (when undo
          (let ((prev (first undo)))
-           (setf sento.actor:*state* (list prev (rest undo) subs hl))
+           (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl))
            (pine.buffer:notify-subscribers subs prev hl))))
+      (:redo
+       (when redo
+         (let ((next (first redo)))
+           (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl))
+           (pine.buffer:notify-subscribers subs next hl))))
       ((:set-local :set-meta)
        (let ((new (pine.buffer:set-meta state (getf plist :key) (getf plist :value))))
-         (setf sento.actor:*state* (list new undo subs hl))
+         (setf sento.actor:*state* (list new undo redo subs hl))
          (pine.buffer:notify-subscribers subs new hl)))
       (:set-var
        (let* ((vars (or (fset:@ (pine.buffer:meta state) :vars) (fset:empty-map)))
               (new (pine.buffer:set-meta
                     state :vars (fset:with vars (getf plist :key) (getf plist :value)))))
-         (setf sento.actor:*state* (list new undo subs hl))
+         (setf sento.actor:*state* (list new undo redo subs hl))
          (pine.buffer:notify-subscribers subs new hl)))
       (:replace-content
        (let ((new (pine.buffer:set-meta
                    (pine.buffer:load-content (getf plist :content))
                    :name (or (fset:@ (pine.buffer:meta state) :name) ""))))
-         (setf sento.actor:*state* (list new undo subs hl))
+         ;; fresh content clears history
+         (setf sento.actor:*state* (list new nil nil subs hl))
          (pine.buffer:notify-subscribers subs new hl))))))
 
 (defmethod dispatch-message ((mode text-mode) self tag plist)
-  (destructuring-bind (state undo subs hl) sento.actor:*state*
-    (case tag
-      (:insert
-       (let* ((snap (pine.buffer:state->snapshot state))
-              (l (pine.buffer:point-line snap))
-              (c (pine.buffer:point-col snap))
-              (new (pine.buffer:insert-string state l c (getf plist :text))))
-         (setf sento.actor:*state* (list new (cons state undo) subs hl))
-         (pine.buffer:notify-subscribers subs new hl)))
-      (:newline
-       (let* ((snap (pine.buffer:state->snapshot state))
-              (l (pine.buffer:point-line snap))
-              (c (pine.buffer:point-col snap))
-              (new (pine.buffer:insert-newline state l c)))
-         (setf sento.actor:*state* (list new (cons state undo) subs hl))
-         (pine.buffer:notify-subscribers subs new hl)))
-      (:backspace
-       (let* ((snap (pine.buffer:state->snapshot state))
-              (l (pine.buffer:point-line snap))
-              (c (pine.buffer:point-col snap)))
-         (cond
-           ((plusp c)
-            (let ((new (pine.buffer:move-mark
-                        (pine.buffer:delete-char state l (1- c)) :point l (1- c))))
-              (setf sento.actor:*state* (list new (cons state undo) subs hl))
-              (pine.buffer:notify-subscribers subs new hl)))
-           ((plusp l)
-            (let* ((prev-len (length (fset:@ (pine.buffer:lines state) (1- l))))
-                   (new (pine.buffer:move-mark
+  (destructuring-bind (state undo redo subs hl) sento.actor:*state*
+    ;; edits push the old state onto UNDO and clear REDO.
+    (macrolet ((commit (new-state)
+                 `(let ((new ,new-state))
+                    (setf sento.actor:*state* (list new (cons state undo) nil subs hl))
+                    (pine.buffer:notify-subscribers subs new hl))))
+      (case tag
+        (:insert
+         (let* ((snap (pine.buffer:state->snapshot state))
+                (l (pine.buffer:point-line snap))
+                (c (pine.buffer:point-col snap)))
+           (commit (pine.buffer:insert-string state l c (getf plist :text)))))
+        (:newline
+         (let* ((snap (pine.buffer:state->snapshot state))
+                (l (pine.buffer:point-line snap))
+                (c (pine.buffer:point-col snap)))
+           (commit (pine.buffer:insert-newline state l c))))
+        (:backspace
+         (let* ((snap (pine.buffer:state->snapshot state))
+                (l (pine.buffer:point-line snap))
+                (c (pine.buffer:point-col snap)))
+           (cond
+             ((plusp c)
+              (commit (pine.buffer:move-mark
+                       (pine.buffer:delete-char state l (1- c)) :point l (1- c))))
+             ((plusp l)
+              (let ((prev-len (length (fset:@ (pine.buffer:lines state) (1- l)))))
+                (commit (pine.buffer:move-mark
                          (pine.buffer:delete-char state (1- l) prev-len)
-                         :point (1- l) prev-len)))
-              (setf sento.actor:*state* (list new (cons state undo) subs hl))
-              (pine.buffer:notify-subscribers subs new hl))))))
-      (:move-point
-       (let ((new (pine.buffer:move-mark state :point
-                                         (getf plist :line) (getf plist :col))))
-         (setf sento.actor:*state* (list new undo subs hl))
-         (pine.buffer:notify-subscribers subs new hl)))
-      (:delete-region
-       (let ((new (pine.buffer:delete-region state
-                                             (getf plist :start-line) (getf plist :start-col)
-                                             (getf plist :end-line) (getf plist :end-col))))
-         (setf sento.actor:*state* (list new (cons state undo) subs hl))
-         (pine.buffer:notify-subscribers subs new hl)))
-      (:append-with-prompt
-       (let* ((text (getf plist :text)) (pr (getf plist :prompt))
-              (snap (pine.buffer:state->snapshot state))
-              (last-line (1- (pine.buffer:line-count snap)))
-              (last-col (length (fset:@ (pine.buffer:lines state) last-line)))
-              (s1 (pine.buffer:move-mark state :point last-line last-col))
-              (s2 (pine.buffer:insert-newline s1 last-line last-col))
-              (s3 (pine.buffer:insert-string s2 (1+ last-line) 0 text))
-              (s4-snap (pine.buffer:state->snapshot s3))
-              (s4-line (1- (pine.buffer:line-count s4-snap)))
-              (s4-col (length (fset:@ (pine.buffer:lines s3) s4-line)))
-              (s5 (pine.buffer:insert-newline s3 s4-line s4-col))
-              (s6 (pine.buffer:insert-string s5 (1+ s4-line) 0 pr)))
-         (setf sento.actor:*state* (list s6 (cons state undo) subs hl))
-         (pine.buffer:notify-subscribers subs s6 hl)))
-      (t (call-next-method)))))
+                         :point (1- l) prev-len)))))))
+        (:move-point
+         (let ((new (pine.buffer:move-mark state :point
+                                           (getf plist :line) (getf plist :col))))
+           (setf sento.actor:*state* (list new undo redo subs hl))
+           (pine.buffer:notify-subscribers subs new hl)))
+        (:delete-region
+         (commit (pine.buffer:delete-region state
+                                            (getf plist :start-line) (getf plist :start-col)
+                                            (getf plist :end-line) (getf plist :end-col))))
+        (:append-with-prompt
+         (let* ((text (getf plist :text)) (pr (getf plist :prompt))
+                (snap (pine.buffer:state->snapshot state))
+                (last-line (1- (pine.buffer:line-count snap)))
+                (last-col (length (fset:@ (pine.buffer:lines state) last-line)))
+                (s1 (pine.buffer:move-mark state :point last-line last-col))
+                (s2 (pine.buffer:insert-newline s1 last-line last-col))
+                (s3 (pine.buffer:insert-string s2 (1+ last-line) 0 text))
+                (s4-snap (pine.buffer:state->snapshot s3))
+                (s4-line (1- (pine.buffer:line-count s4-snap)))
+                (s4-col (length (fset:@ (pine.buffer:lines s3) s4-line)))
+                (s5 (pine.buffer:insert-newline s3 s4-line s4-col)))
+           (commit (pine.buffer:insert-string s5 (1+ s4-line) 0 pr))))
+        (t (call-next-method))))))
 
 (defmethod dispatch-message ((mode repl-mode) self tag plist)
   (declare (ignore self plist))
   (case tag
-    (:newline (pine.shell:repl-submit))
+    (:newline (pine.repl:repl-submit))
     (t (call-next-method))))
 
 (defmethod dispatch-message ((mode terminal-mode) self tag plist)
@@ -254,7 +253,7 @@ run before the major mode's under CLOS method combination."
     (:get-text
      (let ((term (pine.term:terminal-for-buffer self)))
        (sento.actor:reply (if term (pine.term:gterm-text term) ""))))
-    ((:move-point :delete-region :undo :replace-content :append-with-prompt) nil)
+    ((:move-point :delete-region :undo :redo :replace-content :append-with-prompt) nil)
     (t (call-next-method))))
 
 ;;;; Defaults

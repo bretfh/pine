@@ -225,7 +225,8 @@
   (let ((initial (move-mark (set-meta (load-content content) :name name) :point 0 0)))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)
-                                  :state (list initial nil nil nil)
+                                  ;; state tuple: (STATE UNDO REDO SUBSCRIBERS HIGHLIGHTS)
+                                  :state (list initial nil nil nil nil)
                                   :receive
                                   (lambda (msg)
                                     (let* ((state (first sento.actor:*state*))

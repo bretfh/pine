@@ -53,21 +53,27 @@
 (defun list-agents (server)
   (act:ask-s (pine.server:agent-registry server) '(:list) :time-out 5))
 
-(defun agent-eval (server agent-or-name form-string &key (time-out 30))
-  (let ((actor (etypecase agent-or-name
-                 (agent-info (agent-info-actor agent-or-name))
-                 (string (let ((info (find-agent server agent-or-name)))
-                           (unless info (error "No agent named ~s" agent-or-name))
-                           (agent-info-actor info)))
-                 (t agent-or-name))))
-    (act:ask-s actor (list :eval :form form-string) :time-out time-out)))
+(defun resolve-agent (server agent-or-name)
+  "The actor ref for AGENT-OR-NAME (an agent-info, a registered name, or a ref)."
+  (etypecase agent-or-name
+    (agent-info (agent-info-actor agent-or-name))
+    (string (let ((info (find-agent server agent-or-name)))
+              (unless info (error "No agent named ~s" agent-or-name))
+              (agent-info-actor info)))
+    (t agent-or-name)))
 
-(defun agent-compile (server agent-or-name text &key package (time-out 60))
-  (let ((actor (etypecase agent-or-name
-                 (agent-info (agent-info-actor agent-or-name))
-                 (string (agent-info-actor (find-agent server agent-or-name)))
-                 (t agent-or-name))))
-    (act:ask-s actor (list :compile :text text :package package) :time-out time-out)))
+(defun agent-eval (server agent-or-name form-string &key on-done package bindings)
+  "Evaluate FORM-STRING in AGENT-OR-NAME through pine.eval, off the agent's
+mailbox thread. Returns immediately; the result reaches ON-DONE and any error
+reaches the shared debugger surface."
+  (act:tell (resolve-agent server agent-or-name)
+            (list :eval :form form-string :package package
+                  :bindings bindings :on-done on-done)))
+
+(defun agent-compile (server agent-or-name text &key on-done package bindings)
+  (act:tell (resolve-agent server agent-or-name)
+            (list :compile :text text :package package
+                  :bindings bindings :on-done on-done)))
 
 
 (defun start-local-agent (server)
@@ -77,22 +83,24 @@
                   :receive
                   (lambda (msg)
                     (case (first msg)
-                      (:eval
-                       (destructuring-bind (&key form) (rest msg)
-                         (handler-case
-                             (let* ((f (read-from-string form))
-                                    (values (multiple-value-list (eval f)))
-                                    (result (format nil "~{~s~^~%~}" values)))
-                               (reply (list :ok result)))
-                           (error (c) (reply (list :error (princ-to-string c)))))))
-                      (:compile
-                       (destructuring-bind (&key text package) (rest msg)
-                         (handler-case
-                             (let ((*package* (or (and package (find-package package))
-                                                  *package*)))
-                               (eval (read-from-string text))
-                               (reply (list :ok "compiled")))
-                           (error (c) (reply (list :error (princ-to-string c)))))))
+                      ;; Evaluation runs through pine.eval on its own thread, so
+                      ;; a looping or erroring form can neither block this actor's
+                      ;; mailbox (and the shared dispatcher behind it) nor drop to
+                      ;; a console debugger. Fire-and-forget: the result reaches
+                      ;; ON-DONE and errors reach the shared *on-debug* surface,
+                      ;; not a synchronous reply.
+                      ((:eval :compile)
+                       (destructuring-bind (&key form text package bindings on-done)
+                           (rest msg)
+                         (let ((source (or form text)))
+                           (when source
+                             (pine.eval:evaluate-string
+                              source
+                              :package (or (and package (find-package package))
+                                           (find-package :cl-user))
+                              :bindings bindings
+                              :on-done on-done)))
+                         (reply :started)))
                       (:set-package
                        (destructuring-bind (&key name) (rest msg)
                          (let ((pkg (find-package name)))

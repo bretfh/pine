@@ -257,30 +257,49 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
 
 ;;;; Highlight computation (portable)
 
-(defun build-line-offsets (text)
-  (let ((offsets (list 0)))
-    (loop for i from 0 below (length text)
-          when (char= (char text i) #\Newline)
-            do (push (1+ i) offsets))
-    (coerce (nreverse offsets) 'vector)))
+(defun char-byte-length (ch)
+  "UTF-8 encoded length in bytes of the single character CH."
+  (let ((code (char-code ch)))
+    (cond ((< code #x80) 1) ((< code #x800) 2) ((< code #x10000) 3) (t 4))))
 
-(defun byte-to-line-col (byte-pos offsets)
-  (let ((lo 0) (hi (1- (length offsets))))
-    (loop while (<= lo hi)
-          do (let ((mid (ash (+ lo hi) -1)))
-               (cond
-                 ((> (aref offsets mid) byte-pos) (setf hi (1- mid)))
-                 ((and (< mid (1- (length offsets)))
-                       (<= (aref offsets (1+ mid)) byte-pos))
-                  (setf lo (1+ mid)))
-                 (t (return-from byte-to-line-col
-                      (values mid (- byte-pos (aref offsets mid))))))))
-    (values (1- (length offsets)) 0)))
+(defun build-line-index (text)
+  "Vector of (start-byte . start-char) per line. tree-sitter reports positions
+in UTF-8 bytes while the cell grid and point are in characters; the index
+converts both ways without assuming one byte per character."
+  (let ((index (list (cons 0 0))) (bpos 0) (ci 0))
+    (loop for ch across text
+          do (incf bpos (char-byte-length ch))
+             (incf ci)
+             (when (char= ch #\Newline) (push (cons bpos ci) index)))
+    (coerce (nreverse index) 'vector)))
+
+(defun %line-of-byte (byte-pos index)
+  "Greatest line whose start byte is <= BYTE-POS."
+  (let ((lo 0) (hi (1- (length index))))
+    (loop while (< lo hi)
+          do (let ((mid (ceiling (+ lo hi) 2)))
+               (if (<= (car (aref index mid)) byte-pos)
+                   (setf lo mid)
+                   (setf hi (1- mid)))))
+    lo))
+
+(defun byte-to-line-col (byte-pos index text)
+  "Map a UTF-8 BYTE-POS to (values line char-col) using the line INDEX and TEXT."
+  (let* ((line (%line-of-byte byte-pos index))
+         (b (car (aref index line)))
+         (ci (cdr (aref index line)))
+         (len (length text))
+         (col 0))
+    (loop while (and (< b byte-pos) (< ci len))
+          do (incf b (char-byte-length (char text ci)))
+             (incf ci)
+             (incf col))
+    (values line col)))
 
 (defun byte-length (text)
   (length (sb-ext:string-to-octets text :external-format :utf-8)))
 
-(defun collect-captures (cursor query cache text offsets)
+(defun collect-captures (cursor query cache text index)
   "Iterate CURSOR's captures, mapping each to (line start-col end-col face)."
   (let ((highlights nil))
     (cffi:with-foreign-objects ((match '(:struct ts-query-match))
@@ -299,8 +318,8 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
                    (end (ts-node-end-byte node))
                    (face (reclassify raw text start end)))
               (when face
-                (multiple-value-bind (sl sc) (byte-to-line-col start offsets)
-                  (multiple-value-bind (el ec) (byte-to-line-col end offsets)
+                (multiple-value-bind (sl sc) (byte-to-line-col start index text)
+                  (multiple-value-bind (el ec) (byte-to-line-col end index text)
                     (if (= sl el)
                         (push (list sl sc ec face) highlights)
                         (progn
@@ -316,7 +335,7 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
     (let ((parser (entry-parser entry))
           (query  (entry-query entry))
           (cache  (entry-capture-cache entry))
-          (offsets (build-line-offsets text))
+          (line-index (build-line-index text))
           (highlights nil))
       (handler-case
           (cffi:with-foreign-string (cstr text :encoding :utf-8)
@@ -330,7 +349,7 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
                             (progn
                               (ts-query-cursor-exec cursor query root)
                               (setf highlights
-                                    (collect-captures cursor query cache text offsets)))
+                                    (collect-captures cursor query cache text line-index)))
                          (ts-query-cursor-delete cursor)))
                   (ts-tree-delete tree)))))
         (error () nil))
@@ -354,9 +373,17 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
                   (ts-tree-delete tree)))))
         (error () nil)))))
 
-(defun pos-to-byte (text line col)
-  (let ((offsets (build-line-offsets text)))
-    (+ (if (< line (length offsets)) (aref offsets line) 0) col)))
+(defun pos-to-byte (text line col index)
+  "UTF-8 byte offset of the character position LINE/COL."
+  (let* ((line (min line (1- (length index))))
+         (bpos (car (aref index line)))
+         (ci (cdr (aref index line)))
+         (len (length text)))
+    (loop for k from 0 below col
+          while (< ci len)
+          do (incf bpos (char-byte-length (char text ci)))
+             (incf ci))
+    bpos))
 
 (defun %forward-sexp-byte (root byte)
   (let ((cur (ts-node-named-descendant-for-byte-range root byte byte)))
@@ -382,42 +409,41 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
 
 (defun %defun-bytes (root byte)
   "Start and end bytes of the top-level form (a direct child of ROOT)
-containing BYTE."
+containing BYTE, or nil."
   (let ((cur (ts-node-named-descendant-for-byte-range root byte byte)))
-    (if (ts-node-is-null cur)
-        nil
-        (progn
-          (loop for p = (ts-node-parent cur)
-                until (ts-node-is-null p)
-                do (if (ts-node-is-null (ts-node-parent p))
-                       (progn (setf cur p) (loop-finish))
-                       (setf cur p)))
-          (values (ts-node-start-byte cur) (ts-node-end-byte cur))))))
+    (cond
+      ((ts-node-is-null cur) nil)
+      ;; Climb until CUR's parent is ROOT (i.e. its grandparent is null),
+      ;; leaving CUR as the enclosing top-level form -- not ROOT itself.
+      (t (loop for p = (ts-node-parent cur)
+               until (or (ts-node-is-null p) (ts-node-is-null (ts-node-parent p)))
+               do (setf cur p))
+         (values (ts-node-start-byte cur) (ts-node-end-byte cur))))))
 
 (defun forward-sexp-pos (runtime language text line col)
   "Position (values line col) after the next sexp, or nil."
-  (let ((byte (pos-to-byte text line col))
-        (offsets (build-line-offsets text)))
-    (let ((target (call-with-root runtime language text
-                                  (lambda (root) (%forward-sexp-byte root byte)))))
-      (when target (byte-to-line-col target offsets)))))
+  (let* ((index (build-line-index text))
+         (byte (pos-to-byte text line col index))
+         (target (call-with-root runtime language text
+                                 (lambda (root) (%forward-sexp-byte root byte)))))
+    (when target (byte-to-line-col target index text))))
 
 (defun backward-sexp-pos (runtime language text line col)
-  (let ((byte (pos-to-byte text line col))
-        (offsets (build-line-offsets text)))
-    (let ((target (call-with-root runtime language text
-                                  (lambda (root) (%backward-sexp-byte root byte)))))
-      (when target (byte-to-line-col target offsets)))))
+  (let* ((index (build-line-index text))
+         (byte (pos-to-byte text line col index))
+         (target (call-with-root runtime language text
+                                 (lambda (root) (%backward-sexp-byte root byte)))))
+    (when target (byte-to-line-col target index text))))
 
 (defun defun-bounds-pos (runtime language text line col)
   "Bounds of the enclosing top-level form as (values start-line start-col
 end-line end-col), or nil."
-  (let ((byte (pos-to-byte text line col))
-        (offsets (build-line-offsets text)))
+  (let* ((index (build-line-index text))
+         (byte (pos-to-byte text line col index)))
     (multiple-value-bind (start end)
         (call-with-root runtime language text
                         (lambda (root) (%defun-bytes root byte)))
       (when start
-        (multiple-value-bind (sl sc) (byte-to-line-col start offsets)
-          (multiple-value-bind (el ec) (byte-to-line-col end offsets)
+        (multiple-value-bind (sl sc) (byte-to-line-col start index text)
+          (multiple-value-bind (el ec) (byte-to-line-col end index text)
             (values sl sc el ec)))))))

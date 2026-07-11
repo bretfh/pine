@@ -1,4 +1,4 @@
-(in-package :pine.shell)
+(in-package :pine.repl)
 
 (defvar *history* (fset:empty-seq))
 (defvar *history-index* -1)
@@ -26,13 +26,22 @@
     (t (eval-lisp input))))
 
 (defun eval-lisp (input)
-  (handler-case
-      (let* ((form (read-from-string input))
-             (values (multiple-value-list (eval form)))
-             (result (format nil "~{~s~^~%~}" values)))
-        (append-output result))
-    (error (c)
-      (append-output (format nil "error: ~a" c)))))
+  ;; off-thread via pine.eval: a slow/looping/erroring form can't hang the repl,
+  ;; and errors reach the shared debugger surface (*on-debug*).
+  (pine.eval:evaluate-string
+   input
+   :package (find-package :cl-user)
+   :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
+   :on-done
+   (lambda (ev)
+     (append-output
+      (case (pine.eval:evaluation-status ev)
+        (:ok (let ((out (pine.eval:evaluation-output ev)))
+               (format nil "~@[~a~%~]~{~s~^~%~}"
+                       (and (plusp (length out)) out)
+                       (pine.eval:evaluation-values ev))))
+        (:aborted "; aborted")
+        (t (format nil "; error: ~a" (pine.eval:evaluation-condition ev))))))))
 
 (defun run-shell-command (cmd)
   (handler-case

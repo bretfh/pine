@@ -8,6 +8,7 @@
               "gtk"
               "gobject-introspection"
               "tree-sitter"
+              "gtk4-layer-shell"
               "gcc-toolchain"
               "pkg-config"))
        (packages->manifest (list tree-sitter-commonlisp pine-pty))))

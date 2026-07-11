@@ -112,33 +112,43 @@ cairo context and the font face/size already selected."
 (defun pump (cli s)
   (let ((pine.client:*client* cli))
     (sync-size cli s)
+    (when (pine.term:drain-terminals cli)
+      (let ((rs (pine.client:render-state cli)))
+        (setf (pine.client:render-state cli) (fset:with rs :dirty t))))
     (let ((rs (pine.client:render-state cli))
           (w (pine.client:focused-window cli)))
       (when (and w (fset:@ rs :dirty))
         (setf (pine.client:render-state cli) (fset:with rs :dirty nil))
-        (let ((snap (pine.buffer:snap w)))
-          (when snap
-            (pine.buffer:ensure-point-visible w)
-            (pine.buffer:ensure-col-visible w)
-            (setf (pine.buffer:win-display w) (pine.buffer:window-display-lines w))
-            (pine.render:render-buffer-to-frame w)
-            (paint-frame s (pine.client:frame cli))))))))
+        ;; text buffers need scroll/display prep; terminals render from their
+        ;; own grid and have no snapshot.
+        (when (pine.buffer:snap w)
+          (pine.buffer:ensure-point-visible w)
+          (pine.buffer:ensure-col-visible w)
+          (setf (pine.buffer:win-display w) (pine.buffer:window-display-lines w)))
+        ;; never let a render error take down the whole application
+        (handler-case
+            (progn (pine.render:render-buffer-to-frame w)
+                   (paint-frame s (pine.client:frame cli)))
+          (error (c)
+            (pine.echo:message (format nil "render error: ~a" c))))))))
 
 (defun gdk->key (keyval state)
-  (let ((ctrl  (logtest state gdk4:+modifier-type-control-mask+))
-        (meta  (logtest state gdk4:+modifier-type-alt-mask+))
-        (shift (logtest state gdk4:+modifier-type-shift-mask+))
-        (super (logtest state gdk4:+modifier-type-super-mask+))
-        (uni   (gdk4:keyval-to-unicode keyval)))
-    (pine.key:make-key
-     ;; printable keys resolve to their character (so M-< / M-- match the
-     ;; "<" / "-" bindings); ctrl/super keep the keyval name so C-space etc.
-     ;; stay symbolic.
-     (if (and (plusp uni) (not ctrl) (not super)
-              (graphic-char-p (code-char uni)))
-         (string (code-char uni))
-         (gdk4:keyval-name keyval))
-     :ctrl ctrl :meta meta :shift shift :super super)))
+  (let* ((ctrl  (logtest state gdk4:+modifier-type-control-mask+))
+         (meta  (logtest state gdk4:+modifier-type-alt-mask+))
+         (super (logtest state gdk4:+modifier-type-super-mask+))
+         (uni   (gdk4:keyval-to-unicode keyval))
+         ;; a printable key resolves to its character so C-/ C-? M-< all match
+         ;; their string bindings; the char already encodes shift, so drop it.
+         ;; ctrl+space stays symbolic ("space") so C-space keeps working.
+         (printable (and (plusp uni) (not super)
+                         (graphic-char-p (code-char uni))
+                         (not (and ctrl (char= (code-char uni) #\Space))))))
+    (if printable
+        (pine.key:make-key (string (code-char uni)) :ctrl ctrl :meta meta :super super)
+        (pine.key:make-key (gdk4:keyval-name keyval)
+                           :ctrl ctrl :meta meta
+                           :shift (logtest state gdk4:+modifier-type-shift-mask+)
+                           :super super))))
 
 (define-application (:name %app :id "org.pine.editor")
   (define-main-window (window (make-application-window :application *application*))
@@ -173,7 +183,12 @@ cairo context and the font face/size already selected."
         (pine.render:relayout)
         (pine.buffer:ensure-frame-cells f))
       (timeout-add 16 (lambda () (pump cli s) t))
-      (window-present window))))
+      (window-present window)
+      ;; the desktop bar is a second surface on the same substrate; a
+      ;; layer-shell failure must not take the editor down.
+      (when pine.de:*bar-enabled*
+        (handler-case (pine.de:make-bar *application* cli)
+          (error (c) (format *error-output* "pine bar failed: ~a~%" c)))))))
 
 (defun run ()
   (multiple-value-bind (srv cli) (pine:main)

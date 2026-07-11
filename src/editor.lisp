@@ -12,6 +12,8 @@
     (install-commands)
     (install-bindings)
     (setf pine.command:*minibuffer-handler* #'minibuffer-dispatch)
+    (setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch)
+    (setf pine.eval:*on-debug* #'%eval-error)
     (let ((buf (pine.buffer:make-buffer "scratch")))
       (pine.buffer:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -141,6 +143,44 @@ prefix count."
         (values-list values))
     (error (c) (pine.echo:message (format nil "error in ~s: ~a" form c)) nil)))
 
+;;;; Evaluation runs through pine.eval on its own thread, never on the UI
+;;;; thread, so a slow/looping/erroring form can't hang or crash the editor.
+
+(defvar *pending-debugger* nil "The evaluation currently waiting in the debugger.")
+
+(defun %eval-notify (text)
+  "Show TEXT in the echo area and repaint, safely from the eval thread."
+  (pine.echo:message text)
+  (let ((r (ignore-errors (pine.client:renderer (pine.client:current-client)))))
+    (when r (sento.actor:tell r '(:force-render)))))
+
+(defun %eval-done (ev)
+  (case (pine.eval:evaluation-status ev)
+    (:ok (%eval-notify (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
+    (:aborted (%eval-notify "aborted"))))
+
+(defun %debugger-text (ev)
+  (with-output-to-string (s)
+    (format s "Evaluation error~%~%~a:~%  ~a~%~%Restarts:~%"
+            (pine.eval:evaluation-condition-type ev)
+            (pine.eval:evaluation-condition ev))
+    (loop for (name report) in (pine.eval:evaluation-restarts ev) for i from 0
+          do (format s "  ~d  [~a] ~a~%" i (or name "") report))
+    (format s "~%Backtrace:~%~a" (pine.eval:evaluation-backtrace ev))))
+
+(defun %eval-error (ev)
+  (setf *pending-debugger* ev)
+  (%show-help "*debugger*" (%debugger-text ev))
+  (%eval-notify (format nil "eval error: ~a  (M-x choose-restart / C-g abort)"
+                        (pine.eval:evaluation-condition-type ev))))
+
+(defun %eval-form-string (str package)
+  ;; errors route to the shared *on-debug* surface installed in start-editor
+  (pine.eval:evaluate-string
+   str :package package
+   :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
+   :on-done #'%eval-done))
+
 (defun eval-last-sexp ()
   (let ((buf (cur-buffer)))
     (when buf
@@ -150,27 +190,37 @@ prefix count."
              (offset (min (%point->offset snap) (length text))))
         (multiple-value-bind (start end) (%preceding-sexp-bounds text offset)
           (if start
-              (let* ((*package* (%buffer-package state))
-                     (form (read-from-string (subseq text start end))))
-                (%show-eval-result form (lambda () (eval form))))
+              (%eval-form-string (subseq text start end) (%buffer-package state))
               (pine.echo:message "no form before point")))))))
 
 (defun eval-buffer ()
+  ;; one evaluation on the eval thread reads and runs every form in order, so
+  ;; *package* changes (in-package) carry across forms, a looping form can't
+  ;; hang the editor, and a reader/eval error reaches the shared debugger
+  ;; surface like every other eval path.
   (let ((buf (cur-buffer)))
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.buffer:state->string state))
-             (pos 0) (count 0) (*package* (%buffer-package state)))
-        (handler-case
-            (loop
-              (multiple-value-bind (form new-pos)
-                  (read-from-string text nil :eof :start pos)
-                (when (eq form :eof) (return))
-                (eval form) (incf count) (setf pos new-pos)))
-          (error (c)
-            (pine.echo:message (format nil "eval-buffer error at ~a: ~a" pos c))
-            (return-from eval-buffer)))
-        (pine.echo:message (format nil "eval-buffer: ~a forms" count))))))
+             (package (%buffer-package state)))
+        (pine.eval:evaluate-thunk
+         (lambda ()
+           (let ((*package* package) (pos 0) (count 0))
+             (loop
+               (multiple-value-bind (form new-pos)
+                   (read-from-string text nil :eof :start pos)
+                 (when (eq form :eof) (return count))
+                 (eval form) (incf count) (setf pos new-pos)))))
+         :package package
+         :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
+         :on-done
+         (lambda (ev)
+           (%eval-notify
+            (case (pine.eval:evaluation-status ev)
+              (:ok (format nil "eval-buffer: ~a forms"
+                           (first (pine.eval:evaluation-values ev))))
+              (:aborted "eval-buffer aborted")
+              (t "eval-buffer: error")))))))))
 
 (defun scroll-window (delta)
   (let* ((client (pine.client:current-client))
@@ -274,6 +324,13 @@ prefix count."
 (defun install-commands ()
   (defcmd "keyboard-quit" ()
     (setf (pine.client:pending-keys (pine.client:current-client)) nil)
+    (when *pending-debugger*
+      (pine.eval:abort-evaluation *pending-debugger*)
+      (setf *pending-debugger* nil))
+    (let ((buf (cur-buffer)))
+      (when buf
+        (sento.actor:tell buf (list :set-meta :key :mark-line :value nil))
+        (sento.actor:tell buf (list :set-meta :key :mark-col :value nil))))
     (cancel-prompt))
   (defcmd "backspace" ()
     (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:backspace)))))
@@ -288,6 +345,8 @@ prefix count."
     (let ((buf (cur-buffer))) (when buf (pine.buffer:tell buf :newline))))
   (defcmd "undo" ()
     (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:undo)))))
+  (defcmd "redo" ()
+    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:redo)))))
 
   (defcmd "forward-char" (n)  (:interactive :number) (move-chars n))
   (defcmd "backward-char" (n) (:interactive :number) (move-chars (- n)))
@@ -390,8 +449,21 @@ prefix count."
   (defcmd "eval-expression" ()
     (prompt "Eval: "
       (lambda (text)
-        (handler-case (pine.echo:message (format nil "=> ~s" (eval (read-from-string text))))
-          (error (c) (pine.echo:message (format nil "error: ~a" c)))))))
+        (let ((pkg (let ((buf (cur-buffer)))
+                     (if buf
+                         (%buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
+                         (find-package :cl-user)))))
+          (%eval-form-string text pkg)))))
+  (defcmd "choose-restart" ()
+    (let ((ev *pending-debugger*))
+      (if (and ev (eq (pine.eval:evaluation-status ev) :error))
+          (completing-read "Restart: "
+            (remove nil (mapcar #'first (pine.eval:evaluation-restarts ev)))
+            (lambda (name)
+              (pine.eval:pick-restart ev name)
+              (setf *pending-debugger* nil)
+              (pine.echo:message (format nil "invoked ~a" name))))
+          (pine.echo:message "no evaluation in the debugger"))))
   (defcmd "eval-last-sexp" () (eval-last-sexp))
   (defcmd "eval-buffer" ()    (eval-buffer))
   (defcmd "new-buffer" ()
@@ -401,11 +473,24 @@ prefix count."
   (defcmd "open-repl" ()
     (handler-case
         (let* ((client (pine.client:current-client))
-               (buf (or (pine.client:repl-buffer client) (pine.shell:start-repl))))
+               (buf (or (pine.client:repl-buffer client) (pine.repl:start-repl))))
           (pine.buffer:switch-buffer "*repl*")
           (pine.render:subscribe-to-buffer buf)
           (sento.actor:tell (pine.client:renderer client)
                             (list :switch-buffer :buffer buf :name "*repl*")))
+      (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (defcmd "terminal" ()
+    (handler-case
+        (let* ((client (pine.client:current-client))
+               (f (pine.client:frame client))
+               (cols (pine.buffer:frame-cols f))
+               (rows (max 1 (- (pine.buffer:frame-rows f) 2)))
+               (buf (pine.buffer:make-buffer "*terminal*")))
+          (pine.term:open-terminal client buf :rows rows :cols cols)
+          (pine.mode:set-buffer-mode buf :terminal-mode)
+          (pine.buffer:switch-buffer "*terminal*")
+          (sento.actor:tell (pine.client:renderer client)
+                            (list :switch-buffer :buffer buf :name "*terminal*")))
       (error (c) (pine.echo:message (format nil "error: ~a" c)))))
   (defcmd "overwrite-mode" ()
     (let ((on (pine.mode:toggle-minor-mode (pine.client:current-client) :overwrite-mode)))
@@ -443,6 +528,7 @@ prefix count."
     (pine.keymap:define-key g (list (k "C-x") (k "b")) "switch-buffer")
     (pine.keymap:define-key g (list (k "C-x") (k "n")) "new-buffer")
     (pine.keymap:define-key g (list (k "C-x") (k "r")) "open-repl")
+    (pine.keymap:define-key g (list (k "C-x") (k "t")) "terminal")
     (pine.keymap:define-key g (list (k "C-x") (k "C-e")) "eval-last-sexp")
     (pine.keymap:define-key g (k "M-x") "execute-command")
     (pine.keymap:define-key g (k "Insert") "overwrite-mode")
@@ -484,6 +570,8 @@ prefix count."
     (pine.keymap:define-key tm (k "Prior") "scroll-up")
     (pine.keymap:define-key tm (k "Next") "scroll-down")
     (pine.keymap:define-key tm (k "C-z") "undo")
+    (pine.keymap:define-key tm (k "C-/") "undo")
+    (pine.keymap:define-key tm (k "C-?") "redo")
     ;; structural navigation (tree-sitter)
     (pine.keymap:define-key tm (k "C-M-f") "forward-sexp")
     (pine.keymap:define-key tm (k "C-M-b") "backward-sexp")

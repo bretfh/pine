@@ -84,24 +84,43 @@
                 (list :delete-region :start-line pl :start-col pc
                       :end-line (1+ pl) :end-col 0))))))))
 
+;;;; The most recent yank, so yank-pop can delete it before inserting the next
+;;;; ring entry: (buffer start-line start-col inserted-text).
+(defvar *last-yank* nil)
+
+(defun %advance-pos (line col text)
+  "Line/col after inserting TEXT starting at (LINE COL)."
+  (loop for ch across text
+        do (if (char= ch #\Newline) (setf line (1+ line) col 0) (incf col)))
+  (values line col))
+
 (defun yank-cmd ()
   (let* ((client (pine.client:current-client))
          (buf (pine.client:current-buffer client))
          (text (kill-ring-top)))
     (when (and text buf)
+      (let ((snap (pine.buffer:current-buffer-snapshot)))
+        (when snap
+          (setf *last-yank* (list buf (pine.buffer:point-line snap)
+                                  (pine.buffer:point-col snap) text))))
       (sento.actor:tell buf (list :insert :text text)))))
 
 (defun yank-pop-cmd ()
   (let ((client (pine.client:current-client)))
-    (when (and (equal (pine.client:last-command client) "yank")
+    (when (and (member (pine.client:last-command client) '("yank" "yank-pop")
+                       :test #'equal)
+               *last-yank*
                (rest (pine.client:kill-ring client)))
       (let ((top (pop (pine.client:kill-ring client))))
         (setf (pine.client:kill-ring client)
-              (append (pine.client:kill-ring client) (list top)))
-        (let ((text (kill-ring-top))
-              (buf (pine.client:current-buffer client)))
-          (when (and text buf)
-            (sento.actor:tell buf (list :insert :text text))))))))
+              (append (pine.client:kill-ring client) (list top))))
+      (destructuring-bind (buf sl sc old-text) *last-yank*
+        (let ((new-text (kill-ring-top)))
+          (multiple-value-bind (el ec) (%advance-pos sl sc old-text)
+            (sento.actor:tell buf (list :delete-region :start-line sl :start-col sc
+                                        :end-line el :end-col ec)))
+          (sento.actor:tell buf (list :insert :text new-text))
+          (setf *last-yank* (list buf sl sc new-text)))))))
 
 (defun copy-region-cmd ()
   (let* ((client (pine.client:current-client))
