@@ -57,6 +57,11 @@
 (defclass center (node)
   ((child :initarg :child :accessor child :initform nil)))
 
+(defclass scroll (node)
+  ((child   :initarg :child  :accessor child         :initform nil)
+   (offset  :initarg :offset :accessor scroll-offset :initform 0)
+   (vheight :initarg :height :accessor vheight        :initform 10)))
+
 (defclass selectable (node)
   ((child             :initarg :child    :accessor child             :initform nil)
    (data              :initarg :data     :accessor data              :initform nil)
@@ -150,6 +155,11 @@ rest as children, dropping nils and splicing lists."
   (multiple-value-bind (props kids) (%parse-args args)
     (apply #'make-instance 'center :child (first kids) props)))
 
+(defun viewport (&rest args)
+  "A clipped, scrollable window onto a taller child. Props :height :offset."
+  (multiple-value-bind (props kids) (%parse-args args)
+    (apply #'make-instance 'scroll :child (first kids) props)))
+
 (defun gap (&rest props)
   "Flexible empty space. (gap :expand 2)"
   (apply #'make-instance 'spacer props))
@@ -198,7 +208,7 @@ Falls back to the default when no face (or no client to resolve it) exists."
 ;;;; Raster — a cell buffer widgets paint into. Cells are the flat 10-slot
 ;;;; [row col code fr fg fb br bg bb bold] format the surface painter draws.
 
-(defstruct (raster (:constructor %make-raster)) cols rows cells)
+(defstruct (raster (:constructor %make-raster)) cols rows cells (clip nil))
 
 (defun make-raster (cols rows)
   (let* ((n (* cols rows)) (v (make-array (* 10 n))))
@@ -215,7 +225,18 @@ Falls back to the default when no face (or no client to resolve it) exists."
 (declaim (inline %cell-off %in-raster))
 (defun %cell-off (r row col) (* 10 (+ (* row (raster-cols r)) col)))
 (defun %in-raster (r row col)
-  (and (>= row 0) (< row (raster-rows r)) (>= col 0) (< col (raster-cols r))))
+  (and (>= row 0) (< row (raster-rows r)) (>= col 0) (< col (raster-cols r))
+       (let ((c (raster-clip r)))
+         (or (null c)
+             (and (>= col (first c)) (< col (third c))
+                  (>= row (second c)) (< row (fourth c)))))))
+
+(defmacro %with-clip ((r x0 y0 x1 y1) &body body)
+  "Restrict raster writes to the rect [X0 X1) x [Y0 Y1) within BODY."
+  (let ((rr (gensym)) (old (gensym)))
+    `(let* ((,rr ,r) (,old (raster-clip ,rr)))
+       (setf (raster-clip ,rr) (list ,x0 ,y0 ,x1 ,y1))
+       (unwind-protect (progn ,@body) (setf (raster-clip ,rr) ,old)))))
 
 (defun raster-put (r row col ch face)
   (when (%in-raster r row col)
@@ -413,6 +434,22 @@ space. Bottom-up; does not set bounds."))
       (multiple-value-bind (cw ch) (measure c w h)
         (arrange c (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch)))))
 (defmethod paint ((n center) r) (when (child n) (paint (child n) r)))
+
+(defmethod measure ((n scroll) aw ah)
+  (declare (ignore ah))
+  (values (if (child n) (nth-value 0 (measure (child n) aw 100000)) 0)
+          (vheight n)))
+(defmethod arrange ((n scroll) x y w h)
+  (call-next-method n x y w (vheight n))
+  (when (child n)
+    (let ((ch (nth-value 1 (measure (child n) w 100000))))
+      ;; the child is laid out at full height, shifted up by the scroll offset;
+      ;; paint clips it to the viewport.
+      (arrange (child n) x (- y (scroll-offset n)) w ch))))
+(defmethod paint ((n scroll) r)
+  (when (child n)
+    (%with-clip (r (start-col n) (start-line n) (end-col n) (+ (start-line n) (vheight n)))
+      (paint (child n) r))))
 
 (defmethod measure ((n selectable) aw ah)
   (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
@@ -659,6 +696,7 @@ matching frame-cell-count so paint-cell-grid iterates it with `below n by 10'."
                  (vstack (some #'walk (children n)))
                  (box    (walk (child n)))
                  (center (walk (child n)))
+                 (scroll (when (%node-contains n line col) (walk (child n))))
                  (grid   (some (lambda (row) (some #'walk row)) (cells n)))
                  (list-node (some #'walk (rendered n)))
                  (t nil)))))
@@ -693,6 +731,7 @@ point is over neither."
                    (hstack (mapc #'walk (children x)))
                    (box (walk (child x)))
                    (center (walk (child x)))
+                   (scroll (walk (child x)))
                    (grid (dolist (row (cells x)) (mapc #'walk row)))
                    (action (walk (child x)))
                    (list-node (mapc #'walk (rendered x)))

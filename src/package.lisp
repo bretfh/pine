@@ -178,6 +178,7 @@
    #:text-node #:content
    #:separator #:sep-char
    #:spacer #:center
+   #:scroll #:scroll-offset #:vheight
    #:field #:prefix-length
    #:input-start-line #:input-start-col #:input-end-line #:input-end-col
    #:vstack #:children #:spacing #:align
@@ -189,7 +190,7 @@
    #:grid #:cells #:col-widths
    #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
    ;; constructor DSL
-   #:label #:icon #:column #:row #:button #:boxed #:centered
+   #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
    #:gap #:rule #:meter #:rows #:choice
    ;; layout protocol
    #:measure #:arrange #:paint

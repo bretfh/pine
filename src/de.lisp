@@ -2,7 +2,7 @@
   (:use #:cl #:gtk4)
   (:shadowing-import-from #:pine.layout
                 #:defwidget #:column #:row #:label #:icon #:button #:boxed
-                #:centered #:gap #:rule #:meter #:rows #:choice)
+                #:centered #:viewport #:gap #:rule #:meter #:rows #:choice)
   (:export #:make-bar #:*bar-enabled*))
 
 (in-package #:pine.de)
@@ -214,6 +214,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
     (configure-bar window)
     (register-panel app "calendar" #'calendar-panel :width 240 :height 120)
     (register-panel app "audio" #'audio-panel :width 340 :height 120)
+    (register-panel app "network" #'network-panel :width 420 :height 360)
     (window-present window)
     (timeout-add 1000 (lambda () (widget-queue-draw area) t))
     window))
@@ -357,3 +358,35 @@ cells (fed by the audio source), so it re-renders when they change."
           (icon (if muted *g-mute* *g-vol*) :face :string))
         (meter :value vol :min 0 :max 100 :track 20 :on-change #'%set-volume)
         (label (format nil "~3d%" vol) :face :comment)))))
+
+(defwidget wifi-row (n)
+  (button :on-click (lambda () (pine.source:select! (getf n :ssid)))
+    (row :spacing 1
+      (icon *g-net* :face (cond ((equal (getf n :sig) "hi")  :string)
+                                ((equal (getf n :sig) "mid") :variable-param)
+                                (t :comment)))
+      (label (getf n :ssid) :face (if (getf n :in_use) :function-name :default))
+      (label (if (getf n :secure) " lock" "")   :face :comment)
+      (label (if (getf n :in_use) " *" "")       :face :function-name))))
+
+(defwidget act-btn (a)
+  (button :on-click (lambda () (pine.source:act! (getf a :kind)))
+    (label (getf a :label)
+           :face (cond ((equal (getf a :style) "go") :string)
+                       ((equal (getf a :style) "no") :constant)
+                       (t :comment)))))
+
+(defwidget network-panel ()
+  "The network panel: status, a scrollable wifi list whose rows call select!,
+and action buttons that call act! -- the eww nREPL callbacks as in-process
+closures. Reads :net/:netlist/:netactions."
+  (let ((net  (%cell :net ""))
+        (list (%cell :netlist nil))
+        (acts (%cell :netactions nil)))
+    (column :spacing 1
+      (label "Network" :face :function-name)
+      (label (if (plusp (length net)) net "Disconnected")
+             :face (if (plusp (length net)) :string :comment))
+      (viewport :height 10
+        (column (mapcar #'wifi-row list)))
+      (row :spacing 2 :align :center (mapcar #'act-btn acts)))))

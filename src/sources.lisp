@@ -1,7 +1,8 @@
 (defpackage #:pine.source
   (:use #:cl)
   (:export #:start-sources #:stop-sources #:workspaces
-           #:defsource #:defpoll #:set! #:cell-of))
+           #:defsource #:defpoll #:set! #:cell-of
+           #:select! #:act!))
 
 (in-package #:pine.source)
 
@@ -162,3 +163,110 @@ with the actor system."
         50)))
 
 (defpoll :bri 15 (brightness))
+
+;;;; Network (nmcli). The wifi list, connection status, and the currently
+;;;; selected network's actions all live in cells. select! / act! are the
+;;;; in-process closures the panel's rows and buttons call -- pine's answer to
+;;;; the eww nREPL callbacks: they mutate cells and shell nmcli directly.
+
+(defun %split (s ch &optional limit)
+  "Split S on CH into at most LIMIT parts (the last keeps any remaining CH)."
+  (let ((parts nil) (start 0) (n 0))
+    (dotimes (i (length s))
+      (when (and (char= (char s i) ch) (or (null limit) (< (1+ n) limit)))
+        (push (subseq s start i) parts) (setf start (1+ i)) (incf n)))
+    (push (subseq s start) parts)
+    (nreverse parts)))
+
+(defun %lines (s) (remove "" (%split s #\newline) :test #'string=))
+(defun cell-val (name) (let ((c (pine.cell:find-cell name))) (and c (pine.cell:cell-ref c))))
+
+(defun net-connected ()
+  (dolist (line (%lines (sh "nmcli" "-t" "-f" "TYPE,STATE,CONNECTION"
+                            "device" "status")) "")
+    (destructuring-bind (&optional type state conn) (%split line #\: 3)
+      (when (and (member type '("wifi" "ethernet") :test #'equal)
+                 (equal state "connected"))
+        (return (or conn ""))))))
+
+(defun sig-bucket (s) (cond ((>= s 66) "hi") ((>= s 40) "mid") (t "lo")))
+
+(defun wifi-list (&optional (rescan "no"))
+  (let ((saved (%lines (sh "nmcli" "-t" "-f" "NAME" "connection" "show")))
+        (best (make-hash-table :test 'equal)))
+    (dolist (line (%lines (sh "nmcli" "-t" "-f" "IN-USE,SSID,SECURITY,SIGNAL"
+                              "device" "wifi" "list" "--rescan" rescan)))
+      (destructuring-bind (&optional inuse ssid sec sig) (%split line #\: 4)
+        (when (and ssid (plusp (length ssid)))
+          (let ((signal (or (ignore-errors (parse-integer sig)) 0))
+                (prev (gethash ssid best)))
+            (when (or (null prev) (> signal (getf prev :signal)))
+              (setf (gethash ssid best)
+                    (list :ssid ssid :in_use (equal inuse "*")
+                          :secure (not (member sec '("" "--") :test #'equal))
+                          :saved (and (member ssid saved :test #'equal) t)
+                          :signal signal)))))))
+    (let ((rows (loop for v being the hash-values of best collect v)))
+      (mapcar (lambda (r) (list :ssid (getf r :ssid) :in_use (getf r :in_use)
+                               :secure (getf r :secure) :saved (getf r :saved)
+                               :sig (sig-bucket (getf r :signal))))
+              (sort rows (lambda (a b)
+                           (cond ((not (eq (getf a :in_use) (getf b :in_use))) (getf a :in_use))
+                                 ((not (eq (getf a :saved) (getf b :saved))) (getf a :saved))
+                                 (t (string< (string-downcase (getf a :ssid))
+                                             (string-downcase (getf b :ssid)))))))))))
+
+(defun connected-ssid (rows)
+  (loop for r in rows when (getf r :in_use) return (getf r :ssid)))
+
+(defun actions-for (ssid rows)
+  (let ((n (find ssid rows :key (lambda (r) (getf r :ssid)) :test #'equal)))
+    (cond ((null n) nil)
+          ((getf n :in_use) (list (list :label "Disconnect" :style "" :kind "disconnect")
+                                  (list :label "Forget" :style "no" :kind "forget")))
+          ((getf n :saved)  (list (list :label "Connect" :style "go" :kind "up")
+                                  (list :label "Forget" :style "no" :kind "forget")))
+          ((getf n :secure) (list (list :label "Connect" :style "go" :kind "connect-pw")))
+          (t                (list (list :label "Connect" :style "go" :kind "connect"))))))
+
+(defun push-actions (rows)
+  (let* ((cur (cell-val :netsel))
+         (sel (if (and cur (plusp (length cur))) cur (connected-ssid rows))))
+    (set! :netsel (or sel ""))
+    (set! :netactions (and sel (actions-for sel rows)))))
+
+(defun refresh-net (&optional (rescan "no"))
+  (set! :net (net-connected))
+  (let ((rows (wifi-list rescan)))
+    (when rows
+      (set! :netlist rows)
+      (push-actions rows))))
+
+(defun select! (ssid)
+  "Select network SSID: update its action set. Called from a panel row."
+  (set! :netsel (or ssid ""))
+  (set! :netactions (and ssid (actions-for ssid (cell-val :netlist)))))
+
+(defun act! (kind)
+  "Run action KIND on the selected network. Called from a panel button."
+  (let* ((cur (cell-val :netsel))
+         (ssid (and cur (plusp (length cur)) cur)))
+    (when ssid
+      (cond
+        ((equal kind "disconnect") (sh "nmcli" "connection" "down" ssid))
+        ((equal kind "up")         (sh "nmcli" "connection" "up" ssid))
+        ((equal kind "forget")     (sh "nmcli" "connection" "delete" ssid))
+        ((equal kind "connect")    (sh "nmcli" "device" "wifi" "connect" ssid))
+        ((equal kind "connect-pw")
+         (let ((pw (sh "fuzzel" "--dmenu" "--password" "--prompt"
+                       (format nil "~a password: " ssid))))
+           (when (plusp (length pw))
+             (sh "nmcli" "device" "wifi" "connect" ssid "password" pw)))))
+      (set! :netsel "")
+      (refresh-net "yes"))))
+
+(defsource :network (system)
+  (start-stream system "nmcli monitor" (lambda () (refresh-net "no"))))
+
+(defsource :network-scan (system)
+  (start-poll system 15 (lambda () (refresh-net "yes"))))
