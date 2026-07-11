@@ -88,8 +88,10 @@
 
 (defpackage :pine.echo
   (:use :cl)
-  (:export #:message #:show-input #:hide-input
-           #:show-completions-area #:hide-completions-area))
+  (:export #:message #:current-message
+           #:show-input #:hide-input
+           #:input-active-p #:input-prompt #:input-text #:set-input-text
+           #:show-completions-area #:hide-completions-area #:completions-text))
 
 (defpackage :pine.file
   (:use :cl)
@@ -148,12 +150,23 @@
   (:export
    #:mode #:major-mode #:minor-mode
    #:base-mode #:text-mode #:lisp-mode #:repl-mode #:terminal-mode
+   #:overwrite-mode
    #:mode-name #:mode-keymap #:mode-indicator #:parent-mode #:ts-language
    #:precedence #:transparent
    #:register-mode #:find-mode #:global-keymap
    #:buffer-mode #:current-buffer-mode #:set-buffer-mode #:mode-for-file
-   #:buffer-active-modes #:active-keymaps #:active-modes-instance
+   #:buffer-active-modes #:buffer-minor-modes #:active-keymaps
+   #:active-modes-instance
+   #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
+   #:toggle-minor-mode #:active-minor-mode-indicators
    #:dispatch-message #:install-default-modes))
+
+(defpackage :pine.var
+  (:use :cl)
+  (:export
+   #:evar #:define-variable #:find-variable #:all-variable-names
+   #:variable-value #:variable-scope #:set-variable #:set-global #:set-buffer-local
+   #:evar-name #:evar-default #:evar-documentation #:evar-global #:evar-global-set))
 
 (defpackage :pine.layout
   (:use :cl)
@@ -198,10 +211,14 @@
    #:windows
    #:focused-window
    #:pending-keys
+   #:prefix-arg
+   #:this-command-key
+   #:pending-key-reader
    #:mode-stack
    #:completion-state
    #:current-buffer
    #:buffer-modes
+   #:buffer-minor-modes
    #:kill-ring
    #:kill-ring-max
    #:last-command
@@ -218,6 +235,7 @@
    #:input
    #:callback
    #:prompt
+   #:dynamic-fn
    #:*client*
    #:current-client
    #:start-client
@@ -249,6 +267,10 @@
    #:yank-pop-cmd
    ;; completing-read
    #:completing-read
+   #:read-file-name
+   #:file-completion-active-p
+   #:file-name-complete
+   #:file-name-accept
    #:completion-accept
    #:completion-cancel
    #:completion-next

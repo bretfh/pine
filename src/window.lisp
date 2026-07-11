@@ -30,7 +30,9 @@
    (dirtyp        :accessor frame-dirtyp        :initform t)))
 
 (defun ensure-frame-cells (f)
-  (let ((needed (* (frame-cols f) (frame-rows f) 10)))
+  ;; rows + headroom: completion candidates overlay buffer rows, so more cells
+  ;; may be emitted than the base grid holds.
+  (let ((needed (* (frame-cols f) (+ (frame-rows f) 16) 10)))
     (when (or (null (frame-cells f))
               (< (length (frame-cells f)) needed))
       (setf (frame-cells f) (make-array needed)

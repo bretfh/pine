@@ -1,7 +1,7 @@
 (defpackage #:pine.keymap
   (:use #:cl)
   (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
-           #:define-key #:keymap-lookup #:prefix-p))
+           #:define-key #:keymap-lookup #:prefix-p #:keymap-bindings))
 
 (in-package #:pine.keymap)
 
@@ -34,3 +34,25 @@
   (or (gethash key (keymap-table keymap))
       (let ((p (keymap-parent keymap)))
         (and p (keymap-lookup p key)))))
+
+(defun keymap-bindings (keymap &optional include-parent)
+  "List of (KEY-STRING . COMMAND) in KEYMAP. Chords render space-joined. With
+INCLUDE-PARENT, unshadowed parent bindings are appended."
+  (let ((acc '()))
+    (labels ((walk (table prefix)
+               (maphash
+                (lambda (k v)
+                  (let ((seq (if prefix
+                                 (concatenate 'string prefix " " (pine.key:key->string k))
+                                 (pine.key:key->string k))))
+                    (if (hash-table-p v)
+                        (walk v seq)
+                        (push (cons seq v) acc))))
+                table)))
+      (walk (keymap-table keymap) nil))
+    (when (and include-parent (keymap-parent keymap))
+      (let ((local (mapcar #'car acc)))
+        (dolist (pb (keymap-bindings (keymap-parent keymap) t))
+          (unless (member (car pb) local :test #'string=)
+            (push pb acc)))))
+    acc))

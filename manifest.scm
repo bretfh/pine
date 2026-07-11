@@ -1,7 +1,13 @@
-(specifications->manifest
- (list "sbcl"
-       "gtk"
-       "gobject-introspection"
-       "tree-sitter"
-       "gcc-toolchain"
-       "pkg-config"))
+(use-modules (guix profiles) (gnu packages))
+(add-to-load-path (string-append (dirname (current-filename)) "/guix"))
+(use-modules (tree-sitter-commonlisp))
+
+(concatenate-manifests
+ (list (specifications->manifest
+        (list "sbcl"
+              "gtk"
+              "gobject-introspection"
+              "tree-sitter"
+              "gcc-toolchain"
+              "pkg-config"))
+       (packages->manifest (list tree-sitter-commonlisp))))

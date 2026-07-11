@@ -222,7 +222,7 @@
                 finally (return s))))))
 
 (defun make-buffer-actor (system name &key (content ""))
-  (let ((initial (set-meta (load-content content) :name name)))
+  (let ((initial (move-mark (set-meta (load-content content) :name name) :point 0 0)))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)
                                   :state (list initial nil nil nil)

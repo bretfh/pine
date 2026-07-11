@@ -8,7 +8,9 @@
                #:fset
                #:alexandria
                #:bordeaux-threads
-               #:closer-mop)
+               #:closer-mop
+               #:cffi
+               #:cffi-libffi)
   :serial t
   :pathname "src/"
   :components
@@ -25,6 +27,7 @@
    (:file "client")
    (:file "echo")
    (:file "command")
+   (:file "variable")
    (:file "layout")
    (:file "mode")
    (:file "kill-ring")
@@ -32,7 +35,7 @@
    (:file "prompt")
    (:file "file")
    (:file "shell")
-   (:file "ts-stub")
+   (:file "ts")
    (:file "render")
    (:file "editor")
    (:file "user")

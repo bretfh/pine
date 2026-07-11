@@ -14,13 +14,28 @@
    (cell-w :accessor gs-cell-w :initform 9d0)
    (cell-h :accessor gs-cell-h :initform 18d0)
    (ascent :accessor gs-ascent :initform 14d0)
-   (font   :accessor gs-font   :initform 15d0)))
+   (font   :accessor gs-font   :initform 15d0)
+   ;; cell metrics are measured from the font on first paint, not guessed.
+   (measured :accessor gs-measured :initform nil)
+   ;; last allocated pixel size, updated from the draw callback.
+   (width  :accessor gs-width  :initform 800)
+   (height :accessor gs-height :initform 500)))
+
+(defun measure-font (s)
+  "Set cell width/height/ascent from the current cairo font. Call with a live
+cairo context and the font face/size already selected."
+  (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
+    (declare (ignore xb yb w h))
+    (when (plusp xadv) (setf (gs-cell-w s) (/ xadv 10d0))))
+  (let ((fe (cairo:get-font-extents)))
+    (setf (gs-cell-h s) (cairo:font-height fe)
+          (gs-ascent s) (cairo:font-ascent fe)))
+  (setf (gs-measured s) t))
 
 (defmethod surface-metrics ((s gtk-surface))
-  (let ((area (gs-area s)))
-    (values (gs-cell-w s) (gs-cell-h s)
-            (if area (max 1 (floor (drawing-area-content-width area) (gs-cell-w s))) 80)
-            (if area (max 1 (floor (drawing-area-content-height area) (gs-cell-h s))) 29))))
+  (values (gs-cell-w s) (gs-cell-h s)
+          (max 1 (floor (gs-width s) (gs-cell-w s)))
+          (max 1 (floor (gs-height s) (gs-cell-h s)))))
 
 (defmethod paint-frame ((s gtk-surface) frame)
   (setf (gs-frame s) frame)
@@ -34,13 +49,25 @@
 (defun paint-cells (s)
   (cairo:set-source-rgb 0.12d0 0.12d0 0.14d0)
   (cairo:paint)
+  (cairo:select-font-face "monospace" :normal :normal)
+  (cairo:set-font-size (gs-font s))
+  (unless (gs-measured s) (measure-font s))
   (let ((frame (gs-frame s)))
     (when frame
       (let ((cells (pine.buffer:frame-cells frame))
             (n (pine.buffer:frame-cell-count frame))
             (cw (gs-cell-w s)) (lh (gs-cell-h s)) (asc (gs-ascent s)) (x0 6d0))
-        (cairo:select-font-face "monospace" :normal :normal)
-        (cairo:set-font-size (gs-font s))
+        ;; background fills first (modeline bar, completion rows), then glyphs.
+        (loop for i from 0 below n by 10
+              for row = (svref cells i)
+              for col = (svref cells (+ i 1))
+              for br = (svref cells (+ i 6))
+              when (and (integerp br) (>= br 0))
+                do (cairo:set-source-rgb (/ br 255d0)
+                                         (/ (svref cells (+ i 7)) 255d0)
+                                         (/ (svref cells (+ i 8)) 255d0))
+                   (cairo:rectangle (+ x0 (* col cw)) (* row lh) cw lh)
+                   (cairo:fill-path))
         (loop for i from 0 below n by 10
               for row = (svref cells i)
               for col = (svref cells (+ i 1))
@@ -61,13 +88,30 @@
                                (width :int) (height :int) (data :pointer))
   (declare (ignore area data))
   (when *surface*
+    (setf (gs-width *surface*) width
+          (gs-height *surface*) height)
     (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
                                           :width width :height height
                                           :pixel-based-p nil)))
       (paint-cells *surface*))))
 
+(defun sync-size (cli s)
+  "Match the frame's cols/rows to the drawing area's current pixel size."
+  (multiple-value-bind (cw ch cols rows) (surface-metrics s)
+    (declare (ignore cw ch))
+    (let ((f (pine.client:frame cli)))
+      (when (or (/= cols (pine.buffer:frame-cols f))
+                (/= rows (pine.buffer:frame-rows f)))
+        (setf (pine.buffer:frame-cols f) cols
+              (pine.buffer:frame-rows f) rows)
+        (pine.render:relayout)
+        (pine.buffer:ensure-frame-cells f)
+        (let ((rs (pine.client:render-state cli)))
+          (setf (pine.client:render-state cli) (fset:with rs :dirty t)))))))
+
 (defun pump (cli s)
   (let ((pine.client:*client* cli))
+    (sync-size cli s)
     (let ((rs (pine.client:render-state cli))
           (w (pine.client:focused-window cli)))
       (when (and w (fset:@ rs :dirty))
@@ -87,7 +131,10 @@
         (super (logtest state gdk4:+modifier-type-super-mask+))
         (uni   (gdk4:keyval-to-unicode keyval)))
     (pine.key:make-key
-     (if (and (plusp uni) (not ctrl) (not meta) (not super)
+     ;; printable keys resolve to their character (so M-< / M-- match the
+     ;; "<" / "-" bindings); ctrl/super keep the keyval name so C-space etc.
+     ;; stay symbolic.
+     (if (and (plusp uni) (not ctrl) (not super)
               (graphic-char-p (code-char uni)))
          (string (code-char uni))
          (gdk4:keyval-name keyval))
@@ -112,7 +159,12 @@
                  (lambda (c keyval keycode state)
                    (declare (ignore c keycode))
                    (when *client*
-                     (pine.command:dispatch *client* (gdk->key keyval state)))
+                     (pine.command:dispatch *client* (gdk->key keyval state))
+                     ;; a keypress may change only the echo area / minibuffer
+                     ;; (no buffer snapshot), so force a repaint every time.
+                     (let ((rs (pine.client:render-state *client*)))
+                       (setf (pine.client:render-state *client*)
+                             (fset:with rs :dirty t))))
                    t))
         (widget-add-controller window kc))
       (let ((f (pine.client:frame cli)))

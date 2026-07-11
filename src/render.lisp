@@ -161,11 +161,12 @@
          (f (pine.client:frame client))
          (cols (pine.buffer:frame-cols f))
          (rows (pine.buffer:frame-rows f)))
+    ;; reserve the bottom two rows for the modeline and the echo/minibuffer.
     (dolist (w (pine.client:windows client))
       (setf (pine.buffer:row w) 0
             (pine.buffer:col w) 0
             (pine.buffer:win-width w) cols
-            (pine.buffer:win-height w) rows))))
+            (pine.buffer:win-height w) (max 1 (- rows 2))))))
 
 
 ;;;; Cell emission
@@ -223,55 +224,130 @@
                            (aref prios c) p)))))
     slots))
 
+(defun emit-string (f off row str fg &optional bg)
+  "Write STR at ROW (col 0..) into F's cells with FG (list r g b) and optional
+BG. Returns the new cell offset."
+  (let ((cells (pine.buffer:frame-cells f)))
+    (loop for i from 0 below (length str)
+          for ch = (char-code (char str i))
+          do (setf (svref cells (+ off 0)) row
+                   (svref cells (+ off 1)) i
+                   (svref cells (+ off 2)) ch
+                   (svref cells (+ off 3)) (first fg)
+                   (svref cells (+ off 4)) (second fg)
+                   (svref cells (+ off 5)) (third fg)
+                   (svref cells (+ off 6)) (if bg (first bg) -1)
+                   (svref cells (+ off 7)) (if bg (second bg) -1)
+                   (svref cells (+ off 8)) (if bg (third bg) -1)
+                   (svref cells (+ off 9)) nil)
+             (incf off 10))
+    off))
+
+(defun %pad (str width)
+  (let ((s (if (> (length str) width) (subseq str 0 width) str)))
+    (concatenate 'string s (make-string (max 0 (- width (length s)))
+                                        :initial-element #\Space))))
+
+(defun render-chrome (f off w)
+  "Paint the modeline, echo/minibuffer line, and any completion candidates.
+Returns the new cell offset."
+  (let* ((cols (pine.buffer:frame-cols f))
+         (rows (pine.buffer:frame-rows f))
+         (mode-row (- rows 2))
+         (echo-row (- rows 1))
+         (s (pine.buffer:snap w)))
+    ;; modeline
+    (let* ((mode (pine.mode:current-buffer-mode))
+           (line (if (and s (typep s 'pine.buffer:snapshot))
+                     (format nil " ~a   ~a   L~d C~d"
+                             (pine.buffer:window-name w)
+                             (pine.mode:mode-indicator mode)
+                             (1+ (pine.buffer:point-line s))
+                             (pine.buffer:point-col s))
+                     (format nil " ~a" (pine.buffer:window-name w)))))
+      (setf off (emit-string f off mode-row (%pad line cols)
+                             '(30 30 46) '(180 190 210))))
+    ;; completions (just above the echo line)
+    (let ((ct (pine.echo:completions-text)))
+      (when (and ct (pine.echo:input-active-p))
+        (let* ((clines (let ((acc '()) (start 0))
+                         (loop for nl = (position #\Newline ct :start start)
+                               do (push (subseq ct start (or nl (length ct))) acc)
+                               while nl do (setf start (1+ nl)))
+                         (nreverse acc)))
+               (n (length clines))
+               (top (max 0 (- mode-row n))))
+          (loop for cl in clines
+                for r from top below mode-row
+                do (setf off (emit-string f off r (%pad cl cols)
+                                          '(205 214 244) '(49 50 68)))))))
+    ;; echo / minibuffer line
+    (let* ((prompt (pine.echo:input-prompt))
+           (text (if prompt
+                     (concatenate 'string prompt (pine.echo:input-text))
+                     (pine.echo:current-message))))
+      (setf off (emit-string f off echo-row (%pad text cols) '(205 214 244)))
+      ;; cursor sits in the minibuffer while a prompt is active
+      (when prompt
+        (setf (pine.buffer:frame-cursor-row f) echo-row
+              (pine.buffer:frame-cursor-col f) (length text))))
+    off))
+
 (defun render-buffer-to-frame (w)
   (let ((f (pine.client:frame (pine.client:current-client))))
     (pine.buffer:ensure-frame-cells f)
+    ;; SNAP is read once: a buffer switch can null it from the renderer thread
+    ;; mid-paint, so treat a missing snapshot as an empty buffer (chrome still
+    ;; paints) rather than dereferencing nil.
     (let* ((s (pine.buffer:snap w))
-           (dl (pine.buffer:win-display w))
+           (dl (and s (pine.buffer:win-display w)))
            (wid (pine.buffer:win-width w))
            (cells (pine.buffer:frame-cells f))
            (left (pine.buffer:col w))
-           (hl (pine.buffer:highlights s))
+           (hl (and s (pine.buffer:highlights s)))
            (hl-table (when hl
                        (build-highlight-table hl (pine.buffer:scroll-top w) (length dl))))
            (off 0))
-      (loop for d in dl
-            for display-row from 0
-            for row = (+ (pine.buffer:row w) display-row)
-            for text = (pine.buffer:display-text d)
-            for buf-line-idx = (+ display-row (pine.buffer:scroll-top w))
-            do (let* ((line-hl (when hl-table (gethash display-row hl-table)))
-                      (buf-line-len (if (< buf-line-idx (pine.buffer:line-count s))
-                                        (length (fset:@ (pine.buffer:lines s) buf-line-idx))
-                                        0))
-                      (face-slots (when line-hl
-                                    (build-face-slots line-hl buf-line-len))))
-                 (loop for i from 0 below (min (length text) wid)
-                       for ch = (char-code (char text i))
-                       for col = i
-                       for buf-col = (+ i left)
-                       for face = (when (and face-slots (< buf-col (length face-slots)))
-                                    (aref face-slots buf-col))
-                       for rgb = (face-rgb face)
-                       do (setf (svref cells (+ off 0)) row
-                                (svref cells (+ off 1)) col
-                                (svref cells (+ off 2)) ch
-                                (svref cells (+ off 3)) (first rgb)
-                                (svref cells (+ off 4)) (second rgb)
-                                (svref cells (+ off 5)) (third rgb)
-                                (svref cells (+ off 6)) -1
-                                (svref cells (+ off 7)) -1
-                                (svref cells (+ off 8)) -1
-                                (svref cells (+ off 9)) nil)
-                          (incf off 10))))
+      (when s
+        (loop for d in dl
+              for display-row from 0
+              for row = (+ (pine.buffer:row w) display-row)
+              for text = (pine.buffer:display-text d)
+              for buf-line-idx = (+ display-row (pine.buffer:scroll-top w))
+              do (let* ((line-hl (when hl-table (gethash display-row hl-table)))
+                        (buf-line-len (if (< buf-line-idx (pine.buffer:line-count s))
+                                          (length (fset:@ (pine.buffer:lines s) buf-line-idx))
+                                          0))
+                        (face-slots (when line-hl
+                                      (build-face-slots line-hl buf-line-len))))
+                   (loop for i from 0 below (min (length text) wid)
+                         for ch = (char-code (char text i))
+                         for col = i
+                         for buf-col = (+ i left)
+                         for face = (when (and face-slots (< buf-col (length face-slots)))
+                                      (aref face-slots buf-col))
+                         for rgb = (face-rgb face)
+                         do (setf (svref cells (+ off 0)) row
+                                  (svref cells (+ off 1)) col
+                                  (svref cells (+ off 2)) ch
+                                  (svref cells (+ off 3)) (first rgb)
+                                  (svref cells (+ off 4)) (second rgb)
+                                  (svref cells (+ off 5)) (third rgb)
+                                  (svref cells (+ off 6)) -1
+                                  (svref cells (+ off 7)) -1
+                                  (svref cells (+ off 8)) -1
+                                  (svref cells (+ off 9)) nil)
+                            (incf off 10))))
+        (setf (pine.buffer:frame-cursor-row f)
+              (max 0 (min (- (pine.buffer:point-line s) (pine.buffer:scroll-top w))
+                          (1- (pine.buffer:win-height w))))
+              (pine.buffer:frame-cursor-col f)
+              (- (pine.buffer:point-col s) (pine.buffer:col w))
+              (pine.buffer:frame-scroll-pixel f)
+              (coerce (pine.buffer:scroll-top w) 'double-float)))
+      ;; modeline + echo/minibuffer (may move the cursor into the minibuffer)
+      (setf off (render-chrome f off w))
       (setf (pine.buffer:frame-cell-count f) off
-            (pine.buffer:frame-cursor-row f)
-            (max 0 (min (- (pine.buffer:point-line s) (pine.buffer:scroll-top w))
-                        (1- (pine.buffer:win-height w))))
-            (pine.buffer:frame-cursor-col f)
-            (- (pine.buffer:point-col s) (pine.buffer:col w))
-            (pine.buffer:frame-scroll-pixel f)
-            (coerce (pine.buffer:scroll-top w) 'double-float)
             (pine.buffer:frame-dirtyp f) t))))
 
 

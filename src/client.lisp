@@ -7,7 +7,10 @@
    (index      :initarg :index      :accessor index      :initform -1)
    (input      :initarg :input      :accessor input      :initform "")
    (callback   :initarg :callback   :accessor callback   :initform nil)
-   (prompt     :initarg :prompt     :accessor prompt     :initform "")))
+   (prompt     :initarg :prompt     :accessor prompt     :initform "")
+   ;; when set, a function of the current input returning fresh candidates
+   ;; (filesystem path completion), instead of filtering a fixed list.
+   (dynamic-fn :initarg :dynamic-fn :accessor dynamic-fn :initform nil)))
 
 (defclass client ()
   ((server-of       :initarg :server-of       :accessor server-of       :initform nil)
@@ -20,6 +23,10 @@
    (windows         :initarg :windows         :accessor windows         :initform nil)
    (focused-window  :initarg :focused-window  :accessor focused-window  :initform nil)
    (pending-keys    :initarg :pending-keys    :accessor pending-keys    :initform nil)
+   (prefix-arg      :initarg :prefix-arg      :accessor prefix-arg      :initform nil)
+   (this-command-key :initarg :this-command-key :accessor this-command-key :initform nil)
+   (pending-key-reader :initarg :pending-key-reader :accessor pending-key-reader
+                    :initform nil)
    (mode-stack      :initarg :mode-stack      :accessor mode-stack      :initform nil)
    (completion-state
      :initarg :completion-state :accessor completion-state

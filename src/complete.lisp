@@ -47,7 +47,8 @@
           (pine.client:filtered c) nil
           (pine.client:index c) -1
           (pine.client:input c) ""
-          (pine.client:callback c) nil))
+          (pine.client:callback c) nil
+          (pine.client:dynamic-fn c) nil))
   (pine.echo:hide-completions-area)
   (pine.echo:hide-input))
 
@@ -65,10 +66,13 @@
       (show-completions))))
 
 (defun completion-update-input (text)
-  (let ((c (completion)))
+  (let* ((c (completion))
+         (cands (if (pine.client:dynamic-fn c)
+                    (funcall (pine.client:dynamic-fn c) text)
+                    (filter-candidates text (pine.client:candidates c)))))
     (setf (pine.client:input c) text
-          (pine.client:filtered c) (filter-candidates text (pine.client:candidates c))
-          (pine.client:index c) (if (pine.client:filtered c) 0 -1))
+          (pine.client:filtered c) cands
+          (pine.client:index c) (if cands 0 -1))
     (show-completions)))
 
 (defun show-completions ()
@@ -91,3 +95,105 @@
 (defun completing-read-active-p ()
   (let ((cli pine.client:*client*))
     (and cli (pine.client:active-p (pine.client:completion-state cli)))))
+
+(defun file-completion-active-p ()
+  (and (completing-read-active-p)
+       (pine.client:dynamic-fn (completion))))
+
+
+;;;; Filesystem path completion (find-file)
+
+(defun expand-tilde (text)
+  (cond
+    ((string= text "~") (namestring (user-homedir-pathname)))
+    ((and (>= (length text) 2) (string= (subseq text 0 2) "~/"))
+     (concatenate 'string (namestring (user-homedir-pathname)) (subseq text 2)))
+    (t text)))
+
+(defun split-path (path)
+  "Directory part (through the last slash) and the trailing basename."
+  (let ((slash (position #\/ path :from-end t)))
+    (if slash
+        (values (subseq path 0 (1+ slash)) (subseq path (1+ slash)))
+        (values "" path))))
+
+(defun directory-entries (dir)
+  "Names in DIR: subdirectories with a trailing slash, then files. nil if DIR
+cannot be read."
+  (handler-case
+      (append
+       (sort (mapcar (lambda (p)
+                       (concatenate 'string (car (last (pathname-directory p))) "/"))
+                     (uiop:subdirectories dir))
+             #'string<)
+       (sort (mapcar #'file-namestring (uiop:directory-files dir)) #'string<))
+    (error () nil)))
+
+(defun file-name-completions (text)
+  "Directory entries matching the basename the user is typing."
+  (multiple-value-bind (dir base) (split-path (expand-tilde text))
+    (let ((entries (directory-entries (if (string= dir "") "./" dir))))
+      (if (string= base "")
+          entries
+          (remove-if-not
+           (lambda (n) (and (>= (length n) (length base))
+                            (string= base (subseq n 0 (length base)))))
+           entries)))))
+
+(defun longest-common-prefix (strings)
+  (if (null strings)
+      ""
+      (let ((p (first strings)))
+        (dolist (s (rest strings) p)
+          (let ((n (min (length p) (length s))))
+            (setf p (subseq p 0 (or (mismatch p s :end1 n :end2 n) n))))))))
+
+(defun default-directory ()
+  (let* ((buf (cur-buffer))
+         (path (and buf (ignore-errors
+                          (pine.buffer:buffer-local
+                           (pine.buffer:ask buf :state) :pathname nil)))))
+    (if path (directory-namestring path) (namestring (uiop:getcwd)))))
+
+(defun read-file-name (prompt-text cb)
+  (let ((c (completion)) (initial (default-directory)))
+    (setf (pine.client:active-p c) t
+          (pine.client:candidates c) nil
+          (pine.client:dynamic-fn c) #'file-name-completions
+          (pine.client:callback c) cb
+          (pine.client:prompt c) prompt-text)
+    (pine.echo:show-input prompt-text)
+    (pine.echo:set-input-text initial)
+    (completion-update-input initial)))
+
+(defun file-name-complete ()
+  "Tab: extend the path by the entries' common prefix; a lone match completes
+fully (directories keep their trailing slash so the next Tab descends)."
+  (let ((cands (pine.client:filtered (completion))))
+    (multiple-value-bind (dir base) (split-path (expand-tilde (pine.client:input (completion))))
+      (declare (ignore base))
+      (when cands
+        (let ((add (if (= 1 (length cands)) (first cands) (longest-common-prefix cands))))
+          (minibuffer-set-text (concatenate 'string dir add)))))))
+
+(defun file-name-accept ()
+  "Return: a highlighted entry (when the typed path is not itself a file) is
+taken; a directory is descended into, a file is opened."
+  (let* ((c (completion))
+         (typed (expand-tilde (pine.client:input c)))
+         (sel (let ((i (pine.client:index c)) (f (pine.client:filtered c)))
+                (when (and (>= i 0) (< i (length f))) (nth i f))))
+         (target (multiple-value-bind (dir base) (split-path typed)
+                   (declare (ignore base))
+                   (if (and sel (not (uiop:file-exists-p typed))
+                            (not (uiop:directory-exists-p typed)))
+                       (concatenate 'string dir sel)
+                       typed))))
+    (if (uiop:directory-exists-p target)
+        (minibuffer-set-text (if (and (plusp (length target))
+                                      (char= (char target (1- (length target))) #\/))
+                                 target
+                                 (concatenate 'string target "/")))
+        (let ((cb (pine.client:callback c)))
+          (completion-cleanup)
+          (when cb (funcall cb target))))))

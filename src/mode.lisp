@@ -165,6 +165,12 @@ run before the major mode's under CLOS method combination."
        (let ((new (pine.buffer:set-meta state (getf plist :key) (getf plist :value))))
          (setf sento.actor:*state* (list new undo subs hl))
          (pine.buffer:notify-subscribers subs new hl)))
+      (:set-var
+       (let* ((vars (or (fset:@ (pine.buffer:meta state) :vars) (fset:empty-map)))
+              (new (pine.buffer:set-meta
+                    state :vars (fset:with vars (getf plist :key) (getf plist :value)))))
+         (setf sento.actor:*state* (list new undo subs hl))
+         (pine.buffer:notify-subscribers subs new hl)))
       (:replace-content
        (let ((new (pine.buffer:set-meta
                    (pine.buffer:load-content (getf plist :content))
@@ -275,4 +281,26 @@ run before the major mode's under CLOS method combination."
                                   :indicator "TERM"
                                   :keymap (pine.keymap:make-keymap
                                            :name :term :parent (mode-keymap base))))
+    (register-mode (make-instance 'overwrite-mode :name :overwrite-mode
+                                  :precedence 10 :transparent t :indicator "Ovwrt"
+                                  :keymap (pine.keymap:make-keymap :name :overwrite)))
     base))
+
+;;;; overwrite-mode: transparent augmentation of self-insert. It runs BEFORE
+;;;; the base insert (method combination), deleting the char under point so the
+;;;; inserted char overwrites it, then falls through to the normal insert.
+
+(defun %overwrite-forward ()
+  (let ((buf (pine.client:current-buffer (pine.client:current-client))))
+    (when buf
+      (multiple-value-bind (l c) (pine.buffer:ask buf :point)
+        (let ((line (pine.buffer:ask buf :line l)))
+          (when (and line (< c (length line)))
+            (pine.buffer:tell buf :delete-region
+                              :start-line l :start-col c
+                              :end-line l :end-col (1+ c))))))))
+
+(defmethod pine.command:execute :before ((modes overwrite-mode) command argument)
+  (declare (ignore argument))
+  (when (string= (pine.command:command-name command) "self-insert-command")
+    (%overwrite-forward)))
