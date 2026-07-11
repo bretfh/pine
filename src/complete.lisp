@@ -21,7 +21,7 @@
           (pine.client:filtered c) (filter-candidates "" candidates)
           (pine.client:prompt c) prompt-text)
     (show-completions)
-    #+lqml (pine.qml:show-status-input prompt-text)))
+    (pine.echo:show-input prompt-text)))
 
 (defun completion-accept ()
   (let* ((c (completion))
@@ -34,11 +34,11 @@
     (when cb
       (handler-case (funcall cb result)
         (error (c)
-          #+lqml (pine.qml:update-status-text (format nil "error: ~a" c)))))))
+          (pine.echo:message (format nil "error: ~a" c)))))))
 
 (defun completion-cancel ()
   (completion-cleanup)
-  #+lqml (pine.qml:update-status-text "cancelled"))
+  (pine.echo:message "cancelled"))
 
 (defun completion-cleanup ()
   (let ((c (completion)))
@@ -48,8 +48,8 @@
           (pine.client:index c) -1
           (pine.client:input c) ""
           (pine.client:callback c) nil))
-  #+lqml (pine.qml:hide-completion-area)
-  #+lqml (pine.qml:hide-status-input))
+  (pine.echo:hide-completions-area)
+  (pine.echo:hide-input))
 
 (defun completion-next ()
   (let ((c (completion)))
@@ -72,7 +72,6 @@
     (show-completions)))
 
 (defun show-completions ()
-  #+lqml
   (let* ((c (completion))
          (max-visible 12)
          (filtered (pine.client:filtered c))
@@ -85,9 +84,9 @@
                                   (format nil "> ~a" cand)
                                   (format nil "  ~a" cand)))))
     (if lines
-        (pine.qml:show-completion-area
+        (pine.echo:show-completions-area
          (format nil "~{~a~^~%~}" lines))
-        (pine.qml:show-completion-area "(no matches)"))))
+        (pine.echo:show-completions-area "(no matches)"))))
 
 (defun completing-read-active-p ()
   (let ((cli pine.client:*client*))

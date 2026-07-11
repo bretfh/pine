@@ -19,8 +19,7 @@
                 (:register-remote
                  (destructuring-bind (&key name host port) (rest msg)
                    (let* ((uri (format nil "sento://~a:~d/user/agent" host port))
-                          (ref #-lqml (rem:make-remote-ref sys uri)
-                               #+lqml nil)
+                          (ref (rem:make-remote-ref sys uri))
                           (info (make-agent-info :name name :type :process
                                                  :actor ref :port port)))
                      (setf (gethash name act:*state*) info)

@@ -116,8 +116,7 @@
                                                          (relayout)
                                                          (pine.buffer:ensure-frame-cells (pine.client:frame cli))
                                                          (pine.term:resize-active-terminal cols rows)
-                                                         (rs-update :dirty t)
-                                                         #+lqml (start-render-loop)))
+                                                         (rs-update :dirty t)))
 
                                                       (:switch-buffer
                                                        (destructuring-bind (&key buffer name) (rest msg)
@@ -276,60 +275,7 @@
             (pine.buffer:frame-dirtyp f) t))))
 
 
-;;;; Render loop (Qt thread)
-;;;;
-;;;; Persistent self-perpetuating tick. Every render-tick resets the next
-;;;; one via unwind-protect, so an error inside the body can never stall
-;;;; the loop.
-
-(defun start-render-loop ()
-  #+lqml
-  (let ((client (pine.client:current-client)))
-    (unless (fset:@ (pine.client:render-state client) :loop-started)
-      (setf (pine.client:render-state client)
-            (fset:with (pine.client:render-state client) :loop-started t))
-      (qml:qsingle-shot 16 #'render-tick))))
-
-(defun render-tick ()
-  #+lqml
-  (unwind-protect
-       (handler-case
-           (let ((client pine.client:*client*))
-             (when client
-               (let ((rs (pine.client:render-state client))
-                     (w (pine.client:focused-window client))
-                     (f (pine.client:frame client)))
-                 (when (and w (fset:@ rs :dirty))
-                   (let ((term (pine.term:terminal-for-buffer
-                                (pine.buffer:buffer-ref w))))
-                     (cond
-                       ((and term (pine.term:terminal-visible-p))
-                        (setf (pine.client:render-state client)
-                              (fset:with rs :dirty nil))
-                        (pine.term:render-terminal-to-frame)
-                        (pine.qml:push-frame)
-                        (pine.qml:update-status-text
-                         (format nil "*terminal*  |  L~a:C~a"
-                                 (1+ (pine.buffer:frame-cursor-row f))
-                                 (1+ (pine.buffer:frame-cursor-col f)))))
-                       (t
-                        (let ((s (pine.buffer:snap w)))
-                          (when s
-                            (setf (pine.client:render-state client)
-                                  (fset:with rs :dirty nil))
-                            (pine.buffer:ensure-point-visible w)
-                            (pine.buffer:ensure-col-visible w)
-                            (setf (pine.buffer:win-display w)
-                                  (pine.buffer:window-display-lines w))
-                            (render-buffer-to-frame w)
-                            (pine.qml:push-frame)
-                            (pine.qml:update-status-text
-                             (format nil "~a  |  L~a:C~a"
-                                     (pine.buffer:window-name w)
-                                     (1+ (pine.buffer:point-line s))
-                                     (1+ (pine.buffer:point-col s)))))))))))))
-         (error () nil))
-    (qml:qsingle-shot 16 #'render-tick)))
+;;;; The paint loop lives in the surface (pine.gtk pump), not here.
 
 
 ;;;; Subscription

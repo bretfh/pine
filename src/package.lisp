@@ -86,23 +86,10 @@
    ;; high-level API
    #:buffer #:ask #:tell))
 
-(defpackage :pine.qml
+(defpackage :pine.echo
   (:use :cl)
-  (:export
-   #:*ui-ready*
-   #:init-ui
-   #:find-item
-   #:set-property
-   #:push-frame
-   #:set-cursor
-   #:on-scroll
-   #:report-resize
-   #:update-status-text
-   #:show-status-input
-   #:hide-status-input
-   #:show-completion-area
-   #:hide-completion-area
-   #:on-input-changed))
+  (:export #:message #:show-input #:hide-input
+           #:show-completions-area #:hide-completions-area))
 
 (defpackage :pine.file
   (:use :cl)
@@ -118,9 +105,9 @@
    #:ts-request-parse
    #:start-renderer
    #:start-ts-actor
-   #:start-render-loop
    #:subscribe-to-buffer
    #:unsubscribe-from-buffer
+   #:render-buffer-to-frame
    #:relayout))
 
 (defpackage :pine.shell
@@ -159,31 +146,14 @@
 (defpackage :pine.mode
   (:use :cl)
   (:export
-   #:base-mode
-   #:text-mode
-   #:lisp-mode
-   #:repl-mode
-   #:terminal-mode
-   #:mode-for-file
-   #:name
-   #:parent-mode
-   #:keymap
-   #:ts-language
-   #:enter-hook
-   #:exit-hook
-   #:fallback
-   #:indicator
-   #:defmode
-   #:register-mode
-   #:find-mode
-   #:derive-chain
-   #:mode-lookup
-   #:mode-fallback
-   #:set-buffer-mode
-   #:buffer-mode
-   #:current-buffer-mode
-   #:dispatch-message
-   #:install-default-modes))
+   #:mode #:major-mode #:minor-mode
+   #:base-mode #:text-mode #:lisp-mode #:repl-mode #:terminal-mode
+   #:mode-name #:mode-keymap #:mode-indicator #:parent-mode #:ts-language
+   #:precedence #:transparent
+   #:register-mode #:find-mode #:global-keymap
+   #:buffer-mode #:current-buffer-mode #:set-buffer-mode #:mode-for-file
+   #:buffer-active-modes #:active-keymaps #:active-modes-instance
+   #:dispatch-message #:install-default-modes))
 
 (defpackage :pine.layout
   (:use :cl)
@@ -257,20 +227,13 @@
   (:use :cl)
   (:export
    #:start-editor
+   #:install-commands
+   #:install-bindings
    #:focused-snap
    #:scroll-window
    #:eval-last-sexp
    #:eval-buffer
-   #:on-key
    #:on-minibuffer-accept
-   #:defcommand
-   #:register-command
-   #:bind-key
-   #:run-command
-   #:install-default-commands
-   #:install-default-bindings
-   #:install-text-mode-bindings
-   #:bind-mode-key
    ;; prompt
    #:prompt
    #:cancel-prompt
@@ -302,5 +265,4 @@
    #:*target*
    #:desktop?
    #:mobile?
-   #:on-key
    #:on-minibuffer-accept))

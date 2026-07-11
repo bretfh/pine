@@ -32,7 +32,7 @@
       (pine.render:subscribe-to-buffer buf)
       (let ((mode-kw (or (pine.mode:mode-for-file namestring) :text-mode)))
         (pine.mode:set-buffer-mode buf mode-kw))
-      #+lqml (pine.qml:update-status-text
+      (pine.echo:message
               (if exists (format nil "~a" namestring)
                   (format nil "(new file) ~a" namestring)))
       buf)))
@@ -46,5 +46,5 @@
         (if path
             (progn
               (write-file path text)
-              #+lqml (pine.qml:update-status-text (format nil "wrote ~a" path)))
-            #+lqml (pine.qml:update-status-text "no file path for this buffer"))))))
+              (pine.echo:message (format nil "wrote ~a" path)))
+            (pine.echo:message "no file path for this buffer"))))))

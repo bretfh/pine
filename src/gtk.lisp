@@ -1,0 +1,131 @@
+(defpackage #:pine.gtk
+  (:use #:cl #:gtk4 #:pine.surface)
+  (:export #:gtk-surface #:run))
+
+(in-package #:pine.gtk)
+
+(defvar *surface* nil)
+(defvar *client* nil)
+
+(defclass gtk-surface (surface)
+  ((window :accessor gs-window :initform nil)
+   (area   :accessor gs-area   :initform nil)
+   (frame  :accessor gs-frame  :initform nil)
+   (cell-w :accessor gs-cell-w :initform 9d0)
+   (cell-h :accessor gs-cell-h :initform 18d0)
+   (ascent :accessor gs-ascent :initform 14d0)
+   (font   :accessor gs-font   :initform 15d0)))
+
+(defmethod surface-metrics ((s gtk-surface))
+  (let ((area (gs-area s)))
+    (values (gs-cell-w s) (gs-cell-h s)
+            (if area (max 1 (floor (drawing-area-content-width area) (gs-cell-w s))) 80)
+            (if area (max 1 (floor (drawing-area-content-height area) (gs-cell-h s))) 29))))
+
+(defmethod paint-frame ((s gtk-surface) frame)
+  (setf (gs-frame s) frame)
+  (request-redraw s))
+
+(defmethod request-redraw ((s gtk-surface))
+  (let ((area (gs-area s)))
+    (when area
+      (run-in-main-event-loop () (widget-queue-draw area)))))
+
+(defun paint-cells (s)
+  (cairo:set-source-rgb 0.12d0 0.12d0 0.14d0)
+  (cairo:paint)
+  (let ((frame (gs-frame s)))
+    (when frame
+      (let ((cells (pine.buffer:frame-cells frame))
+            (n (pine.buffer:frame-cell-count frame))
+            (cw (gs-cell-w s)) (lh (gs-cell-h s)) (asc (gs-ascent s)) (x0 6d0))
+        (cairo:select-font-face "monospace" :normal :normal)
+        (cairo:set-font-size (gs-font s))
+        (loop for i from 0 below n by 10
+              for row = (svref cells i)
+              for col = (svref cells (+ i 1))
+              for code = (svref cells (+ i 2))
+              for r = (svref cells (+ i 3))
+              for g = (svref cells (+ i 4))
+              for b = (svref cells (+ i 5))
+              do (cairo:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0))
+                 (cairo:move-to (+ x0 (* col cw)) (+ (* row lh) asc))
+                 (cairo:show-text (string (code-char code))))
+        (cairo:set-source-rgb 0.50d0 0.70d0 0.90d0)
+        (cairo:rectangle (+ x0 (* (pine.buffer:frame-cursor-col frame) cw))
+                         (* (pine.buffer:frame-cursor-row frame) lh) cw lh)
+        (cairo:set-line-width 1.5d0)
+        (cairo:stroke)))))
+
+(cffi:defcallback %draw :void ((area :pointer) (cr :pointer)
+                               (width :int) (height :int) (data :pointer))
+  (declare (ignore area data))
+  (when *surface*
+    (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
+                                          :width width :height height
+                                          :pixel-based-p nil)))
+      (paint-cells *surface*))))
+
+(defun pump (cli s)
+  (let ((pine.client:*client* cli))
+    (let ((rs (pine.client:render-state cli))
+          (w (pine.client:focused-window cli)))
+      (when (and w (fset:@ rs :dirty))
+        (setf (pine.client:render-state cli) (fset:with rs :dirty nil))
+        (let ((snap (pine.buffer:snap w)))
+          (when snap
+            (pine.buffer:ensure-point-visible w)
+            (pine.buffer:ensure-col-visible w)
+            (setf (pine.buffer:win-display w) (pine.buffer:window-display-lines w))
+            (pine.render:render-buffer-to-frame w)
+            (paint-frame s (pine.client:frame cli))))))))
+
+(defun gdk->key (keyval state)
+  (let ((ctrl  (logtest state gdk4:+modifier-type-control-mask+))
+        (meta  (logtest state gdk4:+modifier-type-alt-mask+))
+        (shift (logtest state gdk4:+modifier-type-shift-mask+))
+        (super (logtest state gdk4:+modifier-type-super-mask+))
+        (uni   (gdk4:keyval-to-unicode keyval)))
+    (pine.key:make-key
+     (if (and (plusp uni) (not ctrl) (not meta) (not super)
+              (graphic-char-p (code-char uni)))
+         (string (code-char uni))
+         (gdk4:keyval-name keyval))
+     :ctrl ctrl :meta meta :shift shift :super super)))
+
+(define-application (:name %app :id "org.pine.editor")
+  (define-main-window (window (make-application-window :application *application*))
+    (setf (window-title window) "pine")
+    (let ((area (make-drawing-area))
+          (s *surface*)
+          (cli *client*))
+      (setf (drawing-area-content-width area) 800
+            (drawing-area-content-height area) 500
+            (drawing-area-draw-func area) (list (cffi:callback %draw)
+                                                (cffi:null-pointer)
+                                                (cffi:null-pointer)))
+      (setf (gs-area s) area
+            (gs-window s) window
+            (window-child window) area)
+      (let ((kc (make-event-controller-key)))
+        (connect kc "key-pressed"
+                 (lambda (c keyval keycode state)
+                   (declare (ignore c keycode))
+                   (when *client*
+                     (pine.command:dispatch *client* (gdk->key keyval state)))
+                   t))
+        (widget-add-controller window kc))
+      (let ((f (pine.client:frame cli)))
+        (setf (pine.buffer:frame-cols f) 80
+              (pine.buffer:frame-rows f) 29)
+        (pine.render:relayout)
+        (pine.buffer:ensure-frame-cells f))
+      (timeout-add 16 (lambda () (pump cli s) t))
+      (window-present window))))
+
+(defun run ()
+  (multiple-value-bind (srv cli) (pine:main)
+    (declare (ignore srv))
+    (setf *surface* (make-instance 'gtk-surface)
+          *client* cli)
+    (%app)))

@@ -347,7 +347,7 @@ typedef void  (*gterm_resize_fn)(void*, int, int);
       (sento.actor:tell renderer
                         (list :switch-buffer :buffer (term-buffer term) :name name))
       (pine.render:subscribe-to-buffer (term-buffer term))
-      #+lqml (pine.qml:update-status-text (format nil "terminal: ~a" name))
+      (pine.echo:message (format nil "terminal: ~a" name))
       term)))
 
 (defun terminal-visible-p ()

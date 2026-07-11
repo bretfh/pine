@@ -33,7 +33,7 @@
             (list :set-meta :key :mark-line :value (pine.buffer:point-line snap)))
           (sento.actor:tell buf
             (list :set-meta :key :mark-col :value (pine.buffer:point-col snap)))
-          #+lqml (pine.qml:update-status-text "mark set"))))))
+          (pine.echo:message "mark set"))))))
 
 (defun region-bounds (state)
   (let* ((m (pine.buffer:meta state))
@@ -112,4 +112,4 @@
           (when sl
             (let ((text (pine.buffer:region-string state sl sc el ec)))
               (kill-ring-push text)
-              #+lqml (pine.qml:update-status-text "copied"))))))))
+              (pine.echo:message "copied"))))))))

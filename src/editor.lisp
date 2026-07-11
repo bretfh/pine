@@ -1,22 +1,15 @@
-(in-package :pine.editor)
+(in-package #:pine.editor)
 
 (defun start-editor ()
   (let* ((client (pine.client:current-client))
          (server (pine.client:server-of client)))
     (pine.buffer:start-buffer-registry server)
-    (handler-case
-        (let ((rt (pine.server:ts-runtime server)))
-          (pine.ts:ensure-ts rt)
-          (format *error-output* "tree-sitter: ~a~%" (pine.ts:ts-loaded-p rt))
-          (force-output *error-output*))
-      (error (c)
-        (format *error-output* "tree-sitter init error: ~a~%" c)
-        (force-output *error-output*)))
+    (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime server))
+      (error () nil))
     (pine.render:start-renderer client)
-    (install-default-commands)
-    (install-default-bindings)
     (pine.mode:install-default-modes)
-    (install-text-mode-bindings)
+    (install-commands)
+    (install-bindings)
     (let ((buf (pine.buffer:make-buffer "scratch")))
       (pine.buffer:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -25,106 +18,82 @@
       (pine.buffer:tell buf :set-local :key :package :value :pine-user))
     (pine.render:relayout)))
 
+;;;; Motion / eval helpers (command implementations)
+
 (defun focused-snap ()
   (let ((w (pine.client:focused-window (pine.client:current-client))))
     (when w (pine.buffer:snap w))))
 
+(defun cur-buffer () (pine.client:current-buffer (pine.client:current-client)))
+
 (defun move-point-up ()
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
-    (when buf
-      (let ((snap (focused-snap)))
-        (when (and snap (plusp (pine.buffer:point-line snap)))
-          (let* ((new-line (1- (pine.buffer:point-line snap)))
-                 (new-col (min (pine.buffer:point-col snap)
-                               (length (fset:@ (pine.buffer:lines snap) new-line)))))
-            (sento.actor:tell buf (list :move-point :line new-line :col new-col))))))))
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap (plusp (pine.buffer:point-line snap)))
+      (let* ((nl (1- (pine.buffer:point-line snap)))
+             (nc (min (pine.buffer:point-col snap)
+                      (length (fset:@ (pine.buffer:lines snap) nl)))))
+        (sento.actor:tell buf (list :move-point :line nl :col nc))))))
 
 (defun move-point-down ()
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
-    (when buf
-      (let ((snap (focused-snap)))
-        (when (and snap (< (1+ (pine.buffer:point-line snap))
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap (< (1+ (pine.buffer:point-line snap))
                            (pine.buffer:line-count snap)))
-          (let* ((new-line (1+ (pine.buffer:point-line snap)))
-                 (new-col (min (pine.buffer:point-col snap)
-                               (length (fset:@ (pine.buffer:lines snap) new-line)))))
-            (sento.actor:tell buf (list :move-point :line new-line :col new-col))))))))
+      (let* ((nl (1+ (pine.buffer:point-line snap)))
+             (nc (min (pine.buffer:point-col snap)
+                      (length (fset:@ (pine.buffer:lines snap) nl)))))
+        (sento.actor:tell buf (list :move-point :line nl :col nc))))))
 
 (defun move-point-left ()
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
-    (when buf
-      (let ((snap (focused-snap)))
-        (when snap
-          (cond
-            ((plusp (pine.buffer:point-col snap))
-             (sento.actor:tell buf
-                               (list :move-point
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap)
+      (cond
+        ((plusp (pine.buffer:point-col snap))
+         (sento.actor:tell buf (list :move-point
                                      :line (pine.buffer:point-line snap)
                                      :col (1- (pine.buffer:point-col snap)))))
-            ((plusp (pine.buffer:point-line snap))
-             (let* ((new-line (1- (pine.buffer:point-line snap)))
-                    (new-col (length (fset:@ (pine.buffer:lines snap) new-line))))
-               (sento.actor:tell buf (list :move-point :line new-line :col new-col))))))))))
+        ((plusp (pine.buffer:point-line snap))
+         (let* ((nl (1- (pine.buffer:point-line snap)))
+                (nc (length (fset:@ (pine.buffer:lines snap) nl))))
+           (sento.actor:tell buf (list :move-point :line nl :col nc))))))))
 
 (defun move-point-right ()
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
-    (when buf
-      (let ((snap (focused-snap)))
-        (when snap
-          (let ((line-len (length (fset:@ (pine.buffer:lines snap)
-                                          (pine.buffer:point-line snap)))))
-            (cond
-              ((< (pine.buffer:point-col snap) line-len)
-               (sento.actor:tell buf
-                                 (list :move-point
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap)
+      (let ((len (length (fset:@ (pine.buffer:lines snap)
+                                 (pine.buffer:point-line snap)))))
+        (cond
+          ((< (pine.buffer:point-col snap) len)
+           (sento.actor:tell buf (list :move-point
                                        :line (pine.buffer:point-line snap)
                                        :col (1+ (pine.buffer:point-col snap)))))
-              ((< (1+ (pine.buffer:point-line snap))
-                  (pine.buffer:line-count snap))
-               (sento.actor:tell buf
-                                 (list :move-point
+          ((< (1+ (pine.buffer:point-line snap)) (pine.buffer:line-count snap))
+           (sento.actor:tell buf (list :move-point
                                        :line (1+ (pine.buffer:point-line snap))
-                                       :col 0))))))))))
+                                       :col 0))))))))
 
 (defun %point->offset (snap)
-  "Char offset of point in the buffer text (newlines count as one char)."
   (let ((pl (pine.buffer:point-line snap))
         (pc (pine.buffer:point-col snap))
         (lines (pine.buffer:lines snap)))
-    (+ (loop for i from 0 below pl
-             sum (1+ (length (fset:@ lines i))))
-       pc)))
+    (+ (loop for i from 0 below pl sum (1+ (length (fset:@ lines i)))) pc)))
 
 (defun %whitespace-p (c)
-  (or (char= c #\Space) (char= c #\Tab)
-      (char= c #\Newline) (char= c #\Return)))
+  (or (char= c #\Space) (char= c #\Tab) (char= c #\Newline) (char= c #\Return)))
 
 (defun %sexp-delim-p (c)
-  (or (%whitespace-p c)
-      (char= c #\() (char= c #\)) (char= c #\")))
+  (or (%whitespace-p c) (char= c #\() (char= c #\)) (char= c #\")))
 
 (defun %match-paren-backward (text close-pos)
-  "Given the offset of a closing paren, walk back to the matching open."
   (let ((depth 1) (i (1- close-pos)) (in-string nil))
     (loop while (>= i 0) do
       (let ((c (char text i)))
         (cond
           (in-string
-           (when (and (char= c #\")
-                      (or (zerop i)
-                          (not (char= (char text (1- i)) #\\))))
+           (when (and (char= c #\") (or (zerop i) (not (char= (char text (1- i)) #\\))))
              (setf in-string nil))
            (decf i))
-          ((char= c #\")
-           (setf in-string t)
-           (decf i))
-          ((char= c #\))
-           (incf depth)
-           (decf i))
+          ((char= c #\") (setf in-string t) (decf i))
+          ((char= c #\)) (incf depth) (decf i))
           ((char= c #\()
            (decf depth)
            (when (zerop depth) (return-from %match-paren-backward i))
@@ -133,65 +102,42 @@
     nil))
 
 (defun %match-string-backward (text close-pos)
-  "Given the offset of a closing quote, walk back to the matching open quote."
   (let ((i (1- close-pos)))
     (loop while (>= i 0) do
       (let ((c (char text i)))
-        (cond
-          ((and (char= c #\")
-                (or (zerop i)
-                    (not (char= (char text (1- i)) #\\))))
-           (return-from %match-string-backward i))
-          (t (decf i)))))
+        (if (and (char= c #\") (or (zerop i) (not (char= (char text (1- i)) #\\))))
+            (return-from %match-string-backward i)
+            (decf i))))
     nil))
 
 (defun %atom-start-backward (text end-inclusive)
-  "Walk back over atom chars starting at END-INCLUSIVE; return first atom char."
   (let ((i end-inclusive))
-    (loop while (and (>= i 0)
-                     (not (%sexp-delim-p (char text i))))
-          do (decf i))
+    (loop while (and (>= i 0) (not (%sexp-delim-p (char text i)))) do (decf i))
     (1+ i)))
 
 (defun %preceding-sexp-bounds (text end)
-  "Return (values START END-EXCLUSIVE) of the sexp preceding position END,
-skipping trailing whitespace. Returns NIL if nothing is there."
   (let ((i (1- end)))
-    (loop while (and (>= i 0) (%whitespace-p (char text i)))
-          do (decf i))
+    (loop while (and (>= i 0) (%whitespace-p (char text i))) do (decf i))
     (when (minusp i) (return-from %preceding-sexp-bounds nil))
     (let ((c (char text i)))
       (cond
-        ((char= c #\))
-         (let ((start (%match-paren-backward text i)))
-           (when start (values start (1+ i)))))
-        ((char= c #\")
-         (let ((start (%match-string-backward text i)))
-           (when start (values start (1+ i)))))
-        (t
-         (values (%atom-start-backward text i) (1+ i)))))))
+        ((char= c #\)) (let ((s (%match-paren-backward text i))) (when s (values s (1+ i)))))
+        ((char= c #\") (let ((s (%match-string-backward text i))) (when s (values s (1+ i)))))
+        (t (values (%atom-start-backward text i) (1+ i)))))))
 
 (defun %buffer-package (state)
   (let ((name (pine.buffer:buffer-local state :package nil)))
-    (or (and name (find-package name))
-        (find-package :cl-user))))
+    (or (and name (find-package name)) (find-package :cl-user))))
 
 (defun %show-eval-result (form thunk)
   (handler-case
       (let ((values (multiple-value-list (funcall thunk))))
-        #+lqml (pine.qml:update-status-text
-                (format nil "=> ~{~s~^, ~}" values))
+        (pine.echo:message (format nil "=> ~{~s~^, ~}" values))
         (values-list values))
-    (error (c)
-      #+lqml (pine.qml:update-status-text
-              (format nil "error in ~s: ~a" form c))
-      nil)))
+    (error (c) (pine.echo:message (format nil "error in ~s: ~a" form c)) nil)))
 
 (defun eval-last-sexp ()
-  "Eval the sexp immediately preceding point — same semantics as Emacs:
-paren-match back from the char before point, or walk back over an atom."
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
+  (let ((buf (cur-buffer)))
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.buffer:state->string state))
@@ -200,35 +146,26 @@ paren-match back from the char before point, or walk back over an atom."
         (multiple-value-bind (start end) (%preceding-sexp-bounds text offset)
           (if start
               (let* ((*package* (%buffer-package state))
-                     (form-text (subseq text start end))
-                     (form (read-from-string form-text)))
+                     (form (read-from-string (subseq text start end))))
                 (%show-eval-result form (lambda () (eval form))))
-              #+lqml (pine.qml:update-status-text "no form before point")))))))
+              (pine.echo:message "no form before point")))))))
 
 (defun eval-buffer ()
-  "Eval every top-level form in the current buffer."
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
+  (let ((buf (cur-buffer)))
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.buffer:state->string state))
-             (pos 0)
-             (count 0)
-             (*package* (%buffer-package state)))
+             (pos 0) (count 0) (*package* (%buffer-package state)))
         (handler-case
             (loop
               (multiple-value-bind (form new-pos)
                   (read-from-string text nil :eof :start pos)
                 (when (eq form :eof) (return))
-                (eval form)
-                (incf count)
-                (setf pos new-pos)))
+                (eval form) (incf count) (setf pos new-pos)))
           (error (c)
-            #+lqml (pine.qml:update-status-text
-                    (format nil "eval-buffer error at ~a: ~a" pos c))
+            (pine.echo:message (format nil "eval-buffer error at ~a: ~a" pos c))
             (return-from eval-buffer)))
-        #+lqml (pine.qml:update-status-text
-                (format nil "eval-buffer: ~a forms" count))))))
+        (pine.echo:message (format nil "eval-buffer: ~a forms" count))))))
 
 (defun scroll-window (delta)
   (let* ((client (pine.client:current-client))
@@ -247,14 +184,160 @@ paren-match back from the char before point, or walk back over an atom."
             (setf (pine.buffer:scroll-top w) new-scroll)
             (cond
               ((< pl new-scroll)
-               (sento.actor:tell buf
-                                 (list :move-point
-                                       :line new-scroll
-                                       :col (min pc (length (fset:@ (pine.buffer:lines snap) new-scroll))))))
+               (sento.actor:tell buf (list :move-point :line new-scroll
+                 :col (min pc (length (fset:@ (pine.buffer:lines snap) new-scroll))))))
               ((>= pl (+ new-scroll h))
                (let ((target (+ new-scroll h -1)))
-                 (sento.actor:tell buf
-                                   (list :move-point
-                                         :line target
-                                         :col (min pc (length (fset:@ (pine.buffer:lines snap) target))))))))
+                 (sento.actor:tell buf (list :move-point :line target
+                   :col (min pc (length (fset:@ (pine.buffer:lines snap) target))))))))
             (sento.actor:tell (pine.client:renderer client) '(:force-render))))))))
+
+;;;; Commands
+
+(defmacro defcmd (name (&rest args) &body body)
+  `(pine.command:define-command ,name ,args ,@body))
+
+(defun install-commands ()
+  (defcmd "keyboard-quit" ()
+    (setf (pine.client:pending-keys (pine.client:current-client)) nil)
+    (cancel-prompt))
+  (defcmd "self-insert" ()) ; keys resolve to self-insert in the dispatcher
+
+  (defcmd "backspace" ()
+    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:backspace)))))
+  (defcmd "delete-char" ()
+    (let ((buf (cur-buffer)) (snap (focused-snap)))
+      (when (and buf snap)
+        (sento.actor:tell buf
+          (list :delete-region
+                :start-line (pine.buffer:point-line snap) :start-col (pine.buffer:point-col snap)
+                :end-line (pine.buffer:point-line snap) :end-col (1+ (pine.buffer:point-col snap)))))))
+  (defcmd "newline" ()
+    (let ((buf (cur-buffer))) (when buf (pine.buffer:tell buf :newline))))
+  (defcmd "undo" ()
+    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:undo)))))
+
+  (defcmd "forward-char" ()  (move-point-right))
+  (defcmd "backward-char" () (move-point-left))
+  (defcmd "next-line" ()     (move-point-down))
+  (defcmd "previous-line" () (move-point-up))
+
+  (defcmd "beginning-of-line" ()
+    (let ((buf (cur-buffer)) (snap (focused-snap)))
+      (when (and buf snap)
+        (sento.actor:tell buf (list :move-point :line (pine.buffer:point-line snap) :col 0)))))
+  (defcmd "end-of-line" ()
+    (let ((buf (cur-buffer)) (snap (focused-snap)))
+      (when (and buf snap)
+        (let ((len (length (fset:@ (pine.buffer:lines snap) (pine.buffer:point-line snap)))))
+          (sento.actor:tell buf (list :move-point :line (pine.buffer:point-line snap) :col len))))))
+  (defcmd "beginning-of-buffer" ()
+    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf (list :move-point :line 0 :col 0)))))
+  (defcmd "end-of-buffer" ()
+    (let ((buf (cur-buffer)) (snap (focused-snap)))
+      (when (and buf snap)
+        (let* ((ll (1- (pine.buffer:line-count snap)))
+               (lc (length (fset:@ (pine.buffer:lines snap) ll))))
+          (sento.actor:tell buf (list :move-point :line ll :col lc))))))
+
+  (defcmd "scroll-down" ()
+    (let ((w (pine.client:focused-window (pine.client:current-client))))
+      (when w (scroll-window (- (pine.buffer:win-height w) 2)))))
+  (defcmd "scroll-up" ()
+    (let ((w (pine.client:focused-window (pine.client:current-client))))
+      (when w (scroll-window (- 2 (pine.buffer:win-height w))))))
+
+  (defcmd "set-mark" ()     (set-mark))
+  (defcmd "kill-line" ()    (kill-line-cmd))
+  (defcmd "kill-region" ()  (kill-region-cmd))
+  (defcmd "copy-region" ()  (copy-region-cmd))
+  (defcmd "yank" ()         (yank-cmd))
+  (defcmd "yank-pop" ()     (yank-pop-cmd))
+
+  (defcmd "find-file" ()
+    (prompt "Find file: "
+      (lambda (path)
+        (handler-case (pine.file:find-file path)
+          (error (c) (pine.echo:message (format nil "error: ~a" c)))))))
+  (defcmd "save-file" ()
+    (handler-case (pine.file:save-current-buffer)
+      (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (defcmd "switch-buffer" ()
+    (completing-read "Switch to: " (pine.buffer:list-buffers)
+      (lambda (name)
+        (let* ((client (pine.client:current-client))
+               (buf (pine.buffer:switch-buffer name)))
+          (when buf
+            (sento.actor:tell (pine.client:renderer client)
+                              (list :switch-buffer :buffer buf :name name))
+            (pine.render:subscribe-to-buffer buf))))))
+  (defcmd "list-buffers" ()
+    (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.buffer:list-buffers))))
+  (defcmd "execute-command" ()
+    (completing-read "M-x " (pine.command:all-command-names)
+      (lambda (name) (pine.command:call-command name))))
+  (defcmd "eval-expression" ()
+    (prompt "Eval: "
+      (lambda (text)
+        (handler-case (pine.echo:message (format nil "=> ~s" (eval (read-from-string text))))
+          (error (c) (pine.echo:message (format nil "error: ~a" c)))))))
+  (defcmd "eval-last-sexp" () (eval-last-sexp))
+  (defcmd "eval-buffer" ()    (eval-buffer))
+  (defcmd "new-buffer" ()
+    (prompt "New buffer: "
+      (lambda (name)
+        (let ((buf (pine.buffer:make-buffer name))) (pine.render:subscribe-to-buffer buf)))))
+  (defcmd "open-repl" ()
+    (handler-case
+        (let* ((client (pine.client:current-client))
+               (buf (or (pine.client:repl-buffer client) (pine.shell:start-repl))))
+          (pine.buffer:switch-buffer "*repl*")
+          (pine.render:subscribe-to-buffer buf)
+          (sento.actor:tell (pine.client:renderer client)
+                            (list :switch-buffer :buffer buf :name "*repl*")))
+      (error (c) (pine.echo:message (format nil "error: ~a" c))))))
+
+;;;; Bindings
+
+(defun k (spec) (pine.key:parse-key spec))
+
+(defun install-bindings ()
+  (let ((g (pine.mode:global-keymap))
+        (tm (pine.mode:mode-keymap (pine.mode:find-mode :text-mode))))
+    ;; global: quit, chords, M-x
+    (pine.keymap:define-key g (k "C-g") "keyboard-quit")
+    (pine.keymap:define-key g (k "Escape") "keyboard-quit")
+    (pine.keymap:define-key g (list (k "C-x") (k "C-f")) "find-file")
+    (pine.keymap:define-key g (list (k "C-x") (k "C-s")) "save-file")
+    (pine.keymap:define-key g (list (k "C-x") (k "b")) "switch-buffer")
+    (pine.keymap:define-key g (list (k "C-x") (k "n")) "new-buffer")
+    (pine.keymap:define-key g (list (k "C-x") (k "r")) "open-repl")
+    (pine.keymap:define-key g (list (k "C-x") (k "C-e")) "eval-last-sexp")
+    (pine.keymap:define-key g (k "M-x") "execute-command")
+    ;; text-mode editing
+    (pine.keymap:define-key tm (k "BackSpace") "backspace")
+    (pine.keymap:define-key tm (k "Return") "newline")
+    (pine.keymap:define-key tm (k "Up") "previous-line")
+    (pine.keymap:define-key tm (k "Down") "next-line")
+    (pine.keymap:define-key tm (k "Left") "backward-char")
+    (pine.keymap:define-key tm (k "Right") "forward-char")
+    (pine.keymap:define-key tm (k "C-f") "forward-char")
+    (pine.keymap:define-key tm (k "C-b") "backward-char")
+    (pine.keymap:define-key tm (k "C-n") "next-line")
+    (pine.keymap:define-key tm (k "C-p") "previous-line")
+    (pine.keymap:define-key tm (k "C-a") "beginning-of-line")
+    (pine.keymap:define-key tm (k "C-e") "end-of-line")
+    (pine.keymap:define-key tm (k "C-d") "delete-char")
+    (pine.keymap:define-key tm (k "M-<") "beginning-of-buffer")
+    (pine.keymap:define-key tm (k "M->") "end-of-buffer")
+    (pine.keymap:define-key tm (k "C-space") "set-mark")
+    (pine.keymap:define-key tm (k "C-k") "kill-line")
+    (pine.keymap:define-key tm (k "C-w") "kill-region")
+    (pine.keymap:define-key tm (k "M-w") "copy-region")
+    (pine.keymap:define-key tm (k "C-y") "yank")
+    (pine.keymap:define-key tm (k "M-y") "yank-pop")
+    (pine.keymap:define-key tm (k "C-v") "scroll-down")
+    (pine.keymap:define-key tm (k "M-v") "scroll-up")
+    (pine.keymap:define-key tm (k "Prior") "scroll-up")
+    (pine.keymap:define-key tm (k "Next") "scroll-down")
+    (pine.keymap:define-key tm (k "C-z") "undo")))
