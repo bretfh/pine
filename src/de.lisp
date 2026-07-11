@@ -76,6 +76,10 @@
 (defparameter *g-vol*      #x0F028)
 (defparameter *g-mute*     #x0F026)
 (defparameter *g-media*    #x0F001)
+(defparameter *g-prev*     #x0F048)
+(defparameter *g-pause*    #x0F04C)
+(defparameter *g-play*     #x0F04B)
+(defparameter *g-next*     #x0F051)
 (defparameter *g-net*      #x0F1EB)
 (defparameter *g-system*   #x0F007)
 
@@ -215,6 +219,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
     (register-panel app "calendar" #'calendar-panel :width 240 :height 120)
     (register-panel app "audio" #'audio-panel :width 340 :height 120)
     (register-panel app "network" #'network-panel :width 420 :height 360)
+    (register-panel app "media" #'media-panel :width 380 :height 200)
     (window-present window)
     (timeout-add 1000 (lambda () (widget-queue-draw area) t))
     window))
@@ -390,3 +395,27 @@ closures. Reads :net/:netlist/:netactions."
       (viewport :height 10
         (column (mapcar #'wifi-row list)))
       (row :spacing 2 :align :center (mapcar #'act-btn acts)))))
+
+(defun %emms (form) (%sh (format nil "emacsclient -e '~a'" form)))
+(defun %emms-seek (v)
+  (ignore-errors
+    (uiop:launch-program
+     (list "emacsclient" "-e" (format nil "(emms-seek-to ~a)" v)))))
+
+(defwidget media-panel ()
+  "The media panel: title/artist, a seek slider driving EMMS, and prev/pause/next
+transport. Reads the :media cell (polled from the emacs daemon)."
+  (let* ((m (%cell :media nil))
+         (status (or (getf m :status) "Stopped"))
+         (len (max 1 (or (getf m :length) 1))))
+    (column :spacing 1
+      (label "Media" :face :function-name)
+      (label status :face (if (equal status "Playing") :string :comment))
+      (label (or (getf m :title) "")  :face :default)
+      (label (or (getf m :artist) "") :face :comment)
+      (meter :value (or (getf m :pos) 0) :min 0 :max len :track 24 :on-change #'%emms-seek)
+      (row :spacing 3 :align :center
+        (button :on-click (%emms "(emms-previous)") (icon *g-prev* :face :string))
+        (button :on-click (%emms "(emms-pause)")
+          (icon (if (equal status "Playing") *g-pause* *g-play*) :face :string))
+        (button :on-click (%emms "(emms-next)") (icon *g-next* :face :string))))))

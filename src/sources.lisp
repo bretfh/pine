@@ -270,3 +270,33 @@ with the actor system."
 
 (defsource :network-scan (system)
   (start-poll system 15 (lambda () (refresh-net "yes"))))
+
+;;;; Media (EMMS via the emacs daemon). Polled into a :media plist cell.
+
+(defparameter +emms-elisp+
+  "(let* ((trk (ignore-errors (emms-playlist-current-selected-track))) (playing (and (boundp 'emms-player-playing-p) emms-player-playing-p)) (paused (and (boundp 'emms-player-paused-p) emms-player-paused-p))) (if trk (json-encode (list :title (or (emms-track-get trk 'info-title) \"\") :artist (or (emms-track-get trk 'info-artist) \"\") :length (or (emms-track-get trk 'info-playing-time) 0) :pos (or (and (boundp 'emms-playing-time) emms-playing-time) 0) :status (cond (paused \"Paused\") (playing \"Playing\") (t \"Stopped\")))) \"{}\"))")
+
+(defun %unquote-elisp (s)
+  "emacsclient -e prints a Lisp string literal; strip the quotes and unescape."
+  (let ((s (string-trim '(#\space #\newline) s)))
+    (when (and (>= (length s) 2) (char= (char s 0) #\")
+               (char= (char s (1- (length s))) #\"))
+      (setf s (subseq s 1 (1- (length s)))))
+    (with-output-to-string (out)
+      (loop with i = 0 with n = (length s)
+            while (< i n)
+            do (let ((c (char s i)))
+                 (if (and (char= c #\\) (< (1+ i) n))
+                     (progn (write-char (char s (1+ i)) out) (incf i 2))
+                     (progn (write-char c out) (incf i))))))))
+
+(defun emms-media ()
+  (let ((raw (sh "emacsclient" "-e" +emms-elisp+)))
+    (when (plusp (length raw))
+      (ignore-errors
+        (let ((h (com.inuoe.jzon:parse (%unquote-elisp raw))))
+          (list :title  (gethash "title" h "")  :artist (gethash "artist" h "")
+                :status (gethash "status" h "Stopped")
+                :pos    (gethash "pos" h 0)      :length (gethash "length" h 0)))))))
+
+(defpoll :media 1 (emms-media))
