@@ -2,7 +2,7 @@
 
 (in-package :cl-user)
 
-(defpackage :hemlock.term
+(defpackage :pine.vt
   (:use :common-lisp)
   (:export
    #:cell
@@ -45,8 +45,11 @@
    #:term-grid-row
    #:color-index-to-rgb
    #:key-event-to-escape-sequence
-   #:set-pty-size
    #:spawn-pty-process
+   #:pty-set-size
+   #:pty-read-string
+   #:pty-write-string
+   #:pty-close
    #:term-render-line
    #:term-dump-row-string
    #:term-dump-to-string

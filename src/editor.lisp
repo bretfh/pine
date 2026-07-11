@@ -31,6 +31,22 @@
 (defun %fresh-snap ()
   (let ((buf (cur-buffer))) (when buf (pine.buffer:ask buf :snapshot))))
 
+(defun %buffer-ts-lang ()
+  (let ((mode (pine.mode:current-buffer-mode)))
+    (and (typep mode 'pine.mode:major-mode) (pine.mode:ts-language mode))))
+
+(defun %ts-runtime ()
+  (pine.server:ts-runtime (pine.client:server-of (pine.client:current-client))))
+
+(defun %sexp-move (pos-fn)
+  "Move point to the position returned by POS-FN (a pine.ts sexp motion)."
+  (let ((buf (cur-buffer)) (snap (%fresh-snap)) (lang (%buffer-ts-lang)))
+    (when (and buf snap lang)
+      (multiple-value-bind (l c)
+          (funcall pos-fn (%ts-runtime) lang (pine.buffer:ask buf :text)
+                   (pine.buffer:point-line snap) (pine.buffer:point-col snap))
+        (when l (sento.actor:tell buf (list :move-point :line l :col c)))))))
+
 (defun move-chars (n)
   "Move point N characters (negative = left) across line boundaries, clamped.
 Computed in one shot from a fresh snapshot so it is safe to repeat via a
@@ -326,6 +342,22 @@ prefix count."
     (let ((w (pine.client:focused-window (pine.client:current-client))))
       (when w (scroll-window (- 2 (pine.buffer:win-height w))))))
 
+  (defcmd "forward-sexp" ()  (%sexp-move #'pine.ts:forward-sexp-pos))
+  (defcmd "backward-sexp" () (%sexp-move #'pine.ts:backward-sexp-pos))
+  (defcmd "beginning-of-defun" ()
+    (%sexp-move (lambda (rt lang text l c)
+                  (multiple-value-bind (sl sc) (pine.ts:defun-bounds-pos rt lang text l c)
+                    (values sl sc)))))
+  (defcmd "end-of-defun" ()
+    (%sexp-move (lambda (rt lang text l c)
+                  (multiple-value-bind (sl sc el ec)
+                      (pine.ts:defun-bounds-pos rt lang text l c)
+                    (declare (ignore sl sc))
+                    (values el ec)))))
+  (defcmd "mark-sexp" ()
+    (set-mark)
+    (%sexp-move #'pine.ts:forward-sexp-pos))
+
   (defcmd "set-mark" ()     (set-mark))
   (defcmd "kill-line" ()    (kill-line-cmd))
   (defcmd "kill-region" ()  (kill-region-cmd))
@@ -451,4 +483,10 @@ prefix count."
     (pine.keymap:define-key tm (k "M-v") "scroll-up")
     (pine.keymap:define-key tm (k "Prior") "scroll-up")
     (pine.keymap:define-key tm (k "Next") "scroll-down")
-    (pine.keymap:define-key tm (k "C-z") "undo")))
+    (pine.keymap:define-key tm (k "C-z") "undo")
+    ;; structural navigation (tree-sitter)
+    (pine.keymap:define-key tm (k "C-M-f") "forward-sexp")
+    (pine.keymap:define-key tm (k "C-M-b") "backward-sexp")
+    (pine.keymap:define-key tm (k "C-M-a") "beginning-of-defun")
+    (pine.keymap:define-key tm (k "C-M-e") "end-of-defun")
+    (pine.keymap:define-key tm (k "C-M-space") "mark-sexp")))

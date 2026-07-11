@@ -129,7 +129,10 @@
    #:ensure-ts
    #:ensure-language
    #:compute-highlights
-   #:capture-name-to-face))
+   #:capture-name-to-face
+   #:forward-sexp-pos
+   #:backward-sexp-pos
+   #:defun-bounds-pos))
 
 (defpackage :pine.term
   (:use :cl)

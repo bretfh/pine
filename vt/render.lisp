@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :hemlock.term)
+(in-package :pine.vt)
 
 (defun face-attrs-equal (a b)
   (cond

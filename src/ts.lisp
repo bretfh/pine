@@ -36,6 +36,17 @@
   (node (:struct ts-node)))
 (cffi:defcfun ("ts_node_end_byte" ts-node-end-byte) :uint32
   (node (:struct ts-node)))
+(cffi:defcfun ("ts_node_parent" ts-node-parent) (:struct ts-node)
+  (node (:struct ts-node)))
+(cffi:defcfun ("ts_node_is_null" ts-node-is-null) :bool
+  (node (:struct ts-node)))
+(cffi:defcfun ("ts_node_named_child_count" ts-node-named-child-count) :uint32
+  (node (:struct ts-node)))
+(cffi:defcfun ("ts_node_named_child" ts-node-named-child) (:struct ts-node)
+  (node (:struct ts-node)) (index :uint32))
+(cffi:defcfun ("ts_node_named_descendant_for_byte_range"
+               ts-node-named-descendant-for-byte-range) (:struct ts-node)
+  (node (:struct ts-node)) (start :uint32) (end :uint32))
 (cffi:defcfun ("ts_query_new" ts-query-new) :pointer
   (language :pointer) (source :pointer) (length :uint32)
   (error-offset :pointer) (error-type :pointer))
@@ -324,3 +335,89 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
                   (ts-tree-delete tree)))))
         (error () nil))
       (nreverse highlights))))
+
+
+;;;; Structural navigation. Each motion parses the buffer, walks the tree once,
+;;;; and returns a target position; the tree lives only for the call.
+
+(defun call-with-root (runtime language text fn)
+  "Parse TEXT and call FN with the tree's root node. Returns FN's values, or nil."
+  (let ((entry (ensure-language runtime language)))
+    (when entry
+      (handler-case
+          (cffi:with-foreign-string (cstr text :encoding :utf-8)
+            (let ((tree (ts-parser-parse-string (entry-parser entry)
+                                                (cffi:null-pointer) cstr
+                                                (byte-length text))))
+              (when (and tree (not (cffi:null-pointer-p tree)))
+                (unwind-protect (funcall fn (ts-tree-root-node tree))
+                  (ts-tree-delete tree)))))
+        (error () nil)))))
+
+(defun pos-to-byte (text line col)
+  (let ((offsets (build-line-offsets text)))
+    (+ (if (< line (length offsets)) (aref offsets line) 0) col)))
+
+(defun %forward-sexp-byte (root byte)
+  (let ((cur (ts-node-named-descendant-for-byte-range root byte byte)))
+    (cond
+      ((ts-node-is-null cur) nil)
+      ((<= byte (ts-node-start-byte cur)) (ts-node-end-byte cur))
+      (t (loop for i from 0 below (ts-node-named-child-count cur)
+               for child = (ts-node-named-child cur i)
+               when (>= (ts-node-start-byte child) byte)
+                 return (ts-node-end-byte child)
+               finally (return (ts-node-end-byte cur)))))))
+
+(defun %backward-sexp-byte (root byte)
+  (let ((cur (ts-node-named-descendant-for-byte-range root byte byte)))
+    (cond
+      ((ts-node-is-null cur) nil)
+      ((>= byte (ts-node-end-byte cur)) (ts-node-start-byte cur))
+      (t (loop for i from (1- (ts-node-named-child-count cur)) downto 0
+               for child = (ts-node-named-child cur i)
+               when (<= (ts-node-end-byte child) byte)
+                 return (ts-node-start-byte child)
+               finally (return (ts-node-start-byte cur)))))))
+
+(defun %defun-bytes (root byte)
+  "Start and end bytes of the top-level form (a direct child of ROOT)
+containing BYTE."
+  (let ((cur (ts-node-named-descendant-for-byte-range root byte byte)))
+    (if (ts-node-is-null cur)
+        nil
+        (progn
+          (loop for p = (ts-node-parent cur)
+                until (ts-node-is-null p)
+                do (if (ts-node-is-null (ts-node-parent p))
+                       (progn (setf cur p) (loop-finish))
+                       (setf cur p)))
+          (values (ts-node-start-byte cur) (ts-node-end-byte cur))))))
+
+(defun forward-sexp-pos (runtime language text line col)
+  "Position (values line col) after the next sexp, or nil."
+  (let ((byte (pos-to-byte text line col))
+        (offsets (build-line-offsets text)))
+    (let ((target (call-with-root runtime language text
+                                  (lambda (root) (%forward-sexp-byte root byte)))))
+      (when target (byte-to-line-col target offsets)))))
+
+(defun backward-sexp-pos (runtime language text line col)
+  (let ((byte (pos-to-byte text line col))
+        (offsets (build-line-offsets text)))
+    (let ((target (call-with-root runtime language text
+                                  (lambda (root) (%backward-sexp-byte root byte)))))
+      (when target (byte-to-line-col target offsets)))))
+
+(defun defun-bounds-pos (runtime language text line col)
+  "Bounds of the enclosing top-level form as (values start-line start-col
+end-line end-col), or nil."
+  (let ((byte (pos-to-byte text line col))
+        (offsets (build-line-offsets text)))
+    (multiple-value-bind (start end)
+        (call-with-root runtime language text
+                        (lambda (root) (%defun-bytes root byte)))
+      (when start
+        (multiple-value-bind (sl sc) (byte-to-line-col start offsets)
+          (multiple-value-bind (el ec) (byte-to-line-col end offsets)
+            (values sl sc el ec)))))))

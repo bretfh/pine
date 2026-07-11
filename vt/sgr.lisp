@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :hemlock.term)
+(in-package :pine.vt)
 
 (defun process-sgr (term params)
   (let ((attrs (term-attrs term))

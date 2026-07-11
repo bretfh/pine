@@ -1,6 +1,6 @@
 (use-modules (guix profiles) (gnu packages))
 (add-to-load-path (string-append (dirname (current-filename)) "/guix"))
-(use-modules (tree-sitter-commonlisp))
+(use-modules (tree-sitter-commonlisp) (pine-pty))
 
 (concatenate-manifests
  (list (specifications->manifest
@@ -10,4 +10,4 @@
               "tree-sitter"
               "gcc-toolchain"
               "pkg-config"))
-       (packages->manifest (list tree-sitter-commonlisp))))
+       (packages->manifest (list tree-sitter-commonlisp pine-pty))))

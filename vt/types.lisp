@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :hemlock.term)
+(in-package :pine.vt)
 
 (defstruct (face-attrs (:copier nil) (:conc-name face-))
   (fg nil)

@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :hemlock.term)
+(in-package :pine.vt)
 
 (defvar *dec-line-drawing-table* (make-hash-table :test 'eql))
 

@@ -41,6 +41,22 @@
    (:file "user")
    (:file "main")))
 
+(asdf:defsystem #:pine/vt
+  :description "Self-contained terminal emulator (ex hemlock.term) + native pty."
+  :depends-on (#:cffi)
+  :serial t
+  :pathname "vt/"
+  :components ((:file "package")
+               (:file "types")
+               (:file "color")
+               (:file "sgr")
+               (:file "ops")
+               (:file "write")
+               (:file "parser")
+               (:file "render")
+               (:file "input")
+               (:file "pty")))
+
 (asdf:defsystem #:pine/gtk
   :depends-on (#:pine #:cl-gtk4 #:cl-gdk4 #:cl-cairo2)
   :serial t

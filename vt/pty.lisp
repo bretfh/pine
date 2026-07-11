@@ -1,51 +1,43 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :hemlock.term)
+(in-package :pine.vt)
 
-(cffi:defcstruct (pty-winsize :size 8)
-  (row    :uint16 :offset 0)
-  (col    :uint16 :offset 2)
-  (xpixel :uint16 :offset 4)
-  (ypixel :uint16 :offset 6))
+(cffi:define-foreign-library libpine-pty
+  (t (:default "libpine-pty")))
 
-(defconstant +tiocswinsz+
-  #+darwin #x80087467
-  #+linux  #x00005414)
+(defvar *pty-loaded* nil)
 
-(cffi:defcfun ("ioctl" pty-ioctl) :int
-  (fd :int) (request :unsigned-long) &rest)
+(defun ensure-pty-lib ()
+  (unless *pty-loaded*
+    (handler-case
+        (progn (cffi:load-foreign-library 'libpine-pty)
+               (setf *pty-loaded* t))
+      (error () nil)))
+  *pty-loaded*)
 
-(defun set-pty-size (fd rows cols)
-  (cffi:with-foreign-object (ws '(:struct pty-winsize))
-    (cffi:with-foreign-slots ((row col xpixel ypixel) ws (:struct pty-winsize))
-      (setf row rows col cols xpixel 0 ypixel 0))
-    (pty-ioctl fd +tiocswinsz+ :pointer ws)))
+(cffi:defcfun ("pine_pty_spawn" %pty-spawn) :int
+  (command :string) (rows :int) (cols :int) (pid :pointer))
 
-(defun make-terminal-env (&optional (term-type "xterm-256color"))
-  (let ((env (hemlock.text:posix-environ)))
-    (flet ((set-var (name value)
-             (setf env (cons (format nil "~A=~A" name value)
-                             (remove-if (lambda (e)
-                                          (and (> (length e) (1+ (length name)))
-                                               (string= e name
-                                                        :end1 (length name))
-                                               (char= (char e (length name))
-                                                      #\=)))
-                                        env)))))
-      (set-var "TERM" term-type)
-      (set-var "COLORTERM" "truecolor")
-      (set-var "TERMCAP" "")
-      (set-var "INSIDE_HEMLOCK" "")
-      env)))
+(cffi:defcfun ("pine_pty_set_size" pty-set-size) :void
+  (fd :int) (rows :int) (cols :int))
 
 (defun spawn-pty-process (command &key (rows 24) (cols 80))
-  (multiple-value-bind (master agent agent-name)
-      (hemlock::find-a-pty)
-    (set-pty-size master rows cols)
-    (let ((pc (hemlock::make-process-connection
-               (list "/bin/sh" "-c" command)
-               :agent-pty-name agent-name
-               :agent-fd agent
-               :environment (make-terminal-env))))
-      (hemlock.text:posix-close agent)
-      (values master pc))))
+  "Run COMMAND under /bin/sh in a new pty. Returns (values master-fd pid)."
+  (ensure-pty-lib)
+  (cffi:with-foreign-object (pid :int)
+    (let ((master (%pty-spawn command rows cols pid)))
+      (values master (cffi:mem-ref pid :int)))))
+
+(defun pty-read-string (fd size)
+  "Read up to SIZE bytes from FD as a string, or nil at EOF/error."
+  (cffi:with-foreign-object (buf :unsigned-char size)
+    (let ((n (cffi:foreign-funcall "read" :int fd :pointer buf :long size :long)))
+      (when (plusp n)
+        (cffi:foreign-string-to-lisp buf :count n :encoding :latin-1)))))
+
+(defun pty-write-string (fd string)
+  (cffi:with-foreign-string ((s len) string :encoding :utf-8)
+    (cffi:foreign-funcall "write" :int fd :pointer s :long len :long)))
+
+(defun pty-close (fd)
+  (cffi:foreign-funcall "close" :int fd :int))
