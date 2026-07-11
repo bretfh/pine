@@ -1,5 +1,8 @@
 (defpackage #:pine.de
   (:use #:cl #:gtk4)
+  (:shadowing-import-from #:pine.layout
+                #:defwidget #:column #:row #:label #:icon #:button #:boxed
+                #:centered #:gap #:rule #:meter #:rows #:choice)
   (:export #:make-bar #:*bar-enabled*))
 
 (in-package #:pine.de)
@@ -35,9 +38,9 @@
     (%init p)
     (%set-namespace p "pine-bar")
     (%set-layer p 2)
-    (%set-anchor p 0 t)
-    (%set-anchor p 1 t)
-    (%set-anchor p 2 t)
+    (%set-anchor p 0 t)   ; left
+    (%set-anchor p 2 t)   ; top
+    (%set-anchor p 3 t)   ; bottom  -> a full-height strip on the left edge
     (%auto-zone p)))
 
 
@@ -46,57 +49,88 @@
 ;;;; are in-process closures (pine.layout:action), hit-tested by column -- no
 ;;;; nREPL, no eww-update string protocol.
 
-(defun %text (s &optional face)
-  (make-instance 'pine.layout:text-node :content s :face face))
-
-(defun ws-node (w)
-  "A clickable workspace glyph: focusing it runs niri in-process. The focused
-workspace is accented, the rest dim."
-  (make-instance 'pine.layout:action
-    :callback (let ((idx (getf w :idx)))
-                (lambda ()
-                  (ignore-errors
-                    (uiop:launch-program
-                     (list "niri" "msg" "action" "focus-workspace"
-                           (princ-to-string idx))))))
-    :child (%text (princ-to-string (getf w :idx))
-                  (cond ((getf w :urgent)  :constant)
-                        ((getf w :focused) :function-name)
-                        (t                 :comment)))))
-
 (defun %cell (name default)
   (let ((c (pine.cell:find-cell name))) (if c (pine.cell:cell-ref c) default)))
 
-(defun bar-root (cli)
-  (let* ((label (%cell :bar-label "pine"))
-         (wss (%cell :workspaces nil))
-         (buf (and cli (pine.client:current-buffer cli)))
-         (name (or (and buf (ignore-errors (pine.buffer:ask buf :name))) "scratch"))
-         (clock (multiple-value-bind (s m h) (decode-universal-time (get-universal-time))
-                  (declare (ignore s))
-                  (format nil "~2,'0d:~2,'0d" h m))))
-    (make-instance 'pine.layout:hstack :spacing 2
-      :children (append (list (%text label :function-name) (%text "|" :comment))
-                        (mapcar #'ws-node wss)
-                        (list (%text "|" :comment) (%text name :default)
-                              (%text "|" :comment)
-                              (make-instance 'pine.layout:action
-                                :callback (lambda ()
-                                            (run-in-main-event-loop ()
-                                              (toggle-panel "calendar")))
-                                :child (%text clock :string)))))))
+(defun %sh (cmd)
+  "A thunk that runs shell CMD off the UI thread (safe from a click handler)."
+  (lambda () (ignore-errors (uiop:launch-program (list "sh" "-c" cmd)))))
 
-(defparameter *bar-cols* 200)
+(defun %toggle (name)
+  "A thunk that toggles panel NAME on the UI thread."
+  (lambda () (run-in-main-event-loop () (toggle-panel name))))
+
+;; nerd-font glyph codepoints (numeric so the source stays ASCII)
+(defparameter *g-overview* #xF02C1)
+(defparameter *g-search*   #x0F002)
+(defparameter *g-apps*     #xF003B)
+(defparameter *g-term*     #x0F120)
+(defparameter *g-web*      #x0F268)
+(defparameter *g-files*    #x0F07B)
+(defparameter *g-edit*     #x0F121)
+(defparameter *g-vol*      #x0F028)
+(defparameter *g-media*    #x0F001)
+(defparameter *g-net*      #x0F1EB)
+(defparameter *g-system*   #x0F007)
+
+;;;; The sidebar, declared as composable widgets. Each defwidget is a component
+;;;; (like an eww defwidget); it reads cells, so a cell change re-renders it.
+
+(defwidget ws-item (w)
+  (icon (princ-to-string (getf w :idx))
+        :on-click (%sh (format nil "niri msg action focus-workspace ~a" (getf w :idx)))
+        :face (cond ((getf w :urgent)  :constant)
+                    ((getf w :focused) :function-name)
+                    (t                 :comment))))
+
+(defwidget sidebar-top ()
+  (column :align :center :spacing 1
+    (icon *g-overview* :on-click (%sh "niri msg action toggle-overview") :face :comment)
+    (icon *g-search*   :on-click (%sh "cd ~ && setsid -f bb ~/.config/eww/niri-window-switch.bb")
+                       :face :comment)
+    (mapcar #'ws-item (%cell :workspaces nil))))
+
+(defwidget sidebar-apps ()
+  (column :align :center :spacing 1
+    (icon *g-apps*  :on-click (%sh "setsid -f fuzzel"))
+    (icon *g-term*  :on-click (%sh "setsid -f alacritty"))
+    (icon *g-web*   :on-click (%sh "setsid -f google-chrome"))
+    (icon *g-files* :on-click (%sh "setsid -f nautilus"))
+    (icon *g-edit*  :on-click (%sh "cd ~ && emacsclient -c -n"))))
+
+(defwidget sidebar-tray ()
+  (multiple-value-bind (s m h) (decode-universal-time (get-universal-time))
+    (declare (ignore s))
+    (column :align :center :spacing 1
+      (icon *g-vol*    :on-click (%toggle "audio")   :face :string)
+      (icon *g-media*  :on-click (%toggle "media")   :face :string)
+      (icon *g-net*    :on-click (%toggle "network") :face :string)
+      (label (format nil "~2,'0d" h) :face :variable-param)
+      (label (format nil "~2,'0d" m) :face :comment)
+      (icon *g-system* :on-click (%toggle "calendar") :face :function-name))))
+
+(defwidget sidebar ()
+  (column :align :center
+    (sidebar-top)
+    (gap)
+    (sidebar-apps)
+    (gap)
+    (sidebar-tray)))
+
+(defparameter *bar-cols* 4)
+(defparameter *bar-rows* 40)
 (defvar *bar-view* nil)
 (defvar *bar-root* nil)
 (defvar *bar-cells* #())
 (defvar *bar-count* 0)
 
 (defun build-bar-cells (cli)
-  "The view thunk: build + render the bar tree to a styled cell grid, keeping
-the root for hit-testing. Returns the cell vector."
-  (let* ((root (bar-root cli))
-         (lay (make-instance 'pine.layout:layout :root root :width *bar-cols*)))
+  "The view thunk: build + render the sidebar to a styled cell grid at the
+surface's full height, keeping the root for hit-testing. Returns the cells."
+  (declare (ignore cli))
+  (let* ((root (sidebar))
+         (lay (make-instance 'pine.layout:layout :root root
+                             :width *bar-cols* :height *bar-rows*)))
     (setf *bar-root* root)
     (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
       (declare (ignore lines))
@@ -133,7 +167,8 @@ the root for hit-testing. Returns the cell vector."
         (setf *bar-ascent* (cairo:font-ascent fe)
               *bar-cell-h* (cairo:font-height fe)))
       (setf *bar-measured* t))
-    (setf *bar-cols* (max 10 (floor width *bar-cell-w*)))
+    (setf *bar-cols* (max 1 (floor width *bar-cell-w*))
+          *bar-rows* (max 1 (floor height *bar-cell-h*)))
     ;; render-view runs the thunk (build-bar-cells) with cell tracking, so the
     ;; bar re-subscribes to exactly the cells it read and redraws on change.
     (if *bar-view* (pine.cell:render-view *bar-view*) (build-bar-cells *bar-client*))
@@ -160,7 +195,7 @@ the root for hit-testing. Returns the cell vector."
           (pine.cell:make-view
            (lambda () (build-bar-cells cli))
            (lambda () (run-in-main-event-loop () (widget-queue-draw area)))))
-    (setf (drawing-area-content-height area) 22
+    (setf (drawing-area-content-width area) 36   ; narrow sidebar; height stretches
           (drawing-area-draw-func area) (list (cffi:callback %bar-draw)
                                               (cffi:null-pointer) (cffi:null-pointer))
           (window-child window) area)
@@ -199,7 +234,7 @@ the root for hit-testing. Returns the cell vector."
     (%set-anchor p 3 t)))     ; bottom
 
 (defun build-panel-cells (panel)
-  (let* ((root (funcall (panel-builder panel) *bar-client*))
+  (let* ((root (funcall (panel-builder panel)))
          (cols (max 10 (floor (panel-width panel) *bar-cell-w*)))
          (lay (make-instance 'pine.layout:layout :root root :width cols)))
     (setf (panel-root panel) root)
@@ -295,11 +330,10 @@ client returning a node tree). Show it with toggle-panel."
                      *panels*)
             (show-panel panel))))))
 
-(defun calendar-panel (cli)
+(defwidget calendar-panel ()
   "Placeholder panel: today's date. Exercises the panel surface end to end."
-  (declare (ignore cli))
   (multiple-value-bind (s m h d mo y) (decode-universal-time (get-universal-time))
     (declare (ignore s m h))
-    (make-instance 'pine.layout:vstack :spacing 0
-      :children (list (%text (format nil "~4,'0d-~2,'0d-~2,'0d" y mo d) :function-name)
-                      (%text "calendar" :comment)))))
+    (column :align :center
+      (label (format nil "~4,'0d-~2,'0d-~2,'0d" y mo d) :face :function-name)
+      (label "calendar" :face :comment))))

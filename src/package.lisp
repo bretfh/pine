@@ -188,6 +188,9 @@
    #:list-node #:items #:item-fn #:max-visible
    #:grid #:cells #:col-widths
    #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
+   ;; constructor DSL
+   #:label #:icon #:column #:row #:button #:boxed #:centered
+   #:gap #:rule #:meter #:rows #:choice
    ;; layout protocol
    #:measure #:arrange #:paint
    ;; layout container

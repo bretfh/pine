@@ -95,6 +95,83 @@
   (when (zerop (expand-of n)) (setf (expand-of n) 1)))
 
 
+;;;; Declarative constructor DSL. Each widget is a terse function: leading
+;;;; :keyword value pairs are props, the remaining arguments are children (a
+;;;; child that is itself a list is spliced, so (mapcar ...) works like eww's
+;;;; `for'). Trees read like markup -- (column :spacing 1 (label "a") (row ...))
+;;;; -- and defwidget names a reusable component. This is the eww analog.
+
+(defun %parse-args (args)
+  "(values plist children): peel leading keyword/value prop pairs, then treat the
+rest as children, dropping nils and splicing lists."
+  (let ((props nil) (rest args))
+    (loop while (and rest (keywordp (car rest)) (cdr rest))
+          do (push (pop rest) props) (push (pop rest) props))
+    (values (nreverse props)
+            (loop for c in rest when c append (if (listp c) c (list c))))))
+
+(defun label (text &rest props)
+  "A text run. (label \"hi\" :face :keyword)"
+  (make-instance 'text-node :content (or text "") :face (getf props :face)))
+
+(defun icon (glyph &rest props)
+  "A glyph (a codepoint or string), optionally clickable via :on-click.
+(icon #xF120 :on-click thunk :face :string)"
+  (let ((lbl (make-instance 'text-node
+               :content (if (integerp glyph) (string (code-char glyph)) (string glyph))
+               :face (getf props :face))))
+    (if (getf props :on-click)
+        (make-instance 'action :callback (getf props :on-click) :child lbl)
+        lbl)))
+
+(defun column (&rest args)
+  "A vertical box. Props :spacing :align :expand :face; rest are children."
+  (multiple-value-bind (props kids) (%parse-args args)
+    (apply #'make-instance 'vstack :children kids props)))
+
+(defun row (&rest args)
+  "A horizontal box. Props :spacing :align :expand :face; rest are children."
+  (multiple-value-bind (props kids) (%parse-args args)
+    (apply #'make-instance 'hstack :children kids props)))
+
+(defun button (&rest args)
+  "A clickable wrapper. (button :on-click thunk (label \"go\"))"
+  (multiple-value-bind (props kids) (%parse-args args)
+    (make-instance 'action :callback (getf props :on-click)
+                           :face (getf props :face) :child (first kids))))
+
+(defun boxed (&rest args)
+  "A fixed-width cell. Props :width :align :pad :face; one child."
+  (multiple-value-bind (props kids) (%parse-args args)
+    (apply #'make-instance 'box :child (first kids) props)))
+
+(defun centered (&rest args)
+  "Centre one child in the space it is given."
+  (multiple-value-bind (props kids) (%parse-args args)
+    (apply #'make-instance 'center :child (first kids) props)))
+
+(defun gap (&rest props)
+  "Flexible empty space. (gap :expand 2)"
+  (apply #'make-instance 'spacer props))
+
+(defun rule (&rest props)
+  "A separator line. (rule :char #\\= :face :comment)"
+  (apply #'make-instance 'separator props))
+
+(defun meter (&rest props)
+  "A slider/gauge. (meter :value v :min 0 :max 100 :track 12 :on-change fn)"
+  (apply #'make-instance 'slider props))
+
+(defun rows (items item-fn &rest props)
+  "A vertical list built by mapping ITEM-FN over ITEMS. (rows nets #'net-row)"
+  (apply #'make-instance 'list-node :items items :item-fn item-fn props))
+
+(defun choice (&rest args)
+  "A selectable row (keyboard-navigable). (choice :data d (label ...))"
+  (multiple-value-bind (props kids) (%parse-args args)
+    (apply #'make-instance 'selectable :child (first kids) props)))
+
+
 ;;;; Faces -> cell colours
 
 (defun %hex-rgb (hex)
