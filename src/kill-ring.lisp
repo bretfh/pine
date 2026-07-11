@@ -1,0 +1,115 @@
+(in-package :pine.editor)
+
+(defun kill-ring-push (text)
+  (let ((client (pine.client:current-client)))
+    (when (and text (plusp (length text)))
+      (if (and (member (pine.client:last-command client)
+                       '("kill-line" "kill-region" "kill-word" "backward-kill-word")
+                       :test #'equal)
+               (pine.client:kill-ring client))
+          (setf (first (pine.client:kill-ring client))
+                (concatenate 'string (first (pine.client:kill-ring client)) text))
+          (progn
+            (push text (pine.client:kill-ring client))
+            (when (> (length (pine.client:kill-ring client))
+                     (pine.client:kill-ring-max client))
+              (setf (pine.client:kill-ring client)
+                    (subseq (pine.client:kill-ring client) 0
+                            (pine.client:kill-ring-max client)))))))))
+
+(defun kill-ring-top ()
+  (first (pine.client:kill-ring (pine.client:current-client))))
+
+
+;;;; Mark and region
+
+(defun set-mark ()
+  (let* ((client (pine.client:current-client))
+         (buf (pine.client:current-buffer client)))
+    (when buf
+      (let ((snap (pine.buffer:current-buffer-snapshot)))
+        (when snap
+          (sento.actor:tell buf
+            (list :set-meta :key :mark-line :value (pine.buffer:point-line snap)))
+          (sento.actor:tell buf
+            (list :set-meta :key :mark-col :value (pine.buffer:point-col snap)))
+          #+lqml (pine.qml:update-status-text "mark set"))))))
+
+(defun region-bounds (state)
+  (let* ((m (pine.buffer:meta state))
+         (ml (fset:@ m :mark-line))
+         (mc (fset:@ m :mark-col))
+         (snap (pine.buffer:state->snapshot state))
+         (pl (pine.buffer:point-line snap))
+         (pc (pine.buffer:point-col snap)))
+    (when (and ml mc)
+      (if (or (< ml pl) (and (= ml pl) (<= mc pc)))
+          (values ml mc pl pc)
+          (values pl pc ml mc)))))
+
+
+;;;; Kill commands
+
+(defun kill-region-cmd ()
+  (let* ((client (pine.client:current-client))
+         (buf (pine.client:current-buffer client)))
+    (when buf
+      (let ((state (sento.actor:ask-s buf '(:get-state) :time-out 5)))
+        (multiple-value-bind (sl sc el ec) (region-bounds state)
+          (when sl
+            (let ((text (pine.buffer:region-string state sl sc el ec)))
+              (kill-ring-push text)
+              (sento.actor:tell buf
+                (list :delete-region :start-line sl :start-col sc
+                      :end-line el :end-col ec)))))))))
+
+(defun kill-line-cmd ()
+  (let* ((client (pine.client:current-client))
+         (buf (pine.client:current-buffer client)))
+    (when buf
+      (let* ((snap (pine.buffer:current-buffer-snapshot))
+             (pl (pine.buffer:point-line snap))
+             (pc (pine.buffer:point-col snap))
+             (line (fset:@ (pine.buffer:lines snap) pl))
+             (len (length line)))
+        (if (< pc len)
+            (let ((text (subseq line pc)))
+              (kill-ring-push text)
+              (sento.actor:tell buf
+                (list :delete-region :start-line pl :start-col pc
+                      :end-line pl :end-col len)))
+            (when (< (1+ pl) (pine.buffer:line-count snap))
+              (kill-ring-push (string #\Newline))
+              (sento.actor:tell buf
+                (list :delete-region :start-line pl :start-col pc
+                      :end-line (1+ pl) :end-col 0))))))))
+
+(defun yank-cmd ()
+  (let* ((client (pine.client:current-client))
+         (buf (pine.client:current-buffer client))
+         (text (kill-ring-top)))
+    (when (and text buf)
+      (sento.actor:tell buf (list :insert :text text)))))
+
+(defun yank-pop-cmd ()
+  (let ((client (pine.client:current-client)))
+    (when (and (equal (pine.client:last-command client) "yank")
+               (rest (pine.client:kill-ring client)))
+      (let ((top (pop (pine.client:kill-ring client))))
+        (setf (pine.client:kill-ring client)
+              (append (pine.client:kill-ring client) (list top)))
+        (let ((text (kill-ring-top))
+              (buf (pine.client:current-buffer client)))
+          (when (and text buf)
+            (sento.actor:tell buf (list :insert :text text))))))))
+
+(defun copy-region-cmd ()
+  (let* ((client (pine.client:current-client))
+         (buf (pine.client:current-buffer client)))
+    (when buf
+      (let ((state (sento.actor:ask-s buf '(:get-state) :time-out 5)))
+        (multiple-value-bind (sl sc el ec) (region-bounds state)
+          (when sl
+            (let ((text (pine.buffer:region-string state sl sc el ec)))
+              (kill-ring-push text)
+              #+lqml (pine.qml:update-status-text "copied"))))))))
