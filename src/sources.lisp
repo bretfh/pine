@@ -300,3 +300,30 @@ with the actor system."
                 :pos    (gethash "pos" h 0)      :length (gethash "length" h 0)))))))
 
 (defpoll :media 1 (emms-media))
+
+;;;; System stats (cpu / ram / temp) for the control panel.
+
+(defun %starts (s prefix)
+  (and (>= (length s) (length prefix)) (string= s prefix :end1 (length prefix))))
+
+(defun cpu-temp ()
+  (let ((dirs (ignore-errors (directory "/sys/class/hwmon/*/"))))
+    (dolist (d dirs 0)
+      (when (member (sh "cat" (namestring (merge-pathnames "name" d)))
+                    '("k10temp" "coretemp" "zenpower") :test #'equal)
+        (let ((raw (read-int-file (merge-pathnames "temp1_input" d))))
+          (when raw (return (round raw 1000))))))))
+
+(defun mem-percent ()
+  (let ((total 0) (avail 0))
+    (dolist (line (%lines (sh "cat" "/proc/meminfo")))
+      (cond ((%starts line "MemTotal:")     (setf total (or (%first-number line) 0)))
+            ((%starts line "MemAvailable:") (setf avail (or (%first-number line) 0)))))
+    (if (plusp total) (round (* 100 (- total avail)) total) 0)))
+
+(defun cpu-percent ()
+  (let ((load (or (%first-number (sh "cat" "/proc/loadavg")) 0))
+        (ncpu (or (ignore-errors (parse-integer (sh "nproc"))) 1)))
+    (min 100 (round (* 100 load) (max 1 ncpu)))))
+
+(defpoll :sys 3 (list :cpu (cpu-percent) :ram (mem-percent) :temp (cpu-temp)))

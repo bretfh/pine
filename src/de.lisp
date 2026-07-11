@@ -82,6 +82,15 @@
 (defparameter *g-next*     #x0F051)
 (defparameter *g-net*      #x0F1EB)
 (defparameter *g-system*   #x0F007)
+(defparameter *g-lock2*    #x0F023)
+(defparameter *g-logout*   #x0F08B)
+(defparameter *g-reboot*   #x0F021)
+(defparameter *g-suspend*  #x0F186)
+(defparameter *g-off*      #x0F011)
+(defparameter *g-cpu*      #x0F2DB)
+(defparameter *g-ram*      #x0F1C0)
+(defparameter *g-temp*     #x0F2C9)
+(defparameter *g-bri*      #x0F185)
 
 ;;;; The sidebar, declared as composable widgets. Each defwidget is a component
 ;;;; (like an eww defwidget); it reads cells, so a cell change re-renders it.
@@ -115,9 +124,11 @@
       (icon *g-vol*    :on-click (%toggle "audio")   :face :string)
       (icon *g-media*  :on-click (%toggle "media")   :face :string)
       (icon *g-net*    :on-click (%toggle "network") :face :string)
-      (label (format nil "~2,'0d" h) :face :variable-param)
-      (label (format nil "~2,'0d" m) :face :comment)
-      (icon *g-system* :on-click (%toggle "calendar") :face :function-name))))
+      (button :on-click (%toggle "calendar")
+        (column :align :center
+          (label (format nil "~2,'0d" h) :face :variable-param)
+          (label (format nil "~2,'0d" m) :face :comment)))
+      (icon *g-system* :on-click (%toggle "ctl") :face :function-name))))
 
 (defwidget sidebar ()
   (column :align :center
@@ -220,6 +231,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
     (register-panel app "audio" #'audio-panel :width 340 :height 120)
     (register-panel app "network" #'network-panel :width 420 :height 360)
     (register-panel app "media" #'media-panel :width 380 :height 200)
+    (register-panel app "ctl" #'ctl-panel :width 400 :height 280)
     (window-present window)
     (timeout-add 1000 (lambda () (widget-queue-draw area) t))
     window))
@@ -419,3 +431,34 @@ transport. Reads the :media cell (polled from the emacs daemon)."
         (button :on-click (%emms "(emms-pause)")
           (icon (if (equal status "Playing") *g-pause* *g-play*) :face :string))
         (button :on-click (%emms "(emms-next)") (icon *g-next* :face :string))))))
+
+(defun %set-brightness (v)
+  (ignore-errors (uiop:launch-program (list "brightnessctl" "set" (format nil "~a%" v)))))
+
+(defwidget gauge (glyph value)
+  (row :spacing 1 :align :center
+    (icon glyph :face :string)
+    (meter :value value :min 0 :max 100 :track 12 :filled-face :string :empty-face :comment)
+    (label (format nil "~3d" value) :face :default)))
+
+(defwidget ctl-panel ()
+  "The control panel: power actions, cpu/ram/temp gauges, and vol/brightness
+sliders. Reads :sys/:vol/:bri."
+  (let ((sys (%cell :sys nil)) (vol (%cell :vol 0)) (bri (%cell :bri 50)))
+    (column :spacing 1
+      (label "System" :face :function-name)
+      (row :spacing 2 :align :center
+        (button :on-click (%sh "loginctl lock-session") (icon *g-lock2* :face :string))
+        (button :on-click (%sh "niri msg action quit")  (icon *g-logout* :face :variable-param))
+        (button :on-click (%sh "loginctl reboot")       (icon *g-reboot* :face :variable-param))
+        (button :on-click (%sh "loginctl suspend")      (icon *g-suspend* :face :comment))
+        (button :on-click (%sh "loginctl poweroff")     (icon *g-off* :face :constant)))
+      (gauge *g-cpu*  (or (getf sys :cpu) 0))
+      (gauge *g-ram*  (or (getf sys :ram) 0))
+      (gauge *g-temp* (or (getf sys :temp) 0))
+      (row :spacing 1 :align :center
+        (icon *g-vol* :face :string)
+        (meter :value vol :min 0 :max 100 :track 18 :on-change #'%set-volume))
+      (row :spacing 1 :align :center
+        (icon *g-bri* :face :variable-param)
+        (meter :value bri :min 0 :max 100 :track 18 :on-change #'%set-brightness)))))
