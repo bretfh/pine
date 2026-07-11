@@ -173,24 +173,28 @@
   (:use :cl)
   (:export
    ;; nodes
-   #:node #:key-of #:parent #:start-line #:start-col #:end-line #:end-col
-   #:text-node #:content #:face
+   #:node #:key-of #:parent #:face #:expand-of
+   #:start-line #:start-col #:end-line #:end-col
+   #:text-node #:content
    #:separator #:sep-char
+   #:spacer #:center
    #:field #:prefix-length
    #:input-start-line #:input-start-col #:input-end-line #:input-end-col
-   #:vstack #:children #:spacing
+   #:vstack #:children #:spacing #:align
    #:hstack
-   #:box #:child #:width-of #:align #:pad-char
+   #:box #:child #:width-of #:pad-char
    #:selectable #:data #:selectedp #:prefix-selected #:prefix-unselected
    #:action #:callback
    #:list-node #:items #:item-fn #:max-visible
    #:grid #:cells #:col-widths
    #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
+   ;; layout protocol
+   #:measure #:arrange #:paint
    ;; layout container
-   #:layout #:layout-root #:layout-buffer-name #:layout-state #:layout-width
+   #:layout #:layout-root #:layout-buffer-name #:layout-state #:layout-width #:layout-height
    #:install-layout #:uninstall-layout #:buffer-layout #:layout-get
    #:defwidget
-   #:render-layout #:render-layout-grid #:layout-lines #:render-node #:node-to-string
+   #:render-layout #:render-layout-grid #:layout-lines #:node-to-string
    ;; input
    #:input-string #:cursor-offset
    #:type-char-at-cursor #:delete-char-before-cursor
