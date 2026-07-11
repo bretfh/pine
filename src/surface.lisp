@@ -2,9 +2,14 @@
   (:use #:cl)
   (:export #:surface #:surface-on-key #:surface-on-resize
            #:present #:paint-frame #:request-redraw #:surface-metrics
-           #:paint-cell-grid))
+           #:paint-cell-grid #:*font-family*))
 
 (in-package #:pine.surface)
+
+(defparameter *font-family* "Maple Mono NF"
+  "The cairo font family the editor and desktop surfaces render with. Must be a
+monospace nerd font for the glyphs to resolve; a plain \"monospace\" lacks them.
+This is the font knob.")
 
 (defun paint-cell-grid (cells n cell-w cell-h ascent x0)
   "Paint a flat 10-slot cell grid [row col code fr fg fb br bg bb bold] with the

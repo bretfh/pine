@@ -49,7 +49,7 @@ cairo context and the font face/size already selected."
 (defun paint-cells (s)
   (cairo:set-source-rgb 0.12d0 0.12d0 0.14d0)
   (cairo:paint)
-  (cairo:select-font-face "monospace" :normal :normal)
+  (cairo:select-font-face *font-family* :normal :normal)
   (cairo:set-font-size (gs-font s))
   (unless (gs-measured s) (measure-font s))
   (let ((frame (gs-frame s)))

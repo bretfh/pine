@@ -176,7 +176,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
                                         :width width :height height :pixel-based-p nil)))
     (cairo:set-source-rgb 0.09d0 0.09d0 0.14d0)
     (cairo:paint)
-    (cairo:select-font-face "monospace" :normal :normal)
+    (cairo:select-font-face pine.surface:*font-family* :normal :normal)
     (cairo:set-font-size *bar-font*)
     ;; hit-testing must use the font's real advance, not a guess, or click
     ;; columns drift off the rendered glyphs.
@@ -287,7 +287,7 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
                                             :width width :height height :pixel-based-p nil)))
         (cairo:set-source-rgb 0.10d0 0.10d0 0.15d0)
         (cairo:paint)
-        (cairo:select-font-face "monospace" :normal :normal)
+        (cairo:select-font-face pine.surface:*font-family* :normal :normal)
         (cairo:set-font-size *bar-font*)
         (%ensure-metrics)
         (if (panel-view panel)
