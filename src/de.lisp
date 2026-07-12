@@ -135,7 +135,9 @@
         (column :align :start
           (label (format nil "~2,'0d" h) :face :variable-param)
           (label (format nil "~2,'0d" m) :face :comment)))
-      (icon *g-system* :on-click (%toggle "ctl") :hint "System" :face :function-name))))
+      ;; the system tile: an accent -> magenta gradient rounded square (corner-sq)
+      (column :radius 9 :fill "#675072" :grad "#ffaacf"
+        (icon *g-system* :on-click (%toggle "ctl") :hint "System" :face :default)))))
 
 (defwidget sidebar ()
   (column :align :start
@@ -177,19 +179,68 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
 (defparameter *bar-font* 14d0)
 (defparameter *bar-ascent* 15d0)
 (defparameter *bar-x0* 8d0)
+(defparameter *bg-alpha* 0.9d0)   ; window translucency so niri's blur shows through
 (defvar *bar-measured* nil)
+
+;;;; Cairo chrome: rounded/gradient backgrounds drawn behind the cells, from
+;;;; each node's :radius/:fill/:grad style. This is cairo, so corners round,
+;;;; gradients fill, and (with *bg-alpha*) the surface is glass for niri's blur.
+
+(defun %rounded-rect (x y w h r)
+  (let ((r (min r (/ w 2d0) (/ h 2d0))))
+    (if (<= r 0d0)
+        (cairo:rectangle x y w h)
+        (let ((q (/ pi 2)))
+          (cairo:new-sub-path)
+          (cairo:arc (- (+ x w) r) (+ y r)       r (- q) 0d0)
+          (cairo:arc (- (+ x w) r) (- (+ y h) r) r 0d0 q)
+          (cairo:arc (+ x r)       (- (+ y h) r) r q pi)
+          (cairo:arc (+ x r)       (+ y r)       r pi (* 3 q))
+          (cairo:close-path)))))
+
+(defun %rgb (hex) (multiple-value-bind (r g b) (pine.layout:hex-rgb hex)
+                    (values (/ r 255d0) (/ g 255d0) (/ b 255d0))))
+
+(defun paint-chrome (node cw ch x0)
+  "Draw NODE's rounded/gradient cairo background, then recurse into children."
+  (when node
+    (let ((fill (pine.layout:fill-of node))
+          (gr   (pine.layout:grad node))
+          (rad  (coerce (pine.layout:radius node) 'double-float)))
+      (when (or fill gr)
+        (let* ((x (coerce (+ x0 (* (pine.layout:start-col node) cw)) 'double-float))
+               (y (coerce (* (pine.layout:start-line node) ch) 'double-float))
+               (w (coerce (* (- (pine.layout:end-col node) (pine.layout:start-col node)) cw)
+                          'double-float))
+               (h (coerce (* (1+ (- (pine.layout:end-line node) (pine.layout:start-line node))) ch)
+                          'double-float)))
+          (%rounded-rect x y w h rad)
+          (if gr
+              (let ((p (cairo:create-linear-pattern x y (+ x w) (+ y h))))
+                (multiple-value-bind (r g b) (%rgb (or fill gr))
+                  (cairo:pattern-add-color-stop-rgb p 0d0 r g b))
+                (multiple-value-bind (r g b) (%rgb gr)
+                  (cairo:pattern-add-color-stop-rgb p 1d0 r g b))
+                (cairo:set-source p)
+                (cairo:fill-path))
+              (multiple-value-bind (r g b) (%rgb fill)
+                (cairo:set-source-rgb r g b)
+                (cairo:fill-path))))))
+    (dolist (c (pine.layout:node-children node)) (paint-chrome c cw ch x0))))
 
 (cffi:defcallback %bar-draw :void ((area :pointer) (cr :pointer)
                                    (width :int) (height :int) (data :pointer))
   (declare (ignore area data))
   (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
                                         :width width :height height :pixel-based-p nil)))
-    (cairo:set-source-rgb 0.09d0 0.09d0 0.14d0)
-    (cairo:paint)
+    ;; a rounded, translucent glass panel for the whole bar (corners stay
+    ;; transparent for niri's blur), instead of an opaque square fill.
+    (multiple-value-bind (r g b) (%rgb "#232025")
+      (cairo:set-source-rgba r g b *bg-alpha*))
+    (%rounded-rect 3d0 3d0 (- width 6d0) (- height 6d0) 12d0)
+    (cairo:fill-path)
     (cairo:select-font-face pine.surface:*font-family* :normal :normal)
     (cairo:set-font-size *bar-font*)
-    ;; hit-testing must use the font's real advance, not a guess, or click
-    ;; columns drift off the rendered glyphs.
     (unless *bar-measured*
       (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
         (declare (ignore xb yb w h))
@@ -200,9 +251,8 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
       (setf *bar-measured* t))
     (setf *bar-cols* (max 1 (floor width *bar-cell-w*))
           *bar-rows* (max 1 (floor height *bar-cell-h*)))
-    ;; render-view runs the thunk (build-bar-cells) with cell tracking, so the
-    ;; bar re-subscribes to exactly the cells it read and redraws on change.
     (if *bar-view* (pine.cell:render-view *bar-view*) (build-bar-cells *bar-client*))
+    (paint-chrome *bar-root* *bar-cell-w* *bar-cell-h* *bar-x0*)
     (pine.surface:paint-cell-grid *bar-cells* *bar-count*
                                   *bar-cell-w* *bar-cell-h* *bar-ascent* *bar-x0*)))
 
@@ -381,14 +431,17 @@ echo strip renders it). Redraws only when the hovered cell changes."
     (when panel
       (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
                                             :width width :height height :pixel-based-p nil)))
-        (cairo:set-source-rgb 0.10d0 0.10d0 0.15d0)
-        (cairo:paint)
+        (multiple-value-bind (r g b) (%rgb "#232025")
+          (cairo:set-source-rgba r g b *bg-alpha*))
+        (%rounded-rect 4d0 4d0 (- width 8d0) (- height 8d0) 12d0)
+        (cairo:fill-path)
         (cairo:select-font-face pine.surface:*font-family* :normal :normal)
         (cairo:set-font-size *bar-font*)
         (%ensure-metrics)
         (if (panel-view panel)
             (pine.cell:render-view (panel-view panel))
             (build-panel-cells panel))
+        (paint-chrome (panel-root panel) *bar-cell-w* *bar-cell-h* 8d0)
         (pine.surface:paint-cell-grid (panel-cells panel) (panel-count panel)
                                       *bar-cell-w* *bar-cell-h* *bar-ascent* 8d0)))))
 
@@ -507,8 +560,10 @@ closures. Reads :net/:netlist/:netactions."
       (label "Network" :face :function-name)
       (label (if (plusp (length net)) net "Disconnected")
              :face (if (plusp (length net)) :string :comment))
-      (viewport :height 10
-        (column (mapcar #'wifi-row list)))
+      ;; rounded card behind the scrollable wifi list (eww's nm-card)
+      (column :radius 8 :fill "#322f34"
+        (viewport :height 10
+          (column (mapcar #'wifi-row list))))
       (row :spacing 2 :align :center (mapcar #'act-btn acts)))))
 
 (defun %emms (form) (%sh (format nil "emacsclient -e '~a'" form)))

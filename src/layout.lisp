@@ -18,6 +18,11 @@
    (face    :initarg :face   :accessor face    :initform nil)
    (hint    :initarg :hint   :accessor hint    :initform nil)
    (hovered :initform nil    :accessor hovered)
+   ;; cairo chrome drawn behind the content: a rounded/gradient background.
+   ;; radius in px; fill and grad are #rrggbb (grad = a linear gradient to it).
+   (radius  :initarg :radius :accessor radius  :initform 0)
+   (fill-of :initarg :fill   :accessor fill-of :initform nil)
+   (grad    :initarg :grad   :accessor grad    :initform nil)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
    (start-col  :initform 0 :accessor start-col)
@@ -721,6 +726,19 @@ HOVER, a (line . col) cons, marks the node under it hovered before painting."
   "The hover hint of the node under (LINE COL), or nil."
   (let ((n (node-at root line col)))
     (and n (hint n))))
+
+(defun node-children (n)
+  "N's child nodes, for tree walks (e.g. the cairo chrome pass)."
+  (typecase n
+    ((or vstack hstack) (children n))
+    ((or box center action selectable scroll) (and (child n) (list (child n))))
+    (grid (apply #'append (cells n)))
+    (list-node (rendered n))
+    (t nil)))
+
+(defun hex-rgb (hex)
+  "The (values r g b) 0-255 of a #rrggbb string."
+  (%hex-rgb hex))
 
 (defun click-thunk (root line col)
   "A nullary thunk for a click at (LINE COL) on arranged ROOT: an action's

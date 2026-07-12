@@ -174,6 +174,7 @@
   (:export
    ;; nodes
    #:node #:key-of #:parent #:face #:hint #:expand-of
+   #:radius #:fill-of #:grad #:node-children #:hex-rgb
    #:start-line #:start-col #:end-line #:end-col
    #:text-node #:content
    #:separator #:sep-char
