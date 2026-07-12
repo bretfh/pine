@@ -36,6 +36,27 @@
               (or (pine.server:remoting-port srv) "none"))
       (values srv cli))))
 
+(defun start-daemon (&key (workers 4) (remoting-port 0))
+  "Boot the headless substrate: server, registries, eval, and remoting. No
+client, no GTK, no rendering. Apps attach over remoting. Returns the server; the
+caller keeps the process alive. This is the daemon."
+  (let ((srv (pine.server:start-server :workers workers :remoting-port remoting-port)))
+    (setf pine.server:*server* srv)
+    (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (pine.event:make-event-bus srv)
+    (pine.actor:start-agent-registry srv)
+    (pine.actor:start-local-agent srv)
+    (pine.buffer:start-buffer-registry srv)
+    (pine.attach:start-attach-listener srv)
+    (pine.buffer:install-default-faces)
+    (pine.mode:install-default-modes)
+    (pine.editor:install-commands)
+    (pine.editor:install-bindings)
+    (pine.editor:install-editor-sessions)
+    (pine.desktop-session:install-desktop-sessions)
+    (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
+    srv))
+
 (defun stop ()
   (pine.hooks:run-shutdown-hooks))
 

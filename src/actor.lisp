@@ -75,6 +75,13 @@ reaches the shared debugger surface."
             (list :compile :text text :package package
                   :bindings bindings :on-done on-done)))
 
+(defun agent-run (server agent-or-name thunk &key on-done package)
+  "Run THUNK (a live in-image closure) in AGENT-OR-NAME through pine.eval, off the
+agent's mailbox thread. The desktop's widget-click path -- one addressable eval
+path, :local by default."
+  (act:tell (resolve-agent server agent-or-name)
+            (list :run :thunk thunk :package package :on-done on-done)))
+
 
 (defun start-local-agent (server)
   (let* ((sys (pine.server:actor-system server))
@@ -101,6 +108,19 @@ reaches the shared debugger surface."
                               :bindings bindings
                               :on-done on-done)))
                          (reply :started)))
+                      ;; A thunk job (a live closure, in-image): the desktop's
+                      ;; click path routes here, so a widget click is agent-eval
+                      ;; :local like every other eval -- off this mailbox thread,
+                      ;; through the one pine.eval engine.
+                      (:run
+                       (destructuring-bind (&key thunk package on-done) (rest msg)
+                         (when thunk
+                           (pine.eval:evaluate-thunk
+                            thunk
+                            :package (or (and package (find-package package))
+                                         (find-package :cl-user))
+                            :on-done on-done))
+                         (reply :started)))
                       (:set-package
                        (destructuring-bind (&key name) (rest msg)
                          (let ((pkg (find-package name)))
@@ -115,27 +135,51 @@ reaches the shared debugger surface."
     local))
 
 
+(defvar *agent-port* 18100
+  "Next remoting port for a spawned process agent.")
+
+(defun %agent-script (name master-port self-port)
+  "The source a spawned SBCL process agent runs: a fresh actor-system with
+remoting and a /user/agent actor that evals forms (isolated in its own image),
+then registers back with the master's agent-registry and stays up."
+  (format nil
+"(require :asdf)
+(asdf:load-system :sento)
+(asdf:load-system :sento-remoting)
+(defvar *sys* (sento.actor-system:make-actor-system '(:dispatchers (:shared (:workers 2 :strategy :random)))))
+(sento.remoting:enable-remoting *sys* :host \"127.0.0.1\" :port ~d)
+(sento.actor-context:actor-of *sys* :name \"agent\"
+  :receive (lambda (msg)
+    (case (first msg)
+      (:ping (sento.actor:reply :pong))
+      (:eval (sento.actor:reply
+              (handler-case (eval (read-from-string (getf (rest msg) :form)))
+                (error (e) (list :err (princ-to-string e))))))
+      (:crash (sb-ext:exit :abort t))
+      (t (sento.actor:reply :unknown)))))
+(sento.actor:tell
+  (sento.remoting:make-remote-ref *sys* \"sento://127.0.0.1:~d/user/agent-registry\")
+  (list :register-remote :name ~s :host \"127.0.0.1\" :port ~d))
+(loop (sleep 3600))"
+          self-port master-port name self-port))
+
 (defun spawn-agent (server name)
+  "Spawn a real SBCL process agent: it enables remoting, evals in its own image,
+and registers back to this daemon. It can loop, block, or crash in isolation
+without touching the daemon or any app. Returns the agent-info once it connects."
   (let ((master-port (pine.server:remoting-port server)))
-    (unless master-port
-      (error "Cannot spawn agent: remoting not enabled."))
-    (let* ((script (format nil
-                           "(require :asdf)~%(asdf:load-system :pine-agent)~%(pine.agent:connect :name ~s :master-port ~d)~%"
-                           name master-port))
-           (tmp (merge-pathnames (format nil "pine-agent-~a.lisp" name)
-                                 (uiop:temporary-directory))))
+    (unless master-port (error "Cannot spawn agent: remoting not enabled."))
+    (let* ((self-port (incf *agent-port*))
+           (tmp (format nil "/tmp/pine-agent-~a.lisp" name)))
       (with-open-file (s tmp :direction :output :if-exists :supersede)
-        (write-string script s))
-      (uiop:launch-program
-       (list "ecl" "-q" "--load"
-             (namestring (merge-pathnames "init.lisp"
-                                          (asdf:system-source-directory :pine)))
-             "--load" (namestring tmp)))
-      (loop for i from 0 below 150
-            for info = (find-agent server name)
+        (write-string (%agent-script name master-port self-port) s))
+      (uiop:launch-program (list "sbcl" "--non-interactive" "--load" tmp)
+                           :output nil :error-output nil)
+      (loop for i from 0 below 400
+            for info = (ignore-errors (find-agent server name))
             when info return info
-            do (sleep 0.1)
-            finally (error "Agent ~s did not connect within 15 seconds." name)))))
+            do (sleep 0.25)
+            finally (error "Agent ~s did not connect in time." name)))))
 
 (defun kill-agent (server name)
   (let ((info (find-agent server name)))

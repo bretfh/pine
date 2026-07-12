@@ -44,6 +44,9 @@
    (:file "ts")
    (:file "render")
    (:file "editor")
+   (:file "attach")
+   (:file "editor-session")
+   (:file "desktop-session")
    (:file "user")
    (:file "main")))
 
@@ -68,5 +71,10 @@
   :serial t
   :pathname "src/"
   :components ((:file "surface")
-               (:file "de")
+               (:module "de"
+                :serial t
+                :components ((:file "package")
+                             (:file "paint")
+                             (:file "layer")
+                             (:file "desktop")))
                (:file "gtk")))

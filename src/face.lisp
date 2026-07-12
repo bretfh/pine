@@ -13,7 +13,10 @@
    (underline :initarg :underline :accessor underline :initform nil)))
 
 (defun faces-table ()
-  (let ((srv (pine.client:server-of (pine.client:current-client))))
+  ;; server-scoped state; a headless daemon (no client) resolves via *server*.
+  ;; read the *client* special directly -- current-client errors when unbound.
+  (let* ((cli pine.client:*client*)
+         (srv (if cli (pine.client:server-of cli) pine.server:*server*)))
     (or (pine.server:faces srv)
         (setf (pine.server:faces srv) (make-hash-table :test 'eq)))))
 

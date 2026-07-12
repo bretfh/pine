@@ -1,5 +1,9 @@
 (in-package :pine.server)
 
+(defvar *server* nil
+  "The daemon's server, for server-scoped state (faces) reached without a client.
+A headless daemon has no client, so registry accessors fall back to this.")
+
 (defclass server ()
   ((actor-system    :initarg :actor-system    :accessor actor-system    :initform nil)
    (event-bus       :initarg :event-bus       :accessor event-bus       :initform nil)

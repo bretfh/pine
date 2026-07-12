@@ -2,6 +2,7 @@
   (:use :cl)
   (:export
    #:server
+   #:*server*
    #:actor-system
    #:event-bus
    #:agent-registry
@@ -26,7 +27,7 @@
    #:agent-info-meta #:agent-info-port
    #:start-agent-registry
    #:register-agent #:unregister-agent #:find-agent #:list-agents
-   #:agent-eval #:agent-compile
+   #:agent-eval #:agent-compile #:agent-run
    #:start-local-agent
    #:spawn-agent #:kill-agent))
 
@@ -191,6 +192,7 @@
    #:list-node #:items #:item-fn #:max-visible
    #:grid #:cells #:col-widths
    #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
+   #:slider-fraction
    ;; constructor DSL
    #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
    #:gap #:rule #:meter #:rows #:choice
@@ -201,6 +203,7 @@
    #:install-layout #:uninstall-layout #:buffer-layout #:layout-get
    #:defwidget
    #:render-layout #:render-layout-grid #:layout-lines #:node-to-string
+   #:node->wire #:wire->node
    ;; input
    #:input-string #:cursor-offset
    #:type-char-at-cursor #:delete-char-before-cursor
@@ -261,6 +264,7 @@
    #:start-editor
    #:install-commands
    #:install-bindings
+   #:install-editor-sessions
    #:focused-snap
    #:scroll-window
    #:eval-last-sexp
@@ -296,6 +300,7 @@
   (:use :cl)
   (:export
    #:main
+   #:start-daemon
    #:stop
    #:*version*
    #:*target*
