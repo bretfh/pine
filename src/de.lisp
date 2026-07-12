@@ -92,70 +92,75 @@
 (defparameter *g-temp*     #x0F2C9)
 (defparameter *g-bri*      #x0F185)
 
-;;;; The sidebar, declared as composable widgets. Each defwidget is a component
-;;;; (like an eww defwidget); it reads cells, so a cell change re-renders it.
+;;;; The sidebar. Each clickable icon is eww's `ib`: a 28px-wide rounded cell,
+;;;; 8px vertical padding, glyph centred, colour fg-alt, hover highlight. Built
+;;;; as composable defwidgets that read cells, so a cell change re-renders.
+
+(defun %ib (glyph &key on-click hint (face :variable))
+  "An icon button: a fixed-width rounded cell with a centred glyph (eww's ib)."
+  (icon glyph :on-click on-click :hint hint :face face
+              :font-px 15 :min-w 28 :pad-y 8 :radius 8))
 
 (defwidget ws-item (w)
-  ;; the focused workspace is a rounded accent pill (eww's .ws.current): a cairo
-  ;; rounded background, not a square per-cell fill.
-  (let ((click (%sh (format nil "niri msg action focus-workspace ~a" (getf w :idx))))
-        (n (princ-to-string (getf w :idx))))
+  ;; the focused workspace is an accent pill (eww's .ws.current): the ib carries
+  ;; a filled rounded background.
+  (let ((idx (princ-to-string (getf w :idx)))
+        (click (%sh (format nil "niri msg action focus-workspace ~a" (getf w :idx)))))
     (if (getf w :focused)
-        (column :radius 8 :fill "#675072"
-          (icon n :on-click click :hint "Workspace" :face :default))
-        (icon n :on-click click :hint "Workspace"
-                :face (if (getf w :urgent) :constant :comment)))))
-
-;; The sidebar is left-aligned: nerd glyphs render at widths the cell model
-;; can't know, so centring mixed-width content (glyphs, a 2-digit clock) drifts.
-;; Left edges always line up.
+        (icon idx :on-click click :hint "Workspace" :face :default
+                  :font-px 15 :min-w 28 :pad-y 6 :radius 8 :fill "#675072")
+        (%ib idx :on-click click :hint "Workspace"
+                 :face (if (getf w :urgent) :constant :variable)))))
 
 (defwidget sidebar-top ()
-  (column :align :center :spacing 1
-    (icon *g-overview* :on-click (%sh "niri msg action toggle-overview")
-                       :hint "Overview" :face :comment)
-    (icon *g-search*   :on-click (%sh "cd ~ && setsid -f bb ~/.config/eww/niri-window-switch.bb")
-                       :hint "Search windows" :face :comment)
-    (mapcar #'ws-item (%cell :workspaces nil))))
+  (column :align :center :spacing 12
+    (%ib *g-overview* :on-click (%sh "niri msg action toggle-overview") :hint "Overview")
+    (column :align :center :spacing 4
+      (%ib *g-search* :on-click (%sh "cd ~ && setsid -f bb ~/.config/eww/niri-window-switch.bb")
+                      :hint "Search windows")
+      (mapcar #'ws-item (%cell :workspaces nil)))))
 
 (defwidget sidebar-apps ()
-  (column :align :center :spacing 1
-    (icon *g-apps*  :on-click (%sh "setsid -f fuzzel")        :hint "Applications")
-    (icon *g-term*  :on-click (%sh "setsid -f alacritty")     :hint "Terminal")
-    (icon *g-web*   :on-click (%sh "setsid -f google-chrome") :hint "Browser")
-    (icon *g-files* :on-click (%sh "setsid -f nautilus")      :hint "Files")
-    (icon *g-edit*  :on-click (%sh "cd ~ && emacsclient -c -n") :hint "Editor")))
+  (column :align :center :spacing 8
+    (%ib *g-apps*  :on-click (%sh "setsid -f fuzzel")          :hint "Applications")
+    (%ib *g-term*  :on-click (%sh "setsid -f alacritty")       :hint "Terminal")
+    (%ib *g-web*   :on-click (%sh "setsid -f google-chrome")   :hint "Browser")
+    (%ib *g-files* :on-click (%sh "setsid -f nautilus")        :hint "Files")
+    (%ib *g-edit*  :on-click (%sh "cd ~ && emacsclient -c -n") :hint "Editor")))
 
-(defwidget sidebar-tray ()
+(defwidget clock ()
   (multiple-value-bind (s m h) (decode-universal-time (get-universal-time))
     (declare (ignore s))
-    (column :align :center :spacing 1
-      (icon *g-vol*    :on-click (%toggle "audio")   :hint "Volume"  :face :string)
-      (icon *g-media*  :on-click (%toggle "media")   :hint "Media"   :face :string)
-      (icon *g-net*    :on-click (%toggle "network") :hint "Network" :face :string)
-      (button :on-click (%toggle "calendar") :hint "Calendar"
-        (column :align :center
-          (label (format nil "~2,'0d" h) :face :variable-param)
-          (label (format nil "~2,'0d" m) :face :comment)))
-      ;; the system tile: an accent -> magenta gradient rounded square (corner-sq)
-      (column :radius 9 :fill "#675072" :grad "#ffaacf"
-        (icon *g-system* :on-click (%toggle "ctl") :hint "System" :face :default)))))
+    (button :on-click (%toggle "calendar") :hint "Calendar" :min-w 28 :pad-y 6 :radius 8
+      (column :align :center
+        (label (format nil "~2,'0d" h) :face :default :font-px 15)
+        (label (format nil "~2,'0d" m) :face :comment :font-px 15)))))
+
+(defwidget corner ()
+  ;; the system tile: an accent -> magenta gradient rounded square (corner-sq)
+  (button :on-click (%toggle "ctl") :hint "System" :min-w 28 :min-h 28 :radius 9
+          :fill "#675072" :grad "#ffaacf"
+    (icon *g-system* :font-px 15 :face :default)))
+
+(defwidget sidebar-tray ()
+  (column :align :center :spacing 10
+    (%ib *g-vol*   :on-click (%toggle "audio")   :hint "Volume")
+    (%ib *g-media* :on-click (%toggle "media")   :hint "Media")
+    (%ib *g-net*   :on-click (%toggle "network") :hint "Network" :face :builtin)
+    (clock)
+    (corner)))
 
 (defwidget sidebar ()
-  (column :align :center
+  (column :align :center :pad-y 8
     (sidebar-top)
     (gap)
     (sidebar-apps)
     (gap)
     (sidebar-tray)))
 
-(defparameter *bar-cols* 4)
-(defparameter *bar-rows* 40)
 (defvar *bar-view* nil)
 (defvar *bar-root* nil)
-(defvar *bar-cells* #())
-(defvar *bar-count* 0)
-(defvar *bar-hover* nil)   ; (line . col) under the pointer, or nil
+(defvar *bar-hover* nil)   ; (y . x) pixel under the pointer, or nil
 (defvar *bar-area* nil)
 
 (defun build-bar-tree ()
@@ -164,20 +169,12 @@ view tracks them). The cairo draw lays it out in pixels and paints it."
   (setf *bar-root* (sidebar)))
 
 
-
 ;;;; Drawing + input
 
-(defparameter *bar-cell-w* 9d0)   ; measured from the font on first paint
-(defparameter *bar-cell-h* 20d0)
-(defparameter *bar-font* 14d0)
-(defparameter *bar-ascent* 15d0)
-(defparameter *bar-x0* 8d0)
-(defparameter *bg-alpha* 0.9d0)   ; window translucency so niri's blur shows through
-(defvar *bar-measured* nil)
+(defparameter *bg-alpha* 0.42d0)  ; window translucency; niri's blur is the glass
 
-;;;; Cairo chrome: rounded/gradient backgrounds drawn behind the cells, from
-;;;; each node's :radius/:fill/:grad style. This is cairo, so corners round,
-;;;; gradients fill, and (with *bg-alpha*) the surface is glass for niri's blur.
+;;;; Cairo helpers: rounded rects, gradients, and the pixel painter that lays
+;;;; the widget tree out with real text metrics and draws it.
 
 (defun %rounded-rect (x y w h r)
   (let ((r (min r (/ w 2d0) (/ h 2d0))))
@@ -194,32 +191,6 @@ view tracks them). The cairo draw lays it out in pixels and paints it."
 (defun %rgb (hex) (multiple-value-bind (r g b) (pine.layout:hex-rgb hex)
                     (values (/ r 255d0) (/ g 255d0) (/ b 255d0))))
 
-(defun paint-chrome (node cw ch x0)
-  "Draw NODE's rounded/gradient cairo background, then recurse into children."
-  (when node
-    (let ((fill (pine.layout:fill-of node))
-          (gr   (pine.layout:grad node))
-          (rad  (coerce (pine.layout:radius node) 'double-float)))
-      (when (or fill gr)
-        (let* ((x (coerce (+ x0 (* (pine.layout:start-col node) cw)) 'double-float))
-               (y (coerce (* (pine.layout:start-line node) ch) 'double-float))
-               (w (coerce (* (- (pine.layout:end-col node) (pine.layout:start-col node)) cw)
-                          'double-float))
-               (h (coerce (* (1+ (- (pine.layout:end-line node) (pine.layout:start-line node))) ch)
-                          'double-float)))
-          (%rounded-rect x y w h rad)
-          (if gr
-              (let ((p (cairo:create-linear-pattern x y (+ x w) (+ y h))))
-                (multiple-value-bind (r g b) (%rgb (or fill gr))
-                  (cairo:pattern-add-color-stop-rgb p 0d0 r g b))
-                (multiple-value-bind (r g b) (%rgb gr)
-                  (cairo:pattern-add-color-stop-rgb p 1d0 r g b))
-                (cairo:set-source p)
-                (cairo:fill-path))
-              (multiple-value-bind (r g b) (%rgb fill)
-                (cairo:set-source-rgb r g b)
-                (cairo:fill-path))))))
-    (dolist (c (pine.layout:node-children node)) (paint-chrome c cw ch x0))))
 
 ;;;; Pixel/cairo render for the panels: real per-widget font sizes and metrics.
 ;;;; Text is measured and drawn through cairo at each node's :font-px, sliders
@@ -277,7 +248,7 @@ view tracks them). The cairo draw lays it out in pixels and paints it."
            (%rounded-rect x ty w 8d0 4d0) (cairo:fill-path)
            (multiple-value-bind (r g b) (%rgb "#675072") (cairo:set-source-rgb r g b))
            (%rounded-rect x ty (* w frac) 8d0 4d0) (cairo:fill-path)))))
-    (dolist (c (pine.layout:node-children node)) (paint-cairo c))))
+    (dolist (c (pine.layout:nodes-of node)) (paint-cairo c))))
 
 (cffi:defcallback %bar-draw :void ((area :pointer) (cr :pointer)
                                    (width :int) (height :int) (data :pointer))
@@ -342,7 +313,7 @@ echo strip renders it). Redraws only when the hovered position changes."
           (pine.cell:make-view
            (lambda () (build-bar-tree))
            (lambda () (run-in-main-event-loop () (widget-queue-draw area)))))
-    (setf (drawing-area-content-width area) 36   ; narrow sidebar; height stretches
+    (setf (drawing-area-content-width area) 44   ; sidebar: 28px cells + margins
           (drawing-area-draw-func area) (list (cffi:callback %bar-draw)
                                               (cffi:null-pointer) (cffi:null-pointer))
           (window-child window) area)
@@ -372,29 +343,26 @@ echo strip renders it). Redraws only when the hovered position changes."
 ;;;; The echo strip: a bottom full-width layer-shell surface that shows the
 ;;;; :hint cell (set by hover). A second surface on the same substrate.
 
-(defvar *echo-cells* #())
-(defvar *echo-count* 0)
-
 (defwidget echo-bar ()
-  (label (%cell :hint "") :face :comment))
+  (row :pad-x 12 :pad-y 4
+    (label (%cell :hint "") :face :comment :font-px 13)))
 
 (cffi:defcallback %echo-draw :void ((area :pointer) (cr :pointer)
                                     (width :int) (height :int) (data :pointer))
   (declare (ignore area data))
   (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
                                         :width width :height height :pixel-based-p nil)))
-    (cairo:set-source-rgb 0.09d0 0.09d0 0.14d0)
+    (multiple-value-bind (r g b) (%rgb "#232025")
+      (cairo:set-source-rgba r g b *bg-alpha*))
     (cairo:paint)
     (cairo:select-font-face pine.surface:*font-family* :normal :normal)
-    (cairo:set-font-size *bar-font*)
-    (%ensure-metrics)
-    (let ((lay (make-instance 'pine.layout:layout :root (echo-bar)
-                              :width (max 1 (floor width *bar-cell-w*)))))
-      (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
-        (declare (ignore lines))
-        (setf *echo-cells* cells *echo-count* n)))
-    (pine.surface:paint-cell-grid *echo-cells* *echo-count*
-                                  *bar-cell-w* *bar-cell-h* *bar-ascent* 8d0)))
+    (let ((pine.layout:*text-size* #'%cairo-text-size)
+          (pine.layout:*default-font-px* 13)
+          (root (echo-bar)))
+      (pine.layout:measure root width height)
+      (pine.layout:arrange root 64d0 0d0
+                           (coerce (- width 64) 'double-float) (coerce height 'double-float))
+      (paint-cairo root))))
 
 (defun configure-echo (window)
   (ensure-layer-shell)
@@ -453,16 +421,6 @@ echo strip renders it). Redraws only when the hovered position changes."
   "View thunk: build the panel's widget tree (reading cells, so the reactive
 view tracks them). The cairo draw lays it out in pixels and paints it."
   (setf (panel-root panel) (funcall (panel-builder panel))))
-
-(defun %ensure-metrics ()
-  (unless *bar-measured*
-    (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
-      (declare (ignore xb yb w h))
-      (when (plusp xadv) (setf *bar-cell-w* (/ xadv 10d0))))
-    (let ((fe (cairo:get-font-extents)))
-      (setf *bar-ascent* (cairo:font-ascent fe)
-            *bar-cell-h* (cairo:font-height fe)))
-    (setf *bar-measured* t)))
 
 (cffi:defcallback %panel-draw :void ((area :pointer) (cr :pointer)
                                      (width :int) (height :int) (data :pointer))

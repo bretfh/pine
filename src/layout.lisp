@@ -25,6 +25,13 @@
    (grad    :initarg :grad   :accessor grad    :initform nil)
    ;; font size in px for the pixel/cairo render; nil = the default size
    (font-px :initarg :font-px :accessor font-px :initform nil)
+   ;; padding inside the node's rect (px), and a minimum size, as in CSS.
+   ;; :pad sets both axes; :pad-x / :pad-y set one.
+   (pad     :initarg :pad    :initform nil)
+   (pad-x   :initarg :pad-x  :accessor pad-x   :initform 0)
+   (pad-y   :initarg :pad-y  :accessor pad-y   :initform 0)
+   (min-w   :initarg :min-w  :accessor min-w   :initform 0)
+   (min-h   :initarg :min-h  :accessor min-h   :initform 0)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
    (start-col  :initform 0 :accessor start-col)
@@ -48,38 +55,38 @@
    (input-end-col    :initform 0 :accessor input-end-col)))
 
 (defclass vstack (node)
-  ((children :initarg :children :accessor children :initform nil)
+  ((nodes :initarg :nodes :accessor nodes :initform nil)
    (spacing  :initarg :spacing  :accessor spacing  :initform 0)
    (align    :initarg :align    :accessor align    :initform :start)))
 
 (defclass hstack (node)
-  ((children :initarg :children :accessor children :initform nil)
+  ((nodes :initarg :nodes :accessor nodes :initform nil)
    (spacing  :initarg :spacing  :accessor spacing  :initform 1)
    (align    :initarg :align    :accessor align    :initform :start)))
 
 (defclass box (node)
-  ((child    :initarg :child    :accessor child    :initform nil)
+  ((node    :initarg :node    :accessor node    :initform nil)
    (width-of :initarg :width    :accessor width-of :initform 0)
    (align    :initarg :align    :accessor align    :initform :left)
    (pad-char :initarg :pad      :accessor pad-char :initform #\space)))
 
 (defclass center (node)
-  ((child :initarg :child :accessor child :initform nil)))
+  ((node :initarg :node :accessor node :initform nil)))
 
 (defclass scroll (node)
-  ((child   :initarg :child  :accessor child         :initform nil)
+  ((node   :initarg :node  :accessor node         :initform nil)
    (offset  :initarg :offset :accessor scroll-offset :initform 0)
    (vheight :initarg :height :accessor vheight        :initform 10)))
 
 (defclass selectable (node)
-  ((child             :initarg :child    :accessor child             :initform nil)
+  ((node             :initarg :node    :accessor node             :initform nil)
    (data              :initarg :data     :accessor data              :initform nil)
    (selectedp         :initarg :selected :accessor selectedp         :initform nil)
    (prefix-selected   :initarg :prefix-selected   :accessor prefix-selected   :initform "> ")
    (prefix-unselected :initarg :prefix-unselected :accessor prefix-unselected :initform "  ")))
 
 (defclass action (node)
-  ((child    :initarg :child    :accessor child    :initform nil)
+  ((node    :initarg :node    :accessor node    :initform nil)
    (callback :initarg :callback :accessor callback :initform nil)))
 
 (defclass list-node (node)
@@ -105,19 +112,22 @@
    (filled-face :initarg :filled-face :accessor filled-face :initform :function-name)
    (empty-face  :initarg :empty-face  :accessor empty-face  :initform :comment)))
 
+(defmethod initialize-instance :after ((n node) &key pad)
+  (when pad (setf (pad-x n) pad (pad-y n) pad)))
+
 (defmethod initialize-instance :after ((n spacer) &key)
   (when (zerop (expand-of n)) (setf (expand-of n) 1)))
 
 
 ;;;; Declarative constructor DSL. Each widget is a terse function: leading
-;;;; :keyword value pairs are props, the remaining arguments are children (a
-;;;; child that is itself a list is spliced, so (mapcar ...) works like eww's
+;;;; :keyword value pairs are props, the remaining arguments are nodes (a
+;;;; node that is itself a list is spliced, so (mapcar ...) works like eww's
 ;;;; `for'). Trees read like markup -- (column :spacing 1 (label "a") (row ...))
 ;;;; -- and defwidget names a reusable component. This is the eww analog.
 
 (defun %parse-args (args)
-  "(values plist children): peel leading keyword/value prop pairs, then treat the
-rest as children, dropping nils and splicing lists."
+  "(values plist nodes): peel leading keyword/value prop pairs, then treat the
+rest as nodes, dropping nils and splicing lists."
   (let ((props nil) (rest args))
     (loop while (and rest (keywordp (car rest)) (cdr rest))
           do (push (pop rest) props) (push (pop rest) props))
@@ -125,51 +135,57 @@ rest as children, dropping nils and splicing lists."
             (loop for c in rest when c append (if (listp c) c (list c))))))
 
 (defun label (text &rest props)
-  "A text run. (label \"hi\" :face :keyword :font-px 17)"
-  (make-instance 'text-node :content (or text "") :face (getf props :face)
-                            :font-px (getf props :font-px)))
+  "A text run. Props are any node style: :face :font-px :pad :min-w :radius ..."
+  (apply #'make-instance 'text-node :content (or text "") props))
 
 (defun icon (glyph &rest props)
-  "A glyph (a codepoint or string), optionally clickable via :on-click.
-(icon #xF120 :on-click thunk :face :string :font-px 15)"
-  (let ((lbl (make-instance 'text-node
-               :content (if (integerp glyph) (string (code-char glyph)) (string glyph))
-               :face (getf props :face) :font-px (getf props :font-px))))
+  "A glyph (a codepoint or string). With :on-click it becomes a clickable cell:
+:face/:font-px style the glyph, the rest (:min-w :pad :radius :hint) style the
+clickable node, which centres the glyph.
+(icon #xF120 :on-click thunk :hint \"Term\" :min-w 28 :pad-y 8 :radius 8 :font-px 15)"
+  (let* ((g (if (integerp glyph) (string (code-char glyph)) (string glyph)))
+         (lbl (make-instance 'text-node :content g
+                             :face (getf props :face) :font-px (getf props :font-px))))
     (if (getf props :on-click)
-        (make-instance 'action :callback (getf props :on-click)
-                               :hint (getf props :hint) :child lbl)
+        (let ((p (copy-list props)))
+          (remf p :face) (remf p :font-px)
+          (let ((click (getf p :on-click)))
+            (remf p :on-click)
+            (apply #'make-instance 'action :callback click :node lbl p)))
         lbl)))
 
 (defun column (&rest args)
-  "A vertical box. Props :spacing :align :expand :face; rest are children."
-  (multiple-value-bind (props kids) (%parse-args args)
-    (apply #'make-instance 'vstack :children kids props)))
+  "A vertical box. Props :spacing :align :expand :face; rest are nodes."
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'vstack :nodes items props)))
 
 (defun row (&rest args)
-  "A horizontal box. Props :spacing :align :expand :face; rest are children."
-  (multiple-value-bind (props kids) (%parse-args args)
-    (apply #'make-instance 'hstack :children kids props)))
+  "A horizontal box. Props :spacing :align :expand :face; rest are nodes."
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'hstack :nodes items props)))
 
 (defun button (&rest args)
-  "A clickable wrapper. (button :on-click thunk :hint \"...\" (label \"go\"))"
-  (multiple-value-bind (props kids) (%parse-args args)
-    (make-instance 'action :callback (getf props :on-click) :hint (getf props :hint)
-                           :face (getf props :face) :child (first kids))))
+  "A clickable wrapper carrying any node style. It centres its one node.
+(button :on-click thunk :hint \"...\" :pad-x 12 :radius 8 (label \"go\"))"
+  (multiple-value-bind (props items) (%parse-args args)
+    (let ((click (getf props :on-click)))
+      (remf props :on-click)
+      (apply #'make-instance 'action :callback click :node (first items) props))))
 
 (defun boxed (&rest args)
-  "A fixed-width cell. Props :width :align :pad :face; one child."
-  (multiple-value-bind (props kids) (%parse-args args)
-    (apply #'make-instance 'box :child (first kids) props)))
+  "A fixed-width cell. Props :width :align :pad :face; one node."
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'box :node (first items) props)))
 
 (defun centered (&rest args)
-  "Centre one child in the space it is given."
-  (multiple-value-bind (props kids) (%parse-args args)
-    (apply #'make-instance 'center :child (first kids) props)))
+  "Centre one node in the space it is given."
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'center :node (first items) props)))
 
 (defun viewport (&rest args)
-  "A clipped, scrollable window onto a taller child. Props :height :offset."
-  (multiple-value-bind (props kids) (%parse-args args)
-    (apply #'make-instance 'scroll :child (first kids) props)))
+  "A clipped, scrollable window onto a taller node. Props :height :offset."
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'scroll :node (first items) props)))
 
 (defun gap (&rest props)
   "Flexible empty space. (gap :expand 2)"
@@ -189,8 +205,8 @@ rest as children, dropping nils and splicing lists."
 
 (defun choice (&rest args)
   "A selectable row (keyboard-navigable). (choice :data d (label ...))"
-  (multiple-value-bind (props kids) (%parse-args args)
-    (apply #'make-instance 'selectable :child (first kids) props)))
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'selectable :node (first items) props)))
 
 
 ;;;; Faces -> cell colours
@@ -293,7 +309,7 @@ measure through it (pixel/cairo mode); otherwise a character is one cell.")
 in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
 
 (defgeneric arrange (node x y w h)
-  (:documentation "Assign the node the rect X Y W H and place its children."))
+  (:documentation "Assign the node the rect X Y W H and place its nodes."))
 
 (defgeneric paint (node raster)
   (:documentation "Draw the node into its arranged rect on RASTER."))
@@ -301,6 +317,20 @@ in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
 (defun %node-width (n) (- (end-col n) (start-col n)))
 
 (defmethod measure ((n node) aw ah) (declare (ignore aw ah)) (values 0 1))
+
+(defmethod measure :around ((n node) aw ah)
+  "Wrap the intrinsic measure with padding and the minimum size (CSS box model):
+content is measured in the space left after padding; the result adds padding
+back and is floored at min-w/min-h."
+  (multiple-value-bind (w h)
+      (call-next-method n (max 0 (- aw (* 2 (pad-x n)))) (max 0 (- ah (* 2 (pad-y n)))))
+    (values (max (min-w n) (+ w (* 2 (pad-x n))))
+            (max (min-h n) (+ h (* 2 (pad-y n)))))))
+
+(defun %inner (n x y w h)
+  "The content rect of N inside its padding."
+  (values (+ x (pad-x n)) (+ y (pad-y n))
+          (max 0 (- w (* 2 (pad-x n)))) (max 0 (- h (* 2 (pad-y n))))))
 
 (defmethod arrange ((n node) x y w h)
   (setf (start-col n) x (start-line n) y
@@ -379,71 +409,73 @@ width is the arranged pixel width in pixel mode, else the cell track."
 ;;; Containers — the flex box algebra
 
 (defmethod measure ((n vstack) aw ah)
-  (let ((w 0) (h 0) (kids (children n)))
-    (dolist (c kids)
+  (let ((w 0) (h 0) (items (nodes n)))
+    (dolist (c items)
       (multiple-value-bind (cw ch) (measure c aw ah)
         (setf w (max w cw)) (incf h ch)))
-    (values w (+ h (* (spacing n) (max 0 (1- (length kids))))))))
+    (values w (+ h (* (spacing n) (max 0 (1- (length items))))))))
 
 (defmethod arrange ((n vstack) x y w h)
   (call-next-method)
-  (let* ((kids (children n))
-         (nats (mapcar (lambda (c) (multiple-value-list (measure c w h))) kids))
-         (natsum (+ (reduce #'+ (mapcar #'second nats) :initial-value 0)
-                    (* (spacing n) (max 0 (1- (length kids))))))
-         (slack (max 0 (- h natsum)))
-         (tw (reduce #'+ (mapcar #'expand-of kids) :initial-value 0))
-         (cy y))
-    (loop for c in kids for (cw ch) in nats
-          for extra = (if (plusp tw) (round (* slack (/ (expand-of c) tw))) 0)
-          for fh = (+ ch extra)
-          for cx = (ecase (align n)
-                     ((:start :stretch) x)
-                     (:center (+ x (floor (- w cw) 2)))
-                     (:end (+ x (- w cw))))
-          for fw = (if (eq (align n) :stretch) w cw)
-          do (arrange c cx cy fw fh)
-             (setf cy (+ cy fh (spacing n))))))
+  (multiple-value-bind (x y w h) (%inner n x y w h)
+    (let* ((items (nodes n))
+           (nats (mapcar (lambda (c) (multiple-value-list (measure c w h))) items))
+           (natsum (+ (reduce #'+ (mapcar #'second nats) :initial-value 0)
+                      (* (spacing n) (max 0 (1- (length items))))))
+           (slack (max 0 (- h natsum)))
+           (tw (reduce #'+ (mapcar #'expand-of items) :initial-value 0))
+           (cy y))
+      (loop for c in items for (cw ch) in nats
+            for extra = (if (plusp tw) (round (* slack (/ (expand-of c) tw))) 0)
+            for fh = (+ ch extra)
+            for cx = (ecase (align n)
+                       ((:start :stretch) x)
+                       (:center (+ x (floor (- w cw) 2)))
+                       (:end (+ x (- w cw))))
+            for fw = (if (eq (align n) :stretch) w cw)
+            do (arrange c cx cy fw fh)
+               (setf cy (+ cy fh (spacing n)))))))
 
-(defmethod paint ((n vstack) r) (dolist (c (children n)) (paint c r)))
+(defmethod paint ((n vstack) r) (dolist (c (nodes n)) (paint c r)))
 
 (defmethod measure ((n hstack) aw ah)
-  (let ((w 0) (h 0) (kids (children n)))
-    (dolist (c kids)
+  (let ((w 0) (h 0) (items (nodes n)))
+    (dolist (c items)
       (multiple-value-bind (cw ch) (measure c aw ah)
         (incf w cw) (setf h (max h ch))))
-    (values (+ w (* (spacing n) (max 0 (1- (length kids))))) h)))
+    (values (+ w (* (spacing n) (max 0 (1- (length items))))) h)))
 
 (defmethod arrange ((n hstack) x y w h)
   (call-next-method)
-  (let* ((kids (children n))
-         (nats (mapcar (lambda (c) (multiple-value-list (measure c w h))) kids))
-         (natsum (+ (reduce #'+ (mapcar #'first nats) :initial-value 0)
-                    (* (spacing n) (max 0 (1- (length kids))))))
-         (slack (max 0 (- w natsum)))
-         (tw (reduce #'+ (mapcar #'expand-of kids) :initial-value 0))
-         (cx x))
-    (loop for c in kids for (cw ch) in nats
-          for extra = (if (plusp tw) (round (* slack (/ (expand-of c) tw))) 0)
-          for fw = (+ cw extra)
-          for cy = (ecase (align n)
-                     ((:start :stretch) y)
-                     (:center (+ y (floor (- h ch) 2)))
-                     (:end (+ y (- h ch))))
-          for fh = (if (eq (align n) :stretch) h ch)
-          do (arrange c cx cy fw fh)
-             (setf cx (+ cx fw (spacing n))))))
+  (multiple-value-bind (x y w h) (%inner n x y w h)
+    (let* ((items (nodes n))
+           (nats (mapcar (lambda (c) (multiple-value-list (measure c w h))) items))
+           (natsum (+ (reduce #'+ (mapcar #'first nats) :initial-value 0)
+                      (* (spacing n) (max 0 (1- (length items))))))
+           (slack (max 0 (- w natsum)))
+           (tw (reduce #'+ (mapcar #'expand-of items) :initial-value 0))
+           (cx x))
+      (loop for c in items for (cw ch) in nats
+            for extra = (if (plusp tw) (round (* slack (/ (expand-of c) tw))) 0)
+            for fw = (+ cw extra)
+            for cy = (ecase (align n)
+                       ((:start :stretch) y)
+                       (:center (+ y (floor (- h ch) 2)))
+                       (:end (+ y (- h ch))))
+            for fh = (if (eq (align n) :stretch) h ch)
+            do (arrange c cx cy fw fh)
+               (setf cx (+ cx fw (spacing n)))))))
 
-(defmethod paint ((n hstack) r) (dolist (c (children n)) (paint c r)))
+(defmethod paint ((n hstack) r) (dolist (c (nodes n)) (paint c r)))
 
 (defmethod measure ((n box) aw ah)
   (declare (ignore aw))
-  (let ((c (child n)))
+  (let ((c (node n)))
     (values (width-of n) (if c (nth-value 1 (measure c (width-of n) ah)) 1))))
 (defmethod arrange ((n box) x y w h)
   (declare (ignore w))
   (call-next-method n x y (width-of n) h)
-  (let ((c (child n)))
+  (let ((c (node n)))
     (when c
       (multiple-value-bind (cw ch) (measure c (width-of n) h)
         (let ((cx (ecase (align n)
@@ -455,56 +487,60 @@ width is the arranged pixel width in pixel mode, else the cell track."
   (unless (char= (pad-char n) #\space)
     (loop for col from (start-col n) below (end-col n)
           do (raster-put r (start-line n) col (pad-char n) (face n))))
-  (when (child n) (paint (child n) r)))
+  (when (node n) (paint (node n) r)))
 
 (defmethod measure ((n center) aw ah)
-  (if (child n) (measure (child n) aw ah) (values 0 0)))
+  (if (node n) (measure (node n) aw ah) (values 0 0)))
 (defmethod arrange ((n center) x y w h)
   (call-next-method)
-  (let ((c (child n)))
-    (when c
-      (multiple-value-bind (cw ch) (measure c w h)
-        (arrange c (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch)))))
-(defmethod paint ((n center) r) (when (child n) (paint (child n) r)))
+  (multiple-value-bind (x y w h) (%inner n x y w h)
+    (let ((c (node n)))
+      (when c
+        (multiple-value-bind (cw ch) (measure c w h)
+          (arrange c (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch))))))
+(defmethod paint ((n center) r) (when (node n) (paint (node n) r)))
 
 (defmethod measure ((n scroll) aw ah)
   (declare (ignore ah))
-  (values (if (child n) (nth-value 0 (measure (child n) aw 100000)) 0)
+  (values (if (node n) (nth-value 0 (measure (node n) aw 100000)) 0)
           (vheight n)))
 (defmethod arrange ((n scroll) x y w h)
   (call-next-method n x y w (vheight n))
-  (when (child n)
-    (let ((ch (nth-value 1 (measure (child n) w 100000))))
-      ;; the child is laid out at full height, shifted up by the scroll offset;
+  (when (node n)
+    (let ((ch (nth-value 1 (measure (node n) w 100000))))
+      ;; the node is laid out at full height, shifted up by the scroll offset;
       ;; paint clips it to the viewport.
-      (arrange (child n) x (- y (scroll-offset n)) w ch))))
+      (arrange (node n) x (- y (scroll-offset n)) w ch))))
 (defmethod paint ((n scroll) r)
-  (when (child n)
+  (when (node n)
     (%with-clip (r (start-col n) (start-line n) (end-col n) (+ (start-line n) (vheight n)))
-      (paint (child n) r))))
+      (paint (node n) r))))
 
 (defmethod measure ((n selectable) aw ah)
   (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
-    (multiple-value-bind (cw ch) (if (child n) (measure (child n) aw ah) (values 0 1))
+    (multiple-value-bind (cw ch) (if (node n) (measure (node n) aw ah) (values 0 1))
       (values (+ (length pfx) cw) ch))))
 (defmethod arrange ((n selectable) x y w h)
   (call-next-method)
   (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
-    (when (child n) (arrange (child n) (+ x (length pfx)) y (- w (length pfx)) h))))
+    (when (node n) (arrange (node n) (+ x (length pfx)) y (- w (length pfx)) h))))
 (defmethod paint ((n selectable) r)
   (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
     (loop for i from 0 below (length pfx)
           do (raster-put r (start-line n) (+ (start-col n) i) (char pfx i) (face n)))
-    (when (child n) (paint (child n) r))))
+    (when (node n) (paint (node n) r))))
 
 (defmethod measure ((n action) aw ah)
-  (if (child n) (measure (child n) aw ah) (values 0 1)))
+  (if (node n) (measure (node n) aw ah) (values 0 1)))
 (defmethod arrange ((n action) x y w h)
   (call-next-method)
-  (when (child n) (arrange (child n) x y w h)))
-(defmethod paint ((n action) r) (when (child n) (paint (child n) r)))
+  (multiple-value-bind (x y w h) (%inner n x y w h)
+    (when (node n)
+      (multiple-value-bind (cw ch) (measure (node n) w h)
+        (arrange (node n) (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch)))))
+(defmethod paint ((n action) r) (when (node n) (paint (node n) r)))
 
-(defun %list-kids (n)
+(defun %list-items (n)
   (let* ((is (items n)) (mx (max-visible n))
          (vis (if mx (subseq is 0 (min mx (length is))) is)))
     (setf (rendered n)
@@ -512,7 +548,7 @@ width is the arranged pixel width in pixel mode, else the cell track."
 
 (defmethod measure ((n list-node) aw ah)
   (let ((w 0) (h 0))
-    (dolist (c (%list-kids n))
+    (dolist (c (%list-items n))
       (multiple-value-bind (cw ch) (measure c aw ah) (setf w (max w cw)) (incf h ch)))
     (values w h)))
 (defmethod arrange ((n list-node) x y w h)
@@ -725,14 +761,14 @@ HOVER, a (line . col) cons, marks the node under it hovered before painting."
   (labels ((walk (n)
              (when n
                (typecase n
-                 (action     (when (%node-contains n line col) (or (walk (child n)) n)))
-                 (selectable (when (%node-contains n line col) (or (walk (child n)) n)))
+                 (action     (when (%node-contains n line col) (or (walk (node n)) n)))
+                 (selectable (when (%node-contains n line col) (or (walk (node n)) n)))
                  (slider     (when (%node-contains n line col) n))
-                 (hstack (some #'walk (children n)))
-                 (vstack (some #'walk (children n)))
-                 (box    (walk (child n)))
-                 (center (walk (child n)))
-                 (scroll (when (%node-contains n line col) (walk (child n))))
+                 (hstack (some #'walk (nodes n)))
+                 (vstack (some #'walk (nodes n)))
+                 (box    (walk (node n)))
+                 (center (walk (node n)))
+                 (scroll (when (%node-contains n line col) (walk (node n))))
                  (grid   (some (lambda (row) (some #'walk row)) (cells n)))
                  (list-node (some #'walk (rendered n)))
                  (t nil)))))
@@ -748,11 +784,11 @@ HOVER, a (line . col) cons, marks the node under it hovered before painting."
   (let ((n (node-at root line col)))
     (and n (hint n))))
 
-(defun node-children (n)
-  "N's child nodes, for tree walks (e.g. the cairo chrome pass)."
+(defun nodes-of (n)
+  "N's node nodes, for tree walks (e.g. the cairo chrome pass)."
   (typecase n
-    ((or vstack hstack) (children n))
-    ((or box center action selectable scroll) (and (child n) (list (child n))))
+    ((or vstack hstack) (nodes n))
+    ((or box center action selectable scroll) (and (node n) (list (node n))))
     (grid (apply #'append (cells n)))
     (list-node (rendered n))
     (t nil)))
@@ -781,13 +817,13 @@ point is over neither."
                (when x
                  (typecase x
                    (selectable (push x result))
-                   (vstack (mapc #'walk (children x)))
-                   (hstack (mapc #'walk (children x)))
-                   (box (walk (child x)))
-                   (center (walk (child x)))
-                   (scroll (walk (child x)))
+                   (vstack (mapc #'walk (nodes x)))
+                   (hstack (mapc #'walk (nodes x)))
+                   (box (walk (node x)))
+                   (center (walk (node x)))
+                   (scroll (walk (node x)))
                    (grid (dolist (row (cells x)) (mapc #'walk row)))
-                   (action (walk (child x)))
+                   (action (walk (node x)))
                    (list-node (mapc #'walk (rendered x)))
                    (t nil)))))
       (walk n))

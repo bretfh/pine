@@ -174,7 +174,7 @@
   (:export
    ;; nodes
    #:node #:key-of #:parent #:face #:hint #:expand-of
-   #:radius #:fill-of #:grad #:font-px #:hovered #:node-children #:hex-rgb
+   #:radius #:fill-of #:grad #:font-px #:hovered #:nodes-of #:hex-rgb
    #:*text-size* #:*default-font-px*
    #:start-line #:start-col #:end-line #:end-col
    #:text-node #:content
@@ -183,9 +183,9 @@
    #:scroll #:scroll-offset #:vheight
    #:field #:prefix-length
    #:input-start-line #:input-start-col #:input-end-line #:input-end-col
-   #:vstack #:children #:spacing #:align
+   #:vstack #:nodes #:spacing #:align
    #:hstack
-   #:box #:child #:width-of #:pad-char
+   #:box #:node #:width-of #:pad-char
    #:selectable #:data #:selectedp #:prefix-selected #:prefix-unselected
    #:action #:callback
    #:list-node #:items #:item-fn #:max-visible
