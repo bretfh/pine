@@ -37,31 +37,34 @@
 
 
 (defun install-default-faces ()
-  (defface :default       :fg "#cdd6f4")
-  (defface :cursor        :bg "#89b4fa")
-  (defface :selection     :bg "#45475a")
-  (defface :modeline      :fg "#cdd6f4" :bg "#181825")
-  (defface :modeline-mode :fg "#89b4fa" :bg "#181825" :bold t)
-  (defface :modeline-dim  :fg "#6c7086" :bg "#181825")
-  (defface :modeline-faint :fg "#45475a" :bg "#181825")
-  (defface :border-active :fg "#89b4fa")
-  (defface :border-inactive :fg "#232334")
-  (defface :prompt        :fg "#89b4fa" :bold t)
-  (defface :completion    :fg "#cdd6f4" :bg "#181825")
-  (defface :completion-selected :fg "#cdd6f4" :bg "#333455")
-  (defface :keyword         :fg "#cba6f7")
-  (defface :string          :fg "#a6e3a1")
-  (defface :comment         :fg "#6c7086")
-  (defface :function-name   :fg "#89b4fa")
-  (defface :variable        :fg "#f5c2e7")
-  (defface :variable-param  :fg "#f9e2af")
-  (defface :type            :fg "#f9e2af")
-  (defface :builtin         :fg "#94e2d5")
-  (defface :constant        :fg "#fab387")
-  ;; desktop: the focused workspace pill (accent background, dark text)
-  (defface :ws-active       :fg "#11111b" :bg "#89b4fa" :bold t)
-  (defface :escape          :fg "#fab387")
-  (defface :line-number     :fg "#45475a"))
+  ;; ef-dream palette (the active theme). Themes both the editor's syntax faces
+  ;; and the desktop, since the widgets reuse these faces.
+  (defface :default       :fg "#efd5c5")
+  (defface :cursor        :bg "#f3c09a")
+  (defface :selection     :bg "#544a50")
+  (defface :modeline      :fg "#efd5c5" :bg "#322f34")
+  (defface :modeline-mode :fg "#57b0ff" :bg "#322f34" :bold t)
+  (defface :modeline-dim  :fg "#8f8886" :bg "#322f34")
+  (defface :modeline-faint :fg "#635850" :bg "#322f34")
+  (defface :border-active :fg "#675072")
+  (defface :border-inactive :fg "#3b393e")
+  (defface :prompt        :fg "#57b0ff" :bold t)
+  (defface :completion    :fg "#efd5c5" :bg "#322f34")
+  (defface :completion-selected :fg "#fedeff" :bg "#5b595e")
+  (defface :keyword         :fg "#ffaacf")   ; magenta
+  (defface :string          :fg "#51b04f")   ; green
+  (defface :comment         :fg "#8f8886")   ; fg-dim
+  (defface :function-name   :fg "#57b0ff")   ; blue
+  (defface :variable        :fg "#b0a0cf")   ; fg-alt
+  (defface :variable-param  :fg "#c0b24f")   ; yellow
+  (defface :type            :fg "#c0b24f")
+  (defface :builtin         :fg "#6fb3c0")   ; cyan
+  (defface :constant        :fg "#c0b24f")
+  (defface :escape          :fg "#c0b24f")
+  (defface :line-number     :fg "#635850")
+  ;; desktop accents
+  (defface :ws-active       :fg "#fedeff" :bg "#675072" :bold t)   ; accent pill
+  (defface :hover           :fg "#fedeff" :bg "#5b595e"))          ; hover: bg-active
 
 
 ;;;; Face runs — attributed text

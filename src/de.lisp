@@ -151,6 +151,8 @@
 (defvar *bar-root* nil)
 (defvar *bar-cells* #())
 (defvar *bar-count* 0)
+(defvar *bar-hover* nil)   ; (line . col) under the pointer, or nil
+(defvar *bar-area* nil)
 
 (defun build-bar-cells (cli)
   "The view thunk: build + render the sidebar to a styled cell grid at the
@@ -160,7 +162,8 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
          (lay (make-instance 'pine.layout:layout :root root
                              :width *bar-cols* :height *bar-rows*)))
     (setf *bar-root* root)
-    (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
+    (multiple-value-bind (lines cells n)
+        (pine.layout:render-layout-grid lay :hover *bar-hover*)
       (declare (ignore lines))
       (setf *bar-cells* cells *bar-count* n)
       cells)))
@@ -212,12 +215,20 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
     (when thunk (pine.eval:evaluate-thunk thunk :package (find-package :pine-user)))))
 
 (defun on-bar-motion (x y)
-  "Set the :hint cell to the hint of the widget under the pointer; the echo
-strip renders it."
+  "Track the hovered cell for the hover highlight, and set the :hint cell (the
+echo strip renders it). Redraws only when the hovered cell changes."
   (let* ((col (floor (- x *bar-x0*) *bar-cell-w*))
          (line (floor y *bar-cell-h*))
-         (h (and *bar-root* (pine.layout:hint-at *bar-root* line col))))
-    (pine.source:set! :hint (or h ""))))
+         (pos (cons line col)))
+    (pine.source:set! :hint (or (and *bar-root* (pine.layout:hint-at *bar-root* line col)) ""))
+    (unless (equal pos *bar-hover*)
+      (setf *bar-hover* pos)
+      (when *bar-area* (widget-queue-draw *bar-area*)))))
+
+(defun on-bar-leave ()
+  (setf *bar-hover* nil)
+  (pine.source:set! :hint "")
+  (when *bar-area* (widget-queue-draw *bar-area*)))
 
 (defun make-bar (app cli)
   (setf *bar-client* cli)
@@ -225,8 +236,10 @@ strip renders it."
   (ignore-errors
    (pine.source:start-sources
     (pine.server:actor-system (pine.client:server-of cli))))
+  (setf pine.layout:*hover-face* :hover)
   (let ((window (make-application-window :application app))
         (area (make-drawing-area)))
+    (setf *bar-area* area)
     (setf *bar-view*
           (pine.cell:make-view
            (lambda () (build-bar-cells cli))
@@ -245,7 +258,7 @@ strip renders it."
       (connect motion "motion"
                (lambda (c x y) (declare (ignore c)) (on-bar-motion x y)))
       (connect motion "leave"
-               (lambda (c) (declare (ignore c)) (pine.source:set! :hint "")))
+               (lambda (c) (declare (ignore c)) (on-bar-leave)))
       (widget-add-controller area motion))
     (configure-bar window)
     (register-panel app "calendar" #'calendar-panel :width 240 :height 120)
@@ -317,7 +330,7 @@ strip renders it."
 ;;;; panel shows at a time; toggling one closes the others.
 
 (defstruct panel name builder window area view root (cells #()) (count 0)
-                 (width 400) (height 320) (visible nil))
+                 (width 400) (height 320) (visible nil) (hover nil))
 
 (defvar *panels* (make-hash-table :test 'equal))
 (defvar *panels-by-area* (make-hash-table))
@@ -332,12 +345,21 @@ strip renders it."
     (%set-anchor p 0 t)       ; left
     (%set-anchor p 3 t)))     ; bottom
 
+(defun on-panel-motion (panel x y)
+  (let* ((col (floor (- x 8d0) *bar-cell-w*))
+         (line (floor y *bar-cell-h*))
+         (pos (cons line col)))
+    (unless (equal pos (panel-hover panel))
+      (setf (panel-hover panel) pos)
+      (widget-queue-draw (panel-area panel)))))
+
 (defun build-panel-cells (panel)
   (let* ((root (funcall (panel-builder panel)))
          (cols (max 10 (floor (panel-width panel) *bar-cell-w*)))
          (lay (make-instance 'pine.layout:layout :root root :width cols)))
     (setf (panel-root panel) root)
-    (multiple-value-bind (lines cells n) (pine.layout:render-layout-grid lay)
+    (multiple-value-bind (lines cells n)
+        (pine.layout:render-layout-grid lay :hover (panel-hover panel))
       (declare (ignore lines))
       (setf (panel-cells panel) cells (panel-count panel) n)
       cells)))
@@ -403,6 +425,13 @@ client returning a node tree). Show it with toggle-panel."
                  (declare (ignore gesture n-press))
                  (on-panel-click panel x y)))
       (widget-add-controller area click))
+    (let ((motion (make-event-controller-motion)))
+      (connect motion "motion"
+               (lambda (c x y) (declare (ignore c)) (on-panel-motion panel x y)))
+      (connect motion "leave"
+               (lambda (c) (declare (ignore c))
+                 (setf (panel-hover panel) nil) (widget-queue-draw area)))
+      (widget-add-controller area motion))
     (configure-panel window)
     (setf (gethash name *panels*) panel)
     panel))

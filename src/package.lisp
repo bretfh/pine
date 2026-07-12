@@ -193,7 +193,7 @@
    #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
    #:gap #:rule #:meter #:rows #:choice
    ;; layout protocol
-   #:measure #:arrange #:paint
+   #:measure #:arrange #:paint #:*hover-face*
    ;; layout container
    #:layout #:layout-root #:layout-buffer-name #:layout-state #:layout-width #:layout-height
    #:install-layout #:uninstall-layout #:buffer-layout #:layout-get

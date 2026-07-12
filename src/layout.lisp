@@ -17,6 +17,7 @@
    (parent  :initarg :parent :accessor parent  :initform nil)
    (face    :initarg :face   :accessor face    :initform nil)
    (hint    :initarg :hint   :accessor hint    :initform nil)
+   (hovered :initform nil    :accessor hovered)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
    (start-col  :initform 0 :accessor start-col)
@@ -286,9 +287,12 @@ space. Bottom-up; does not set bounds."))
 
 (defmethod paint ((n node) r) (declare (ignore r)) nil)
 
+(defparameter *hover-face* nil
+  "A face designator painted as the background of the hovered node, or nil.")
+
 (defun %fill-bg (n r)
-  "Fill the node's rect background if its face carries one."
-  (let ((f (face n)))
+  "Fill the node's rect background: the hover face when hovered, else its own."
+  (let ((f (if (and (hovered n) *hover-face*) *hover-face* (face n))))
     (when f
       (multiple-value-bind (fr fg fb br bg bb bold) (%face-cell-rgb f)
         (declare (ignore fr fg fb bold))
@@ -508,10 +512,11 @@ space. Bottom-up; does not set bounds."))
 
 ;;;; Render entry points
 
-(defun render-layout-grid (layout)
+(defun render-layout-grid (layout &key hover)
   "Render LAYOUT to (values lines cell-vector slot-count). CELL-VECTOR is the
 flat 10-slot format the surface painter draws; SLOT-COUNT is 10 * cols * rows,
-matching frame-cell-count so paint-cell-grid iterates it with `below n by 10'."
+matching frame-cell-count so paint-cell-grid iterates it with `below n by 10'.
+HOVER, a (line . col) cons, marks the node under it hovered before painting."
   (let* ((root (layout-root layout))
          (w (layout-width layout)))
     (if (null root)
@@ -521,6 +526,9 @@ matching frame-cell-count so paint-cell-grid iterates it with `below n by 10'."
           (let* ((h (max 1 (or (layout-height layout) mh)))
                  (r (make-raster w h)))
             (arrange root 0 0 w h)
+            (when hover
+              (let ((n (node-at root (car hover) (cdr hover))))
+                (when n (setf (hovered n) t))))
             (paint root r)
             (values (raster-lines r) (raster-cells r) (* 10 w h)))))))
 
