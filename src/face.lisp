@@ -63,6 +63,8 @@
   (defface :escape          :fg "#c0b24f")
   (defface :line-number     :fg "#635850")
   ;; desktop accents
+  (defface :error           :fg "#ff6f6f")   ; red (destructive actions)
+  (defface :accent          :fg "#b0a0cf")   ; fg-alt as a visible accent on glass
   (defface :ws-active       :fg "#fedeff" :bg "#675072" :bold t)   ; accent pill
   (defface :hover           :fg "#fedeff" :bg "#5b595e"))          ; hover: bg-active
 

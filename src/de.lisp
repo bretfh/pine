@@ -517,60 +517,83 @@ client returning a node tree). Show it with toggle-panel."
                      *panels*)
             (show-panel panel))))))
 
+;;;; Panel building blocks (eww's nm-card / nm-head vocabulary). A card is a
+;;;; rounded bg-dim box with 12px padding; a header is an accent icon plus a
+;;;; title and a status line. Panels are a padded column of cards.
+
+(defun %card (&rest nodes)
+  (apply #'column :radius 8 :fill "#322f34" :pad 12 :spacing 6 nodes))
+
+(defun %header (glyph title sub &optional (sub-face :string))
+  (%card
+   (row :spacing 14 :align :center
+     (icon glyph :face :accent :font-px 22)
+     (column :spacing 2
+       (label title :face :default :font-px 17)
+       (label sub :face sub-face :font-px 13)))))
+
+(defun %pill (&rest args)
+  "A pill button: rounded, padded, hover-highlighted (eww's nm-row / nm-btn)."
+  (apply #'button :pad-x 12 :pad-y 10 :radius 8 args))
+
 (defwidget calendar-panel ()
-  "Placeholder panel: today's date. Exercises the panel surface end to end."
   (multiple-value-bind (s m h d mo y) (decode-universal-time (get-universal-time))
     (declare (ignore s m h))
-    (column :align :center
-      (label (format nil "~4,'0d-~2,'0d-~2,'0d" y mo d) :face :function-name)
-      (label "calendar" :face :comment))))
+    (column :pad 8
+      (%card
+       (label (format nil "~4,'0d-~2,'0d-~2,'0d" y mo d) :face :default :font-px 20)
+       (label "calendar" :face :comment :font-px 13)))))
 
 (defwidget audio-panel ()
-  "The audio panel, authored declaratively: header, mute toggle, a live volume
-slider whose on-change drives wpctl, and the percentage. Reads the :vol/:muted
-cells (fed by the audio source), so it re-renders when they change."
+  "Header, mute toggle, a live volume slider driving wpctl, and the percent.
+Reads the :vol/:muted cells fed by the audio source."
   (let ((vol (%cell :vol 0)) (muted (%cell :muted nil)))
-    (column :spacing 1
-      (label "Audio" :face :function-name :font-px 17)
-      (row :spacing 1 :align :center
-        (button :on-click (%sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
-          (icon (if muted *g-mute* *g-vol*) :face :string))
-        (meter :value vol :min 0 :max 100 :track 20 :on-change #'%set-volume)
-        (label (format nil "~3d%" vol) :face :comment)))))
+    (column :pad 8 :spacing 6 :min-w 320
+      (%header *g-vol* "Audio"
+               (format nil "~d%~a" vol (if muted "  muted" ""))
+               (if muted :comment :string))
+      (%card
+       (row :spacing 12 :align :center
+         (button :pad 4 :radius 8 :on-click (%sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+           (icon (if muted *g-mute* *g-vol*) :face :builtin :font-px 20))
+         (meter :value vol :min 0 :max 100 :expand 1 :on-change #'%set-volume)
+         (label (format nil "~3d%" vol) :face :comment :min-w 38))))))
 
 (defwidget wifi-row (n)
-  (button :on-click (lambda () (pine.source:select! (getf n :ssid)))
-    (row :spacing 1
-      (icon *g-net* :face (cond ((equal (getf n :sig) "hi")  :string)
-                                ((equal (getf n :sig) "mid") :variable-param)
-                                (t :comment)))
-      (label (getf n :ssid) :face (if (getf n :in_use) :function-name :default))
-      (label (if (getf n :secure) " lock" "")   :face :comment)
-      (label (if (getf n :in_use) " *" "")       :face :function-name))))
+  (%pill :on-click (lambda () (pine.source:select! (getf n :ssid)))
+    (row :spacing 10 :align :center
+      (icon *g-net* :font-px 14
+            :face (cond ((equal (getf n :sig) "hi")  :string)
+                        ((equal (getf n :sig) "mid") :variable-param)
+                        (t :error)))
+      (label (getf n :ssid) :expand 1
+             :face (if (getf n :in_use) :string :default))
+      (label (if (getf n :secure) (string (code-char #xF0341)) "") :face :comment :font-px 12)
+      (label (if (getf n :in_use) (string (code-char #xF012C)) "") :face :string :font-px 13))))
 
 (defwidget act-btn (a)
-  (button :on-click (lambda () (pine.source:act! (getf a :kind)))
+  (button :pad-x 20 :pad-y 10 :radius 8
+          :fill (if (equal (getf a :style) "go") "#675072" "#3b393e")
+          :on-click (lambda () (pine.source:act! (getf a :kind)))
     (label (getf a :label)
-           :face (cond ((equal (getf a :style) "go") :string)
-                       ((equal (getf a :style) "no") :constant)
-                       (t :comment)))))
+           :face (cond ((equal (getf a :style) "go") :default)
+                       ((equal (getf a :style) "no") :error)
+                       (t :default)))))
 
 (defwidget network-panel ()
-  "The network panel: status, a scrollable wifi list whose rows call select!,
-and action buttons that call act! -- the eww nREPL callbacks as in-process
-closures. Reads :net/:netlist/:netactions."
+  "Status header, a scrollable wifi list whose rows call select!, and action
+buttons calling act! -- the eww callbacks as in-process closures."
   (let ((net  (%cell :net ""))
         (list (%cell :netlist nil))
         (acts (%cell :netactions nil)))
-    (column :spacing 1
-      (label "Network" :face :function-name :font-px 17)
-      (label (if (plusp (length net)) net "Disconnected")
-             :face (if (plusp (length net)) :string :comment))
-      ;; rounded card behind the scrollable wifi list (eww's nm-card)
-      (column :radius 8 :fill "#322f34"
-        (viewport :height 10
-          (column (mapcar #'wifi-row list))))
-      (row :spacing 2 :align :center (mapcar #'act-btn acts)))))
+    (column :pad 8 :spacing 6 :min-w 380
+      (%header *g-net* "Network"
+               (if (plusp (length net)) net "Disconnected")
+               (if (plusp (length net)) :string :comment))
+      (%card
+       (viewport :height 260
+         (column :spacing 2 (mapcar #'wifi-row list))))
+      (row :spacing 8 :align :center (mapcar #'act-btn acts)))))
 
 (defun %emms (form) (%sh (format nil "emacsclient -e '~a'" form)))
 (defun %emms-seek (v)
@@ -579,50 +602,61 @@ closures. Reads :net/:netlist/:netactions."
      (list "emacsclient" "-e" (format nil "(emms-seek-to ~a)" v)))))
 
 (defwidget media-panel ()
-  "The media panel: title/artist, a seek slider driving EMMS, and prev/pause/next
-transport. Reads the :media cell (polled from the emacs daemon)."
+  "Title/artist, a seek slider driving EMMS, and prev/pause/next transport.
+Reads the :media cell polled from the emacs daemon."
   (let* ((m (%cell :media nil))
          (status (or (getf m :status) "Stopped"))
          (len (max 1 (or (getf m :length) 1))))
-    (column :spacing 1
-      (label "Media" :face :function-name :font-px 17)
-      (label status :face (if (equal status "Playing") :string :comment))
-      (label (or (getf m :title) "")  :face :default)
-      (label (or (getf m :artist) "") :face :comment)
-      (meter :value (or (getf m :pos) 0) :min 0 :max len :track 24 :on-change #'%emms-seek)
-      (row :spacing 3 :align :center
-        (button :on-click (%emms "(emms-previous)") (icon *g-prev* :face :string))
-        (button :on-click (%emms "(emms-pause)")
-          (icon (if (equal status "Playing") *g-pause* *g-play*) :face :string))
-        (button :on-click (%emms "(emms-next)") (icon *g-next* :face :string))))))
+    (column :pad 8 :spacing 6 :min-w 360
+      (%header *g-media* "Media"
+               (if (equal status "Stopped") "Idle" status)
+               (if (equal status "Playing") :string :comment))
+      (%card
+       (label (or (getf m :title) "")  :face :default :font-px 15)
+       (label (or (getf m :artist) "") :face :comment :font-px 13)
+       (meter :value (or (getf m :pos) 0) :min 0 :max len :expand 1 :on-change #'%emms-seek)
+       (row :spacing 28 :align :center
+         (button :pad 6 :radius 8 :on-click (%emms "(emms-previous)")
+           (icon *g-prev* :face :default :font-px 20))
+         (button :pad 6 :radius 8 :on-click (%emms "(emms-pause)")
+           (icon (if (equal status "Playing") *g-pause* *g-play*) :face :default :font-px 20))
+         (button :pad 6 :radius 8 :on-click (%emms "(emms-next)")
+           (icon *g-next* :face :default :font-px 20)))))))
 
 (defun %set-brightness (v)
   (ignore-errors (uiop:launch-program (list "brightnessctl" "set" (format nil "~a%" v)))))
 
-(defwidget gauge (glyph value)
-  (row :spacing 1 :align :center
-    (icon glyph :face :string)
-    (meter :value value :min 0 :max 100 :track 12 :filled-face :string :empty-face :comment)
-    (label (format nil "~3d" value) :face :default)))
+(defwidget gauge (glyph value face)
+  (row :spacing 12 :align :center
+    (icon glyph :face face :font-px 18)
+    (meter :value value :min 0 :max 100 :expand 1)
+    (label (format nil "~3d" value) :face :default :min-w 30)))
 
 (defwidget ctl-panel ()
-  "The control panel: power actions, cpu/ram/temp gauges, and vol/brightness
-sliders. Reads :sys/:vol/:bri."
+  "Power actions, cpu/ram/temp gauges, and vol/brightness sliders. Reads
+:sys/:vol/:bri."
   (let ((sys (%cell :sys nil)) (vol (%cell :vol 0)) (bri (%cell :bri 50)))
-    (column :spacing 1
-      (label "System" :face :function-name :font-px 17)
-      (row :spacing 2 :align :center
-        (button :on-click (%sh "loginctl lock-session") (icon *g-lock2* :face :string))
-        (button :on-click (%sh "niri msg action quit")  (icon *g-logout* :face :variable-param))
-        (button :on-click (%sh "loginctl reboot")       (icon *g-reboot* :face :variable-param))
-        (button :on-click (%sh "loginctl suspend")      (icon *g-suspend* :face :comment))
-        (button :on-click (%sh "loginctl poweroff")     (icon *g-off* :face :constant)))
-      (gauge *g-cpu*  (or (getf sys :cpu) 0))
-      (gauge *g-ram*  (or (getf sys :ram) 0))
-      (gauge *g-temp* (or (getf sys :temp) 0))
-      (row :spacing 1 :align :center
-        (icon *g-vol* :face :string)
-        (meter :value vol :min 0 :max 100 :track 18 :on-change #'%set-volume))
-      (row :spacing 1 :align :center
-        (icon *g-bri* :face :variable-param)
-        (meter :value bri :min 0 :max 100 :track 18 :on-change #'%set-brightness)))))
+    (column :pad 8 :spacing 6 :min-w 360
+      (%card
+       (row :spacing 8 :align :center
+         (button :pad 8 :radius 8 :on-click (%sh "loginctl lock-session")
+           (icon *g-lock2* :face :function-name :font-px 20))
+         (button :pad 8 :radius 8 :on-click (%sh "niri msg action quit")
+           (icon *g-logout* :face :variable-param :font-px 20))
+         (button :pad 8 :radius 8 :on-click (%sh "loginctl reboot")
+           (icon *g-reboot* :face :accent :font-px 20))
+         (button :pad 8 :radius 8 :on-click (%sh "loginctl suspend")
+           (icon *g-suspend* :face :builtin :font-px 20))
+         (button :pad 8 :radius 8 :on-click (%sh "loginctl poweroff")
+           (icon *g-off* :face :error :font-px 20))))
+      (%card
+       (gauge *g-cpu*  (or (getf sys :cpu) 0)  :error)
+       (gauge *g-ram*  (or (getf sys :ram) 0)  :function-name)
+       (gauge *g-temp* (or (getf sys :temp) 0) :variable-param))
+      (%card
+       (row :spacing 14 :align :center
+         (icon *g-vol* :face :accent :font-px 17)
+         (meter :value vol :min 0 :max 100 :expand 1 :on-change #'%set-volume))
+       (row :spacing 14 :align :center
+         (icon *g-bri* :face :variable-param :font-px 17)
+         (meter :value bri :min 0 :max 100 :expand 1 :on-change #'%set-brightness))))))
