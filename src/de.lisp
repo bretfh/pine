@@ -228,6 +228,64 @@ surface's full height, keeping the root for hit-testing. Returns the cells."
                 (cairo:fill-path))))))
     (dolist (c (pine.layout:node-children node)) (paint-chrome c cw ch x0))))
 
+;;;; Pixel/cairo render for the panels: real per-widget font sizes and metrics.
+;;;; Text is measured and drawn through cairo at each node's :font-px, sliders
+;;;; are drawn as a trough + highlight, chrome rounds and gradients. Bound via
+;;;; pine.layout:*text-size* so measure/arrange work in pixels.
+
+(defun %cairo-text-size (text font-px)
+  (cairo:set-font-size (coerce font-px 'double-float))
+  (multiple-value-bind (xb yb w h xadv) (cairo:text-extents text)
+    (declare (ignore xb yb w h))
+    (values (ceiling (max xadv 1)) (ceiling (+ (cairo:font-height (cairo:get-font-extents)) 4)))))
+
+(defun %face-rgb01 (face)
+  (let ((f (and face (ignore-errors (pine.buffer:find-face face)))))
+    (if (and f (pine.buffer:fg f)) (%rgb (pine.buffer:fg f)) (values 0.94d0 0.83d0 0.77d0))))
+
+(defun %px-bounds (n)
+  (values (coerce (pine.layout:start-col n) 'double-float)
+          (coerce (pine.layout:start-line n) 'double-float)
+          (coerce (- (pine.layout:end-col n) (pine.layout:start-col n)) 'double-float)
+          (coerce (1+ (- (pine.layout:end-line n) (pine.layout:start-line n))) 'double-float)))
+
+(defun paint-cairo (node)
+  "Paint the arranged (pixel) tree with cairo: chrome, then per-type content."
+  (when node
+    (multiple-value-bind (x y w h) (%px-bounds node)
+      (when (pine.layout:hovered node)
+        (multiple-value-bind (r g b) (%rgb "#5b595e") (cairo:set-source-rgba r g b 0.9d0))
+        (%rounded-rect x y w h 6d0) (cairo:fill-path))
+      (let ((fill (pine.layout:fill-of node)) (gr (pine.layout:grad node))
+            (rad (coerce (pine.layout:radius node) 'double-float)))
+        (when (or fill gr)
+          (%rounded-rect x y w h rad)
+          (if gr
+              (let ((p (cairo:create-linear-pattern x y (+ x w) (+ y h))))
+                (multiple-value-bind (r g b) (%rgb (or fill gr)) (cairo:pattern-add-color-stop-rgb p 0d0 r g b))
+                (multiple-value-bind (r g b) (%rgb gr) (cairo:pattern-add-color-stop-rgb p 1d0 r g b))
+                (cairo:set-source p) (cairo:fill-path))
+              (multiple-value-bind (r g b) (%rgb fill) (cairo:set-source-rgb r g b) (cairo:fill-path)))))
+      (typecase node
+        (pine.layout:text-node
+         (let ((s (pine.layout:content node)))
+           (when (plusp (length s))
+             (cairo:set-font-size (coerce (or (pine.layout:font-px node) pine.layout:*default-font-px*)
+                                          'double-float))
+             (multiple-value-bind (r g b) (%face-rgb01 (pine.layout:face node))
+               (cairo:set-source-rgb r g b))
+             (cairo:move-to x (+ y (cairo:font-ascent (cairo:get-font-extents))))
+             (cairo:show-text s))))
+        (pine.layout:slider
+         (let* ((span (max 1 (- (pine.layout:max-of node) (pine.layout:min-of node))))
+                (frac (/ (max 0 (min span (- (pine.layout:value node) (pine.layout:min-of node)))) span))
+                (ty (+ y (/ h 2d0) -4d0)))
+           (multiple-value-bind (r g b) (%rgb "#3b393e") (cairo:set-source-rgb r g b))
+           (%rounded-rect x ty w 8d0 4d0) (cairo:fill-path)
+           (multiple-value-bind (r g b) (%rgb "#675072") (cairo:set-source-rgb r g b))
+           (%rounded-rect x ty (* w frac) 8d0 4d0) (cairo:fill-path)))))
+    (dolist (c (pine.layout:node-children node)) (paint-cairo c))))
+
 (cffi:defcallback %bar-draw :void ((area :pointer) (cr :pointer)
                                    (width :int) (height :int) (data :pointer))
   (declare (ignore area data))
@@ -396,23 +454,15 @@ echo strip renders it). Redraws only when the hovered cell changes."
     (%set-anchor p 3 t)))     ; bottom
 
 (defun on-panel-motion (panel x y)
-  (let* ((col (floor (- x 8d0) *bar-cell-w*))
-         (line (floor y *bar-cell-h*))
-         (pos (cons line col)))
+  (let ((pos (cons (round y) (round x))))   ; pixel (y . x)
     (unless (equal pos (panel-hover panel))
       (setf (panel-hover panel) pos)
       (widget-queue-draw (panel-area panel)))))
 
-(defun build-panel-cells (panel)
-  (let* ((root (funcall (panel-builder panel)))
-         (cols (max 10 (floor (panel-width panel) *bar-cell-w*)))
-         (lay (make-instance 'pine.layout:layout :root root :width cols)))
-    (setf (panel-root panel) root)
-    (multiple-value-bind (lines cells n)
-        (pine.layout:render-layout-grid lay :hover (panel-hover panel))
-      (declare (ignore lines))
-      (setf (panel-cells panel) cells (panel-count panel) n)
-      cells)))
+(defun build-panel-tree (panel)
+  "View thunk: build the panel's widget tree (reading cells, so the reactive
+view tracks them). The cairo draw lays it out in pixels and paints it."
+  (setf (panel-root panel) (funcall (panel-builder panel))))
 
 (defun %ensure-metrics ()
   (unless *bar-measured*
@@ -436,20 +486,28 @@ echo strip renders it). Redraws only when the hovered cell changes."
         (%rounded-rect 4d0 4d0 (- width 8d0) (- height 8d0) 12d0)
         (cairo:fill-path)
         (cairo:select-font-face pine.surface:*font-family* :normal :normal)
-        (cairo:set-font-size *bar-font*)
-        (%ensure-metrics)
+        ;; build the tree (tracked), lay it out in pixels via cairo metrics, paint
         (if (panel-view panel)
             (pine.cell:render-view (panel-view panel))
-            (build-panel-cells panel))
-        (paint-chrome (panel-root panel) *bar-cell-w* *bar-cell-h* 8d0)
-        (pine.surface:paint-cell-grid (panel-cells panel) (panel-count panel)
-                                      *bar-cell-w* *bar-cell-h* *bar-ascent* 8d0)))))
+            (build-panel-tree panel))
+        (let ((pine.layout:*text-size* #'%cairo-text-size)
+              (pine.layout:*default-font-px* 13)
+              (root (panel-root panel)))
+          (when root
+            (multiple-value-bind (mw mh) (pine.layout:measure root (- width 16) 100000)
+              (declare (ignore mw))
+              (pine.layout:arrange root 8d0 8d0
+                                   (coerce (- width 16) 'double-float)
+                                   (coerce mh 'double-float))
+              (when (panel-hover panel)
+                (let ((n (pine.layout:node-at root (car (panel-hover panel))
+                                              (cdr (panel-hover panel)))))
+                  (when n (setf (pine.layout:hovered n) t))))
+              (paint-cairo root))))))))
 
 (defun on-panel-click (panel x y)
-  (let* ((col (floor (- x 8d0) *bar-cell-w*))
-         (line (floor y *bar-cell-h*))
-         (thunk (and (panel-root panel)
-                     (pine.layout:click-thunk (panel-root panel) line col))))
+  (let ((thunk (and (panel-root panel)
+                    (pine.layout:click-thunk (panel-root panel) (round y) (round x)))))
     (when thunk (pine.eval:evaluate-thunk thunk :package (find-package :pine-user)))))
 
 (defun register-panel (app name builder &key (width 400) (height 320))
@@ -469,7 +527,7 @@ client returning a node tree). Show it with toggle-panel."
                    *panels-by-area*)
           panel)
     (setf (panel-view panel)
-          (pine.cell:make-view (lambda () (build-panel-cells panel))
+          (pine.cell:make-view (lambda () (build-panel-tree panel))
                                (lambda () (run-in-main-event-loop ()
                                             (widget-queue-draw area)))))
     (let ((click (make-gesture-click)))
@@ -525,7 +583,7 @@ slider whose on-change drives wpctl, and the percentage. Reads the :vol/:muted
 cells (fed by the audio source), so it re-renders when they change."
   (let ((vol (%cell :vol 0)) (muted (%cell :muted nil)))
     (column :spacing 1
-      (label "Audio" :face :function-name)
+      (label "Audio" :face :function-name :font-px 17)
       (row :spacing 1 :align :center
         (button :on-click (%sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
           (icon (if muted *g-mute* *g-vol*) :face :string))
@@ -557,7 +615,7 @@ closures. Reads :net/:netlist/:netactions."
         (list (%cell :netlist nil))
         (acts (%cell :netactions nil)))
     (column :spacing 1
-      (label "Network" :face :function-name)
+      (label "Network" :face :function-name :font-px 17)
       (label (if (plusp (length net)) net "Disconnected")
              :face (if (plusp (length net)) :string :comment))
       ;; rounded card behind the scrollable wifi list (eww's nm-card)
@@ -579,7 +637,7 @@ transport. Reads the :media cell (polled from the emacs daemon)."
          (status (or (getf m :status) "Stopped"))
          (len (max 1 (or (getf m :length) 1))))
     (column :spacing 1
-      (label "Media" :face :function-name)
+      (label "Media" :face :function-name :font-px 17)
       (label status :face (if (equal status "Playing") :string :comment))
       (label (or (getf m :title) "")  :face :default)
       (label (or (getf m :artist) "") :face :comment)
@@ -604,7 +662,7 @@ transport. Reads the :media cell (polled from the emacs daemon)."
 sliders. Reads :sys/:vol/:bri."
   (let ((sys (%cell :sys nil)) (vol (%cell :vol 0)) (bri (%cell :bri 50)))
     (column :spacing 1
-      (label "System" :face :function-name)
+      (label "System" :face :function-name :font-px 17)
       (row :spacing 2 :align :center
         (button :on-click (%sh "loginctl lock-session") (icon *g-lock2* :face :string))
         (button :on-click (%sh "niri msg action quit")  (icon *g-logout* :face :variable-param))

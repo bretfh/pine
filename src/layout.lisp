@@ -23,6 +23,8 @@
    (radius  :initarg :radius :accessor radius  :initform 0)
    (fill-of :initarg :fill   :accessor fill-of :initform nil)
    (grad    :initarg :grad   :accessor grad    :initform nil)
+   ;; font size in px for the pixel/cairo render; nil = the default size
+   (font-px :initarg :font-px :accessor font-px :initform nil)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
    (start-col  :initform 0 :accessor start-col)
@@ -123,15 +125,16 @@ rest as children, dropping nils and splicing lists."
             (loop for c in rest when c append (if (listp c) c (list c))))))
 
 (defun label (text &rest props)
-  "A text run. (label \"hi\" :face :keyword)"
-  (make-instance 'text-node :content (or text "") :face (getf props :face)))
+  "A text run. (label \"hi\" :face :keyword :font-px 17)"
+  (make-instance 'text-node :content (or text "") :face (getf props :face)
+                            :font-px (getf props :font-px)))
 
 (defun icon (glyph &rest props)
   "A glyph (a codepoint or string), optionally clickable via :on-click.
-(icon #xF120 :on-click thunk :face :string)"
+(icon #xF120 :on-click thunk :face :string :font-px 15)"
   (let ((lbl (make-instance 'text-node
                :content (if (integerp glyph) (string (code-char glyph)) (string glyph))
-               :face (getf props :face))))
+               :face (getf props :face) :font-px (getf props :font-px))))
     (if (getf props :on-click)
         (make-instance 'action :callback (getf props :on-click)
                                :hint (getf props :hint) :child lbl)
@@ -272,9 +275,22 @@ Falls back to the default when no face (or no client to resolve it) exists."
 
 ;;;; Layout protocol
 
+(defvar *text-size* nil
+  "When bound to a function of (text font-px) -> (values w h), text leaves
+measure through it (pixel/cairo mode); otherwise a character is one cell.")
+(defvar *default-font-px* 13)
+
+(defun %text-size (text font-px)
+  (if *text-size*
+      (funcall *text-size* text (or font-px *default-font-px*))
+      (values (length text) 1)))
+
+(defun %line-h (font-px)
+  (if *text-size* (nth-value 1 (%text-size "M" font-px)) 1))
+
 (defgeneric measure (node avail-w avail-h)
-  (:documentation "The node's natural (values w h) in cells given the available
-space. Bottom-up; does not set bounds."))
+  (:documentation "The node's natural (values w h) given the available space,
+in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
 
 (defgeneric arrange (node x y w h)
   (:documentation "Assign the node the rect X Y W H and place its children."))
@@ -311,13 +327,14 @@ space. Bottom-up; does not set bounds."))
 ;;; Leaves
 
 (defmethod measure ((n text-node) aw ah)
-  (declare (ignore aw ah)) (values (length (content n)) 1))
+  (declare (ignore aw ah)) (%text-size (content n) (font-px n)))
 (defmethod paint ((n text-node) r)
   (let ((s (content n)) (w (%node-width n)))
     (loop for i from 0 below (min (length s) w)
           do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
 
-(defmethod measure ((n separator) aw ah) (declare (ignore ah)) (values aw 1))
+(defmethod measure ((n separator) aw ah)
+  (declare (ignore ah)) (values aw (%line-h (font-px n))))
 (defmethod paint ((n separator) r)
   (loop for col from (start-col n) below (end-col n)
         do (raster-put r (start-line n) col (sep-char n) (face n))))
@@ -325,7 +342,7 @@ space. Bottom-up; does not set bounds."))
 (defmethod measure ((n spacer) aw ah) (declare (ignore aw ah)) (values 0 0))
 
 (defmethod measure ((n field) aw ah)
-  (declare (ignore aw ah)) (values (length (content n)) 1))
+  (declare (ignore aw ah)) (%text-size (content n) (font-px n)))
 (defmethod arrange ((n field) x y w h)
   (call-next-method)
   (setf (input-start-line n) y (input-start-col n) (+ x (prefix-length n))
@@ -338,7 +355,9 @@ space. Bottom-up; does not set bounds."))
 (defparameter +slider-filled+ (code-char #x2588)) ; full block
 (defparameter +slider-empty+  (code-char #x2500)) ; light horizontal
 
-(defmethod measure ((n slider) aw ah) (declare (ignore aw ah)) (values (track n) 1))
+(defmethod measure ((n slider) aw ah)
+  (declare (ignore aw ah))
+  (if *text-size* (values (* 8 (track n)) (%line-h (font-px n))) (values (track n) 1)))
 (defmethod paint ((n slider) r)
   (let* ((w (track n))
          (span (max 1 (- (max-of n) (min-of n))))
@@ -350,10 +369,12 @@ space. Bottom-up; does not set bounds."))
                          (if (< i fill) (filled-face n) (empty-face n))))))
 
 (defun slider-value-at (n col)
-  "The value a click at absolute COL maps to for arranged slider N."
-  (let* ((rel (max 0 (min (track n) (- col (start-col n)))))
+  "The value a click at absolute COL maps to for arranged slider N. The track
+width is the arranged pixel width in pixel mode, else the cell track."
+  (let* ((w (if *text-size* (max 1 (- (end-col n) (start-col n))) (track n)))
+         (rel (max 0 (min w (- col (start-col n)))))
          (span (- (max-of n) (min-of n))))
-    (+ (min-of n) (round (* (/ rel (track n)) span)))))
+    (+ (min-of n) (round (* (/ rel w) span)))))
 
 ;;; Containers — the flex box algebra
 
