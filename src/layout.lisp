@@ -118,6 +118,19 @@
 (defmethod initialize-instance :after ((n spacer) &key)
   (when (zerop (expand-of n)) (setf (expand-of n) 1)))
 
+(defmethod initialize-instance :after ((n slider) &key)
+  ;; a slider reads live cell values, which may be nil before their source has
+  ;; run; coerce to numbers so measure/paint never do arithmetic on nil.
+  (unless (numberp (value n))  (setf (value n) 0))
+  (unless (numberp (min-of n)) (setf (min-of n) 0))
+  (unless (numberp (max-of n)) (setf (max-of n) 100)))
+
+(defun slider-fraction (n)
+  "The filled fraction 0..1 of slider N, clamped and nil-safe."
+  (let* ((span (max 1 (- (max-of n) (min-of n))))
+         (v (max 0 (min span (- (value n) (min-of n))))))
+    (/ v span)))
+
 
 ;;;; Declarative constructor DSL. Each widget is a terse function: leading
 ;;;; :keyword value pairs are props, the remaining arguments are nodes (a
@@ -619,6 +632,74 @@ HOVER, a (line . col) cons, marks the node under it hovered before painting."
 
 (defmacro defwidget (name (&rest args) &body body)
   `(defun ,name (,@args) ,@body))
+
+
+;;;; Wire codec: a widget tree <-> plain data, so a declarative UI can cross the
+;;;; attach wire. CLOS nodes and closure click-handlers do not serialize, so a
+;;;; node becomes (TYPE PLIST . CHILDREN) and any handler is replaced by an
+;;;; :action id -- the producer keeps the closure keyed by id, the renderer sends
+;;;; the id back on interaction. Only plain data (keywords, numbers, strings,
+;;;; lists) is emitted.
+
+(defun %wire-base (n)
+  "The non-default style props of node N as a plist."
+  (let (p)
+    (flet ((put (k v &optional default) (unless (equal v default) (setf (getf p k) v))))
+      (put :face (face n)) (put :hint (hint n)) (put :font-px (font-px n))
+      (put :radius (radius n) 0) (put :fill (fill-of n)) (put :grad (grad n))
+      (put :pad-x (pad-x n) 0) (put :pad-y (pad-y n) 0)
+      (put :min-w (min-w n) 0) (put :min-h (min-h n) 0)
+      (put :expand (expand-of n) 0))
+    p))
+
+(defun node->wire (n &key on-action)
+  "Serialize node N to plain data. ON-ACTION, given a handler closure, returns an
+id to embed."
+  (when n
+    (flet ((kids (list) (mapcar (lambda (c) (node->wire c :on-action on-action)) list))
+           (act (cb) (and cb on-action (funcall on-action cb))))
+      (etypecase n
+        (text-node (list :label (list* :content (content n) (%wire-base n))))
+        (separator (list :rule (%wire-base n)))
+        (spacer    (list :gap (%wire-base n)))
+        (slider    (list :meter (list* :value (value n) :min (min-of n) :max (max-of n)
+                                       :action (act (on-change n)) (%wire-base n))))
+        (action    (list* :action (list* :action (act (callback n)) (%wire-base n))
+                          (kids (list (node n)))))
+        (scroll    (list* :viewport (list* :height (vheight n) (%wire-base n))
+                          (kids (list (node n)))))
+        (center    (list* :centered (%wire-base n) (kids (list (node n)))))
+        (vstack    (list* :column (list* :spacing (spacing n) :align (align n) (%wire-base n))
+                          (kids (nodes n))))
+        (hstack    (list* :row (list* :spacing (spacing n) :align (align n) (%wire-base n))
+                          (kids (nodes n))))))))
+
+(defun %wire-clean (props &rest drop)
+  (loop for (k v) on props by #'cddr unless (member k drop) append (list k v)))
+
+(defun wire->node (form &key on-action)
+  "Rebuild a node from wire FORM. ON-ACTION, given an id, returns a handler (a
+function of any interaction args) -- the renderer's 'send this id back'."
+  (when form
+    (destructuring-bind (type props &rest children) form
+      (flet ((kids () (mapcar (lambda (c) (wire->node c :on-action on-action)) children))
+             (handler (id) (and id on-action (funcall on-action id))))
+        (ecase type
+          (:label    (apply #'label (getf props :content "") (%wire-clean props :content)))
+          (:rule     (apply #'rule (%wire-clean props)))
+          (:gap      (apply #'gap (%wire-clean props)))
+          (:meter    (apply #'meter :value (getf props :value 0) :min (getf props :min 0)
+                            :max (getf props :max 100)
+                            :on-change (handler (getf props :action))
+                            (%wire-clean props :value :min :max :action)))
+          (:action   (apply #'make-instance 'action
+                            :callback (handler (getf props :action))
+                            :node (first (kids)) (%wire-clean props :action)))
+          (:viewport (apply #'viewport :height (getf props :height 10)
+                            (append (%wire-clean props :height) (kids))))
+          (:centered (apply #'centered (append (%wire-clean props) (kids))))
+          (:column   (apply #'column (append (%wire-clean props) (kids))))
+          (:row      (apply #'row (append (%wire-clean props) (kids)))))))))
 
 
 ;;;; Scroll helper

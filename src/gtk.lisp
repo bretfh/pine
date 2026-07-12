@@ -168,8 +168,8 @@ cairo context and the font face/size already selected."
       ;; the desktop bar is a second surface on the same substrate; a
       ;; layer-shell failure must not take the editor down.
       (when pine.de:*bar-enabled*
-        (handler-case (pine.de:make-bar *application* cli)
-          (error (c) (format *error-output* "pine bar failed: ~a~%" c)))))))
+        (handler-case (pine.de:start-desktop *application* cli)
+          (error (c) (format *error-output* "pine desktop failed: ~a~%" c)))))))
 
 (defun run ()
   (multiple-value-bind (srv cli) (pine:main)
