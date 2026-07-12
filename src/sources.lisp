@@ -2,7 +2,7 @@
   (:use #:cl)
   (:export #:start-sources #:stop-sources #:workspaces
            #:defsource #:defpoll #:set! #:cell-of
-           #:select! #:act!))
+           #:select! #:act! #:select-sink!))
 
 (in-package #:pine.source)
 
@@ -42,43 +42,63 @@
 
 ;;; source primitives
 
-(defstruct source actor process)
+(defstruct source name actor process super (stopped nil))
 
-(defun %actor (system refresh-fn)
+(defvar *actor-counter* 0
+  "Serial for unique source-actor names; sento rejects a duplicate name, which
+would silently drop every source after the first.")
+
+(defun %actor (system)
+  "A lightweight identity actor for a source, so it is addressable in the service
+registry. The source's blocking IO does NOT run here -- it runs on the source's
+own dedicated thread, never on this actor's shared pool worker."
   (sento.actor-context:actor-of system
-    :name "pine-source"
-    :receive (lambda (msg)
-               (case (first msg)
-                 ((:refresh :poll) (ignore-errors (funcall refresh-fn)))
-                 (t nil)))))
+    :name (format nil "pine-source-~d" (incf *actor-counter*))
+    :receive (lambda (msg) (declare (ignore msg)) nil)))
+
+(defparameter *stream-backoff* 2
+  "Seconds a supervised stream waits before relaunching a died subprocess.")
 
 (defun start-stream (system command refresh-fn &optional (trigger (constantly t)))
-  "Spawn COMMAND; when a stdout line satisfies TRIGGER, run REFRESH-FN on the
-source actor (REFRESH-FN sets cells). The reader thread only forwards events;
-stopping terminates the process so it hits EOF and exits. No thread is killed."
-  (let* ((actor (%actor system refresh-fn))
-         (proc (uiop:launch-program (list "sh" "-c" command) :output :stream)))
-    (sento.actor:tell actor '(:refresh))
-    (bordeaux-threads:make-thread
-     (lambda ()
-       (handler-case
-           (loop with out = (uiop:process-info-output proc)
-                 for line = (read-line out nil nil)
-                 while line
-                 when (funcall trigger line) do (sento.actor:tell actor '(:refresh)))
-         (error () nil)))
-     :name "pine-source-reader")
-    (make-source :actor actor :process proc)))
+  "Spawn COMMAND under supervision on the source's OWN dedicated thread; when a
+stdout line satisfies TRIGGER, run REFRESH-FN (which sets cells) on that same
+thread. The blocking subprocess IO never touches the shared pool, so a slow or
+flooding source cannot starve the daemon. The supervisor relaunches the
+subprocess if it dies (EOF/error) after a backoff. stop-sources sets the stopped
+flag and terminates the process so the read hits EOF and the thread exits
+cleanly. No thread is ever killed."
+  (let ((src (make-source :actor (%actor system))))
+    (setf (source-super src)
+          (bordeaux-threads:make-thread
+           (lambda ()
+             (loop until (source-stopped src) do
+               (handler-case
+                   (let ((proc (uiop:launch-program (list "sh" "-c" command) :output :stream)))
+                     (setf (source-process src) proc)
+                     (ignore-errors (funcall refresh-fn))   ; initial read, on this thread
+                     (loop with out = (uiop:process-info-output proc)
+                           for line = (read-line out nil nil)
+                           while line
+                           when (funcall trigger line)
+                             do (ignore-errors (funcall refresh-fn))))  ; on this thread
+                 (error () nil))
+               (unless (source-stopped src) (sleep *stream-backoff*))))
+           :name "pine-source-stream"))
+    src))
 
 (defun start-poll (system interval refresh-fn)
-  "Run REFRESH-FN every INTERVAL seconds on the source actor, driven by the
-actor system's wheel-timer (the timer thread only tells the actor)."
-  (let ((actor (%actor system refresh-fn)))
-    (sento.actor:tell actor '(:poll))
-    (sento.wheel-timer:schedule-recurring
-     (sento.actor-system::scheduler system) interval interval
-     (lambda () (sento.actor:tell actor '(:poll))))
-    (make-source :actor actor)))
+  "Run REFRESH-FN every INTERVAL seconds on the source's OWN dedicated thread, so
+its blocking IO never touches the shared pool. Sleeps in one-second steps so a
+stop takes effect promptly."
+  (let ((src (make-source :actor (%actor system))))
+    (setf (source-super src)
+          (bordeaux-threads:make-thread
+           (lambda ()
+             (loop until (source-stopped src) do
+               (handler-case (funcall refresh-fn) (error () nil))
+               (loop repeat (max 1 interval) until (source-stopped src) do (sleep 1))))
+           :name "pine-source-poll"))
+    src))
 
 ;;; source registry + declarative definition
 
@@ -110,18 +130,29 @@ BODY) when that is non-nil."
              (let ((,val (progn ,@body)))
                (when ,val (pine.cell:set-cell c ,val)) nil)))))))
 
-(defun start-sources (system)
-  "Start every declared source once."
+(defun start-sources (server)
+  "Start every declared source once and register it as an adapter in the service
+registry (pine.actor), named source:<name>, so it is addressable and listable
+alongside the other agents. A source is the desktop's data adapter."
   (unless *running*
-    (setf *running*
-          (loop for starter being the hash-values of *source-defs*
-                for s = (ignore-errors (funcall starter system))
-                when s collect s))))
+    (let ((system (pine.server:actor-system server)))
+      (setf *running*
+            (loop for name being the hash-keys of *source-defs* using (hash-value starter)
+                  for s = (ignore-errors (funcall starter system))
+                  when s
+                    do (setf (source-name s) name)
+                       (ignore-errors
+                        (pine.actor:register-agent
+                         server (format nil "source:~(~a~)" name)
+                         :source (source-actor s) :meta (list :cell name)))
+                    and collect s)))))
 
 (defun stop-sources ()
-  "Terminate each source's subprocess so its reader exits; actors and timers die
-with the actor system."
+  "Stop each source: flag its supervisor to exit, then terminate its subprocess
+so the read hits EOF and the supervisor loop ends. Actors and timers die with
+the actor system. No thread is killed."
   (dolist (s *running*)
+    (setf (source-stopped s) t)
     (when (source-process s)
       (ignore-errors (uiop:terminate-process (source-process s) :urgent t))))
   (setf *running* nil))
@@ -149,9 +180,36 @@ with the actor system."
 (defun audio-muted ()
   (and (search "MUTED" (sh "wpctl" "get-volume" "@DEFAULT_AUDIO_SINK@")) t))
 
+(defun audio-sinks ()
+  "pactl sinks as (:name NAME :desc DESC :default BOOL), the default first."
+  (let ((default (sh "pactl" "get-default-sink"))
+        (rows nil) (name nil) (desc nil))
+    (flet ((flush ()
+             (when name
+               (push (list :name name :desc (or desc name)
+                           :default (equal name default))
+                     rows))
+             (setf name nil desc nil)))
+      (dolist (line (%lines (sh "pactl" "list" "sinks")))
+        (let ((trim (string-trim '(#\space #\tab) line)))
+          (cond ((%starts trim "Sink #") (flush))
+                ((%starts trim "Name:")
+                 (setf name (string-trim '(#\space) (subseq trim 5))))
+                ((%starts trim "Description:")
+                 (setf desc (string-trim '(#\space) (subseq trim 12)))))))
+      (flush))
+    (sort (nreverse rows) (lambda (a b) (and (getf a :default) (not (getf b :default)))))))
+
+(defun select-sink! (name)
+  "Make sink NAME the default output. Called from an audio-panel row."
+  (when (and name (plusp (length name)))
+    (sh "pactl" "set-default-sink" name)
+    (set! :sinks (audio-sinks))))
+
 (defsource :audio (system)
   (start-stream system "pactl subscribe"
-    (lambda () (set! :vol (audio-volume)) (set! :muted (audio-muted)))
+    (lambda () (set! :vol (audio-volume)) (set! :muted (audio-muted))
+            (set! :sinks (audio-sinks)))
     (lambda (line) (search "sink" line))))
 
 (defun brightness ()
@@ -326,4 +384,20 @@ with the actor system."
         (ncpu (or (ignore-errors (parse-integer (sh "nproc"))) 1)))
     (min 100 (round (* 100 load) (max 1 ncpu)))))
 
-(defpoll :sys 3 (list :cpu (cpu-percent) :ram (mem-percent) :temp (cpu-temp)))
+(defun disk-percent (&optional (mount "/"))
+  "Used percent of the filesystem holding MOUNT, from df."
+  (let ((line (second (%lines (sh "df" "--output=pcent" mount)))))
+    (or (and line (%first-number line)) 0)))
+
+(defpoll :sys 3 (list :cpu (cpu-percent) :ram (mem-percent)
+                      :temp (cpu-temp) :disk (disk-percent)))
+
+;;;; Profile: who + how long, for the control panel header (eww's ctl-profile).
+
+(defun uptime-string ()
+  (let ((secs (or (%first-number (sh "cat" "/proc/uptime")) 0)))
+    (multiple-value-bind (h rem) (floor (truncate secs) 3600)
+      (format nil "up ~dh ~dm" h (floor rem 60)))))
+
+(defpoll :user 3600 (sh "id" "-un"))
+(defpoll :uptime 60 (uptime-string))
