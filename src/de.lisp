@@ -96,14 +96,20 @@
 ;;;; (like an eww defwidget); it reads cells, so a cell change re-renders it.
 
 (defwidget ws-item (w)
+  ;; the focused workspace gets an accent background (eww's .ws.current), not
+  ;; just coloured text.
   (icon (princ-to-string (getf w :idx))
         :on-click (%sh (format nil "niri msg action focus-workspace ~a" (getf w :idx)))
         :face (cond ((getf w :urgent)  :constant)
-                    ((getf w :focused) :function-name)
+                    ((getf w :focused) :ws-active)
                     (t                 :comment))))
 
+;; The sidebar is left-aligned: nerd glyphs render at widths the cell model
+;; can't know, so centring mixed-width content (glyphs, a 2-digit clock) drifts.
+;; Left edges always line up.
+
 (defwidget sidebar-top ()
-  (column :align :center :spacing 1
+  (column :align :start :spacing 1
     (icon *g-overview* :on-click (%sh "niri msg action toggle-overview")
                        :hint "Overview" :face :comment)
     (icon *g-search*   :on-click (%sh "cd ~ && setsid -f bb ~/.config/eww/niri-window-switch.bb")
@@ -111,7 +117,7 @@
     (mapcar #'ws-item (%cell :workspaces nil))))
 
 (defwidget sidebar-apps ()
-  (column :align :center :spacing 1
+  (column :align :start :spacing 1
     (icon *g-apps*  :on-click (%sh "setsid -f fuzzel")        :hint "Applications")
     (icon *g-term*  :on-click (%sh "setsid -f alacritty")     :hint "Terminal")
     (icon *g-web*   :on-click (%sh "setsid -f google-chrome") :hint "Browser")
@@ -121,18 +127,18 @@
 (defwidget sidebar-tray ()
   (multiple-value-bind (s m h) (decode-universal-time (get-universal-time))
     (declare (ignore s))
-    (column :align :center :spacing 1
+    (column :align :start :spacing 1
       (icon *g-vol*    :on-click (%toggle "audio")   :hint "Volume"  :face :string)
       (icon *g-media*  :on-click (%toggle "media")   :hint "Media"   :face :string)
       (icon *g-net*    :on-click (%toggle "network") :hint "Network" :face :string)
       (button :on-click (%toggle "calendar") :hint "Calendar"
-        (column :align :center
+        (column :align :start
           (label (format nil "~2,'0d" h) :face :variable-param)
           (label (format nil "~2,'0d" m) :face :comment)))
       (icon *g-system* :on-click (%toggle "ctl") :hint "System" :face :function-name))))
 
 (defwidget sidebar ()
-  (column :align :center
+  (column :align :start
     (sidebar-top)
     (gap)
     (sidebar-apps)

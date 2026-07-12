@@ -58,6 +58,8 @@
   (defface :type            :fg "#f9e2af")
   (defface :builtin         :fg "#94e2d5")
   (defface :constant        :fg "#fab387")
+  ;; desktop: the focused workspace pill (accent background, dark text)
+  (defface :ws-active       :fg "#11111b" :bg "#89b4fa" :bold t)
   (defface :escape          :fg "#fab387")
   (defface :line-number     :fg "#45475a"))
 
