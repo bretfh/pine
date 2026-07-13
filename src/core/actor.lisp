@@ -83,6 +83,10 @@ path, :local by default."
             (list :run :thunk thunk :package package :on-done on-done)))
 
 
+(defvar *local-agent* nil
+  "The local agent's actor, cached when it starts, so callers route eval through
+it (agent-eval :local) by ref without a blocking registry lookup on a hot path.")
+
 (defun start-local-agent (server)
   (let* ((sys (pine.server:actor-system server))
          (local (ac:actor-of sys
@@ -132,6 +136,7 @@ path, :local by default."
                       (:shutdown (reply :ok))
                       (t (reply (list :error :unknown-message (first msg)))))))))
     (register-agent server "local" :local local)
+    (setf *local-agent* local)
     local))
 
 
@@ -139,29 +144,31 @@ path, :local by default."
   "Next remoting port for a spawned process agent.")
 
 (defun %agent-script (name master-port self-port)
-  "The source a spawned SBCL process agent runs: a fresh actor-system with
-remoting and a /user/agent actor that evals forms (isolated in its own image),
-then registers back with the master's agent-registry and stays up."
+  "The source a spawned SBCL process agent runs: load :pine, then pine.agent:connect
+-- it runs evals through the same pine.eval engine, ships errors' restarts home
+to the master by name, and stays up. Isolated: it can loop, block, or crash in
+its own image without touching the daemon."
   (format nil
 "(require :asdf)
-(asdf:load-system :sento)
-(asdf:load-system :sento-remoting)
-(defvar *sys* (sento.actor-system:make-actor-system '(:dispatchers (:shared (:workers 2 :strategy :random)))))
-(sento.remoting:enable-remoting *sys* :host \"127.0.0.1\" :port ~d)
-(sento.actor-context:actor-of *sys* :name \"agent\"
-  :receive (lambda (msg)
-    (case (first msg)
-      (:ping (sento.actor:reply :pong))
-      (:eval (sento.actor:reply
-              (handler-case (eval (read-from-string (getf (rest msg) :form)))
-                (error (e) (list :err (princ-to-string e))))))
-      (:crash (sb-ext:exit :abort t))
-      (t (sento.actor:reply :unknown)))))
-(sento.actor:tell
-  (sento.remoting:make-remote-ref *sys* \"sento://127.0.0.1:~d/user/agent-registry\")
-  (list :register-remote :name ~s :host \"127.0.0.1\" :port ~d))
+(push #P~s asdf:*central-registry*)
+(asdf:load-system :pine)
+(pine.agent:connect :name ~s :master-host \"127.0.0.1\" :master-port ~d :self-port ~d)
 (loop (sleep 3600))"
-          self-port master-port name self-port))
+          (namestring (asdf:system-source-directory :pine))
+          name master-port self-port))
+
+(defvar *agent-debug-hook* nil
+  "Called (message) for each :agent-debug / :agent-result from a process agent.
+The editor (the helm) installs this to show the restart menu and drive resume.")
+
+(defun start-agent-debug (server)
+  "The master's receiver for cross-image errors: a process agent's error ships
+its restart list here, by name, and the helm drives the choice back."
+  (sento.actor-context:actor-of (pine.server:actor-system server)
+    :name "agent-debug"
+    :receive (lambda (msg)
+               (when *agent-debug-hook* (ignore-errors (funcall *agent-debug-hook* msg)))
+               nil)))
 
 (defun spawn-agent (server name)
   "Spawn a real SBCL process agent: it enables remoting, evals in its own image,
@@ -177,9 +184,47 @@ without touching the daemon or any app. Returns the agent-info once it connects.
                            :output nil :error-output nil)
       (loop for i from 0 below 400
             for info = (ignore-errors (find-agent server name))
-            when info return info
+            when info return (progn (supervise-agent name) info)
             do (sleep 0.25)
             finally (error "Agent ~s did not connect in time." name)))))
+
+;;;; Supervision. The registry watches process agents: it pings each supervised
+;;;; agent on an interval and, when one is dead (ping fails / no info), respawns
+;;;; it. The check runs on its own dedicated thread, never the shared pool. Let
+;;;; it crash: an isolated agent can die and be brought back without the daemon
+;;;; noticing.
+
+(defvar *supervised* (make-hash-table :test 'equal)
+  "process-agent name -> t: agents the supervisor keeps alive.")
+
+(defun supervise-agent (name) (setf (gethash name *supervised*) t))
+(defun unsupervise-agent (name) (remhash name *supervised*))
+
+(defun agent-alive-p (server name)
+  (let ((info (ignore-errors (find-agent server name))))
+    (and info
+         (ignore-errors (eq :pong (act:ask-s (agent-info-actor info) '(:ping) :time-out 2))))))
+
+(defun start-agent-supervisor (server &key (interval 3))
+  "Watch every supervised process agent; respawn any that has died. Runs on its
+own thread."
+  (bordeaux-threads:make-thread
+   (lambda ()
+     (loop
+       (sleep interval)
+       (let (names)
+         (maphash (lambda (k v) (declare (ignore v)) (push k names)) *supervised*)
+         (dolist (name names)
+           (unless (agent-alive-p server name)
+             (ignore-errors (spawn-agent server name)))))))
+   :name "pine-agent-supervisor"))
+
+(defun request (server capability name)
+  "Broker a capability from the registry by name: an agent ref or a buffer actor.
+Apps ask the registry for a tool rather than reinventing it."
+  (ecase capability
+    (:agent  (let ((info (find-agent server name))) (and info (agent-info-actor info))))
+    (:buffer (gethash name (pine.server:buffer-table server)))))
 
 (defun kill-agent (server name)
   (let ((info (find-agent server name)))

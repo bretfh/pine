@@ -16,6 +16,9 @@
   ((server-of       :initarg :server-of       :accessor server-of       :initform nil)
    (actor           :initarg :actor           :accessor actor           :initform nil)
    (renderer        :initarg :renderer        :accessor renderer        :initform nil)
+   ;; a local paint fn (grid cursor-row cursor-col); when set, the renderer
+   ;; paints the focused window here instead of the daemon pushing frames.
+   (paint-sink      :initarg :paint-sink      :accessor paint-sink      :initform nil)
    (ts-actor        :initarg :ts-actor        :accessor ts-actor        :initform nil)
    (render-state    :initarg :render-state    :accessor render-state
                     :initform (fset:map (:dirty nil)))

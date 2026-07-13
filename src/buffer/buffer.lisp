@@ -221,12 +221,56 @@
                              (setf s (insert-string s last 0 line))))))
                 finally (return s))))))
 
+(defun %state-language (state)
+  "The tree-sitter language keyword for STATE's mode, or nil."
+  (let* ((mode-name (buffer-local state :mode :base-mode))
+         (mode (pine.mode:find-mode mode-name)))
+    (and mode (typep mode 'pine.mode:major-mode) (pine.mode:ts-language mode))))
+
+(defun %ts-runtime ()
+  (when pine.server:*server* (pine.server:ts-runtime pine.server:*server*)))
+
+(defun refresh-highlights (pstate new-state)
+  "Reparse PSTATE to NEW-STATE's text (creating the parse-state if the buffer has
+a tree-sitter language and none exists yet) and return (values highlights
+pstate). No language available -> (values nil pstate), leaving highlights off."
+  (let ((lang (%state-language new-state))
+        (rt (%ts-runtime)))
+    (if (or (null lang) (null rt))
+        (values nil pstate)
+        (let ((ps (or pstate (pine.ts:make-parse-state rt lang))))
+          (if (null ps)
+              (values nil nil)
+              (let ((new-text (state->string new-state)))
+                (pine.ts:reparse! ps new-text)
+                (values (pine.ts:parse-highlights ps new-text) ps)))))))
+
+(defun point-after-move (snap unit n)
+  "Target (values line col) after moving point UNIT (:char or :line) by signed N,
+clamped to the buffer. Computed from SNAP's lines in one shot so a prefix count
+repeats correctly."
+  (let ((lines (lines snap)) (nlines (line-count snap))
+        (l (point-line snap)) (c (point-col snap)))
+    (ecase unit
+      (:char
+       (dotimes (i (abs n))
+         (if (plusp n)
+             (let ((len (length (fset:@ lines l))))
+               (cond ((< c len) (incf c))
+                     ((< (1+ l) nlines) (setf l (1+ l) c 0))))
+             (cond ((plusp c) (decf c))
+                   ((plusp l) (setf l (1- l) c (length (fset:@ lines l))))))))
+      (:line
+       (let ((tl (max 0 (min (1- nlines) (+ l n)))))
+         (setf l tl c (min c (length (fset:@ lines tl)))))))
+    (values l c)))
+
 (defun make-buffer-actor (system name &key (content ""))
   (let ((initial (move-mark (set-meta (load-content content) :name name) :point 0 0)))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)
-                                  ;; state tuple: (STATE UNDO REDO SUBSCRIBERS HIGHLIGHTS)
-                                  :state (list initial nil nil nil nil)
+                                  ;; state tuple: (STATE UNDO REDO SUBSCRIBERS HIGHLIGHTS PARSE-STATE)
+                                  :state (list initial nil nil nil nil nil)
                                   :receive
                                   (lambda (msg)
                                     (let* ((state (first sento.actor:*state*))

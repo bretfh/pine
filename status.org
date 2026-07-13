@@ -1,0 +1,299 @@
+#+TITLE: pine status -- full context
+#+AUTHOR: Bret Horne
+#+STARTUP: overview
+
+This is the working-memory dump for pine as it stands. It maps the architecture,
+the source tree, what is built and proven, the wire protocols, and -- most
+importantly -- the current unsolved problem (the editor is slow editing even a
+small file, and the headless numbers do not explain why). Read this first.
+
+* What pine is
+
+A Lisp Machine substrate shaped like the emacs daemon.
+
+- One headless SBCL process is the daemon: owns live, immutable, addressable
+  state (buffers as fset actors, the registries, tree-sitter, the eval engine)
+  and runs computations. It does NOT draw.
+- Apps are separate OS processes that attach over sento remoting and render. The
+  editor is one app; the desktop (layer-shell bar + panels) is another.
+- Agents are separate SBCL images (process agents) or in-image actors, addressed
+  by name in the registry. A computation can crash in its own image without
+  touching the daemon or the editor.
+- fset is the seam: an immutable value is shared by reference in one heap and
+  serialized across the wire.
+
+Within an image it is a Lisp Machine (Genera/Hemlock). Between images it is
+Erlang (OTP supervision). The editor is the helm: you author from it and every
+error's restart menu comes home to it.
+
+Full design prose: design/architecture.org. This file is the *current state*.
+
+* Source tree (as reorganized)
+
+Two ASDF systems. Everything is :pine (the daemon + all logic) except src/app/,
+which is :pine/gtk (the GTK client apps). vt/ is the pine/vt system.
+
+  src/
+    package.lisp                        ; ALL package defs, loaded first
+    core/    server eval actor agent jobs event hooks attach
+    buffer/  buffer window face
+    session/ client
+    keymap/  key keymap command mode variable
+    widget/  cell sources layout        ; reactive cells, data sources, widget engine + wire codec
+    term/    term
+    ts/      ts
+    render/  render                     ; buffer -> cell-grid frame, ts highlight requests, frame->rows
+    editor/  echo kill-ring complete prompt file repl editor editor-session
+    desktop/ desktop                    ; the WHOLE daemon-side desktop (one package pine.desktop)
+    app/     surface paint desktop-app editor-app   ; :pine/gtk, renders trees/frames, sends input
+    user.lisp main.lisp
+  vt/  (unchanged, the terminal emulator)
+
+Naming rule learned the hard way: symbols inside a package are NOT prefixed with
+the package abbreviation. No =dcard=/=dgauge= (use =card=/=gauge= in pine.desktop),
+no =da-click=/=dasurface= (use =on-click=/=surface= in pine.desktop-app). The "de"
+name is dead; "desktop" is the daemon-side desktop, "desktop-app" is the renderer.
+
+Packages:
+- pine.layout   (widget/layout) -- widget engine, constructors, wire codec (node<->data).
+- pine.desktop  (desktop/desktop) -- daemon-side desktop: card/header/pill/gauge, glyphs,
+                 sidebar, the 5 panels, surface registry, session, toggle. No GTK.
+- pine.desktop-app (app/paint + app/desktop-app) -- cairo painter + layer-shell + the
+                 multi-surface app (bar + panel overlays). Renders trees, no widget defs.
+- pine.gtk      (app/editor-app) -- the editor app: paints frames, sends keys.
+- pine.surface  (app/surface) -- the cell-grid painters (paint-cell-grid, paint-rows).
+
+* Runtime topology + how to run
+
+Make targets:
+- =make daemon=  -> pine:run-daemon  (headless, remoting on 127.0.0.1:17000, stays up).
+- =make editor=  -> pine.gtk:run-editor  (attaches, self-port 17001).
+- =make desktop= -> pine.desktop-app:run-desktop-app  (attaches, self-port 17002).
+- =make dev=     -> daemon in background (waits for "daemon up" in the log), then desktop + editor.
+- =make repl= / =make check= unchanged.
+
+start-daemon boots: server (with remoting) -> ts-runtime + ensure-ts -> event-bus ->
+agent-registry -> local-agent -> agent-debug actor -> buffer-registry ->
+attach-listener -> faces -> modes -> commands -> bindings -> editor sessions
+(installs *minibuffer-handler*/*terminal-handler*/*on-debug* + variables) ->
+desktop sessions -> desktop config (registers bar + panels) -> jobs -> sources.
+
+* The attach wire protocol
+
+An app process has its own actor-system with remoting + a "display" actor. It
+attaches; all messages are async tells, never a blocking remote ask.
+
+  app -> daemon /user/attach : (:attach :display-uri U :kind :editor|:desktop)
+  daemon: creates a client (bound to a remote-ref to the app's display) + a
+          per-client input actor /user/client-N, calls the kind's :on-attach hook.
+  daemon -> app display : (:attached :id N :client-uri "sento://.../user/client-N")
+  app makes a remote-ref to client-uri and sends input to it.
+
+App -> daemon (to client-N):
+  (:key :key-str S :ctrl B :meta B :shift B :super B)   ; editor
+  (:resize :cols C :rows R)                              ; editor
+  (:widget-action :id N :args (...))                     ; desktop
+  (:refresh)                                             ; desktop (re-request after surfaces exist)
+
+Daemon -> app display:
+  (:frame :cols C :rows R :cursor-row cr :cursor-col cc :grid ROWS)   ; editor
+  (:widgets :surface NAME :tree DATA)                                 ; desktop
+  (:panel :name NAME :show BOOL)                                      ; desktop
+
+Only plain data crosses (sexp serializer): symbols, strings, numbers, lists,
+vectors. fset/CLOS are rendered to plain data at the edge.
+
+** The editor frame wire (compact row/runs format)
+
+The daemon renders a buffer to a flat cell grid (render-buffer-to-frame), then
+frame->rows encodes it for the wire:
+
+  :grid = a list of rows, each (TEXT . RUNS)
+          RUNS = list of (col fr fg fb br bg bb bold) style-change markers;
+          a run extends to the next marker's col. bg -1 = none.
+
+CRUCIAL gotcha (a bug I hit and fixed): the cell grid is written in EMISSION
+order and each cell carries its own (row col) in slots 0,1 -- the buffer lines
+first, then the modeline at row rows-2, then echo at rows-1. So frame->rows must
+SCATTER cells by their stored (row col), NOT assume row-major position order.
+The first version assumed position order and put the modeline on row 0 (garbled
+display -- see the screenshot in the conversation). Fixed: it scatters.
+
+The app (app/editor-app.lisp) paints via pine.surface:paint-rows (one show-text
+per run, not per cell). paint-cell-grid still exists but is unused by the editor.
+
+** The desktop widget wire
+
+pine.layout:node->wire serializes a pine.layout tree to plain data; handler
+closures are replaced by an :action id (the daemon keeps the closure keyed by id;
+the app sends the id back on interaction). pine.layout:wire->node rebuilds it.
+Sliders: a click maps to a value via slider-value-at (uses the arranged pixel
+width -- NOT the dynamic *text-size*, which is only bound during a draw) and the
+value is sent as the widget-action arg.
+
+* The daemon-side editor session (editor/editor-session.lisp)
+
+Each attached :editor app gets a session: a pine client + a scratch buffer
+(lisp-mode) + a window + a renderer + its OWN dedicated thread.
+
+- All input runs on the session thread (never the shared pool), so a command
+  that reads the buffer synchronously blocks only that thread; the buffer reply
+  comes from a free pool worker. No pool starvation, no 5s ask timeouts.
+- Frames are coalesced: a pusher actor subscribed to the buffer marks the
+  session dirty with the latest snapshot; the session thread renders that one
+  snapshot. A burst of keystrokes collapses to the latest frame.
+- Render condition: on a fresh buffer snapshot (typing/motion), and on input
+  only when the minibuffer is active (M-x / completing-read change client state,
+  not the buffer). This avoids a stale pre-edit frame per keystroke.
+- ts highlighting is scoped to the visible line range + a 12-line margin
+  (ts-request-parse takes base/n = scroll-top/win-height), NOT the whole file.
+  Highlights come back offset to buffer lines. The ts-actor lives in render.lisp.
+
+The editor commands, minibuffer routing, completion, and eval all run in this
+session with *client* bound. install-editor-sessions replicates what start-editor
+would set globally (*minibuffer-handler* etc.) -- the daemon does not call
+start-editor.
+
+* The daemon-side desktop (desktop/desktop.lisp)
+
+Named surfaces: "bar" + the panels ("calendar" "audio" "network" "media" "ctl").
+- defsurface NAME BUILDER registers a builder (aclient -> node tree).
+- push-surface builds a surface's tree, serializes it (fresh ids, dropping that
+  surface's stale ones), pushes (:widgets :surface NAME :tree DATA).
+- The bar has a reactive view (re-pushes when a cell it reads changes). Panels
+  are pushed on toggle (show-panel), snapshot-on-open.
+- The tray icons call (show-panel aclient NAME); the daemon pushes the panel tree
+  then (:panel :name NAME :show t), hiding any other open panel.
+- Refresh race: the daemon pushes on attach, but the app's GTK surfaces may not
+  exist yet, so that first push is dropped; the app re-sends (:refresh) every
+  second until the bar has content, and the daemon re-pushes.
+
+The desktop app (app/desktop-app.lisp) pre-creates a bar surface + one hidden
+overlay window per panel, one %draw path keyed by drawing-area pointer, installs
+the theme faces locally (faces live in the daemon; only names cross the wire).
+
+* Agents, eval, cross-image debugger, jobs, supervision
+
+- pine.eval: every evaluation runs on its own thread; captures restarts + blocks;
+  a surface (*on-debug*) picks a restart by name or aborts. list-evaluations,
+  find-evaluation, pick-restart, abort-evaluation.
+- Agents: :local (in-image actor), :process (spawn-agent -> a real SBCL that
+  loads :pine and calls pine.agent:connect, enables remoting, registers back).
+  Cached ref: pine.actor:*local-agent*. agent-eval/agent-run/agent-compile.
+- Cross-image debugger: a process agent sets pine.eval:*on-debug* to ship the
+  restart list home to the daemon's /user/agent-debug actor; the master picks a
+  name and sends (:resume :eval-id N :restart NAME); the agent invokes it locally.
+- Jobs (core/jobs.lisp): list-jobs aggregates local evaluations + agent-reported
+  jobs (fed via *agent-debug-hook*).
+- Supervision (core/actor.lisp): start-agent-supervisor pings supervised process
+  agents on an interval; a dead one is respawned. supervise-agent, request.
+
+* What is built and proven (all verified headless over real TCP)
+
+- 27 headless daemon + remoting; reachable from another actor-system (PONG).
+- 28 attach: bidirectional, async, no blocking.
+- 29 editor over the wire: type -> immutable buffer -> frame back with the text.
+- 30 desktop over the wire: declarative tree crosses, click routes back by id.
+- 31 sources on dedicated threads: 8 sources blocking 2s -> pool ask 52ms.
+- 32 widget handlers thread-per-eval: 3s-blocking handler -> pool ask 52ms.
+- 33 real :process agent: spawn, remote (+ 1 2)=3, crash it, daemon survives.
+- 34 one eval path: editor eval routes through the local agent -> (5).
+- 35 cross-image debugger: agent error ships restarts home; USE-ZERO -> ok (0).
+- 36 jobs: local + agent evals aggregated with status.
+- 37 supervision: crash a supervised agent, it is respawned.
+- 38 cross-image live redefine: foo 1 -> redefine -> foo 2 in the running agent.
+- 39 combined stress: runaway loop aborted, pool stays at 52ms.
+
+Then the app binaries + make targets were built (editor + desktop attach and
+render). Fixes since: slider clicks + slider-value-at; real CPU% (/proc/stat
+delta, not loadavg); minibuffer/completions wiring (was missing in the daemon);
+ts + lisp-mode scratch; viewport-scoped ts parse; the compact frame wire; the
+frame->rows scatter fix (modeline was on row 0).
+
+* THE CURRENT UNSOLVED PROBLEM: editor is slow editing a small file (main.lisp)
+
+The user reports the editor is "worthlessly slow" to move/type even in a small
+file. My headless measurements do NOT explain this. This is the open issue.
+
+Real numbers (headless, local TCP, image-surface cairo):
+| step                         | 80x29        | 200x55 (maximized) |
+|------------------------------+--------------+--------------------|
+| serialize (OLD cell format)  | 2.8 ms 71 KB | 12 ms 335 KB       |
+| serialize (NEW row/runs)     | ~            | 1.6 ms 55 KB       |
+| deserialize (row/runs)       | ~            | 0.6 ms             |
+| paint (paint-cell-grid)      | 0.7 ms       | 3.3 ms             |
+| paint (paint-rows)           | ~            | 2.1 ms             |
+| compute-highlights main.lisp | 2.5 ms (78 lines, whole file)          |
+| key -> first-frame over TCP  | 4 ms median, 8 ms max                  |
+| frames pushed per keystroke  | 2 (edit + ts highlight)                |
+
+So the daemon + wire are fast: ~4ms key->frame, and the wire is now ~6-8x
+smaller after the row/runs format. Yet it is still slow in the window. That means
+the bottleneck is CLIENT-SIDE (the GTK editor app), which I have NOT been able to
+measure from headless (no window). Suspects, none confirmed:
+- The GTK draw/present path itself (compositor, vsync, layer-shell/window
+  interaction, GPU) -- unmeasured.
+- run-in-main-event-loop scheduling of widget-queue-draw per frame; the client
+  actor-system receiving + deserializing frames and marshaling to the GTK thread.
+- 2 frames per keystroke (edit + ts highlight) doubling the client-side work; ts
+  is still on the shared dispatcher (giving it its own :ts dispatcher was
+  in-progress when this was written -- server.lisp make-actor-system + ts-actor
+  :dispatcher :ts) but that changes WHERE the parse runs, not the frame count.
+- send-resize fires every 500ms in the editor app (timeout-add 500) and forces a
+  relayout + full re-render on the daemon even when the size is unchanged.
+
+NEXT STEP for this issue: instrument app/editor-app.lisp to log real windowed
+timing to a file -- frame-receive timestamp, deserialize time, paint duration,
+and frames/sec -- since the headless numbers are all fast and the windowed cost
+is the only thing unmeasured. Do NOT keep adding sleeps/coalescing blind; get the
+client-side number first, then fix the actual bottleneck.
+
+* Known bugs / open items
+
+- Editor slow in the window (above) -- the priority; unexplained by headless numbers.
+- main.lisp (and other files) opened via C-x C-f render as TEXT mode, not
+  lisp-mode -- find-file mode detection (mode-for-file) not applied in the daemon
+  session. So no highlighting on opened files.
+- 2 frames per keystroke; ts still on the shared pool (the :ts dispatcher split
+  was mid-edit).
+- Desktop panels are ported daemon-side + the app has overlay support, but the
+  windowed panel render was never eyeballed. The tray icons -> show-panel path
+  exists. The clock updates on a cell change, not a per-minute tick.
+- Spawned :process agents run (loop (sleep 3600)) and do not self-exit when the
+  daemon dies -- orphans. They should heartbeat the master and exit on loss.
+- Panels are snapshot-on-open (not live-reactive while open).
+- The desktop control panel uses linear meters where eww uses circular-progress
+  rings; a ring/arc primitive in pine.layout is requested but not built.
+- Each eww menu needs a one-by-one comparison against ~/dots/files/eww/*.yuck
+  (bar/audio/network/media/control/echo) -- some render, some partial.
+
+* Conventions / gotchas learned in this conversation
+
+- No package-abbreviation prefixes on internal symbols (no d-/da-).
+- Never do a blocking act:ask-s on the GTK main thread or on the shared pool; the
+  DE click path once did (registry lookup) and hung the UI 5s. Use cached refs +
+  tell.
+- Source blocking IO (nmcli/pactl) runs on per-source dedicated threads, never
+  the shared pool.
+- The daemon's local-agent must be reached by cached ref, not by name (name ->
+  registry ask = blocking).
+- Commit style: terse lowercase, comma/semicolon clauses, NO author attribution
+  ever, commit to master. Only commit when explicitly asked.
+- The user runs the apps separately (make daemon / make editor / make desktop) to
+  test; do not tell them to "just run make dev".
+- Reference eww implementation to match: ~/dots/files/eww/ (yuck + broker.bb).
+
+* Uncommitted
+
+Everything past the first four commits (tasks 34-39, the app binaries, the make
+targets, all the fixes, the whole tree reorg, the compact wire, frame->rows) is
+uncommitted on master.
+
+* Reference
+
+- design/architecture.org  -- the design prose.
+- design/api.org           -- ask/tell/buffer.
+- design/client-actor.org  -- the client actor + attach model.
+- design/treesitter.org    -- tree-sitter.
+- ~/org/pine.org, ~/org/pine-scope.org -- older task lists.
+- sento: vendor/cl-gserver/.

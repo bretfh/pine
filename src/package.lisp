@@ -27,8 +27,10 @@
    #:agent-info-meta #:agent-info-port
    #:start-agent-registry
    #:register-agent #:unregister-agent #:find-agent #:list-agents
-   #:agent-eval #:agent-compile #:agent-run
-   #:start-local-agent
+   #:agent-eval #:agent-compile #:agent-run #:*local-agent*
+   #:start-local-agent #:start-agent-debug #:*agent-debug-hook*
+   #:start-agent-supervisor #:supervise-agent #:unsupervise-agent
+   #:agent-alive-p #:request
    #:spawn-agent #:kill-agent))
 
 (defpackage :pine.event
@@ -60,11 +62,15 @@
    #:delete-char #:delete-region
    #:move-mark #:set-meta
    #:buffer-local
+   #:refresh-highlights #:point-after-move
    #:load-content #:notify-subscribers
    #:line-count-of #:line-at #:region-string
    ;; faces
    #:face #:fg #:bg #:bold #:italic #:underline
-   #:defface #:find-face #:face-to-plist #:install-default-faces
+   #:defface #:find-face #:face-to-plist #:face-attr-bits #:install-default-faces
+   #:deftheme #:load-theme #:find-theme #:theme-color #:color
+   #:hex-rgb #:face-fg #:face-bg
+   #:theme #:theme-name #:theme-palette #:theme-faces
    #:face-run #:run-start #:run-end #:run-face
    #:display-line #:display-text #:display-runs
    #:make-display-line #:display-line-to-plist
@@ -105,12 +111,11 @@
 (defpackage :pine.render
   (:use :cl)
   (:export
-   #:ts-request-parse
    #:start-renderer
-   #:start-ts-actor
    #:subscribe-to-buffer
    #:unsubscribe-from-buffer
    #:render-buffer-to-frame
+   #:frame->rows
    #:relayout))
 
 (defpackage :pine.repl
@@ -130,10 +135,14 @@
    #:ensure-ts
    #:ensure-language
    #:compute-highlights
-   #:capture-name-to-face
    #:forward-sexp-pos
    #:backward-sexp-pos
-   #:defun-bounds-pos))
+   #:defun-bounds-pos
+   ;; per-buffer incremental parse state
+   #:parse-state #:make-parse-state #:free-parse-state
+   #:reparse! #:parse-full! #:parse-highlights #:parse-motion
+   ;; highlight harness
+   #:walk-highlights #:hl-dump #:hl-dump-file))
 
 (defpackage :pine.term
   (:use :cl)
@@ -175,7 +184,7 @@
   (:export
    ;; nodes
    #:node #:key-of #:parent #:face #:hint #:expand-of
-   #:radius #:fill-of #:grad #:font-px #:hovered #:nodes-of #:hex-rgb
+   #:radius #:fill-of #:grad #:font-px #:hovered #:nodes-of
    #:*text-size* #:*default-font-px*
    #:start-line #:start-col #:end-line #:end-col
    #:text-node #:content
@@ -193,9 +202,11 @@
    #:grid #:cells #:col-widths
    #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
    #:slider-fraction
+   #:ring #:thickness #:diameter #:arc-face #:track-face #:ring-fraction
+   #:calendar #:cal-year #:cal-month #:cal-day #:picture #:pic-path
    ;; constructor DSL
    #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
-   #:gap #:rule #:meter #:rows #:choice
+   #:gap #:rule #:meter #:rows #:choice #:cal #:pic #:centerbox
    ;; layout protocol
    #:measure #:arrange #:paint #:*hover-face*
    ;; layout container
@@ -222,6 +233,7 @@
    #:completion
    #:actor
    #:renderer
+   #:paint-sink
    #:ts-actor
    #:render-state
    #:frame
@@ -265,6 +277,8 @@
    #:install-commands
    #:install-bindings
    #:install-editor-sessions
+   #:make-editor-session
+   #:session-feed
    #:focused-snap
    #:scroll-window
    #:eval-last-sexp
@@ -301,6 +315,7 @@
   (:export
    #:main
    #:start-daemon
+   #:run-daemon
    #:stop
    #:*version*
    #:*target*

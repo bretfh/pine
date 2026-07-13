@@ -40,43 +40,22 @@
 (defun %ts-runtime ()
   (pine.server:ts-runtime (pine.client:server-of (pine.client:current-client))))
 
-(defun %sexp-move (pos-fn)
-  "Move point to the position returned by POS-FN (a pine.ts sexp motion)."
-  (let ((buf (cur-buffer)) (snap (%fresh-snap)) (lang (%buffer-ts-lang)))
-    (when (and buf snap lang)
-      (multiple-value-bind (l c)
-          (funcall pos-fn (%ts-runtime) lang (pine.buffer:ask buf :text)
-                   (pine.buffer:point-line snap) (pine.buffer:point-col snap))
-        (when l (sento.actor:tell buf (list :move-point :line l :col c)))))))
+(defun %sexp-move (kind)
+  "Move point structurally via the buffer's persistent tree (no reparse). The
+buffer walks its own tree from its own point and moves; nothing blocks here."
+  (let ((buf (cur-buffer)))
+    (when buf (sento.actor:tell buf (list :ts-motion :kind kind)))))
 
 (defun move-chars (n)
-  "Move point N characters (negative = left) across line boundaries, clamped.
-Computed in one shot from a fresh snapshot so it is safe to repeat via a
-prefix count."
-  (let ((buf (cur-buffer)) (snap (%fresh-snap)))
-    (when (and buf snap)
-      (let ((lines  (pine.buffer:lines snap))
-            (nlines (pine.buffer:line-count snap))
-            (l (pine.buffer:point-line snap))
-            (c (pine.buffer:point-col snap)))
-        (dotimes (i (abs n))
-          (if (plusp n)
-              (let ((len (length (fset:@ lines l))))
-                (cond ((< c len) (incf c))
-                      ((< (1+ l) nlines) (setf l (1+ l) c 0))))
-              (cond ((plusp c) (decf c))
-                    ((plusp l) (setf l (1- l) c (length (fset:@ lines l)))))))
-        (sento.actor:tell buf (list :move-point :line l :col c))))))
+  "Move point N characters (negative = left) across line boundaries. The buffer
+computes the target from its own state, so this never blocks on a round-trip."
+  (let ((buf (cur-buffer)))
+    (when buf (sento.actor:tell buf (list :move-by :unit :char :n n)))))
 
 (defun move-lines (n)
   "Move point N lines (negative = up), keeping the column where possible."
-  (let ((buf (cur-buffer)) (snap (%fresh-snap)))
-    (when (and buf snap)
-      (let* ((lines  (pine.buffer:lines snap))
-             (nlines (pine.buffer:line-count snap))
-             (tl (max 0 (min (1- nlines) (+ (pine.buffer:point-line snap) n))))
-             (tc (min (pine.buffer:point-col snap) (length (fset:@ lines tl)))))
-        (sento.actor:tell buf (list :move-point :line tl :col tc))))))
+  (let ((buf (cur-buffer)))
+    (when buf (sento.actor:tell buf (list :move-by :unit :line :n n)))))
 
 (defun %point->offset (snap)
   (let ((pl (pine.buffer:point-line snap))
@@ -175,11 +154,18 @@ prefix count."
                         (pine.eval:evaluation-condition-type ev))))
 
 (defun %eval-form-string (str package)
-  ;; errors route to the shared *on-debug* surface installed in start-editor
-  (pine.eval:evaluate-string
-   str :package package
-   :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
-   :on-done #'%eval-done))
+  ;; one eval path: route through the local agent (agent-eval :local), off the
+  ;; caller thread, sharing the same pine.eval engine. Errors reach *on-debug*.
+  (if pine.actor:*local-agent*
+      (pine.actor:agent-eval nil pine.actor:*local-agent* str
+                             :package package
+                             :bindings (list (cons 'pine.client:*client*
+                                                   (pine.client:current-client)))
+                             :on-done #'%eval-done)
+      (pine.eval:evaluate-string
+       str :package package
+       :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
+       :on-done #'%eval-done)))
 
 (defun eval-last-sexp ()
   (let ((buf (cur-buffer)))
@@ -202,25 +188,28 @@ prefix count."
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.buffer:state->string state))
-             (package (%buffer-package state)))
-        (pine.eval:evaluate-thunk
-         (lambda ()
-           (let ((*package* package) (pos 0) (count 0))
-             (loop
-               (multiple-value-bind (form new-pos)
-                   (read-from-string text nil :eof :start pos)
-                 (when (eq form :eof) (return count))
-                 (eval form) (incf count) (setf pos new-pos)))))
-         :package package
-         :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
-         :on-done
-         (lambda (ev)
-           (%eval-notify
-            (case (pine.eval:evaluation-status ev)
-              (:ok (format nil "eval-buffer: ~a forms"
-                           (first (pine.eval:evaluation-values ev))))
-              (:aborted "eval-buffer aborted")
-              (t "eval-buffer: error")))))))))
+             (package (%buffer-package state))
+             (cli (pine.client:current-client))
+             (thunk (lambda ()
+                      (let ((pine.client:*client* cli) (*package* package)
+                            (pos 0) (count 0))
+                        (loop
+                          (multiple-value-bind (form new-pos)
+                              (read-from-string text nil :eof :start pos)
+                            (when (eq form :eof) (return count))
+                            (eval form) (incf count) (setf pos new-pos))))))
+             (done (lambda (ev)
+                     (%eval-notify
+                      (case (pine.eval:evaluation-status ev)
+                        (:ok (format nil "eval-buffer: ~a forms"
+                                     (first (pine.eval:evaluation-values ev))))
+                        (:aborted "eval-buffer aborted")
+                        (t "eval-buffer: error"))))))
+        ;; one eval path: route the whole-buffer eval through the local agent.
+        (if pine.actor:*local-agent*
+            (pine.actor:agent-run nil pine.actor:*local-agent* thunk
+                                  :package package :on-done done)
+            (pine.eval:evaluate-thunk thunk :package package :on-done done))))))
 
 (defun scroll-window (delta)
   (let* ((client (pine.client:current-client))
@@ -401,21 +390,13 @@ prefix count."
     (let ((w (pine.client:focused-window (pine.client:current-client))))
       (when w (scroll-window (- 2 (pine.buffer:win-height w))))))
 
-  (defcmd "forward-sexp" ()  (%sexp-move #'pine.ts:forward-sexp-pos))
-  (defcmd "backward-sexp" () (%sexp-move #'pine.ts:backward-sexp-pos))
-  (defcmd "beginning-of-defun" ()
-    (%sexp-move (lambda (rt lang text l c)
-                  (multiple-value-bind (sl sc) (pine.ts:defun-bounds-pos rt lang text l c)
-                    (values sl sc)))))
-  (defcmd "end-of-defun" ()
-    (%sexp-move (lambda (rt lang text l c)
-                  (multiple-value-bind (sl sc el ec)
-                      (pine.ts:defun-bounds-pos rt lang text l c)
-                    (declare (ignore sl sc))
-                    (values el ec)))))
+  (defcmd "forward-sexp" ()      (%sexp-move :forward-sexp))
+  (defcmd "backward-sexp" ()     (%sexp-move :backward-sexp))
+  (defcmd "beginning-of-defun" () (%sexp-move :beginning-of-defun))
+  (defcmd "end-of-defun" ()      (%sexp-move :end-of-defun))
   (defcmd "mark-sexp" ()
     (set-mark)
-    (%sexp-move #'pine.ts:forward-sexp-pos))
+    (%sexp-move :forward-sexp))
 
   (defcmd "set-mark" ()     (set-mark))
   (defcmd "kill-line" ()    (kill-line-cmd))

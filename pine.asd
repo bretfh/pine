@@ -17,36 +17,40 @@
   :pathname "src/"
   :components
   ((:file "package")
-   (:file "key")
-   (:file "keymap")
-   (:file "server")
-   (:file "eval")
-   (:file "actor")
-   (:file "event")
-   (:file "hooks")
-   (:file "face")
-   (:file "buffer")
-   (:file "window")
-   (:file "client")
-   (:file "cell")
-   (:file "sources")
-   (:file "echo")
-   (:file "command")
-   (:file "variable")
-   (:file "layout")
-   (:file "mode")
-   (:file "kill-ring")
-   (:file "complete")
-   (:file "prompt")
-   (:file "file")
-   (:file "repl")
-   (:file "term")
-   (:file "ts")
-   (:file "render")
-   (:file "editor")
-   (:file "attach")
-   (:file "editor-session")
-   (:file "desktop-session")
+   (:module "core"
+    :serial t
+    :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
+                (:file "jobs") (:file "event") (:file "hooks") (:file "attach")))
+   (:module "buffer"
+    :serial t
+    :components ((:file "buffer") (:file "window") (:file "face")))
+   (:module "session"
+    :serial t
+    :components ((:file "client")))
+   (:module "keymap"
+    :serial t
+    :components ((:file "key") (:file "keymap") (:file "command") (:file "mode")
+                (:file "variable")))
+   (:module "widget"
+    :serial t
+    :components ((:file "cell") (:file "sources") (:file "layout")))
+   (:module "term"
+    :serial t
+    :components ((:file "term")))
+   (:module "ts"
+    :serial t
+    :components ((:file "ts") (:file "highlight")))
+   (:module "render"
+    :serial t
+    :components ((:file "render")))
+   (:module "editor"
+    :serial t
+    :components ((:file "echo") (:file "kill-ring") (:file "complete")
+                (:file "prompt") (:file "file") (:file "repl") (:file "editor")
+                (:file "editor-session")))
+   (:module "desktop"
+    :serial t
+    :components ((:file "desktop")))
    (:file "user")
    (:file "main")))
 
@@ -70,11 +74,8 @@
   :depends-on (#:pine #:cl-gtk4 #:cl-gdk4 #:cl-cairo2)
   :serial t
   :pathname "src/"
-  :components ((:file "surface")
-               (:module "de"
-                :serial t
-                :components ((:file "package")
-                             (:file "paint")
-                             (:file "layer")
-                             (:file "desktop")))
-               (:file "gtk")))
+  :components
+  ((:module "app"
+    :serial t
+    :components ((:file "surface") (:file "paint") (:file "desktop-app")
+                (:file "editor-app")))))

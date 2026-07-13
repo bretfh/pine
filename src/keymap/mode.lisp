@@ -48,9 +48,13 @@
 
 (defun set-buffer-mode (buffer-actor mode-name)
   (unless (find-mode mode-name) (error "No mode named ~s" mode-name))
-  (setf (gethash buffer-actor (pine.client:buffer-modes (pine.client:current-client)))
-        mode-name)
+  ;; the buffer's own :mode meta drives highlighting, so set it first and
+  ;; unconditionally; recording it on the client (for the modeline) is
+  ;; best-effort and must not stop the buffer from learning its mode.
   (sento.actor:tell buffer-actor (list :set-local :key :mode :value mode-name))
+  (let ((cli (ignore-errors (pine.client:current-client))))
+    (when cli
+      (setf (gethash buffer-actor (pine.client:buffer-modes cli)) mode-name)))
   (find-mode mode-name))
 
 (defun mode-for-file (path)
@@ -136,7 +140,7 @@ run before the major mode's under CLOS method combination."
 
 (defmethod dispatch-message ((mode base-mode) self tag plist)
   (declare (ignore self))
-  (destructuring-bind (state undo redo subs hl) sento.actor:*state*
+  (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
     (case tag
       (:get-state (sento.actor:reply state))
       (:get-snapshot (sento.actor:reply (pine.buffer:state->snapshot state)))
@@ -146,51 +150,72 @@ run before the major mode's under CLOS method combination."
         (pine.buffer:buffer-local state (getf plist :key) (getf plist :default))))
       (:subscribe
        (let ((r (getf plist :renderer)))
-         (setf sento.actor:*state* (list state undo redo (adjoin r subs :test #'eq) hl))
+         (setf sento.actor:*state* (list state undo redo (adjoin r subs :test #'eq) hl pstate))
          (sento.actor:tell r
            (list :snapshot :snapshot (pine.buffer:state->snapshot-with-hl state hl)))))
       (:unsubscribe
        (let ((r (getf plist :renderer)))
-         (setf sento.actor:*state* (list state undo redo (remove r subs :test #'eq) hl))))
-      (:highlights
-       (let ((h (getf plist :highlights)))
-         (setf sento.actor:*state* (list state undo redo subs h))
-         (pine.buffer:notify-subscribers subs state h)))
+         (setf sento.actor:*state* (list state undo redo (remove r subs :test #'eq) hl pstate))))
+      ;; structural motion off the persistent tree; no reparse, no whole-buffer
+      ;; string, computed from the buffer's own point.
+      (:ts-motion
+       (when pstate
+         (let ((snap (pine.buffer:state->snapshot state)))
+           (multiple-value-bind (l c)
+               (pine.ts:parse-motion pstate (getf plist :kind)
+                                     (pine.buffer:point-line snap)
+                                     (pine.buffer:point-col snap))
+             (when l
+               (let ((new (pine.buffer:move-mark state :point l c)))
+                 (setf sento.actor:*state* (list new undo redo subs hl pstate))
+                 (pine.buffer:notify-subscribers subs new hl)))))))
       (:undo
        (when undo
          (let ((prev (first undo)))
-           (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl))
-           (pine.buffer:notify-subscribers subs prev hl))))
+           (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate prev)
+             (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl2 ps2))
+             (pine.buffer:notify-subscribers subs prev hl2)))))
       (:redo
        (when redo
          (let ((next (first redo)))
-           (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl))
-           (pine.buffer:notify-subscribers subs next hl))))
+           (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate next)
+             (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl2 ps2))
+             (pine.buffer:notify-subscribers subs next hl2)))))
       ((:set-local :set-meta)
        (let ((new (pine.buffer:set-meta state (getf plist :key) (getf plist :value))))
-         (setf sento.actor:*state* (list new undo redo subs hl))
-         (pine.buffer:notify-subscribers subs new hl)))
+         ;; a mode change (re)builds the parse-state and highlights immediately,
+         ;; so opening a file or setting lisp-mode colours it at once.
+         (if (eq (getf plist :key) :mode)
+             (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate new)
+               (setf sento.actor:*state* (list new undo redo subs hl2 ps2))
+               (pine.buffer:notify-subscribers subs new hl2))
+             (progn
+               (setf sento.actor:*state* (list new undo redo subs hl pstate))
+               (pine.buffer:notify-subscribers subs new hl)))))
       (:set-var
        (let* ((vars (or (fset:@ (pine.buffer:meta state) :vars) (fset:empty-map)))
               (new (pine.buffer:set-meta
                     state :vars (fset:with vars (getf plist :key) (getf plist :value)))))
-         (setf sento.actor:*state* (list new undo redo subs hl))
+         (setf sento.actor:*state* (list new undo redo subs hl pstate))
          (pine.buffer:notify-subscribers subs new hl)))
       (:replace-content
        (let ((new (pine.buffer:set-meta
                    (pine.buffer:load-content (getf plist :content))
                    :name (or (fset:@ (pine.buffer:meta state) :name) ""))))
-         ;; fresh content clears history
-         (setf sento.actor:*state* (list new nil nil subs hl))
-         (pine.buffer:notify-subscribers subs new hl))))))
+         ;; fresh content clears history and reparses from scratch
+         (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate new)
+           (setf sento.actor:*state* (list new nil nil subs hl2 ps2))
+           (pine.buffer:notify-subscribers subs new hl2)))))))
 
 (defmethod dispatch-message ((mode text-mode) self tag plist)
-  (destructuring-bind (state undo redo subs hl) sento.actor:*state*
-    ;; edits push the old state onto UNDO and clear REDO.
+  (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
+    ;; edits push the old state onto UNDO, clear REDO, and reparse the tree
+    ;; incrementally so the notified snapshot already carries fresh highlights.
     (macrolet ((commit (new-state)
                  `(let ((new ,new-state))
-                    (setf sento.actor:*state* (list new (cons state undo) nil subs hl))
-                    (pine.buffer:notify-subscribers subs new hl))))
+                    (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate new)
+                      (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 ps2))
+                      (pine.buffer:notify-subscribers subs new hl2)))))
       (case tag
         (:insert
          (let* ((snap (pine.buffer:state->snapshot state))
@@ -218,8 +243,17 @@ run before the major mode's under CLOS method combination."
         (:move-point
          (let ((new (pine.buffer:move-mark state :point
                                            (getf plist :line) (getf plist :col))))
-           (setf sento.actor:*state* (list new undo redo subs hl))
+           (setf sento.actor:*state* (list new undo redo subs hl pstate))
            (pine.buffer:notify-subscribers subs new hl)))
+        ;; char/line motion computed from the buffer's own state, so the editor
+        ;; never blocks on a round-trip just to move point.
+        (:move-by
+         (multiple-value-bind (l c)
+             (pine.buffer:point-after-move (pine.buffer:state->snapshot state)
+                                           (getf plist :unit) (getf plist :n))
+           (let ((new (pine.buffer:move-mark state :point l c)))
+             (setf sento.actor:*state* (list new undo redo subs hl pstate))
+             (pine.buffer:notify-subscribers subs new hl))))
         (:delete-region
          (commit (pine.buffer:delete-region state
                                             (getf plist :start-line) (getf plist :start-col)

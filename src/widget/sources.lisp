@@ -332,7 +332,15 @@ the actor system. No thread is killed."
 ;;;; Media (EMMS via the emacs daemon). Polled into a :media plist cell.
 
 (defparameter +emms-elisp+
-  "(let* ((trk (ignore-errors (emms-playlist-current-selected-track))) (playing (and (boundp 'emms-player-playing-p) emms-player-playing-p)) (paused (and (boundp 'emms-player-paused-p) emms-player-paused-p))) (if trk (json-encode (list :title (or (emms-track-get trk 'info-title) \"\") :artist (or (emms-track-get trk 'info-artist) \"\") :length (or (emms-track-get trk 'info-playing-time) 0) :pos (or (and (boundp 'emms-playing-time) emms-playing-time) 0) :status (cond (paused \"Paused\") (playing \"Playing\") (t \"Stopped\")))) \"{}\"))")
+  "(let* ((trk (ignore-errors (emms-playlist-current-selected-track))) (playing (and (boundp 'emms-player-playing-p) emms-player-playing-p)) (paused (and (boundp 'emms-player-paused-p) emms-player-paused-p))) (if trk (json-encode (list :title (or (emms-track-get trk 'info-title) \"\") :artist (or (emms-track-get trk 'info-artist) \"\") :length (or (emms-track-get trk 'info-playing-time) 0) :pos (or (and (boundp 'emms-playing-time) emms-playing-time) 0) :file (or (ignore-errors (emms-track-name trk)) \"\") :status (cond (paused \"Paused\") (playing \"Playing\") (t \"Stopped\")))) \"{}\"))")
+
+(defun cover-for (file)
+  "A cover-art image path in FILE's directory, or nil."
+  (when (and (stringp file) (plusp (length file)) (ignore-errors (probe-file file)))
+    (let ((dir (directory-namestring file)))
+      (dolist (name '("cover.jpg" "cover.jpeg" "cover.png" "folder.jpg" "front.jpg") nil)
+        (let ((path (merge-pathnames name dir)))
+          (when (ignore-errors (probe-file path)) (return (namestring path))))))))
 
 (defun %unquote-elisp (s)
   "emacsclient -e prints a Lisp string literal; strip the quotes and unescape."
@@ -355,9 +363,16 @@ the actor system. No thread is killed."
         (let ((h (com.inuoe.jzon:parse (%unquote-elisp raw))))
           (list :title  (gethash "title" h "")  :artist (gethash "artist" h "")
                 :status (gethash "status" h "Stopped")
-                :pos    (gethash "pos" h 0)      :length (gethash "length" h 0)))))))
+                :pos    (gethash "pos" h 0)      :length (gethash "length" h 0)
+                :file   (gethash "file" h "")))))))
 
-(defpoll :media 1 (emms-media))
+(defsource :media (system)
+  (let ((mc (cell-of :media)) (ac (cell-of :art)))
+    (start-poll system 1
+      (lambda ()
+        (let ((m (emms-media)))
+          (pine.cell:set-cell mc m)
+          (pine.cell:set-cell ac (or (cover-for (getf m :file)) "")))))))
 
 ;;;; System stats (cpu / ram / temp) for the control panel.
 
@@ -379,10 +394,22 @@ the actor system. No thread is killed."
             ((%starts line "MemAvailable:") (setf avail (or (%first-number line) 0)))))
     (if (plusp total) (round (* 100 (- total avail)) total) 0)))
 
+(defvar *cpu-prev* nil "Previous (total . idle) from /proc/stat, for the CPU% delta.")
 (defun cpu-percent ()
-  (let ((load (or (%first-number (sh "cat" "/proc/loadavg")) 0))
-        (ncpu (or (ignore-errors (parse-integer (sh "nproc"))) 1)))
-    (min 100 (round (* 100 load) (max 1 ncpu)))))
+  "Real CPU utilisation percent from the /proc/stat delta since the last poll
+(like eww's EWW_CPU.avg), not the load average."
+  (let* ((line (first (%lines (sh "cat" "/proc/stat"))))
+         (nums (loop for s in (rest (%split (string-trim " " (or line "")) #\space))
+                     for n = (ignore-errors (parse-integer s))
+                     when n collect n))
+         (total (reduce #'+ nums :initial-value 0))
+         (idle (+ (or (nth 3 nums) 0) (or (nth 4 nums) 0))))   ; idle + iowait
+    (prog1
+        (if *cpu-prev*
+            (let ((dt (- total (car *cpu-prev*))) (di (- idle (cdr *cpu-prev*))))
+              (if (plusp dt) (max 0 (min 100 (round (* 100 (- dt di)) dt))) 0))
+            0)
+      (setf *cpu-prev* (cons total idle)))))
 
 (defun disk-percent (&optional (mount "/"))
   "Used percent of the filesystem holding MOUNT, from df."
@@ -400,4 +427,18 @@ the actor system. No thread is killed."
       (format nil "up ~dh ~dm" h (floor rem 60)))))
 
 (defpoll :user 3600 (sh "id" "-un"))
+(defpoll :host 3600 (sh "hostname"))
 (defpoll :uptime 60 (uptime-string))
+(defpoll :clock 30 (get-universal-time))
+
+;;;; Focused window title (for the echo strip).
+
+(defun focused-title ()
+  (ignore-errors
+    (let ((w (com.inuoe.jzon:parse (sh "niri" "msg" "--json" "focused-window"))))
+      (and (hash-table-p w) (gethash "title" w "")))))
+
+(defsource :wintitle (system)
+  (start-stream system "niri msg --json event-stream"
+    (lambda () (set! :wintitle (or (focused-title) "")))
+    (lambda (line) (search "Window" line))))

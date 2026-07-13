@@ -22,6 +22,7 @@
           *target*)
   (let ((srv (pine.server:start-server :workers workers
                                        :remoting-port remoting-port)))
+    (setf pine.server:*server* srv)
     (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
     (pine.event:make-event-bus srv)
     (pine.actor:start-agent-registry srv)
@@ -43,9 +44,12 @@ caller keeps the process alive. This is the daemon."
   (let ((srv (pine.server:start-server :workers workers :remoting-port remoting-port)))
     (setf pine.server:*server* srv)
     (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime srv))   ; tree-sitter for highlights
+      (error () nil))
     (pine.event:make-event-bus srv)
     (pine.actor:start-agent-registry srv)
     (pine.actor:start-local-agent srv)
+    (pine.actor:start-agent-debug srv)
     (pine.buffer:start-buffer-registry srv)
     (pine.attach:start-attach-listener srv)
     (pine.buffer:install-default-faces)
@@ -53,9 +57,20 @@ caller keeps the process alive. This is the daemon."
     (pine.editor:install-commands)
     (pine.editor:install-bindings)
     (pine.editor:install-editor-sessions)
-    (pine.desktop-session:install-desktop-sessions)
+    (pine.desktop:install-desktop-sessions)
+    (pine.desktop:install-desktop-config)
+    (pine.jobs:install-jobs)
+    (ignore-errors (pine.source:start-sources srv))   ; sources feed cells the desktop reads
     (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
     srv))
+
+(defun run-daemon (&key (port 17000))
+  "Start the headless daemon and keep the process alive. Editor and desktop apps
+attach over remoting on PORT. This is the entry `make daemon` runs."
+  (start-daemon :remoting-port port)
+  (format t "pine daemon up on 127.0.0.1:~d -- attach editor/desktop apps.~%" port)
+  (finish-output)
+  (loop (sleep 3600)))
 
 (defun stop ()
   (pine.hooks:run-shutdown-hooks))
