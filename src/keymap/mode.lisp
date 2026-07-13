@@ -199,10 +199,15 @@ run before the major mode's under CLOS method combination."
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
          (pine.buffer:notify-subscribers subs new hl)))
       (:replace-content
-       (let ((new (pine.buffer:set-meta
-                   (pine.buffer:load-content (getf plist :content))
-                   :name (or (fset:@ (pine.buffer:meta state) :name) ""))))
-         ;; fresh content clears history and reparses from scratch
+       ;; fresh content clears history, but the buffer keeps its identity: name,
+       ;; mode, pathname, and buffer-locals carry over so highlighting and the
+       ;; mode survive a content replace (loading a file, reverting).
+       (let* ((old (pine.buffer:meta state))
+              (new (reduce (lambda (st key)
+                             (multiple-value-bind (val present) (fset:lookup old key)
+                               (if present (pine.buffer:set-meta st key val) st)))
+                           '(:name :mode :pathname :vars)
+                           :initial-value (pine.buffer:load-content (getf plist :content)))))
          (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate new)
            (setf sento.actor:*state* (list new nil nil subs hl2 ps2))
            (pine.buffer:notify-subscribers subs new hl2)))))))

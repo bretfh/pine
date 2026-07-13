@@ -1,7 +1,7 @@
 (defpackage #:pine.desktop
   (:use #:cl)
   (:export #:install-desktop-sessions #:install-desktop-config
-           #:defsurface #:push-surface #:show-panel))
+           #:defsurface #:push-surface #:show-panel #:refresh-all))
 
 (in-package #:pine.desktop)
 
@@ -106,7 +106,19 @@ close it if it is already the open one."
   "Wire the daemon to host a desktop session per attaching :desktop app."
   (pine.attach:register-app-kind :desktop
     :on-attach (lambda (c) (make-desktop-session c))
-    :on-input  (lambda (c msg) (desktop-input c msg))))
+    :on-input  (lambda (c msg) (desktop-input c msg)))
+  (pine.command:define-command "reload-desktop" () (refresh-all)))
+
+(defun refresh-all ()
+  "Re-push every surface for every attached desktop client. Call it (M-x
+reload-desktop) after redefining a builder so the change shows at once."
+  (dolist (c pine.attach:*clients*)
+    (when (eq (pine.attach:attached-client-kind c) :desktop)
+      (let ((s (pine.attach:attached-client-session c)))
+        (when (dsession-p s)
+          (push-surface c "bar")
+          (push-surface c "echo")
+          (when (dsession-open s) (push-surface c (dsession-open s))))))))
 
 
 ;;;; The widget vocabulary, daemon-side (pine.layout only, no GTK). A card is a
@@ -345,14 +357,14 @@ close it if it is already the open one."
 ;;;; Control panel.
 
 (defun ring-face (cls)
-  (cond ((equal cls "cpu") :error) ((equal cls "ram") :function-name)
-        ((equal cls "disk") :string) (t :variable-param)))
+  (cond ((equal cls "cpu") :ring-cpu) ((equal cls "ram") :ring-ram)
+        ((equal cls "disk") :ring-disk) (t :ring-temp)))
 
 (defun ring-tile (glyph value cls name &optional (unit "%"))
   (pine.layout:column :class (format nil "ctl-ring-box ~a" cls) :align :center
     (pine.layout:ring :class (format nil "ctl-ring ~a" cls)
                       :value value :min 0 :max 100 :thickness 5 :diameter 58
-                      :arc-face (ring-face cls) :track-face :comment
+                      :arc-face (ring-face cls) :track-face :ring-track
       (pine.layout:icon glyph :class "ctl-ring-ico"))
     (pine.layout:label (format nil "~a ~d~a" name value unit) :class "ctl-ring-lbl")))
 

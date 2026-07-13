@@ -1,5 +1,8 @@
 (in-package #:pine.editor)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require :sb-introspect))
+
 (defun start-editor ()
   (let* ((client (pine.client:current-client))
          (server (pine.client:server-of client)))
@@ -111,9 +114,33 @@ computes the target from its own state, so this never blocks on a round-trip."
         ((char= c #\") (let ((s (%match-string-backward text i))) (when s (values s (1+ i)))))
         (t (values (%atom-start-backward text i) (1+ i)))))))
 
+(defun %infer-package (text)
+  "The package named by the last (in-package ...) in TEXT, like SLIME infers it
+from the buffer, or nil."
+  (let ((pos 0) (result nil))
+    (loop for idx = (search "(in-package" text :start2 pos)
+          while idx do
+            (multiple-value-bind (form new)
+                (ignore-errors (read-from-string text nil nil :start idx))
+              (when (and (consp form) (symbolp (first form))
+                         (string-equal (symbol-name (first form)) "IN-PACKAGE")
+                         (second form))
+                (let ((p (find-package (second form)))) (when p (setf result p))))
+              (setf pos (if (and new (> new idx)) new (1+ idx)))))
+    result))
+
 (defun %buffer-package (state)
-  (let ((name (pine.buffer:buffer-local state :package nil)))
-    (or (and name (find-package name)) (find-package :cl-user))))
+  (let ((inferred (%infer-package (pine.buffer:state->string state)))
+        (name (pine.buffer:buffer-local state :package nil)))
+    (or inferred (and name (find-package name)) (find-package :cl-user))))
+
+(defun %lc->offset (text line col)
+  "Character offset of LINE/COL in TEXT."
+  (let ((i 0) (l 0) (n (length text)))
+    (loop while (and (< i n) (< l line))
+          do (when (char= (char text i) #\Newline) (incf l))
+             (incf i))
+    (min (+ i col) n)))
 
 (defun %show-eval-result (form thunk)
   (handler-case
@@ -148,24 +175,188 @@ computes the target from its own state, so this never blocks on a round-trip."
     (format s "~%Backtrace:~%~a" (pine.eval:evaluation-backtrace ev))))
 
 (defun %eval-error (ev)
-  (setf *pending-debugger* ev)
+  (setf *pending-debugger* ev
+        *pending-agent-debug* nil)
   (%show-help "*debugger*" (%debugger-text ev))
   (%eval-notify (format nil "eval error: ~a  (M-x choose-restart / C-g abort)"
                         (pine.eval:evaluation-condition-type ev))))
 
+(defvar *pending-agent-debug* nil
+  "The last error reported home by a :process agent: (:agent :eval-id :restarts).")
+
+(defun %agent-debug-surface (msg)
+  "A process agent's error, surfaced in the editor: show its restarts and let
+choose-restart drive the resume back to that agent. Move the decision, not the
+handler."
+  (when (eq (first msg) :agent-debug)
+    (destructuring-bind (&key agent eval-id condition restarts &allow-other-keys)
+        (rest msg)
+      (setf *pending-agent-debug* (list :agent agent :eval-id eval-id :restarts restarts)
+            *pending-debugger* nil)
+      (%show-help "*debugger*"
+                  (format nil "Error in agent ~a~%~%~a~%~%Restarts:~%~{  ~a~%~}"
+                          agent condition restarts))
+      (%eval-notify (format nil "agent ~a error (M-x choose-restart)" agent)))))
+
+(defvar *eval-target* :local
+  "Where C-x C-e / eval-defun run: :local (this image), or a registered agent
+name (a :process agent's own image). The one eval path, target swappable.")
+
 (defun %eval-form-string (str package)
-  ;; one eval path: route through the local agent (agent-eval :local), off the
-  ;; caller thread, sharing the same pine.eval engine. Errors reach *on-debug*.
-  (if pine.actor:*local-agent*
-      (pine.actor:agent-eval nil pine.actor:*local-agent* str
-                             :package package
-                             :bindings (list (cons 'pine.client:*client*
-                                                   (pine.client:current-client)))
-                             :on-done #'%eval-done)
-      (pine.eval:evaluate-string
-       str :package package
-       :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
-       :on-done #'%eval-done)))
+  ;; one eval path: run STR in the chosen agent, off the caller thread, sharing
+  ;; the same pine.eval engine. Errors reach *on-debug* (local) or come home
+  ;; from a process agent via agent-debug.
+  (if (or (null *eval-target*) (eq *eval-target* :local))
+      (if pine.actor:*local-agent*
+          (pine.actor:agent-eval nil pine.actor:*local-agent* str
+                                 :package package
+                                 :bindings (list (cons 'pine.client:*client*
+                                                       (pine.client:current-client)))
+                                 :on-done #'%eval-done)
+          (pine.eval:evaluate-string
+           str :package package
+           :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
+           :on-done #'%eval-done))
+      ;; a remote agent's image: no local bindings cross the wire
+      (pine.actor:agent-eval (pine.client:server-of (pine.client:current-client))
+                             *eval-target* str :package package :on-done #'%eval-done)))
+
+(defun eval-defun ()
+  "Evaluate the top-level form point is inside (C-M-x), via the buffer's tree."
+  (let ((buf (cur-buffer)))
+    (when buf
+      (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
+             (text (pine.buffer:state->string state))
+             (snap (pine.buffer:state->snapshot state))
+             (lang (%buffer-ts-lang)))
+        (if (null lang)
+            (eval-last-sexp)
+            (multiple-value-bind (sl sc el ec)
+                (pine.ts:defun-bounds-pos (%ts-runtime) lang text
+                                          (pine.buffer:point-line snap)
+                                          (pine.buffer:point-col snap))
+              (if sl
+                  (%eval-form-string
+                   (subseq text (%lc->offset text sl sc) (%lc->offset text el ec))
+                   (%buffer-package state))
+                  (eval-last-sexp))))))))
+
+(defun %offset->lc (text offset)
+  (let ((line 0) (col 0))
+    (dotimes (i (min offset (length text)) (values line col))
+      (if (char= (char text i) #\Newline) (setf line (1+ line) col 0) (incf col)))))
+
+(defun %token-at (text offset)
+  "The symbol token surrounding OFFSET, bounded by sexp delimiters."
+  (let ((s (min offset (length text))) (e (min offset (length text))) (n (length text)))
+    (loop while (and (> s 0) (not (%sexp-delim-p (char text (1- s))))) do (decf s))
+    (loop while (and (< e n) (not (%sexp-delim-p (char text e)))) do (incf e))
+    (when (< s e) (subseq text s e))))
+
+(defun %open-definition (label srcs)
+  (let* ((src (first srcs))
+         (path (and src (sb-introspect:definition-source-pathname src)))
+         (coff (and src (sb-introspect:definition-source-character-offset src))))
+    (cond
+      ((and path (probe-file path))
+       (pine.file:find-file (namestring path))
+       (when coff
+         (let ((nbuf (cur-buffer)))
+           (when nbuf
+             (let ((ntext (pine.buffer:state->string
+                           (sento.actor:ask-s nbuf '(:get-state) :time-out 5))))
+               (multiple-value-bind (l c) (%offset->lc ntext coff)
+                 (sento.actor:tell nbuf (list :move-point :line l :col c)))))))
+       (pine.echo:message (format nil "~a" (file-namestring path))))
+      (t (pine.echo:message (format nil "no source for ~a" label))))))
+
+(defun find-definition ()
+  "Jump to the source of the symbol at point (M-.), via sb-introspect."
+  (let ((buf (cur-buffer)))
+    (when buf
+      (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
+             (text (pine.buffer:state->string state))
+             (snap (pine.buffer:state->snapshot state))
+             (off (min (%point->offset snap) (length text)))
+             (tok (%token-at text off))
+             (pkg (%buffer-package state)))
+        (if (null tok)
+            (pine.echo:message "no symbol at point")
+            (let* ((sym (let ((*package* pkg)) (ignore-errors (read-from-string tok))))
+                   (srcs (and (symbolp sym)
+                              (loop for kind in '(:function :macro :generic-function
+                                                  :variable :class)
+                                    thereis (ignore-errors
+                                             (sb-introspect:find-definition-sources-by-name
+                                              sym kind))))))
+              (%open-definition tok srcs)))))))
+
+(defun %token-start (text offset)
+  (let ((s (min offset (length text))))
+    (loop while (and (> s 0) (not (%sexp-delim-p (char text (1- s))))) do (decf s))
+    s))
+
+(defun %symbol-candidates (prefix pkg)
+  "Downcased names of symbols accessible in PKG that start with PREFIX."
+  (let ((up (string-upcase prefix)) (out nil))
+    (do-symbols (s pkg)
+      (let ((name (symbol-name s)))
+        (when (and (>= (length name) (length up))
+                   (string= up name :end2 (length up)))
+          (pushnew (string-downcase name) out :test #'string=))))
+    (sort out #'string<)))
+
+(defun complete-symbol ()
+  "Complete the symbol at point against the buffer's package; Tab when there is
+no symbol to complete."
+  (let ((buf (cur-buffer)))
+    (when buf
+      (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
+             (text (pine.buffer:state->string state))
+             (snap (pine.buffer:state->snapshot state))
+             (off (min (%point->offset snap) (length text)))
+             (start (%token-start text off))
+             (prefix (subseq text start off))
+             (pkg (%buffer-package state)))
+        (if (zerop (length prefix))
+            (pine.command:call-command "insert-tab")
+            (let ((cands (%symbol-candidates prefix pkg)))
+              (cond
+                ((null cands) (pine.echo:message "no completions"))
+                ((null (rest cands)) (%replace-prefix buf prefix (first cands)))
+                (t (completing-read "Complete: " cands
+                     (lambda (choice) (%replace-prefix buf prefix choice)))))))))))
+
+(defun %replace-prefix (buf prefix choice)
+  (dotimes (i (length prefix)) (sento.actor:tell buf '(:backspace)))
+  (pine.buffer:tell buf :insert :text choice))
+
+(defun symbol-arglist ()
+  "Echo the lambda list of the function named at point (M-x arglist)."
+  (let ((buf (cur-buffer)))
+    (when buf
+      (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
+             (text (pine.buffer:state->string state))
+             (snap (pine.buffer:state->snapshot state))
+             (off (min (%point->offset snap) (length text)))
+             (tok (%token-at text off))
+             (pkg (%buffer-package state)))
+        (when tok
+          (let ((sym (let ((*package* pkg)) (ignore-errors (read-from-string tok)))))
+            (if (and (symbolp sym) (fboundp sym))
+                (pine.echo:message
+                 (format nil "~a ~(~a~)" tok (sb-introspect:function-lambda-list sym)))
+                (pine.echo:message (format nil "~a: not a function" tok)))))))))
+
+(defun load-file ()
+  "Compile and load the current buffer's file into the eval target's image."
+  (let* ((buf (cur-buffer))
+         (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5)))
+         (path (and state (pine.buffer:buffer-local state :pathname nil))))
+    (if path
+        (%eval-form-string (format nil "(load (compile-file ~s))" (namestring path))
+                           (find-package :cl-user))
+        (pine.echo:message "buffer has no file"))))
 
 (defun eval-last-sexp ()
   (let ((buf (cur-buffer)))
@@ -436,17 +627,54 @@ computes the target from its own state, so this never blocks on a round-trip."
                          (find-package :cl-user)))))
           (%eval-form-string text pkg)))))
   (defcmd "choose-restart" ()
-    (let ((ev *pending-debugger*))
-      (if (and ev (eq (pine.eval:evaluation-status ev) :error))
-          (completing-read "Restart: "
-            (remove nil (mapcar #'first (pine.eval:evaluation-restarts ev)))
-            (lambda (name)
-              (pine.eval:pick-restart ev name)
-              (setf *pending-debugger* nil)
-              (pine.echo:message (format nil "invoked ~a" name))))
-          (pine.echo:message "no evaluation in the debugger"))))
+    (cond
+      (*pending-agent-debug*
+       (destructuring-bind (&key agent eval-id restarts) *pending-agent-debug*
+         (completing-read "Restart: " (remove nil restarts)
+           (lambda (name)
+             (let ((info (pine.actor:find-agent
+                          (pine.client:server-of (pine.client:current-client)) agent)))
+               (when info
+                 (sento.actor:tell (pine.actor:agent-info-actor info)
+                                   (list :resume :eval-id eval-id :restart name))))
+             (setf *pending-agent-debug* nil)
+             (pine.echo:message (format nil "resumed ~a in agent ~a" name agent))))))
+      ((and *pending-debugger*
+            (eq (pine.eval:evaluation-status *pending-debugger*) :error))
+       (let ((ev *pending-debugger*))
+         (completing-read "Restart: "
+           (remove nil (mapcar #'first (pine.eval:evaluation-restarts ev)))
+           (lambda (name)
+             (pine.eval:pick-restart ev name)
+             (setf *pending-debugger* nil)
+             (pine.echo:message (format nil "invoked ~a" name))))))
+      (t (pine.echo:message "no evaluation in the debugger"))))
+  (defcmd "jobs" ()
+    (%show-help "*jobs*"
+      (with-output-to-string (s)
+        (format s "Jobs  (M-x choose-restart on an errored one)~%~%~4@a  ~-10a ~-9a ~a~%"
+                "id" "agent" "status" "form / condition")
+        (dolist (j (pine.jobs:list-jobs))
+          (format s "~4@a  ~-10a ~-9a ~a~%"
+                  (getf j :id) (getf j :agent) (getf j :status)
+                  (or (getf j :form) (getf j :condition) ""))))))
   (defcmd "eval-last-sexp" () (eval-last-sexp))
+  (defcmd "eval-defun" ()     (eval-defun))
   (defcmd "eval-buffer" ()    (eval-buffer))
+  (defcmd "find-definition" () (find-definition))
+  (defcmd "arglist" ()        (symbol-arglist))
+  (defcmd "complete-symbol" () (complete-symbol))
+  (defcmd "load-file" ()      (load-file))
+  (defcmd "set-eval-target" ()
+    (completing-read
+     "Eval in: "
+     (cons "local"
+           (mapcar #'pine.actor:agent-info-name
+                   (pine.actor:list-agents
+                    (pine.client:server-of (pine.client:current-client)))))
+     (lambda (name)
+       (setf *eval-target* (if (string= name "local") :local name))
+       (pine.echo:message (format nil "eval target: ~a" name)))))
   (defcmd "new-buffer" ()
     (prompt "New buffer: "
       (lambda (name)
@@ -511,6 +739,8 @@ computes the target from its own state, so this never blocks on a round-trip."
     (pine.keymap:define-key g (list (k "C-x") (k "r")) "open-repl")
     (pine.keymap:define-key g (list (k "C-x") (k "t")) "terminal")
     (pine.keymap:define-key g (list (k "C-x") (k "C-e")) "eval-last-sexp")
+    (pine.keymap:define-key g (k "C-M-x") "eval-defun")
+    (pine.keymap:define-key g (k "M-.") "find-definition")
     (pine.keymap:define-key g (k "M-x") "execute-command")
     (pine.keymap:define-key g (k "Insert") "overwrite-mode")
     ;; prefix argument
@@ -558,4 +788,11 @@ computes the target from its own state, so this never blocks on a round-trip."
     (pine.keymap:define-key tm (k "C-M-b") "backward-sexp")
     (pine.keymap:define-key tm (k "C-M-a") "beginning-of-defun")
     (pine.keymap:define-key tm (k "C-M-e") "end-of-defun")
-    (pine.keymap:define-key tm (k "C-M-space") "mark-sexp")))
+    (pine.keymap:define-key tm (k "C-M-space") "mark-sexp")
+    ;; lisp-mode: the SLIME chord set (mode-keymap chords resolve fine)
+    (let ((lm (pine.mode:mode-keymap (pine.mode:find-mode :lisp-mode))))
+      (pine.keymap:define-key lm (list (k "C-c") (k "C-c")) "eval-defun")
+      (pine.keymap:define-key lm (list (k "C-c") (k "C-k")) "eval-buffer")
+      (pine.keymap:define-key lm (list (k "C-c") (k "C-l")) "load-file")
+      (pine.keymap:define-key lm (list (k "C-c") (k "C-d")) "arglist")
+      (pine.keymap:define-key lm (k "Tab") "complete-symbol"))))
