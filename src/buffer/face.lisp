@@ -50,6 +50,7 @@
 (defclass theme ()
   ((name    :initarg :name    :reader theme-name)
    (palette :initarg :palette :reader theme-palette :initform nil)
+   (metrics :initarg :metrics :reader theme-metrics :initform nil)
    (faces   :initarg :faces   :reader theme-faces
             :initform (make-hash-table :test 'eq))))
 
@@ -85,6 +86,14 @@
   "The hex of a palette ROLE in the active theme."
   (theme-color *active-theme* role))
 
+(defun theme-metric (theme-name key &optional default)
+  (let ((cell (assoc key (theme-metrics (find-theme theme-name)) :test #'string=)))
+    (if cell (cdr cell) default)))
+
+(defun metric (key &optional default)
+  "A layout metric (:radius :border :opacity :font ...) from the active theme."
+  (theme-metric *active-theme* key default))
+
 (defun hex-rgb (hex)
   "The (values r g b) 0..255 of a #rrggbb string, or NIL for a non-colour."
   (when (and (stringp hex) (>= (length hex) 7) (char= (char hex 0) #\#))
@@ -106,9 +115,11 @@
     (when (and f (bg f))
       (multiple-value-bind (r g b) (hex-rgb (bg f)) (list r g b)))))
 
-(defun build-theme (name palette-plist face-specs)
+(defun build-theme (name palette-plist metrics-plist face-specs)
   (let ((palette (loop for (role hex) on palette-plist by #'cddr
                        collect (cons role hex)))
+        (metrics (loop for (key val) on metrics-plist by #'cddr
+                       collect (cons key val)))
         (faces   (make-hash-table :test 'eq)))
     (dolist (spec face-specs)
       (destructuring-bind (fname &key fg bg bold italic underline) spec
@@ -117,10 +128,11 @@
                              :fg (resolve-color fg palette)
                              :bg (resolve-color bg palette)
                              :bold bold :italic italic :underline underline))))
-    (make-instance 'theme :name (theme-key name) :palette palette :faces faces)))
+    (make-instance 'theme :name (theme-key name) :palette palette
+                          :metrics metrics :faces faces)))
 
-(defmacro deftheme (name &key palette faces)
-  `(register-theme (build-theme ',name ',palette ',faces)))
+(defmacro deftheme (name &key palette metrics faces)
+  `(register-theme (build-theme ',name ',palette ',metrics ',faces)))
 
 (defun %faces-server ()
   (let ((cli pine.client:*client*))
@@ -150,6 +162,7 @@
             ;; ef-dream chrome
             cursor "#f3c09a" region "#544a50" bg-completion "#503240"
             shadow "#0a0a10")
+  :metrics (radius 8 border 2 opacity 0.4 font "Maple Mono NF")
   :faces ((:default        :fg fg)
           (:window         :bg bg)
           (:echo           :fg fg)
@@ -192,7 +205,13 @@
           (:error          :fg red)
           (:accent         :fg fg-alt)
           (:ws-active      :fg accent-fg :bg accent :bold t)
-          (:hover          :fg accent-fg :bg bg-active)))
+          (:hover          :fg accent-fg :bg bg-active)
+          ;; control-panel rings: dedicated colours, not the syntax faces
+          (:ring-cpu       :fg red)
+          (:ring-ram       :fg blue)
+          (:ring-disk      :fg green)
+          (:ring-temp      :fg yellow)
+          (:ring-track     :fg bg-active)))
 
 
 ;;;; Face runs — attributed text

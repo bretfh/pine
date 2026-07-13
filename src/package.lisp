@@ -69,8 +69,8 @@
    #:face #:fg #:bg #:bold #:italic #:underline
    #:defface #:find-face #:face-to-plist #:face-attr-bits #:install-default-faces
    #:deftheme #:load-theme #:find-theme #:theme-color #:color
-   #:hex-rgb #:face-fg #:face-bg
-   #:theme #:theme-name #:theme-palette #:theme-faces
+   #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric
+   #:theme #:theme-name #:theme-palette #:theme-metrics #:theme-faces
    #:face-run #:run-start #:run-end #:run-face
    #:display-line #:display-text #:display-runs
    #:make-display-line #:display-line-to-plist

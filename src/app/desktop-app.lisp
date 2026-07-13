@@ -7,29 +7,36 @@
 ;;;; Stylesheet, authored in Lisp -> GTK CSS.
 
 (defun p (role) (pine.buffer:color role))
-
-(defparameter *glass-opacity* 0.4)
-(defun glass (role &optional (a *glass-opacity*))
+(defun glass (role &optional (a (pine.buffer:metric :opacity 0.4)))
   (multiple-value-bind (r g b) (pine.buffer:hex-rgb (p role))
     (format nil "rgba(~d, ~d, ~d, ~a)" r g b a)))
+(defun rad () (format nil "~apx" (pine.buffer:metric :radius 8)))
+(defun mono () (format nil "~s, monospace" (pine.buffer:metric :font "Maple Mono NF")))
 
 (defun theme-rules ()
-  `(("window, .background" (:background-color "transparent"))
-    ("window" (:font-family "\"Maple Mono NF\", monospace" :font-size "13px" :color ,(p :fg)))
-    ("button" (:background-color "transparent" :background-image "none" :border-width "0"
-               :box-shadow "none" :outline-style "none" :min-height "0" :min-width "0" :padding "0"))
+  `(;; global reset: strip GTK4's default chrome off every widget (eww's
+    ;; `* { all: unset }') -- borders, shadows, focus rings, backgrounds. Specific
+    ;; rules add back only what they want. Font + base colour go on the window so
+    ;; they inherit (a `*' colour would break per-widget colour inheritance).
+    ("*" (:border-width "0" :border-style "none" :box-shadow "none" :outline-style "none"
+          :background-color "transparent" :background-image "none"))
+    ("button" (:min-width "0" :min-height "0" :padding "0"))
     ("button, scale" (:transition "background-color 0.25s, color 0.25s"))
-    (".surface" (:background-color "transparent"))
+    ;; window/decoration carry GTK4's default padding + the CSD shadow-margin;
+    ;; zero them so the surface glass reaches the screen edge (no top/side gap).
+    ("window, .background, .surface, decoration"
+     (:background-color "transparent" :padding "0" :margin "0"))
+    ("window" (:font-family ,(mono) :font-size "13px" :color ,(p :fg)))
     ;; bar
-    (".bar" (:background-color ,(glass :bg) :color ,(p :fg) :padding "8px 0"))
-    (".bgroup" (:background-color "transparent" :border-radius "8px" :padding "6px 4px"))
+    (".bar" (:background-color ,(glass :bg) :color ,(p :fg) :padding "8px 0 0 0"))
+    (".bgroup" (:border-radius ,(rad) :padding "6px 4px"))
     (".viewer, .picker, .launch, .app, .icon, .net, .media, .ctl, .ws"
-     (:background-color "transparent" :color ,(p :fg-alt) :min-width "28px"
-      :padding "8px 0" :border-radius "8px" :margin "3px 0" :font-size "15px"))
+     (:color ,(p :fg-alt) :min-width "28px"
+      :padding "8px 0" :border-radius ,(rad) :margin "3px 0" :font-size "15px"))
     (".net" (:color ,(p :cyan)))
     (".ctl" (:color ,(p :accent)))
     (".ws-current" (:color ,(p :accent-fg) :background-color ,(p :accent) :min-width "28px"
-                    :padding "8px 0" :border-radius "8px" :margin "3px 0"))
+                    :padding "8px 0" :border-radius ,(rad) :margin "3px 0"))
     (".ws" (:font-size "12px"))
     (".viewer:hover, .picker:hover, .launch:hover, .app:hover, .icon:hover, .net:hover, .media:hover, .ctl:hover, .clock:hover, .ws:hover"
      (:background-color ,(p :bg-active) :color ,(p :accent-fg)))
@@ -55,25 +62,27 @@
     (".workspaces .ws .bar-glyph" (:margin-left "2px"))
     (".corner-sq .bar-glyph" (:color ,(p :accent-fg) :font-size "15px"))
     ;; calendar
-    (".cal-box" (:background-color ,(glass :bg-dim) :border-radius "8px" :padding "10px" :margin "6px"))
+    (".cal-box" (:background-color ,(glass :bg-dim) :border-radius ,(rad) :padding "10px"))
     ("calendar" (:color ,(p :fg)))
     ("calendar:selected" (:background-color ,(p :accent) :color ,(p :accent-fg) :border-radius "6px"))
-    (".nm-scroll" (:min-height "12rem"))
     ;; popup chrome
     (".netmenu" (:background-color ,(glass :bg) :color ,(p :fg)
                  :border-width "1px" :border-style "solid" :border-color ,(p :border)
-                 :border-radius "8px" :padding "8px" :margin "8px"
+                 :border-radius ,(rad) :padding "8px" :margin "8px"
                  :box-shadow ,(format nil "0 0 5px 0 ~a" (p :shadow))
                  :min-width "360px"))
-    (".nm-card" (:background-color ,(glass :bg-dim) :border-radius "8px" :padding "12px" :margin "6px"))
+    (".nm-card" (:background-color ,(glass :bg-dim) :border-radius ,(rad) :padding "12px" :margin "6px"))
     (".nm-head" (:padding "12px 14px"))
     (".nm-head-ico" (:font-size "22px" :color ,(p :accent) :margin-right "14px"))
     (".nm-title" (:font-size "17px" :font-weight "bold" :color ,(p :fg)))
-    (".nm-sub" (:font-size "13px" :color ,(p :fg-dim)))
+    (".nm-sub" (:font-size "13px"))
     (".nm-sub.on" (:color ,(p :green)))
+    (".nm-sub.off" (:color ,(p :fg-dim)))
     (".nm-subhead" (:font-size "13px" :color ,(p :fg-dim) :margin "2px 4px 8px 4px"))
     (".nm-list-card" (:padding "6px"))
-    (".nm-row" (:background-color "transparent" :border-radius "8px" :padding "10px 12px" :margin "2px"))
+    (".nm-scroll" (:min-height "14rem"))
+    (".nm-row" (:border-radius ,(rad) :padding "10px 12px" :margin "2px"
+                :transition "background-color 0.2s"))
     (".nm-row:hover" (:background-color ,(p :bg-active)))
     (".nm-row.active" (:background-color ,(p :bg-alt)))
     (".nm-row.sel" (:background-color ,(p :bg-active) :box-shadow ,(format nil "inset 3px 0 0 0 ~a" (p :accent))))
@@ -86,16 +95,12 @@
     (".nm-lock" (:font-size "12px" :color ,(p :fg-dim)))
     (".nm-check" (:font-size "13px" :color ,(p :green)))
     (".nm-actions" (:padding "6px 4px 2px 4px"))
-    (".nm-btn" (:background-color ,(p :bg-active) :color ,(p :fg) :padding "10px 20px" :border-radius "8px"))
+    (".nm-btn" (:background-color ,(p :bg-active) :color ,(p :fg) :padding "10px 20px"
+                :border-radius ,(rad) :transition "background-color 0.2s, color 0.2s"))
     (".nm-btn:hover" (:background-color ,(p :bg-alt)))
     (".nm-btn.go" (:background-color ,(p :accent) :color ,(p :accent-fg)))
     (".nm-btn.no" (:color ,(p :red)))
-    ;; scale reset: strip the Adwaita focus ring + trough/knob border and shadow
-    ("scale" (:outline-style "none" :min-height "0" :padding "0" :background-color "transparent"))
-    ("scale trough" (:outline-style "none" :border-style "none" :box-shadow "none"))
-    ("scale highlight" (:border-style "none" :box-shadow "none"))
-    ("scale slider" (:outline-style "none" :border-style "none" :box-shadow "none" :margin "0"))
-    ;; menu sliders (audio, media)
+    ;; menu sliders (audio, media) -- the * reset already stripped the Adwaita chrome
     (".menu-slider trough" (:background-color ,(p :bg-alt) :min-height "8px" :border-radius "5px"))
     (".menu-slider trough highlight" (:background-color ,(p :accent) :border-radius "5px"))
     (".menu-slider slider" (:min-width "16px" :min-height "16px" :border-radius "8px" :background-color ,(p :fg)))
@@ -105,25 +110,28 @@
     (".audio-pct" (:color ,(p :fg-dim) :min-width "38px"))
     ;; media
     (".media-info" (:padding "2px 2px 12px 2px"))
-    (".media-art" (:min-width "64px" :min-height "64px" :border-radius "8px" :background-color ,(p :bg-active)))
+    (".media-art" (:min-width "64px" :min-height "64px" :border-radius ,(rad) :background-color ,(p :bg-active)))
     (".media-art-ico" (:font-size "26px" :color ,(p :fg-dim)))
     (".media-title" (:font-size "15px" :font-weight "bold" :color ,(p :fg)))
     (".media-artist" (:color ,(p :fg-dim)))
+    (".media-times" (:padding "6px 2px 2px 2px"))
     (".media-time" (:font-size "11px" :color ,(p :fg-dim)))
+    (".media-ctrl" (:padding "10px 0 2px 0"))
     (".media-btn" (:color ,(p :fg) :font-size "20px" :padding "6px"))
     (".media-btn:hover" (:color ,(p :accent)))
     (".media-none-box" (:padding "8px"))
     (".media-none" (:color ,(p :fg-dim) :padding "14px"))
     ;; control panel
     (".ctlpanel-box" (:padding "4px"))
-    (".ctl-card" (:background-color ,(glass :bg-dim) :border-radius "8px" :padding "14px" :margin "6px"))
+    (".ctl-card" (:background-color ,(glass :bg-dim) :border-radius ,(rad) :padding "14px" :margin "6px"))
+    (".ctl-profile" (:padding "2px"))
     (".ctl-pfp" (:background-color ,(p :accent) :border-radius "100%" :min-width "58px"
                  :min-height "58px" :margin-right "16px"))
     (".ctl-pfp-ico" (:font-size "28px" :color ,(p :accent-fg)))
     (".ctl-user" (:font-size "24px" :font-weight "bold" :color ,(p :accent)))
     (".ctl-uptime" (:color ,(p :fg-dim)))
-    (".ctl-power" (:background-color ,(glass :bg) :border-radius "8px" :padding "12px 8px" :margin-top "14px"))
-    (".ctl-confirm" (:background-color ,(glass :bg) :border-radius "8px" :padding "10px 8px" :margin-top "14px"))
+    (".ctl-power" (:background-color ,(glass :bg) :border-radius ,(rad) :padding "12px 8px" :margin-top "14px"))
+    (".ctl-confirm" (:background-color ,(glass :bg) :border-radius ,(rad) :padding "10px 8px" :margin-top "14px"))
     (".ctl-confirm-lbl" (:color ,(p :fg) :font-size "14px" :font-weight "bold"))
     (".ctl-cf" (:font-size "18px" :padding "4px 14px"))
     (".ctl-cf.yes" (:color ,(p :green)))
@@ -136,7 +144,8 @@
     (".pw-a.suspend" (:color ,(p :cyan)))
     (".pw-a.off" (:color ,(p :red)))
     (".pw-a:hover" (:color ,(p :fg)))
-    (".ctl-ring-box" (:background-color ,(glass :bg) :border-radius "8px" :padding "10px 8px" :margin "0 4px"))
+    (".ctl-rings" (:padding "4px 0"))
+    (".ctl-ring-box" (:background-color ,(glass :bg) :border-radius ,(rad) :padding "10px 8px" :margin "0 4px"))
     (".ctl-ring-ico" (:font-size "18px" :margin "14px"))
     (".ctl-ring-box.cpu .ctl-ring-ico" (:margin-left "11px" :margin-right "17px"))
     (".ctl-ring-box.ram .ctl-ring-ico" (:margin-left "11px" :margin-right "17px"))
@@ -150,13 +159,14 @@
     (".ctl-sico.vol" (:color ,(p :accent) :font-size "17px"))
     (".ctl-sico.bri" (:color ,(p :yellow) :font-size "17px"))
     (".ctl-scale trough" (:background-color ,(p :bg) :min-height "10px" :min-width "180px" :border-radius "50px"))
-    (".ctl-scale.vol highlight" (:background-color ,(p :accent) :border-radius "10px"))
-    (".ctl-scale.bri highlight" (:background-color ,(p :yellow) :border-radius "10px"))
+    (".ctl-scale.vol trough highlight" (:background-color ,(p :accent) :border-radius "10px"))
+    (".ctl-scale.bri trough highlight" (:background-color ,(p :yellow) :border-radius "10px"))
     (".ctl-scale slider" (:min-width "14px" :min-height "14px" :border-radius "7px" :background-color ,(p :fg)))
+    ;; echo
     (".echo" (:background-color "transparent"))
     (".echo-lead" (:min-width "44px" :background-color "transparent"))
     (".echo-body" (:background-color ,(glass :bg)))
-    (".echo-text" (:color ,(p :fg) :font-size "13px" :padding "6px 12px"))
+    (".echo-text" (:color ,(p :fg) :font-size "13px" :padding "0 12px"))
     (".echo-stat" (:color ,(p :fg-dim) :font-size "12px" :padding "0 16px 0 8px"))))
 
 (defun theme->css (rules)
@@ -427,6 +437,7 @@
     (window-present window)
     (let ((ew (make-application-window :application *application*)))
       (add-surface ew "echo" :echo)
+      (setf (gtk4:widget-size-request ew) '(-1 28))
       (configure-window ew :echo)
       (window-present ew))
     (dolist (name *panels*)
