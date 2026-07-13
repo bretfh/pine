@@ -1,0 +1,38 @@
+#+TITLE: pine theming
+#+AUTHOR: Bret Horne
+
+One source of colour: the single deftheme form in src/buffer/face.lisp. Every
+renderer is an orthogonal consumer of it and hardcodes no colour. The done
+condition is mechanical: rg '#[0-9a-fA-F]{6}' over src outside face.lisp is
+empty (the one commented bootstrap fallback in face.lisp is the sole literal).
+
+* The theme
+
+deftheme names a :palette (role -> hex) and :faces (semantic name -> fg/bg plus
+bold/italic/underline, each colour either a hex or a palette role). ef-dream is
+the built-in theme; install-default-faces loads it and sets *active-theme*.
+
+* Resolvers (all read the active theme)
+
+- color role            : palette role -> hex, active theme. Raw colour for CSS
+                          structure (shadows, gradients, borders).
+- face-fg name          : a face's fg as (r g b), default face as fallback.
+- face-bg name          : a face's bg as (r g b), or nil.
+- hex-rgb hex           : #rrggbb -> (values r g b). The one parser.
+
+Semantic elements take a face (:modeline, :cursor, :completion, :keyword ...);
+faces resolve through the installed set, so a consumer never names the theme.
+Raw palette needs use color, which reads *active-theme*.
+
+* Consumers
+
+| consumer                    | reads                                        |
+| render.lisp (cell grid)     | face-fg/face-bg per face; syntax via faces   |
+| widget/layout.lisp          | %face-cell-rgb -> face-fg/face-bg            |
+| app/paint.lisp (desktop)    | %face-rgb01, %role -> color                  |
+| app/editor-app.lisp         | face-bg :window / :cursor                    |
+| app/desktop-app.lisp (CSS)  | p -> color; glass -> color + hex-rgb         |
+
+The vt terminal palette (vt/color.lisp) is orthogonal and untouched: it maps
+ANSI escape codes, and terminal output is truecolour. Only the default fg when
+an app sets none reads the theme (:default).

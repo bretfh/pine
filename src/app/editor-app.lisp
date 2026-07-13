@@ -1,0 +1,115 @@
+(defpackage #:pine.gtk
+  (:use #:cl #:gtk4 #:pine.surface)
+  (:export #:run-editor))
+
+(in-package #:pine.gtk)
+
+(defvar *session* nil)
+(defvar *area* nil)
+(defvar *grid* nil)
+(defvar *cursor-row* 0)
+(defvar *cursor-col* 0)
+(defvar *px-w* 800) (defvar *px-h* 500)
+(defvar *sent-cols* -1) (defvar *sent-rows* -1)
+
+(defvar *cell-w* 9d0) (defvar *cell-h* 18d0) (defvar *ascent* 14d0)
+(defparameter *font* 15d0)
+(defvar *measured* nil)
+
+(defun measure-font ()
+  (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
+    (declare (ignore xb yb w h))
+    (when (plusp xadv) (setf *cell-w* (/ xadv 10d0))))
+  (let ((fe (cairo:get-font-extents)))
+    (setf *cell-h* (cairo:font-height fe) *ascent* (cairo:font-ascent fe)))
+  (setf *measured* t))
+
+(defun cols () (max 1 (floor *px-w* (max 1d0 *cell-w*))))
+(defun rows () (max 1 (floor *px-h* (max 1d0 *cell-h*))))
+
+(defun paint-sink (grid cursor-row cursor-col)
+  (setf *grid* grid *cursor-row* cursor-row *cursor-col* cursor-col)
+  (when *area* (run-in-main-event-loop () (widget-queue-draw *area*))))
+
+(cffi:defcallback %draw :void ((area :pointer) (cr :pointer)
+                               (width :int) (height :int) (data :pointer))
+  (declare (ignore area data))
+  (setf *px-w* width *px-h* height)
+  (let ((cairo:*context* (make-instance 'cairo:context :pointer cr
+                                        :width width :height height :pixel-based-p nil)))
+    (destructuring-bind (r g b) (pine.buffer:face-bg :window)
+      (cairo:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0)))
+    (cairo:paint)
+    (cairo:select-font-face *font-family* :normal :normal)
+    (cairo:set-font-size *font*)
+    (unless *measured* (measure-font))
+    (let ((c (cols)) (r (rows)))
+      (unless (and (= c *sent-cols*) (= r *sent-rows*))
+        (setf *sent-cols* c *sent-rows* r)
+        (when *session*
+          (pine.editor:session-feed *session* (list :resize :cols c :rows r)))))
+    (let ((grid *grid*))
+      (when grid
+        (paint-rows grid *cell-w* *cell-h* *ascent* 6d0)
+        (destructuring-bind (r g b) (pine.buffer:face-bg :cursor)
+          (cairo:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0)))
+        (cairo:rectangle (+ 6d0 (* *cursor-col* *cell-w*))
+                         (* *cursor-row* *cell-h*) *cell-w* *cell-h*)
+        (cairo:set-line-width 1.5d0) (cairo:stroke)))))
+
+(defun gdk->wire (keyval state)
+  (let* ((ctrl  (and (logtest state gdk4:+modifier-type-control-mask+) t))
+         (meta  (and (logtest state gdk4:+modifier-type-alt-mask+) t))
+         (super (and (logtest state gdk4:+modifier-type-super-mask+) t))
+         (shift (and (logtest state gdk4:+modifier-type-shift-mask+) t))
+         (uni   (gdk4:keyval-to-unicode keyval))
+         (printable (and (plusp uni) (not super)
+                         (graphic-char-p (code-char uni))
+                         (not (and ctrl (char= (code-char uni) #\Space))))))
+    (if printable
+        (list :key :key-str (string (code-char uni)) :ctrl ctrl :meta meta :super super)
+        (list :key :key-str (gdk4:keyval-name keyval)
+              :ctrl ctrl :meta meta :shift shift :super super))))
+
+(defun start-local-substrate ()
+  (let ((srv (pine.server:start-server)))
+    (setf pine.server:*server* srv)
+    (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (ignore-errors (pine.ts:ensure-ts (pine.server:ts-runtime srv)))
+    (pine.event:make-event-bus srv)
+    (pine.actor:start-agent-registry srv)
+    (pine.actor:start-local-agent srv)
+    (pine.buffer:start-buffer-registry srv)
+    (pine.buffer:install-default-faces)
+    (pine.mode:install-default-modes)
+    (pine.editor:install-commands)
+    (pine.editor:install-bindings)
+    (pine.editor:install-editor-sessions)
+    srv))
+
+(define-application (:name %app :id "org.pine.editor")
+  (define-main-window (window (make-application-window :application *application*))
+    (setf (window-title window) "pine")
+    (let ((area (make-drawing-area)))
+      (setf *area* area
+            (drawing-area-content-width area) 800
+            (drawing-area-content-height area) 500
+            (drawing-area-draw-func area) (list (cffi:callback %draw)
+                                                (cffi:null-pointer) (cffi:null-pointer))
+            (window-child window) area)
+      (let ((kc (make-event-controller-key)))
+        (connect kc "key-pressed"
+                 (lambda (c keyval keycode state)
+                   (declare (ignore c keycode))
+                   (when *session*
+                     (pine.editor:session-feed *session* (gdk->wire keyval state)))
+                   t))
+        (widget-add-controller window kc))
+      (window-present window))))
+
+(defun run-editor (&rest args)
+  "Run the pine editor window."
+  (declare (ignore args))
+  (start-local-substrate)
+  (setf *session* (pine.editor:make-editor-session nil :sink #'paint-sink))
+  (%app))
