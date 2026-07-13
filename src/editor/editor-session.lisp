@@ -76,6 +76,17 @@
   (setf pine.command:*minibuffer-handler* #'minibuffer-dispatch
         pine.command:*terminal-handler*   #'pine.term:terminal-dispatch
         pine.eval:*on-debug*              #'%eval-error)
+  ;; a process agent's error comes home to this editor's restart menu; jobs
+  ;; chains on top of this hook, so both fire.
+  (let ((prev pine.actor:*agent-debug-hook*))
+    (setf pine.actor:*agent-debug-hook*
+          (lambda (msg)
+            (when prev (ignore-errors (funcall prev msg)))
+            (ignore-errors (%agent-debug-surface msg)))))
   (pine.attach:register-app-kind :editor
-    :on-attach (lambda (c) (make-editor-session c))
+    :on-attach (lambda (c)
+                 (make-editor-session
+                  c :sink (lambda (rows crow ccol)
+                            (pine.attach:push-to-app c :frame
+                                                     :rows rows :crow crow :ccol ccol))))
     :on-input  (lambda (c msg) (session-input c msg))))

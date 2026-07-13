@@ -64,9 +64,31 @@ caller keeps the process alive. This is the daemon."
     (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
     srv))
 
+(defun %setenv (name value)
+  (cffi:foreign-funcall "setenv" :string name :string value :int 1 :int))
+
+(defun discover-session-env ()
+  "A shepherd service starts outside the wayland session, so WAYLAND_DISPLAY and
+NIRI_SOCKET are unset. Fill them from XDG_RUNTIME_DIR -- a wayland-N socket and
+the newest niri.*.sock -- so the daemon's sources and app launches reach the
+running session. A no-op when already set (an in-session `make daemon` run)."
+  (let* ((dir (or (uiop:getenv "XDG_RUNTIME_DIR") "/run/user/1000"))
+         (names (ignore-errors (uiop:run-program (list "ls" "-t" dir) :output :lines))))
+    (unless (uiop:getenv "WAYLAND_DISPLAY")
+      (let ((wl (find-if (lambda (n) (and (uiop:string-prefix-p "wayland-" n)
+                                          (not (uiop:string-suffix-p ".lock" n))))
+                         names)))
+        (when wl (%setenv "WAYLAND_DISPLAY" wl))))
+    (unless (uiop:getenv "NIRI_SOCKET")
+      (let ((sock (find-if (lambda (n) (and (uiop:string-prefix-p "niri." n)
+                                            (uiop:string-suffix-p ".sock" n)))
+                           names)))
+        (when sock (%setenv "NIRI_SOCKET" (format nil "~a/~a" dir sock)))))))
+
 (defun run-daemon (&key (port 17000))
   "Start the headless daemon and keep the process alive. Editor and desktop apps
 attach over remoting on PORT. This is the entry `make daemon` runs."
+  (discover-session-env)
   (start-daemon :remoting-port port)
   (format t "pine daemon up on 127.0.0.1:~d -- attach editor/desktop apps.~%" port)
   (finish-output)

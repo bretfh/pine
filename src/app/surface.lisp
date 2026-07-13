@@ -2,11 +2,38 @@
   (:use #:cl)
   (:export #:surface #:surface-on-key #:surface-on-resize
            #:present #:paint-frame #:request-redraw #:surface-metrics
-           #:paint-cell-grid #:paint-rows #:*font-family*))
+           #:paint-cell-grid #:paint-rows #:render-frame-to-png #:*font-family*))
 
 (in-package #:pine.surface)
 
 (defparameter *font-family* "Maple Mono NF")
+
+(defun %cell-metrics (font-px)
+  "cell-w cell-h ascent for *font-family* at FONT-PX in the current context."
+  (cairo:select-font-face *font-family* :normal :normal)
+  (cairo:set-font-size font-px)
+  (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
+    (declare (ignore xb yb w h))
+    (let ((fe (cairo:get-font-extents)))
+      (values (/ (max xadv 1d0) 10d0) (cairo:font-height fe) (cairo:font-ascent fe)))))
+
+(defun render-frame-to-png (rows path &key (font-px 15d0) (x0 6d0))
+  "Paint wire ROWS (pine.render:frame->rows output) to a PNG at PATH. Headless
+eyes for the editor frame: no window, an offscreen cairo image surface."
+  (multiple-value-bind (cell-w cell-h ascent)
+      (cairo:with-png-file ("/tmp/pine-metrics.png" :argb32 8 8) (%cell-metrics font-px))
+    (let* ((cols (reduce #'max rows :initial-value 1
+                         :key (lambda (r) (length (car r)))))
+           (w (max 1 (ceiling (+ (* cols cell-w) (* 2 x0)))))
+           (h (max 1 (ceiling (* (length rows) cell-h)))))
+      (cairo:with-png-file (path :argb32 w h)
+        (destructuring-bind (r g b) (pine.buffer:face-bg :window)
+          (cairo:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0)))
+        (cairo:paint)
+        (cairo:select-font-face *font-family* :normal :normal)
+        (cairo:set-font-size font-px)
+        (paint-rows rows cell-w cell-h ascent x0))
+      path)))
 
 (defun %select-attr-font (attr)
   (cairo:select-font-face *font-family*

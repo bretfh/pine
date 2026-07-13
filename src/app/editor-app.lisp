@@ -4,7 +4,9 @@
 
 (in-package #:pine.gtk)
 
-(defvar *session* nil)
+(defvar *sys* nil)
+(defvar *client-ref* nil)   ; the daemon's client-N input actor, over remoting
+(defvar *attach-ref* nil)   ; the daemon's attach actor, kept from GC
 (defvar *area* nil)
 (defvar *grid* nil)
 (defvar *cursor-row* 0)
@@ -46,8 +48,8 @@
     (let ((c (cols)) (r (rows)))
       (unless (and (= c *sent-cols*) (= r *sent-rows*))
         (setf *sent-cols* c *sent-rows* r)
-        (when *session*
-          (pine.editor:session-feed *session* (list :resize :cols c :rows r)))))
+        (when *client-ref*
+          (sento.actor:tell *client-ref* (list :resize :cols c :rows r)))))
     (let ((grid *grid*))
       (when grid
         (paint-rows grid *cell-w* *cell-h* *ascent* 6d0)
@@ -71,21 +73,17 @@
         (list :key :key-str (gdk4:keyval-name keyval)
               :ctrl ctrl :meta meta :shift shift :super super))))
 
-(defun start-local-substrate ()
-  (let ((srv (pine.server:start-server)))
-    (setf pine.server:*server* srv)
-    (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-    (ignore-errors (pine.ts:ensure-ts (pine.server:ts-runtime srv)))
-    (pine.event:make-event-bus srv)
-    (pine.actor:start-agent-registry srv)
-    (pine.actor:start-local-agent srv)
-    (pine.buffer:start-buffer-registry srv)
-    (pine.buffer:install-default-faces)
-    (pine.mode:install-default-modes)
-    (pine.editor:install-commands)
-    (pine.editor:install-bindings)
-    (pine.editor:install-editor-sessions)
-    srv))
+(defun display-receive (msg)
+  (case (first msg)
+    (:attached
+     (destructuring-bind (&key id client-uri) (rest msg)
+       (declare (ignore id))
+       (setf *client-ref* (sento.remoting:make-remote-ref *sys* client-uri))
+       (sento.actor:tell *client-ref* (list :resize :cols (cols) :rows (rows)))))
+    (:frame
+     (destructuring-bind (&key rows crow ccol) (rest msg)
+       (paint-sink rows crow ccol))))
+  nil)
 
 (define-application (:name %app :id "org.pine.editor")
   (define-main-window (window (make-application-window :application *application*))
@@ -101,15 +99,66 @@
         (connect kc "key-pressed"
                  (lambda (c keyval keycode state)
                    (declare (ignore c keycode))
-                   (when *session*
-                     (pine.editor:session-feed *session* (gdk->wire keyval state)))
+                   (when *client-ref*
+                     (sento.actor:tell *client-ref* (gdk->wire keyval state)))
                    t))
         (widget-add-controller window kc))
       (window-present window))))
 
-(defun run-editor (&rest args)
-  "Run the pine editor window."
-  (declare (ignore args))
-  (start-local-substrate)
-  (setf *session* (pine.editor:make-editor-session nil :sink #'paint-sink))
+(defun %shot-substrate ()
+  "A minimal in-process substrate for headless rendering: no remoting, no window."
+  (let ((srv (pine.server:start-server)))
+    (setf pine.server:*server* srv
+          (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (ignore-errors (pine.ts:ensure-ts (pine.server:ts-runtime srv)))
+    (pine.event:make-event-bus srv)
+    (pine.actor:start-agent-registry srv)
+    (pine.actor:start-local-agent srv)
+    (pine.buffer:start-buffer-registry srv)
+    (pine.buffer:install-default-faces)
+    (pine.mode:install-default-modes)
+    (pine.editor:install-commands)
+    (pine.editor:install-bindings)
+    (pine.editor:install-editor-sessions)
+    srv))
+
+(defun shot (&key (path "/tmp/pine-shot.png")
+                  (text "(defun frobnicate (x &optional (y 10))
+  \"a docstring\"
+  (let ((sum 0))
+    (dolist (a x) (incf sum (car a)))
+    (when (> sum y) (format t \"~a: ~s~%\" x sum))
+    (pine.util:combine sum y :key)))"))
+  "Render the editor frame for TEXT to a PNG at PATH, headless."
+  (unless pine.server:*server* (%shot-substrate))
+  (let* ((frame nil)
+         (sess (pine.editor:make-editor-session
+                nil :sink (lambda (rows crow ccol)
+                            (declare (ignore crow ccol))
+                            (setf frame rows)))))
+    (let ((buf (pine.client:current-buffer (pine.editor::sess-client sess))))
+      (pine.buffer:tell buf :replace-content :content text))
+    (pine.editor:session-feed sess (list :resize :cols 84 :rows 30))
+    (sleep 0.8)
+    (cond (frame (pine.surface:render-frame-to-png frame path)
+                 (format t "~&wrote ~a~%" path) path)
+          (t (format t "~&shot: no frame captured~%") nil))))
+
+(defun run-editor (&key (host "127.0.0.1") (port 17000))
+  "Attach the editor window to the pine daemon on HOST:PORT. The daemon owns the
+buffers and runs the eval; this process paints frames it pushes and sends input
+back. Faces are installed locally too, since the cairo draw resolves the window
+and cursor colours here."
+  (unless pine.server:*server* (setf pine.server:*server* (make-instance 'pine.server:server)))
+  (ignore-errors (pine.buffer:install-default-faces))
+  (setf *sys* (sento.actor-system:make-actor-system
+               '(:dispatchers (:shared (:workers 2 :strategy :random)))))
+  (sento.remoting:enable-remoting *sys* :host "127.0.0.1" :port 0)
+  (sento.actor-context:actor-of *sys* :name "display" :receive #'display-receive)
+  (setf *attach-ref*
+        (pine.attach:attach-to-daemon
+         *sys*
+         (format nil "sento://~a:~d/user/attach" host port)
+         (format nil "sento://127.0.0.1:~d/user/display" (sento.remoting:remoting-port *sys*))
+         :kind :editor))
   (%app))
