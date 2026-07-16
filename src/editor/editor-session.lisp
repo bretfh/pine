@@ -29,6 +29,11 @@ nodes and the editor frontend derive their cell grid from, so a buffer laid out 
 N cols x rows lands exactly in the frontend's cells."
   (pine.buffer:metric :font-px 15))
 
+(defun editor-opacity ()
+  "The editor background alpha from the :editor-opacity ref (1.0 = opaque)."
+  (let ((r (pine.ref:find-ref :editor-opacity)))
+    (if r (pine.ref:deref r) 1.0)))
+
 (defun editor-window-node (buffer)
   "An Emacs window: a pane rendering BUFFER, from the session's latest rows (all
 frame rows but the mode line and echo line), carrying the point. One window per
@@ -38,17 +43,19 @@ session today, so BUFFER selects nothing yet."
     (pine.layout:window (if (> n 2) (subseq rows 0 (- n 2)) rows)
                         :crow (if s (sess-crow s) -1)
                         :ccol (if s (sess-ccol s) -1)
-                        :font-px (editor-font-px) :expand 1)))
+                        :font-px (editor-font-px) :opacity (editor-opacity) :expand 1)))
 
 (defun editor-terminal-node (buffer) (editor-window-node buffer))
 
 (defun editor-modeline-node ()
   (let* ((s *editor-session*) (rows (and s (sess-rows s))) (n (length rows)))
-    (pine.layout:window (when (>= n 2) (list (nth (- n 2) rows))) :font-px (editor-font-px))))
+    (pine.layout:window (when (>= n 2) (list (nth (- n 2) rows)))
+                        :font-px (editor-font-px) :opacity (editor-opacity))))
 
 (defun editor-echo-node ()
   (let* ((s *editor-session*) (rows (and s (sess-rows s))) (n (length rows)))
-    (pine.layout:window (when (>= n 1) (list (nth (1- n) rows))) :font-px (editor-font-px))))
+    (pine.layout:window (when (>= n 1) (list (nth (1- n) rows)))
+                        :font-px (editor-font-px) :opacity (editor-opacity))))
 
 (defun push-editor-surface (aclient s)
   "Build the `editor' surface from S's latest rows and push it as a widget tree."

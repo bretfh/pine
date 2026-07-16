@@ -209,7 +209,7 @@
    #:slider-fraction
    #:ring #:thickness #:diameter #:arc-face #:track-face #:ring-fraction
    #:calendar #:cal-year #:cal-month #:cal-day #:picture #:pic-path
-   #:window #:window-rows #:window-crow #:window-ccol #:blit-row
+   #:window #:window-rows #:window-crow #:window-ccol #:window-opacity #:blit-row
    ;; constructor DSL
    #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
    #:gap #:rule #:meter #:rows #:choice #:cal #:pic #:centerbox

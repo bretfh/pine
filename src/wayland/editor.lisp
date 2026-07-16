@@ -91,15 +91,14 @@ buffer rows were laid out for."
         (shm:with-open-shm-and-mmap* (obj data (:direction :io) (size))
           (let (buffer)
             (with-proxy (pool (wl-shm.create-pool shm (shm:shm-fd obj) size))
-              (setf buffer (wl-shm-pool.create-buffer pool 0 width height stride :xrgb8888)))
+              (setf buffer (wl-shm-pool.create-buffer pool 0 width height stride :argb8888)))
             (c:with-surface-and-context
-                (surf (c:create-image-surface-for-data data :rgb24 width height stride))
-              (destructuring-bind (r g b) (pine.buffer:face-bg :window)
-                (c:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0)) (c:paint))
+                (surf (c:create-image-surface-for-data data :argb32 width height stride))
+              (c:set-operator :source)
+              (c:set-source-rgba 0d0 0d0 0d0 0d0) (c:paint)
+              (c:set-operator :over)
               (ensure-metrics ed)
               (maybe-resize ed)
-              ;; the editor is a surface: paint its widget tree (window + modeline
-              ;; + echo) through the shared layout/cairo pass.
               (when (ed-tree ed)
                 (l:with-cairo-layout (l:paint-tree (ed-tree ed) width height))))
             (wl-surface.attach wl-surface buffer 0 0)
