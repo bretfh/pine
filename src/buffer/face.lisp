@@ -162,7 +162,7 @@
             ;; ef-dream chrome
             cursor "#f3c09a" region "#544a50" bg-completion "#503240"
             shadow "#0a0a10")
-  :metrics (radius 8 border 2 opacity 0.4 font "Maple Mono NF")
+  :metrics (radius 8 border 2 opacity 0.4 font "Maple Mono NF" font-px 15)
   :faces ((:default        :fg fg)
           (:window         :bg bg)
           (:echo           :fg fg)

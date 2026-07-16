@@ -2,10 +2,71 @@
 
 (defstruct sess
   client win aclient sink
+  (rows nil) (crow 0) (ccol 0)               ; latest rendered frame, for the editor surface
   (inbox nil)
   (lock (bordeaux-threads:make-lock))
   (cvar (bordeaux-threads:make-condition-variable))
-  (stop nil) thread)
+  (stop nil) thread pump)
+
+;;;; The editor as a surface. The renderer lays the current buffer out into rows;
+;;;; the `editor' surface declared in init.lisp --
+;;;; (defsurface editor (:as :toplevel) (column (window (current)) (modeline) (echo)))
+;;;; -- reads those rows through the `window'/`modeline'/`echo' nodes. So the
+;;;; editor is one surface tree over the one wire, like everything else.
+
+(defvar *editor-session* nil
+  "The editor session whose rows the editor-surface windows read, bound while
+that surface's tree is built.")
+
+(defun editor-current ()
+  "The current buffer of the editor session in scope."
+  (let ((s *editor-session*))
+    (and s (sess-client s) (pine.client:current-buffer (sess-client s)))))
+
+(defun editor-font-px ()
+  "The editor's cell font size -- the one theme metric both the daemon's window
+nodes and the editor frontend derive their cell grid from, so a buffer laid out at
+N cols x rows lands exactly in the frontend's cells."
+  (pine.buffer:metric :font-px 15))
+
+(defun editor-window-node (buffer)
+  "An Emacs window: a pane rendering BUFFER, from the session's latest rows (all
+frame rows but the mode line and echo line), carrying the point. One window per
+session today, so BUFFER selects nothing yet."
+  (declare (ignore buffer))
+  (let* ((s *editor-session*) (rows (and s (sess-rows s))) (n (length rows)))
+    (pine.layout:window (if (> n 2) (subseq rows 0 (- n 2)) rows)
+                        :crow (if s (sess-crow s) -1)
+                        :ccol (if s (sess-ccol s) -1)
+                        :font-px (editor-font-px) :expand 1)))
+
+(defun editor-terminal-node (buffer) (editor-window-node buffer))
+
+(defun editor-modeline-node ()
+  (let* ((s *editor-session*) (rows (and s (sess-rows s))) (n (length rows)))
+    (pine.layout:window (when (>= n 2) (list (nth (- n 2) rows))) :font-px (editor-font-px))))
+
+(defun editor-echo-node ()
+  (let* ((s *editor-session*) (rows (and s (sess-rows s))) (n (length rows)))
+    (pine.layout:window (when (>= n 1) (list (nth (1- n) rows))) :font-px (editor-font-px))))
+
+(defun push-editor-surface (aclient s)
+  "Build the `editor' surface from S's latest rows and push it as a widget tree."
+  (let ((builder (gethash "editor" (symbol-value (find-symbol "*SURFACES*" :pine.desktop)))))
+    (when builder
+      (let* ((*editor-session* s)
+             (data (pine.layout:node->wire (funcall builder nil))))
+        (pine.attach:push-to-app aclient :widgets :surface "editor"
+                                 :tree data :as :toplevel)))))
+
+(defun editor-frame (aclient)
+  "Renderer trigger for an editor session: read the freshly rendered window
+(render-window), store its rows, and push the editor surface as a widget tree."
+  (let ((s (pine.attach:attached-client-session aclient)))
+    (when (sess-p s)
+      (multiple-value-bind (rows crow ccol) (pine.render:render-window (sess-client s))
+        (setf (sess-rows s) rows (sess-crow s) crow (sess-ccol s) ccol))
+      (push-editor-surface aclient s))))
 
 (defun sess-signal (s msg)
   (bordeaux-threads:with-lock-held ((sess-lock s))
@@ -35,7 +96,23 @@
           (setf (sess-thread s)
                 (bordeaux-threads:make-thread (lambda () (session-loop s))
                                               :name "pine-editor-input"))
+          (start-term-pump s)
           s)))))
+
+(defun start-term-pump (s)
+  "Periodically ask the renderer to drain pending terminal output and repaint,
+while a terminal buffer is live."
+  (let ((client (sess-client s)))
+    (setf (sess-pump s)
+          (bordeaux-threads:make-thread
+           (lambda ()
+             (loop until (sess-stop s) do
+               (sleep 1/30)
+               (let ((tm (pine.client:terminal-map client)))
+                 (when (and tm (plusp (hash-table-count tm)))
+                   (ignore-errors
+                    (sento.actor:tell (pine.client:renderer client) '(:term-tick)))))))
+           :name "pine-term-pump"))))
 
 (defun session-input (aclient msg)
   (let ((s (pine.attach:attached-client-session aclient)))
@@ -86,7 +163,5 @@
   (pine.attach:register-app-kind :editor
     :on-attach (lambda (c)
                  (make-editor-session
-                  c :sink (lambda (rows crow ccol)
-                            (pine.attach:push-to-app c :frame
-                                                     :rows rows :crow crow :ccol ccol))))
+                  c :sink (lambda (&rest _) (declare (ignore _)) (editor-frame c))))
     :on-input  (lambda (c msg) (session-input c msg))))

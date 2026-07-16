@@ -17,7 +17,11 @@
    #:clients
    #:remoting-port
    #:start-server
-   #:stop-server))
+   #:stop-server
+   #:*host*
+   #:*port*
+   #:daemon-uri
+   #:local-uri))
 
 (defpackage :pine.actor
   (:use :cl :ac :act :asys :rem)
@@ -68,8 +72,8 @@
    ;; faces
    #:face #:fg #:bg #:bold #:italic #:underline
    #:defface #:find-face #:face-to-plist #:face-attr-bits #:install-default-faces
-   #:deftheme #:load-theme #:find-theme #:theme-color #:color
-   #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric
+   #:deftheme #:load-theme #:find-theme #:theme-color #:color #:*active-theme*
+   #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric #:theme-rules
    #:theme #:theme-name #:theme-palette #:theme-metrics #:theme-faces
    #:face-run #:run-start #:run-end #:run-face
    #:display-line #:display-text #:display-runs
@@ -116,6 +120,7 @@
    #:unsubscribe-from-buffer
    #:render-buffer-to-frame
    #:frame->rows
+   #:render-window
    #:relayout))
 
 (defpackage :pine.repl
@@ -204,6 +209,7 @@
    #:slider-fraction
    #:ring #:thickness #:diameter #:arc-face #:track-face #:ring-fraction
    #:calendar #:cal-year #:cal-month #:cal-day #:picture #:pic-path
+   #:window #:window-rows #:window-crow #:window-ccol #:blit-row
    ;; constructor DSL
    #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
    #:gap #:rule #:meter #:rows #:choice #:cal #:pic #:centerbox
@@ -279,6 +285,12 @@
    #:install-editor-sessions
    #:make-editor-session
    #:session-feed
+   ;; the editor as a surface: the current buffer and its live window widgets
+   #:editor-current
+   #:editor-window-node
+   #:editor-terminal-node
+   #:editor-modeline-node
+   #:editor-echo-node
    #:focused-snap
    #:scroll-window
    #:eval-last-sexp

@@ -1,7 +1,7 @@
 (defpackage #:pine.source
   (:use #:cl)
   (:export #:start-sources #:stop-sources #:workspaces
-           #:defsource #:defpoll #:set! #:cell-of
+           #:defsource #:defpoll #:set! #:ref-of
            #:select! #:act! #:select-sink!))
 
 (in-package #:pine.source)
@@ -14,12 +14,12 @@
 ;;;; are declared with defsource / defpoll and started together by start-sources.
 ;;;; This is the runtime behind the widgets' cell reads -- pine's eww broker.
 
-(defun cell-of (name)
-  (or (pine.cell:find-cell name) (pine.cell:make-cell :name name)))
+(defun ref-of (name)
+  (or (pine.ref:find-ref name) (pine.ref:make-ref :name name)))
 
 (defun set! (name value)
-  "Set reactive cell NAME to VALUE (deduped by the cell)."
-  (pine.cell:set-cell (cell-of name) value))
+  "Set reactive ref NAME to VALUE (deduped by the ref)."
+  (pine.ref:set-ref (ref-of name) value))
 
 ;;; shell helpers
 
@@ -114,21 +114,21 @@ and returns a source (usually via start-stream / start-poll)."
 (defmacro defpoll (name interval &body body)
   "Reactive cell NAME refreshed to (progn BODY) every INTERVAL seconds."
   `(defsource ,name (system)
-     (let ((c (cell-of ',name)))
+     (let ((c (ref-of ',name)))
        (start-poll system ,interval
-                   (lambda () (pine.cell:set-cell c (progn ,@body)))))))
+                   (lambda () (pine.ref:set-ref c (progn ,@body)))))))
 
 (defmacro deflisten (name command (line) &body body)
   "Reactive cell NAME fed from COMMAND's stdout: each LINE sets it to (progn
 BODY) when that is non-nil."
   (let ((val (gensym)))
     `(defsource ,name (system)
-       (let ((c (cell-of ',name)))
+       (let ((c (ref-of ',name)))
          (start-stream system ,command
            (constantly nil)
            (lambda (,line)
              (let ((,val (progn ,@body)))
-               (when ,val (pine.cell:set-cell c ,val)) nil)))))))
+               (when ,val (pine.ref:set-ref c ,val)) nil)))))))
 
 (defun start-sources (server)
   "Start every declared source once and register it as an adapter in the service
@@ -237,7 +237,7 @@ the actor system. No thread is killed."
     (nreverse parts)))
 
 (defun %lines (s) (remove "" (%split s #\newline) :test #'string=))
-(defun cell-val (name) (let ((c (pine.cell:find-cell name))) (and c (pine.cell:cell-ref c))))
+(defun cell-val (name) (let ((c (pine.ref:find-ref name))) (and c (pine.ref:deref c))))
 
 (defun net-connected ()
   (dolist (line (%lines (sh "nmcli" "-t" "-f" "TYPE,STATE,CONNECTION"
@@ -367,12 +367,12 @@ the actor system. No thread is killed."
                 :file   (gethash "file" h "")))))))
 
 (defsource :media (system)
-  (let ((mc (cell-of :media)) (ac (cell-of :art)))
+  (let ((mc (ref-of :media)) (ac (ref-of :art)))
     (start-poll system 1
       (lambda ()
         (let ((m (emms-media)))
-          (pine.cell:set-cell mc m)
-          (pine.cell:set-cell ac (or (cover-for (getf m :file)) "")))))))
+          (pine.ref:set-ref mc m)
+          (pine.ref:set-ref ac (or (cover-for (getf m :file)) "")))))))
 
 ;;;; System stats (cpu / ram / temp) for the control panel.
 

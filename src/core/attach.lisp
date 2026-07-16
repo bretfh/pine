@@ -24,11 +24,8 @@
 ;;;; Only plain data crosses (the sexp wire): lists, numbers, strings, keywords,
 ;;;; vectors. fset/CLOS values are rendered to plain data at the edge.
 
-(defvar *attach-host* "127.0.0.1"
-  "Host the daemon's remoting binds; used to build client-actor URIs.")
-
 (defun daemon-base-uri (server)
-  (format nil "sento://~a:~d/user/" *attach-host* (pine.server:remoting-port server)))
+  (pine.server:daemon-uri "" :port (pine.server:remoting-port server)))
 
 (defstruct attached-client id kind display input session)
 

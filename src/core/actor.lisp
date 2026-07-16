@@ -18,7 +18,7 @@
                    (reply info)))
                 (:register-remote
                  (destructuring-bind (&key name host port) (rest msg)
-                   (let* ((uri (format nil "sento://~a:~d/user/agent" host port))
+                   (let* ((uri (pine.server:daemon-uri "agent" :host host :port port))
                           (ref (rem:make-remote-ref sys uri))
                           (info (make-agent-info :name name :type :process
                                                  :actor ref :port port)))
@@ -143,19 +143,19 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
 (defvar *agent-port* 18100
   "Next remoting port for a spawned process agent.")
 
-(defun %agent-script (name master-port self-port)
-  "The source a spawned SBCL process agent runs: load :pine, then pine.agent:connect
--- it runs evals through the same pine.eval engine, ships errors' restarts home
-to the master by name, and stays up. Isolated: it can loop, block, or crash in
-its own image without touching the daemon."
-  (format nil
-"(require :asdf)
-(push #P~s asdf:*central-registry*)
-(asdf:load-system :pine)
-(pine.agent:connect :name ~s :master-host \"127.0.0.1\" :master-port ~d :self-port ~d)
-(loop (sleep 3600))"
-          (namestring (asdf:system-source-directory :pine))
-          name master-port self-port))
+(defun %agent-command (name master-port self-port)
+  "The argv for a spawned SBCL process agent: load :pine, connect back to this
+daemon over the same pine.eval engine (shipping errors' restarts home by name),
+and idle. Passed as --eval forms, so nothing is written to disk. Isolated: it can
+loop, block, or crash in its own image without touching the daemon."
+  (list "sbcl" "--non-interactive"
+        "--eval" "(require :asdf)"
+        "--eval" (format nil "(push #P~s asdf:*central-registry*)"
+                         (namestring (asdf:system-source-directory :pine)))
+        "--eval" "(asdf:load-system :pine)"
+        "--eval" (format nil "(pine.agent:connect :name ~s :master-host ~s :master-port ~d :self-port ~d)"
+                         name pine.server:*host* master-port self-port)
+        "--eval" "(loop (sleep 3600))"))
 
 (defvar *agent-debug-hook* nil
   "Called (message) for each :agent-debug / :agent-result from a process agent.
@@ -176,11 +176,8 @@ and registers back to this daemon. It can loop, block, or crash in isolation
 without touching the daemon or any app. Returns the agent-info once it connects."
   (let ((master-port (pine.server:remoting-port server)))
     (unless master-port (error "Cannot spawn agent: remoting not enabled."))
-    (let* ((self-port (incf *agent-port*))
-           (tmp (format nil "/tmp/pine-agent-~a.lisp" name)))
-      (with-open-file (s tmp :direction :output :if-exists :supersede)
-        (write-string (%agent-script name master-port self-port) s))
-      (uiop:launch-program (list "sbcl" "--non-interactive" "--load" tmp)
+    (let ((self-port (incf *agent-port*)))
+      (uiop:launch-program (%agent-command name master-port self-port)
                            :output nil :error-output nil)
       (loop for i from 0 below 400
             for info = (ignore-errors (find-agent server name))

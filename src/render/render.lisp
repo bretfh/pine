@@ -62,6 +62,16 @@ their own (row col); scatter by those."
                  (pine.buffer:frame-cursor-row f)
                  (pine.buffer:frame-cursor-col f))))))
 
+(defun render-window (client)
+  "The focused window's rendered rows + point from CLIENT's frame -- the buffer
+laid out (visible lines, highlights, point, scroll, selection), plus the mode
+line and echo line as the last two rows. The editor surface's window / modeline /
+echo nodes read through this; there is no separate frame wire message."
+  (let ((f (pine.client:frame client)))
+    (values (frame->rows f)
+            (pine.buffer:frame-cursor-row f)
+            (pine.buffer:frame-cursor-col f))))
+
 (defun start-renderer (client)
   (let* ((sys (pine.server:actor-system (pine.client:server-of client)))
          (renderer
@@ -90,9 +100,15 @@ their own (row col); scatter by those."
                         (destructuring-bind (&key buffer name) (rest msg)
                           (switch-window-buffer buffer name)
                           (paint-focused client)))
+                       (:term-tick
+                        (when (pine.term:drain-terminals client)
+                          (paint-focused client)))
                        (:force-render
                         (paint-focused client)))
-                   (error () nil)))))))
+                   (error (e)
+                     (ignore-errors
+                      (format *error-output* "~&renderer error on ~s: ~a~%"
+                              (first msg) e)))))))))
     (setf (pine.client:renderer client) renderer)
     renderer))
 

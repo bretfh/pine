@@ -23,10 +23,10 @@
   (let ((sys (sento.actor-system:make-actor-system
               '(:dispatchers (:shared (:workers 2 :strategy :random))))))
     (setf *agent-system* sys)
-    (sento.remoting:enable-remoting sys :host "127.0.0.1" :port self-port)
+    (sento.remoting:enable-remoting sys :host pine.server:*host* :port self-port)
     (setf *master-debug*
           (sento.remoting:make-remote-ref
-           sys (format nil "sento://~a:~d/user/agent-debug" master-host master-port)))
+           sys (pine.server:daemon-uri "agent-debug" :host master-host :port master-port)))
     ;; an error in this image ships its restart list home, by name
     (setf pine.eval:*on-debug*
           (lambda (ev)
@@ -65,6 +65,6 @@
           (t (sento.actor:reply :unknown)))))
     (sento.actor:tell
      (sento.remoting:make-remote-ref
-      sys (format nil "sento://~a:~d/user/agent-registry" master-host master-port))
-     (list :register-remote :name name :host "127.0.0.1" :port self-port))
+      sys (pine.server:daemon-uri "agent-registry" :host master-host :port master-port))
+     (list :register-remote :name name :host pine.server:*host* :port self-port))
     sys))

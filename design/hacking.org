@@ -1,0 +1,155 @@
+#+TITLE: pine: hacking on itself
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+The goal: editing pine, with pine, is as good as emacs+SLIME editing a CL
+process. You open a pine source file in the attached editor, change a defun,
+one keystroke recompiles it into the running daemon, and the live thing follows.
+That loop is the payoff of the whole substrate; until it is smooth, isolation is
+theory. This plan names what exists, what is missing, and the exact changes.
+
+Notation: EXISTS = already in the tree. NEW = to build. Each NEW names the file
+and the function or binding.
+
+* P0. Prove the foundation (the attached editor)
+
+Nothing self-hosts unless the editor's eval lands in the daemon's image. The
+editor now attaches (editor-session gives the :editor session a frame sink;
+run-editor attaches instead of start-local-substrate) but it is unrun.
+
+- NEW verify the attach roundtrip. Bring up make daemon, then make editor;
+  confirm a keystroke reaches the daemon session (client-N -> session-input ->
+  dispatch) and a frame comes back (paint-focused sink -> push-to-app :frame ->
+  display actor -> paint-sink). Fix races: the first :resize must precede the
+  first paint; the display actor must hold the client-ref before keys flow.
+- NEW eyes: a headless frame render. src/app has the cairo paint-rows already;
+  add a `render-frame-to-png (rows path)` that paints a wire frame into a cairo
+  image-surface and writes a PNG, and a `make shot FORM=...` that boots a daemon
+  session, drives input, and dumps the frame. This is how a change is verified
+  without the GUI, the same way `make hl` checks highlighting.
+
+Gate: until a keystroke in the attached editor changes a daemon buffer and the
+frame returns, stop here.
+
+* P1. The SLIME editing loop
+
+The mechanics that make redefining live feel like C-c C-c, not a chore.
+
+- NEW eval-defun (editor.lisp). Eval the top-level form point is inside, not the
+  preceding sexp. defun-bounds-pos / parse-motion :beginning-of-defun and
+  :end-of-defun already give the bounds from the buffer's tree; extract that text
+  and route it through %eval-form-string. Bind C-M-x globally, and C-c C-c once
+  mode chords work (below).
+- NEW package tracking (editor.lisp %buffer-package). Instead of a fixed
+  buffer-local :package, compute the package from the nearest preceding
+  (in-package ...) in the buffer text before point, like SLIME infers it from the
+  file. Show it in the modeline. Then `(in-package :pine.desktop)` at the top of
+  a buffer makes every defun compile in that package, and the pine.desktop::
+  qualifiers disappear.
+- NEW mode-level chords (keymap/mode.lisp). Known limit: mode keymaps are
+  single-key, so C-c C-c is unbindable through a mode. Make the dispatch walk a
+  pending-keys submap for mode keymaps the way the global map already does. This
+  unlocks C-c C-c, C-c C-k, and the rest of the SLIME set in lisp-mode.
+- NEW result persistence (editor.lisp %eval-done). The eval `=>` line clobbers a
+  user's own echo message and vanishes. Keep the last result in a value the
+  modeline or a *result* line shows, and do not overwrite a fresh pine.echo
+  message with the auto result.
+- NEW surface redisplay (desktop.lisp). After redefining a builder, the surface
+  only repaints when a cell it reads changes. Add `refresh-all (aclient)` that
+  re-pushes every registered surface plus the open panel, and a `reload-desktop`
+  command that finds each :desktop client in pine.attach:*clients* and calls it.
+  One key instead of a hand-written push-surface with a hand-found aclient.
+
+* P2. Navigation and introspection
+
+The layer that makes a codebase browsable, all over SBCL's sb-introspect.
+
+- NEW find-definition / M-. (editor.lisp). sb-introspect:find-definition-sources-by-name
+  gives a symbol's source file and position; open the file and move point. Push a
+  mark ring so M-, returns.
+- NEW symbol completion at point. Complete the token before point against the
+  current package's symbols in the minibuffer, reusing completing-read.
+- NEW arglist echo. On space after a known operator, show
+  sb-introspect:function-lambda-list in the echo area.
+- NEW apropos / describe-symbol commands. describe a function or variable into a
+  help buffer (the %show-help path already exists).
+
+* P3. The isolation payoff: jobs and the cross-image debugger
+
+This is what makes the process boundary worth its cost during development.
+
+- NEW jobs buffer (jobs.lisp). pine.eval:list-evaluations already yields every
+  live evaluation (id, form, package, status). Render them into a *jobs* buffer,
+  auto-refreshing, with abort-evaluation and pick-restart on the selected row.
+  One place to see and kill every running eval across every agent.
+- NEW cross-image debugger wiring (editor-session.lisp / editor.lisp). The
+  transport exists: a :process agent's error ships its condition and restart
+  names to the daemon's agent-debug actor, and *agent-debug-hook* fires. Install
+  a hook that renders that remote restart menu in the editor exactly like the
+  local %eval-error debugger, and have choose-restart send :resume with the
+  chosen name back to that agent. Then an error in any image surfaces where you
+  are typing, and the "move the decision, not the handler" claim is real end to
+  end, not just in transport.
+
+* P4. Hacking across images
+
+- NEW eval-target selector (editor.lisp). Today %eval-form-string always targets
+  *local-agent*. Add a per-editor "eval target" (an agent name or :local),
+  a command to set it, and a modeline indicator. Then C-x C-e / eval-defun
+  redefine a function in the chosen agent's image. The eval path is already
+  agent-parameterized; this only exposes the choice.
+- NEW compile/load a file into the daemon (file.lisp). eval-buffer reads-and-evals;
+  add compile-file + load of a real pine source path, run as an eval job, so
+  editing a whole file (not just a defun) updates the running image. This is how
+  you reload src/desktop/desktop.lisp after a bigger change.
+- Workflow falls out: spawn-agent a worker, set the eval target to it, redefine
+  its job live, and its errors come home to your editor.
+
+* P5. Write the workflows down
+
+Keep this file current, and add a short "getting started" once P0..P2 land.
+
+* Workflows (what the loop actually is)
+
+** WF-A. Hack on pine's live desktop
+Requires P0, P1.
+1. In the attached editor, C-x C-f src/desktop/desktop.lisp.
+2. The buffer's (in-package :pine.desktop) sets the package (P1); no qualifiers.
+3. Edit audio-panel. Point inside it, C-M-x (eval-defun).
+4. reload-desktop (or toggle the audio panel). The live panel is your new code.
+
+** WF-B. Add a widget and a pane from scratch
+Requires P0, P1.
+1. In scratch with (in-package :pine.desktop): define hello-panel, defsurface
+   "hello", redefine bar-bottom with a Hello ib, each C-M-x.
+2. reload-desktop. The bar has a Hello button; it opens the pane.
+   (Today this needs pine.desktop:: qualifiers and a hand-written push-surface;
+   P1 removes both.)
+
+** WF-C. Hack on an isolated agent
+Requires P3, P4.
+1. (spawn-agent *server* "w") -- a real, separate SBCL image.
+2. Set the editor's eval target to "w".
+3. Redefine the agent's job with eval-defun; it runs in w's heap.
+4. When it errors, w ships its restarts home; the editor shows the menu; you
+   pick one; w invokes it locally. A crash in w never touches the daemon.
+
+** WF-D. Change a face or the theme live
+Available now (in the daemon image).
+1. C-M-x a defface or the deftheme form.
+2. Move point / force a paint; the syntax and chrome update. Revert with
+   (load-theme :ef-dream).
+
+** WF-E. Edit the daemon's own logic
+Requires P0, P1.
+1. Open the source of a command or a mode method.
+2. eval-defun it. Because the editor session runs in the daemon, the running
+   editor picks up the new behavior on the next keystroke.
+
+* Sequencing
+
+P0 first and alone; it gates everything. Then P1 makes the loop pleasant, which
+is where "worth hacking on itself" is won. P2 and P3 are independent and can land
+in either order. P4 is the cross-image reach; it depends on P3 for its debugger
+and P1 for eval-defun. Each phase ends with make check green and, for the visual
+ones, a `make shot` PNG that shows the change.

@@ -1,0 +1,265 @@
+#+TITLE: The Pine User Language
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+The vocabulary you write in =init.lisp=. One language for defining surfaces and
+their content, whatever Wayland backs them with. There is no editor language and
+no desktop language; a surface is a surface, and a buffer is a widget you place
+in one. The daemon loads =init.lisp= at boot, in the =:pine.user= package, and
+this is the set of symbols it makes available.
+
+Every name in this language is a symbol. Strings are for user facing text and
+for shell commands, nothing else.
+
+* Status legend
+
+Each entry is tagged with where it stands against this design.
+
+- [have]   usable now, this name and shape.
+- [rename] exists, but under a different name or shape; needs to be brought to
+  the name here.
+- [build]  does not exist yet.
+
+* Surfaces
+
+A surface is the unit Wayland shows. You declare what you want; pine chooses the
+backing primitive (layer-shell, xdg-shell, a subsurface). The editor, the bar,
+and every panel are surfaces.
+
+| symbol       | form                                   | status  |
+|--------------+----------------------------------------+---------|
+| =defsurface= | =(defsurface NAME (:as ROLE opts) BODY)= | [rename] |
+| =show=       | =(show NAME)=                            | [rename] |
+| =hide=       | =(hide NAME)=                            | [build]  |
+| =toggle=     | =(toggle NAME)=                          | [rename] |
+
+- =defsurface= NAME is a symbol. BODY returns a widget tree. Today it takes a
+  string name and a builder function of an argument; the target is a symbol name
+  and a body, with placement declared, not implied.
+- =:as= ROLE is a placement preset: =:bar= =:panel= =:overlay= =:window=
+  =:background= =:echo=. =:bar= is a layer surface anchored and exclusive;
+  =:window= is xdg-shell; and so on. Raw options when you need them: =:anchor=
+  =:layer= =:exclusive= =:size= =:margin=.
+- =show= / =hide= / =toggle= take the surface symbol. Today this is =show-panel=
+  keyed by string.
+
+* Widgets
+
+The base classes. The same set builds every surface. A widget takes =:class= and
+=:face= for style and the event keywords under Behavior.
+
+** Containers
+
+| symbol       | note                                  | status  |
+|--------------+---------------------------------------+---------|
+| =column=     | vertical stack                        | [have]   |
+| =row=        | horizontal stack                      | [have]   |
+| =centerbox=  | start / center / end along an axis    | [have]   |
+| =center=     | center one child                      | [rename] |
+| =box=        | fixed width cell                      | [rename] |
+| =scroll=     | clipped, scrollable viewport          | [rename] |
+| =grid=       | fixed column grid                     | [build]  |
+| =stack=      | z-overlay, children on top of children | [build]  |
+
+- =center= is =centered=, =box= is =boxed=, =scroll= is =viewport= today.
+
+** Content
+
+| symbol   | note                     | status  |
+|----------+--------------------------+---------|
+| =label=  | a text run               | [have]   |
+| =icon=   | a glyph, optionally clickable | [have] |
+| =image=  | an image from a path     | [rename] |
+| =rule=   | a separator line         | [have]   |
+| =gap=    | flexible empty space     | [have]   |
+
+- =image= is =pic= today.
+
+** Controls
+
+| symbol   | note                           | status  |
+|----------+--------------------------------+---------|
+| =button= | a clickable wrapper            | [have]   |
+| =slider= | a value gauge, drag to set     | [rename] |
+| =ring=   | a circular gauge               | [have]   |
+| =field=  | a text input                   | [have]   |
+| =choice= | a selectable row               | [have]   |
+| =rows=   | a list built by mapping a function over data | [have] |
+
+- =slider= is =meter= today.
+
+** Views
+
+The widgets that dissolve the editor / desktop split: a buffer and a terminal
+are widgets you place in a surface like any other.
+
+| symbol     | note                                  | status  |
+|------------+---------------------------------------+---------|
+| =calendar= | a month grid                          | [rename] |
+| =buffer=   | a buffer's live frame as a widget     | [build]  |
+| =terminal= | a pty view as a widget                | [build]  |
+| =modeline= | the mode line for a buffer view       | [build]  |
+| =echo=     | the echo / minibuffer line            | [build]  |
+
+- =calendar= is =cal= today.
+- =buffer=, =terminal=, =modeline=, =echo= are the real work behind this
+  language. Today a buffer frame and a widget tree are separate render paths
+  (=pine.render= for the cell grid, =pine.layout= for widgets). Making =buffer= a
+  layout node unifies them, and after that the editor is just
+  =(defsurface editor (:as :window) (buffer (current)) (modeline) (echo))=.
+
+* Style
+
+Color and shape as data. Change the theme and everything downstream re-resolves.
+
+| symbol       | form                              | status |
+|--------------+-----------------------------------+--------|
+| =deftheme=   | =(deftheme NAME :palette .. :metrics .. :faces ..)= | [have] |
+| =defface=    | =(defface NAME :fg .. :bg .. :bold ..)= | [have] |
+| =load-theme= | =(load-theme NAME)=                 | [have] |
+| =color=      | =(color ROLE)=                      | [have] |
+| =metric=     | =(metric KEY [default])=            | [have] |
+| =face-fg=    | =(face-fg NAME)=                    | [have] |
+
+- On a widget: =:class= applies the theme rules (the CSS-as-data list); =:face=
+  applies a face directly.
+
+* Data
+
+Sources feed cells; cells feed widgets. Reads inside a surface body are tracked,
+so the surface re-renders when a cell it read changes, and only then.
+
+| symbol      | form                                | status  |
+|-------------+-------------------------------------+---------|
+| =defcell=   | =(defcell NAME [default])=            | [have]   |
+| =cell=      | =(cell NAME [default])= (tracked read) | [rename] |
+| =set!=      | =(set! NAME VALUE)=                   | [have]   |
+| =defpoll=   | =(defpoll NAME SECONDS BODY)=         | [have]   |
+| =defsource= | =(defsource NAME COMMAND PARSE)=      | [have]   |
+| =sh=        | =(sh COMMAND)= run a shell command   | [rename] |
+
+- =cell= (the tracked reader) and =sh= exist as helpers inside =desktop.lisp=;
+  they belong in the public vocabulary.
+
+* Behavior
+
+What input does.
+
+| symbol       | form                             | status  |
+|--------------+----------------------------------+---------|
+| =defcommand= | =(defcommand NAME (args) BODY)=    | [rename] |
+| =bind=       | =(bind KEY COMMAND [keymap])=      | [rename] |
+| =defmode=    | =(defmode NAME ...)=               | [build]  |
+| =:on-click=  | widget keyword                   | [have]   |
+| =:on-change= | widget keyword (slider, field)   | [have]   |
+| =:hint=      | widget keyword (echo hint)       | [have]   |
+
+- =defcommand= is =define-command= today; =bind= is =define-key=. A buffer
+  surface's keymap is just =bind= into a keymap.
+
+* Processes
+
+Isolated, supervised SBCL images. An agent's error ships its restart list home to
+the editor, where you pick a restart and it resumes in its own image.
+
+| symbol       | form                       | status  |
+|--------------+----------------------------+---------|
+| =defagent=   | =(defagent NAME BODY)=       | [build]  |
+| =spawn=      | =(spawn NAME)=              | [rename] |
+| =supervise=  | =(supervise NAME)=         | [rename] |
+| =kill=       | =(kill NAME)=              | [rename] |
+
+- =defagent= is spawn plus supervise plus a body, and does not exist yet.
+  =spawn= / =supervise= / =kill= are =spawn-agent= / =supervise-agent= /
+  =kill-agent=.
+
+* The CLI
+
+The shell face onto the same command surface. =pine VERB ARGS= is one binary that
+is the daemon, a control client, and the launcher, the way =tmux= is server and
+client and =systemctl= is control verbs over a channel. It is a CLI, not a REPL:
+each invocation connects to the running daemon, issues one request, prints the
+reply, and exits. The verbs are the vocabulary: =pine show bar= is the shell form
+of =(show bar)=.
+
+** Lifecycle
+
+| verb            | does                                    | status |
+|-----------------+-----------------------------------------+--------|
+| =pine start=    | start the daemon if it is not running   | [build] |
+| =pine stop=     | stop the daemon                         | [build] |
+| =pine restart=  | stop then start                         | [build] |
+| =pine status=   | up or down, port, attached clients, agents | [build] |
+
+** Command surface (mirrors the vocabulary)
+
+| verb                    | does                              | status |
+|-------------------------+-----------------------------------+--------|
+| =pine eval FORM=        | eval one form in the daemon, print it | [build] |
+| =pine run COMMAND ...=  | run a named command (M-x from the shell) | [build] |
+| =pine show NAME=        | show a surface                    | [build] |
+| =pine hide NAME=        | hide a surface                    | [build] |
+| =pine toggle NAME=      | toggle a surface                  | [build] |
+| =pine set CELL VALUE=   | set a cell                        | [build] |
+| =pine reload=           | reload init.lisp                  | [build] |
+
+** Agents
+
+| verb                | does                | status |
+|---------------------+---------------------+--------|
+| =pine agents=       | list process agents | [build] |
+| =pine spawn NAME=   | spawn an agent      | [build] |
+| =pine kill NAME=    | kill an agent       | [build] |
+| =pine logs NAME=    | an agent's output   | [build] |
+
+** Buffers and frontends
+
+| verb                | does                          | status |
+|---------------------+-------------------------------+--------|
+| =pine buffers=      | list buffers                  | [build] |
+| =pine open FILE=    | open a file in a buffer       | [build] |
+| =pine editor=       | launch the editor, attached   | [build] |
+| =pine desktop=      | launch the desktop, attached  | [build] |
+
+The control verbs (everything but lifecycle and the frontend launchers) connect
+to the daemon over the same remoting the frontends use, ask one message of a
+control actor, print, and exit. The frontend launchers are the =make= targets as
+subcommands.
+
+* The three decisions this catalog commits to
+
+1. Names are symbols, everywhere: surfaces, cells, agents, commands. Strings only
+   for user text and shell.
+2. =buffer= and =terminal= are widgets. This is what makes it one language: the
+   editor is a surface holding a =buffer=, and a =buffer= can sit in a panel. It
+   is also the largest piece to build, because it unifies the two render paths.
+3. One =surface= with =:as= presets. The layer-shell / xdg difference appears
+   only in =:as=; the body is the same widgets either way.
+
+* A sketch, in the target language
+
+#+BEGIN_SRC lisp
+(in-package :pine.user)
+
+(load-theme :ef-dream)
+
+(defpoll clock 1 (get-universal-time))
+(defsource workspaces "niri msg --json event-stream" #'parse-workspaces)
+
+(defsurface bar (:as :bar)
+  (centerbox :orient :v
+    :start  (column (icon #xF02C1 :on-click (sh "niri msg action toggle-overview"))
+                    (rows (cell workspaces) #'ws-tile))
+    :end    (column (icon #x0F028 :on-click (show audio))
+                    (label (fmt-clock (cell clock)))
+                    (icon #x0F007 :on-click (show ctl)))))
+
+(defsurface editor (:as :window)
+  (buffer (current)) (modeline) (echo))
+
+(defcommand scratch () (show-buffer "*scratch*"))
+(bind "C-c s" 'scratch)
+
+(defagent notifier
+  (loop (dolist (n (poll-notifications)) (emit n)) (sleep 1)))
+#+END_SRC

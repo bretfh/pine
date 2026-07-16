@@ -23,7 +23,7 @@
                 (:file "jobs") (:file "event") (:file "hooks") (:file "attach")))
    (:module "buffer"
     :serial t
-    :components ((:file "buffer") (:file "window") (:file "face")))
+    :components ((:file "buffer") (:file "window") (:file "face") (:file "rules")))
    (:module "session"
     :serial t
     :components ((:file "client")))
@@ -50,7 +50,7 @@
                 (:file "editor-session")))
    (:module "desktop"
     :serial t
-    :components ((:file "desktop")))
+    :components ((:file "desktop") (:file "palette")))
    (:file "user")
    (:file "main")))
 
@@ -70,12 +70,29 @@
                (:file "input")
                (:file "pty")))
 
+(asdf:defsystem #:pine/cairo
+  :description "GTK-free cairo backend for the widget engine: theme-rules as a
+style resolver + a paint-cairo pass rendering the layout tree to a cairo context."
+  :depends-on (#:pine #:cl-cairo2)
+  :serial t
+  :pathname "src/cairo/"
+  :components ((:file "cell") (:file "style") (:file "paint") (:file "shot")))
+
+(asdf:defsystem #:pine/wayland
+  :description "GTK-free wayland client: wlr-layer-shell bindings + shm/cairo
+surfaces painting the pine.layout tree through the :pine/cairo backend. Uses the
+wayflan library for the raw protocol."
+  :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
+  :serial t
+  :pathname "src/wayland/"
+  :components ((:file "layer-shell") (:file "surface") (:file "input") (:file "client")
+               (:file "editor") (:file "editor-keys")))
+
 (asdf:defsystem #:pine/gtk
-  :depends-on (#:pine #:cl-gtk4 #:cl-gdk4 #:cl-cairo2)
+  :depends-on (#:pine #:pine/cairo #:cl-gtk4 #:cl-gdk4 #:cl-cairo2)
   :serial t
   :pathname "src/"
   :components
   ((:module "app"
     :serial t
-    :components ((:file "surface") (:file "paint") (:file "desktop-app")
-                (:file "editor-app")))))
+    :components ((:file "paint") (:file "desktop-app") (:file "editor-app")))))

@@ -9,6 +9,9 @@
               "gobject-introspection"
               "tree-sitter"
               "gtk4-layer-shell"
+              "wlr-protocols"
+              "libxkbcommon"
+              "sbcl-cl-xkb"
               "gcc-toolchain"
               "pkg-config"))
        (packages->manifest (list tree-sitter-commonlisp pine-pty))))

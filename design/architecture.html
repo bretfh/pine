@@ -1,439 +1,566 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>hecl — architecture overview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pine — architecture</title>
 <style>
-body { font: 14px/1.5 system-ui, sans-serif; max-width: 1040px;
-       margin: 2rem auto; color: #1e1e2e; background: #f8f8f8; padding: 0 2rem; }
-h1, h2, h3 { color: #0a2540; }
-h1 { margin-top: 0; }
-h2 { border-bottom: 1px solid #ccc; padding-bottom: .25rem; margin-top: 2.5rem; }
-h3 { margin-top: 1.5rem; }
-code, pre { font-family: 'SF Mono', Menlo, monospace; }
-pre { background: #eee; padding: 1rem; border-radius: 6px; overflow-x: auto;
-      font-size: 13px; line-height: 1.4; }
-.ref { color: #6c7086; font-size: .9em; }
-table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-th, td { border: 1px solid #ccc; padding: .5rem; text-align: left; vertical-align: top; }
-th { background: #e6e8ea; }
-.actors { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; margin: 1rem 0; }
-.actor  { border: 2px solid #0a6cbe; border-radius: 8px; padding: .75rem 1rem;
-          background: white; }
-.actor h3 { margin: 0 0 .25rem 0; color: inherit; }
-.actor.user     { border-color: #888;   color: #444; }
-.actor.client   { border-color: #0a6cbe; color: #0a6cbe; }
-.actor.buffer   { border-color: #4a7c4a; color: #2e5d2e; }
-.actor.other    { border-color: #a33;   color: #7a2222; }
-.msg  { font-family: monospace; background: #f4f4f4; padding: .15rem .4rem;
-        border-radius: 3px; font-size: 12px; }
-.callout { background: #fff8dc; border-left: 4px solid #d4a017;
-           padding: .75rem 1rem; margin: 1rem 0; }
-.callout.good { background: #e8f5e9; border-color: #4a7c4a; }
-.callout.warn { background: #ffefef; border-color: #a33; }
-.tree { font-family: 'SF Mono', Menlo, monospace; white-space: pre;
-        background: #eee; padding: 1rem; border-radius: 6px; font-size: 13px; }
-.gate { font-weight: bold; color: #a33; }
-.ok   { font-weight: bold; color: #2e5d2e; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.file-badge { display: inline-block; background: #e6e8ea; border-radius: 3px;
-              padding: .1rem .4rem; font-family: monospace; font-size: 12px;
-              color: #0a2540; }
-ul.tight li { margin: .15rem 0; }
+  :root{
+    --bg:#232025; --bg-dim:#322f34; --bg-alt:#3b393e; --bg-active:#5b595e;
+    --fg:#efd5c5; --fg-dim:#8f8886; --fg-alt:#b0a0cf; --border:#635850;
+    --accent:#675072; --accent-fg:#fedeff; --red:#ff6f6f; --green:#51b04f;
+    --yellow:#c0b24f; --blue:#57b0ff; --magenta:#ffaacf; --cyan:#6fb3c0;
+    --mono:"Maple Mono NF","JetBrains Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:var(--mono);font-size:15px;line-height:1.65;
+    display:grid;grid-template-columns:290px 1fr;
+  }
+  nav{
+    position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;
+    background:var(--bg-dim);border-right:1px solid var(--border);padding:26px 20px;
+  }
+  nav .brand{font-size:26px;font-weight:700;color:var(--accent-fg);letter-spacing:.04em}
+  nav .brand small{display:block;font-size:12px;color:var(--fg-dim);font-weight:400;margin-top:2px}
+  nav ol{list-style:none;margin:20px 0 0;padding:0;counter-reset:s}
+  nav ol>li{counter-increment:s;margin:2px 0}
+  nav ol>li>a{display:block;color:var(--fg-dim);text-decoration:none;padding:4px 8px;border-radius:6px;font-size:13px}
+  nav ol>li>a::before{content:counter(s) ".  ";color:var(--accent)}
+  nav ol>li>a:hover{background:var(--bg-active);color:var(--accent-fg)}
+  nav .sub{list-style:none;margin:0 0 0 20px;padding:0}
+  nav .sub li a{display:block;color:var(--border);text-decoration:none;font-size:12px;padding:2px 8px;border-radius:5px}
+  nav .sub li a:hover{color:var(--fg-alt)}
+  main{padding:48px 64px;max-width:1100px}
+  h1{font-size:40px;color:var(--accent-fg);margin:0 0 4px}
+  .lede{color:var(--fg-alt);font-size:18px;margin:0 0 34px;border-bottom:1px solid var(--border);padding-bottom:22px}
+  section{margin:0 0 56px;scroll-margin-top:20px}
+  h2{font-size:26px;color:var(--accent-fg);margin:0 0 6px;border-bottom:1px solid var(--bg-active);padding-bottom:8px}
+  h2 .n{color:var(--accent);font-size:18px;margin-right:10px}
+  h3{font-size:19px;color:var(--fg-alt);margin:30px 0 6px}
+  h4{font-size:15px;color:var(--cyan);margin:22px 0 4px;text-transform:uppercase;letter-spacing:.06em}
+  p{margin:10px 0}
+  a{color:var(--blue)}
+  code{font-family:var(--mono);background:var(--bg-dim);color:var(--accent-fg);padding:1px 5px;border-radius:4px;font-size:.9em}
+  pre{background:var(--bg-dim);border:1px solid var(--border);border-radius:8px;padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.5;color:var(--fg)}
+  pre .c{color:var(--fg-dim)} pre .k{color:var(--magenta)} pre .s{color:var(--green)} pre .f{color:var(--blue)} pre .y{color:var(--yellow)}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px}
+  th,td{border:1px solid var(--border);padding:8px 12px;text-align:left;vertical-align:top}
+  th{background:var(--bg-dim);color:var(--fg-alt);font-weight:600}
+  td code{background:var(--bg);white-space:nowrap}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:var(--bg-dim);border:1px solid var(--border);border-radius:8px;padding:14px 18px}
+  .card h4{margin-top:0}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;background:var(--accent);color:var(--accent-fg);margin-left:8px;vertical-align:middle;letter-spacing:.04em}
+  .muted{color:var(--fg-dim)} .rule{color:var(--yellow)}
+  blockquote{margin:14px 0;padding:10px 18px;border-left:3px solid var(--accent);background:var(--bg-dim);border-radius:0 6px 6px 0;color:var(--fg-alt)}
+  .diagram{background:var(--bg-dim);border:1px solid var(--border);border-radius:8px;padding:20px;color:var(--fg-dim);font-size:12.5px;line-height:1.45;white-space:pre;overflow-x:auto}
+  .diagram b{color:var(--accent-fg)} .diagram .d{color:var(--cyan)} .diagram .a{color:var(--yellow)}
+  footer{color:var(--fg-dim);font-size:12px;border-top:1px solid var(--border);padding-top:18px;margin-top:40px}
+  @media(max-width:1000px){body{grid-template-columns:1fr}nav{position:static;height:auto}main{padding:28px}}
 </style>
 </head>
 <body>
 
-<h1>hecl — architecture overview</h1>
+<nav>
+  <div class="brand">pine<small>Pine Is Not Emacs</small></div>
+  <ol>
+    <li><a href="#overview">Overview &amp; philosophy</a></li>
+    <li><a href="#topology">Process topology</a></li>
+    <li><a href="#daemon">The daemon</a></li>
+    <li><a href="#state">State: buffers &amp; fset</a></li>
+    <li><a href="#attach">Attach &amp; remoting</a></li>
+    <li><a href="#editor">The editor</a></li>
+    <li><a href="#treesitter">Tree-sitter</a></li>
+    <li><a href="#desktop">The desktop</a>
+      <ul class="sub">
+        <li><a href="#layout">Layout engine</a></li>
+        <li><a href="#wire-codec">Wire codec</a></li>
+        <li><a href="#cells">Reactive cells</a></li>
+        <li><a href="#sources">Data sources</a></li>
+        <li><a href="#surfaces">Surfaces &amp; session</a></li>
+        <li><a href="#desktop-app">The desktop app</a></li>
+      </ul>
+    </li>
+    <li><a href="#theme">Theme system</a></li>
+    <li><a href="#agents">Agents, eval &amp; supervision</a></li>
+    <li><a href="#vt">Terminal emulator</a></li>
+    <li><a href="#deploy">Deployment</a></li>
+    <li><a href="#tree">Source tree &amp; packages</a></li>
+    <li><a href="#principles">Design principles</a></li>
+    <li><a href="#perf">Performance &amp; footprint</a></li>
+  </ol>
+</nav>
 
-<p>One-line read: a programmable editor built as a network of sento actors,
-with a CLOS class hierarchy of modes driving behavior, and a uniform
-<code>tell</code> / <code>ask</code> verb set for anything addressable.</p>
+<main>
 
+<h1>pine</h1>
+<p class="lede">A Lisp Machine substrate shaped like the Emacs daemon. One headless SBCL image owns
+live, immutable, addressable state and runs computations; separate OS processes attach over the
+network and render. Within an image it is a Lisp Machine; between images it is Erlang.</p>
 
-<h2>Runtime topology</h2>
-
-<p>Four kinds of things, all addressable through the same actor system:</p>
-
-<div class="actors">
-  <div class="actor user">
-    <h3>User</h3>
-    <p>Keyboard, mouse, QML callbacks.</p>
-    <p>External input source, not an actor itself.</p>
+<section id="overview">
+  <h2><span class="n">1</span>Overview &amp; philosophy</h2>
+  <p>Pine is not an editor with a server bolted on. It is a <b>substrate</b> — a long-lived Lisp
+  image that holds the world — with editing and a desktop as two of its tenants. The defining choice
+  is the split between <em>a single image that owns state</em> and <em>many processes that merely
+  render or compute</em>.</p>
+  <div class="grid2">
+    <div class="card">
+      <h4>Within an image</h4>
+      <p class="muted">A Lisp Machine (Genera / Hemlock). Everything is live, inspectable, and
+      redefinable at runtime. Immutable values are shared by reference in one heap. You author from the
+      editor and every error's restart menu comes home to you.</p>
+    </div>
+    <div class="card">
+      <h4>Between images</h4>
+      <p class="muted">Erlang / OTP. Processes are addressable actors connected by async message
+      passing over the network, supervised and respawned. A computation can crash in its own image
+      without touching the daemon or the editor.</p>
+    </div>
   </div>
-  <div class="actor client">
-    <h3>Client</h3>
-    <p>Actor with a dispatch loop. Owns frame, windows, focused window,
-       pending-keys, mode stack, kill-ring, completion state, renderer,
-       buffer-modes cache.</p>
-    <p>Window manager for the buffers it hosts.</p>
-    <p><span class="ref">src/client.lisp</span></p>
+  <p><b>fset is the seam.</b> An immutable fset value is a single object shared by reference inside one
+  heap, and it serializes to plain data to cross the wire. That one property is what lets state live in
+  exactly one place (the daemon) and still be present, cheaply, wherever it is needed.</p>
+  <blockquote>The daemon owns state and never draws. Apps draw and own no state. Agents compute and are
+  disposable. Everything crosses as plain data; only the daemon holds the live objects.</blockquote>
+</section>
+
+<section id="topology">
+  <h2><span class="n">2</span>Process topology</h2>
+  <p>Three kinds of OS process, each its own SBCL image, connected by <a href="#attach">sento
+  remoting</a> over local TCP.</p>
+  <div class="diagram">                      <b>DAEMON</b>  (headless SBCL, :pine)  <span class="d">127.0.0.1:17000</span>
+             owns state · runs computations · does not draw
+   ┌───────────────────────────────────────────────────────────────┐
+   │  server + actor-system (sento)                                  │
+   │  registries: agents · buffers · layouts · faces · modes         │
+   │  buffers (fset actors) · tree-sitter · eval engine · jobs        │
+   │  editor sessions · desktop surfaces · data sources              │
+   └───────────────────────────────────────────────────────────────┘
+        ▲  attach          ▲  attach                 ▲  spawn / supervise
+        │  keys / actions  │  widget actions          │  remote eval
+   ┌────┴─────┐       ┌────┴────────┐            ┌─────┴──────────┐
+   │ <b>EDITOR APP</b>│       │ <b>DESKTOP APP</b> │            │ <b>PROCESS AGENT</b> │
+   │ :pine/gtk │       │ :pine/gtk   │            │ :pine (+conn)  │
+   │ paints    │       │ layer-shell │            │ its own image  │
+   │ frames    │       │ bar+panels  │            │ crashes alone  │
+   │ sends keys│       │ cairo/GTK4  │            │ ships restarts │
+   └───────────┘       └─────────────┘            └────────────────┘
+       <span class="a">renders</span>              <span class="a">renders</span>                     <span class="a">computes</span></div>
+  <table>
+    <tr><th>Process</th><th>System</th><th>Role</th><th>Owns</th></tr>
+    <tr><td><b>daemon</b></td><td><code>:pine</code></td><td>the substrate; all logic</td><td>every live object, all state</td></tr>
+    <tr><td><b>editor app</b></td><td><code>:pine/gtk</code></td><td>paints cell-grid frames, sends keys</td><td>a GTK window + a cairo surface</td></tr>
+    <tr><td><b>desktop app</b></td><td><code>:pine/gtk</code></td><td>layer-shell bar + panels</td><td>GTK4 windows; the theme CSS</td></tr>
+    <tr><td><b>process agent</b></td><td><code>:pine</code></td><td>isolated computation</td><td>only its own transient work</td></tr>
+  </table>
+  <p class="muted">Agents may also be <em>in-image</em> actors (no separate process) when isolation is
+  not needed. Both kinds are reached by name in the agent registry.</p>
+</section>
+
+<section id="daemon">
+  <h2><span class="n">3</span>The daemon</h2>
+  <p>The headless image. It holds the server object (the root of all registries and the actor system),
+  boots every subsystem in a fixed order, and then stays up. It renders buffers to frames and builds
+  surface trees on demand, but it never touches a GPU or a window.</p>
+  <h3>Boot sequence</h3>
+  <p><code>start-daemon</code> (in <code>src/main.lisp</code>) brings the world up in dependency order:</p>
+  <pre><span class="f">start-daemon</span>
+  → server + remoting            <span class="c">; the actor-system, listening on :17000</span>
+  → ts-runtime + ensure-ts       <span class="c">; tree-sitter library + language</span>
+  → event-bus
+  → agent-registry → local-agent → agent-debug actor
+  → buffer-registry
+  → attach-listener              <span class="c">; /user/attach — apps connect here</span>
+  → faces (install-default-faces) → modes → commands → bindings
+  → editor sessions              <span class="c">; per-app minibuffer/terminal/debug handlers</span>
+  → desktop sessions → desktop config   <span class="c">; register the bar + 5 panels</span>
+  → jobs
+  → sources                      <span class="c">; the reactive data feeders (niri/pactl/nmcli/...)</span></pre>
+  <p><code>run-daemon</code> wraps this: it first fills <code>WAYLAND_DISPLAY</code>/<code>NIRI_SOCKET</code>
+  from <code>XDG_RUNTIME_DIR</code> (so a service started outside the session still reaches it — see
+  <a href="#deploy">Deployment</a>), starts the daemon, then <code>(loop (sleep 3600))</code> to stay
+  alive.</p>
+  <h3>The actor system</h3>
+  <p>Everything concurrent is a <a href="https://github.com/mdbergmann/cl-gserver">sento</a> actor. The
+  server holds one actor-system with a shared dispatcher pool. <b>The cardinal rule:</b> blocking IO
+  never runs on the shared pool. Buffer replies, source reads, and widget handlers each run on their
+  own thread, so a slow <code>nmcli</code> or a runaway eval cannot starve the daemon or hang an app.
+  Actors are addressed by URI (<code>sento://host:port/user/name</code>) and talk with async
+  <code>tell</code> — never a blocking <code>ask</code> across the wire.</p>
+</section>
+
+<section id="state">
+  <h2><span class="n">4</span>State: buffers &amp; fset</h2>
+  <h3>Buffers as immutable actors</h3>
+  <p>A buffer is an actor wrapping an immutable <code>buffer-state</code> (fset-backed lines + marks +
+  meta + a tick). Every edit produces a <em>new</em> state; the actor swaps its reference and notifies
+  subscribers. Because the value is immutable, a snapshot handed to a renderer can never be mutated
+  under it — no locks on the read path.</p>
+  <pre><span class="k">buffer-state</span> = lines · marks · meta · tick
+<span class="k">snapshot</span>     = name · line-count · point-line/col · highlights   <span class="c">; the read view</span>
+edit ops:  insert-char/string/newline · delete-char/region · move-mark
+each op:   state → state'  (structural sharing; O(edit), not O(buffer))</pre>
+  <p>Editing, undo/redo, tree-sitter state and highlighting live <b>solely</b> in the daemon's buffer
+  layer. Keystrokes remain programmatically sendable (from the app, an agent, or a script), but the
+  buffer and its incremental parser are never shipped over the wire — only snapshots and rendered
+  frames are.</p>
+  <h3>The seam</h3>
+  <p>Inside the daemon a snapshot is a live object shared by reference. To reach an app it is rendered
+  to <em>plain data</em> — the wire carries only keywords, strings, numbers, lists and vectors. fset
+  and CLOS objects are flattened at the edge and never cross intact. This is what keeps "one owner of
+  state" honest: the app holds a picture, never the thing.</p>
+</section>
+
+<section id="attach">
+  <h2><span class="n">5</span>Attach &amp; remoting</h2>
+  <p>An app is its own actor-system with remoting enabled and a single <code>display</code> actor. It
+  attaches to the daemon; from then on all traffic is async tells in both directions.</p>
+  <h3>The handshake</h3>
+  <pre>app  → daemon <span class="s">/user/attach</span> : (<span class="k">:attach</span> :display-uri U :kind :editor|:desktop)
+daemon:  makes a client bound to a remote-ref to the app's display,
+         plus a per-client input actor <span class="s">/user/client-N</span>;
+         runs the kind's <span class="k">:on-attach</span> hook.
+daemon → app display : (<span class="k">:attached</span> :id N :client-uri "sento://…/user/client-N")
+app:     makes a remote-ref to client-uri; sends all input there.</pre>
+  <h3>Message tables</h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>app → daemon (client-N)</h4>
+      <pre>(<span class="k">:key</span> :key-str S :ctrl B :meta B
+      :shift B :super B)      <span class="c">; editor</span>
+(<span class="k">:resize</span> :cols C :rows R)     <span class="c">; editor</span>
+(<span class="k">:widget-action</span> :id N :args …) <span class="c">; desktop</span>
+(<span class="k">:refresh</span>)                   <span class="c">; desktop</span>
+(<span class="k">:hint</span> :text S)             <span class="c">; desktop</span></pre>
+    </div>
+    <div class="card">
+      <h4>daemon → app (display)</h4>
+      <pre>(<span class="k">:frame</span> :cols C :rows R
+       :cursor-row cr :cursor-col cc
+       :grid ROWS)            <span class="c">; editor</span>
+(<span class="k">:widgets</span> :surface NAME
+         :tree DATA)         <span class="c">; desktop</span>
+(<span class="k">:panel</span> :name NAME :show B)   <span class="c">; desktop</span></pre>
+    </div>
   </div>
-  <div class="actor buffer">
-    <h3>Buffer</h3>
-    <p>Actor owning an immutable <code>buffer-state</code>, undo ring,
-       subscriber list, last highlights.</p>
-    <p>Doesn't know who renders it.</p>
-    <p><span class="ref">src/buffer.lisp</span></p>
-  </div>
-  <div class="actor other">
-    <h3>Other actors</h3>
-    <p>Tree-sitter parser, buffer registry, event bus, agent registry,
-       LSP / LLM adapters (future).</p>
-    <p>From inside hecl they're just named mailboxes.</p>
-  </div>
-</div>
-
-
-<h2>Server / client relationship (tmux model)</h2>
-
-<p>The server holds the runtime; clients are actors inside it.</p>
-
-<table>
-<thead><tr><th>On the <b>server</b></th><th>On each <b>client</b></th></tr></thead>
-<tbody>
-<tr>
-<td>
-  actor-system · event-bus · agent-registry · buffer-registry · buffer-table ·
-  commands · global-keymap · faces · modes · ts-runtime · clients list ·
-  remoting-port
-  <br><br><span class="ref">src/server.lisp</span>
-</td>
-<td>
-  server-of (back-reference) · actor · renderer · ts-actor · render-state ·
-  frame · windows · focused-window · current-buffer · buffer-modes cache ·
-  pending-keys · mode-stack · completion-state · kill-ring · last-command ·
-  terminals · terminal-map · repl-buffer · prompt state
-  <br><br><span class="ref">src/client.lisp</span>
-</td>
-</tr>
-</tbody>
-</table>
-
-<p>Multiple clients can attach to one server. Buffers are shared across
-clients; windows and scroll positions are per-client. Kill the last client,
-server keeps running.</p>
-
-
-<h2>Files and load order</h2>
-
-<p>From <span class="file-badge">hecl.asd</span>:</p>
-
-<div class="tree">package → server → actor → event → hooks → face → buffer → window
-      → client → layout → mode → #+lqml bridge → ts → render
-      → file → shell → term → keymap → kill-ring → complete
-      → prompt → editor → user → main</div>
-
-<p>Early files are infrastructure (actors, state classes, faces). Middle files
-define the buffer/layout/mode substrate. Late files are commands, rendering,
-the LQML bridge, and user-facing entry points.</p>
-
-
-<h2>Buffer model</h2>
-
-<p>Every buffer is a text buffer at the data layer.</p>
-
-<ul class="tight">
-<li><code>buffer-state</code>: immutable — <code>lines</code> (fset:seq), <code>marks</code> (fset:map), <code>meta</code> (fset:map), <code>tick</code> (edit counter). <span class="ref">src/buffer.lisp:4–8</span></li>
-<li><code>snapshot</code>: frozen view for rendering — name, tick, lines, line-count, point-line, point-col, highlights, meta. <span class="ref">src/buffer.lisp:10–18</span></li>
-<li>Per-buffer actor stores <code>(state undo-ring subscribers hl-cache)</code>.</li>
-<li>Edits: message comes in → dispatch to mode → mode produces a new state → setf <code>sento.actor:*state*</code> → notify subscribers.</li>
-<li>Subscribers are client renderer actor refs; eq-identity for add/remove.</li>
-<li><code>buffer-local state/snap :key &optional default</code> reads <code>meta</code>. <span class="ref">src/buffer.lisp:38–47</span></li>
-</ul>
-
-
-<h2>Mode system</h2>
-
-<p>Modes are CLOS classes. <code>dispatch-message</code> is a generic function
-dispatched on mode; <code>call-next-method</code> walks parents.</p>
-
-<h3>Class hierarchy</h3>
-<div class="tree">base-mode                       (queries, subscribe, undo, set-local, highlights)
-├── text-mode                  (edit verbs: insert / newline / backspace / ...)
-│   ├── lisp-mode              (ts-language :commonlisp)
-│   └── repl-mode              (overrides :newline → repl-submit)
-└── terminal-mode              (writes → PTY; reads synthesized from gterm)</div>
-
-<p><span class="ref">src/mode.lisp:6–15 (base-mode); 175–245 (text-mode); 249–257 (lisp/repl); 275–312 (terminal)</span></p>
-
-<h3>Dispatch-message protocol</h3>
-
-<p>Buffer actor's receive reduces to:</p>
-
-<pre>(lambda (msg)
-  (let* ((state (first sento.actor:*state*))
-         (mode (or (find-mode (buffer-local state :mode :base-mode))
-                   (find-mode :base-mode))))
-    (dispatch-message mode sento.actor:*self*
-                      (first msg) (rest msg))))</pre>
-
-<p><span class="ref">src/buffer.lisp:226–236</span></p>
-
-<p>Methods handle their own state updates and replies by touching
-<code>sento.actor:*state*</code> directly and calling
-<code>sento.actor:reply</code>. Unknown tags fall through
-<code>call-next-method</code>.</p>
-
-<h3>Verb coverage per mode</h3>
-
-<table>
-<thead><tr><th>verb</th><th>base</th><th>text</th><th>terminal</th></tr></thead>
-<tbody>
-<tr><td>:get-state / :get-snapshot / :get-text</td><td class="ok">yes</td><td>inherit</td><td class="ok">override (reads gterm)</td></tr>
-<tr><td>:subscribe / :unsubscribe</td><td class="ok">yes</td><td>inherit</td><td>inherit</td></tr>
-<tr><td>:highlights</td><td class="ok">yes</td><td>inherit</td><td>inherit</td></tr>
-<tr><td>:set-local / :set-meta / :get-local</td><td class="ok">yes</td><td>inherit</td><td>inherit</td></tr>
-<tr><td>:undo</td><td class="ok">yes</td><td>inherit</td><td>no-op</td></tr>
-<tr><td>:replace-content</td><td class="ok">yes</td><td>inherit</td><td>no-op</td></tr>
-<tr><td>:insert / :newline / :backspace</td><td>—</td><td class="ok">edit state</td><td class="ok">write to PTY</td></tr>
-<tr><td>:move-point / :delete-region / :append-with-prompt</td><td>—</td><td class="ok">edit state</td><td>no-op</td></tr>
-</tbody>
-</table>
-
-<p>repl-mode inherits everything from text-mode and overrides only
-<code>:newline</code> to call <code>hecl.shell:repl-submit</code>. <span class="ref">src/mode.lisp:253–257</span></p>
-
-<h3>Per-mode fallback</h3>
-
-<p>When no keymap entry matches a key, the mode's <code>fallback</code> slot
-runs:</p>
-<ul class="tight">
-<li><code>text-mode</code>: insert the char if it's printable and unmodified.</li>
-<li><code>terminal-mode</code>: encode Ctrl-letter → control char, or special keys via <code>key-bytes</code>, then <code>tell buf :insert :text</code> — the terminal-mode <code>dispatch-message</code> method forwards to the PTY.</li>
-<li><code>base-mode</code>: no fallback (bound keys only).</li>
-</ul>
-<p><span class="ref">src/mode.lisp:316–347</span></p>
-
-
-<h2>Layout system</h2>
-
-<p>Buffers that display structured content (dired, compile, grep,
-completing-read) render a virtual node tree into their text. The
-<code>hecl.layout</code> package owns this.</p>
-
-<div class="grid-2">
-  <div>
-    <p><b>Containers:</b> <code>vstack</code>, <code>hstack</code>, <code>box</code>, <code>grid</code>, <code>list-node</code>.</p>
-    <p><b>Content:</b> <code>text-node</code>, <code>separator</code>, <code>field</code>.</p>
-    <p><b>Interactive:</b> <code>selectable</code>, <code>action</code>.</p>
-  </div>
-  <div>
-    <p><b>Container:</b> <code>layout</code> holds root node, target buffer name, state (plist), width.</p>
-    <p>Registered per-buffer on the server (<code>(hecl.server:layouts srv)</code>).</p>
-    <p><code>render-layout</code> produces lines; marks anchor each node's start/end for interactive hit-testing.</p>
-  </div>
-</div>
-
-<p><span class="ref">src/layout.lisp</span></p>
-
-<p>This is the substrate modes like dired-mode will use: keep <code>:insert</code>
-etc. as no-ops, override <code>:activate</code> (RET) to find the
-<code>selectable</code> at point via <code>buffer-layout</code> and fire its
-callback.</p>
-
-
-<h2>Key dispatch</h2>
-
-<p>QML forwards keys to <code>hecl:on-key</code>. <code>dispatch-key</code>
-walks:</p>
-
-<ol>
-  <li><code>pending-keys</code> — active chord prefix (e.g. <code>C-x …</code>).</li>
-  <li>Current mode's keymap chain (mode → parent → ... → base-mode).</li>
-  <li><code>global-keymap</code> — truly global (chord prefixes, <code>M-x</code>, <code>C-x C-e</code>).</li>
-  <li>Mode's <code>fallback</code> (insert-char for text, PTY-forward for terminal).</li>
-</ol>
-
-<p><span class="ref">src/keymap.lisp:75–133</span></p>
-
-<h3>Bindings split</h3>
-
-<table>
-<thead><tr><th>Where</th><th>What lives there</th></tr></thead>
-<tbody>
-<tr><td><code>global-keymap</code></td>
-    <td>C-x chord prefixes (<code>C-x C-f</code>, <code>C-x C-s</code>, <code>C-x b</code>, <code>C-x n</code>, <code>C-x r</code>, <code>C-x C-e</code>), <code>M-x</code>. Shared across all modes.</td></tr>
-<tr><td><code>text-mode</code> keymap</td>
-    <td>Arrows, Emacs-style movement (<code>C-f/b/a/e/n/p/d</code>, <code>M-&lt;/&gt;</code>), editing (<code>backspace</code>, <code>newline</code>, <code>delete-char</code>), kill/yank (<code>C-w</code>, <code>M-w</code>, <code>C-y</code>, <code>M-y</code>), <code>C-SPC</code> mark, scroll, undo.</td></tr>
-<tr><td><code>terminal-mode</code> keymap</td>
-    <td>Empty. Inherits C-x and M-x from global; everything else falls to the fallback and goes to the PTY.</td></tr>
-</tbody>
-</table>
-
-<p><span class="ref">src/keymap.lisp: install-default-bindings / install-text-mode-bindings</span></p>
-
-
-<h2>Rendering pipeline</h2>
-
-<p>Two threads, loosely coupled via an <code>fset:map</code> render-state.</p>
-
-<div class="grid-2">
-  <div>
-    <h3>Actor path (dispatcher thread)</h3>
-    <p>Renderer receives <code>:snapshot</code>, <code>:resize</code>,
-       <code>:switch-buffer</code>, <code>:force-render</code>. Updates windows
-       and marks <code>:dirty</code> in render-state.</p>
-    <p>On <code>:snapshot</code>, if the buffer's mode declares a
-       <code>ts-language</code> and the snapshot's tick is newer than the last
-       parsed tick, send <code>:parse</code> to ts-actor.</p>
-    <p><span class="ref">src/render.lisp:72–124</span></p>
-  </div>
-  <div>
-    <h3>Paint path (Qt thread)</h3>
-    <p>60 Hz persistent tick via <code>qsingle-shot 16</code>. If
-       <code>:dirty</code>, render focused window to the frame-cells buffer,
-       push to QML Canvas. Re-arms itself inside <code>unwind-protect</code>
-       so errors in the body never wedge the loop.</p>
-    <p><span class="ref">src/render.lisp:293–333</span></p>
-  </div>
-</div>
-
-<div class="callout good">
-<p><b>Invariant:</b> paints run independently of parsing. If tree-sitter is
-busy, slow, or unloaded, typing still shows up.</p>
-</div>
-
-
-<h2>Tree-sitter integration</h2>
-
-<p><code>hecl.ts:ts-runtime</code> holds a language map. Each entry carries
-its own parser, query, and capture-cache.</p>
-
-<pre>ts-runtime
-  libs-loaded : boolean
-  languages   : fset:map eq-keyword  → ts-entry
-                    ts-entry
-                      language
-                      parser
-                      query
-                      capture-cache</pre>
-
-<p><span class="ref">src/ts.lisp:51–70</span></p>
-
-<p>Adding a new language = one case in <code>load-language-entry</code>
-plus a loader function that dlopens the parser lib and reads the query.
-<span class="ref">src/ts.lisp:264–311</span></p>
-
-<p>A mode declares its language via the <code>ts-language</code> slot:</p>
-
-<table>
-<thead><tr><th>mode</th><th>ts-language</th><th>effect</th></tr></thead>
-<tbody>
-<tr><td>:base-mode / :text-mode</td><td>nil</td><td>no parse requested</td></tr>
-<tr><td>:lisp-mode</td><td>:commonlisp</td><td>parsed on each tick advance</td></tr>
-<tr><td>:repl-mode / :terminal-mode</td><td>nil</td><td>no parse requested</td></tr>
-</tbody>
-</table>
-
-<p>The renderer's <code>:snapshot</code> handler is what reads the mode and
-decides. If you want more detail on that specific path, see
-<code>design/render-snapshot-flow.html</code>.</p>
-
-
-<h2>Terminal integration</h2>
-
-<p>Terminals aren't a side channel. They're a mode.</p>
-
-<ul class="tight">
-  <li>Open a terminal → buffer actor + gterm (libghostty-vt) + forkpty pair + reader thread.</li>
-  <li>Buffer gets mode <code>:terminal-mode</code>. State is vestigial; real "text" lives in gterm's cell grid.</li>
-  <li>Writes: <code>(tell terminal-buf :insert :text "ls\n")</code> → terminal-mode's <code>dispatch-message</code> → <code>term-write</code> → <code>write(master_fd, ...)</code>.</li>
-  <li>Reads: <code>(ask terminal-buf :text)</code> → terminal-mode's <code>:get-text</code> override → <code>gterm-text</code> decodes the grid into a multi-line string.</li>
-  <li><code>:get-snapshot</code> / <code>:get-state</code>: synthesize a state from gterm-text plus the real cursor position via <code>gterm-cursor-row-of</code> / <code>gterm-cursor-col-of</code>.</li>
-  <li>Subscribers and <code>:highlights</code> on terminal-mode fall through to base-mode — harmless.</li>
-</ul>
-
-<p><span class="ref">src/term.lisp · src/mode.lisp:275–312</span></p>
-
-<div class="callout">
-<p>This is why <code>tell</code> is the single verb: same message, different
-semantics per mode, via CLOS. No <code>terminal-send-key</code> in the public
-API anymore — that path collapsed into the mode method.</p>
-</div>
-
-
-<h2>Interactive API — buffer / ask / tell</h2>
-
-<p>Three primitives in <code>hecl.buffer</code>, re-exported into scratch's
-default package <code>hecl-user</code>:</p>
-
-<pre>(buffer X)                       ; coerce: string/actor/:current/:focused/nil
-(ask TARGET QUERY &rest ARGS)    ; :server / :client / buffer queries
-(tell TARGET TAG &rest PLIST)    ; any tag the target's dispatch handles</pre>
-
-<p>Verb tables: <span class="file-badge">src/buffer.lisp:+server-verbs+ / +client-verbs+ / +buffer-verbs+</span></p>
-
-<p>Every target supports <code>(ask TARGET :describe)</code> returning its
-verb list.</p>
-
-<p>Full reference: <code>design/api.org</code>.</p>
-
-
-<h2>Bootstrap sequence</h2>
-
-<p><code>hecl:main</code> wires everything up:</p>
-
-<ol class="tight">
-<li><code>start-server</code> → actor-system + commands + global-keymap + faces + modes + buffer-table.</li>
-<li><code>ts-runtime</code> created (libs not loaded yet).</li>
-<li>Event bus + agent registry + local agent actors spawned.</li>
-<li><code>start-client server</code> → client instance + pushed onto server's clients list.</li>
-<li><code>setf hecl.client:*client*</code> = that client, making it the ambient context.</li>
-<li><code>install-default-faces</code>.</li>
-<li><code>start-editor</code> → buffer-registry actor, <code>ensure-ts</code> loads libtree-sitter, renderer actor + ts-actor spawned, default commands + bindings + modes installed, scratch buffer + window created, subscribed to buffer, scratch's <code>:package</code> set to <code>:hecl-user</code>.</li>
-<li><code>run-init-hooks</code>.</li>
-<li><code>(#+lqml init-ui client)</code> schedules <code>lispReady = true</code> 100 ms later; QML then reports real size and the render loop kicks off on the first <code>:resize</code>.</li>
-</ol>
-
-<p><span class="ref">src/main.lisp · src/editor.lisp:3–26</span></p>
-
-
-<h2>Status</h2>
-
-<div class="grid-2">
-  <div>
-    <h3>Shipped (Order 0)</h3>
-    <ul class="tight">
-      <li>Client / server split; globals → slots.</li>
-      <li>Ambient <code>*client*</code> only; no other dynamic specials for per-session state.</li>
-      <li>Actor messages: <code>(:tag :k v …)</code> plists everywhere.</li>
-      <li>Buffer-local vars via typed accessor on <code>meta</code>.</li>
-      <li>Render-loop unwedge fix (persistent tick + unwind-protect).</li>
-      <li>Parse-loop CPU fix (per-buffer last-parsed-tick gate).</li>
-      <li>Subscribe / unsubscribe by identity.</li>
-      <li>Deferred render-loop start on first resize.</li>
-    </ul>
-  </div>
-  <div>
-    <h3>Shipped (Order 1)</h3>
-    <ul class="tight">
-      <li>Mode system: CLOS classes, <code>defmode</code>, <code>dispatch-message</code> generic.</li>
-      <li>base-mode, text-mode, lisp-mode, repl-mode, terminal-mode.</li>
-      <li>Terminal integrated via the mode; no side-channel API.</li>
-      <li>Tree-sitter refactored to hold a language map.</li>
-      <li>find-file picks mode by file extension.</li>
-    </ul>
-    <h3>Next up</h3>
-    <ul class="tight">
-      <li>Split windows + <code>C-x o</code>.</li>
-      <li>isearch + transient highlights.</li>
-      <li><code>hecl.term</code> → <code>hecl.vt</code> + <code>hecl.pty</code> substrate split (unlocks compile/grep/shell-on-vt).</li>
-      <li>compile-mode, dired-mode, grep-mode on top of the layout substrate.</li>
-    </ul>
-  </div>
-</div>
-
-
-<h2>Design docs</h2>
-
-<ul class="tight">
-<li><code>design/architecture.org</code> — master writeup, priority table, historical rationale.</li>
-<li><code>design/api.org</code> — <code>buffer</code> / <code>ask</code> / <code>tell</code> reference.</li>
-<li><code>design/client-actor.org</code> — the client-as-actor plan.</li>
-<li><code>design/render-snapshot-flow.html</code> — zoom-in on the <code>:snapshot</code> handler.</li>
-<li><code>design/architecture.html</code> — this file.</li>
-</ul>
-
+  <h3>The editor frame wire — <span class="rule">row / runs</span></h3>
+  <p>The daemon renders a buffer to a flat cell grid, then encodes it compactly for the wire:</p>
+  <pre>:grid = list of rows, each (TEXT . RUNS)
+RUNS  = list of (col fr fg fb br bg bb bold) style-change markers;
+        a run extends to the next marker's col.  bg -1 = none.</pre>
+  <blockquote><span class="rule">Gotcha, hard-won:</span> the cell grid is written in <em>emission
+  order</em> (buffer lines, then modeline at row&nbsp;<code>rows-2</code>, then echo at
+  <code>rows-1</code>) and every cell carries its own <code>(row col)</code>. The encoder must
+  <b>scatter</b> cells by their stored coordinates, not assume row-major position — an early version
+  assumed position order and painted the modeline on row&nbsp;0.</blockquote>
+  <h3>The desktop widget wire</h3>
+  <p><code>node→wire</code> serializes a layout tree to plain data; a handler closure is replaced by an
+  <code>:action</code> id (the daemon keeps the closure keyed by id; the app sends the id back on
+  interaction). <code>wire→node</code> rebuilds it on the far side. A slider click maps to a value via
+  the node's arranged pixel width and is sent as the action's arg. See <a href="#wire-codec">Wire
+  codec</a>.</p>
+</section>
+
+<section id="editor">
+  <h2><span class="n">6</span>The editor</h2>
+  <p>The editor is a tenant of the daemon, not a separate program. Buffers, editing, modes, keymaps,
+  tree-sitter and rendering all live daemon-side; the editor <em>app</em> is a thin GTK painter.</p>
+  <h3>Editor sessions</h3>
+  <p>Each attached <code>:editor</code> app gets a session: a client, a scratch buffer (lisp-mode), a
+  window, a renderer, and its <b>own dedicated thread</b>.</p>
+  <ul>
+    <li><b>Input on the session thread.</b> A command that reads the buffer synchronously blocks only
+    that thread; the buffer's reply comes from a free pool worker. No pool starvation, no ask timeouts.</li>
+    <li><b>Frames are coalesced.</b> A pusher actor subscribed to the buffer marks the session dirty
+    with the <em>latest</em> snapshot; the session thread renders that one. A burst of keystrokes
+    collapses to the latest frame.</li>
+    <li><b>Render only when needed:</b> on a fresh buffer snapshot (typing/motion), and on input only
+    when the minibuffer is active — <code>M-x</code>/completing-read change client state, not the buffer.</li>
+  </ul>
+  <h3>Modes &amp; keymaps</h3>
+  <p>Major/minor modes carry keymaps, indicators and a tree-sitter language. Dispatch walks the active
+  keymaps for the pressed key; editing commands run in the session with <code>*client*</code> bound.
+  <code>install-editor-sessions</code> replicates, per session, what a global <code>start-editor</code>
+  would set (minibuffer handler, terminal handler, debug surface, variables) — the daemon never calls
+  <code>start-editor</code>.</p>
+  <h3>Rendering</h3>
+  <p><code>render-buffer-to-frame</code> lays the buffer into a fixed cell grid (visible lines +
+  modeline + echo), then <code>frame→rows</code> encodes it. The app paints one <code>show-text</code>
+  per run (not per cell) via the cell-grid painters in <code>pine.surface</code>.</p>
+</section>
+
+<section id="treesitter">
+  <h2><span class="n">7</span>Tree-sitter <span class="tag">incremental</span></h2>
+  <p>Highlighting is real incremental tree-sitter, owned per buffer — never a re-parse from scratch,
+  never shipped over the wire.</p>
+  <ul>
+    <li>Each buffer holds a <code>parse-state</code> (parser · language · tree · text). An edit runs
+    <code>ts_tree_edit</code> then re-parses against the <em>old</em> tree, so only the changed region
+    is re-walked.</li>
+    <li>The byte↔char boundary is handled explicitly (<code>TSInputEdit</code>/<code>TSPoint</code>,
+    UTF-8 aware), so multibyte edits map to correct tree points.</li>
+    <li>Highlighting is <b>viewport-scoped</b>: the request covers the visible line range plus a
+    ~12-line margin (base = scroll-top, n = window height), not the whole file. Captures come back
+    offset to buffer lines and are attached to the snapshot.</li>
+    <li>The same parse state answers structural motion (<code>forward/backward-sexp</code>, defun
+    bounds).</li>
+  </ul>
+</section>
+
+<section id="desktop">
+  <h2><span class="n">8</span>The desktop</h2>
+  <p>The desktop is a faithful re-implementation of the author's <a href="https://github.com/elkowar/eww">eww</a>
+  setup — the bar, the echo strip, and five toggled panels — but built <em>inside</em> pine: the
+  widgets, the data feeders, and the interactions are all daemon-side Lisp. There is no external
+  broker, no yuck, no SCSS; the wire carries a declarative tree and the app renders it with GTK4.</p>
+  <div class="diagram"><b>daemon (pine.desktop)</b>                         <b>app (pine.desktop-app)</b>
+  build node tree  ──node→wire──▶  plain data  ──▶  wire→GTK build-widget
+  (bar / 5 panels)                (:widgets …)       (GtkCenterBox, GtkBox,
+  reactive cells                                      GtkButton, GtkScale,
+  data sources ─▶ cells                               GtkCalendar, cairo ring)
+        ▲                                                     │
+        └──────────  (:widget-action :id N) ◀─────────────────┘  click / slider / hover</div>
+  <h3 id="layout">Layout engine <span class="tag">pine.layout</span></h3>
+  <p>A widget tree is laid out in three passes over a cell raster, giving a real box model (alignment,
+  expansion, 2-D placement) that a linear emit model cannot:</p>
+  <pre><span class="k">measure</span>  node → natural (w h)          <span class="c">; bottom-up</span>
+<span class="k">arrange</span>  assign absolute rects         <span class="c">; top-down, slack to expanders</span>
+<span class="k">paint</span>    write styled cells into rect  <span class="c">; faces cascade as fg + bg fill</span></pre>
+  <p>Nodes are CLOS objects (<code>text-node</code>, <code>vstack</code>/<code>hstack</code>,
+  <code>box</code>, <code>center</code>, <code>centerbox</code>, <code>scroll</code>,
+  <code>action</code>, <code>selectable</code>, <code>slider</code>, <code>ring</code>,
+  <code>calendar</code>, <code>picture</code>, <code>grid</code>, …). A terse constructor DSL reads like
+  markup and mirrors eww:</p>
+  <pre>(<span class="f">centerbox</span> :orient :v :class <span class="s">"bar"</span>
+  :start  (<span class="f">column</span> …)          <span class="c">; top    — pinned to the top edge</span>
+  :center (<span class="f">column</span> …)          <span class="c">; middle — floats in the slack</span>
+  :end    (<span class="f">column</span> …))         <span class="c">; bottom — pinned to the bottom edge</span></pre>
+  <p>After <code>arrange</code> every node has an absolute rect, so hit-testing (which action / slider /
+  row is under a point) is exact.</p>
+  <h3 id="wire-codec">Wire codec</h3>
+  <p><code>node→wire</code> emits <code>(TYPE PLIST . CHILDREN)</code>; every non-default style prop is
+  in the plist, and any handler closure becomes an <code>:action</code> id via a callback the producer
+  supplies. <code>wire→node</code> rebuilds the tree on the app side and, given an id, hands back a
+  handler that sends that id home. Only plain data crosses.</p>
+  <h3 id="cells">Reactive cells</h3>
+  <p>A cell holds a value and a subscriber list; setting it notifies subscribers only on a real change.
+  A <em>view</em> renders inside a tracking context, so any cell read during a build records a
+  dependency automatically — a widget just reads a cell and re-renders when it changes, no manual
+  wiring. The bar is a live view; panels re-render while open.</p>
+  <h3 id="sources">Data sources <span class="tag">the eww broker, in-image</span></h3>
+  <p><code>pine.source</code> is pine's answer to eww's babashka broker. A source is a <b>stream</b> (a
+  subprocess line-stream that triggers a refresh, event-driven) or a <b>poll</b> (a refresh on an
+  interval); either way the blocking IO runs on the source's own dedicated thread and writes reactive
+  cells. Declared with <code>defsource</code>/<code>defpoll</code>, started together.</p>
+  <table>
+    <tr><th>Cell(s)</th><th>Source</th><th>Model</th></tr>
+    <tr><td><code>:workspaces</code> <code>:wintitle</code></td><td>niri <code>event-stream</code></td><td>event</td></tr>
+    <tr><td><code>:vol</code> <code>:muted</code> <code>:sinks</code></td><td><code>pactl subscribe</code></td><td>event</td></tr>
+    <tr><td><code>:net</code> <code>:netlist</code> <code>:netactions</code></td><td><code>nmcli monitor</code> + 15 s rescan</td><td>event + poll</td></tr>
+    <tr><td><code>:media</code> <code>:art</code></td><td>EMMS via emacsclient</td><td>1 s poll</td></tr>
+    <tr><td><code>:sys</code> (cpu/ram/disk/temp)</td><td><code>/proc</code> + <code>df</code></td><td>3 s poll</td></tr>
+    <tr><td><code>:bri</code></td><td>backlight / ddcutil</td><td>15 s poll</td></tr>
+    <tr><td><code>:user</code> <code>:host</code> <code>:uptime</code> <code>:clock</code></td><td>id/hostname/uptime/time</td><td>poll</td></tr>
+  </table>
+  <p>Interactions (<code>select!</code>/<code>act!</code> for wifi, sink switching, volume/brightness,
+  media transport) are in-process closures the panel rows call — pine's replacement for eww's nREPL
+  callbacks. Pine computes its own cpu/ram/disk, so it is <em>more</em> self-contained than the eww
+  broker, which relied on eww's built-in magic vars.</p>
+  <h3 id="surfaces">Surfaces &amp; session</h3>
+  <p>The daemon hosts named surfaces — <code>"bar"</code>, <code>"echo"</code>, and the panels
+  <code>calendar/audio/network/media/ctl</code>. <code>defsurface NAME BUILDER</code> registers a
+  builder (client → node tree). <code>push-surface</code> builds the tree, serializes it with fresh ids
+  (dropping the surface's stale ones), and pushes <code>(:widgets :surface NAME :tree DATA)</code>. A
+  tray icon calls <code>show-panel</code>, which pushes the panel tree then
+  <code>(:panel :name NAME :show t)</code>, closing any other open panel. Because the app's GTK surfaces
+  may not exist at attach time, the app re-sends <code>(:refresh)</code> until the bar has content.</p>
+  <h3 id="desktop-app">The desktop app</h3>
+  <p><code>pine.desktop-app</code> turns wire trees into GTK4 widgets and hosts them on layer-shell
+  surfaces. <code>build-widget</code> maps each wire node to a real widget — <code>GtkCenterBox</code>,
+  <code>GtkBox</code>, <code>GtkButton</code>, <code>GtkScale</code>, <code>GtkCalendar</code>,
+  <code>GtkPicture</code>, a <code>GtkScrolledWindow</code> viewport — and the control-panel rings are
+  drawn in <b>cairo</b> on a <code>GtkDrawingArea</code> with the glyph overlaid. Layer-shell (a
+  hand-bound CFFI wrapper) anchors the bar full-height on the left, the echo as a bottom strip, and the
+  panels on the overlay layer, all under the <code>gtk-layer-shell</code> namespace so the compositor's
+  blur rule applies. Styling is GTK CSS, generated from the theme (next section); cairo is used only for
+  the ring and the editor's cell grid.</p>
+</section>
+
+<section id="theme">
+  <h2><span class="n">9</span>Theme system</h2>
+  <p>One theme drives colour, metrics and faces. It lives in <code>pine.buffer</code> (the face layer)
+  and is consumed by both the terminal render path (as faces → cell colours) and the desktop (as
+  roles/metrics → GTK CSS).</p>
+  <pre>(<span class="f">deftheme</span> ef-dream
+  :palette (bg <span class="s">"#232025"</span>  fg <span class="s">"#efd5c5"</span>  accent <span class="s">"#675072"</span> … shadow <span class="s">"#0a0a10"</span>)
+  :metrics (radius 8  border 2  opacity 0.4  font <span class="s">"Maple Mono NF"</span>)
+  :faces   ((:default :fg fg) … (:ring-cpu :fg red) (:ring-track :fg bg-active) …))</pre>
+  <ul>
+    <li><b>Palette</b> — named colour roles (<code>(color :accent)</code> → hex).</li>
+    <li><b>Metrics</b> — layout constants (<code>(metric :radius)</code>, <code>:opacity</code>,
+    <code>:font</code>). Nothing in the stylesheet is hardcoded; radius, glass opacity and font all flow
+    from here.</li>
+    <li><b>Faces</b> — fg/bg/attrs, used both for terminal cell colours and for the desktop's
+    cairo-drawn ring (which reads dedicated <code>:ring-*</code> faces, decoupled from syntax faces).</li>
+  </ul>
+  <h4>Generating GTK CSS</h4>
+  <p>The desktop app authors CSS <em>in Lisp</em>: a rules list of <code>(SELECTOR (:prop val …))</code>
+  is flattened to a GTK stylesheet. <code>glass</code> renders a role at the theme opacity
+  (<code>rgba(r,g,b,0.4)</code>); a global <code>*</code> reset strips GTK4's default chrome (the eww
+  <code>all: unset</code> equivalent), then each rule adds back only what it wants. The result mirrors
+  the eww stylesheet role-for-role, but derived from the theme.</p>
+</section>
+
+<section id="agents">
+  <h2><span class="n">10</span>Agents, eval &amp; supervision</h2>
+  <p>Computation is first-class and isolated. This is the OTP half of pine.</p>
+  <h3>Eval engine</h3>
+  <p>Every evaluation runs on its own thread and captures its restarts and blocks. A surface
+  (<code>*on-debug*</code>) chooses a restart by name or aborts. Evaluations are listable and
+  addressable (<code>list-evaluations</code>, <code>pick-restart</code>, <code>abort-evaluation</code>)
+  — a runaway loop is aborted without touching anything else.</p>
+  <h3>Agents</h3>
+  <p>An agent is <b>:local</b> (an in-image actor) or <b>:process</b> (<code>spawn-agent</code> starts a
+  real SBCL that loads <code>:pine</code>, calls <code>pine.agent:connect</code>, enables remoting and
+  registers back). Agents run remote eval/compile/run and are reached by cached ref — never by a
+  blocking name lookup.</p>
+  <h3>Cross-image debugger</h3>
+  <p>A process agent points <code>*on-debug*</code> at the daemon: on an error it ships its restart list
+  home to <code>/user/agent-debug</code>; the master picks a name and sends
+  <code>(:resume :eval-id N :restart NAME)</code>; the agent invokes it locally. An error in another
+  image debugs <em>in the editor you author from</em>.</p>
+  <h3>Jobs &amp; supervision</h3>
+  <p><code>list-jobs</code> aggregates local evaluations and agent-reported work.
+  <code>start-agent-supervisor</code> pings supervised process agents on an interval and respawns a dead
+  one. Live redefinition works across images: redefine a function in the daemon and the running agent
+  sees the new definition.</p>
+</section>
+
+<section id="vt">
+  <h2><span class="n">11</span>Terminal emulator <span class="tag">:pine/vt</span></h2>
+  <p>A self-contained terminal emulator plus a native pty, its own ASDF system with only a CFFI
+  dependency. It parses the VT stream into a cell grid (SGR, colours, ops) and exposes it as text, so a
+  pine buffer can host a real terminal. It is independent of the editor and the desktop — a library the
+  daemon draws on when a buffer needs a terminal.</p>
+</section>
+
+<section id="deploy">
+  <h2><span class="n">12</span>Deployment</h2>
+  <h3>Running by hand</h3>
+  <table>
+    <tr><th>Target</th><th>Runs</th><th>Notes</th></tr>
+    <tr><td><code>make daemon</code></td><td><code>pine:run-daemon</code></td><td>headless, remoting :17000, stays up</td></tr>
+    <tr><td><code>make editor</code></td><td><code>pine.gtk:run-editor</code></td><td>attaches to the daemon</td></tr>
+    <tr><td><code>make desktop</code></td><td><code>pine.desktop-app:run-desktop-app</code></td><td>layer-shell bar + panels, attaches</td></tr>
+    <tr><td><code>make dev</code></td><td>daemon (bg) → desktop + editor</td><td>waits for "daemon up"</td></tr>
+    <tr><td><code>make check</code></td><td>load <code>:pine/gtk</code> headless</td><td>compile gate</td></tr>
+  </table>
+  <p>Each is a <code>guix shell -m manifest.scm -- sbcl</code> invocation; the Lisp deps come from ocicl
+  in-repo, the C libs (GTK, gtk4-layer-shell, tree-sitter, cairo) from the manifest.</p>
+  <h3>As a service (replacing eww)</h3>
+  <p>The daemon runs as a Guix-Home shepherd service (<code>home-pine</code>, parallel to the old
+  <code>home-eww-broker</code>): a respawning <code>forkexec</code> of the same
+  <code>guix shell … sbcl … (pine:run-daemon)</code> command. The desktop app is a niri
+  spawn-at-startup, in-session so it has the wayland display — mirroring how eww split its broker
+  (service) from its GUI (startup). Because a shepherd service starts <em>outside</em> the session,
+  <code>run-daemon</code> discovers <code>WAYLAND_DISPLAY</code> and <code>NIRI_SOCKET</code> from
+  <code>XDG_RUNTIME_DIR</code> so its sources and app-launches reach the running session — the same
+  problem the eww broker solved. Switching bfh's home is one line: swap the service, point the desktop's
+  <code>bar</code> at <code>pine</code>. Nothing is deleted; eww stays a fallback.</p>
+</section>
+
+<section id="tree">
+  <h2><span class="n">13</span>Source tree &amp; packages</h2>
+  <p>Two ASDF systems (plus <code>:pine/vt</code>). Everything is <code>:pine</code> — the daemon and
+  all logic — except <code>src/app/</code>, which is <code>:pine/gtk</code>, the GTK client apps.</p>
+  <pre>src/
+  package.lisp                       <span class="c">; ALL package defs, loaded first</span>
+  core/    server eval actor agent jobs event hooks attach
+  buffer/  buffer window face        <span class="c">; state · windows/frames · faces+theme</span>
+  session/ client
+  keymap/  key keymap command mode variable
+  widget/  cell sources layout       <span class="c">; reactive cells · data feeders · widget engine + wire</span>
+  term/    term
+  ts/      ts                        <span class="c">; incremental tree-sitter</span>
+  render/  render                    <span class="c">; buffer → cell-grid frame → row/runs wire</span>
+  editor/  echo kill-ring complete prompt file repl editor editor-session
+  desktop/ desktop                   <span class="c">; the whole daemon-side desktop (pine.desktop)</span>
+  app/     surface paint desktop-app editor-app   <span class="c">; :pine/gtk renderers</span>
+  user.lisp main.lisp
+vt/                                  <span class="c">; :pine/vt — terminal emulator + pty</span>
+guix/                                <span class="c">; packaging (tree-sitter grammar, pty)</span></pre>
+  <table>
+    <tr><th>Package</th><th>Home</th><th>Owns</th></tr>
+    <tr><td><code>pine.server / .actor / .event</code></td><td>core</td><td>server root, actors, event bus</td></tr>
+    <tr><td><code>pine.buffer</code></td><td>buffer</td><td>buffer state, windows/frames, faces + theme</td></tr>
+    <tr><td><code>pine.ts</code></td><td>ts</td><td>incremental tree-sitter</td></tr>
+    <tr><td><code>pine.mode / .keymap / .var</code></td><td>keymap</td><td>modes, keymaps, variables</td></tr>
+    <tr><td><code>pine.cell / .source</code></td><td>widget</td><td>reactive cells, data feeders</td></tr>
+    <tr><td><code>pine.layout</code></td><td>widget</td><td>widget engine, constructor DSL, wire codec</td></tr>
+    <tr><td><code>pine.render</code></td><td>render</td><td>buffer → frame → wire</td></tr>
+    <tr><td><code>pine.editor / .echo / .repl</code></td><td>editor</td><td>commands, minibuffer, completion, sessions</td></tr>
+    <tr><td><code>pine.desktop</code></td><td>desktop</td><td>daemon-side bar + 5 panels, surface registry</td></tr>
+    <tr><td><code>pine.desktop-app / .surface</code></td><td>app</td><td>GTK4 layer-shell renderer, cell-grid painters</td></tr>
+    <tr><td><code>pine.gtk</code></td><td>app</td><td>the editor app</td></tr>
+  </table>
+</section>
+
+<section id="principles">
+  <h2><span class="n">14</span>Design principles</h2>
+  <ul>
+    <li><span class="rule">One owner of state.</span> The daemon holds every live object. Apps hold
+    pictures, agents hold transients. State never lives in two places.</li>
+    <li><span class="rule">Plain data on the wire.</span> Only keywords, strings, numbers, lists,
+    vectors cross. fset/CLOS are rendered to data at the edge.</li>
+    <li><span class="rule">Never block the shared pool or the GTK thread.</span> Blocking IO
+    (nmcli/pactl), synchronous buffer reads, and widget handlers each get a dedicated thread. Cross-wire
+    talk is async <code>tell</code> with cached refs — never a blocking <code>ask</code>.</li>
+    <li><span class="rule">Compose, don't switch.</span> Sub-techniques dispatch from real state; no
+    mode flags choosing between alternatives, no plugin loaders. The engine/game seam is code layout +
+    install-hooks, not a runtime <code>PLUGIN=</code>.</li>
+    <li><span class="rule">Faithful ports, derived from source.</span> The desktop matches eww
+    role-for-role and metric-for-metric, but the values come from the theme; the reference is a
+    constraint, not a template.</li>
+    <li><span class="rule">No package-abbreviation prefixes on internal symbols.</span> In
+    <code>pine.desktop</code> it is <code>card</code>, not <code>dcard</code>; <code>on-click</code>,
+    not <code>da-click</code>.</li>
+  </ul>
+</section>
+
+<section id="perf">
+  <h2><span class="n">15</span>Performance &amp; footprint</h2>
+  <h3>Wire &amp; latency (headless, local TCP)</h3>
+  <table>
+    <tr><th>step</th><th>80×29</th><th>200×55 (maximized)</th></tr>
+    <tr><td>serialize (row/runs)</td><td>—</td><td>1.6 ms · 55 KB</td></tr>
+    <tr><td>deserialize (row/runs)</td><td>—</td><td>0.6 ms</td></tr>
+    <tr><td>paint (paint-rows)</td><td>—</td><td>2.1 ms</td></tr>
+    <tr><td>compute-highlights (main.lisp, 78 lines)</td><td colspan="2">2.5 ms</td></tr>
+    <tr><td>key → first frame over TCP</td><td colspan="2">4 ms median, 8 ms max</td></tr>
+  </table>
+  <h3>Running footprint (idle)</h3>
+  <table>
+    <tr><th>process</th><th>RSS</th><th>CPU (steady)</th></tr>
+    <tr><td>daemon (<code>run-daemon</code>)</td><td>~324 MB</td><td>~3% (source polls)</td></tr>
+    <tr><td>desktop app (<code>run-desktop-app</code>)</td><td>~398 MB</td><td>~1%</td></tr>
+    <tr><td>editor app (<code>run-editor</code>)</td><td>~353 MB</td><td>0%</td></tr>
+    <tr><td>each <code>guix shell</code> wrapper</td><td>~38 MB</td><td>0%</td></tr>
+  </table>
+  <p class="muted">RSS overcounts shared GTK/glibc; the incremental cost is lower. The two sbcl images
+  (~290–400 MB) are the SBCL core plus the compiled pine/GTK/sento/cffi stack resident. The daemon's ~3%
+  is dominated by the 1-second EMMS media poll.</p>
+</section>
+
+<footer>
+  pine — Pine Is Not Emacs · a Lisp Machine substrate shaped like the Emacs daemon.<br>
+  This document is the architectural master; the live working-memory is <code>status.org</code>, the
+  design prose is <code>design/architecture.org</code>.
+</footer>
+
+</main>
 </body>
 </html>

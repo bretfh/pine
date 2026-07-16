@@ -33,6 +33,9 @@
    (pad-y   :initarg :pad-y  :accessor pad-y   :initform 0)
    (min-w   :initarg :min-w  :accessor min-w   :initform 0)
    (min-h   :initarg :min-h  :accessor min-h   :initform 0)
+   ;; outer margin (top right bottom left) in px, or nil; set only by the cairo
+   ;; style pass, so cell-grid nodes never carry it and layout is unchanged there.
+   (margin  :initarg :margin :accessor node-margin :initform nil)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
    (start-col  :initform 0 :accessor start-col)
@@ -130,6 +133,16 @@
 
 (defclass picture (node)
   ((path :initarg :path :accessor pic-path :initform "")))
+
+;; A leaf holding already-rendered cell rows (a buffer's or a terminal's frame,
+;; each row a (text . runs) pair). One node, not a tree of characters: measure
+;; and arrange are O(1), and paint blits the rows. This is how a buffer or a
+;; terminal composes into a widget tree without the layout engine ever touching
+;; the text cell by cell.
+(defclass window (node)
+  ((rows :initarg :rows :accessor window-rows :initform nil)
+   (crow :initarg :crow :accessor window-crow :initform -1)
+   (ccol :initarg :ccol :accessor window-ccol :initform -1)))
 
 (defclass centerbox (node)
   ((orient    :initarg :orient :accessor cb-orient :initform :v)
@@ -268,6 +281,12 @@ never pushes the end past the surface. (centerbox :orient :v :start .. :end ..)"
   "An image loaded from file PATH."
   (apply #'make-instance 'picture :path (or path "") props))
 
+(defun window (rows &rest props)
+  "A leaf rendering already-laid-out cell ROWS (each (text . runs)) -- an Emacs
+window onto a buffer or a terminal. Props may set :crow / :ccol for the point,
+plus any node style. Measure/arrange are O(1); paint blits the rows."
+  (apply #'make-instance 'window :rows rows props))
+
 (defun rows (items item-fn &rest props)
   "A vertical list built by mapping ITEM-FN over ITEMS. (rows nets #'net-row)"
   (apply #'make-instance 'list-node :items items :item-fn item-fn props))
@@ -340,6 +359,25 @@ is the packed bold/italic/underline bits. Resolves through the active theme."
     (let ((off (%cell-off r row col)) (v (raster-cells r)))
       (setf (svref v (+ off 6)) br (svref v (+ off 7)) bg (svref v (+ off 8)) bb))))
 
+(defun raster-put-rgb (r row col ch fr fg fb br bg bb attr)
+  "Write a cell with explicit colours (not a face), for blitting cell rows."
+  (when (%in-raster r row col)
+    (let ((off (%cell-off r row col)) (v (raster-cells r)))
+      (setf (svref v (+ off 2)) (char-code ch)
+            (svref v (+ off 3)) fr (svref v (+ off 4)) fg (svref v (+ off 5)) fb
+            (svref v (+ off 9)) (or attr 0))
+      (when (and (integerp br) (>= br 0))
+        (setf (svref v (+ off 6)) br (svref v (+ off 7)) bg (svref v (+ off 8)) bb)))))
+
+(defun blit-row (r row col0 text runs)
+  "Blit one (TEXT . RUNS) row into raster R at ROW, starting COL0. Each run is
+(col fr fg fb br bg bb attr), its colours extending to the next run's col."
+  (loop for (run . more) on runs do
+    (destructuring-bind (col fr fg fb br bg bb attr) run
+      (let ((end (if more (car (first more)) (length text))))
+        (loop for c from col below (min end (length text))
+              do (raster-put-rgb r row (+ col0 c) (char text c) fr fg fb br bg bb attr))))))
+
 (defun raster-lines (r)
   (loop for row from 0 below (raster-rows r)
         collect (let ((s (make-string (raster-cols r))))
@@ -378,14 +416,32 @@ in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
 
 (defmethod measure ((n node) aw ah) (declare (ignore aw ah)) (values 0 1))
 
+;;; Margin: outer space around a node's border-box (CSS margin). NIL means none,
+;;; the common case, and every helper collapses to zero -- so a node without a
+;;; margin (every cell-grid node) measures and arranges exactly as before.
+
+(defun %margin-x (n) (let ((m (node-margin n))) (if m (+ (fourth m) (second m)) 0)))
+(defun %margin-y (n) (let ((m (node-margin n))) (if m (+ (first m) (third m)) 0)))
+(defun %margin-l (n) (let ((m (node-margin n))) (if m (fourth m) 0)))
+(defun %margin-t (n) (let ((m (node-margin n))) (if m (first m) 0)))
+
 (defmethod measure :around ((n node) aw ah)
-  "Wrap the intrinsic measure with padding and the minimum size (CSS box model):
-content is measured in the space left after padding; the result adds padding
-back and is floored at min-w/min-h."
+  "Wrap the intrinsic measure with the CSS box model: content is measured in the
+space left after margin and padding; the result adds padding back (floored at
+min-w/min-h for the border-box) and then adds margin for the outer size."
   (multiple-value-bind (w h)
-      (call-next-method n (max 0 (- aw (* 2 (pad-x n)))) (max 0 (- ah (* 2 (pad-y n)))))
-    (values (max (min-w n) (+ w (* 2 (pad-x n))))
-            (max (min-h n) (+ h (* 2 (pad-y n)))))))
+      (call-next-method n (max 0 (- aw (* 2 (pad-x n)) (%margin-x n)))
+                          (max 0 (- ah (* 2 (pad-y n)) (%margin-y n))))
+    (values (+ (max (min-w n) (+ w (* 2 (pad-x n)))) (%margin-x n))
+            (+ (max (min-h n) (+ h (* 2 (pad-y n)))) (%margin-y n)))))
+
+(defmethod arrange :around ((n node) x y w h)
+  "Inset the allocated rect by the node's margin before the primary arrange, so
+the node's border-box (and everything it lays out inside) sits within its margin."
+  (if (node-margin n)
+      (call-next-method n (+ x (%margin-l n)) (+ y (%margin-t n))
+                        (max 0 (- w (%margin-x n))) (max 0 (- h (%margin-y n))))
+      (call-next-method)))
 
 (defun %inner (n x y w h)
   "The content rect of N inside its padding."
@@ -422,6 +478,19 @@ back and is floored at min-w/min-h."
   (let ((s (content n)) (w (%node-width n)))
     (loop for i from 0 below (min (length s) w)
           do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
+
+(defmethod measure ((n window) aw ah)
+  (declare (ignore aw ah))
+  (let* ((rows (window-rows n))
+         (cols (reduce #'max rows :initial-value 1 :key (lambda (row) (length (car row)))))
+         (nrows (max 1 (length rows))))
+    (if *text-size*
+        (multiple-value-bind (cw ch) (%text-size "M" (font-px n))
+          (values (* cols cw) (* nrows ch)))
+        (values cols nrows))))
+(defmethod paint ((n window) r)
+  (loop for row in (window-rows n) for y from (start-line n)
+        do (blit-row r y (start-col n) (car row) (cdr row))))
 
 (defmethod measure ((n separator) aw ah)
   (declare (ignore ah)) (values aw (%line-h (font-px n))))
@@ -703,7 +772,7 @@ HOVER, a (line . col) cons, marks the node under it hovered before painting."
 
 
 ;;;; Widgets — a widget is a function of its arguments returning a node tree.
-;;;; Reading reactive cells (pine.cell:cell-ref) in the body makes it re-render
+;;;; Reading reactive cells (pine.ref:deref) in the body makes it re-render
 ;;;; when those cells change, when rendered inside a reactive view. Widgets
 ;;;; compose by calling one another.
 
@@ -751,6 +820,8 @@ id to embed."
         (calendar  (list :calendar (list* :year (cal-year n) :month (cal-month n)
                                           :day (cal-day n) (%wire-base n))))
         (picture   (list :picture (list* :path (pic-path n) (%wire-base n))))
+        (window    (list :window (list* :rows (window-rows n) :crow (window-crow n)
+                                        :ccol (window-ccol n) (%wire-base n))))
         (centerbox (list* :centerbox (list* :orient (cb-orient n) (%wire-base n))
                           (kids (list (cb-start n) (cb-center n) (cb-end n)))))
         (action    (list* :action (list* :action (act (callback n)) (%wire-base n))
@@ -807,6 +878,9 @@ function of any interaction args) -- the renderer's 'send this id back'."
           (:calendar (apply #'cal :year (getf props :year 2000) :month (getf props :month 1)
                             :day (getf props :day 1) (%wire-clean props :year :month :day)))
           (:picture  (apply #'pic (getf props :path "") (%wire-clean props :path)))
+          (:window   (apply #'window (getf props :rows)
+                            :crow (getf props :crow -1) :ccol (getf props :ccol -1)
+                            (%wire-clean props :rows :crow :ccol)))
           (:centerbox (centerbox :orient (getf props :orient :v)
                                  :class (getf props :class) :hint (getf props :hint)
                                  :expand (getf props :expand 0)
