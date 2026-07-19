@@ -21,8 +21,11 @@
   (let ((fe (cairo:get-font-extents)))
     (multiple-value-bind (xb yb w h ax) (cairo:text-extents text)
       (declare (ignore xb yb w h))
+      ;; line height must match the blit cell height (cairo-cell-metrics /
+      ;; paint-rows / the frontend resize all use font-height); measuring at
+      ;; ascent+descent instead drifts the stacked window/modeline/echo nodes.
       (values (max 1 (ceiling ax))
-              (max 1 (ceiling (+ (cairo:font-ascent fe) (cairo:font-descent fe))))))))
+              (max 1 (ceiling (cairo:font-height fe)))))))
 
 ;;;; Style plumbing.
 
