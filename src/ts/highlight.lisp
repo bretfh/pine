@@ -366,12 +366,25 @@
                   (walk value depth nil)))))
          (walk-for-clause (node depth)
            (let ((variable (ts-field node "variable")))
+             ;; the leading `for'/`as' is an anonymous token, not a named child;
+             ;; colour the range before the variable so the clause head shows.
+             (when variable
+               (emit (ts-node-start-byte node) (ts-node-start-byte variable) :keyword))
              (dolist (child (ts-named-children node))
                (if (and variable
                         (= (ts-node-start-byte child) (ts-node-start-byte variable)))
                    (emit-node child :variable-param)
                    (walk child depth nil)))))
          (walk-loop (node depth)
+           ;; `loop' itself is anonymous; colour from the node start to its first
+           ;; named clause so the head keyword is highlighted like other heads.
+           ;; The loop_macro node includes its own `(', which the enclosing
+           ;; list already paints as a rainbow delimiter, so skip a leading paren.
+           (let* ((kids (ts-named-children node))
+                  (sb (ts-node-start-byte node))
+                  (s (if (char= (char text (char-at sb)) #\() (1+ sb) sb))
+                  (e (if kids (ts-node-start-byte (first kids)) (ts-node-end-byte node))))
+             (emit s e :keyword))
            (walk-children node depth nil)))
       (walk root 0 nil)
       (nreverse acc))))
