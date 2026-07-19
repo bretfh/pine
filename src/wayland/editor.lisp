@@ -140,6 +140,16 @@ buffer rows were laid out for."
                (wl-proxy-hooks keyboard))))
       (:name (name) (declare (ignore name))))))
 
+(defun request-no-respawn (ed)
+  "A WM window-close is an explicit kill: tell the daemon to stop respawning this
+editor before we exit, so it stays closed. Best-effort and synchronous, so the
+daemon has cleared the flag before the process goes away."
+  (ignore-errors
+    (sento.actor:ask-s
+     (sento.remoting:make-remote-ref
+      (ed-sys ed) (pine.server:daemon-uri "control"))
+     '(:unsupervise-frontend :verb "editor") :time-out 2)))
+
 (defun open-window (ed)
   (with-slots (compositor xdg-wm-base wl-surface xdg-surface xdg-toplevel) ed
     (setf wl-surface (wl-compositor.create-surface compositor)
@@ -154,7 +164,7 @@ buffer rows were laid out for."
             (:configure (w h states) (declare (ignore states))
              (unless (zerop w) (setf (ed-width ed) w))
              (unless (zerop h) (setf (ed-height ed) h)))
-            (:close () (setf (ed-done ed) t)))
+            (:close () (request-no-respawn ed) (setf (ed-done ed) t)))
           (wl-proxy-hooks xdg-toplevel))
     (xdg-toplevel.set-title xdg-toplevel "pine")
     (wl-surface.commit wl-surface)))

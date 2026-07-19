@@ -604,6 +604,10 @@ no symbol to complete."
   (defcmd "save-file" ()
     (handler-case (pine.file:save-current-buffer)
       (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (defcmd "kill-pine-editor" ()
+    ;; the explicit teardown: unsupervise this editor so the daemon will not
+    ;; respawn it, then terminate its process. Same path a WM window-close takes.
+    (pine:kill-frontend "editor"))
   (defcmd "switch-buffer" ()
     (completing-read "Switch to: " (pine.buffer:list-buffers)
       (lambda (name)
@@ -739,6 +743,7 @@ no symbol to complete."
     (pine.keymap:define-key g (list (k "C-x") (k "r")) "open-repl")
     (pine.keymap:define-key g (list (k "C-x") (k "t")) "terminal")
     (pine.keymap:define-key g (list (k "C-x") (k "C-e")) "eval-last-sexp")
+    (pine.keymap:define-key g (list (k "C-x") (k "C-c")) "kill-pine-editor")
     (pine.keymap:define-key g (k "C-M-x") "eval-defun")
     (pine.keymap:define-key g (k "M-.") "find-definition")
     (pine.keymap:define-key g (k "M-x") "execute-command")

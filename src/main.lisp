@@ -143,6 +143,14 @@ daemon' runs."
                   (sleep 0.2)
                   (sb-ext:exit :code 0 :abort t))
                 :name "pine-shutdown"))
+              (:kill-frontend
+               (destructuring-bind (&key verb) (rest msg)
+                 (kill-frontend verb) (r "killed")))
+              (:unsupervise-frontend
+               ;; a frontend telling the daemon "I am closing on purpose, do not
+               ;; respawn me"; it exits itself, so we only clear the flag.
+               (destructuring-bind (&key verb) (rest msg)
+                 (unsupervise-frontend verb) (r "ok")))
               (:reload (load-init) (ignore-errors (pine.desktop:refresh-all)) (r "reloaded"))
               (:agents (r (mapcar #'pine.actor:agent-info-name (pine.actor:list-agents server))))
               (:spawn (pine.actor:spawn-agent server (second msg)) (r "spawned"))
@@ -207,6 +215,12 @@ init.lisp may rebind this to choose which frontends come up.")
 (defvar *frontend-procs* (make-hash-table :test 'equal)
   "frontend verb -> its uiop process, so the supervisor can see it has died.")
 
+(defvar *frontend-wanted* (make-hash-table :test 'equal)
+  "frontend verb -> t while it should be kept alive. An explicit kill (a window
+close, or the kill-pine-editor command) clears it, so the supervisor stops
+respawning that one frontend -- without stopping the daemon or the others. This
+is what distinguishes a deliberate close from a crash.")
+
 (defun daemon-is-binary-p ()
   "True when this daemon runs from the built `pine' binary (so it can re-invoke
 itself to spawn a frontend). Under `make daemon' argv0 is sbcl and there is no
@@ -216,6 +230,7 @@ binary to spawn -- then the daemon stays headless and frontends are run by hand.
 
 (defun spawn-frontend (verb)
   "Launch one frontend (`pine VERB') as its own process, logging to /tmp."
+  (setf (gethash verb *frontend-wanted*) t)
   (let ((log (format nil "/tmp/pine-~a.log" verb)))
     (setf (gethash verb *frontend-procs*)
           (uiop:launch-program (list (first sb-ext:*posix-argv*) verb)
@@ -239,9 +254,10 @@ it is for process agents."
        (sleep 3)
        (when *frontend-supervise*
          (dolist (v verbs)
-           (let ((p (gethash v *frontend-procs*)))
-             (unless (and p (uiop:process-alive-p p))
-               (ignore-errors (spawn-frontend v))))))))
+           (when (gethash v *frontend-wanted*)         ; skip the explicitly killed
+             (let ((p (gethash v *frontend-procs*)))
+               (unless (and p (uiop:process-alive-p p))
+                 (ignore-errors (spawn-frontend v)))))))))
    :name "pine-frontend-supervisor"))
 
 (defun stop-frontends ()
@@ -252,6 +268,20 @@ daemon shutdown takes its editor and desktop down with it."
              (ignore-errors (uiop:terminate-process p :urgent t)))
            *frontend-procs*)
   (clrhash *frontend-procs*))
+
+(defun unsupervise-frontend (verb)
+  "Stop respawning frontend VERB, without killing it. A window close routes here
+(the frontend then exits itself), so a deliberate close stays closed."
+  (setf (gethash verb *frontend-wanted*) nil))
+
+(defun kill-frontend (verb)
+  "Explicitly kill frontend VERB: stop respawning it, then terminate its process.
+The kill-pine-editor command routes here -- the frontend is not exiting on its
+own, so the daemon closes it. A no-op under `make daemon' (no supervised procs)."
+  (unsupervise-frontend verb)
+  (let ((p (gethash verb *frontend-procs*)))
+    (when p (ignore-errors (uiop:terminate-process p :urgent t))))
+  (remhash verb *frontend-procs*))
 
 (defun kill-port (port)
   "Kill whatever process holds PORT. Version-independent, so `pine stop' works

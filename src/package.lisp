@@ -333,4 +333,6 @@
    #:*target*
    #:desktop?
    #:mobile?
+   #:kill-frontend
+   #:unsupervise-frontend
    #:on-minibuffer-accept))
