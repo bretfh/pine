@@ -1,6 +1,9 @@
 .PHONY: repl dev daemon editor desktop check cairo-shot wl-desktop wl-editor bin bench check-bench
 
-GUIX := guix shell -m manifest.scm --
+# --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
+# pine-pty) change on disk without manifest.scm's mtime moving; the cached
+# profile would silently serve stale builds.
+GUIX := guix shell --rebuild-cache -m manifest.scm --
 ENV  := LD_LIBRARY_PATH="$$GUIX_ENVIRONMENT/lib" ASDF_OUTPUT_TRANSLATIONS="/:$$HOME/.cache/common-lisp/pine/"
 PRELOAD := LD_PRELOAD="$$GUIX_ENVIRONMENT/lib/libgtk4-layer-shell.so"
 
