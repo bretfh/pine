@@ -13,6 +13,15 @@
 (defun mod-active (state name)
   (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
 
+(defparameter +modifier-keysyms+
+  '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"
+    "Meta_L" "Meta_R" "Super_L" "Super_R" "Hyper_L" "Hyper_R"
+    "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
+  "Keysyms that never arm key repeat: holding a bare modifier repeats nothing.")
+
+(defun modifier-key-p (msg)
+  (member (getf (rest msg) :key-str) +modifier-keysyms+ :test #'string=))
+
 (defun key->wire (state keycode)
   "Translate a keycode to the daemon's (:key :key-str S :ctrl .. :meta .. ) form."
   (let* ((sym  (xkb:xkb-state-key-get-one-sym state keycode))
@@ -53,11 +62,28 @@
        (xkb:xkb-state-update-mask (third cell) depressed latched locked 0 0 group)))
     (:key (serial time-ms key state)
      (declare (ignore serial time-ms))
-     (when (eq state :pressed)
-       (a:when-let ((cell (ekb ed)))
-         (send-input ed (key->wire (third cell) (+ 8 key))))))
+     (case state
+       (:pressed
+        (a:when-let ((cell (ekb ed)))
+          (let ((msg (key->wire (third cell) (+ 8 key))))
+            (send-input ed msg)
+            ;; arm repeat for this key; repeat resends the message built at
+            ;; press time, so held modifiers travel with it
+            (if (modifier-key-p msg)
+                (setf (ed-held-msg ed) nil (ed-held-keycode ed) nil)
+                (setf (ed-held-keycode ed) key
+                      (ed-held-msg ed) msg
+                      (ed-held-since-ms ed) (now-ms)
+                      (ed-last-repeat-ms ed) 0)))))
+       (:released
+        (when (eql key (ed-held-keycode ed))
+          (setf (ed-held-msg ed) nil (ed-held-keycode ed) nil)))))
     (:enter (serial surface keys) (declare (ignore serial surface keys)))
-    (:leave (serial surface) (declare (ignore serial surface)))
-    (:repeat-info (rate delay) (declare (ignore rate delay)))))
+    (:leave (serial surface)
+     (declare (ignore serial surface))
+     (setf (ed-held-msg ed) nil (ed-held-keycode ed) nil))
+    (:repeat-info (rate delay)
+     (setf (ed-repeat-rate ed) rate
+           (ed-repeat-delay-ms ed) delay))))
 
 (setf *keyboard-handler* #'handle-keyboard)

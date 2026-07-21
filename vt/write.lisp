@@ -2,6 +2,8 @@
 
 (in-package :pine.vt)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 (defvar *dec-line-drawing-table* (make-hash-table :test 'eql))
 
 (macrolet ((def-chars (&rest pairs)
@@ -58,12 +60,7 @@
 (defun term-write (term str &optional (start 0) (end (length str)))
   (let* ((w (term-width term))
          (charset (current-charset-mapping term))
-         (face (let ((cur (term-attrs term))
-                     (cached (term-last-write-face term)))
-                 (if (and cached (face-attrs-equal cached cur))
-                     cached
-                     (setf (term-last-write-face term)
-                           (copy-face-attrs cur))))))
+         (face (intern-face term)))
     (do ((idx start (1+ idx)))
         ((>= idx end))
       (let* ((raw-ch (char str idx))

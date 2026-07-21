@@ -268,12 +268,16 @@ is the ancestor class-set list, root-first, for style resolution."))
 ;;;; painter, offset to the node's rect. One leaf, the whole text area.
 
 (defun cairo-cell-metrics (fpx)
+  "cell-w cell-h ascent, identical to what CAIRO-TEXT-SIZE (the measure hook)
+reports for one cell, so a window measures and paints at the same grid."
   (cairo:select-font-face *cairo-font* :normal :normal)
   (cairo:set-font-size (float fpx 1d0))
-  (multiple-value-bind (xb yb w h xadv) (cairo:text-extents "MMMMMMMMMM")
-    (declare (ignore xb yb w h))
-    (let ((fe (cairo:get-font-extents)))
-      (values (/ (max xadv 1d0) 10d0) (cairo:font-height fe) (cairo:font-ascent fe)))))
+  (let ((fe (cairo:get-font-extents)))
+    (multiple-value-bind (xb yb w h ax) (cairo:text-extents "M")
+      (declare (ignore xb yb w h))
+      (values (float (max 1 (ceiling ax)) 1d0)
+              (float (max 1 (ceiling (+ (cairo:font-ascent fe) (cairo:font-descent fe)))) 1d0)
+              (cairo:font-ascent fe)))))
 
 (defmethod paint-cairo ((n window) chain)
   (declare (ignore chain))

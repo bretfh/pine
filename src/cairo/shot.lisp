@@ -34,36 +34,43 @@
 (defparameter *shots* '("ctl" "audio" "network" "media" "calendar" "bar"))
 
 (defun sample-editor-rows ()
-  "A few (text . runs) rows mimicking a rendered lisp buffer + mode line + echo
-line, so the editor surface (window/modeline/echo nodes) can render headless."
   (flet ((run (col r g b &optional (br -1) (bg -1) (bb -1) (attr 0))
-           (list col r g b br bg bb attr)))
-    (list
-     ;; buffer text (syntax-coloured)
-     (cons "(defun greet (name)"
-           (list (run 0 205 214 244) (run 1 167 139 250 -1 -1 -1 1) (run 7 137 220 194)
-                 (run 12 205 214 244) (run 14 250 179 135) (run 18 205 214 244)))
-     (cons "  (format t \"Hello, ~a!\" name))"
-           (list (run 0 205 214 244) (run 3 137 180 250) (run 12 137 220 235)
-                 (run 25 250 179 135) (run 29 205 214 244)))
-     (cons ";; the editor is a surface now"
-           (list (run 0 110 110 130 -1 -1 -1 2)))
-     (cons "" nil)
-     ;; mode line
-     (cons " scratch   Lisp   L1 C7"
-           (list (run 0 205 214 244 42 42 54)))
-     ;; echo line
-     (cons " pine ready"
-           (list (run 0 166 173 200))))))
+           (list col r g b br bg bb attr))
+         (plain (s) (cons s (list (list 0 205 214 244 -1 -1 -1 0)))))
+    (append
+     (list
+      (cons "(defun greet (name)"
+            (list (run 0 205 214 244) (run 1 167 139 250 -1 -1 -1 1) (run 7 137 220 194)
+                  (run 12 205 214 244) (run 14 250 179 135) (run 18 205 214 244)))
+      (cons "  (format t \"Hello, ~a!\" name))"
+            (list (run 0 205 214 244) (run 3 137 180 250) (run 12 137 220 235)
+                  (run 25 250 179 135) (run 29 205 214 244)))
+      (cons ";; the editor is a surface now" (list (run 0 110 110 130 -1 -1 -1 2)))
+      (plain ""))
+     (loop repeat 12 collect (plain ""))
+     (list
+      (cons "> greet          function" (list (run 0 250 210 150 80 50 64)))
+      (cons "  greeting       variable" (list (run 0 205 214 244 80 50 64)))
+      (cons "  greet-user     command"  (list (run 0 205 214 244 80 50 64)))
+      (cons " scratch   Lisp   L1 C7" (list (run 0 205 214 244 42 42 54)))
+      (cons " M-x " (list (run 0 166 173 200)))))))
 
 (defun editor-shot (dir)
   (let* ((rows (sample-editor-rows))
-         (sess (pine.editor::make-sess :rows rows :crow 0 :ccol 7))
+         (sess (pine.editor::make-sess :rows rows :crow 3 :ccol 8))
          (builder (gethash "editor" (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
-         (pine.editor::*editor-session* sess))
+         (pine.editor::*editor-session* sess)
+         (w 560) (h 480) (path (format nil "~a/pine-cairo-editor.png" dir)))
     (when builder
-      (let ((path (format nil "~a/pine-cairo-editor.png" dir)))
-        (cons "editor" (pine.layout:render-tree-to-png (funcall builder nil) path :avail-w 520))))))
+      (pine.layout:with-cairo-layout
+        (let ((surface (cairo:create-image-surface :argb32 w h))
+              (tree (funcall builder nil)))
+          (cairo:with-context ((cairo:create-context surface))
+            (multiple-value-bind (r g b) (pine.buffer:hex-rgb (pine.buffer:color :bg-alt))
+              (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
+            (pine.layout:paint-tree tree w h))
+          (cairo:surface-write-to-png surface path)))
+      (cons "editor" (list :w w :h h :path path)))))
 
 (defun shot (&key (dir "/tmp"))
   "Render every desktop surface to DIR/pine-cairo-NAME.png; return the results."

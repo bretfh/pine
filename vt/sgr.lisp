@@ -2,6 +2,8 @@
 
 (in-package :pine.vt)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 (defun process-sgr (term params)
   (let ((attrs (term-attrs term))
         (i 0)

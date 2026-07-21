@@ -2,6 +2,8 @@
 
 (in-package :pine.vt)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 (defun term-process-output (term string)
   (let ((len (length string))
         (index 0))
@@ -55,7 +57,7 @@
                (#\M (term-reverse-index term))
                (#\[ (setf (term-parser-state term) :read-csi-format))
                (#\] (setf (term-parser-state term) :read-osc
-                          (term-osc-buf term) ""))
+                          (fill-pointer (term-osc-buf term)) 0))
                (#\P (setf (term-parser-state term) :read-dcs))
                (#\c (term-reset term))
                (#\n (setf (term-active-charset term) :g2))
@@ -125,30 +127,23 @@
            (let ((end-pos (position-if
                            (lambda (c) (or (char= c #\Bel)
                                            (char= c #\\)))
-                           string :start index)))
+                           string :start index))
+                 (buf (term-osc-buf term)))
              (if end-pos
-                 (let ((chunk (subseq string index end-pos)))
-                   (setf (term-osc-buf term)
-                         (concatenate 'string (term-osc-buf term) chunk))
-                   (if (and (char= (char string end-pos) #\\)
-                            (plusp (length (term-osc-buf term)))
-                            (char= (char (term-osc-buf term)
-                                         (1- (length (term-osc-buf term))))
-                                   #\Escape))
-                       (progn
-                         (setf (term-osc-buf term)
-                               (subseq (term-osc-buf term) 0
-                                       (1- (length (term-osc-buf term)))))
-                         (dispatch-osc term (term-osc-buf term))
-                         (setf (term-parser-state term) nil))
-                       (progn
-                         (dispatch-osc term (term-osc-buf term))
-                         (setf (term-parser-state term) nil)))
-                   (setf index (1+ end-pos)))
                  (progn
-                   (setf (term-osc-buf term)
-                         (concatenate 'string (term-osc-buf term)
-                                      (subseq string index)))
+                   (loop for i from index below end-pos do
+                     (vector-push-extend (char string i) buf))
+                   (when (and (char= (char string end-pos) #\\)
+                              (plusp (fill-pointer buf))
+                              (char= (char buf (1- (fill-pointer buf)))
+                                     #\Escape))
+                     (decf (fill-pointer buf)))
+                   (dispatch-osc term buf)
+                   (setf (term-parser-state term) nil
+                         index (1+ end-pos)))
+                 (progn
+                   (loop for i from index below len do
+                     (vector-push-extend (char string i) buf))
                    (setf index len)))))
 
           ((eq state :read-dcs)

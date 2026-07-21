@@ -175,6 +175,11 @@ the daemon (make daemon) must already be up."
       (pine.server:daemon-uri "attach" :host host :port port)
       (pine.server:local-uri "display" (sento.remoting:remoting-port sys))
       :kind :desktop)
+    ;; serve this image as agent "desktop": daemon-driven eval into the frontend,
+    ;; and errors here ship their restarts home like any process agent
+    (ignore-errors
+     (pine.agent:serve sys :name "desktop" :master-host host :master-port port
+                           :self-port (sento.remoting:remoting-port sys)))
     (run-loop client)))
 
 (defun daemon-listening-p (port)

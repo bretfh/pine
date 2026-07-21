@@ -120,7 +120,12 @@ daemon' runs."
 ;;;; The control endpoint. The CLI connects, asks one message, prints, exits.
 
 (defun start-control (server)
+  ;; :pinned -- this actor blocks (eval, spawn's connect wait, reload), so it
+  ;; runs on its own thread. On the shared pool it starves the other actors:
+  ;; sento routes each message to a random worker queue, and anything queued
+  ;; behind a blocked worker waits out its full ask timeout.
   (sento.actor-context:actor-of (pine.server:actor-system server) :name "control"
+    :dispatcher :pinned
     :receive
     (lambda (msg)
       (flet ((r (x) (sento.actor:reply x)))

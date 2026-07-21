@@ -60,6 +60,11 @@ computes the target from its own state, so this never blocks on a round-trip."
   (let ((buf (cur-buffer)))
     (when buf (sento.actor:tell buf (list :move-by :unit :line :n n)))))
 
+(defun move-words (n)
+  "Move point N words (negative = backward) across line boundaries."
+  (let ((buf (cur-buffer)))
+    (when buf (sento.actor:tell buf (list :move-by :unit :word :n n)))))
+
 (defun %point->offset (snap)
   (let ((pl (pine.buffer:point-line snap))
         (pc (pine.buffer:point-col snap))
@@ -165,38 +170,127 @@ from the buffer, or nil."
     (:ok (%eval-notify (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
     (:aborted (%eval-notify "aborted"))))
 
-(defun %debugger-text (ev)
-  (with-output-to-string (s)
-    (format s "Evaluation error~%~%~a:~%  ~a~%~%Restarts:~%"
-            (pine.eval:evaluation-condition-type ev)
-            (pine.eval:evaluation-condition ev))
-    (loop for (name report) in (pine.eval:evaluation-restarts ev) for i from 0
-          do (format s "  ~d  [~a] ~a~%" i (or name "") report))
-    (format s "~%Backtrace:~%~a" (pine.eval:evaluation-backtrace ev))))
+(defvar *pending-agent-debug* nil
+  "The last error reported home by a :process agent: (:agent :eval-id :restarts).")
+
+;;;; The debugger buffer is a real mode, not raw text: restart lines carry
+;;;; faces and indices, and debugger-mode's keymap (0-9, Return, a, q) drives
+;;;; the choice. The restart stays live on its blocked thread (or in its agent);
+;;;; only the decision moves.
+
+(defvar *debugger-restarts* #()
+  "Vector of restart names shown in the live debugger buffer, by index.")
+(defvar *debugger-restart-lines* nil
+  "Alist (buffer-line . restart-index) for Return-on-a-restart-line.")
+(defvar *debugger-return-to* nil
+  "Buffer name to return to when the debugger is dismissed.")
+
+(defun %switch-to-buffer (name)
+  (let ((client (pine.client:current-client))
+        (buf (pine.buffer:buffer name)))
+    (when buf
+      (pine.buffer:switch-buffer name)
+      (let ((r (ignore-errors (pine.client:renderer client))))
+        (when r
+          (sento.actor:tell r (list :switch-buffer :buffer buf :name name)))))))
+
+(defun %show-debugger (header condition restarts backtrace)
+  "Open *debugger* in debugger-mode. RESTARTS is a list of (name report)."
+  (let ((lines nil) (hl nil) (rlines nil) (i 0))
+    (flet ((add (text face)
+             (push text lines)
+             (when face (push (list i 0 999 face) hl))
+             (incf i)))
+      (add header :function-name)
+      (add "" nil)
+      (dolist (cl (%split-lines* condition)) (add cl :string))
+      (add "" nil)
+      (add "Restarts (press the number, or Return on a line):" :comment)
+      (loop for (name report) in restarts for idx from 0
+            do (push (cons i idx) rlines)
+               (add (format nil "  ~d  [~a]  ~a" idx (or name "") (or report ""))
+                    :keyword))
+      (add "" nil)
+      (when backtrace
+        (add "Backtrace:" :comment)
+        (dolist (bl (%split-lines* backtrace)) (add bl :comment))))
+    (setf *debugger-restarts* (coerce (mapcar #'first restarts) 'vector)
+          *debugger-restart-lines* (nreverse rlines)
+          *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name)))
+    (let ((buf (pine.buffer:make-buffer "*debugger*")))
+      (pine.buffer:tell buf :replace-content
+                        :content (format nil "~{~a~^~%~}" (nreverse lines)))
+      (pine.mode:set-buffer-mode buf :debugger-mode)
+      (pine.buffer:tell buf :set-highlights :highlights (nreverse hl))
+      (pine.render:subscribe-to-buffer buf)
+      (%switch-to-buffer "*debugger*")
+      buf)))
+
+(defun %split-lines* (string)
+  (loop with start = 0
+        for nl = (position #\Newline string :start start)
+        collect (subseq string start (or nl (length string)))
+        while nl do (setf start (1+ nl))))
 
 (defun %eval-error (ev)
   (setf *pending-debugger* ev
         *pending-agent-debug* nil)
-  (%show-help "*debugger*" (%debugger-text ev))
-  (%eval-notify (format nil "eval error: ~a  (M-x choose-restart / C-g abort)"
+  (%show-debugger (format nil "Evaluation error: ~a"
+                          (pine.eval:evaluation-condition-type ev))
+                  (pine.eval:evaluation-condition ev)
+                  (pine.eval:evaluation-restarts ev)
+                  (pine.eval:evaluation-backtrace ev))
+  (%eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
                         (pine.eval:evaluation-condition-type ev))))
 
-(defvar *pending-agent-debug* nil
-  "The last error reported home by a :process agent: (:agent :eval-id :restarts).")
-
 (defun %agent-debug-surface (msg)
-  "A process agent's error, surfaced in the editor: show its restarts and let
-choose-restart drive the resume back to that agent. Move the decision, not the
-handler."
+  "A process agent's error, surfaced in the editor: show its restarts and drive
+the resume back to that agent. Move the decision, not the handler."
   (when (eq (first msg) :agent-debug)
     (destructuring-bind (&key agent eval-id condition restarts &allow-other-keys)
         (rest msg)
       (setf *pending-agent-debug* (list :agent agent :eval-id eval-id :restarts restarts)
             *pending-debugger* nil)
-      (%show-help "*debugger*"
-                  (format nil "Error in agent ~a~%~%~a~%~%Restarts:~%~{  ~a~%~}"
-                          agent condition restarts))
-      (%eval-notify (format nil "agent ~a error (M-x choose-restart)" agent)))))
+      (%show-debugger (format nil "Error in agent ~a" agent)
+                      (or condition "")
+                      (mapcar (lambda (r) (list r nil)) (remove nil restarts))
+                      nil)
+      (%eval-notify (format nil "agent ~a error (0-9/Return picks a restart)" agent)))))
+
+(defun invoke-pending-restart (name)
+  "Invoke restart NAME on whatever is waiting: the blocked local evaluation, or
+the agent that shipped its restarts home."
+  (cond
+    (*pending-agent-debug*
+     (destructuring-bind (&key agent eval-id restarts) *pending-agent-debug*
+       (declare (ignore restarts))
+       (let ((info (pine.actor:find-agent
+                    (pine.client:server-of (pine.client:current-client)) agent)))
+         (when info
+           (sento.actor:tell (pine.actor:agent-info-actor info)
+                             (list :resume :eval-id eval-id :restart name))))
+       (setf *pending-agent-debug* nil)
+       (pine.echo:message (format nil "resumed ~a in agent ~a" name agent))
+       t))
+    ((and *pending-debugger*
+          (eq (pine.eval:evaluation-status *pending-debugger*) :error))
+     (pine.eval:pick-restart *pending-debugger* name)
+     (setf *pending-debugger* nil)
+     (pine.echo:message (format nil "invoked ~a" name))
+     t)
+    (t (pine.echo:message "no evaluation in the debugger")
+       nil)))
+
+(defun %debugger-quit ()
+  (when *debugger-return-to*
+    (%switch-to-buffer *debugger-return-to*))
+  (ignore-errors (pine.buffer:kill-buffer "*debugger*")))
+
+(defun %debugger-invoke-index (n)
+  (if (and n (< -1 n (length *debugger-restarts*)))
+      (when (invoke-pending-restart (aref *debugger-restarts* n))
+        (%debugger-quit))
+      (pine.echo:message (format nil "no restart ~a" n))))
 
 (defvar *eval-target* :local
   "Where C-x C-e / eval-defun run: :local (this image), or a registered agent
@@ -532,6 +626,12 @@ no symbol to complete."
   (defcmd "backward-char" (n) (:interactive :number) (move-chars (- n)))
   (defcmd "next-line" (n)     (:interactive :number) (move-lines n))
   (defcmd "previous-line" (n) (:interactive :number) (move-lines (- n)))
+  (defcmd "forward-word" (n)  (:interactive :number) (move-words n))
+  (defcmd "backward-word" (n) (:interactive :number) (move-words (- n)))
+  (defcmd "kill-word" (n)          (:interactive :number) (kill-words-cmd n))
+  (defcmd "backward-kill-word" (n) (:interactive :number) (kill-words-cmd (- n)))
+  (defcmd "isearch-forward" ()  (isearch-start :forward))
+  (defcmd "isearch-backward" () (isearch-start :backward))
   (defcmd "universal-argument" () (:prefix)
     (let ((cli (pine.client:current-client)))
       (setf (pine.client:prefix-arg cli)
@@ -627,28 +727,28 @@ no symbol to complete."
                          (find-package :cl-user)))))
           (%eval-form-string text pkg)))))
   (defcmd "choose-restart" ()
-    (cond
-      (*pending-agent-debug*
-       (destructuring-bind (&key agent eval-id restarts) *pending-agent-debug*
-         (completing-read "Restart: " (remove nil restarts)
-           (lambda (name)
-             (let ((info (pine.actor:find-agent
-                          (pine.client:server-of (pine.client:current-client)) agent)))
-               (when info
-                 (sento.actor:tell (pine.actor:agent-info-actor info)
-                                   (list :resume :eval-id eval-id :restart name))))
-             (setf *pending-agent-debug* nil)
-             (pine.echo:message (format nil "resumed ~a in agent ~a" name agent))))))
-      ((and *pending-debugger*
-            (eq (pine.eval:evaluation-status *pending-debugger*) :error))
-       (let ((ev *pending-debugger*))
-         (completing-read "Restart: "
-           (remove nil (mapcar #'first (pine.eval:evaluation-restarts ev)))
-           (lambda (name)
-             (pine.eval:pick-restart ev name)
-             (setf *pending-debugger* nil)
-             (pine.echo:message (format nil "invoked ~a" name))))))
-      (t (pine.echo:message "no evaluation in the debugger"))))
+    (let ((names (coerce *debugger-restarts* 'list)))
+      (if names
+          (completing-read "Restart: " (remove nil names)
+            (lambda (name)
+              (when (invoke-pending-restart name)
+                (%debugger-quit))))
+          (pine.echo:message "no evaluation in the debugger"))))
+  (defcmd "debugger-invoke-restart" ()
+    (let* ((key (pine.client:this-command-key (pine.client:current-client)))
+           (sym (pine.key:key-sym key)))
+      (%debugger-invoke-index (and (= 1 (length sym)) (digit-char-p (char sym 0))))))
+  (defcmd "debugger-invoke-at-point" ()
+    (let* ((snap (pine.buffer:current-buffer-snapshot))
+           (entry (assoc (pine.buffer:point-line snap) *debugger-restart-lines*)))
+      (if entry
+          (%debugger-invoke-index (cdr entry))
+          (pine.echo:message "point is not on a restart line"))))
+  (defcmd "debugger-abort" ()
+    (when (invoke-pending-restart "ABORT")
+      (%debugger-quit)))
+  (defcmd "debugger-quit" ()
+    (%debugger-quit))
   (defcmd "jobs" ()
     (%show-help "*jobs*"
       (with-output-to-string (s)
@@ -728,7 +828,14 @@ no symbol to complete."
 
 (defun install-bindings ()
   (let ((g (pine.mode:global-keymap))
-        (tm (pine.mode:mode-keymap (pine.mode:find-mode :text-mode))))
+        (tm (pine.mode:mode-keymap (pine.mode:find-mode :text-mode)))
+        (dm (pine.mode:mode-keymap (pine.mode:find-mode :debugger-mode))))
+    ;; debugger-mode: the restart menu answers to its own keys
+    (dotimes (d 10)
+      (pine.keymap:define-key dm (k (string (digit-char d))) "debugger-invoke-restart"))
+    (pine.keymap:define-key dm (k "Return") "debugger-invoke-at-point")
+    (pine.keymap:define-key dm (k "a") "debugger-abort")
+    (pine.keymap:define-key dm (k "q") "debugger-quit")
     ;; global: quit, chords, M-x
     (pine.keymap:define-key g (k "C-g") "keyboard-quit")
     (pine.keymap:define-key g (k "Escape") "keyboard-quit")
@@ -768,6 +875,12 @@ no symbol to complete."
     (pine.keymap:define-key tm (k "C-a") "beginning-of-line")
     (pine.keymap:define-key tm (k "C-e") "end-of-line")
     (pine.keymap:define-key tm (k "C-d") "delete-char")
+    (pine.keymap:define-key tm (k "M-f") "forward-word")
+    (pine.keymap:define-key tm (k "M-b") "backward-word")
+    (pine.keymap:define-key tm (k "M-d") "kill-word")
+    (pine.keymap:define-key tm (k "M-BackSpace") "backward-kill-word")
+    (pine.keymap:define-key tm (k "C-s") "isearch-forward")
+    (pine.keymap:define-key tm (k "C-r") "isearch-backward")
     (pine.keymap:define-key tm (k "M-<") "beginning-of-buffer")
     (pine.keymap:define-key tm (k "M->") "end-of-buffer")
     (pine.keymap:define-key tm (k "C-space") "set-mark")

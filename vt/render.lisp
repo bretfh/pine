@@ -2,6 +2,8 @@
 
 (in-package :pine.vt)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 (defun face-attrs-equal (a b)
   (cond
     ((and (null a) (null b)) t)
@@ -83,40 +85,41 @@
     (dotimes (x w s)
       (setf (schar s x) (cell-char (aref row x))))))
 
-(defun emit-sgr-string (face)
-  (if (null face)
-      (format nil "~C[0m" #\Escape)
-      (let ((codes nil))
-        (when (face-bold face) (push "1" codes))
-        (when (face-faint face) (push "2" codes))
-        (when (face-italic face) (push "3" codes))
-        (when (face-underline face) (push "4" codes))
-        (when (face-inverse face) (push "7" codes))
-        (when (face-crossed face) (push "9" codes))
-        (let ((fg (if (face-inverse face) (face-bg face) (face-fg face)))
-              (bg (if (face-inverse face) (face-fg face) (face-bg face))))
-          (when (face-conceal face)
-            (setf fg bg))
-          (when fg
-            (push (emit-color-code fg 38) codes))
-          (when bg
-            (push (emit-color-code bg 48) codes)))
-        (if codes
-            (format nil "~C[~{~A~^;~}m" #\Escape (nreverse codes))
-            (format nil "~C[0m" #\Escape)))))
-
-(defun emit-color-code (color base)
+(defun write-color-code (color base s)
   (cond
     ((and (integerp color) (<= 0 color 7))
-     (format nil "~D" (+ base (- 38 38) color)))
+     (format s "~D" (+ base color)))
     ((and (integerp color) (<= 8 color 15))
-     (format nil "~D" (+ (if (= base 38) 90 100) (- color 8))))
+     (format s "~D" (+ (if (= base 38) 90 100) (- color 8))))
     ((and (integerp color) (<= 0 color 255))
-     (format nil "~D;5;~D" base color))
+     (format s "~D;5;~D" base color))
     ((and (listp color) (= (length color) 3))
-     (format nil "~D;2;~D;~D;~D" base
+     (format s "~D;2;~D;~D;~D" base
              (first color) (second color) (third color)))
-    (t (format nil "~D" (+ base (- 38 38) 9)))))
+    (t (format s "~D" (+ base 9)))))
+
+(defun write-sgr (face s)
+  "Write FACE's SGR escape sequence directly to stream S, no intermediates."
+  (write-char #\Escape s)
+  (write-char #\[ s)
+  (if (null face)
+      (write-char #\0 s)
+      (let ((any nil))
+        (flet ((sep () (if any (write-char #\; s) (setf any t))))
+          (when (face-bold face) (sep) (write-char #\1 s))
+          (when (face-faint face) (sep) (write-char #\2 s))
+          (when (face-italic face) (sep) (write-char #\3 s))
+          (when (face-underline face) (sep) (write-char #\4 s))
+          (when (face-inverse face) (sep) (write-char #\7 s))
+          (when (face-crossed face) (sep) (write-char #\9 s))
+          (let ((fg (if (face-inverse face) (face-bg face) (face-fg face)))
+                (bg (if (face-inverse face) (face-fg face) (face-bg face))))
+            (when (face-conceal face)
+              (setf fg bg))
+            (when fg (sep) (write-color-code fg 38 s))
+            (when bg (sep) (write-color-code bg 48 s))))
+        (unless any (write-char #\0 s))))
+  (write-char #\m s))
 
 (defun term-render-ansi-line (term y)
   (let* ((w (term-width term))
@@ -128,7 +131,7 @@
                (ch (cell-char cell))
                (face (cell-face cell)))
           (unless (face-attrs-equal face prev-face)
-            (write-string (emit-sgr-string face) s)
+            (write-sgr face s)
             (setf prev-face face))
           (write-char (if (graphic-char-p ch) ch #\Space) s)))
-      (write-string (format nil "~C[0m" #\Escape) s))))
+      (write-sgr nil s))))

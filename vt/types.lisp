@@ -2,6 +2,8 @@
 
 (in-package :pine.vt)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 (defstruct (face-attrs (:copier nil) (:conc-name face-))
   (fg nil)
   (bg nil)
@@ -32,6 +34,9 @@
   (char #\Space :type character)
   (face nil :type (or null face-attrs)))
 
+(defun make-osc-buf ()
+  (make-array 64 :element-type 'character :adjustable t :fill-pointer 0))
+
 (defun make-grid (width height)
   (let ((grid (make-array height :initial-element nil)))
     (dotimes (y height grid)
@@ -59,7 +64,7 @@
   (parser-state nil)
   (csi-params nil :type list)
   (csi-format nil)
-  (osc-buf "" :type string)
+  (osc-buf (make-osc-buf) :type string)
   (auto-margin t :type boolean)
   (insert-mode nil :type boolean)
   (keypad-mode nil :type boolean)
@@ -73,6 +78,7 @@
   (active-charset :g0)
   (scrollback nil :type (or null vector))
   (scrollback-size 0 :type fixnum)
+  (scrollback-head 0 :type fixnum)
   (max-scrollback 10000 :type fixnum)
   (input-fn nil)
   (bell-fn nil)
@@ -82,7 +88,23 @@
   (cwd "" :type string)
   (last-char #\Space :type character)
   (in-alt-screen nil :type boolean)
-  (last-write-face nil :type (or null face-attrs)))
+  (face-cache (make-array 16 :initial-element nil) :type simple-vector)
+  (face-cache-pos 0 :type fixnum))
+
+(defun intern-face (term)
+  "A shared face-attrs equal to TERM's current attrs. A small ring cache keeps
+the working set of faces shared, so SGR-heavy output stops copying a struct per
+color change."
+  (let ((cur (term-attrs term))
+        (cache (term-face-cache term)))
+    (or (loop for i from 0 below (length cache)
+              for f = (svref cache i)
+              when (and f (face-attrs-equal f cur)) return f)
+        (let ((new (copy-face-attrs cur))
+              (pos (term-face-cache-pos term)))
+          (setf (svref cache pos) new
+                (term-face-cache-pos term) (mod (1+ pos) (length cache)))
+          new))))
 
 (defun make-term (&key (width 80) (height 24)
                        input-fn bell-fn title-fn cwd-fn
@@ -122,10 +144,3 @@
   (dotimes (y (length grid))
     (clear-row (aref grid y) face)))
 
-(defun copy-row (src)
-  (let* ((len (length src))
-         (dst (make-array len :initial-element nil)))
-    (dotimes (x len dst)
-      (let ((sc (aref src x)))
-        (setf (aref dst x) (make-cell (cell-char sc)
-                                       (cell-face sc)))))))

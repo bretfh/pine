@@ -58,6 +58,37 @@
 
 (cffi:defcfun ("ts_tree_edit" ts-tree-edit) :void (tree :pointer) (edit :pointer))
 
+;;;; Changed ranges: which regions of the new tree differ from the old one.
+;;;; The truth for incremental re-highlighting -- the edit span alone
+;;;; under-approximates (an opened string quote recolors everything after it).
+
+(cffi:defcstruct ts-range
+  (start-point (:struct ts-point))
+  (end-point   (:struct ts-point))
+  (start-byte :uint32)
+  (end-byte :uint32))
+
+(cffi:defcfun ("ts_tree_get_changed_ranges" ts-tree-get-changed-ranges) :pointer
+  (old-tree :pointer) (new-tree :pointer) (length (:pointer :uint32)))
+
+(defun %changed-row-span (old-tree new-tree)
+  "Union of changed line rows between OLD-TREE and NEW-TREE as (values lo hi),
+or nil when tree-sitter reports no changed ranges."
+  (cffi:with-foreign-object (len :uint32)
+    (let ((ranges (ts-tree-get-changed-ranges old-tree new-tree len)))
+      (unwind-protect
+           (let ((n (cffi:mem-ref len :uint32)))
+             (when (and (plusp n) (not (cffi:null-pointer-p ranges)))
+               (let ((lo most-positive-fixnum) (hi 0))
+                 (dotimes (i n (values lo hi))
+                   (let ((r (cffi:mem-aptr ranges '(:struct ts-range) i)))
+                     (let ((sp (cffi:foreign-slot-pointer r '(:struct ts-range) 'start-point))
+                           (ep (cffi:foreign-slot-pointer r '(:struct ts-range) 'end-point)))
+                       (setf lo (min lo (cffi:foreign-slot-value sp '(:struct ts-point) 'row))
+                             hi (max hi (cffi:foreign-slot-value ep '(:struct ts-point) 'row)))))))))
+        (unless (cffi:null-pointer-p ranges)
+          (cffi:foreign-free ranges))))))
+
 
 ;;;; Grammar registry. Each language maps to a grammar shared library and the
 ;;;; C function that returns its TSLanguage*. Grammar libraries come from Guix,
@@ -301,7 +332,15 @@ end-line end-col), or nil."
   ((language :initarg :language :accessor ps-language)
    (parser   :initarg :parser   :accessor ps-parser)   ; own TSParser*
    (tree     :initform nil      :accessor ps-tree)      ; persistent TSTree* or nil
-   (text     :initform ""       :accessor ps-text)))    ; text the tree reflects
+   (text     :initform ""       :accessor ps-text)      ; text the tree reflects
+   ;; incremental highlight state: the last full tuple list, the text it was
+   ;; computed for, and the one edit recorded since (rows in the NEW text plus
+   ;; the line delta old->new). More than one edit between highlight calls, or
+   ;; any doubt, sets hl-stale and the next call walks the whole tree.
+   (hl-cache   :initform nil :accessor ps-hl-cache)
+   (hl-text    :initform nil :accessor ps-hl-text)
+   (hl-pending :initform nil :accessor ps-hl-pending)   ; (lo-row hi-row delta)
+   (hl-stale   :initform nil :accessor ps-hl-stale)))
 
 (defun make-parse-state (runtime language)
   "A parse-state for LANGUAGE, or nil if the grammar is unavailable."
@@ -326,7 +365,11 @@ whenever there is no old tree to edit from."
                                             cstr (byte-length text))))
           (setf (ps-tree ps) (if (cffi:null-pointer-p tree) nil tree))))
     (error () (setf (ps-tree ps) nil)))
-  (setf (ps-text ps) text)
+  (setf (ps-text ps) text
+        (ps-hl-cache ps) nil
+        (ps-hl-text ps) nil
+        (ps-hl-pending ps) nil
+        (ps-hl-stale ps) nil)
   ps)
 
 (defun %char->byte-point (text char-index)
@@ -367,40 +410,143 @@ start/old-end/new-end byte offsets and their three TSPoints."
 
 (defun reparse! (ps new-text)
   "Incrementally reparse PS to NEW-TEXT, editing its persistent tree from the
-diff against the text it currently reflects. Falls back to a full parse when
-there is no tree yet or the incremental parse fails."
+diff against the text it currently reflects, and record the changed line span
+for incremental highlighting. Falls back to a full parse when there is no tree
+yet or the incremental parse fails."
   (if (null (ps-tree ps))
       (parse-full! ps new-text)
       (handler-case
-          (progn
-            (multiple-value-bind (sb obe nbe sp oep nep) (%text-edit (ps-text ps) new-text)
-              (cffi:with-foreign-object (edit '(:struct ts-input-edit))
-                (setf (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'start-byte) sb
-                      (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'old-end-byte) obe
-                      (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'new-end-byte) nbe)
-                (%set-point edit 'start-point sp)
-                (%set-point edit 'old-end-point oep)
-                (%set-point edit 'new-end-point nep)
-                (ts-tree-edit (ps-tree ps) edit)))
+          (multiple-value-bind (sb obe nbe sp oep nep) (%text-edit (ps-text ps) new-text)
+            (cffi:with-foreign-object (edit '(:struct ts-input-edit))
+              (setf (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'start-byte) sb
+                    (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'old-end-byte) obe
+                    (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'new-end-byte) nbe)
+              (%set-point edit 'start-point sp)
+              (%set-point edit 'old-end-point oep)
+              (%set-point edit 'new-end-point nep)
+              (ts-tree-edit (ps-tree ps) edit))
             (cffi:with-foreign-string (cstr new-text :encoding :utf-8)
               (let* ((old (ps-tree ps))
                      (new (ts-parser-parse-string (ps-parser ps) old cstr
                                                   (byte-length new-text))))
                 (cond
                   ((cffi:null-pointer-p new) (parse-full! ps new-text))
-                  (t (unless (cffi:pointer-eq new old) (ts-tree-delete old))
+                  (t (%record-hl-edit ps old new (car sp) (car oep) (car nep))
+                     (unless (cffi:pointer-eq new old) (ts-tree-delete old))
                      (setf (ps-tree ps) new (ps-text ps) new-text)))))
             ps)
         (error () (parse-full! ps new-text)))))
 
+(defun %record-hl-edit (ps old new start-row old-end-row new-end-row)
+  "Note one edit for incremental highlighting: rows from tree-sitter's changed
+ranges unioned with the raw edit's rows (a pure line insert shifts everything
+below while changing no named ranges), plus the line delta. A second edit before
+the next highlight call, or any failure here, marks the cache stale."
+  (when (ps-hl-cache ps)
+    (if (ps-hl-pending ps)
+        (setf (ps-hl-stale ps) t)
+        (handler-case
+            (let ((lo start-row)
+                  (hi new-end-row)
+                  (delta (- new-end-row old-end-row)))
+              (unless (cffi:pointer-eq new old)
+                (multiple-value-bind (rlo rhi) (%changed-row-span old new)
+                  (when rlo
+                    (setf lo (min lo rlo) hi (max hi rhi)))))
+              (setf (ps-hl-pending ps) (list lo hi delta)))
+          (error () (setf (ps-hl-stale ps) t))))))
+
 (defun parse-highlights (ps text)
-  "Highlights (line start-col end-col face) from PS's persistent tree over TEXT."
+  "Highlights (line start-col end-col face) from PS's persistent tree over TEXT.
+Incremental: when exactly one edit was recorded since the last call, only the
+changed top-level forms are re-walked and the cached tuples outside them are
+kept (shifted by the line delta). Anything unexpected falls back to the full
+walk."
   (let ((tree (ps-tree ps)))
     (when tree
       (handler-case
-          (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
-                           (build-line-index text))
-        (error () nil)))))
+          (cond
+            ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
+                  (string= text (or (ps-hl-text ps) "")))
+             (ps-hl-cache ps))
+            ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps))
+                  (string= text (ps-text ps)))
+             (%hl-incremental ps tree text))
+            (t (%hl-full ps tree text)))
+        (error ()
+          (setf (ps-hl-cache ps) nil (ps-hl-text ps) nil
+                (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+          (handler-case
+              (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
+                               (build-line-index text))
+            (error () nil)))))))
+
+(defun %hl-full (ps tree text)
+  (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
+                             (build-line-index text))))
+    (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
+          (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+    hl))
+
+(defun %line-start-byte (line index)
+  (if (< line (length index)) (car (aref index line)) most-positive-fixnum))
+
+(defun %hl-incremental (ps tree text)
+  "Re-walk only the top-level forms covering the recorded edit and merge with
+the cached tuples: keep lines above, shift lines below by the edit's delta.
+The re-walk window is widened to whole lines and whole top-level forms (to a
+fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
+  (destructuring-bind (lo hi delta) (ps-hl-pending ps)
+    (let* ((index (build-line-index text))
+           (root (ts-tree-root-node tree))
+           (nlines (length index))
+           (lo-byte (%line-start-byte (min lo (1- nlines)) index))
+           (hi-byte (%line-start-byte (1+ hi) index)))
+      ;; widen to whole lines and whole top-level forms until stable; the
+      ;; window only grows and is bounded by the file, so this terminates
+      (loop for grew = nil
+            do (loop for i from 0 below (ts-node-named-child-count root)
+                     for child = (ts-node-named-child root i)
+                     for s = (ts-node-start-byte child)
+                     for e = (ts-node-end-byte child)
+                     do (when (and (< s hi-byte) (> e lo-byte)
+                                   (or (< s lo-byte) (> e hi-byte)))
+                          (setf lo-byte (min lo-byte s)
+                                hi-byte (max hi-byte e)
+                                grew t)))
+               (let ((ll (%line-start-byte (%line-of-byte lo-byte index) index))
+                     (hl (%line-start-byte
+                          (1+ (%line-of-byte (max lo-byte (1- hi-byte)) index))
+                          index)))
+                 (when (< ll lo-byte) (setf lo-byte ll grew t))
+                 (when (> hl hi-byte) (setf hi-byte hl grew t)))
+            while grew)
+      ;; a window that swallowed most of the file: the merge bookkeeping buys
+      ;; nothing over the plain full walk
+      (when (>= (- hi-byte lo-byte) (* 3 (floor (max 1 (byte-length text)) 4)))
+        (return-from %hl-incremental (%hl-full ps tree text)))
+      (let* ((lo-line (%line-of-byte lo-byte index))
+             (hi-line (%line-of-byte (max lo-byte (1- hi-byte)) index))
+             (old-hi-line (- hi-line delta))
+             (fresh (walk-highlights (ps-language ps) root text index
+                                     :lo-byte lo-byte :hi-byte hi-byte))
+             (merged nil))
+        (dolist (tup (ps-hl-cache ps))
+          (let ((line (first tup)))
+            (when (< line lo-line)
+              (push tup merged))))
+        (setf merged (nreverse merged))
+        (setf merged (nconc merged (copy-list fresh)))
+        (let ((below nil))
+          (dolist (tup (ps-hl-cache ps))
+            (let ((line (first tup)))
+              (when (> line old-hi-line)
+                (push (list (+ line delta) (second tup) (third tup) (fourth tup))
+                      below))))
+          (setf merged (nconc merged (nreverse below))))
+        (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
+              (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+        merged))))
 
 (defun parse-motion (ps kind line col)
   "A structural target from PS's persistent tree at LINE/COL, no reparse. KIND

@@ -47,7 +47,31 @@ buffer rows were laid out for."
    (queue   :initform nil :accessor ed-queue)
    (qlock   :initform (bt:make-lock) :reader ed-qlock)
    (dirty   :initform nil :accessor ed-dirty)
-   (done    :initform nil :accessor ed-done)))
+   (done    :initform nil :accessor ed-done)
+   ;; client-side key repeat: wayland compositors do not repeat for clients.
+   ;; The compositor's repeat_info sets rate/delay; a held key resends its wire
+   ;; message from the run-loop tick until release or focus loss.
+   (repeat-rate     :initform 25 :accessor ed-repeat-rate)   ; keys/sec, 0 = off
+   (repeat-delay-ms :initform 400 :accessor ed-repeat-delay-ms)
+   (held-keycode    :initform nil :accessor ed-held-keycode)
+   (held-msg        :initform nil :accessor ed-held-msg)
+   (held-since-ms   :initform 0 :accessor ed-held-since-ms)
+   (last-repeat-ms  :initform 0 :accessor ed-last-repeat-ms)))
+
+(defun now-ms ()
+  (values (floor (* 1000 (get-internal-real-time)) internal-time-units-per-second)))
+
+(defun check-repeat (ed)
+  "Resend the held key's message once the repeat delay has elapsed, at the
+compositor's repeat rate. Called from the run-loop tick."
+  (let ((msg (ed-held-msg ed))
+        (rate (ed-repeat-rate ed)))
+    (when (and msg (plusp rate))
+      (let ((now (now-ms)))
+        (when (and (>= (- now (ed-held-since-ms ed)) (ed-repeat-delay-ms ed))
+                   (>= (- now (ed-last-repeat-ms ed)) (floor 1000 rate)))
+          (setf (ed-last-repeat-ms ed) now)
+          (send-input ed msg))))))
 
 (defun enqueue (ed thunk)
   (bt:with-lock-held ((ed-qlock ed)) (push thunk (ed-queue ed))))
@@ -65,15 +89,17 @@ buffer rows were laid out for."
 (defun ed-rows (ed) (max 1 (floor (ed-height ed) (max 1d0 (ed-cell-h ed)))))
 
 (defun ensure-metrics (ed)
-  "Measure the monospace cell from the theme font in the current context, once."
+  "Measure the monospace cell once, the same way the layout engine's window node
+does, so a frame laid out at N cols x rows lands exactly in the cells."
   (unless (ed-metricsp ed)
     (c:select-font-face s:*font-family* :normal :normal)
     (c:set-font-size (font-px))
-    (multiple-value-bind (xb yb w h xadv) (c:text-extents "MMMMMMMMMM")
-      (declare (ignore xb yb w h))
-      (when (plusp xadv) (setf (ed-cell-w ed) (/ xadv 10d0))))
     (let ((fe (c:get-font-extents)))
-      (setf (ed-cell-h ed) (c:font-height fe) (ed-ascent ed) (c:font-ascent fe)))
+      (multiple-value-bind (xb yb w h ax) (c:text-extents "M")
+        (declare (ignore xb yb w h))
+        (setf (ed-cell-w ed) (float (max 1 (ceiling ax)) 1d0)))
+      (setf (ed-cell-h ed) (float (max 1 (ceiling (+ (c:font-ascent fe) (c:font-descent fe)))) 1d0)
+            (ed-ascent ed) (c:font-ascent fe)))
     (setf (ed-metricsp ed) t)))
 
 (defun maybe-resize (ed)
@@ -184,6 +210,7 @@ buffer rows were laid out for."
   (let ((display (ed-display ed)))
     (loop until (ed-done ed) do
       (drain ed)
+      (check-repeat ed)
       (when (ed-dirty ed) (paint-editor ed))
       (loop while (wl-display-listen display) do (wl-display-dispatch-event display))
       (sleep 0.006))))
@@ -206,6 +233,11 @@ it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up.
       (pine.server:daemon-uri "attach" :host host :port port)
       (pine.server:local-uri "display" (sento.remoting:remoting-port sys))
       :kind :editor)
+    ;; serve this image as agent "editor": daemon-driven eval into the frontend,
+    ;; and errors here ship their restarts home like any process agent
+    (ignore-errors
+     (pine.agent:serve sys :name "editor" :master-host host :master-port port
+                           :self-port (sento.remoting:remoting-port sys)))
     (unwind-protect (run-loop ed)
       (wl-display-disconnect (ed-display ed)))))
 

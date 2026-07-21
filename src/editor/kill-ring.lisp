@@ -84,6 +84,27 @@
                 (list :delete-region :start-line pl :start-col pc
                       :end-line (1+ pl) :end-col 0))))))))
 
+(defun kill-words-cmd (n)
+  "Kill N words forward (negative = backward): the region from point to where
+point-after-move :word lands, into the kill ring."
+  (let* ((client (pine.client:current-client))
+         (buf (pine.client:current-buffer client)))
+    (when buf
+      (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
+             (snap (pine.buffer:state->snapshot state))
+             (pl (pine.buffer:point-line snap))
+             (pc (pine.buffer:point-col snap)))
+        (multiple-value-bind (tl tc) (pine.buffer:point-after-move snap :word n)
+          (multiple-value-bind (sl sc el ec)
+              (if (or (< tl pl) (and (= tl pl) (< tc pc)))
+                  (values tl tc pl pc)
+                  (values pl pc tl tc))
+            (unless (and (= sl el) (= sc ec))
+              (kill-ring-push (pine.buffer:region-string state sl sc el ec))
+              (sento.actor:tell buf
+                (list :delete-region :start-line sl :start-col sc
+                      :end-line el :end-col ec)))))))))
+
 ;;;; The most recent yank, so yank-pop can delete it before inserting the next
 ;;;; ring entry: (buffer start-line start-col inserted-text).
 (defvar *last-yank* nil)

@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check cairo-shot wl-desktop wl-editor bin
+.PHONY: repl dev daemon editor desktop check cairo-shot wl-desktop wl-editor bin bench check-bench
 
 GUIX := guix shell -m manifest.scm --
 ENV  := LD_LIBRARY_PATH="$$GUIX_ENVIRONMENT/lib" ASDF_OUTPUT_TRANSLATIONS="/:$$HOME/.cache/common-lisp/pine/"
@@ -16,8 +16,10 @@ bin:
 	@echo "built ./pine"
 
 # the headless substrate: editor and desktop apps attach to it over remoting.
+# Explicit heap: the daemon is long-lived; give the GC room instead of growing
+# into fragmentation.
 daemon:
-	$(GUIX) sh -c '$(ENV) sbcl --eval "(asdf:load-system :pine)" --eval "(pine:run-daemon)"'
+	$(GUIX) sh -c '$(ENV) sbcl --dynamic-space-size 4096 --eval "(asdf:load-system :pine)" --eval "(pine:run-daemon)"'
 
 # the editor app: a separate process, attaches to the daemon.
 editor:
@@ -33,7 +35,7 @@ desktop:
 dev:
 	$(GUIX) sh -c '$(ENV) \
 	  rm -f /tmp/pine-daemon.log; \
-	  sbcl --non-interactive --eval "(asdf:load-system :pine)" --eval "(pine:run-daemon)" >/tmp/pine-daemon.log 2>&1 & \
+	  sbcl --dynamic-space-size 4096 --non-interactive --eval "(asdf:load-system :pine)" --eval "(pine:run-daemon)" >/tmp/pine-daemon.log 2>&1 & \
 	  DPID=$$!; \
 	  for i in $$(seq 1 90); do grep -q "daemon up" /tmp/pine-daemon.log && break; sleep 1; done; \
 	  $(PRELOAD) sbcl --non-interactive --eval "(asdf:load-system :pine/gtk)" --eval "(pine.desktop-app:run-desktop-app)" >/tmp/pine-desktop.log 2>&1 & \
@@ -43,6 +45,14 @@ dev:
 
 check:
 	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine/gtk)" --eval "(princ :loaded)" --eval "(terpri)"'
+
+# hot-path microbenchmarks of the substrate (ns/op, bytes/op, gc%): make bench
+bench:
+	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --load bench/run.lisp'
+
+# correctness probes only (buffer model, vt goldens, highlight equivalence)
+check-bench:
+	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine)" --load bench/check.lisp --eval "(sb-ext:exit :code (if (pine.check:run-checks) 0 1))"'
 
 # the GTK-free desktop: attach to the running daemon (make daemon) and run the
 # bar, echo, and panels as wayland layer surfaces (opens surfaces): make wl-desktop

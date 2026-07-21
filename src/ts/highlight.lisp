@@ -1,5 +1,7 @@
 (in-package :pine.ts)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 ;;;; Single-pass highlighter. One walk of the parse tree assigns each token a
 ;;;; face from its node type and context (form head, quote state, form depth),
 ;;;; replacing the query + capture-name-to-face + reclassify stack. Positions
@@ -133,8 +135,11 @@
 
 ;;;; Common Lisp walk
 
-(defun cl-highlights (root text index)
-  "Highlights (line start-col end-col face) for the CL parse tree ROOT over TEXT."
+(defun cl-highlights (root text index &key lo-byte hi-byte)
+  "Highlights (line start-col end-col face) for the CL parse tree ROOT over TEXT.
+With LO-BYTE / HI-BYTE, subtrees wholly outside that byte window are skipped;
+the descent from ROOT still runs, so context (quote state, depth, head kind)
+stays exact for everything inside the window."
   (let ((acc nil))
     (labels
         ((char-at (byte)
@@ -144,16 +149,21 @@
            (string-downcase (subseq text (char-at (ts-node-start-byte node))
                                     (char-at (ts-node-end-byte node)))))
          (emit (start-byte end-byte face)
+           ;; zero-width spans paint nothing and would straddle the incremental
+           ;; window boundary (a comment's extent ends at col 0 of the next
+           ;; line), so they are never emitted
            (when face
              (multiple-value-bind (sl sc) (byte-to-line-col start-byte index text)
                (multiple-value-bind (el ec) (byte-to-line-col end-byte index text)
                  (if (= sl el)
-                     (push (list sl sc ec face) acc)
+                     (when (> ec sc)
+                       (push (list sl sc ec face) acc))
                      (progn
                        (push (list sl sc 999 face) acc)
                        (loop :for l :from (1+ sl) :below el
                              :do (push (list l 0 999 face) acc))
-                       (push (list el 0 ec face) acc)))))))
+                       (when (plusp ec)
+                         (push (list el 0 ec face) acc))))))))
          (emit-node (node face)
            (emit (ts-node-start-byte node) (ts-node-end-byte node) face))
          (delimiters (node depth)
@@ -166,6 +176,10 @@
                  ((gethash (down node) *cl-constants*) :constant)
                  (t :variable)))
          (walk (node depth quoted)
+           (when (and hi-byte
+                      (or (>= (ts-node-start-byte node) hi-byte)
+                          (<= (ts-node-end-byte node) lo-byte)))
+             (return-from walk))
            (let ((type (ts-node-type node)))
              (cond
                ((member type '("comment" "block_comment" "dis_expr") :test #'string=)
@@ -388,7 +402,7 @@
     "case" "when" "unless" "and" "or" "begin" "do" "set!" "quote" "quasiquote"
     "unquote" "delay" "parameterize" "guard" "syntax-rules" "else"))
 
-(defun scheme-highlights (root text index)
+(defun scheme-highlights (root text index &key lo-byte hi-byte)
   (let ((acc nil))
     (labels
         ((char-at (byte)
@@ -401,11 +415,13 @@
            (multiple-value-bind (sl sc) (byte-to-line-col start-byte index text)
              (multiple-value-bind (el ec) (byte-to-line-col end-byte index text)
                (if (= sl el)
-                   (push (list sl sc ec face) acc)
+                   (when (> ec sc)
+                     (push (list sl sc ec face) acc))
                    (progn (push (list sl sc 999 face) acc)
                           (loop :for l :from (1+ sl) :below el
                                 :do (push (list l 0 999 face) acc))
-                          (push (list el 0 ec face) acc))))))
+                          (when (plusp ec)
+                            (push (list el 0 ec face) acc)))))))
          (emit-node (node face)
            (emit (ts-node-start-byte node) (ts-node-end-byte node) face))
          (delimiters (node depth)
@@ -418,6 +434,10 @@
                  ((gethash (down node) *scheme-keywords*) :keyword)
                  (t :function-call)))
          (walk (node depth head)
+           (when (and hi-byte
+                      (or (>= (ts-node-start-byte node) hi-byte)
+                          (<= (ts-node-end-byte node) lo-byte)))
+             (return-from walk))
            (let ((type (ts-node-type node)))
              (cond
                ((string= type "comment") (emit-node node :comment))
@@ -437,11 +457,12 @@
 
 ;;;; Dispatch
 
-(defun walk-highlights (language root text index)
-  "Highlights for LANGUAGE's parse tree ROOT over TEXT, using the line INDEX."
+(defun walk-highlights (language root text index &key lo-byte hi-byte)
+  "Highlights for LANGUAGE's parse tree ROOT over TEXT, using the line INDEX.
+LO-BYTE / HI-BYTE restrict the walk to subtrees intersecting that byte window."
   (case language
-    (:commonlisp (cl-highlights root text index))
-    (:scheme (scheme-highlights root text index))
+    (:commonlisp (cl-highlights root text index :lo-byte lo-byte :hi-byte hi-byte))
+    (:scheme (scheme-highlights root text index :lo-byte lo-byte :hi-byte hi-byte))
     (t nil)))
 
 

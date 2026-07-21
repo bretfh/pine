@@ -99,19 +99,14 @@
 
 (defmethod insert-newline ((state buffer-state) line-idx col)
   (let* ((ls (lines state))
-         (old (fset:@ ls line-idx))
+         (old (if (< line-idx (fset:size ls)) (fset:@ ls line-idx) ""))
          (c (min col (length old)))
          (before (subseq old 0 c))
          (after (subseq old c))
-         (built (fset:empty-seq)))
-    (loop for i from 0 below (fset:size ls)
-          do (if (= i line-idx)
-                 (progn
-                   (setf built (fset:with-last built before))
-                   (setf built (fset:with-last built after)))
-                 (setf built (fset:with-last built (fset:@ ls i)))))
-    (when (zerop (fset:size ls))
-      (setf built (fset:with-last (fset:with-last built "") "")))
+         (built (if (zerop (fset:size ls))
+                    (fset:seq "" "")
+                    (fset:insert (fset:with ls line-idx before)
+                                 (1+ line-idx) after))))
     (copy-state state
                 :lines built
                 :marks (fset:with (fset:with (marks state)
@@ -134,11 +129,7 @@
       ((< (1+ line-idx) (fset:size ls))
        (let* ((next (fset:@ ls (1+ line-idx)))
               (joined (concatenate 'string line next))
-              (built (fset:empty-seq)))
-         (loop for i from 0 below (fset:size ls)
-               do (cond ((= i line-idx) (setf built (fset:with-last built joined)))
-                        ((= i (1+ line-idx)) nil)
-                        (t (setf built (fset:with-last built (fset:@ ls i))))))
+              (built (fset:less (fset:with ls line-idx joined) (1+ line-idx))))
          (copy-state state :lines built :tick (1+ (tick state)))))
       (t state))))
 
@@ -151,12 +142,9 @@
          (new-line (concatenate 'string
                                 (subseq first-line 0 (min start-col (length first-line)))
                                 (subseq last-line (min end-col (length last-line)))))
-         (built (fset:empty-seq)))
-    (loop for i from 0 below (fset:size ls)
-          do (cond
-               ((= i start-line) (setf built (fset:with-last built new-line)))
-               ((and (> i start-line) (<= i end-line)) nil)
-               (t (setf built (fset:with-last built (fset:@ ls i))))))
+         (built (fset:concat (fset:subseq ls 0 start-line)
+                             (fset:seq new-line)
+                             (fset:subseq ls (min (1+ end-line) (fset:size ls))))))
     (copy-state state
                 :lines built
                 :marks (fset:with (fset:with (marks state) :point-line start-line)
@@ -203,23 +191,8 @@
   (let ((state (make-empty-state "tmp")))
     (if (string= content "")
         state
-        (let ((ls (split-on-newlines content)))
-          (loop with s = state
-                for line in ls
-                for i from 0
-                do (if (zerop i)
-                       (when (plusp (length line))
-                         (setf s (insert-string s 0 0 line)))
-                       (progn
-                         (let* ((snap (state->snapshot s))
-                                (last (1- (line-count snap)))
-                                (last-col (length (fset:@ (lines s) last))))
-                           (setf s (insert-newline s last last-col)))
-                         (when (plusp (length line))
-                           (let* ((snap (state->snapshot s))
-                                  (last (1- (line-count snap))))
-                             (setf s (insert-string s last 0 line))))))
-                finally (return s))))))
+        (copy-state state
+                    :lines (fset:convert 'fset:seq (split-on-newlines content))))))
 
 (defun %state-language (state)
   "The tree-sitter language keyword for STATE's mode, or nil."
@@ -246,23 +219,37 @@ pstate). No language available -> (values nil pstate), leaving highlights off."
                 (values (pine.ts:parse-highlights ps new-text) ps)))))))
 
 (defun point-after-move (snap unit n)
-  "Target (values line col) after moving point UNIT (:char or :line) by signed N,
-clamped to the buffer. Computed from SNAP's lines in one shot so a prefix count
-repeats correctly."
+  "Target (values line col) after moving point UNIT (:char, :word, or :line) by
+signed N, clamped to the buffer. Computed from SNAP's lines in one shot so a
+prefix count repeats correctly."
   (let ((lines (lines snap)) (nlines (line-count snap))
         (l (point-line snap)) (c (point-col snap)))
-    (ecase unit
-      (:char
-       (dotimes (i (abs n))
-         (if (plusp n)
+    (flet ((word-char-p (line col)
+             (let ((s (fset:@ lines line)))
+               (and (>= col 0) (< col (length s)) (alphanumericp (char s col)))))
+           (step-fwd ()
              (let ((len (length (fset:@ lines l))))
-               (cond ((< c len) (incf c))
-                     ((< (1+ l) nlines) (setf l (1+ l) c 0))))
-             (cond ((plusp c) (decf c))
-                   ((plusp l) (setf l (1- l) c (length (fset:@ lines l))))))))
-      (:line
-       (let ((tl (max 0 (min (1- nlines) (+ l n)))))
-         (setf l tl c (min c (length (fset:@ lines tl)))))))
+               (cond ((< c len) (incf c) t)
+                     ((< (1+ l) nlines) (setf l (1+ l) c 0) t))))
+           (step-back ()
+             (cond ((plusp c) (decf c) t)
+                   ((plusp l) (setf l (1- l) c (length (fset:@ lines l))) t))))
+      (ecase unit
+        (:char
+         (dotimes (i (abs n))
+           (if (plusp n) (step-fwd) (step-back))))
+        (:word
+         (dotimes (i (abs n))
+           (if (plusp n)
+               (progn
+                 (loop while (and (not (word-char-p l c)) (step-fwd)))
+                 (loop while (and (word-char-p l c) (step-fwd))))
+               (progn
+                 (loop while (and (not (word-char-p l (1- c))) (step-back)))
+                 (loop while (and (word-char-p l (1- c)) (step-back)))))))
+        (:line
+         (let ((tl (max 0 (min (1- nlines) (+ l n)))))
+           (setf l tl c (min c (length (fset:@ lines tl))))))))
     (values l c)))
 
 (defun make-buffer-actor (system name &key (content ""))

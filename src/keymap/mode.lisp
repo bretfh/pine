@@ -22,6 +22,7 @@
 (defclass lisp-mode (text-mode) ())
 (defclass repl-mode (text-mode) ())
 (defclass terminal-mode (base-mode) ())
+(defclass debugger-mode (base-mode) ())
 
 (defclass overwrite-mode (minor-mode) ())
 
@@ -156,6 +157,12 @@ run before the major mode's under CLOS method combination."
       (:unsubscribe
        (let ((r (getf plist :renderer)))
          (setf sento.actor:*state* (list state undo redo (remove r subs :test #'eq) hl pstate))))
+      ;; explicit highlights for tool buffers (debugger, help): the buffer's
+      ;; face runs are handed in as data instead of computed from a parse tree
+      (:set-highlights
+       (let ((new-hl (getf plist :highlights)))
+         (setf sento.actor:*state* (list state undo redo subs new-hl pstate))
+         (pine.buffer:notify-subscribers subs state new-hl)))
       ;; structural motion off the persistent tree; no reparse, no whole-buffer
       ;; string, computed from the buffer's own point.
       (:ts-motion
@@ -319,6 +326,10 @@ run before the major mode's under CLOS method combination."
                                   :indicator "TERM"
                                   :keymap (pine.keymap:make-keymap
                                            :name :term :parent (mode-keymap base))))
+    (register-mode (make-instance 'debugger-mode :name :debugger-mode :parent-mode base
+                                  :indicator "DEBUG"
+                                  :keymap (pine.keymap:make-keymap
+                                           :name :debugger :parent (mode-keymap base))))
     (register-mode (make-instance 'overwrite-mode :name :overwrite-mode
                                   :precedence 10 :transparent t :indicator "Ovwrt"
                                   :keymap (pine.keymap:make-keymap :name :overwrite)))

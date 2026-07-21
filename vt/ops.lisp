@@ -2,6 +2,8 @@
 
 (in-package :pine.vt)
 
+(declaim (optimize (speed 3) (safety 1)))
+
 (defun term-cursor-right (term &optional (n 1))
   (setf n (max n 1))
   (let ((max-x (1- (term-width term))))
@@ -62,14 +64,9 @@
             (face-crossed cur) (face-crossed saved)))))
 
 (defun term-current-bg-face (term)
-  "Return a face-attrs for the current background, reusing cached copy when possible."
+  "Return a shared face-attrs for the current background, or nil when default."
   (when (face-bg (term-attrs term))
-    (let ((cur (term-attrs term))
-          (cached (term-last-write-face term)))
-      (if (and cached (face-attrs-equal cached cur))
-          cached
-          (setf (term-last-write-face term)
-                (copy-face-attrs cur))))))
+    (intern-face term)))
 
 (defun term-erase-in-line (term &optional (mode 0))
   (let* ((y (term-cursor-y term))
@@ -110,7 +107,8 @@
        (clear-grid grid bg-face)
        (term-goto term 1 1)
        (when (= mode 3)
-         (setf (term-scrollback-size term) 0))))))
+         (setf (term-scrollback-size term) 0
+               (term-scrollback-head term) 0))))))
 
 (defun term-erase-char (term &optional (n 1))
   (setf n (max n 1))
@@ -157,20 +155,38 @@
             (cell-face (aref row i)) bg-face))))
 
 (defun push-scrollback (term row)
-  (when (and (term-scrollback term)
-             (> (term-max-scrollback term) 0))
-    (when (>= (term-scrollback-size term)
-              (length (term-scrollback term)))
-      (let ((new (make-array (min (* 2 (max (length (term-scrollback term)) 64))
-                                  (term-max-scrollback term))
-                             :initial-element nil)))
-        (loop for i from 0 below (term-scrollback-size term) do
-          (setf (aref new i) (aref (term-scrollback term) i)))
-        (setf (term-scrollback term) new)))
-    (when (< (term-scrollback-size term) (term-max-scrollback term))
-      (setf (aref (term-scrollback term) (term-scrollback-size term))
-            (copy-row row))
-      (incf (term-scrollback-size term)))))
+  "Take ownership of ROW into the scrollback ring and return a clean replacement
+row for the grid, or nil when scrollback is off (caller keeps ROW). Rows are
+allocated only until the ring reaches max-scrollback; at capacity the evicted
+oldest row is recycled as the replacement, so steady-state scrolling is O(1)
+pointer moves with no consing."
+  (let ((ring (term-scrollback term))
+        (max (term-max-scrollback term)))
+    (when (and ring (plusp max))
+      (let ((cap (length ring))
+            (size (term-scrollback-size term))
+            (head (term-scrollback-head term)))
+        (declare (type fixnum cap size head))
+        (cond
+          ((>= size max)                ; at capacity: evict oldest, recycle it
+           (let ((evicted (aref ring head)))
+             (setf (aref ring (mod (+ head size) cap)) row
+                   (term-scrollback-head term) (mod (1+ head) cap))
+             (if (= (length (the simple-vector evicted)) (term-width term))
+                 (progn (clear-row evicted) evicted)
+                 (make-row (term-width term)))))
+          (t
+           (when (= size cap)           ; grow the ring array toward max
+             (let ((new (make-array (min (* 2 (max cap 64)) max)
+                                    :initial-element nil)))
+               (dotimes (i size)
+                 (setf (aref new i) (aref ring (mod (+ head i) cap))))
+               (setf (term-scrollback term) new
+                     (term-scrollback-head term) 0
+                     ring new cap (length new) head 0)))
+           (setf (aref ring (mod (+ head size) cap)) row
+                 (term-scrollback-size term) (1+ size))
+           (make-row (term-width term))))))))
 
 (defun term-scroll-up (term &optional (n 1))
   (setf n (max n 1))
@@ -180,18 +196,19 @@
          (count (min n region-height))
          (grid (term-grid term)))
     (when (plusp count)
-      (when (and (zerop top) (not (term-in-alt-screen term)))
-        (dotimes (i count)
-          (push-scrollback term (aref grid (+ top i)))))
-      (let ((saved (make-array count :initial-element nil)))
+      (let ((saved (make-array count :initial-element nil))
+            (record (and (zerop top) (not (term-in-alt-screen term)))))
         (dotimes (i count)
           (setf (aref saved i) (aref grid (+ top i))))
         (loop for i from top to (- bot count) do
           (setf (aref grid i) (aref grid (+ i count))))
         (dotimes (i count)
-          (let ((row (aref saved i)))
-            (clear-row row)
-            (setf (aref grid (+ bot (- count) 1 i)) row)))))))
+          (let* ((row (aref saved i))
+                 (repl (and record (push-scrollback term row))))
+            (unless repl
+              (clear-row row)
+              (setf repl row))
+            (setf (aref grid (+ bot (- count) 1 i)) repl)))))))
 
 (defun term-scroll-down (term &optional (n 1))
   (setf n (max n 1))
