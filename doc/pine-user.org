@@ -36,10 +36,10 @@ and every panel are surfaces.
 - =defsurface= NAME is a symbol. BODY returns a widget tree. Today it takes a
   string name and a builder function of an argument; the target is a symbol name
   and a body, with placement declared, not implied.
-- =:as= ROLE is a placement preset: =:bar= =:panel= =:overlay= =:window=
+- =:as= ROLE is a placement preset: =:bar= =:panel= =:overlay= =:toplevel=
   =:background= =:echo=. =:bar= is a layer surface anchored and exclusive;
-  =:window= is xdg-shell; and so on. Raw options when you need them: =:anchor=
-  =:layer= =:exclusive= =:size= =:margin=.
+  =:toplevel= is xdg-shell (the editor); and so on. Raw options when you need
+  them: =:anchor= =:layer= =:exclusive= =:size= =:margin=.
 - =show= / =hide= / =toggle= take the surface symbol. Today this is =show-panel=
   keyed by string.
 
@@ -90,23 +90,26 @@ The base classes. The same set builds every surface. A widget takes =:class= and
 
 ** Views
 
-The widgets that dissolve the editor / desktop split: a buffer and a terminal
-are widgets you place in a surface like any other.
+The widgets that dissolve the editor / desktop split: a buffer view and a
+terminal are widgets you place in any surface.
 
-| symbol     | note                                  | status  |
-|------------+---------------------------------------+---------|
-| =calendar= | a month grid                          | [rename] |
-| =buffer=   | a buffer's live frame as a widget     | [build]  |
-| =terminal= | a pty view as a widget                | [build]  |
-| =modeline= | the mode line for a buffer view       | [build]  |
-| =echo=     | the echo / minibuffer line            | [build]  |
+| symbol     | note                                            | status  |
+|------------+-------------------------------------------------+---------|
+| =calendar= | a month grid                                    | [rename] |
+| =window=   | a live view of exactly the buffer you name      | [have]   |
+| =terminal= | a window view of a terminal buffer              | [have]   |
+| =modeline= | the mode line: focused window's, or X's         | [have]   |
+| =echo=     | the echo / minibuffer line + completion popup   | [have]   |
 
 - =calendar= is =cal= today.
-- =buffer=, =terminal=, =modeline=, =echo= are the real work behind this
-  language. Today a buffer frame and a widget tree are separate render paths
-  (=pine.render= for the cell grid, =pine.layout= for widgets). Making =buffer= a
-  layout node unifies them, and after that the editor is just
-  =(defsurface editor (:as :window) (buffer (current)) (modeline) (echo))=.
+- =(window X &key class expand font-px)= renders X's buffer (an actor or a
+  name string) at the rect the tree arranges it into: visible lines,
+  highlights, region, terminal grid, layout rows. The editor surface's
+  declared tree IS the live arrangement: C-x 2/3/0/1/o mutate it, C-x b
+  retargets the focused window. A =(window "*log*")= in a panel is a
+  read-only live view, same widget.
+- The editor surface is optional; the engine default is
+  =(column :align :stretch (window "scratch" :expand 1) (echo) (modeline))=.
 
 * Style
 
@@ -317,9 +320,9 @@ subcommands.
 
 1. Names are symbols, everywhere: surfaces, refs, agents, commands. Strings only
    for user text and shell.
-2. =buffer= and =terminal= are widgets. This is what makes it one language: the
-   editor is a surface holding a =buffer=, and a =buffer= can sit in a panel. It
-   is also the largest piece to build, because it unifies the two render paths.
+2. =window= and =terminal= are widgets. This is what makes it one language:
+   the editor is a surface holding window views, and a =window= can sit in a
+   panel. Built: one render path, one arrange, the tree is the arrangement.
 3. One =surface= with =:as= presets. The layer-shell / xdg difference appears
    only in =:as=; the body is the same widgets either way.
 
@@ -341,8 +344,12 @@ subcommands.
                     (label (fmt-clock (ref clock)))
                     (icon #x0F007 :on-click (show ctl)))))
 
-(defsurface editor (:as :window)
-  (buffer (current)) (modeline) (echo))
+(defsurface editor (:as :toplevel)
+  (column :align :stretch
+    (window "scratch" :class "editor-view" :expand 1)
+    (echo)
+    (modeline)))
+(defrules (".editor-view" :opacity "0.9"))
 
 (defcommand scratch () (show-buffer "*scratch*"))
 (bind "C-c s" 'scratch)

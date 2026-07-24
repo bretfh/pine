@@ -15,7 +15,8 @@
 |             | layout-next/prev/activate)                                   |
 | render      | layout -> cell rows (+ the arranged tree)                    |
 | paint-px    | layout -> pixels (cairo)                                     |
-| ref         | reactive value: defref / ref / set!                          |
+| ref         | reactive value: defref declares, (ref K) reads (tracked),    |
+|             | (setf (ref K) V) writes (deduped)                            |
 | var         | editor variable: defonce declares, (var k [buf]) reads,      |
 |             | (setf (var k [buf])) writes                                  |
 
