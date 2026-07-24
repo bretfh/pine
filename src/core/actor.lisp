@@ -148,7 +148,7 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
 daemon over the same pine.eval engine (shipping errors' restarts home by name),
 and idle. Passed as --eval forms, so nothing is written to disk. Isolated: it can
 loop, block, or crash in its own image without touching the daemon."
-  (list "sbcl" "--non-interactive"
+  (list "sbcl" "--non-interactive" "--no-userinit"
         "--eval" "(require :asdf)"
         "--eval" (format nil "(push #P~s asdf:*central-registry*)"
                          (namestring (asdf:system-source-directory :pine)))
