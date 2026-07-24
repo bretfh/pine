@@ -26,12 +26,12 @@ Raw palette needs use color, which reads *active-theme*.
 
 * Consumers
 
-| consumer                    | reads                                        |
-| render.lisp (cell grid)     | face-fg/face-bg per face; syntax via faces   |
-| widget/layout.lisp          | %face-cell-rgb -> face-fg/face-bg            |
-| app/paint.lisp (desktop)    | %face-rgb01, %role -> color                  |
-| app/editor-app.lisp         | face-bg :window / :cursor                    |
-| app/desktop-app.lisp (CSS)  | p -> color; glass -> color + hex-rgb         |
+| consumer                     | reads                                        |
+| render/render.lisp (cells)   | face-fg/face-bg per face; syntax via faces   |
+| layout/layout.lisp           | %face-cell-rgb -> face-fg/face-bg            |
+| cairo/paint.lisp (pixels)    | set-face-rgb, content-color -> face-fg       |
+| cairo/display.lisp           | face-bg :window / :cursor                    |
+| buffer/rules.lisp (CSS)      | p -> color; glass -> color + hex-rgb         |
 
 The vt terminal palette (vt/color.lisp) is orthogonal and untouched: it maps
 ANSI escape codes, and terminal output is truecolour. Only the default fg when

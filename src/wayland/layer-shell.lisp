@@ -2,9 +2,9 @@
 ;;;; protocol XML shipped by the wlr-protocols guix package (in the manifest).
 ;;;; The XML path is resolved at compile time from GUIX_ENVIRONMENT, so the
 ;;;; build must run inside `guix shell -m manifest.scm'. This is the anchored
-;;;; bar/panel surface protocol that gtk4-layer-shell wraps for the GTK app --
-;;;; here we bind it directly, no C shim. The package uses the xdg-shell package
-;;;; so the get_popup request's xdg_popup argument resolves.
+;;;; bar/panel surface protocol, bound directly -- no C shim. The package uses
+;;;; the xdg-shell package so the get_popup request's xdg_popup argument
+;;;; resolves.
 
 (defpackage #:pine.wlr-layer-shell
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell)

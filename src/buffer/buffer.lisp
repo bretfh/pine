@@ -68,7 +68,7 @@
                  :tick  (if tick-p tick (tick state))))
 
 
-(defun split-on-newlines (string)
+(defun split-lines (string)
   (loop with start = 0
         for i from 0 below (length string)
         when (char= (char string i) #\Newline)
@@ -78,17 +78,43 @@
 
 (defgeneric insert-string (state line-idx col string))
 
-(defmethod insert-string ((state buffer-state) line-idx col string)
-  (let* ((ls (lines state))
+(defun %insert-multiline (state line-idx col string)
+  "Insert multi-line STRING at LINE-IDX/COL, splitting on its newlines: the
+first part joins the line before the cut, the last part takes the remainder,
+the middle parts become whole lines. Point lands after the inserted text."
+  (let* ((parts (split-lines string))
+         (ls (lines state))
          (old (if (< line-idx (fset:size ls)) (fset:@ ls line-idx) ""))
          (c (min col (length old)))
-         (new (concatenate 'string (subseq old 0 c) string (subseq old c))))
+         (last-part (car (last parts)))
+         (built (fset:with ls line-idx
+                           (concatenate 'string (subseq old 0 c) (first parts))))
+         (at (1+ line-idx)))
+    (dolist (m (butlast (rest parts)))
+      (setf built (fset:insert built at m))
+      (incf at))
+    (setf built (fset:insert built at
+                             (concatenate 'string last-part (subseq old c))))
     (copy-state state
-                :lines (fset:with ls line-idx new)
+                :lines built
                 :marks (let ((m (marks state)))
-                         (fset:with (fset:with m :point-line line-idx)
-                                    :point-charpos (+ c (length string))))
+                         (fset:with (fset:with m :point-line at)
+                                    :point-charpos (length last-part)))
                 :tick (1+ (tick state)))))
+
+(defmethod insert-string ((state buffer-state) line-idx col string)
+  (if (find #\Newline string)
+      (%insert-multiline state line-idx col string)
+      (let* ((ls (lines state))
+             (old (if (< line-idx (fset:size ls)) (fset:@ ls line-idx) ""))
+             (c (min col (length old)))
+             (new (concatenate 'string (subseq old 0 c) string (subseq old c))))
+        (copy-state state
+                    :lines (fset:with ls line-idx new)
+                    :marks (let ((m (marks state)))
+                             (fset:with (fset:with m :point-line line-idx)
+                                        :point-charpos (+ c (length string))))
+                    :tick (1+ (tick state))))))
 
 (defgeneric insert-char (state line-idx col char))
 
@@ -192,7 +218,7 @@
     (if (string= content "")
         state
         (copy-state state
-                    :lines (fset:convert 'fset:seq (split-on-newlines content))))))
+                    :lines (fset:convert 'fset:seq (split-lines content))))))
 
 (defun %state-language (state)
   "The tree-sitter language keyword for STATE's mode, or nil."
@@ -416,11 +442,11 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
 
 (defun buffer (x)
   "Coerce X to a buffer actor.
-- nil            → nil
-- string         → lookup by name in current server's buffer-table
-- :current       → current client's current-buffer
-- :focused       → focused window's buffer-ref
-- actor ref      → passthrough
+- nil            -> nil
+- string         -> lookup by name in current server's buffer-table
+- :current       -> current client's current-buffer
+- :focused       -> focused window's buffer-ref
+- actor ref      -> passthrough
 Unknown keywords error; nothing silently falls through."
   (cond
     ((null x) nil)

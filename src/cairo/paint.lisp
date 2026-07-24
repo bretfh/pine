@@ -2,12 +2,12 @@
 
 ;;;; The cairo backend for the widget engine. measure/arrange already run in
 ;;;; pixels when *text-size* is bound; here we bind it to a cairo text measurer
-;;;; and add PAINT-CAIRO, a second paint pass that draws each arranged node to a
+;;;; and add PAINT-PX, a second paint pass that draws each arranged node to a
 ;;;; cairo context -- rounded backgrounds, borders, themed text, sliders, and
-;;;; rings -- styled by pine.style resolving the shared theme-rules. No GTK, no
-;;;; cell raster: the same tree the daemon builds renders straight to pixels.
+;;;; rings -- styled by pine.style resolving the shared theme-rules. No cell
+;;;; raster: the same tree the daemon builds renders straight to pixels.
 
-(export '(paint-cairo render-tree-to-png paint-tree measure-tree
+(export '(paint-px render-tree-to-png paint-tree paint-arranged measure-tree
           with-cairo-layout *cairo-font*))
 
 (defvar *cairo-font* "Maple Mono NF")
@@ -24,11 +24,8 @@
       (values (max 1 (ceiling ax))
               (max 1 (ceiling (+ (cairo:font-ascent fe) (cairo:font-descent fe))))))))
 
-;;;; Style plumbing.
-
-(defun node-classes (n)
-  (let ((c (css-class n)))
-    (if c (remove "" (uiop:split-string c :separator '(#\space)) :test #'string=) nil)))
+;;;; Style plumbing. NODE-CLASSES lives in layout.lisp (shared with the cell
+;;;; render's RESOLVE-STYLES!).
 
 (defun styled (n chain hover)
   "The resolved style for N given its ancestor class CHAIN (root-first). The
@@ -151,31 +148,31 @@ concentric low-alpha layers, so the panel reads as floating over the desktop."
             (cairo:set-source-rgb ir ig ib)
             (cairo:fill-path)))))))
 
-;;;; PAINT-CAIRO: chrome via :before, content/recursion in the primary method.
+;;;; PAINT-PX: chrome via :before, content/recursion in the primary method.
 
-(defgeneric paint-cairo (node chain)
+(defgeneric paint-px (node chain)
   (:documentation "Draw arranged NODE and its subtree to cairo:*context*. CHAIN
 is the ancestor class-set list, root-first, for style resolution."))
 
-(defmethod paint-cairo :before ((n node) chain)
+(defmethod paint-px :before ((n node) chain)
   (let ((st (styled n chain (hovered n))))
     (multiple-value-bind (x y w h) (node-rect n)
       (draw-chrome st x y w h))))
 
-(defmethod paint-cairo ((n node) chain) (declare (ignore chain)) nil)
+(defmethod paint-px ((n node) chain) (declare (ignore chain)) nil)
 
 (defun paint-children (n chain list)
-  (let ((cc (child-chain n chain))) (dolist (c list) (when c (paint-cairo c cc)))))
+  (let ((cc (child-chain n chain))) (dolist (c list) (when c (paint-px c cc)))))
 
-(defmethod paint-cairo ((n vstack) chain) (paint-children n chain (nodes n)))
-(defmethod paint-cairo ((n hstack) chain) (paint-children n chain (nodes n)))
-(defmethod paint-cairo ((n centerbox) chain) (paint-children n chain (%cb-parts n)))
-(defmethod paint-cairo ((n grid) chain) (paint-children n chain (apply #'append (cells n))))
-(defmethod paint-cairo ((n list-node) chain) (paint-children n chain (rendered n)))
-(defmethod paint-cairo ((n box) chain) (paint-children n chain (list (node n))))
-(defmethod paint-cairo ((n center) chain) (paint-children n chain (list (node n))))
+(defmethod paint-px ((n vstack) chain) (paint-children n chain (nodes n)))
+(defmethod paint-px ((n hstack) chain) (paint-children n chain (nodes n)))
+(defmethod paint-px ((n centerbox) chain) (paint-children n chain (%cb-parts n)))
+(defmethod paint-px ((n grid) chain) (paint-children n chain (apply #'append (cells n))))
+(defmethod paint-px ((n list-node) chain) (paint-children n chain (rendered n)))
+(defmethod paint-px ((n box) chain) (paint-children n chain (list (node n))))
+(defmethod paint-px ((n center) chain) (paint-children n chain (list (node n))))
 
-(defmethod paint-cairo ((n scroll) chain)
+(defmethod paint-px ((n scroll) chain)
   "Clip to the viewport rect before painting the (taller, offset) content."
   (multiple-value-bind (x y w h) (node-rect n)
     (cairo:save)
@@ -183,12 +180,10 @@ is the ancestor class-set list, root-first, for style resolution."))
     (cairo:clip)
     (paint-children n chain (list (node n)))
     (cairo:restore)))
-(defmethod paint-cairo ((n action) chain) (paint-children n chain (list (node n))))
-(defmethod paint-cairo ((n selectable) chain) (paint-children n chain (list (node n))))
+(defmethod paint-px ((n action) chain) (paint-children n chain (list (node n))))
+(defmethod paint-px ((n selectable) chain) (paint-children n chain (list (node n))))
 
-(defmethod paint-cairo ((n text-node) chain)
-  (paint-glyph-run n chain (content n)))
-(defmethod paint-cairo ((n field) chain)
+(defmethod paint-px ((n text-node) chain)
   (paint-glyph-run n chain (content n)))
 
 (defun paint-glyph-run (n chain text)
@@ -207,16 +202,21 @@ is the ancestor class-set list, root-first, for style resolution."))
           (cairo:move-to (float x 1d0) (float (+ top asc) 1d0))
           (cairo:show-text text))))))
 
-(defmethod paint-cairo ((n separator) chain)
+(defmethod paint-px ((n separator) chain)
   (declare (ignore chain))
   (multiple-value-bind (x y w h) (node-rect n)
     (set-face-rgb (or (face n) :comment))
     (cairo:set-line-width 1d0)
-    (cairo:move-to (float x 1d0) (float (+ y (/ h 2d0)) 1d0))
-    (cairo:line-to (float (+ x w) 1d0) (float (+ y (/ h 2d0)) 1d0))
+    (if (sep-vertical n)
+        (progn
+          (cairo:move-to (float (+ x (/ w 2d0)) 1d0) (float y 1d0))
+          (cairo:line-to (float (+ x (/ w 2d0)) 1d0) (float (+ y h) 1d0)))
+        (progn
+          (cairo:move-to (float x 1d0) (float (+ y (/ h 2d0)) 1d0))
+          (cairo:line-to (float (+ x w) 1d0) (float (+ y (/ h 2d0)) 1d0))))
     (cairo:stroke)))
 
-(defmethod paint-cairo ((n slider) chain)
+(defmethod paint-px ((n slider) chain)
   (declare (ignore chain))
   (multiple-value-bind (x y w h) (node-rect n)
     (let* ((frac (slider-fraction n))
@@ -233,7 +233,7 @@ is the ancestor class-set list, root-first, for style resolution."))
         (cairo:arc (float kx 1d0) (float (+ ty (/ th 2.0)) 1d0) 7d0 0d0 (* 2d0 pi))
         (set-hex (pine.buffer:color :fg)) (cairo:fill-path)))))
 
-(defmethod paint-cairo ((n ring) chain)
+(defmethod paint-px ((n ring) chain)
   (multiple-value-bind (x y w h) (node-rect n)
     (let* ((d (min w h)) (th (float (thickness n) 1d0))
            (cx (float (+ x (/ w 2.0)) 1d0)) (cy (float (+ y (/ h 2.0)) 1d0))
@@ -248,7 +248,7 @@ is the ancestor class-set list, root-first, for style resolution."))
         (cairo:new-sub-path) (cairo:arc cx cy rad start end) (cairo:stroke))))
   (when (node n) (paint-children n chain (list (node n)))))
 
-(defmethod paint-cairo ((n picture) chain)
+(defmethod paint-px ((n picture) chain)
   (declare (ignore chain))
   (let ((path (pic-path n)))
     (when (and path (plusp (length path)) (probe-file path))
@@ -279,7 +279,7 @@ reports for one cell, so a window measures and paints at the same grid."
               (float (max 1 (ceiling (+ (cairo:font-ascent fe) (cairo:font-descent fe)))) 1d0)
               (cairo:font-ascent fe)))))
 
-(defmethod paint-cairo ((n window) chain)
+(defmethod paint-px ((n window-node) chain)
   (declare (ignore chain))
   (multiple-value-bind (x y w h) (node-rect n)
     (destructuring-bind (br bg bb) (pine.buffer:face-bg :window)
@@ -287,13 +287,30 @@ reports for one cell, so a window measures and paints at the same grid."
                              (float (window-opacity n) 1d0)))
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:fill-path)
-    (let ((fpx (or (font-px n) *default-font-px*)))
+    (let ((fpx (or (font-px n) *default-font-px*))
+          (over (%window-overlay-count n)))
       (multiple-value-bind (cw ch asc) (cairo-cell-metrics fpx)
+        ;; the overlay block (completion popup) floats above the rect, over
+        ;; whatever the flow put there; no clip to the rect
+        (when (plusp over)
+          (let ((top (- y (* over ch)))
+                (orows (subseq (window-rows n) 0 over)))
+            (destructuring-bind (br bg bb) (or (pine.buffer:face-bg :completion)
+                                               (pine.buffer:face-bg :window)
+                                               (list 0 0 0))
+              (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0) 0.95d0))
+            (cairo:rectangle (float x 1d0) (float top 1d0)
+                             (float w 1d0) (float (* over ch) 1d0))
+            (cairo:fill-path)
+            (cairo:save)
+            (cairo:translate 0d0 (float top 1d0))
+            (pine.display:paint-rows orows cw ch asc (float x 1d0))
+            (cairo:restore)))
         (cairo:save)
         (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
         (cairo:clip)
         (cairo:translate 0d0 (float y 1d0))
-        (pine.surface:paint-rows (window-rows n) cw ch asc (float x 1d0))
+        (pine.display:paint-rows (subseq (window-rows n) over) cw ch asc (float x 1d0))
         ;; the point (a hollow caret), when this window carries one
         (when (>= (window-crow n) 0)
           (destructuring-bind (br bg bb) (pine.buffer:face-bg :cursor)
@@ -339,7 +356,7 @@ reports for one cell, so a window measures and paints at the same grid."
                      (float (+ cy (/ (- ch lh) 2.0) asc) 1d0))
       (cairo:show-text s))))
 
-(defmethod paint-cairo ((n calendar) chain)
+(defmethod paint-px ((n calendar) chain)
   (declare (ignore chain))
   (multiple-value-bind (x y w h) (node-rect n)
     (let* ((fpx (or (font-px n) *default-font-px*))
@@ -380,8 +397,11 @@ inside WITH-CAIRO-LAYOUT."
       (apply-styles! node nil)
       (measure node avail-w 100000))))
 
-(defun measure-scratch (node avail-w)
-  (measure-tree node avail-w))
+(defun paint-arranged (node)
+  "Paint NODE at the rects it already carries -- the daemon's one arrange,
+shipped over the wire -- resolving styles but running no second layout."
+  (apply-styles! node nil)
+  (paint-px node nil))
 
 (defun paint-tree (node width height)
   "Measure/arrange NODE to fill WIDTH x HEIGHT and paint it to the bound cairo
@@ -390,7 +410,7 @@ caller sets up WITH-CAIRO-LAYOUT, the context, and any wallpaper/clear."
   (apply-styles! node nil)
   (measure node width height)
   (arrange node 0 0 width height)
-  (paint-cairo node nil))
+  (paint-px node nil))
 
 (defun render-tree-to-png (node path &key (pad 20) (avail-w 420) (bg :bg-alt))
   "Render the widget NODE tree to a PNG at PATH, on a BG palette-role wallpaper
@@ -403,6 +423,6 @@ so the glass surfaces read. Returns (:w W :h H :path PATH)."
           (multiple-value-bind (r g b) (pine.buffer:hex-rgb (pine.buffer:color bg))
             (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
           (arrange node pad pad mw mh)
-          (paint-cairo node nil))
+          (paint-px node nil))
         (cairo:surface-write-to-png surface path)
         (list :w w :h h :path path)))))

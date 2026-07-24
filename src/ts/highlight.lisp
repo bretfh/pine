@@ -586,19 +586,13 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
 ;;;; Development harness. Prints every highlighted token and its face; a check
 ;;;; that a rule resolves as intended without launching the editor.
 
-(defun %split-lines (string)
-  (loop :with start := 0
-        :for newline := (position #\Newline string :start start)
-        :collect (subseq string start (or newline (length string)))
-        :while newline :do (setf start (1+ newline))))
-
 (defun hl-dump (source &optional (language :commonlisp))
   "Print each highlighted token of SOURCE and the face it resolves to."
   (let* ((runtime (make-ts-runtime))
          (ps (progn (ensure-ts runtime) (make-parse-state runtime language))))
     (if (null ps)
         (format t "~&no grammar loaded for ~a~%" language)
-        (let ((lines (coerce (%split-lines source) 'vector)))
+        (let ((lines (coerce (pine.buffer:split-lines source) 'vector)))
           (reparse! ps source)
           (dolist (h (parse-highlights ps source))
             (destructuring-bind (line start-col end-col face) h

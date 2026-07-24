@@ -1,10 +1,8 @@
-(defpackage #:pine.surface
+(defpackage #:pine.display
   (:use #:cl)
-  (:export #:surface #:surface-on-key #:surface-on-resize
-           #:present #:paint-frame #:request-redraw #:surface-metrics
-           #:paint-cell-grid #:paint-rows #:render-frame-to-png #:*font-family*))
+  (:export #:paint-cell-grid #:paint-rows #:render-frame-to-png #:*font-family*))
 
-(in-package #:pine.surface)
+(in-package #:pine.display)
 
 (defparameter *font-family* "Maple Mono NF")
 
@@ -96,12 +94,3 @@ eyes for the editor frame: no window, an offscreen cairo image surface."
                (cairo:rectangle x (+ y 1d0) cell-w 1d0)
                (cairo:fill-path)))))
 
-(defclass surface ()
-  ((on-key    :initarg :on-key    :accessor surface-on-key    :initform nil)
-   (on-resize :initarg :on-resize :accessor surface-on-resize :initform nil)))
-
-(defgeneric present (surface))
-(defgeneric paint-frame (surface frame))
-(defgeneric request-redraw (surface))
-(defgeneric surface-metrics (surface)
-  (:documentation "Values: cell-width cell-height cols rows."))

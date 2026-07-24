@@ -20,7 +20,7 @@ of the whole, =api.org=, =theming.org=, =client-actor.org=, =treesitter.org=,
 names the design note that carries it.
 
 A word on how to read the names. Every subsystem is a package, and the package
-name is the concept: =pine.buffer=, =pine.layout=, =pine.cell=. When this manual
+name is the concept: =pine.buffer=, =pine.layout=, =pine.ref=. When this manual
 says "the layout engine" it means =pine.layout=, and when it names a function it
 gives the package, as in =pine.buffer:make-buffer=. You can follow any of them
 into the source; the source is the final authority and this manual tracks it.
@@ -167,9 +167,9 @@ renderer lays the window's visible lines into the frame's cells, adds the
 modeline and the echo line, and the frame crosses the wire as rows. A cell is ten
 numbers: row, column, character, a foreground triple, a background triple, and
 packed attribute bits for bold, italic, and underline. This flat cell format is
-the common ground every text frontend paints, whether the backend is a terminal,
-a GTK drawing area, or a wayflan cairo surface. The cell grid is the wire format;
-the backend is only the thing that ships it to a surface.
+the common ground every text frontend paints, whether the backend is a terminal
+or a wayflan cairo surface. The cell grid is the wire format; the backend is
+only the thing that ships it to a surface.
 
 * Faces and Themes
 :PROPERTIES:
@@ -196,12 +196,11 @@ holds a literal color.
 
 Beyond faces, the desktop has a stylesheet, and it is data, not code. It is a
 list of (selector, properties) pairs where the properties are CSS strings, kept
-in =pine.buffer:theme-rules= so a single source drives every renderer. The GTK
-backend flattens the rules to a CSS string. The cairo backend parses each value
-and paints it directly. Both consume the same list, which is why the wayflan
-desktop reproduces the GTK look without reinterpreting anything: same rules, same
-radius, same glass. Styling as data is what let the whole GUI move backends
-cheaply.
+in =pine.buffer:theme-rules= so a single source drives every renderer. The cairo
+painter parses each value and paints it in pixels; the cell render resolves the
+same rules into cell colors. Both consume the same list: same rules, same
+radius, same glass. Styling as data is what lets a surface and a layout buffer
+share one look.
 
 * The Layout Engine
 :PROPERTIES:
@@ -259,36 +258,36 @@ column, =click-thunk= turns a click into the action to run, =slider-value-at=
 maps a click along a slider to a value. A frontend does not know what a button is.
 It sends a coordinate, and the engine on the daemon decides what was pressed.
 
-* Cells and Sources
+* Refs and Sources
 :PROPERTIES:
 :DESCRIPTION: Reactive state, and the world feeding it.
 :END:
 
-A cell is a named box holding a value that notifies when it changes, and a source
-is something that keeps a cell current from the outside world. Together they are
-how the desktop stays live without anyone wiring updates by hand. Cells are
-=pine.cell=, sources are =pine.source=.
+A ref is a named box holding a value that notifies when it changes, and a source
+is something that keeps a ref current from the outside world. Together they are
+how the desktop stays live without anyone wiring updates by hand. Refs are
+=pine.ref=, sources are =pine.source=.
 
-** Cells and views
+** Refs and views
 
-A cell dedups on write: setting it to a value equal to the one it holds notifies
-no one, so identical updates never cause a redraw. What makes cells reactive is
-dependency tracking. When a widget builder reads cells inside a tracked render,
-the render records exactly which cells it touched and subscribes to that set; the
+A ref dedups on write: setting it to a value equal to the one it holds notifies
+no one, so identical updates never cause a redraw. What makes refs reactive is
+dependency tracking. When a widget builder reads refs inside a tracked render,
+the render records exactly which refs it touched and subscribes to that set; the
 next render re-subscribes to the possibly different set it touches this time. You
-write a builder that reads =(cell :volume 0)= and it re-runs when the volume cell
-changes and only then, with no manual subscription. This is =pine.cell:make-view=
+write a builder that reads =(ref :volume 0)= and it re-runs when the volume ref
+changes and only then, with no manual subscription. This is =pine.ref:make-view=
 and =render-view=, and it is the eww =var= idea made native.
 
 ** Sources
 
-A source feeds a cell. A stream source runs a subprocess and sets a cell from its
-output as lines arrive, event driven. A poll source sets a cell on an interval.
+A source feeds a ref. A stream source runs a subprocess and sets a ref from its
+output as lines arrive, event driven. A poll source sets a ref on an interval.
 Either way the blocking work, the subprocess read, the shell call, runs on the
 source's own thread, off the actor pool, so a slow or flooding source cannot
 starve the daemon. Declared with =defsource= and =defpoll= and started together,
 sources are the daemon's answer to the eww broker: the workspace list, the volume,
-the network state, the now playing track, each a source feeding a cell that a
+the network state, the now playing track, each a source feeding a ref that a
 widget reads.
 
 * Modes and Keymaps
@@ -308,8 +307,8 @@ pty instead of inserting them. To be written; the code is the current authority.
 
 Commands (=pine.command=), how a key resolves to a command through the active
 keymaps, and the minibuffer: prompting, and =completing-read= with its filtered
-candidates and its callback. The palette shape, sources of candidates and acting
-on the selection, is the natural extension point here. To be written.
+candidates and its callback. The completion facility, sources of candidates and
+actions on the selection, is the natural extension point here. To be written.
 
 * The Terminal
 :PROPERTIES:
@@ -337,7 +336,7 @@ painter shared by the frontends. The backends are the interesting part.
 
 ** The cairo backend
 
-=pine.cairo= is a GTK free renderer. It binds =pine.layout:*text-size*= to a
+=pine.cairo= is the pixel renderer. It binds =pine.layout:*text-size*= to a
 cairo text measurer so the layout engine lays out in pixels, resolves each node's
 style from =theme-rules= as data, and paints the tree: rounded backgrounds,
 borders, themed text, sliders, rings, a calendar grid. It renders headless to a
@@ -346,20 +345,11 @@ it reproduces the widget trees the daemon builds exactly.
 
 ** The wayflan backend
 
-=pine.wayland= is a from scratch Wayland client, no GTK and no libwayland. It
-binds =wlr-layer-shell= for anchored bars and panels and =xdg-shell= for windows,
+=pine.wayland= is a from scratch Wayland client, no libwayland. It binds
+=wlr-layer-shell= for anchored bars and panels and =xdg-shell= for windows,
 paints the cairo trees into shared memory buffers, and drives input through the
-layout engine's own hit testing. Its cost against the GTK backend is roughly two
-gigabytes of dependency closure and the GObject introspection machinery, dropped;
-what remains is cairo, sockets, and a little protocol code. This is the backend
-the desktop and the editor run on now.
-
-** The GTK backend
-
-=pine.desktop-app= and the GTK editor are the original backend, GTK4 widgets and
-the GTK CSS engine, kept as a fallback while the wayflan backend proves out. The
-theme rules that the cairo backend parses, the GTK backend flattens to CSS. Two
-backends, one source of style.
+layout engine's own hit testing. The whole client is cairo, sockets, and a
+little protocol code. This is the backend the desktop and the editor run on.
 
 * The Desktop
 :PROPERTIES:
@@ -369,10 +359,10 @@ backends, one source of style.
 The desktop is a set of named surfaces the daemon builds and a client paints: a
 bar down one side, an echo strip along the bottom, and panels that toggle open,
 calendar, audio, network, media, a control panel. This is =pine.desktop= on the
-daemon and the wayflan or GTK backend on the client. Each surface is a widget
-tree built from cells, serialized, and pushed; interacting sends an id or a hint
+daemon and the wayflan backend on the client. Each surface is a widget
+tree built from refs, serialized, and pushed; interacting sends an id or a hint
 back and the daemon runs the closure or updates the echo. The desktop is the
-layout engine, the cells and sources, and the wire, put together into the thing
+layout engine, the refs and sources, and the wire, put together into the thing
 you look at.
 
 * Evaluation and Agents
@@ -392,7 +382,7 @@ crash, can distribute" half of the sentence is implemented.
 :END:
 
 Every extension point in this manual is a small thing because the architecture
-did the work. To add a status source, =defpoll= a cell and read it in a widget.
+did the work. To add a status source, =defpoll= a ref and read it in a widget.
 To add a panel, write a builder that returns a node tree and register it as a
 surface. To add a command, define it and bind a key. To add a theme, =deftheme=
 a palette, metrics, and faces. To add a whole new frontend, register an app kind

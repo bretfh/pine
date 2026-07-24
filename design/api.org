@@ -1,8 +1,32 @@
-#+TITLE: hecl — Interactive API
+#+TITLE: pine: interactive API
 #+OPTIONS: toc:2 num:nil
 
-The runtime exposes three primitives in ~hecl.buffer~, also imported into
-the scratch default package ~hecl-user~: ~buffer~, ~ask~, ~tell~. Everything
+* The words
+
+| word        | means                                                        |
+|-------------+--------------------------------------------------------------|
+| surface     | wayland placement: what the compositor shows (:as roles)     |
+| panel       | a desktop surface toggled by show/hide                       |
+| window      | the Emacs window: a scroll/focus view onto a buffer          |
+| window-node | that view embedded as a layout leaf (class name only)        |
+| buffer      | content: lines + point + meta, an actor over fset state      |
+| layout      | a node tree; a buffer can SHOW one (show-layout,             |
+|             | layout-mode, :set-layout, :layout-* meta,                    |
+|             | layout-next/prev/activate)                                   |
+| render      | layout -> cell rows (+ the arranged tree)                    |
+| paint-px    | layout -> pixels (cairo)                                     |
+| ref         | reactive value: defref / ref / set!                          |
+| var         | editor variable: defonce declares, (var k [buf]) reads,      |
+|             | (setf (var k [buf])) writes                                  |
+
+Three display layers only: buffer (content) -> window (view) -> surface
+(placement). Everything else is content vocabulary. There is no "pane"; no
+"cell" outside the render grid.
+
+* The primitives
+
+The runtime exposes three primitives in ~pine.buffer~, also imported into
+the scratch default package ~pine-user~: ~buffer~, ~ask~, ~tell~. Everything
 REPL-useful is one of these.
 
 * ~buffer~ — coerce anything to a buffer actor
@@ -111,7 +135,7 @@ Messages the buffer actor understands:
 | ~:append-with-prompt~  | ~:text :prompt~                     | REPL output helper         |
 | ~:subscribe~           | ~:renderer REF~                     | register subscriber        |
 | ~:unsubscribe~         | ~:renderer REF~                     | remove subscriber          |
-| ~:highlights~          | ~:highlights LIST~                  | install fresh highlights   |
+| ~:set-highlights~      | ~:highlights LIST~                  | install fresh highlights   |
 
 * Examples
 
@@ -128,15 +152,15 @@ Messages the buffer actor understands:
 
 ;; mutation
 (tell :current :insert :text "hello")
-(tell :current :set-local :key :package :value :hecl-user)
+(tell :current :set-local :key :package :value :pine-user)
 (tell "*terminal*" :move-point :line 0 :col 0)
 #+end_src
 
 * Scratch's default package
 
-The scratch buffer is pinned to ~:hecl-user~ at startup (via
-~:set-local :key :package :value :hecl-user~). ~hecl-user~ imports the
-three primitives plus common handles from ~hecl.client~ and ~hecl.mode~.
+The scratch buffer is pinned to ~:pine-user~ at startup (via
+~:set-local :key :package :value :pine-user~). ~pine-user~ imports the
+three primitives plus common handles from ~pine.client~ and ~pine.mode~.
 Unqualified ~ask~, ~tell~, ~buffer~, ~current-client~, ~current-buffer~,
 ~find-mode~, ~set-buffer-mode~, ~defmode~, ~eval-last-sexp~,
 ~eval-buffer~ all resolve.
@@ -156,3 +180,74 @@ options, use ~(getf (rest args) :key)~.
 
 Unknown verbs get a readable error listing the known set — no silent
 cascades.
+
+* The buffer verb protocol
+
+The verbs a buffer actor answers, layered by mode (dispatch-message methods in
+src/mode/edit.lisp). tell sends any of them; ask wraps the synchronous ones.
+
+** base-mode (every buffer)
+
+| verb              | args                        | effect |
+|-------------------+-----------------------------+--------|
+| =:get-state=      |                             | reply the buffer-state |
+| =:get-snapshot=   |                             | reply a snapshot |
+| =:get-text=       |                             | reply the full string |
+| =:get-local=      | =:key :default=             | reply a meta value |
+| =:subscribe=      | =:renderer REF=             | add subscriber, push a snapshot |
+| =:unsubscribe=    | =:renderer REF=             | remove subscriber |
+| =:set-highlights= | =:highlights RUNS=          | explicit face runs (tool buffers) |
+| =:move-point=     | =:line :col=                | set point |
+| =:move-by=        | =:unit :n=                  | move point by :char/:word/:line |
+| =:ts-motion=      | =:kind=                     | structural motion off the tree |
+| =:undo= / =:redo= |                             | history |
+| =:set-local= / =:set-meta= | =:key :value=      | set a meta key (:mode reparses) |
+| =:set-var=        | =:key :value=               | set a buffer-local variable |
+| =:replace-content= | =:content=                 | fresh content, identity kept |
+| =:set-layout=       | =:builder :width :selection= | become a layout buffer |
+| =:reproject=      | =[:width] [:selection]=     | re-run the stored layout builder |
+
+** text-mode (editable buffers)
+
+| verb              | args                        | effect |
+|-------------------+-----------------------------+--------|
+| =:insert=         | =:text=                     | insert at point |
+| =:newline=        |                             | electric newline (tree indent) |
+| =:backspace=      |                             | delete before point |
+| =:delete-region=  | =:start-line :start-col :end-line :end-col= | delete range |
+| =:indent-lines=   | =[:from] [:to]=             | reindent from the parse tree |
+| =:append-with-prompt= | =:text :prompt=         | repl output + fresh prompt |
+
+repl-mode overrides =:newline= (submit); terminal-mode routes =:insert= /
+=:newline= / =:backspace= to the pty and ignores the editing verbs.
+
+* The node vocabulary (class / constructor / wire tag)
+
+One tree, three names per node kind: the CLOS class (what typecase sees), the
+constructor (what builders call; the user language), and the wire tag
+(node->wire / wire->node).
+
+| class       | constructor | wire        |
+|-------------+-------------+-------------|
+| text-node   | =label= / =icon= | =:label= |
+| separator   | =rule=      | =:rule=     |
+| spacer      | =gap=       | =:gap=      |
+| vstack      | =column=    | =:column=   |
+| hstack      | =row=       | =:row=      |
+| box         | =boxed=     | =:box=      |
+| center      | =centered=  | =:centered= |
+| scroll      | =viewport=  | =:viewport= |
+| selectable  | =choice=    | =:choice=   |
+| action      | =button=    | =:action=   |
+| list-node   | =rows=      | =:column=   |
+| grid        | (direct)    | =:grid=     |
+| slider      | =meter=     | =:meter=    |
+| ring        | =ring=      | =:ring=     |
+| calendar    | =cal=       | =:calendar= |
+| picture     | =pic=       | =:picture=  |
+| window-node | =window=    | =:window=   |
+| centerbox   | =centerbox= | =:centerbox= |
+
+Two paint targets, one tree: =paint= (cells, via =render=) and =paint-px=
+(pixels, cairo). =render root width :selection n= -> (values rows tree): rows
+in the frame wire run format, tree arranged for =node-at= position lookup.

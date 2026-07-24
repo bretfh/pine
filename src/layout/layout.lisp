@@ -46,17 +46,14 @@
   ((content :initarg :content :accessor content :initform "")))
 
 (defclass separator (node)
-  ((sep-char :initarg :char :accessor sep-char :initform (code-char #x2500))))
+  ((sep-char :initarg :char :accessor sep-char :initform (code-char #x2500))
+   (vertical :initarg :vertical :accessor sep-vertical :initform nil)))
+
+(defmethod initialize-instance :after ((n separator) &key)
+  (when (and (sep-vertical n) (char= (sep-char n) (code-char #x2500)))
+    (setf (sep-char n) (code-char #x2502))))
 
 (defclass spacer (node) ())            ; flexible empty space; default expand 1
-
-(defclass field (node)
-  ((content       :initarg :content       :accessor content       :initform "")
-   (prefix-length :initarg :prefix-length :accessor prefix-length :initform 0)
-   (input-start-line :initform 0 :accessor input-start-line)
-   (input-start-col  :initform 0 :accessor input-start-col)
-   (input-end-line   :initform 0 :accessor input-end-line)
-   (input-end-col    :initform 0 :accessor input-end-col)))
 
 (defclass vstack (node)
   ((nodes :initarg :nodes :accessor nodes :initform nil)
@@ -134,16 +131,28 @@
 (defclass picture (node)
   ((path :initarg :path :accessor pic-path :initform "")))
 
-;; A leaf holding already-rendered cell rows (a buffer's or a terminal's frame,
-;; each row a (text . runs) pair). One node, not a tree of characters: measure
-;; and arrange are O(1), and paint blits the rows. This is how a buffer or a
+;; A leaf holding rendered cell rows (a buffer's or a terminal's view, each row
+;; a (text . runs) pair). One node, not a tree of characters: measure and
+;; arrange are O(1), and paint blits the rows. This is how a buffer or a
 ;; terminal composes into a widget tree without the layout engine ever touching
-;; the text cell by cell.
-(defclass window (node)
+;; the text cell by cell. The class is WINDOW-NODE (node convention); the
+;; constructor and the wire tag stay `window' -- the user language reads
+;; (window "scratch") and pine.buffer's window (the scroll/focus view) keeps
+;; its own name in its own package. OF backs a live view with that
+;; pine.buffer:window; KIND (:window :modeline :echo) marks what the editor's
+;; render walk refreshes; neither crosses the wire.
+(defclass window-node (node)
   ((rows :initarg :rows :accessor window-rows :initform nil)
    (crow :initarg :crow :accessor window-crow :initform -1)
    (ccol :initarg :ccol :accessor window-ccol :initform -1)
-   (opacity :initarg :opacity :accessor window-opacity :initform 1.0)))
+   (opacity :initarg :opacity :accessor window-opacity :initform 1.0)
+   ;; BASE bounds the in-flow rows; anything before them is an overlay drawn
+   ;; upward from the arranged rect, outside measure -- how the completion
+   ;; popup floats above the echo line wherever the echo sits, without
+   ;; reflowing the tree as the candidate count changes. nil = all rows flow.
+   (base :initarg :base :accessor window-base :initform nil)
+   (of   :initarg :of   :accessor window-of   :initform nil)
+   (kind :initarg :kind :accessor window-kind :initform nil)))
 
 (defclass centerbox (node)
   ((orient    :initarg :orient :accessor cb-orient :initform :v)
@@ -286,7 +295,7 @@ never pushes the end past the surface. (centerbox :orient :v :start .. :end ..)"
   "A leaf rendering already-laid-out cell ROWS (each (text . runs)) -- an Emacs
 window onto a buffer or a terminal. Props may set :crow / :ccol for the point,
 plus any node style. Measure/arrange are O(1); paint blits the rows."
-  (apply #'make-instance 'window :rows rows props))
+  (apply #'make-instance 'window-node :rows rows props))
 
 (defun rows (items item-fn &rest props)
   "A vertical list built by mapping ITEM-FN over ITEMS. (rows nets #'net-row)"
@@ -302,17 +311,25 @@ plus any node style. Measure/arrange are O(1); paint blits the rows."
 
 (defun %face-cell-rgb (designator)
   "(values fr fg fb br bg bb attr) for a face DESIGNATOR; bg -1 means none, attr
-is the packed bold/italic/underline bits. Resolves through the active theme."
-  (let ((fg (pine.buffer:face-fg designator))
-        (bg (pine.buffer:face-bg designator))
-        (attr (let ((f (ignore-errors (pine.buffer:find-face designator))))
-                (if f (pine.buffer:face-attr-bits f) 0))))
-    (values (first fg) (second fg) (third fg)
-            (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
-            attr)))
+is the packed bold/italic/underline bits. DESIGNATOR is a face name resolved
+through the active theme, or a precomputed (FG BG ATTR) tuple -- FG/BG (r g b)
+lists or nil -- installed by RESOLVE-STYLES! for the cell render."
+  (if (consp designator)
+      (destructuring-bind (fg bg attr) designator
+        (let ((f (or fg (pine.buffer:face-fg :default))))
+          (values (first f) (second f) (third f)
+                  (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
+                  (or attr 0))))
+      (let ((fg (pine.buffer:face-fg designator))
+            (bg (pine.buffer:face-bg designator))
+            (attr (let ((f (ignore-errors (pine.buffer:find-face designator))))
+                    (if f (pine.buffer:face-attr-bits f) 0))))
+        (values (first fg) (second fg) (third fg)
+                (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
+                attr))))
 
 
-;;;; Raster — a cell buffer widgets paint into. Cells are the flat 10-slot
+;;;; Raster -- a cell buffer widgets paint into. Cells are the flat 10-slot
 ;;;; [row col code fr fg fb br bg bb bold] format the surface painter draws.
 
 (defstruct (raster (:constructor %make-raster)) cols rows cells (clip nil))
@@ -379,13 +396,6 @@ is the packed bold/italic/underline bits. Resolves through the active theme."
         (loop for c from col below (min end (length text))
               do (raster-put-rgb r row (+ col0 c) (char text c) fr fg fb br bg bb attr))))))
 
-(defun raster-lines (r)
-  (loop for row from 0 below (raster-rows r)
-        collect (let ((s (make-string (raster-cols r))))
-                  (dotimes (col (raster-cols r))
-                    (setf (char s col)
-                          (code-char (svref (raster-cells r) (+ 2 (%cell-off r row col))))))
-                  (string-right-trim '(#\space) s))))
 
 
 ;;;; Layout protocol
@@ -480,37 +490,43 @@ the node's border-box (and everything it lays out inside) sits within its margin
     (loop for i from 0 below (min (length s) w)
           do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
 
-(defmethod measure ((n window) aw ah)
+(defun %window-overlay-count (n)
+  "How many of N's leading rows are overlay (drawn above the arranged rect)."
+  (let ((base (window-base n)))
+    (if base (max 0 (- (length (window-rows n)) base)) 0)))
+
+(defmethod measure ((n window-node) aw ah)
   (declare (ignore aw ah))
   (let* ((rows (window-rows n))
          (cols (reduce #'max rows :initial-value 1 :key (lambda (row) (length (car row)))))
-         (nrows (max 1 (length rows))))
+         (nrows (max 1 (- (length rows) (%window-overlay-count n)))))
     (if *text-size*
         (multiple-value-bind (cw ch) (%text-size "M" (font-px n))
           (values (* cols cw) (* nrows ch)))
         (values cols nrows))))
-(defmethod paint ((n window) r)
-  (loop for row in (window-rows n) for y from (start-line n)
-        do (blit-row r y (start-col n) (car row) (cdr row))))
+(defmethod paint ((n window-node) r)
+  (let ((over (%window-overlay-count n)))
+    (loop for row in (window-rows n)
+          for y from (- (start-line n) over)
+          do (blit-row r y (start-col n) (car row) (cdr row)))))
 
 (defmethod measure ((n separator) aw ah)
-  (declare (ignore ah)) (values aw (%line-h (font-px n))))
+  "A separator's natural size is its thickness; its length comes from the
+container's arrange (:align :stretch), never from the available space --
+reporting AW/AH here would eat the whole axis as natural size."
+  (declare (ignore aw ah))
+  (let ((px (max 1 (pine.buffer:metric :border 2))))
+    (if (sep-vertical n)
+        (values (if *text-size* px 1) 1)
+        (values 1 (if *text-size* px 1)))))
 (defmethod paint ((n separator) r)
-  (loop for col from (start-col n) below (end-col n)
-        do (raster-put r (start-line n) col (sep-char n) (face n))))
+  (if (sep-vertical n)
+      (loop for row from (start-line n) to (end-line n)
+            do (raster-put r row (start-col n) (sep-char n) (face n)))
+      (loop for col from (start-col n) below (end-col n)
+            do (raster-put r (start-line n) col (sep-char n) (face n)))))
 
 (defmethod measure ((n spacer) aw ah) (declare (ignore aw ah)) (values 0 0))
-
-(defmethod measure ((n field) aw ah)
-  (declare (ignore aw ah)) (%text-size (content n) (font-px n)))
-(defmethod arrange ((n field) x y w h)
-  (call-next-method)
-  (setf (input-start-line n) y (input-start-col n) (+ x (prefix-length n))
-        (input-end-line n) y (input-end-col n) (+ x (length (content n)))))
-(defmethod paint ((n field) r)
-  (let ((s (content n)) (w (%node-width n)))
-    (loop for i from 0 below (min (length s) w)
-          do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
 
 (defparameter +slider-filled+ (code-char #x2588)) ; full block
 (defparameter +slider-empty+  (code-char #x2500)) ; light horizontal
@@ -548,7 +564,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
       (multiple-value-bind (cw ch) (measure (node n) iw ih)
         (arrange (node n) (+ ix (floor (- iw cw) 2)) (+ iy (floor (- ih ch) 2)) cw ch)))))
 
-;;; Containers — the flex box algebra
+;;; Containers -- the flex box algebra
 
 (defmethod measure ((n vstack) aw ah)
   (let ((w 0) (h 0) (items (nodes n)))
@@ -566,9 +582,17 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
                       (* (spacing n) (max 0 (1- (length items))))))
            (slack (max 0 (- h natsum)))
            (tw (reduce #'+ (mapcar #'expand-of items) :initial-value 0))
+           (acc 0) (given 0)
            (cy y))
+      ;; slack shares round cumulatively so the extras sum to exactly SLACK --
+      ;; independent rounding can overshoot and push tail children off the rect
       (loop for c in items for (cw ch) in nats
-            for extra = (if (plusp tw) (round (* slack (/ (expand-of c) tw))) 0)
+            for extra = (if (plusp tw)
+                            (progn
+                              (incf acc (* slack (/ (expand-of c) tw)))
+                              (prog1 (- (round acc) given)
+                                (setf given (round acc))))
+                            0)
             for fh = (+ ch extra)
             for cx = (ecase (align n)
                        ((:start :stretch) x)
@@ -596,9 +620,15 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
                       (* (spacing n) (max 0 (1- (length items))))))
            (slack (max 0 (- w natsum)))
            (tw (reduce #'+ (mapcar #'expand-of items) :initial-value 0))
+           (acc 0) (given 0)
            (cx x))
       (loop for c in items for (cw ch) in nats
-            for extra = (if (plusp tw) (round (* slack (/ (expand-of c) tw))) 0)
+            for extra = (if (plusp tw)
+                            (progn
+                              (incf acc (* slack (/ (expand-of c) tw)))
+                              (prog1 (- (round acc) given)
+                                (setf given (round acc))))
+                            0)
             for fw = (+ cw extra)
             for cy = (ecase (align n)
                        ((:start :stretch) y)
@@ -732,47 +762,97 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
   (dolist (row (cells n)) (dolist (cell row) (paint cell r))))
 
 
-;;;; Render entry points
+;;;; The cell render: the same node tree the desktop paints in pixels,
+;;;; rendered to styled cells for a buffer or the chrome. Styling is the ONE
+;;;; resolution: a node's CSS classes through pine.style (the desktop's
+;;;; theme-rules), else its face name through the theme faces -- both terminate
+;;;; in the same (fg bg attr) run values. The arranged tree rides along so any
+;;;; rendered (line col) maps back to its node with no side table.
 
-(defun render-layout-grid (layout &key hover)
-  "Render LAYOUT to (values lines cell-vector slot-count). CELL-VECTOR is the
-flat 10-slot format the surface painter draws; SLOT-COUNT is 10 * cols * rows,
-matching frame-cell-count so paint-cell-grid iterates it with `below n by 10'.
-HOVER, a (line . col) cons, marks the node under it hovered before painting."
-  (let* ((root (layout-root layout))
-         (w (layout-width layout)))
-    (if (null root)
-        (values (list "") (make-array 0) 0)
-        (multiple-value-bind (mw mh) (measure root w (or (layout-height layout) 1000))
-          (declare (ignore mw))
-          (let* ((h (max 1 (or (layout-height layout) mh)))
-                 (r (make-raster w h)))
-            (arrange root 0 0 w h)
-            (when hover
-              (let ((n (node-at root (car hover) (cdr hover))))
-                (when n (setf (hovered n) t))))
-            (paint root r)
-            (values (raster-lines r) (raster-cells r) (* 10 w h)))))))
+(defun node-classes (n)
+  (let ((c (css-class n)))
+    (if c (remove "" (uiop:split-string c :separator '(#\space)) :test #'string=) nil)))
 
-(defun render-layout (layout)
-  (nth-value 0 (render-layout-grid layout)))
+(defun %scale-rgb (c)
+  "pine.style colours are 0..1; cells carry 0..255."
+  (list (round (* 255 (first c))) (round (* 255 (second c))) (round (* 255 (third c)))))
 
-(defun layout-lines (layout)
-  (reduce (lambda (seq line) (fset:with-last seq line))
-          (render-layout layout)
-          :initial-value (fset:empty-seq)))
+(defun %node-cell-style (n full)
+  "The (FG BG ATTR) cell tuple for N from CSS matched on the class chain FULL,
+falling back per-part to N's face name; nil when CSS contributes nothing (the
+face name, if any, then resolves as usual at paint)."
+  (let* ((st (pine.style:resolve full))
+         (css-fg (pine.style:st-fg st))
+         (css-bg (pine.style:st-bg st))
+         (bold (pine.style:st-bold st))
+         (name (and (keywordp (face n)) (face n))))
+    (when (or css-fg css-bg bold)
+      (list (if css-fg (%scale-rgb css-fg) (and name (pine.buffer:face-fg name)))
+            (if css-bg (%scale-rgb css-bg) (and name (pine.buffer:face-bg name)))
+            (logior (if bold 1 0)
+                    (if name
+                        (pine.buffer:face-attr-bits (pine.buffer:find-face name))
+                        0))))))
 
-(defun node-to-string (n width)
-  "Render node N at WIDTH to a single string."
-  (multiple-value-bind (mw mh) (measure n width 1)
-    (declare (ignore mw mh))
-    (let ((r (make-raster width 1)))
-      (arrange n 0 0 width 1)
-      (paint n r)
-      (first (raster-lines r)))))
+(defun resolve-styles! (root &optional chain)
+  "Resolve every node's cell colours before a cell render: CSS classes win,
+the node's face name fills the gaps, and the result lands in the face slot as a
+precomputed (FG BG ATTR) tuple. Colour/weight only -- CSS box properties are
+pixel values and do not apply to cell layout. A selected selectable resolves
+with a \"sel\" class appended, so \".foo.sel\" rules style the selection. Runs
+at build time; the rendered tree is read-only afterwards."
+  (labels ((walk (n chain)
+             (let* ((classes (append (node-classes n)
+                                     (and (typep n 'selectable) (selectedp n)
+                                          (list "sel"))))
+                    (full (append chain (list classes))))
+               (when classes
+                 (let ((tuple (%node-cell-style n full)))
+                   (when tuple (setf (face n) tuple))))
+               (dolist (c (nodes-of n)) (walk c full)))))
+    (walk root chain))
+  root)
+
+(defun raster->rows (r)
+  "Scan raster R into rows (TEXT . RUNS), run = (col fr fg fb br bg bb attr) --
+the same run format frame->rows ships on the wire, so one format serves the
+frame, the chrome, and layout buffer rows."
+  (let ((cols (raster-cols r)) (v (raster-cells r)))
+    (loop for row from 0 below (raster-rows r) collect
+      (let ((text (make-string cols :initial-element #\space)) (runs nil) (prev nil))
+        (dotimes (c cols)
+          (let* ((off (%cell-off r row c))
+                 (style (list (svref v (+ off 3)) (svref v (+ off 4)) (svref v (+ off 5))
+                              (svref v (+ off 6)) (svref v (+ off 7)) (svref v (+ off 8))
+                              (svref v (+ off 9)))))
+            (setf (char text c) (code-char (svref v (+ off 2))))
+            (unless (equal style prev)
+              (push (list* c style) runs)
+              (setf prev style))))
+        (cons text (nreverse runs))))))
+
+(defun render (root width &key height selection)
+  "Render ROOT to cells: flag SELECTION (the nth selectable), resolve styles,
+lay out at WIDTH, paint, and return (values rows tree) -- rows in the wire row
+format, TREE the arranged root whose rects make node-at a position->node map.
+The returned tree is read-only: selection is an input here, never a mutation of
+a published tree. Layout buffers use static children (vstack), not list-node
+item functions, which build only at measure."
+  (let ((*text-size* nil))
+    (when selection
+      (loop for s in (collect-selectables root) for i from 0
+            do (setf (selectedp s) (= i selection))))
+    (resolve-styles! root)
+    (multiple-value-bind (mw mh) (measure root width (or height 1000))
+      (declare (ignore mw))
+      (let* ((h (max 1 (or height mh)))
+             (r (make-raster width h)))
+        (arrange root 0 0 width h)
+        (paint root r)
+        (values (raster->rows r) root)))))
 
 
-;;;; Widgets — a widget is a function of its arguments returning a node tree.
+;;;; Widgets -- a widget is a function of its arguments returning a node tree.
 ;;;; Reading reactive cells (pine.ref:deref) in the body makes it re-render
 ;;;; when those cells change, when rendered inside a reactive view. Widgets
 ;;;; compose by calling one another.
@@ -789,14 +869,17 @@ HOVER, a (line . col) cons, marks the node under it hovered before painting."
 ;;;; lists) is emitted.
 
 (defun %wire-base (n)
-  "The non-default style props of node N as a plist."
+  "The non-default style props of node N as a plist, plus its arranged rect
+when one was assigned (so an arranged tree's geometry crosses the wire)."
   (let (p)
     (flet ((put (k v &optional default) (unless (equal v default) (setf (getf p k) v))))
       (put :class (css-class n)) (put :face (face n)) (put :hint (hint n)) (put :font-px (font-px n))
       (put :radius (radius n) 0) (put :fill (fill-of n)) (put :grad (grad n))
       (put :pad-x (pad-x n) 0) (put :pad-y (pad-y n) 0)
       (put :min-w (min-w n) 0) (put :min-h (min-h n) 0)
-      (put :expand (expand-of n) 0))
+      (put :expand (expand-of n) 0)
+      (when (or (plusp (end-col n)) (plusp (end-line n)))
+        (put :rect (list (start-line n) (start-col n) (end-line n) (end-col n)))))
     p))
 
 (defun node->wire (n &key on-action)
@@ -807,10 +890,10 @@ id to embed."
            (act (cb) (and cb on-action (funcall on-action cb))))
       (etypecase n
         (text-node (list :label (list* :content (content n) (%wire-base n))))
-        (separator (list :rule (%wire-base n)))
+        (separator (list :rule (list* :char (char-code (sep-char n))
+                                      :vertical (sep-vertical n)
+                                      (%wire-base n))))
         (spacer    (list :gap (%wire-base n)))
-        (field     (list :field (list* :content (content n)
-                                       :prefix-length (prefix-length n) (%wire-base n))))
         (slider    (list :meter (list* :value (value n) :min (min-of n) :max (max-of n)
                                        :action (act (on-change n)) (%wire-base n))))
         (ring      (list* :ring (list* :value (value n) :min (min-of n) :max (max-of n)
@@ -821,8 +904,9 @@ id to embed."
         (calendar  (list :calendar (list* :year (cal-year n) :month (cal-month n)
                                           :day (cal-day n) (%wire-base n))))
         (picture   (list :picture (list* :path (pic-path n) (%wire-base n))))
-        (window    (list :window (list* :rows (window-rows n) :crow (window-crow n)
+        (window-node (list :window (list* :rows (window-rows n) :crow (window-crow n)
                                         :ccol (window-ccol n) :opacity (window-opacity n)
+                                        :base (window-base n)
                                         (%wire-base n))))
         (centerbox (list* :centerbox (list* :orient (cb-orient n) (%wire-base n))
                           (kids (list (cb-start n) (cb-center n) (cb-end n)))))
@@ -851,20 +935,34 @@ id to embed."
 (defun %wire-clean (props &rest drop)
   (loop for (k v) on props by #'cddr unless (member k drop) append (list k v)))
 
+(defun arranged-p (n)
+  "True when N carries an arranged rect (from its own arrange, or the wire)."
+  (or (plusp (end-col n)) (plusp (end-line n))))
+
 (defun wire->node (form &key on-action)
-  "Rebuild a node from wire FORM. ON-ACTION, given an id, returns a handler (a
-function of any interaction args) -- the renderer's 'send this id back'."
+  "Rebuild a node from wire FORM, restoring its arranged rect when the wire
+carries one. ON-ACTION, given an id, returns a handler (a function of any
+interaction args) -- the renderer's 'send this id back'."
   (when form
     (destructuring-bind (type props &rest children) form
-      (flet ((kids () (mapcar (lambda (c) (wire->node c :on-action on-action)) children))
-             (handler (id) (and id on-action (funcall on-action id))))
-        (ecase type
+      (let ((rect (getf props :rect)))
+        (setf props (%wire-clean props :rect))
+        (let ((n (%wire->node type props children on-action)))
+          (when (and n rect)
+            (destructuring-bind (sl sc el ec) rect
+              (setf (start-line n) sl (start-col n) sc
+                    (end-line n) el (end-col n) ec)))
+          n)))))
+
+(defun %wire->node (type props children on-action)
+  (flet ((kids () (mapcar (lambda (c) (wire->node c :on-action on-action)) children))
+         (handler (id) (and id on-action (funcall on-action id))))
+    (ecase type
           (:label    (apply #'label (getf props :content "") (%wire-clean props :content)))
-          (:rule     (apply #'rule (%wire-clean props)))
+          (:rule     (apply #'rule :char (code-char (getf props :char #x2500))
+                            :vertical (getf props :vertical)
+                            (%wire-clean props :char :vertical)))
           (:gap      (apply #'gap (%wire-clean props)))
-          (:field    (apply #'make-instance 'field :content (getf props :content "")
-                            :prefix-length (getf props :prefix-length 0)
-                            (%wire-clean props :content :prefix-length)))
           (:meter    (apply #'meter :value (getf props :value 0) :min (getf props :min 0)
                             :max (getf props :max 100)
                             :on-change (handler (getf props :action))
@@ -883,7 +981,8 @@ function of any interaction args) -- the renderer's 'send this id back'."
           (:window   (apply #'window (getf props :rows)
                             :crow (getf props :crow -1) :ccol (getf props :ccol -1)
                             :opacity (getf props :opacity 1.0)
-                            (%wire-clean props :rows :crow :ccol :opacity)))
+                            :base (getf props :base)
+                            (%wire-clean props :rows :crow :ccol :opacity :base)))
           (:centerbox (centerbox :orient (getf props :orient :v)
                                  :class (getf props :class) :hint (getf props :hint)
                                  :expand (getf props :expand 0)
@@ -910,7 +1009,7 @@ function of any interaction args) -- the renderer's 'send this id back'."
                             (append (%wire-clean props :height) (kids))))
           (:centered (apply #'centered (append (%wire-clean props) (kids))))
           (:column   (apply #'column (append (%wire-clean props) (kids))))
-          (:row      (apply #'row (append (%wire-clean props) (kids)))))))))
+          (:row      (apply #'row (append (%wire-clean props) (kids)))))))
 
 
 ;;;; Scroll helper
@@ -924,121 +1023,7 @@ function of any interaction args) -- the renderer's 'send this id back'."
     (max 0 o)))
 
 
-;;;; Layout container + registry (keyed by buffer name on the server)
-
-(defclass layout ()
-  ((root        :initarg :root   :accessor layout-root        :initform nil)
-   (buffer-name :initarg :buffer :accessor layout-buffer-name :initform nil)
-   (state       :initarg :state  :accessor layout-state       :initform nil)
-   (width       :initarg :width  :accessor layout-width       :initform 80)
-   ;; when set, the root is arranged into this many rows (a fixed-size surface
-   ;; like the sidebar), so expanders distribute the extra space; otherwise the
-   ;; natural height is used.
-   (height      :initarg :height :accessor layout-height       :initform nil)))
-
-(defun layouts-table ()
-  (let ((srv (pine.client:server-of (pine.client:current-client))))
-    (or (pine.server:layouts srv)
-        (setf (pine.server:layouts srv) (make-hash-table :test #'equal)))))
-
-(defun install-layout (layout)
-  (setf (gethash (layout-buffer-name layout) (layouts-table)) layout))
-
-(defun uninstall-layout (layout)
-  (remhash (layout-buffer-name layout) (layouts-table)))
-
-(defun buffer-layout (name)
-  (gethash name (layouts-table)))
-
-(defun layout-get (layout key &optional default)
-  (getf (layout-state layout) key default))
-
-(defun (setf layout-get) (value layout key)
-  (setf (getf (layout-state layout) key) value)
-  value)
-
-
-;;;; Input string operations (for fields / completing-read)
-
-(defun input-string (layout)
-  (getf (layout-state layout) :input ""))
-
-(defun (setf input-string) (val layout)
-  (setf (getf (layout-state layout) :input) val))
-
-(defun cursor-offset (layout)
-  (let ((input (input-string layout)))
-    (min (getf (layout-state layout) :cursor-offset (length input))
-         (length input))))
-
-(defun (setf cursor-offset) (val layout)
-  (setf (getf (layout-state layout) :cursor-offset) val))
-
-(defun type-char-at-cursor (layout char)
-  (let* ((input (input-string layout))
-         (off (cursor-offset layout)))
-    (setf (input-string layout)
-          (concatenate 'string (subseq input 0 off) (string char) (subseq input off)))
-    (setf (cursor-offset layout) (1+ off))))
-
-(defun delete-char-before-cursor (layout)
-  (let* ((input (input-string layout))
-         (off (cursor-offset layout)))
-    (when (plusp off)
-      (setf (input-string layout)
-            (concatenate 'string (subseq input 0 (1- off)) (subseq input off)))
-      (setf (cursor-offset layout) (1- off))
-      t)))
-
-(defun kill-input (layout)
-  (setf (input-string layout) ""
-        (cursor-offset layout) 0))
-
-(defun kill-to-end (layout)
-  (let ((off (cursor-offset layout)))
-    (setf (input-string layout) (subseq (input-string layout) 0 off))))
-
-(defun find-word-start (input offset &optional (sep #\space))
-  (let* ((pos (loop for i from (1- offset) downto 0
-                    while (eql (char input i) sep)
-                    finally (return (1+ i)))))
-    (loop for i from (1- pos) downto 0
-          while (not (eql (char input i) sep))
-          finally (return (1+ i)))))
-
-(defun kill-word-before-cursor (layout &optional (sep #\space))
-  (let* ((input (input-string layout))
-         (off (cursor-offset layout))
-         (ws (find-word-start input off sep)))
-    (setf (input-string layout)
-          (concatenate 'string (subseq input 0 ws) (subseq input off)))
-    (setf (cursor-offset layout) ws)))
-
-(defun set-input (layout text)
-  (setf (input-string layout) (or text "")
-        (cursor-offset layout) (length (or text ""))))
-
-(defun move-cursor (layout delta)
-  (let* ((input (input-string layout))
-         (off (cursor-offset layout))
-         (new (max 0 (min (length input) (+ off delta)))))
-    (setf (cursor-offset layout) new)))
-
-(defun cursor-to-start (layout)
-  (setf (cursor-offset layout) 0))
-
-(defun cursor-to-end (layout)
-  (setf (cursor-offset layout) (length (input-string layout))))
-
-(defun confirm-input (layout)
-  (let ((sel (getf (layout-state layout) :selection -1))
-        (filtered (getf (layout-state layout) :filtered)))
-    (if (and (>= sel 0) (< sel (length filtered)))
-        (nth sel filtered)
-      (input-string layout))))
-
-
-;;;; Hit-testing — map an arranged (line col) to the node under it.
+;;;; Hit-testing -- map an arranged (line col) to the node under it.
 
 (defun %node-contains (n line col)
   (and (<= (start-line n) line) (<= line (end-line n))
@@ -1115,22 +1100,3 @@ point is over neither."
                    (t nil)))))
       (walk n))
     (nreverse result)))
-
-(defun update-selection (layout index)
-  (let* ((sels (collect-selectables (layout-root layout)))
-         (n (length sels)))
-    (when (zerop n) (return-from update-selection nil))
-    (setf index (mod index n))
-    (setf (layout-get layout :selection-index) index)
-    (loop for s in sels for i from 0
-          do (setf (selectedp s) (= i index)))
-    (nth index sels)))
-
-(defun selected-node (layout)
-  (let ((idx (layout-get layout :selection-index 0)))
-    (let ((sels (collect-selectables (layout-root layout))))
-      (when sels (nth (mod idx (length sels)) sels)))))
-
-(defun selection-move (layout delta)
-  (let ((idx (layout-get layout :selection-index 0)))
-    (update-selection layout (+ idx delta))))

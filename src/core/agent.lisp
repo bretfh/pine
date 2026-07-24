@@ -1,7 +1,3 @@
-(defpackage #:pine.agent
-  (:use #:cl)
-  (:export #:connect #:serve #:*agent-system* #:*name*))
-
 (in-package #:pine.agent)
 
 ;;;; A process agent's own code. A spawned SBCL image loads :pine and calls
@@ -62,6 +58,13 @@ frontend serving itself up for eval and debugging."
            (let ((ev (gethash eval-id *evals*)))
              (when ev (pine.eval:pick-restart ev restart)))
            (sento.actor:reply :resumed)))
+        (:shutdown
+         ;; kill-agent means the process ends, not just a reply: answer, then
+         ;; exit the image off the actor thread.
+         (sento.actor:reply :ok)
+         (bordeaux-threads:make-thread
+          (lambda () (sleep 0.2) (sb-ext:exit :code 0 :abort t))
+          :name "agent-shutdown"))
         (:crash (sb-ext:exit :abort t))
         (t (sento.actor:reply :unknown)))))
   (sento.actor:tell

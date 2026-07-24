@@ -28,16 +28,6 @@
 (defun find-face (name)
   (gethash name (faces-table)))
 
-(defun face-to-plist (f)
-  "Serialize a face to a plist for crossing the QML boundary."
-  (when f
-    (append
-     (when (fg f) (list :fg (fg f)))
-     (when (bg f) (list :bg (bg f)))
-     (when (bold f) (list :bold t))
-     (when (italic f) (list :italic t))
-     (when (underline f) (list :underline t)))))
-
 (defun face-attr-bits (face)
   "bit 0 bold, bit 1 italic, bit 2 underline."
   (if face
@@ -214,7 +204,7 @@
           (:ring-track     :fg bg-active)))
 
 
-;;;; Face runs — attributed text
+;;;; Face runs -- attributed text
 
 (defclass face-run ()
   ((start-col :initarg :start :accessor run-start :initform 0)
@@ -231,11 +221,3 @@
     :runs (or runs
               (list (make-instance 'face-run
                       :start 0 :end (length text) :face :default)))))
-
-(defun display-line-to-plist (dl)
-  "Serialize a display-line for QML: (:text str :runs ((s e face-plist) ...))."
-  (list :text (display-text dl)
-        :runs (mapcar (lambda (r)
-                        (list (run-start r) (run-end r)
-                              (face-to-plist (find-face (run-face r)))))
-                      (display-runs dl))))

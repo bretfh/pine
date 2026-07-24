@@ -5,51 +5,6 @@
 ;;;; forms, so a config reads as one language and never qualifies a package. The
 ;;;; catalog is doc/pine-user.org.
 
-(defpackage :pine.user
-  (:nicknames :pine-user)
-  (:use :cl)
-  (:import-from :pine.layout
-                #:column #:row #:centerbox #:label #:icon #:button #:ring
-                #:gap #:rule #:rows #:choice)
-  (:import-from :pine.palette
-                #:make-candidate #:register-source #:register-action #:palette-tree)
-  (:import-from :pine.buffer
-                #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
-                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
-                #:ask #:tell)
-  (:import-from :pine.ref #:defref #:find-ref #:deref)
-  (:import-from :pine.source #:defsource #:defpoll #:set!)
-  (:import-from :pine.command #:call-command)
-  (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode)
-  (:import-from :pine.client #:current-client #:current-buffer)
-  (:import-from :pine.editor #:eval-last-sexp #:eval-buffer)
-  (:export
-   ;; surfaces
-   #:defsurface #:show #:hide #:toggle
-   ;; widgets: containers
-   #:column #:row #:centerbox #:center #:box #:scroll
-   ;; widgets: content
-   #:label #:icon #:image #:rule #:gap
-   ;; widgets: controls
-   #:button #:slider #:ring #:choice #:rows
-   ;; widgets: views -- a window renders a buffer; mode line + echo are widgets
-   #:calendar #:window #:buffer #:terminal #:modeline #:echo #:minibuffer #:current
-   ;; completion facility
-   #:make-candidate #:register-source #:register-action #:palette-tree
-   ;; style
-   #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
-   ;; data
-   #:defref #:ref #:set! #:defpoll #:defsource #:sh #:launch
-   ;; behavior
-   #:defcommand #:call-command
-   ;; processes
-   #:defagent #:spawn #:supervise #:kill
-   ;; buffers / editor
-   #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
-   #:ask #:tell #:current-client #:current-buffer
-   #:find-mode #:current-buffer-mode #:set-buffer-mode
-   #:eval-last-sexp #:eval-buffer))
-
 (in-package :pine.user)
 
 ;;;; Widget renames. The layout constructors carry terser class names; the
@@ -62,21 +17,28 @@
 (defun calendar (&rest args) (apply #'pine.layout:cal args))
 (defun image  (path &rest args) (apply #'pine.layout:pic path args))
 
-;;;; Views (content speaks Emacs). A WINDOW renders a BUFFER, with its MODELINE
-;;;; and the ECHO area; CURRENT is the current buffer. A window on the current
-;;;; buffer is `(window (current))'.
+;;;; Views. A WINDOW is a live view of exactly the buffer you name; in the
+;;;; editor surface the declared tree is the LIVE arrangement the split
+;;;; commands mutate. MODELINE and ECHO are widgets you place where you want.
 
-(defun current () (pine.editor:editor-current))
 (defun buffer (name) (pine.buffer:make-buffer name))          ; get or create by name
-(defun window (buffer) (pine.editor:editor-window-node buffer))
-(defun terminal (&optional buffer) (pine.editor:editor-terminal-node buffer))
-(defun modeline () (pine.editor:editor-modeline-node))
+(defun window (x &rest props)
+  "A live view of X's buffer (an actor or a name string): visible lines,
+highlights, region, terminal grid, or layout rows, rendered at the rect the
+tree arranges it into. Props are node style: :opacity :font-px :class :expand."
+  (apply #'pine.editor:editor-window-node x props))
+(defun terminal (x &rest props)
+  "A window view of a terminal buffer."
+  (apply #'pine.editor:editor-terminal-node x props))
+(defun modeline (&optional x)
+  "The mode line: the focused window's by default, or X's buffer's."
+  (pine.editor:editor-modeline-node x))
 (defun echo () (pine.editor:editor-echo-node))
 (defun minibuffer () (echo))
 
 ;;;; Data. SH captures a command's output for a poll or source body; LAUNCH runs
-;;;; one detached, returning a thunk for :on-click. CELL reads a cell, and the
-;;;; read is tracked, so a surface re-renders when a cell it read changes.
+;;;; one detached, returning a thunk for :on-click. REF reads a ref, and the
+;;;; read is tracked, so a surface re-renders when a ref it read changes.
 
 (defun sh (command)
   (or (ignore-errors
@@ -95,6 +57,94 @@
 
 (defmacro defcommand (name args &body body)
   `(pine.command:define-command ,name ,args ,@body))
+
+;;;; Keys (Emacs voice). KBD parses a chord sequence; KEYMAP names one; a
+;;;; command is bound by its string name. A defcommand becomes reachable by key.
+
+(defun kbd (spec)
+  "Parse a key sequence -- \"C-x C-f\", \"M-.\", \"Return\" -- into a key (one
+chord) or a list of keys (a sequence), exactly what DEFINE-KEY takes."
+  (let ((keys (mapcar #'pine.key:parse-key
+                      (remove "" (uiop:split-string spec :separator '(#\space))
+                              :test #'string=))))
+    (if (= 1 (length keys)) (first keys) keys)))
+
+(defun keymap (designator)
+  "The keymap named DESIGNATOR: :global for the global map, or a mode keyword
+for that mode's map."
+  (if (eq designator :global)
+      (pine.mode:global-keymap)
+      (let ((m (find-mode designator)))
+        (if m (pine.mode:mode-keymap m) (error "no mode ~s" designator)))))
+
+(defun define-key (where keys command)
+  "Bind KEYS (from KBD) to COMMAND (a command name string) in WHERE -- a keymap,
+:global, or a mode keyword."
+  (pine.keymap:define-key
+   (if (pine.keymap:keymap-p where) where (keymap where))
+   keys command))
+
+(defun global-set-key (keys command)
+  "Bind KEYS to COMMAND in the global keymap."
+  (pine.keymap:define-key (pine.mode:global-keymap) keys command))
+
+;;;; Modes. DEFMODE / DEFMINOR make a real CLOS class (named NAME) and register
+;;;; a mode instance (keyword :NAME) with its own keymap. Behaviour is plain
+;;;; CLOS on the class: (defmethod dispatch-message ((m NAME) self tag plist) ..)
+;;;; for buffer actions, (defmethod execute ((m NAME) command arg) ..) for
+;;;; command layering. Activate with :NAME (set-buffer-mode / auto-mode) or
+;;;; enable-minor-mode. Reload-safe: redefining replaces the class and the mode.
+
+(defmacro defmode (name (&key (parent :text-mode) (indicator "") ts-language)
+                   &body body)
+  "Define major mode NAME (a symbol) deriving from PARENT (a mode keyword). Its
+keymap is parented to PARENT's. BODY (bindings, defmethods) runs after the class
+exists. Returns the mode keyword :NAME."
+  (let ((kw (intern (string-upcase (string name)) :keyword)))
+    `(let* ((parent-mode (or (find-mode ,parent)
+                             (error "defmode: no parent mode ~s" ,parent))))
+       (c2mop:ensure-class ',name :direct-superclasses (list (class-of parent-mode)))
+       (pine.mode:register-mode
+        (make-instance ',name :name ,kw :parent-mode parent-mode
+                       :indicator ,indicator :ts-language ,ts-language
+                       :keymap (pine.keymap:make-keymap
+                                :name ,kw
+                                :parent (pine.mode:mode-keymap parent-mode))))
+       ,@body
+       ,kw)))
+
+(defmacro defminor (name (&key (precedence 5) transparent (indicator "")) &body body)
+  "Define minor mode NAME (a symbol) with its own standalone keymap. BODY runs
+after the class exists. Returns :NAME."
+  (let ((kw (intern (string-upcase (string name)) :keyword)))
+    `(progn
+       (c2mop:ensure-class ',name
+                           :direct-superclasses (list (find-class 'pine.mode:minor-mode)))
+       (pine.mode:register-mode
+        (make-instance ',name :name ,kw :precedence ,precedence
+                       :transparent ,transparent :indicator ,indicator
+                       :keymap (pine.keymap:make-keymap :name ,kw)))
+       ,@body
+       ,kw)))
+
+;;;; Minor-mode toggles, client-implicit.
+
+(defun enable-minor-mode  (name) (pine.mode:enable-minor-mode  (current-client) name))
+(defun disable-minor-mode (name) (pine.mode:disable-minor-mode (current-client) name))
+(defun toggle-minor-mode  (name) (pine.mode:toggle-minor-mode  (current-client) name))
+
+;;;; Style rules. Add to the one stylesheet the cairo painter and the cell
+;;;; render both read; user rules win the cascade. VALUES are evaluated, so
+;;;; (color :accent) resolves against the active theme.
+
+(defmacro defrules (&rest rules)
+  "Add CSS rules. Each is (SELECTOR PROP VALUE ...); redefining a selector
+replaces it. Reload-safe."
+  `(pine.buffer:add-rules
+    (list ,@(mapcar (lambda (rule)
+                      (destructuring-bind (sel &rest props) rule
+                        `(list ,sel (list ,@props))))
+                    rules))))
 
 ;;;; Processes. SPAWN / SUPERVISE / KILL take the running server implicitly.
 

@@ -1,9 +1,3 @@
-(defpackage #:pine.style
-  (:use #:cl)
-  (:export #:style #:st-bg #:st-gradient #:st-fg #:st-border-w #:st-border-color
-           #:st-radius #:st-pad-x #:st-pad-y #:st-min-w #:st-min-h
-           #:st-font-px #:st-bold #:st-inset #:st-margin #:st-shadow
-           #:resolve #:reset-rules))
 (in-package #:pine.style)
 
 ;;;; The style resolver: pine.buffer:theme-rules is CSS-as-data (selector +
@@ -11,8 +5,8 @@
 ;;;; chain root..node and its hover state -- against those rules the way a
 ;;;; browser cascades them (source order, later wins), then interpret the
 ;;;; matched CSS values into a concrete STYLE the cairo painter consumes.
-;;;; Element and pseudo selectors that only mean something to GTK (trough,
-;;;; highlight, slider, calendar) never match a layout node and drop out.
+;;;; Bare element selectors (button, trough, calendar ...) never match a
+;;;; layout node -- nodes carry classes only -- so those rules drop out.
 
 ;;;; Selector parsing. A selector is comma-separated groups; a group is
 ;;;; whitespace-separated segments (the descendant combinator); a segment is a
@@ -42,13 +36,19 @@
 
 (defvar *compiled* nil)
 (defvar *compiled-theme* nil)
+(defvar *compiled-generation* -1)
 
 (defun compiled-rules ()
-  (unless (and *compiled* (eq *compiled-theme* pine.buffer:*active-theme*))
+  ;; refresh on a theme swap OR when user rules changed (add-rules bumps the
+  ;; generation), so defrules from init.lisp takes effect on reload
+  (unless (and *compiled*
+               (eq *compiled-theme* pine.buffer:*active-theme*)
+               (eql *compiled-generation* pine.buffer:*rules-generation*))
     (setf *compiled*
           (loop for (sel props) in (pine.buffer:theme-rules)
                 collect (cons (parse-rule-selectors sel) props))
-          *compiled-theme* pine.buffer:*active-theme*))
+          *compiled-theme* pine.buffer:*active-theme*
+          *compiled-generation* pine.buffer:*rules-generation*))
   *compiled*)
 
 (defun reset-rules () (setf *compiled* nil))

@@ -5,10 +5,8 @@
 (concatenate-manifests
  (list (specifications->manifest
         (list "sbcl"
-              "gtk"
-              "gobject-introspection"
+              "cairo"
               "tree-sitter"
-              "gtk4-layer-shell"
               "wlr-protocols"
               "libxkbcommon"
               "sbcl-cl-xkb"

@@ -82,7 +82,7 @@ This is what makes the process boundary worth its cost during development.
   live evaluation (id, form, package, status). Render them into a *jobs* buffer,
   auto-refreshing, with abort-evaluation and pick-restart on the selected row.
   One place to see and kill every running eval across every agent.
-- NEW cross-image debugger wiring (editor-session.lisp / editor.lisp). The
+- NEW cross-image debugger wiring (session.lisp / editor.lisp). The
   transport exists: a :process agent's error ships its condition and restart
   names to the daemon's agent-debug actor, and *agent-debug-hook* fires. Install
   a hook that renders that remote restart menu in the editor exactly like the
@@ -118,11 +118,11 @@ Requires P0, P1.
 3. Edit audio-panel. Point inside it, C-M-x (eval-defun).
 4. reload-desktop (or toggle the audio panel). The live panel is your new code.
 
-** WF-B. Add a widget and a pane from scratch
+** WF-B. Add a widget and a panel from scratch
 Requires P0, P1.
 1. In scratch with (in-package :pine.desktop): define hello-panel, defsurface
    "hello", redefine bar-bottom with a Hello ib, each C-M-x.
-2. reload-desktop. The bar has a Hello button; it opens the pane.
+2. reload-desktop. The bar has a Hello button; it opens the panel.
    (Today this needs pine.desktop:: qualifiers and a hand-written push-surface;
    P1 removes both.)
 

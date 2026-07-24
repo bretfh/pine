@@ -24,16 +24,24 @@
    (:module "buffer"
     :serial t
     :components ((:file "buffer") (:file "window") (:file "face") (:file "rules")))
-   (:module "session"
+   (:module "client"
     :serial t
     :components ((:file "client")))
-   (:module "keymap"
+   (:module "state"
     :serial t
-    :components ((:file "key") (:file "keymap") (:file "command") (:file "mode")
-                (:file "variable")))
-   (:module "widget"
+    :components ((:file "ref") (:file "var")))
+   (:module "input"
     :serial t
-    :components ((:file "cell") (:file "sources") (:file "layout")))
+    :components ((:file "key") (:file "keymap") (:file "command")))
+   (:module "mode"
+    :serial t
+    :components ((:file "mode") (:file "edit")))
+   (:module "layout"
+    :serial t
+    :components ((:file "style") (:file "layout")))
+   (:module "source"
+    :serial t
+    :components ((:file "sources")))
    (:module "term"
     :serial t
     :components ((:file "term")))
@@ -46,12 +54,12 @@
    (:module "editor"
     :serial t
     :components ((:file "echo") (:file "kill-ring") (:file "completion")
-                (:file "complete") (:file "minibuffer") (:file "prompt")
-                (:file "isearch") (:file "file") (:file "repl")
-                (:file "editor") (:file "editor-session")))
+                (:file "minibuffer") (:file "isearch") (:file "file")
+                (:file "repl") (:file "editor")
+                (:file "session")))
    (:module "desktop"
     :serial t
-    :components ((:file "desktop") (:file "palette")))
+    :components ((:file "desktop")))
    (:file "user")
    (:file "main")))
 
@@ -72,28 +80,20 @@
                (:file "pty")))
 
 (asdf:defsystem #:pine/cairo
-  :description "GTK-free cairo backend for the widget engine: theme-rules as a
-style resolver + a paint-cairo pass rendering the layout tree to a cairo context."
+  :description "Cairo backend for the widget engine: the paint-px pass rendering
+the layout tree to a cairo context, styled by the shared pine.style resolver
+(which lives in :pine's layout module)."
   :depends-on (#:pine #:cl-cairo2)
   :serial t
   :pathname "src/cairo/"
-  :components ((:file "cell") (:file "style") (:file "paint") (:file "shot")))
+  :components ((:file "display") (:file "paint") (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
-  :description "GTK-free wayland client: wlr-layer-shell bindings + shm/cairo
-surfaces painting the pine.layout tree through the :pine/cairo backend. Uses the
-wayflan library for the raw protocol."
+  :description "Wayland client: wlr-layer-shell bindings + shm/cairo surfaces
+painting the pine.layout tree through the :pine/cairo backend. Uses the wayflan
+library for the raw protocol."
   :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
   :serial t
   :pathname "src/wayland/"
   :components ((:file "layer-shell") (:file "surface") (:file "input") (:file "client")
                (:file "editor") (:file "editor-keys")))
-
-(asdf:defsystem #:pine/gtk
-  :depends-on (#:pine #:pine/cairo #:cl-gtk4 #:cl-gdk4 #:cl-cairo2)
-  :serial t
-  :pathname "src/"
-  :components
-  ((:module "app"
-    :serial t
-    :components ((:file "paint") (:file "desktop-app") (:file "editor-app")))))

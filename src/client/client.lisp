@@ -10,7 +10,12 @@
    (prompt     :initarg :prompt     :accessor prompt     :initform "")
    ;; when set, a function of the current input returning fresh candidates
    ;; (filesystem path completion), instead of filtering a fixed list.
-   (dynamic-fn :initarg :dynamic-fn :accessor dynamic-fn :initform nil)))
+   (dynamic-fn :initarg :dynamic-fn :accessor dynamic-fn :initform nil)
+   ;; the candidate list rendered to styled rows + its arranged tree
+   ;; (pine.layout:render output); render-chrome blits the rows above the
+   ;; echo row while the prompt is active.
+   (popup-rows :initarg :popup-rows :accessor popup-rows :initform nil)
+   (popup-tree :initarg :popup-tree :accessor popup-tree :initform nil)))
 
 (defclass client ()
   ((server-of       :initarg :server-of       :accessor server-of       :initform nil)
@@ -23,7 +28,17 @@
    (render-state    :initarg :render-state    :accessor render-state
                     :initform (fset:map (:dirty nil)))
    (frame           :initarg :frame           :accessor frame           :initform nil)
+   ;; the attached surface's pixel geometry, reported with :resize; when set,
+   ;; the editor tree arranges once, in pixels, on the daemon
+   (px-width        :initarg :px-width        :accessor px-width        :initform nil)
+   (px-height       :initarg :px-height       :accessor px-height       :initform nil)
+   (cell-w          :initarg :cell-w          :accessor cell-w          :initform nil)
+   (cell-h          :initarg :cell-h          :accessor cell-h          :initform nil)
    (windows         :initarg :windows         :accessor windows         :initform nil)
+   ;; the window arrangement: a pine.buffer:window leaf, or (:column ...) /
+   ;; (:row ...) over such trees -- the split shape C-x 2/3/0/1 rewrite.
+   ;; nil means the single window in WINDOWS.
+   (arrangement     :initarg :arrangement     :accessor arrangement     :initform nil)
    (focused-window  :initarg :focused-window  :accessor focused-window  :initform nil)
    (pending-keys    :initarg :pending-keys    :accessor pending-keys    :initform nil)
    (prefix-arg      :initarg :prefix-arg      :accessor prefix-arg      :initform nil)

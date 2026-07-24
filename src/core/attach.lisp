@@ -1,11 +1,3 @@
-(defpackage #:pine.attach
-  (:use #:cl)
-  (:export #:start-attach-listener #:attach-listener
-           #:attach-to-daemon #:register-app-kind
-           #:attached-client #:attached-client-id #:attached-client-kind
-           #:attached-client-display #:attached-client-input #:attached-client-session
-           #:*clients* #:push-to-app))
-
 (in-package #:pine.attach)
 
 ;;;; The attach seam. An app process (editor, desktop) connects to the headless
@@ -19,7 +11,7 @@
 ;;;;   daemon -> app display : (:attached :id N :client-uri V)
 ;;;;   app makes a remote-ref to V and sends input to it:
 ;;;;   app  -> daemon client-N   : (:key ...) (:resize ...) ...
-;;;;   daemon -> app display     : (:frame ...) (:cell ...) (:status ...) ...
+;;;;   daemon -> app display     : (:widgets ...) (:panel ...) ...
 ;;;;
 ;;;; Only plain data crosses (the sexp wire): lists, numbers, strings, keywords,
 ;;;; vectors. fset/CLOS values are rendered to plain data at the edge.

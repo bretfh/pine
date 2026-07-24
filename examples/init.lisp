@@ -20,3 +20,45 @@
            (icon #x0F028 :class "icon" :on-click (show audio) :hint "Volume")
            (icon #x0F1EB :class "net"  :on-click (show network) :hint "Network")
            (icon #x0F007 :class "corner-sq" :on-click (show ctl) :hint "System"))))
+
+
+;;;; ------------------------------------------------------------------
+;;;; Editor authorship: keys, a mode, a variable, a styled tool buffer.
+;;;; The same node language as the bar above -- one layer, any surface.
+;;;; ------------------------------------------------------------------
+
+;; a command and a global binding for it
+(defcommand "reload-init" ()
+  (call-command "reload-desktop")
+  (message "init reloaded"))
+(global-set-key (kbd "C-c r") "reload-init")
+
+;; an editor variable, read by a command
+(defonce :greeting :default "hi" :documentation "what greet echoes")
+(defcommand "greet" () (message (var :greeting)))
+(global-set-key (kbd "C-c g") "greet")
+
+;; a minor mode with its own key, toggled by a command
+(defminor focus-minor (:precedence 12 :indicator "Focus"))
+(define-key (keymap :focus-minor) (kbd "C-c f") "greet")
+(defcommand "toggle-focus" () (toggle-minor-mode :focus-minor))
+(global-set-key (kbd "C-c t") "toggle-focus")
+
+;; a major mode for .todo files, deriving from text-mode
+(defmode todo-mode (:parent :text-mode :indicator "TODO"))
+(auto-mode "todo" :todo-mode)
+
+;; a styled tool buffer: selectable rows whose Return runs a thunk
+(defrules (".tool-title" :color (color :accent) :font-weight "bold")
+          (".tool-row.sel" :background-color (color :bg-active)))
+
+(defcommand "scratchpad" ()
+  (show-layout "*scratchpad*"
+    (lambda (state) (declare (ignore state))
+      (column :align :stretch
+        (label "scratchpad" :class "tool-title")
+        (choice :class "tool-row" :data (lambda () (call-command "greet"))
+          (label "greet"))
+        (choice :class "tool-row" :data (lambda () (call-command "open-repl"))
+          (label "open a repl"))))))
+(global-set-key (kbd "C-c s") "scratchpad")

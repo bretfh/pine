@@ -293,7 +293,7 @@ Genuinely still open (the debugger items are detailed in design/errors.org):
 - Live cross-image redefinition of a whole image's state (instance migration;
   source-of-truth when several images run the same widget code) is still the open
   design question, though eval/compile-into-a-target already works.
-- Two completion UIs coexist: the editor minibuffer (editor/complete.lisp, cell
+- Two completion UIs coexist: the editor minibuffer (editor/minibuffer.lisp, cell
   grid) and the desktop palette (desktop/palette.lisp, widget tree), not unified
   onto one structured-surface model (design/surfaces.org).
 - :media depends on a running emacs/EMMS via emacsclient (widget/sources.lisp) --

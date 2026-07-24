@@ -1,7 +1,3 @@
-(defpackage #:pine.jobs
-  (:use #:cl)
-  (:export #:install-jobs #:list-jobs #:*agent-jobs*))
-
 (in-package #:pine.jobs)
 
 ;;;; The jobs surface's data: every live evaluation across the daemon and every

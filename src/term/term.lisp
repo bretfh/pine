@@ -1,10 +1,10 @@
 (in-package :pine.term)
 
 ;;;; Terminal buffers: a pine.vt emulator driven by a pty. The reader thread
-;;;; only appends bytes to PENDING under a lock; the GTK pump drains PENDING on
-;;;; the main thread (drain-terminals) and feeds the emulator, so the term is
-;;;; only ever mutated from one thread. Keys go straight to the pty as escape
-;;;; sequences via the dispatch hook.
+;;;; only appends bytes to PENDING under a lock; the renderer's term tick drains
+;;;; PENDING (drain-terminals) and feeds the emulator, so the term is only ever
+;;;; mutated from one thread. Keys go straight to the pty as escape sequences
+;;;; via the dispatch hook.
 
 (defstruct (terminal (:constructor %make-terminal))
   buffer
@@ -34,8 +34,8 @@ so memory and latency stay bounded rather than falling minutes behind.")
       (setf (pine.client:terminal-map client) (make-hash-table :test 'eq))))
 
 (defun terminal-for-buffer (buffer)
-  (let ((cli (pine.client:current-client)))
-    (and buffer (gethash buffer (terminal-map cli)))))
+  (let ((cli pine.client:*client*))
+    (and cli buffer (gethash buffer (terminal-map cli)))))
 
 (defun gterm-text (terminal)
   (if terminal (pine.vt:term-dump-to-string (terminal-term terminal)) ""))

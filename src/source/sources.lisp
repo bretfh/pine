@@ -1,18 +1,12 @@
-(defpackage #:pine.source
-  (:use #:cl)
-  (:export #:start-sources #:stop-sources #:workspaces
-           #:defsource #:defpoll #:set! #:ref-of
-           #:select! #:act! #:select-sink!))
-
 (in-package #:pine.source)
 
-;;;; Data sources feed reactive cells; widgets read those cells and re-render on
+;;;; Data sources feed reactive refs; widgets read those refs and re-render on
 ;;;; change. A source is either a STREAM (a subprocess line stream that triggers
 ;;;; a refresh, event-driven) or a POLL (a refresh on an interval). Either way
-;;;; the actual work (shell reads + set-cell) runs on a source actor owned by
+;;;; the actual work (shell reads + set!) runs on a source actor owned by
 ;;;; the actor system, off both the reader thread and the timer thread. Sources
 ;;;; are declared with defsource / defpoll and started together by start-sources.
-;;;; This is the runtime behind the widgets' cell reads -- pine's eww broker.
+;;;; This is the runtime behind the widgets' ref reads -- pine's eww broker.
 
 (defun ref-of (name)
   (or (pine.ref:find-ref name) (pine.ref:make-ref :name name)))
@@ -149,14 +143,14 @@ and returns a source (usually via start-stream / start-poll)."
   `(setf (gethash ',name *source-defs*) (lambda (,system) ,@body)))
 
 (defmacro defpoll (name interval &body body)
-  "Reactive cell NAME refreshed to (progn BODY) every INTERVAL seconds."
+  "Reactive ref NAME refreshed to (progn BODY) every INTERVAL seconds."
   `(defsource ,name (system)
      (let ((c (ref-of ',name)))
        (start-poll system ,interval
                    (lambda () (pine.ref:set-ref c (progn ,@body)))))))
 
 (defmacro deflisten (name command (line) &body body)
-  "Reactive cell NAME fed from COMMAND's stdout: each LINE sets it to (progn
+  "Reactive ref NAME fed from COMMAND's stdout: each LINE sets it to (progn
 BODY) when that is non-nil."
   (let ((val (gensym)))
     `(defsource ,name (system)
@@ -181,7 +175,7 @@ alongside the other agents. A source is the desktop's data adapter."
                        (ignore-errors
                         (pine.actor:register-agent
                          server (format nil "source:~(~a~)" name)
-                         :source (source-actor s) :meta (list :cell name)))
+                         :source (source-actor s) :meta (list :ref name)))
                     and collect s)))))
 
 (defun stop-sources ()
@@ -274,7 +268,7 @@ the actor system. No thread is killed."
     (nreverse parts)))
 
 (defun %lines (s) (remove "" (%split s #\newline) :test #'string=))
-(defun cell-val (name) (let ((c (pine.ref:find-ref name))) (and c (pine.ref:deref c))))
+(defun ref-val (name) (let ((c (pine.ref:find-ref name))) (and c (pine.ref:deref c))))
 
 (defun net-connected ()
   (dolist (line (%lines (sh "nmcli" "-t" "-f" "TYPE,STATE,CONNECTION"
@@ -325,7 +319,7 @@ the actor system. No thread is killed."
           (t                (list (list :label "Connect" :style "go" :kind "connect"))))))
 
 (defun push-actions (rows)
-  (let* ((cur (cell-val :netsel))
+  (let* ((cur (ref-val :netsel))
          (sel (if (and cur (plusp (length cur))) cur (connected-ssid rows))))
     (set! :netsel (or sel ""))
     (set! :netactions (and sel (actions-for sel rows)))))
@@ -340,11 +334,11 @@ the actor system. No thread is killed."
 (defun select! (ssid)
   "Select network SSID: update its action set. Called from a panel row."
   (set! :netsel (or ssid ""))
-  (set! :netactions (and ssid (actions-for ssid (cell-val :netlist)))))
+  (set! :netactions (and ssid (actions-for ssid (ref-val :netlist)))))
 
 (defun act! (kind)
   "Run action KIND on the selected network. Called from a panel button."
-  (let* ((cur (cell-val :netsel))
+  (let* ((cur (ref-val :netsel))
          (ssid (and cur (plusp (length cur)) cur)))
     (when ssid
       (cond

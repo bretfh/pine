@@ -23,19 +23,22 @@
   (action nil)               ; thunk run on accept, or nil
   (category nil)             ; keyword: :command :buffer :file ...
   (source nil)               ; owning source name, for narrowing
+  (value nil)                ; the object acted on; defaults to the string
   (spans nil)                ; list of (start . end) matched char ranges
   (score 0))                 ; lower is a tighter match
 
-(defun candidate (string &key annotation preview action category source)
+(defun candidate (string &key annotation preview action category source
+                              (value string))
   "Construct a candidate. Bare strings passed to the engine are upgraded via
 TO-CANDIDATE; use this when a table wants to carry metadata."
   (%make-candidate :string string :annotation annotation :preview preview
-                   :action action :category category :source source))
+                   :action action :category category :source source
+                   :value value))
 
 (defun to-candidate (x)
   (etypecase x
     (candidate x)
-    (string (%make-candidate :string x))))
+    (string (%make-candidate :string x :value x))))
 
 ;;;; Tables
 
@@ -51,7 +54,8 @@ leak between inputs."
                                        :preview (candidate-preview cc)
                                        :action (candidate-action cc)
                                        :category (candidate-category cc)
-                                       :source (candidate-source cc)))))
+                                       :source (candidate-source cc)
+                                       :value (candidate-value cc)))))
     (etypecase table
       (function (multiple-value-bind (cands meta) (funcall table input)
                   (values (mapcar #'fresh cands) meta)))
@@ -124,3 +128,72 @@ order the UI can page through."
           for matched = (funcall style input cands matchers separator)
           when matched return (rank-candidates matched)
           finally (return nil))))
+
+;;;; Sources and actions. A source is a named table (any table the engine
+;;;; accepts); actions are per-category alists of (label . function-of-value),
+;;;; run on the selected candidate's value. One registry pair for every
+;;;; completion surface -- minibuffer popup and desktop widget alike.
+
+(defvar *sources* (make-hash-table :test 'eq))
+(defun register-source (name table) (setf (gethash name *sources*) table))
+(defun source-table (name) (gethash name *sources*))
+
+(defvar *actions* (make-hash-table :test 'eq))
+(defun register-actions (category alist) (setf (gethash category *actions*) alist))
+(defun candidate-actions (cand)
+  (and cand (gethash (candidate-category cand) *actions*)))
+
+;;;; The candidate list as a node tree. Two builders over the one candidate
+;;;; struct: COMPLETION-POPUP renders to cells (blitted into the chrome above
+;;;; the echo row), COMPLETION-WIDGET is the desktop's pixel rendering of the
+;;;; same data. Selection is flagged at render (pine.layout:render :selection),
+;;;; styled by the .cand-row.sel rules.
+
+(defun completion-popup (visible)
+  "The VISIBLE candidates as selectable rows: string left, annotation right."
+  (apply #'pine.layout:column :align :stretch
+         (if visible
+             (mapcar (lambda (cand)
+                       (pine.layout:choice
+                        :class "cand-row" :prefix-selected "" :prefix-unselected ""
+                        (pine.layout:row :spacing 1
+                          (pine.layout:label (candidate-string cand) :class "cand")
+                          (pine.layout:gap)
+                          (let ((a (candidate-annotation cand)))
+                            (when a (pine.layout:label a :class "cand-annot"))))))
+                     visible)
+             (list (pine.layout:label "(no matches)" :class "cand")))))
+
+(defun %category-glyph (category)
+  (case category
+    (:command #x0F0493) (:buffer #x0F0219) (:file #x0F0210)
+    (:window #x0F02D1) (:system #x0F0709) (t #x0F0766)))
+
+(defun completion-widget (candidates &key (query "") (selected 0) (title ""))
+  "The candidates as a desktop widget tree (the launcher look): a query header,
+one row per candidate with a category glyph + annotation, and the selected
+candidate's actions in the footer."
+  (let* ((sel (and candidates
+                   (nth (max 0 (min selected (1- (length candidates)))) candidates)))
+         (acts (candidate-actions sel)))
+    (pine.layout:column :class "netmenu" :align :stretch
+      (pine.layout:row :class "nm-card nm-head" :align :center :spacing 10
+        (pine.layout:icon #x0F0349 :class "nm-head-ico")
+        (pine.layout:label query :class "nm-title")
+        (pine.layout:label "█" :class "nm-title")
+        (pine.layout:label title :class "nm-subhead"))
+      (apply #'pine.layout:column :class "nm-card nm-list-card" :align :stretch :spacing 3
+        (loop for c in candidates for i from 0 collect
+          (pine.layout:row :class (if (= i selected) "nm-row sel" "nm-row")
+                           :align :center :spacing 12
+            (pine.layout:icon (%category-glyph (candidate-category c)) :class "nm-sig")
+            (pine.layout:label (candidate-string c) :expand 1
+                               :class (if (= i selected) "nm-name active" "nm-name"))
+            (pine.layout:label (or (candidate-annotation c) "") :class "nm-lock"))))
+      (apply #'pine.layout:row :class "nm-actions" :align :center :spacing 16
+        (pine.layout:label "RET run" :class "nm-name active")
+        (append
+         (loop for (label . nil) in acts collect
+           (pine.layout:label label :class "nm-subhead"))
+         (list (pine.layout:gap :expand 1)
+               (pine.layout:label "actions" :class "nm-sig hi")))))))

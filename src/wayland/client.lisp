@@ -1,13 +1,12 @@
 (in-package #:pine.wayland)
 
-;;;; The daemon-attached desktop client -- the wayland/cairo replacement for
-;;;; pine.desktop-app. It attaches to the running daemon as :kind :desktop,
-;;;; receives (:widgets :surface NAME :tree DATA) pushes, rebuilds each surface's
-;;;; node tree with pine.layout:wire->node (click handlers become ids sent back),
-;;;; and paints it onto a wlr-layer-shell surface with cairo. Panels toggle via
-;;;; (:panel :name :show). Interaction sends (:widget-action)/(:hint) to the
-;;;; daemon, which runs the closures -- the tree crosses as data, the closures
-;;;; and cells stay on the daemon, exactly like the GTK app.
+;;;; The daemon-attached desktop client. It attaches to the running daemon as
+;;;; :kind :desktop, receives (:widgets :surface NAME :tree DATA) pushes,
+;;;; rebuilds each surface's node tree with pine.layout:wire->node (click
+;;;; handlers become ids sent back), and paints it onto a wlr-layer-shell
+;;;; surface with cairo. Panels toggle via (:panel :name :show). Interaction
+;;;; sends (:widget-action)/(:hint) to the daemon, which runs the closures --
+;;;; the tree crosses as data, the closures and refs stay on the daemon.
 ;;;;
 ;;;; Threading: wayland calls must all run on the loop thread, but sento delivers
 ;;;; the display actor's messages on pool threads. So the actor handler only

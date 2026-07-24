@@ -2,7 +2,7 @@
 
 
 ;;;; ================================================================
-;;;; Windows — views into buffers
+;;;; Windows -- views into buffers
 ;;;; ================================================================
 
 (defclass window ()
@@ -116,29 +116,3 @@ Clips lines to window width using horizontal scroll offset (col)."
           ((>= pc (+ left wid)) (setf (col w) (1+ (- pc wid)))))))))
 
 
-;;;; Frame building
-
-(defun build-frame (&optional (cli (pine.client:current-client)))
-  (let ((f (pine.client:frame cli))
-        (ws (pine.client:windows cli)))
-    (dolist (w ws)
-      (ensure-point-visible w)
-      (setf (win-display w) (window-display-lines w)))
-    (setf (windows f) ws)
-    f))
-
-(defun frame-to-plist (f)
-  "Serialize frame for QML."
-  (list :cols (frame-cols f)
-        :rows (frame-rows f)
-        :windows
-        (mapcar (lambda (w)
-                  (list :name (window-name w)
-                        :row (row w) :col (col w)
-                        :width (win-width w) :height (win-height w)
-                        :focused (focusedp w)
-                        :point-line (if (snap w) (- (point-line (snap w)) (scroll-top w)) 0)
-                        :point-col (if (snap w) (point-col (snap w)) 0)
-                        :lines (mapcar #'display-line-to-plist
-                                       (or (win-display w) nil))))
-                (windows f))))

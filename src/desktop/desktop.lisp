@@ -1,9 +1,3 @@
-(defpackage #:pine.desktop
-  (:use #:cl)
-  (:export #:install-desktop-sessions
-           #:defsurface #:set-surface-role #:push-surface #:show-panel #:hide-panel
-           #:refresh-all #:*surface-client*))
-
 (in-package #:pine.desktop)
 
 (defvar *surface-client* nil
@@ -12,12 +6,12 @@ firing for. Bound so show / hide / toggle need no explicit client argument.")
 
 ;;;; The daemon-side desktop machinery. It hosts NAMED surfaces -- the bar and
 ;;;; each toggled panel, all declared in the user's init.lisp -- as declarative
-;;;; trees built from cells. A surface's tree is serialized (node->wire) with its
+;;;; trees built from refs. A surface's tree is serialized (node->wire) with its
 ;;;; click handlers registered under ids, and pushed to the desktop app as
 ;;;; (:widgets :surface NAME :tree DATA :as ROLE). The app renders each surface;
 ;;;; interacting sends (:widget-action :id N ...) back and the daemon runs the
 ;;;; closure. Panels toggle via (:panel :name NAME :show B). The tree crosses as
-;;;; data; the closures and the cells stay here. The surfaces themselves live in
+;;;; data; the closures and the refs stay here. The surfaces themselves live in
 ;;;; init.lisp, not here.
 
 ;;;; Surface registry: name -> builder (aclient -> node tree).
@@ -58,7 +52,7 @@ old ones), and push it to the app."
                                  :as (surface-role name))))))
 
 (defun surface-view (aclient name)
-  "A reactive view that re-pushes surface NAME when a cell it reads changes."
+  "A reactive view that re-pushes surface NAME when a ref it reads changes."
   (let (view)
     (setf view (pine.ref:make-view
                 (lambda () (push-surface aclient name))

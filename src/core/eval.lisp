@@ -182,7 +182,7 @@ eval (e.g. *client*). ON-DONE / ON-ERROR run on the eval thread."
     ev))
 
 (defun evaluate-thunk (thunk &key (package *package*) bindings on-done on-error)
-  "Run THUNK (a nullary function) as an evaluation — a widget onclick handler
+  "Run THUNK (a nullary function) as an evaluation -- a widget onclick handler
 can't hang or crash the UI thread."
   (evaluate nil :thunk thunk :package package :bindings bindings
                 :on-done on-done :on-error on-error))

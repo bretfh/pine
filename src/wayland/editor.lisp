@@ -1,11 +1,11 @@
 (defpackage #:pine.wl-editor
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell)
   (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:s #:pine.surface) (#:l #:pine.layout) (#:bt #:bordeaux-threads))
+                    (#:s #:pine.display) (#:l #:pine.layout) (#:bt #:bordeaux-threads))
   (:export #:run-editor #:*keyboard-handler*))
 (in-package #:pine.wl-editor)
 
-;;;; The GTK-free editor: an xdg-shell toplevel that attaches to the daemon as
+;;;; The editor frontend: an xdg-shell toplevel that attaches to the daemon as
 ;;;; :kind :editor and renders the `editor' surface -- one (:widgets ...) widget
 ;;;; tree (a window on the current buffer, a mode line, an echo line) -- through
 ;;;; the shared pine.layout / cairo pass into an shm buffer, exactly like the
@@ -106,7 +106,10 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
   (let ((cc (ed-cols ed)) (rr (ed-rows ed)))
     (unless (and (= cc (ed-sent-cols ed)) (= rr (ed-sent-rows ed)))
       (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr)
-      (send-input ed (list :resize :cols cc :rows rr)))))
+      (send-input ed (list :resize :cols cc :rows rr
+                           :width (ed-width ed) :height (ed-height ed)
+                           :cell-w (round (ed-cell-w ed))
+                           :cell-h (round (ed-cell-h ed)))))))
 
 ;;;; Paint a frame into an shm buffer.
 
@@ -126,7 +129,10 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
               (ensure-metrics ed)
               (maybe-resize ed)
               (when (ed-tree ed)
-                (l:with-cairo-layout (l:paint-tree (ed-tree ed) width height))))
+                (l:with-cairo-layout
+                  (if (l:arranged-p (ed-tree ed))
+                      (l:paint-arranged (ed-tree ed))
+                      (l:paint-tree (ed-tree ed) width height)))))
             (wl-surface.attach wl-surface buffer 0 0)
             (wl-surface.damage-buffer wl-surface 0 0 width height)
             (wl-surface.commit wl-surface)
@@ -193,7 +199,10 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
      (destructuring-bind (&key id client-uri) (rest msg)
        (declare (ignore id))
        (setf (ed-ref ed) (sento.remoting:make-remote-ref (ed-sys ed) client-uri))
-       (send-input ed (list :resize :cols (ed-cols ed) :rows (ed-rows ed)))))
+       (send-input ed (list :resize :cols (ed-cols ed) :rows (ed-rows ed)
+                            :width (ed-width ed) :height (ed-height ed)
+                            :cell-w (round (ed-cell-w ed))
+                            :cell-h (round (ed-cell-h ed))))))
     ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
     ;; -- the buffer's rows ride inside the window node -- and repaint.
     (:widgets

@@ -135,8 +135,8 @@
                                 (pine.layout:node->wire tree)))) rows)
       (push (%safe (lambda () (defbench "wire->node (deserialize bar)"
                                 (pine.layout:wire->node wire)))) rows)
-      (push (%safe (lambda () (defbench "node-to-string (render bar, w=80)"
-                                (pine.layout:node-to-string tree 80)))) rows)
+      (push (%safe (lambda () (defbench "render (bar -> cell rows, w=80)"
+                                (pine.layout:render tree 80)))) rows)
       (print-table "widget view build (per push / per frame)" (nreverse rows)))))
 
 (defun bench-ts ()

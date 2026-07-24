@@ -1,8 +1,3 @@
-(defpackage #:pine.keymap
-  (:use #:cl)
-  (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
-           #:define-key #:keymap-lookup #:prefix-p #:keymap-bindings))
-
 (in-package #:pine.keymap)
 
 (defstruct (keymap (:constructor %make-keymap) (:copier nil))

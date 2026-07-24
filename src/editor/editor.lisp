@@ -153,13 +153,6 @@ from the buffer, or nil."
              (incf i))
     (min (+ i col) n)))
 
-(defun %show-eval-result (form thunk)
-  (handler-case
-      (let ((values (multiple-value-list (funcall thunk))))
-        (pine.echo:message (format nil "=> ~{~s~^, ~}" values))
-        (values-list values))
-    (error (c) (pine.echo:message (format nil "error in ~s: ~a" form c)) nil)))
-
 ;;;; Evaluation runs through pine.eval on its own thread, never on the UI
 ;;;; thread, so a slow/looping/erroring form can't hang or crash the editor.
 
@@ -205,16 +198,12 @@ into the image that broke.")
     (:ok (%eval-notify (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
     (:aborted (%eval-notify "aborted"))))
 
-;;;; The debugger buffer is a real mode, not raw text: restart lines carry
-;;;; faces and indices, and debugger-mode's keymap (0-9, Return, a, q, Tab)
-;;;; drives the choice. The restart stays live on its blocked thread (or in its
-;;;; agent); only the decision moves. The next three are render-scoped: the
-;;;; restart data of the currently painted (attended) session.
+;;;; The debugger buffer is a layout buffer: restart rows are selectable
+;;;; nodes whose activation invokes that restart, so Return / C-n / C-p are the
+;;;; ordinary surface interaction and point->node needs no side table. The
+;;;; restart stays live on its blocked thread (or in its agent); only the
+;;;; decision moves.
 
-(defvar *debugger-restarts* #()
-  "Vector of restart names shown in the live debugger buffer, by index.")
-(defvar *debugger-restart-lines* nil
-  "Alist (buffer-line . restart-index) for Return-on-a-restart-line.")
 (defvar *debugger-return-to* nil
   "Buffer name to return to when the last session is resolved or dismissed.")
 
@@ -227,51 +216,50 @@ into the image that broke.")
         (when r
           (sento.actor:tell r (list :switch-buffer :buffer buf :name name)))))))
 
-(defun %render-session (session)
-  "Paint SESSION into the *debugger* buffer, make it the attended one, and switch
-to it. A switcher header names which session of how many is shown. The eval
-target follows the attended fault, so C-x C-e / recompile land in the image that
-broke -- fix the defun there, then pick retry."
+(defun %debugger-builder (session ordered)
+  "The *debugger* layout for SESSION: switcher row (when several sessions are
+live), header, condition, one selectable restart row per restart -- activation
+invokes that restart -- and the backtrace."
+  (lambda (state)
+    (declare (ignore state))
+    (apply #'pine.layout:column :align :stretch
+           (append
+            (when (> (length ordered) 1)
+              (list (pine.layout:label
+                     (format nil "session ~d/~d  (Tab: next)   ~{~a~^  |  ~}"
+                             (1+ (or (position session ordered) 0)) (length ordered)
+                             (mapcar #'dbg-session-header ordered))
+                     :class "dbg-switch")
+                    (pine.layout:label "")))
+            (list (pine.layout:label (dbg-session-header session) :class "dbg-header")
+                  (pine.layout:label ""))
+            (mapcar (lambda (l) (pine.layout:label l :class "dbg-cond"))
+                    (pine.buffer:split-lines (dbg-session-condition session)))
+            (list (pine.layout:label "")
+                  (pine.layout:label "Restarts (Return on a line):" :class "dbg-note"))
+            (loop for (name report) in (dbg-session-restarts session) collect
+              (pine.layout:choice
+               :class "restart" :prefix-selected "" :prefix-unselected ""
+               :data (let ((nm name)) (lambda () (invoke-pending-restart nm)))
+               (pine.layout:label (format nil "  [~a]  ~a" (or name "") (or report ""))
+                                  :class "restart-lbl")))
+            (when (dbg-session-backtrace session)
+              (list* (pine.layout:label "")
+                     (pine.layout:label "Backtrace:" :class "dbg-note")
+                     (mapcar (lambda (l) (pine.layout:label l :class "dbg-bt"))
+                             (pine.buffer:split-lines (dbg-session-backtrace session)))))))))
+
+(defun %attend-session (session)
+  "Open SESSION in the *debugger* buffer, make it the attended one, and switch
+to it. The eval target follows the attended fault, so C-x C-e / recompile land
+in the image that broke -- fix the defun there, then pick retry."
   (setf *attended-session* session
         *eval-target* (ecase (dbg-session-kind session)
                         (:agent (dbg-session-agent session))
                         (:local :local)))
-  (let ((lines nil) (hl nil) (rlines nil) (i 0)
-        (restarts (dbg-session-restarts session))
-        (ordered (reverse *debugger-sessions*)))        ; oldest first, stable order
-    (flet ((add (text face)
-             (push text lines)
-             (when face (push (list i 0 999 face) hl))
-             (incf i)))
-      (when (> (length ordered) 1)
-        (add (format nil "session ~d/~d  (Tab: next)   ~{~a~^  |  ~}"
-                     (1+ (or (position session ordered) 0)) (length ordered)
-                     (mapcar #'dbg-session-header ordered))
-             :comment)
-        (add "" nil))
-      (add (dbg-session-header session) :function-name)
-      (add "" nil)
-      (dolist (cl (%split-lines* (dbg-session-condition session))) (add cl :string))
-      (add "" nil)
-      (add "Restarts (press the number, or Return on a line):" :comment)
-      (loop for (name report) in restarts for idx from 0
-            do (push (cons i idx) rlines)
-               (add (format nil "  ~d  [~a]  ~a" idx (or name "") (or report ""))
-                    :keyword))
-      (add "" nil)
-      (when (dbg-session-backtrace session)
-        (add "Backtrace:" :comment)
-        (dolist (bl (%split-lines* (dbg-session-backtrace session))) (add bl :comment))))
-    (setf *debugger-restarts* (coerce (mapcar #'first restarts) 'vector)
-          *debugger-restart-lines* (nreverse rlines))
-    (let ((buf (pine.buffer:make-buffer "*debugger*")))
-      (pine.buffer:tell buf :replace-content
-                        :content (format nil "~{~a~^~%~}" (nreverse lines)))
-      (pine.mode:set-buffer-mode buf :debugger-mode)
-      (pine.buffer:tell buf :set-highlights :highlights (nreverse hl))
-      (pine.render:subscribe-to-buffer buf)
-      (%switch-to-buffer "*debugger*")
-      buf)))
+  (show-layout "*debugger*"
+                (%debugger-builder session (reverse *debugger-sessions*))
+                :mode :debugger-mode :selection 0))
 
 (defun %push-session (session)
   "Register SESSION and attend it. The return-to buffer is captured the first
@@ -281,7 +269,7 @@ were before any fault."
     (setf *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name))
           *eval-target-saved* *eval-target*))
   (push session *debugger-sessions*)
-  (%render-session session))
+  (%attend-session session))
 
 (defun %dismiss-debugger ()
   "Hide the *debugger* buffer and return to the pre-debugger buffer. Does not
@@ -295,17 +283,11 @@ resolve anything -- any sessions still in the registry stay parked."
 live session, or dismiss the buffer and clear the return-to when none remain."
   (setf *debugger-sessions* (remove session *debugger-sessions*))
   (let ((next (first *debugger-sessions*)))
-    (cond (next (%render-session next))
+    (cond (next (%attend-session next))
           (t (setf *attended-session* nil
                    *eval-target* *eval-target-saved*)   ; back to the pre-fault target
              (%dismiss-debugger)
              (setf *debugger-return-to* nil)))))
-
-(defun %split-lines* (string)
-  (loop with start = 0
-        for nl = (position #\Newline string :start start)
-        collect (subseq string start (or nl (length string)))
-        while nl do (setf start (1+ nl))))
 
 (defun %eval-error (ev)
   (%push-session
@@ -366,10 +348,55 @@ next live session, or dismiss the debugger)."
 registry (M-x debugger reopens the attended one)."
   (%dismiss-debugger))
 
-(defun %debugger-invoke-index (n)
-  (if (and n (< -1 n (length *debugger-restarts*)))
-      (invoke-pending-restart (aref *debugger-restarts* n))
-      (pine.echo:message (format nil "no restart ~a" n))))
+(defun %text-layout (text)
+  "A read-only layout from TEXT: the first line styled as the heading, the
+rest as entries."
+  (lambda (state)
+    (declare (ignore state))
+    (let ((lines (pine.buffer:split-lines text)))
+      (apply #'pine.layout:column :align :stretch
+             (cons (pine.layout:label (or (first lines) "") :class "help-head")
+                   (mapcar (lambda (l) (pine.layout:label l :class "help-entry"))
+                           (rest lines)))))))
+
+(defun %attend-job (j)
+  "Open the debugger on job J's session when one is parked, else echo its
+status."
+  (let ((s (find-if
+            (lambda (s)
+              (ecase (dbg-session-kind s)
+                (:agent (and (equal (dbg-session-agent s) (getf j :agent))
+                             (eql (dbg-session-eval-id s) (getf j :id))))
+                (:local (and (equal (getf j :agent) "local")
+                             (dbg-session-ev s)
+                             (eql (pine.eval:evaluation-id (dbg-session-ev s))
+                                  (getf j :id))))))
+            *debugger-sessions*)))
+    (if s
+        (%attend-session s)
+        (pine.echo:message (format nil "job ~a: ~a" (getf j :id) (getf j :status))))))
+
+(defun %jobs-builder ()
+  "The *jobs* layout: every live evaluation across the daemon and the agents,
+one selectable row each; Return attends an errored one's debugger session."
+  (lambda (state)
+    (declare (ignore state))
+    (apply #'pine.layout:column :align :stretch
+           (list* (pine.layout:label "Jobs  (Return attends an errored one)"
+                                     :class "help-head")
+                  (pine.layout:label (format nil "~4@a  ~10a ~9a ~a"
+                                             "id" "agent" "status" "form / condition")
+                                     :class "dbg-note")
+                  (loop for j in (pine.jobs:list-jobs) collect
+                    (let ((j j))
+                      (pine.layout:choice
+                       :class "job-row" :prefix-selected "" :prefix-unselected ""
+                       :data (lambda () (%attend-job j))
+                       (pine.layout:label
+                        (format nil "~4@a  ~10a ~9a ~a"
+                                (getf j :id) (getf j :agent) (getf j :status)
+                                (or (getf j :form) (getf j :condition) ""))
+                        :class "help-entry"))))))))
 
 (defun eval-in-target (str package &key on-done bindings)
   "Evaluate STR in the current *eval-target* image over the one eval path: :local
@@ -601,18 +628,8 @@ no symbol to complete."
                    :col (min pc (length (fset:@ (pine.buffer:lines snap) target))))))))
             (sento.actor:tell (pine.client:renderer client) '(:force-render))))))))
 
-;;;; Help / self-documentation
-
-(defun %show-help (name text)
-  "Put TEXT into a buffer named NAME and switch to it."
-  (let* ((client (pine.client:current-client))
-         (buf (pine.buffer:make-buffer name)))
-    (pine.buffer:tell buf :replace-content :content text)
-    (pine.render:subscribe-to-buffer buf)
-    (pine.buffer:switch-buffer name)
-    (sento.actor:tell (pine.client:renderer client)
-                      (list :switch-buffer :buffer buf :name name))
-    buf))
+;;;; Help / self-documentation. Help buffers are read-only layout buffers
+;;;; (%text-layout via show-layout); describe-key echoes.
 
 (defun %describe-key-text (key)
   (let ((entry (pine.command:key-binding (pine.client:current-client) key))
@@ -635,11 +652,11 @@ no symbol to complete."
             do (format out "~16a  ~a~%" keys cmd)))))
 
 (defun install-variables ()
-  (pine.var:define-variable :tab-width :default 8
+  (pine.var:defonce :tab-width :default 8
     :documentation "Tab stop width for the plain-text indent fallback.")
-  (pine.var:define-variable :format-on-save :default nil
+  (pine.var:defonce :format-on-save :default nil
     :documentation "When non-nil, save-file reindents the whole buffer first.")
-  (pine.var:define-variable :debug-on-error :default nil
+  (pine.var:defonce :debug-on-error :default nil
     :documentation "When non-nil, an error in a command opens the *debugger*
 restart menu instead of only echoing the message. Same knob as Emacs's
 debug-on-error; edit-actor and eval errors always reach the debugger."))
@@ -650,7 +667,7 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
     (dolist (name (pine.var:all-variable-names))
       (let ((v (pine.var:find-variable name)))
         (format out "~a = ~s [~(~a~)]~%    default ~s~a~%"
-                name (pine.var:variable-value name) (pine.var:variable-scope name)
+                name (pine.var:var name) (pine.var:variable-scope name)
                 (pine.var:evar-default v)
                 (let ((d (pine.var:evar-documentation v)))
                   (if (plusp (length d)) (format nil "~%    ~a" d) "")))))))
@@ -675,6 +692,242 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
                     (pine.mode:precedence m)
                     (if (pine.mode:transparent m) " transparent" "")))
           (format out "  none~%")))))
+
+;;;; Interaction on layout buffers. A layout buffer's snapshot carries the
+;;;; arranged node tree (:layout-tree) and the selection index
+;;;; (:layout-selection), so navigation is data + re-render -- the published
+;;;; tree is never mutated -- and activation resolves point (or the selection)
+;;;; to a node and runs its thunk: an action's callback, or a selectable whose
+;;;; :data is a function.
+
+(defun %layout-buffer ()
+  (pine.client:current-buffer (pine.client:current-client)))
+
+(defun %layout-snap (&optional (buf (%layout-buffer)))
+  (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
+
+(defun layout-tree (&optional (snap (%layout-snap)))
+  (and snap (pine.buffer:buffer-local snap :layout-tree)))
+
+(defun layout-node-at-point ()
+  "The node under point on the current buffer's layout tree, or nil."
+  (let* ((snap (%layout-snap))
+         (tree (layout-tree snap)))
+    (when tree
+      (pine.layout:node-at tree (pine.buffer:point-line snap)
+                           (pine.buffer:point-col snap)))))
+
+(defun layout-select (delta)
+  "Move the layout selection by DELTA (wrapping), reproject, and land point on
+the selected row. The reproject and the snapshot read serialize in the buffer's
+mailbox, so the tree we read is the reprojected one."
+  (let* ((buf (%layout-buffer))
+         (snap (%layout-snap buf))
+         (tree (layout-tree snap)))
+    (when tree
+      (let* ((n (length (pine.layout:collect-selectables tree)))
+             (cur (pine.buffer:buffer-local snap :layout-selection 0))
+             (new (if (plusp n) (mod (+ cur delta) n) 0)))
+        (sento.actor:tell buf (list :reproject :selection new))
+        (let* ((snap2 (%layout-snap buf))
+               (tree2 (layout-tree snap2))
+               (sel (and tree2 (nth new (pine.layout:collect-selectables tree2)))))
+          (when sel
+            (sento.actor:tell buf (list :move-point
+                                        :line (pine.layout:start-line sel)
+                                        :col 0))))))))
+
+(defun %node-activation (node)
+  "The thunk NODE activates to: an action's callback, a selectable whose data is
+a function, or such a node anywhere below."
+  (typecase node
+    (null nil)
+    (pine.layout:action (pine.layout:callback node))
+    (pine.layout:selectable
+     (let ((d (pine.layout:data node)))
+       (if (functionp d) d (some #'%node-activation (pine.layout:nodes-of node)))))
+    (t (some #'%node-activation (pine.layout:nodes-of node)))))
+
+(defun layout-activate ()
+  "Run the activation under point, else the selected row's."
+  (let* ((snap (%layout-snap))
+         (tree (layout-tree snap)))
+    (when tree
+      (let* ((at (pine.layout:node-at tree (pine.buffer:point-line snap)
+                                      (pine.buffer:point-col snap)))
+             (sel (nth (pine.buffer:buffer-local snap :layout-selection 0)
+                       (pine.layout:collect-selectables tree)))
+             (thunk (or (%node-activation at) (%node-activation sel))))
+        (if thunk
+            (funcall thunk)
+            (pine.echo:message "nothing to activate here"))))))
+
+;;;; Window commands over the live editor tree. The arrangement is layout
+;;;; nodes; a split wraps the focused window leaf in a column/row with a new
+;;;; window on the same buffer, delete prunes, other-window cycles the leaves.
+
+(defun %editor-leaves (&optional (client (pine.client:current-client)))
+  "The window leaves of CLIENT's live tree, in tree order."
+  (let ((tree (pine.client:arrangement client)) (acc nil))
+    (when tree
+      (labels ((walk (n)
+                 (when (and (typep n 'pine.layout:window-node)
+                            (eq (pine.layout:window-kind n) :window)
+                            (pine.layout:window-of n))
+                   (push n acc))
+                 (dolist (c (pine.layout:nodes-of n)) (walk c))))
+        (walk tree)))
+    (nreverse acc)))
+
+(defun %focused-leaf (&optional (client (pine.client:current-client)))
+  (find (pine.client:focused-window client) (%editor-leaves client)
+        :key #'pine.layout:window-of))
+
+(defun %node-parent (root node)
+  "NODE's parent under ROOT, walking nodes-of, or nil for the root itself."
+  (labels ((walk (n)
+             (let ((kids (pine.layout:nodes-of n)))
+               (if (member node kids :test #'eq)
+                   n
+                   (some #'walk kids)))))
+    (unless (eq root node) (walk root))))
+
+(defun %replace-child (parent old new)
+  "Swap OLD for NEW among PARENT's stacked children."
+  (when (typep parent '(or pine.layout:vstack pine.layout:hstack))
+    (setf (pine.layout:nodes parent)
+          (substitute new old (pine.layout:nodes parent) :test #'eq))
+    t))
+
+(defun %focus-leaf (leaf)
+  "Focus LEAF's backing window and follow with the current buffer, so typing
+lands in it."
+  (let ((client (pine.client:current-client))
+        (w (pine.layout:window-of leaf)))
+    (pine.buffer:focus-window w)
+    (setf (pine.client:current-buffer client) (pine.buffer:buffer-ref w))))
+
+(defun %split-window (orient)
+  "Split the focused window along ORIENT (:column below, :row beside): a new
+window on the same buffer joins the parent as a flat sibling when the parent
+already stacks that way, else the leaf wraps in a fresh stack. A divider sits
+between; sizes stay even because siblings share one weight."
+  (let* ((client (pine.client:current-client))
+         (tree (pine.client:arrangement client))
+         (leaf (%focused-leaf client)))
+    (unless leaf
+      (pine.echo:message "no window to split")
+      (return-from %split-window))
+    (let* ((w (pine.layout:window-of leaf))
+           (buf (pine.buffer:buffer-ref w))
+           (weight (max 1 (pine.layout:expand-of leaf)))
+           (nw (pine.buffer:make-window buf (pine.buffer:window-name w)))
+           (nn (pine.layout:window nil :of nw :kind :window :expand weight
+                                   :font-px (pine.layout:font-px leaf)
+                                   :opacity (pine.layout:window-opacity leaf)))
+           (div (pine.layout:rule :vertical (eq orient :row)
+                                  :face :border-inactive))
+           (p (%node-parent tree leaf))
+           (same (and p (typep p (ecase orient
+                                   (:column 'pine.layout:vstack)
+                                   (:row 'pine.layout:hstack))))))
+      (setf (pine.buffer:snap nw) (pine.buffer:snap w)
+            (pine.buffer:scroll-top nw) (pine.buffer:scroll-top w))
+      (cond
+        (same
+         (setf (pine.layout:nodes p)
+               (loop for k in (pine.layout:nodes p)
+                     append (if (eq k leaf) (list k div nn) (list k)))))
+        (t
+         (setf (pine.layout:expand-of leaf) weight)
+         (let ((container (ecase orient
+                            (:column (pine.layout:column :align :stretch
+                                       :expand weight leaf div nn))
+                            (:row (pine.layout:row :align :stretch :spacing 0
+                                       :expand weight leaf div nn)))))
+           (cond
+             ((eq tree leaf) (setf (pine.client:arrangement client) container))
+             ((and p (%replace-child p leaf container)))
+             (t (pine.echo:message "cannot split here")
+                (return-from %split-window))))))
+      (%focus-leaf leaf)
+      (pine.render:relayout))))
+
+(defun %remove-with-divider (p leaf)
+  "Remove LEAF from P's children along with its adjacent divider (the one
+before it, else the one after), so a split's separator leaves with it."
+  (let* ((kids (pine.layout:nodes p))
+         (i (position leaf kids :test #'eq))
+         (prev (and i (plusp i) (nth (1- i) kids)))
+         (next (and i (nth (1+ i) kids)))
+         (div (cond ((typep prev 'pine.layout:separator) prev)
+                    ((typep next 'pine.layout:separator) next))))
+    (setf (pine.layout:nodes p)
+          (remove-if (lambda (k) (or (eq k leaf) (eq k div))) kids))))
+
+(defun %delete-leaf (leaf)
+  "Remove LEAF and its divider from the live tree, splicing out a container
+left with one child, and dropping its backing window."
+  (let* ((client (pine.client:current-client))
+         (tree (pine.client:arrangement client))
+         (p (%node-parent tree leaf)))
+    (when (and p (typep p '(or pine.layout:vstack pine.layout:hstack)))
+      (%remove-with-divider p leaf)
+      (let ((kids (pine.layout:nodes p)))
+        (when (and (null (rest kids)) (first kids))
+          (let ((child (first kids))
+                (gp (%node-parent tree p)))
+            (setf (pine.layout:expand-of child) (pine.layout:expand-of p))
+            (if gp
+                (%replace-child gp p child)
+                (setf (pine.client:arrangement client) child)))))
+      (pine.buffer:remove-window (pine.layout:window-of leaf))
+      t)))
+
+(defun delete-window-cmd ()
+  (let* ((client (pine.client:current-client))
+         (leaves (%editor-leaves client))
+         (leaf (%focused-leaf client)))
+    (cond
+      ((null (rest leaves)) (pine.echo:message "only one window"))
+      ((and leaf (%delete-leaf leaf))
+       (let ((next (first (%editor-leaves client))))
+         (when next (%focus-leaf next)))
+       (pine.render:relayout))
+      (t (pine.echo:message "cannot delete this window")))))
+
+(defun delete-other-windows-cmd ()
+  (let* ((client (pine.client:current-client))
+         (leaf (%focused-leaf client)))
+    (when leaf
+      (dolist (other (remove leaf (%editor-leaves client) :test #'eq))
+        (%delete-leaf other))
+      (%focus-leaf leaf)
+      (pine.render:relayout))))
+
+(defun other-window-cmd ()
+  (let* ((client (pine.client:current-client))
+         (leaves (%editor-leaves client))
+         (pos (position (%focused-leaf client) leaves :test #'eq)))
+    (when (and leaves (rest leaves))
+      (%focus-leaf (nth (mod (1+ (or pos 0)) (length leaves)) leaves)))))
+
+(defun show-layout (name builder &key (mode :base-mode) (selection 0))
+  "Open buffer NAME as a layout buffer showing BUILDER (state -> node tree),
+switch to it, and enable layout-mode on it. Returns the buffer."
+  (let* ((client (pine.client:current-client))
+         (cols (pine.buffer:frame-cols (pine.client:frame client)))
+         (buf (pine.buffer:make-buffer name)))
+    (pine.mode:set-buffer-mode buf mode)
+    (pine.buffer:tell buf :set-layout :builder builder :width cols
+                          :selection selection)
+    (pine.render:subscribe-to-buffer buf)
+    (pine.buffer:switch-buffer name)
+    (let ((r (ignore-errors (pine.client:renderer client))))
+      (when r (sento.actor:tell r (list :switch-buffer :buffer buf :name name))))
+    (ignore-errors (pine.mode:enable-minor-mode client :layout-mode))
+    buf))
+
 
 ;;;; Commands
 
@@ -796,12 +1049,17 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
           ;; opt-in apheleia-style reformat before write; the reindent is a tell
           ;; and save's :get-state queues behind it in the actor mailbox, so the
           ;; write sees the formatted text
-          (when (and buf (pine.var:variable-value :format-on-save buf))
+          (when (and buf (pine.var:var :format-on-save buf))
             (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
               (pine.buffer:tell buf :indent-lines
                                 :from 0 :to (1- (pine.buffer:line-count snap)))))
           (pine.file:save-current-buffer))
       (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (defcmd "split-window-below" () (%split-window :column))
+  (defcmd "split-window-right" () (%split-window :row))
+  (defcmd "delete-window" () (delete-window-cmd))
+  (defcmd "delete-other-windows" () (delete-other-windows-cmd))
+  (defcmd "other-window" () (other-window-cmd))
   (defcmd "switch-buffer" ()
     (completing-read "Switch to: " (pine.buffer:list-buffers)
       (lambda (name)
@@ -825,21 +1083,13 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
                          (find-package :cl-user)))))
           (%eval-form-string text pkg)))))
   (defcmd "choose-restart" ()
-    (let ((names (coerce *debugger-restarts* 'list)))
+    (let ((names (and *attended-session*
+                      (remove nil (mapcar #'first
+                                          (dbg-session-restarts *attended-session*))))))
       (if names
-          (completing-read "Restart: " (remove nil names)
+          (completing-read "Restart: " names
             (lambda (name) (invoke-pending-restart name)))
           (pine.echo:message "no evaluation in the debugger"))))
-  (defcmd "debugger-invoke-restart" ()
-    (let* ((key (pine.client:this-command-key (pine.client:current-client)))
-           (sym (pine.key:key-sym key)))
-      (%debugger-invoke-index (and (= 1 (length sym)) (digit-char-p (char sym 0))))))
-  (defcmd "debugger-invoke-at-point" ()
-    (let* ((snap (pine.buffer:current-buffer-snapshot))
-           (entry (assoc (pine.buffer:point-line snap) *debugger-restart-lines*)))
-      (if entry
-          (%debugger-invoke-index (cdr entry))
-          (pine.echo:message "point is not on a restart line"))))
   (defcmd "debugger-abort" ()
     (invoke-pending-restart "ABORT"))
   (defcmd "debugger-quit" ()
@@ -850,26 +1100,19 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
       (if (> (length ordered) 1)
           (let* ((pos (or (position *attended-session* ordered) 0))
                  (next (nth (mod (1+ pos) (length ordered)) ordered)))
-            (%render-session next))
+            (%attend-session next))
           (pine.echo:message "only one debugger session"))))
   (defcmd "debugger" ()
     "Reopen the *debugger* on the attended session (after q), if one is parked."
     (if *attended-session*
-        (%render-session *attended-session*)
+        (%attend-session *attended-session*)
         (pine.echo:message "no debugger session")))
   (defcmd "toggle-debug-on-error" ()
-    (let ((new (not (pine.var:variable-value :debug-on-error))))
-      (pine.var:set-global :debug-on-error new)
+    (let ((new (not (pine.var:var :debug-on-error))))
+      (setf (pine.var:var :debug-on-error) new)
       (pine.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
   (defcmd "jobs" ()
-    (%show-help "*jobs*"
-      (with-output-to-string (s)
-        (format s "Jobs  (M-x choose-restart on an errored one)~%~%~4@a  ~-10a ~-9a ~a~%"
-                "id" "agent" "status" "form / condition")
-        (dolist (j (pine.jobs:list-jobs))
-          (format s "~4@a  ~-10a ~-9a ~a~%"
-                  (getf j :id) (getf j :agent) (getf j :status)
-                  (or (getf j :form) (getf j :condition) ""))))))
+    (show-layout "*jobs*" (%jobs-builder)))
   (defcmd "eval-last-sexp" () (eval-last-sexp))
   (defcmd "eval-defun" ()     (eval-defun))
   (defcmd "eval-buffer" ()    (eval-buffer))
@@ -922,15 +1165,15 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
      (pine.client:current-client)
      (lambda (key) (pine.echo:message (%describe-key-text key)))))
   (defcmd "describe-bindings" ()
-    (%show-help "*bindings*" (%bindings-text)))
+    (show-layout "*bindings*" (%text-layout (%bindings-text))))
   (defcmd "describe-mode" ()
-    (%show-help "*mode*" (%mode-text)))
+    (show-layout "*mode*" (%text-layout (%mode-text))))
   (defcmd "describe-variables" ()
-    (%show-help "*variables*" (%variables-text)))
+    (show-layout "*variables*" (%text-layout (%variables-text))))
   (defcmd "insert-tab" ()
     (let* ((cli (pine.client:current-client))
            (buf (pine.client:current-buffer cli))
-           (n (max 0 (pine.var:variable-value :tab-width buf))))
+           (n (max 0 (pine.var:var :tab-width buf))))
       (when buf
         (pine.buffer:tell buf :insert :text (make-string n :initial-element #\Space)))))
   (defcmd "indent-for-tab-command" ()
@@ -954,6 +1197,10 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
       (when snap
         (pine.buffer:tell buf :indent-lines
                           :from 0 :to (1- (pine.buffer:line-count snap))))))
+  ;; layout buffers: selection nav + activation on the node tree
+  (defcmd "layout-next" () (layout-select 1))
+  (defcmd "layout-prev" () (layout-select -1))
+  (defcmd "layout-activate" () (layout-activate))
   ;; minibuffer-mode: the only keys the prompt binds; everything else is the
   ;; ordinary buffer editing commands, so the prompt edits like any buffer.
   (defcmd "minibuffer-accept" () (minibuffer-accept))
@@ -970,10 +1217,8 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
   (let ((g (pine.mode:global-keymap))
         (tm (pine.mode:mode-keymap (pine.mode:find-mode :text-mode)))
         (dm (pine.mode:mode-keymap (pine.mode:find-mode :debugger-mode))))
-    ;; debugger-mode: the restart menu answers to its own keys
-    (dotimes (d 10)
-      (pine.keymap:define-key dm (k (string (digit-char d))) "debugger-invoke-restart"))
-    (pine.keymap:define-key dm (k "Return") "debugger-invoke-at-point")
+    ;; debugger-mode: restart rows answer to the surface interaction
+    ;; (Return/C-n/C-p from layout-mode); these are the extras
     (pine.keymap:define-key dm (k "a") "debugger-abort")
     (pine.keymap:define-key dm (k "q") "debugger-quit")
     (pine.keymap:define-key dm (k "Tab") "debugger-next-session")
@@ -983,6 +1228,11 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
     (pine.keymap:define-key g (list (k "C-x") (k "C-f")) "find-file")
     (pine.keymap:define-key g (list (k "C-x") (k "C-s")) "save-file")
     (pine.keymap:define-key g (list (k "C-x") (k "b")) "switch-buffer")
+    (pine.keymap:define-key g (list (k "C-x") (k "2")) "split-window-below")
+    (pine.keymap:define-key g (list (k "C-x") (k "3")) "split-window-right")
+    (pine.keymap:define-key g (list (k "C-x") (k "0")) "delete-window")
+    (pine.keymap:define-key g (list (k "C-x") (k "1")) "delete-other-windows")
+    (pine.keymap:define-key g (list (k "C-x") (k "o")) "other-window")
     (pine.keymap:define-key g (list (k "C-x") (k "n")) "new-buffer")
     (pine.keymap:define-key g (list (k "C-x") (k "r")) "open-repl")
     (pine.keymap:define-key g (list (k "C-x") (k "t")) "terminal")
@@ -1046,6 +1296,13 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
     ;; indentation: Tab reindents (mode-aware), completion moves to the Emacs
     ;; completion binding, region + whole-buffer reformat get their own keys
     (pine.keymap:define-key tm (k "C-M-\\") "indent-region")
+    ;; layout-mode: selection nav + activation on a layout buffer
+    (let ((sm (pine.mode:mode-keymap (pine.mode:find-mode :layout-mode))))
+      (pine.keymap:define-key sm (k "Down") "layout-next")
+      (pine.keymap:define-key sm (k "C-n") "layout-next")
+      (pine.keymap:define-key sm (k "Up") "layout-prev")
+      (pine.keymap:define-key sm (k "C-p") "layout-prev")
+      (pine.keymap:define-key sm (k "Return") "layout-activate"))
     ;; minibuffer-mode: accept / abort / complete / candidate motion. All other
     ;; keys fall through to text-mode, so the prompt has full editing.
     (let ((mm (pine.mode:mode-keymap (pine.mode:find-mode :minibuffer-mode))))

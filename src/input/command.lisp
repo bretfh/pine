@@ -1,13 +1,3 @@
-(defpackage #:pine.command
-  (:use #:cl)
-  (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
-           #:define-command #:register-command #:find-command #:all-command-names
-           #:execute #:call-command #:dispatch #:command-error
-           #:self-insert #:self-insert-key-p
-           #:prefix-numeric-value #:this-command-key
-           #:key-binding #:read-next-key
-           #:*terminal-handler*))
-
 (in-package #:pine.command)
 
 (defvar *terminal-handler* nil)
@@ -96,7 +86,7 @@ non-nil, route it through the same debugger surface evaluations use (*on-debug*
 -> the *debugger* restart menu); otherwise show it in the echo area. Either way
 the command loop lives on -- this never blocks the session thread. Call from a
 handler-bind so the backtrace is captured while the stack is still live."
-  (if (and (ignore-errors (pine.var:variable-value :debug-on-error))
+  (if (and (ignore-errors (pine.var:var :debug-on-error))
            pine.eval:*on-debug*)
       (ignore-errors
        (funcall pine.eval:*on-debug* (pine.eval:make-error-evaluation condition)))
@@ -165,7 +155,7 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
     (when reader
       (setf (pine.client:pending-key-reader client) nil)
       (return-from dispatch (funcall reader key))))
-  ;; in a terminal, keys go to the pty — unless a prefix (C-x ...) is pending.
+  ;; in a terminal, keys go to the pty -- unless a prefix (C-x ...) is pending.
   (when (and *terminal-handler* (null (pine.client:pending-keys client))
              (funcall *terminal-handler* client key))
     (return-from dispatch))

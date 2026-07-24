@@ -7,7 +7,6 @@
    #:event-bus
    #:agent-registry
    #:buffer-registry
-   #:layouts
    #:buffer-table
    #:commands
    #:global-keymap
@@ -68,17 +67,18 @@
    #:buffer-local
    #:refresh-highlights #:point-after-move
    #:line-indent-width #:previous-line-indent #:reindent-line
-   #:load-content #:notify-subscribers
+   #:load-content #:notify-subscribers #:split-lines
    #:line-count-of #:line-at #:region-string
    ;; faces
    #:face #:fg #:bg #:bold #:italic #:underline
-   #:defface #:find-face #:face-to-plist #:face-attr-bits #:install-default-faces
+   #:defface #:find-face #:face-attr-bits #:install-default-faces
    #:deftheme #:load-theme #:find-theme #:theme-color #:color #:*active-theme*
    #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric #:theme-rules
+   #:add-rules #:*rules-generation*
    #:theme #:theme-name #:theme-palette #:theme-metrics #:theme-faces
    #:face-run #:run-start #:run-end #:run-face
    #:display-line #:display-text #:display-runs
-   #:make-display-line #:display-line-to-plist
+   #:make-display-line
    ;; windows
    #:window #:buffer-ref #:window-name #:row #:col #:win-width #:win-height
    #:scroll-top #:focusedp #:snap #:win-display
@@ -87,7 +87,6 @@
    #:frame-scroll-pixel #:frame-dirtyp #:ensure-frame-cells
    #:make-window #:remove-window #:focus-window
    #:window-display-lines #:ensure-point-visible #:ensure-col-visible
-   #:build-frame #:frame-to-plist
    ;; buffer actor
    #:make-buffer-actor #:notify-subscribers #:load-content
    ;; registry
@@ -101,9 +100,8 @@
 (defpackage :pine.echo
   (:use :cl)
   (:export #:message #:current-message
-           #:show-input #:hide-input
-           #:input-active-p #:input-prompt #:input-text #:set-input-text
-           #:show-completions-area #:hide-completions-area #:completions-text))
+           #:show-prompt #:hide-prompt
+           #:prompt-active-p #:prompt-text))
 
 (defpackage :pine.file
   (:use :cl)
@@ -119,9 +117,12 @@
    #:start-renderer
    #:subscribe-to-buffer
    #:unsubscribe-from-buffer
-   #:render-buffer-to-frame
+   #:render-window-rows
+   #:modeline-rows
+   #:echo-rows
+   #:arrange-editor-tree
+   #:refresh-editor-tree
    #:frame->rows
-   #:render-window
    #:relayout))
 
 (defpackage :pine.repl
@@ -162,6 +163,27 @@
    #:resize-active-terminal
    #:terminal-dispatch))
 
+(defpackage #:pine.key
+  (:use #:cl)
+  (:export #:key #:key-p #:make-key
+           #:key-sym #:key-ctrl #:key-meta #:key-shift #:key-super
+           #:key= #:parse-key #:key->string))
+
+(defpackage #:pine.keymap
+  (:use #:cl)
+  (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
+           #:define-key #:keymap-lookup #:prefix-p #:keymap-bindings))
+
+(defpackage #:pine.command
+  (:use #:cl)
+  (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
+           #:define-command #:register-command #:find-command #:all-command-names
+           #:execute #:call-command #:dispatch #:command-error
+           #:self-insert #:self-insert-key-p
+           #:prefix-numeric-value #:this-command-key
+           #:key-binding #:read-next-key
+           #:*terminal-handler*))
+
 (defpackage :pine.mode
   (:use :cl)
   (:export
@@ -172,6 +194,7 @@
    #:precedence #:transparent
    #:register-mode #:find-mode #:global-keymap
    #:buffer-mode #:current-buffer-mode #:set-buffer-mode #:mode-for-file
+   #:auto-mode #:*auto-modes*
    #:buffer-active-modes #:buffer-minor-modes #:active-keymaps
    #:active-modes-instance
    #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
@@ -181,9 +204,11 @@
 (defpackage :pine.var
   (:use :cl)
   (:export
-   #:evar #:define-variable #:find-variable #:all-variable-names
-   #:variable-value #:variable-scope #:set-variable #:set-global #:set-buffer-local
-   #:evar-name #:evar-default #:evar-documentation #:evar-global #:evar-global-set))
+   ;; the API: declare once, one setf-able accessor
+   #:defonce #:var
+   ;; introspection (describe-variables)
+   #:find-variable #:all-variable-names #:variable-scope
+   #:evar-default #:evar-documentation))
 
 (defpackage :pine.layout
   (:use :cl)
@@ -197,11 +222,9 @@
    #:separator #:sep-char
    #:spacer #:center
    #:scroll #:scroll-offset #:vheight
-   #:field #:prefix-length
-   #:input-start-line #:input-start-col #:input-end-line #:input-end-col
    #:vstack #:nodes #:spacing #:align
    #:hstack
-   #:box #:node #:width-of #:pad-char
+   #:box #:width-of #:pad-char
    #:selectable #:data #:selectedp #:prefix-selected #:prefix-unselected
    #:action #:callback
    #:list-node #:items #:item-fn #:max-visible
@@ -210,28 +233,63 @@
    #:slider-fraction
    #:ring #:thickness #:diameter #:arc-face #:track-face #:ring-fraction
    #:calendar #:cal-year #:cal-month #:cal-day #:picture #:pic-path
-   #:window #:window-rows #:window-crow #:window-ccol #:window-opacity #:blit-row
+   #:window #:window-node #:window-rows #:window-crow #:window-ccol
+   #:window-opacity #:window-of #:window-kind #:blit-row
    ;; constructor DSL
    #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
    #:gap #:rule #:meter #:rows #:choice #:cal #:pic #:centerbox
    ;; layout protocol
    #:measure #:arrange #:paint #:*hover-face*
-   ;; layout container
-   #:layout #:layout-root #:layout-buffer-name #:layout-state #:layout-width #:layout-height
-   #:install-layout #:uninstall-layout #:buffer-layout #:layout-get
+   ;; layout -> cell rows (layout buffers + the chrome popup)
+   #:render #:resolve-styles! #:raster->rows
    #:defwidget
-   #:render-layout #:render-layout-grid #:layout-lines #:node-to-string
-   #:node->wire #:wire->node
-   ;; input
-   #:input-string #:cursor-offset
-   #:type-char-at-cursor #:delete-char-before-cursor
-   #:kill-input #:kill-to-end #:kill-word-before-cursor
-   #:set-input #:move-cursor #:cursor-to-start #:cursor-to-end
-   #:confirm-input
+   #:node->wire #:wire->node #:arranged-p
    ;; hit-testing + selection
    #:node-at #:action-at #:click-thunk #:slider-value-at #:hint-at
-   #:collect-selectables #:update-selection #:selected-node #:selection-move
+   #:collect-selectables
    #:scroll-to-selection))
+
+(defpackage #:pine.attach
+  (:use #:cl)
+  (:export #:start-attach-listener #:attach-listener
+           #:attach-to-daemon #:register-app-kind
+           #:attached-client #:attached-client-id #:attached-client-kind
+           #:attached-client-display #:attached-client-input #:attached-client-session
+           #:*clients* #:push-to-app))
+
+(defpackage #:pine.agent
+  (:use #:cl)
+  (:export #:connect #:serve #:*agent-system* #:*name*))
+
+(defpackage #:pine.jobs
+  (:use #:cl)
+  (:export #:install-jobs #:list-jobs #:*agent-jobs*))
+
+(defpackage #:pine.ref
+  (:use #:cl)
+  (:export #:ref #:make-ref #:defref #:find-ref #:ref-name
+           #:ref-value #:deref #:set-ref #:update-ref
+           #:ref-subscribe #:ref-unsubscribe
+           #:reactive-view #:make-view #:render-view #:dispose-view))
+
+(defpackage #:pine.source
+  (:use #:cl)
+  (:export #:start-sources #:stop-sources #:workspaces
+           #:defsource #:defpoll #:set! #:ref-of
+           #:select! #:act! #:select-sink!))
+
+(defpackage #:pine.style
+  (:use #:cl)
+  (:export #:style #:st-bg #:st-gradient #:st-fg #:st-border-w #:st-border-color
+           #:st-radius #:st-pad-x #:st-pad-y #:st-min-w #:st-min-h
+           #:st-font-px #:st-bold #:st-inset #:st-margin #:st-shadow
+           #:resolve #:reset-rules))
+
+(defpackage #:pine.desktop
+  (:use #:cl)
+  (:export #:install-desktop-sessions
+           #:defsurface #:set-surface-role #:push-surface #:show-panel #:hide-panel
+           #:refresh-all #:*surface-client*))
 
 (defpackage :pine.client
   (:use :cl)
@@ -244,7 +302,12 @@
    #:ts-actor
    #:render-state
    #:frame
+   #:px-width
+   #:px-height
+   #:cell-w
+   #:cell-h
    #:windows
+   #:arrangement
    #:focused-window
    #:pending-keys
    #:prefix-arg
@@ -273,6 +336,8 @@
    #:callback
    #:prompt
    #:dynamic-fn
+   #:popup-rows
+   #:popup-tree
    #:*client*
    #:current-client
    #:start-client
@@ -287,8 +352,8 @@
    #:install-editor-sessions
    #:make-editor-session
    #:session-feed
-   ;; the editor as a surface: the current buffer and its live window widgets
-   #:editor-current
+   #:reseed-editor-sessions
+   ;; the editor's live tree: view leaves the render walk refreshes
    #:editor-window-node
    #:editor-terminal-node
    #:editor-modeline-node
@@ -298,7 +363,8 @@
    #:eval-last-sexp
    #:eval-buffer
    #:eval-in-target
-   #:on-minibuffer-accept
+   ;; layout buffers (authorable tool buffers)
+   #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
    ;; prompt
    #:prompt
    #:cancel-prompt
@@ -312,14 +378,19 @@
    #:copy-region-cmd
    #:yank-cmd
    #:yank-pop-cmd
+   ;; the completion facility: candidates, sources, actions, builders
+   #:candidate #:to-candidate
+   #:candidate-string #:candidate-annotation #:candidate-value
+   #:candidate-category #:candidate-source
+   #:register-source #:source-table
+   #:register-actions #:candidate-actions
+   #:completion-popup #:completion-widget
    ;; completing-read
    #:completing-read
    #:read-file-name
    #:file-completion-active-p
    #:file-name-complete
    #:file-name-accept
-   #:completion-accept
-   #:completion-cancel
    #:completion-next
    #:completion-prev
    #:completion-update-input
@@ -331,9 +402,71 @@
    #:main
    #:start-daemon
    #:run-daemon
-   #:stop
-   #:*version*
-   #:*target*
-   #:desktop?
-   #:mobile?
-   #:on-minibuffer-accept))
+   #:stop))
+
+(defpackage :pine.user
+  (:nicknames :pine-user)
+  (:use :cl)
+  (:import-from :pine.layout
+                #:column #:row #:centerbox #:label #:icon #:button #:ring
+                #:gap #:rule #:rows #:choice)
+  (:import-from :pine.editor
+                #:candidate #:register-source #:register-actions
+                #:candidate-actions #:completion-widget)
+  (:import-from :pine.buffer
+                #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
+                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
+                #:ask #:tell)
+  (:import-from :pine.ref #:defref #:find-ref #:deref)
+  (:import-from :pine.source #:defsource #:defpoll #:set!)
+  (:import-from :pine.command #:call-command #:execute)
+  (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode
+                #:dispatch-message #:auto-mode)
+  (:import-from :pine.var #:defonce #:var)
+  (:import-from :pine.client #:current-client #:current-buffer)
+  (:import-from :pine.editor #:eval-last-sexp #:eval-buffer
+                #:completing-read #:read-file-name #:prompt
+                #:show-layout #:layout-node-at-point #:layout-select
+                #:layout-activate)
+  (:import-from :pine.echo #:message)
+  (:export
+   ;; surfaces
+   #:defsurface #:show #:hide #:toggle
+   ;; widgets: containers
+   #:column #:row #:centerbox #:center #:box #:scroll
+   ;; widgets: content
+   #:label #:icon #:image #:rule #:gap
+   ;; widgets: controls
+   #:button #:slider #:ring #:choice #:rows
+   ;; widgets: views -- a window is a live view of the buffer you name
+   #:calendar #:window #:buffer #:terminal #:modeline #:echo #:minibuffer
+   ;; completion facility
+   #:candidate #:register-source #:register-actions #:candidate-actions
+   #:completion-widget
+   ;; style
+   #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
+   ;; data
+   #:defref #:ref #:set! #:defpoll #:defsource #:sh #:launch
+   ;; style rules
+   #:defrules
+   ;; behavior
+   #:defcommand #:call-command
+   ;; keys
+   #:kbd #:keymap #:define-key #:global-set-key
+   ;; modes -- defmode/defminor make real classes; execute/dispatch-message are
+   ;; the CLOS behaviour hooks users specialise
+   #:defmode #:defminor #:execute #:dispatch-message #:auto-mode
+   #:enable-minor-mode #:disable-minor-mode #:toggle-minor-mode
+   ;; editor variables
+   #:defonce #:var
+   ;; prompts + echo
+   #:completing-read #:read-file-name #:prompt #:message
+   ;; layout buffers (authorable tool buffers)
+   #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
+   ;; processes
+   #:defagent #:spawn #:supervise #:kill
+   ;; buffers / editor
+   #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
+   #:ask #:tell #:current-client #:current-buffer
+   #:find-mode #:current-buffer-mode #:set-buffer-mode
+   #:eval-last-sexp #:eval-buffer))

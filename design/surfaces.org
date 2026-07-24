@@ -197,6 +197,6 @@ already resolve.
 - Buffers as immutable fset actors, meta, snapshots to subscribers, the wire
   formats (cell grid, widget tree): design/architecture.org.
 - The candidate object and completion (the near-done structured surface):
-  src/editor/completion.lisp, src/editor/complete.lisp.
+  src/editor/completion.lisp, src/editor/minibuffer.lisp.
 - Modes as CLOS composition, keymap resolution: design/architecture.org "modes";
-  src/keymap/mode.lisp.
+  src/mode/mode.lisp.

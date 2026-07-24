@@ -1,10 +1,58 @@
 (defpackage #:pine.cairo
   (:use #:cl)
-  (:export #:shot))
+  (:export #:shot #:frame-shot))
 (in-package #:pine.cairo)
 
+;;;; The typed-frame shot: a real editor session on a minimal substrate, fed a
+;;;; buffer of TEXT, its rendered frame written to a PNG -- headless eyes for
+;;;; the editor frame itself (no window, no daemon).
+
+(defun %shot-substrate ()
+  (let ((srv (pine.server:start-server)))
+    (setf pine.server:*server* srv
+          (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (ignore-errors (pine.ts:ensure-ts (pine.server:ts-runtime srv)))
+    (pine.event:make-event-bus srv)
+    (pine.actor:start-agent-registry srv)
+    (pine.actor:start-local-agent srv)
+    (pine.buffer:start-buffer-registry srv)
+    (pine.buffer:install-default-faces)
+    (pine.mode:install-default-modes)
+    (pine.editor:install-commands)
+    (pine.editor:install-bindings)
+    (pine.editor:install-editor-sessions)
+    srv))
+
+(defun frame-shot (&key (path "/tmp/pine-shot.png")
+                        (text "(defun frobnicate (x &optional (y 10))
+  \"a docstring\"
+  (let ((sum 0))
+    (dolist (a x) (incf sum (car a)))
+    (when (> sum y) (format t \"~a: ~s~%\" x sum))
+    (pine.util:combine sum y :key)))"))
+  "Render the editor's live tree for TEXT to a PNG at PATH, headless: a real
+session, its tree refreshed and cell-rendered through pine.layout:render."
+  (unless pine.server:*server* (%shot-substrate))
+  (let* ((sess (pine.editor:make-editor-session
+                nil :sink (lambda (&rest args) (declare (ignore args)) nil)))
+         (client (pine.editor::sess-client sess)))
+    (let ((buf (pine.client:current-buffer client)))
+      (pine.buffer:tell buf :replace-content :content text))
+    (pine.editor:session-feed sess (list :resize :cols 84 :rows 30))
+    (sleep 0.8)
+    (let* ((pine.client:*client* client)
+           (tree (pine.render:refresh-editor-tree client))
+           (f (pine.client:frame client))
+           (rows (and tree
+                      (nth-value 0 (pine.layout:render
+                                    tree (pine.buffer:frame-cols f)
+                                    :height (pine.buffer:frame-rows f))))))
+      (cond (rows (pine.display:render-frame-to-png rows path)
+                  (format t "~&wrote ~a~%" path) path)
+            (t (format t "~&shot: no frame captured~%") nil)))))
+
 ;;;; Headless eyes for the cairo backend: load the user's init.lisp (the real
-;;;; surfaces), seed a few cells with sample data, build each surface tree from
+;;;; surfaces), seed a few refs with sample data, build each surface tree from
 ;;;; the registry, and render it to a PNG. Read the PNGs to see what the wayflan
 ;;;; client will show -- no window, no daemon, no display.
 
@@ -16,7 +64,7 @@
     (when (probe-file init)
       (let ((*package* (find-package :pine.user))) (load init)))))
 
-(defun seed-cells ()
+(defun seed-refs ()
   (flet ((c (name val) (pine.ref:set-ref (pine.ref:make-ref :name name) val)))
     (c :sys '(:cpu 42 :ram 68 :disk 55 :temp 47))
     (c :vol 65) (c :muted nil) (c :bri 40)
@@ -56,26 +104,30 @@
       (cons " M-x " (list (run 0 166 173 200)))))))
 
 (defun editor-shot (dir)
+  "Paint a sample editor tree (window + modeline + echo rows) through the
+cairo pass, the same shape the live editor surface ships."
   (let* ((rows (sample-editor-rows))
-         (sess (pine.editor::make-sess :rows rows :crow 3 :ccol 8))
-         (builder (gethash "editor" (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
-         (pine.editor::*editor-session* sess)
+         (n (length rows))
+         (tree (pine.layout:column :align :stretch
+                 (pine.layout:window (subseq rows 0 (- n 2))
+                                     :crow 3 :ccol 8 :expand 1
+                                     :font-px 15 :opacity 0.9)
+                 (pine.layout:window (list (nth (- n 2) rows)) :font-px 15)
+                 (pine.layout:window (list (nth (1- n) rows)) :font-px 15)))
          (w 560) (h 480) (path (format nil "~a/pine-cairo-editor.png" dir)))
-    (when builder
-      (pine.layout:with-cairo-layout
-        (let ((surface (cairo:create-image-surface :argb32 w h))
-              (tree (funcall builder nil)))
-          (cairo:with-context ((cairo:create-context surface))
-            (multiple-value-bind (r g b) (pine.buffer:hex-rgb (pine.buffer:color :bg-alt))
-              (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
-            (pine.layout:paint-tree tree w h))
-          (cairo:surface-write-to-png surface path)))
-      (cons "editor" (list :w w :h h :path path)))))
+    (pine.layout:with-cairo-layout
+      (let ((surface (cairo:create-image-surface :argb32 w h)))
+        (cairo:with-context ((cairo:create-context surface))
+          (multiple-value-bind (r g b) (pine.buffer:hex-rgb (pine.buffer:color :bg-alt))
+            (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
+          (pine.layout:paint-tree tree w h))
+        (cairo:surface-write-to-png surface path)))
+    (cons "editor" (list :w w :h h :path path))))
 
 (defun shot (&key (dir "/tmp"))
   "Render every desktop surface to DIR/pine-cairo-NAME.png; return the results."
   (ensure-env)                                     ; loads init.lisp -> registers surfaces
-  (seed-cells)                                     ; sample data over the defrefs
+  (seed-refs)                                     ; sample data over the defrefs
   (let ((surfaces (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
     (append
      (loop for name in *shots*

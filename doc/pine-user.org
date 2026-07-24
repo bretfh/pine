@@ -82,7 +82,7 @@ The base classes. The same set builds every surface. A widget takes =:class= and
 | =button= | a clickable wrapper            | [have]   |
 | =slider= | a value gauge, drag to set     | [rename] |
 | =ring=   | a circular gauge               | [have]   |
-| =field=  | a text input                   | [have]   |
+| =field=  | a text input                   | [build]  |
 | =choice= | a selectable row               | [have]   |
 | =rows=   | a list built by mapping a function over data | [have] |
 
@@ -121,57 +121,139 @@ Color and shape as data. Change the theme and everything downstream re-resolves.
 | =metric=     | =(metric KEY [default])=            | [have] |
 | =face-fg=    | =(face-fg NAME)=                    | [have] |
 
-- On a widget: =:class= applies the theme rules (the CSS-as-data list); =:face=
-  applies a face directly.
+- On a widget or a layout-buffer node: =:class= applies the CSS-as-data rules
+  (styles the cairo panels and the cell render alike); =:face= applies a
+  theme face directly. Both resolve to the same cell colours.
+
+| symbol     | form                                       | status |
+|------------+--------------------------------------------+--------|
+| =defrules= | =(defrules (SELECTOR PROP VALUE ..) ..)=   | [have] |
+
+- =defrules= appends to the one stylesheet; user rules win the cascade, and
+  redefining a selector replaces it. VALUES are evaluated, so =(color :accent)=
+  resolves against the active theme. =(defrules (".cand-row.sel" :background-color
+  (color :bg-active)))=.
 
 * Data
 
-Sources feed cells; cells feed widgets. Reads inside a surface body are tracked,
-so the surface re-renders when a cell it read changes, and only then.
+Sources feed refs; refs feed widgets. Reads inside a surface body are tracked,
+so the surface re-renders when a ref it read changes, and only then.
 
 | symbol      | form                                | status  |
 |-------------+-------------------------------------+---------|
-| =defcell=   | =(defcell NAME [default])=            | [have]   |
-| =cell=      | =(cell NAME [default])= (tracked read) | [rename] |
+| =defref=    | =(defref NAME [default])=             | [have]   |
+| =ref=       | =(ref NAME [default])= (tracked read)  | [have]   |
 | =set!=      | =(set! NAME VALUE)=                   | [have]   |
 | =defpoll=   | =(defpoll NAME SECONDS BODY)=         | [have]   |
 | =defsource= | =(defsource NAME COMMAND PARSE)=      | [have]   |
 | =sh=        | =(sh COMMAND)= run a shell command   | [rename] |
 
-- =cell= (the tracked reader) and =sh= exist as helpers inside =desktop.lisp=;
-  they belong in the public vocabulary.
+- =ref= is the tracked reader: a surface body that reads a ref re-renders when
+  it changes. =set!= writes one (deduped).
 
 * Behavior
 
 What input does.
 
-| symbol       | form                             | status  |
-|--------------+----------------------------------+---------|
-| =defcommand= | =(defcommand NAME (args) BODY)=    | [rename] |
-| =bind=       | =(bind KEY COMMAND [keymap])=      | [rename] |
-| =defmode=    | =(defmode NAME ...)=               | [build]  |
-| =:on-click=  | widget keyword                   | [have]   |
-| =:on-change= | widget keyword (slider, field)   | [have]   |
-| =:hint=      | widget keyword (echo hint)       | [have]   |
+| symbol       | form                             | status |
+|--------------+----------------------------------+--------|
+| =defcommand= | =(defcommand NAME (args) BODY)=   | [have] |
+| =:on-click=  | widget keyword                   | [have] |
+| =:on-change= | widget keyword (slider)          | [have] |
+| =:hint=      | widget keyword (echo hint)       | [have] |
 
-- =defcommand= is =define-command= today; =bind= is =define-key=. A buffer
-  surface's keymap is just =bind= into a keymap.
+* Keys
+
+Emacs voice. A =defcommand= is reachable by key once bound.
+
+| symbol           | form                          | status |
+|------------------+-------------------------------+--------|
+| =kbd=            | =(kbd "C-x C-f")= -> key(s)    | [have] |
+| =keymap=         | =(keymap :global \vert :mode-kw)= | [have] |
+| =define-key=     | =(define-key WHERE (kbd ..) CMD)= | [have] |
+| =global-set-key= | =(global-set-key (kbd ..) CMD)=  | [have] |
+
+- =kbd= parses a chord ("C-x C-f", "M-.", "Return") into a key or a sequence.
+  WHERE is a keymap, =:global=, or a mode keyword. CMD is a command name string.
+
+* Modes
+
+=defmode= / =defminor= make a real CLOS class named NAME and register a mode
+=:NAME= with its own keymap. Behaviour is plain CLOS on the class.
+
+| symbol              | form                                        | status |
+|---------------------+---------------------------------------------+--------|
+| =defmode=           | =(defmode NAME (:parent :mode :indicator .. :ts-language ..) BODY)= | [have] |
+| =defminor=          | =(defminor NAME (:precedence N :transparent B :indicator ..) BODY)= | [have] |
+| =dispatch-message=  | =(defmethod dispatch-message ((m NAME) self tag plist) ..)= | [have] |
+| =execute=           | =(defmethod execute ((m NAME) command arg) ..)= | [have] |
+| =auto-mode=         | =(auto-mode "ext" :mode-kw)=                 | [have] |
+| =enable-minor-mode= | =(enable-minor-mode :mode-kw)=              | [have] |
+| =disable-minor-mode=| =(disable-minor-mode :mode-kw)=             | [have] |
+| =toggle-minor-mode= | =(toggle-minor-mode :mode-kw)=              | [have] |
+
+- The class NAME (a symbol) is what you specialise defmethods on; the keyword
+  =:NAME= is what =set-buffer-mode= / =auto-mode= / the toggles take. A major
+  mode's keymap is parented to its =:parent='s, so parent keys still resolve.
+  Reload-safe: redefining replaces the class and the mode.
+
+* Editor variables
+
+Buffer-local-with-global-fallback settings, fset-backed.
+
+| symbol            | form                                       | status |
+|-------------------+--------------------------------------------+--------|
+| =defonce=         | =(defonce :name :default V :documentation ..)= | [have] |
+| =var=             | =(var :name [buffer])= -- setf-able         | [have] |
+
+- =defonce= semantics: redeclaring updates the default and doc but keeps a
+  value already set, so reloading =init.lisp= never clobbers it. One setf-able
+  accessor, no separate setters: =(setf (var :tab-width) 2)= sets the global,
+  =(setf (var :tab-width buf) 2)= sets it buffer-locally.
+
+* Prompts and echo
+
+| symbol           | form                                   | status |
+|------------------+----------------------------------------+--------|
+| =completing-read=| =(completing-read PROMPT CANDIDATES CB)= | [have] |
+| =read-file-name= | =(read-file-name PROMPT CB)=            | [have] |
+| =prompt=         | =(prompt PROMPT CB)= (a plain string)   | [have] |
+| =message=        | =(message STRING)= to the echo area     | [have] |
+
+- CB is a function of the chosen string. CANDIDATES is a list of strings or
+  candidate objects. These make a =defcommand= interactive.
+
+* Layout buffers (tool buffers)
+
+A buffer whose content is a node tree: the same widget language as a panel,
+rendered into cells, with selectable rows and per-row actions. (A buffer can
+show a layout; a window shows a buffer; a surface places it.)
+
+| symbol                 | form                                        | status |
+|------------------------+---------------------------------------------+--------|
+| =show-layout=         | =(show-layout NAME BUILDER [:mode M :selection N])= | [have] |
+| =layout-select=       | =(layout-select DELTA)=                     | [have] |
+| =layout-activate=     | =(layout-activate)=                         | [have] |
+| =layout-node-at-point=| =(layout-node-at-point)=                    | [have] |
+
+- BUILDER is a function of the buffer state returning a node tree. =choice= rows
+  carry =:data= (a thunk); =layout-activate= (Return, via layout-mode) runs the
+  row's thunk. =layout-select= (Up/Down/C-n/C-p) moves the highlight. A tool
+  buffer is thus: =defcommand= + =show-layout= + =choice= rows + a keybinding.
 
 * Processes
 
 Isolated, supervised SBCL images. An agent's error ships its restart list home to
 the editor, where you pick a restart and it resumes in its own image.
 
-| symbol       | form                       | status  |
-|--------------+----------------------------+---------|
-| =defagent=   | =(defagent NAME BODY)=       | [build]  |
-| =spawn=      | =(spawn NAME)=              | [rename] |
-| =supervise=  | =(supervise NAME)=         | [rename] |
-| =kill=       | =(kill NAME)=              | [rename] |
+| symbol       | form                       | status |
+|--------------+----------------------------+--------|
+| =defagent=   | =(defagent NAME BODY)=      | [have] |
+| =spawn=      | =(spawn NAME)=             | [have] |
+| =supervise=  | =(supervise NAME)=        | [have] |
+| =kill=       | =(kill NAME)=             | [have] |
 
-- =defagent= is spawn plus supervise plus a body, and does not exist yet.
-  =spawn= / =supervise= / =kill= are =spawn-agent= / =supervise-agent= /
-  =kill-agent=.
+- =defagent= is spawn plus supervise plus a body run in the agent's own image.
 
 * The CLI
 
@@ -200,7 +282,7 @@ of =(show bar)=.
 | =pine show NAME=        | show a surface                    | [build] |
 | =pine hide NAME=        | hide a surface                    | [build] |
 | =pine toggle NAME=      | toggle a surface                  | [build] |
-| =pine set CELL VALUE=   | set a cell                        | [build] |
+| =pine set REF VALUE=    | set a ref                         | [build] |
 | =pine reload=           | reload init.lisp                  | [build] |
 
 ** Agents
@@ -228,7 +310,7 @@ subcommands.
 
 * The three decisions this catalog commits to
 
-1. Names are symbols, everywhere: surfaces, cells, agents, commands. Strings only
+1. Names are symbols, everywhere: surfaces, refs, agents, commands. Strings only
    for user text and shell.
 2. =buffer= and =terminal= are widgets. This is what makes it one language: the
    editor is a surface holding a =buffer=, and a =buffer= can sit in a panel. It
@@ -249,9 +331,9 @@ subcommands.
 (defsurface bar (:as :bar)
   (centerbox :orient :v
     :start  (column (icon #xF02C1 :on-click (sh "niri msg action toggle-overview"))
-                    (rows (cell workspaces) #'ws-tile))
+                    (rows (ref workspaces) #'ws-tile))
     :end    (column (icon #x0F028 :on-click (show audio))
-                    (label (fmt-clock (cell clock)))
+                    (label (fmt-clock (ref clock)))
                     (icon #x0F007 :on-click (show ctl)))))
 
 (defsurface editor (:as :window)

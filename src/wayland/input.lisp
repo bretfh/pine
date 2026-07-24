@@ -129,7 +129,7 @@ callback (that waits for release, so a scrub does not spam the action)."
 
 (defun pointer-click (conn)
   "Run the callback under the cursor, then rebuild + repaint the surface (the
-action may have changed the cells the tree reads)."
+action may have changed the refs the tree reads)."
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-tree ls)
       (let ((thunk (l:click-thunk (ls-tree ls)

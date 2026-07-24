@@ -1,27 +1,8 @@
 (in-package :pine)
 
 (defun main (&key (workers 4) (remoting-port 0))
-  (format t "pine ~a on ~a ~a [~a]~%"
-          *version*
-          (lisp-implementation-type)
-          (lisp-implementation-version)
-          *target*)
-  (let ((srv (pine.server:start-server :workers workers
-                                       :remoting-port remoting-port)))
-    (setf pine.server:*server* srv)
-    (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-    (pine.event:make-event-bus srv)
-    (pine.actor:start-agent-registry srv)
-    (pine.actor:start-local-agent srv)
-    (let ((cli (pine.client:start-client srv)))
-      (setf pine.client:*client* cli)
-      (pine.buffer:install-default-faces)
-      (pine.editor:start-editor)
-      (pine.hooks:run-init-hooks)
-      
-      (format t "pine ready [port ~a]~%"
-              (or (pine.server:remoting-port srv) "none"))
-      (values srv cli))))
+  "Start the whole daemon in this image, for REPL use: (pine:main)."
+  (start-daemon :workers workers :remoting-port remoting-port))
 
 (defun start-daemon (&key (workers 4) (remoting-port 0))
   (let ((srv (pine.server:start-server :workers workers :remoting-port remoting-port)))
@@ -44,7 +25,7 @@
     (pine.desktop:install-desktop-sessions)
     (load-init)
     (pine.jobs:install-jobs)
-    (ignore-errors (pine.source:start-sources srv))   ; sources feed cells the desktop reads
+    (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads
     (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
     srv))
 
@@ -119,7 +100,10 @@
                   (sleep 0.2)
                   (sb-ext:exit :code 0 :abort t))
                 :name "pine-shutdown"))
-              (:reload (load-init) (ignore-errors (pine.desktop:refresh-all)) (r "reloaded"))
+              (:reload (load-init)
+                       (ignore-errors (pine.desktop:refresh-all))
+                       (ignore-errors (pine.editor:reseed-editor-sessions))
+                       (r "reloaded"))
               (:agents (r (mapcar #'pine.actor:agent-info-name (pine.actor:list-agents server))))
               (:spawn (pine.actor:spawn-agent server (second msg)) (r "spawned"))
               (:kill  (pine.actor:kill-agent server (second msg)) (r "killed"))
@@ -294,5 +278,3 @@ sure the port is free even if it was an old or wedged daemon."
 (defun stop ()
   (pine.hooks:run-shutdown-hooks))
 
-(defun on-minibuffer-accept (text)
-  (pine.editor:on-minibuffer-accept text))

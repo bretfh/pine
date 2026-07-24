@@ -1,10 +1,28 @@
 (in-package :pine.buffer)
 
-;;;; The desktop stylesheet, authored in Lisp as data: a list of (selector
-;;;; props-plist) where props values are CSS strings. This is the single source
-;;;; both renderers consume -- the GTK app concatenates it into a CSS string,
-;;;; the cairo backend parses each value and paints it. Colours and metrics come
-;;;; from the active theme, so restyling is a theme swap.
+;;;; The stylesheet, authored in Lisp as data: a list of (selector props-plist)
+;;;; where props values are CSS strings. pine.style compiles it and paints both
+;;;; the cairo panels and the cell render (layout buffers). Colours and
+;;;; metrics come from the active theme, so restyling is a theme swap. Users
+;;;; append their own rules with ADD-RULES (defrules from init.lisp); user rules
+;;;; come after the built-ins, so they win the cascade.
+
+(defvar *user-rules* nil
+  "User (selector props-plist) rules, appended after the built-ins. Keyed by
+selector string for replace-on-reload.")
+(defvar *rules-generation* 0
+  "Bumped whenever *user-rules* changes, so pine.style's compiled-rules cache
+knows to refresh even when the theme is unchanged.")
+
+(defun add-rules (rules)
+  "Merge RULES (a list of (selector props-plist)) into *user-rules*, replacing
+any rule with the same selector string. Reload-safe; bumps *rules-generation*."
+  (dolist (rule rules)
+    (setf *user-rules*
+          (remove (first rule) *user-rules* :key #'first :test #'string=))
+    (push rule *user-rules*))
+  (incf *rules-generation*)
+  *user-rules*)
 
 (defun css-color (role) (color role))
 (defun css-glass (role &optional (a (metric :opacity 0.4)))
@@ -16,8 +34,8 @@
 (defun theme-rules ()
   (flet ((p (role) (css-color role)) (glass (role) (css-glass role))
          (rad () (css-rad)) (mono () (css-mono)))
-    `(;; global reset: strip GTK4's default chrome off every widget (eww's
-      ;; `* { all: unset }') -- borders, shadows, focus rings, backgrounds.
+    `(;; global reset: every widget starts bare -- no borders, shadows, focus
+      ;; rings, or backgrounds; each rule below opts back in.
       ("*" (:border-width "0" :border-style "none" :box-shadow "none" :outline-style "none"
             :background-color "transparent" :background-image "none"))
       ("button" (:min-width "0" :min-height "0" :padding "0"))
@@ -160,9 +178,31 @@
       (".ctl-scale.vol trough highlight" (:background-color ,(p :accent) :border-radius "10px"))
       (".ctl-scale.bri trough highlight" (:background-color ,(p :yellow) :border-radius "10px"))
       (".ctl-scale slider" (:min-width "14px" :min-height "14px" :border-radius "7px" :background-color ,(p :fg)))
+      ;; layout buffers (the cell render): the completion popup, the debugger,
+      ;; jobs, and the help buffers style through the same CSS-as-data as the
+      ;; desktop
+      (".cand" (:color ,(p :fg)))
+      (".cand-annot" (:color ,(p :fg-dim)))
+      (".cand-row" (:background-color ,(p :bg-completion)))
+      (".cand-row.sel" (:background-color ,(p :bg-active)))
+      (".cand-row.sel .cand" (:color ,(p :accent-fg)))
+      (".cand-row.sel .cand-annot" (:color ,(p :accent-fg)))
+      (".dbg-switch" (:color ,(p :blue-faint)))
+      (".dbg-header" (:color ,(p :cyan-warmer) :font-weight "bold"))
+      (".dbg-cond" (:color ,(p :red-faint)))
+      (".dbg-note" (:color ,(p :blue-faint)))
+      (".restart-lbl" (:color ,(p :yellow-cooler)))
+      (".restart.sel" (:background-color ,(p :bg-active)))
+      (".restart.sel .restart-lbl" (:color ,(p :accent-fg)))
+      (".dbg-bt" (:color ,(p :blue-faint)))
+      (".job-row.sel" (:background-color ,(p :bg-active)))
+      (".help-head" (:color ,(p :cyan-warmer) :font-weight "bold"))
+      (".help-entry" (:color ,(p :fg)))
       ;; echo
       (".echo" (:background-color "transparent"))
       (".echo-lead" (:min-width "44px" :background-color "transparent"))
       (".echo-body" (:background-color ,(glass :bg)))
       (".echo-text" (:color ,(p :fg) :font-size "13px" :padding "0 12px"))
-      (".echo-stat" (:color ,(p :fg-dim) :font-size "12px" :padding "0 16px 0 8px")))))
+      (".echo-stat" (:color ,(p :fg-dim) :font-size "12px" :padding "0 16px 0 8px"))
+      ;; user rules last, so they win the cascade
+      ,@(reverse *user-rules*))))
