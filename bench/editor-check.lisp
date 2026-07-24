@@ -95,6 +95,30 @@
         (pine.var:set-global :debug-on-error nil)
         (pine.command:call-command "probe-boom")
         (chk "command error -> echo (no debugger) when off" saw2 nil)
-        (setf pine.eval:*on-debug* nil)))))
+        (setf pine.eval:*on-debug* nil)
+        ;; --- debugger session registry: concurrent faults coexist and page ---
+        (setf pine.editor::*debugger-sessions* nil pine.editor::*attended-session* nil)
+        (pine.editor::%agent-debug-surface
+         (list :agent-debug :agent "alpha" :eval-id 1 :condition "boom-a"
+               :restarts (list "RETRY" "ABORT")))
+        (pine.editor::%agent-debug-surface
+         (list :agent-debug :agent "beta" :eval-id 2 :condition "boom-b"
+               :restarts (list "ABORT")))
+        (sleep 0.1)
+        (chk "two live debugger sessions" (length pine.editor::*debugger-sessions*) 2)
+        (chk "attended is newest fault"
+             (pine.editor::dbg-session-agent pine.editor::*attended-session*) "beta")
+        (pine.command:call-command "debugger-next-session") (sleep 0.05)
+        (chk "Tab pages to the other session"
+             (pine.editor::dbg-session-agent pine.editor::*attended-session*) "alpha")
+        (pine.editor::invoke-pending-restart "ABORT") (sleep 0.05)
+        (chk "resolve drops one, advances to remaining"
+             (list (length pine.editor::*debugger-sessions*)
+                   (pine.editor::dbg-session-agent pine.editor::*attended-session*))
+             (list 1 "beta"))
+        (pine.editor::invoke-pending-restart "ABORT") (sleep 0.05)
+        (chk "last resolve empties the registry"
+             (list (length pine.editor::*debugger-sessions*) pine.editor::*attended-session*)
+             (list 0 nil))))))
 (format t "~&~d failures~%" *f*)
 (sb-ext:exit :code (if (zerop *f*) 0 1))

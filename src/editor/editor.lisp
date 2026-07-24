@@ -163,7 +163,28 @@ from the buffer, or nil."
 ;;;; Evaluation runs through pine.eval on its own thread, never on the UI
 ;;;; thread, so a slow/looping/erroring form can't hang or crash the editor.
 
-(defvar *pending-debugger* nil "The evaluation currently waiting in the debugger.")
+;;;; Debugger sessions. A fault -- a local evaluation, or an error shipped home
+;;;; from a :process agent -- becomes a session and joins a registry, because a
+;;;; multi-image substrate faults in more than one place at once (two agents, an
+;;;; agent and a buffer). The *debugger* buffer shows the ATTENDED session; Tab
+;;;; pages to the next; picking a restart resolves the attended one and advances
+;;;; to the next, or dismisses the buffer when none remain. Resolving drives the
+;;;; decision back to where the restart is live: pick-restart on the blocked
+;;;; local eval, or :resume to the agent.
+
+(defstruct dbg-session
+  id                 ; small integer, for the switcher header
+  kind               ; :local or :agent
+  ev                 ; the pine.eval:evaluation (kind :local), resumed by pick-restart
+  agent eval-id      ; agent name + eval-id (kind :agent), resumed by :resume
+  header             ; one-line title
+  condition          ; condition text
+  restarts           ; list of (name report)
+  backtrace)         ; text, or nil
+
+(defvar *debugger-sessions* nil "Live debugger sessions, most-recent first.")
+(defvar *attended-session* nil "The session the *debugger* buffer currently shows.")
+(defvar *debugger-session-counter* 0)
 
 (defun %eval-notify (text)
   "Show TEXT in the echo area and repaint, safely from the eval thread."
@@ -176,20 +197,18 @@ from the buffer, or nil."
     (:ok (%eval-notify (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
     (:aborted (%eval-notify "aborted"))))
 
-(defvar *pending-agent-debug* nil
-  "The last error reported home by a :process agent: (:agent :eval-id :restarts).")
-
 ;;;; The debugger buffer is a real mode, not raw text: restart lines carry
-;;;; faces and indices, and debugger-mode's keymap (0-9, Return, a, q) drives
-;;;; the choice. The restart stays live on its blocked thread (or in its agent);
-;;;; only the decision moves.
+;;;; faces and indices, and debugger-mode's keymap (0-9, Return, a, q, Tab)
+;;;; drives the choice. The restart stays live on its blocked thread (or in its
+;;;; agent); only the decision moves. The next three are render-scoped: the
+;;;; restart data of the currently painted (attended) session.
 
 (defvar *debugger-restarts* #()
   "Vector of restart names shown in the live debugger buffer, by index.")
 (defvar *debugger-restart-lines* nil
   "Alist (buffer-line . restart-index) for Return-on-a-restart-line.")
 (defvar *debugger-return-to* nil
-  "Buffer name to return to when the debugger is dismissed.")
+  "Buffer name to return to when the last session is resolved or dismissed.")
 
 (defun %switch-to-buffer (name)
   (let ((client (pine.client:current-client))
@@ -200,16 +219,26 @@ from the buffer, or nil."
         (when r
           (sento.actor:tell r (list :switch-buffer :buffer buf :name name)))))))
 
-(defun %show-debugger (header condition restarts backtrace)
-  "Open *debugger* in debugger-mode. RESTARTS is a list of (name report)."
-  (let ((lines nil) (hl nil) (rlines nil) (i 0))
+(defun %render-session (session)
+  "Paint SESSION into the *debugger* buffer, make it the attended one, and switch
+to it. A switcher header names which session of how many is shown."
+  (setf *attended-session* session)
+  (let ((lines nil) (hl nil) (rlines nil) (i 0)
+        (restarts (dbg-session-restarts session))
+        (ordered (reverse *debugger-sessions*)))        ; oldest first, stable order
     (flet ((add (text face)
              (push text lines)
              (when face (push (list i 0 999 face) hl))
              (incf i)))
-      (add header :function-name)
+      (when (> (length ordered) 1)
+        (add (format nil "session ~d/~d  (Tab: next)   ~{~a~^  |  ~}"
+                     (1+ (or (position session ordered) 0)) (length ordered)
+                     (mapcar #'dbg-session-header ordered))
+             :comment)
+        (add "" nil))
+      (add (dbg-session-header session) :function-name)
       (add "" nil)
-      (dolist (cl (%split-lines* condition)) (add cl :string))
+      (dolist (cl (%split-lines* (dbg-session-condition session))) (add cl :string))
       (add "" nil)
       (add "Restarts (press the number, or Return on a line):" :comment)
       (loop for (name report) in restarts for idx from 0
@@ -217,12 +246,11 @@ from the buffer, or nil."
                (add (format nil "  ~d  [~a]  ~a" idx (or name "") (or report ""))
                     :keyword))
       (add "" nil)
-      (when backtrace
+      (when (dbg-session-backtrace session)
         (add "Backtrace:" :comment)
-        (dolist (bl (%split-lines* backtrace)) (add bl :comment))))
+        (dolist (bl (%split-lines* (dbg-session-backtrace session))) (add bl :comment))))
     (setf *debugger-restarts* (coerce (mapcar #'first restarts) 'vector)
-          *debugger-restart-lines* (nreverse rlines)
-          *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name)))
+          *debugger-restart-lines* (nreverse rlines))
     (let ((buf (pine.buffer:make-buffer "*debugger*")))
       (pine.buffer:tell buf :replace-content
                         :content (format nil "~{~a~^~%~}" (nreverse lines)))
@@ -232,6 +260,32 @@ from the buffer, or nil."
       (%switch-to-buffer "*debugger*")
       buf)))
 
+(defun %push-session (session)
+  "Register SESSION and attend it. The return-to buffer is captured the first
+time the debugger opens, so resolving the last session lands you back where you
+were before any fault."
+  (unless *debugger-sessions*
+    (setf *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name))))
+  (push session *debugger-sessions*)
+  (%render-session session))
+
+(defun %dismiss-debugger ()
+  "Hide the *debugger* buffer and return to the pre-debugger buffer. Does not
+resolve anything -- any sessions still in the registry stay parked."
+  (when *debugger-return-to*
+    (%switch-to-buffer *debugger-return-to*))
+  (ignore-errors (pine.buffer:kill-buffer "*debugger*")))
+
+(defun %resolve-session (session)
+  "Drop SESSION from the registry (its thread was just resumed); attend the next
+live session, or dismiss the buffer and clear the return-to when none remain."
+  (setf *debugger-sessions* (remove session *debugger-sessions*))
+  (let ((next (first *debugger-sessions*)))
+    (cond (next (%render-session next))
+          (t (setf *attended-session* nil)
+             (%dismiss-debugger)
+             (setf *debugger-return-to* nil)))))
+
 (defun %split-lines* (string)
   (loop with start = 0
         for nl = (position #\Newline string :start start)
@@ -239,13 +293,13 @@ from the buffer, or nil."
         while nl do (setf start (1+ nl))))
 
 (defun %eval-error (ev)
-  (setf *pending-debugger* ev
-        *pending-agent-debug* nil)
-  (%show-debugger (format nil "Evaluation error: ~a"
-                          (pine.eval:evaluation-condition-type ev))
-                  (pine.eval:evaluation-condition ev)
-                  (pine.eval:evaluation-restarts ev)
-                  (pine.eval:evaluation-backtrace ev))
+  (%push-session
+   (make-dbg-session
+    :id (incf *debugger-session-counter*) :kind :local :ev ev
+    :header (format nil "Evaluation error: ~a" (pine.eval:evaluation-condition-type ev))
+    :condition (pine.eval:evaluation-condition ev)
+    :restarts (pine.eval:evaluation-restarts ev)
+    :backtrace (pine.eval:evaluation-backtrace ev)))
   (%eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
                         (pine.eval:evaluation-condition-type ev))))
 
@@ -255,47 +309,51 @@ the resume back to that agent. Move the decision, not the handler."
   (when (eq (first msg) :agent-debug)
     (destructuring-bind (&key agent eval-id condition restarts &allow-other-keys)
         (rest msg)
-      (setf *pending-agent-debug* (list :agent agent :eval-id eval-id :restarts restarts)
-            *pending-debugger* nil)
-      (%show-debugger (format nil "Error in agent ~a" agent)
-                      (or condition "")
-                      (mapcar (lambda (r) (list r nil)) (remove nil restarts))
-                      nil)
+      (%push-session
+       (make-dbg-session
+        :id (incf *debugger-session-counter*) :kind :agent :agent agent :eval-id eval-id
+        :header (format nil "Error in agent ~a" agent)
+        :condition (or condition "")
+        :restarts (mapcar (lambda (r) (list r nil)) (remove nil restarts))
+        :backtrace nil))
       (%eval-notify (format nil "agent ~a error (0-9/Return picks a restart)" agent)))))
 
+(defun %session-resume (session name)
+  "Send NAME to where SESSION's restart is live: pick-restart on the blocked
+local eval, or :resume to the agent that shipped its restarts home."
+  (ecase (dbg-session-kind session)
+    (:local
+     (when (and (dbg-session-ev session)
+                (eq (pine.eval:evaluation-status (dbg-session-ev session)) :error))
+       (pine.eval:pick-restart (dbg-session-ev session) name)))
+    (:agent
+     (let ((info (pine.actor:find-agent
+                  (pine.client:server-of (pine.client:current-client))
+                  (dbg-session-agent session))))
+       (when info
+         (sento.actor:tell (pine.actor:agent-info-actor info)
+                           (list :resume :eval-id (dbg-session-eval-id session)
+                                 :restart name)))))))
+
 (defun invoke-pending-restart (name)
-  "Invoke restart NAME on whatever is waiting: the blocked local evaluation, or
-the agent that shipped its restarts home."
-  (cond
-    (*pending-agent-debug*
-     (destructuring-bind (&key agent eval-id restarts) *pending-agent-debug*
-       (declare (ignore restarts))
-       (let ((info (pine.actor:find-agent
-                    (pine.client:server-of (pine.client:current-client)) agent)))
-         (when info
-           (sento.actor:tell (pine.actor:agent-info-actor info)
-                             (list :resume :eval-id eval-id :restart name))))
-       (setf *pending-agent-debug* nil)
-       (pine.echo:message (format nil "resumed ~a in agent ~a" name agent))
-       t))
-    ((and *pending-debugger*
-          (eq (pine.eval:evaluation-status *pending-debugger*) :error))
-     (pine.eval:pick-restart *pending-debugger* name)
-     (setf *pending-debugger* nil)
-     (pine.echo:message (format nil "invoked ~a" name))
-     t)
-    (t (pine.echo:message "no evaluation in the debugger")
-       nil)))
+  "Invoke restart NAME on the attended session, then resolve it (advance to the
+next live session, or dismiss the debugger)."
+  (let ((session *attended-session*))
+    (cond
+      ((null session) (pine.echo:message "no evaluation in the debugger") nil)
+      (t (%session-resume session name)
+         (%resolve-session session)
+         (pine.echo:message (format nil "invoked ~a" name))
+         t))))
 
 (defun %debugger-quit ()
-  (when *debugger-return-to*
-    (%switch-to-buffer *debugger-return-to*))
-  (ignore-errors (pine.buffer:kill-buffer "*debugger*")))
+  "Dismiss the *debugger* view without resolving; parked sessions stay in the
+registry (M-x debugger reopens the attended one)."
+  (%dismiss-debugger))
 
 (defun %debugger-invoke-index (n)
   (if (and n (< -1 n (length *debugger-restarts*)))
-      (when (invoke-pending-restart (aref *debugger-restarts* n))
-        (%debugger-quit))
+      (invoke-pending-restart (aref *debugger-restarts* n))
       (pine.echo:message (format nil "no restart ~a" n))))
 
 (defvar *eval-target* :local
@@ -610,9 +668,12 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
 (defun install-commands ()
   (defcmd "keyboard-quit" ()
     (setf (pine.client:pending-keys (pine.client:current-client)) nil)
-    (when *pending-debugger*
-      (pine.eval:abort-evaluation *pending-debugger*)
-      (setf *pending-debugger* nil))
+    ;; C-g while attending a local eval interrupts it into its abort restart
+    ;; (kills a runaway loop) and resolves the session.
+    (let ((s *attended-session*))
+      (when (and s (eq (dbg-session-kind s) :local) (dbg-session-ev s))
+        (pine.eval:abort-evaluation (dbg-session-ev s))
+        (%resolve-session s)))
     (let ((buf (cur-buffer)))
       (when buf
         (sento.actor:tell buf (list :set-meta :key :mark-line :value nil))
@@ -751,9 +812,7 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
     (let ((names (coerce *debugger-restarts* 'list)))
       (if names
           (completing-read "Restart: " (remove nil names)
-            (lambda (name)
-              (when (invoke-pending-restart name)
-                (%debugger-quit))))
+            (lambda (name) (invoke-pending-restart name)))
           (pine.echo:message "no evaluation in the debugger"))))
   (defcmd "debugger-invoke-restart" ()
     (let* ((key (pine.client:this-command-key (pine.client:current-client)))
@@ -766,10 +825,22 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
           (%debugger-invoke-index (cdr entry))
           (pine.echo:message "point is not on a restart line"))))
   (defcmd "debugger-abort" ()
-    (when (invoke-pending-restart "ABORT")
-      (%debugger-quit)))
+    (invoke-pending-restart "ABORT"))
   (defcmd "debugger-quit" ()
     (%debugger-quit))
+  (defcmd "debugger-next-session" ()
+    "Page to the next live debugger session without resolving the current one."
+    (let ((ordered (reverse *debugger-sessions*)))
+      (if (> (length ordered) 1)
+          (let* ((pos (or (position *attended-session* ordered) 0))
+                 (next (nth (mod (1+ pos) (length ordered)) ordered)))
+            (%render-session next))
+          (pine.echo:message "only one debugger session"))))
+  (defcmd "debugger" ()
+    "Reopen the *debugger* on the attended session (after q), if one is parked."
+    (if *attended-session*
+        (%render-session *attended-session*)
+        (pine.echo:message "no debugger session")))
   (defcmd "toggle-debug-on-error" ()
     (let ((new (not (pine.var:variable-value :debug-on-error))))
       (pine.var:set-global :debug-on-error new)
@@ -889,6 +960,7 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
     (pine.keymap:define-key dm (k "Return") "debugger-invoke-at-point")
     (pine.keymap:define-key dm (k "a") "debugger-abort")
     (pine.keymap:define-key dm (k "q") "debugger-quit")
+    (pine.keymap:define-key dm (k "Tab") "debugger-next-session")
     ;; global: quit, chords, M-x
     (pine.keymap:define-key g (k "C-g") "keyboard-quit")
     (pine.keymap:define-key g (k "Escape") "keyboard-quit")
