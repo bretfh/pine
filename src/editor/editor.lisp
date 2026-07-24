@@ -371,24 +371,29 @@ registry (M-x debugger reopens the attended one)."
       (invoke-pending-restart (aref *debugger-restarts* n))
       (pine.echo:message (format nil "no restart ~a" n))))
 
-(defun %eval-form-string (str package)
-  ;; one eval path: run STR in the chosen agent, off the caller thread, sharing
-  ;; the same pine.eval engine. Errors reach *on-debug* (local) or come home
-  ;; from a process agent via agent-debug.
+(defun eval-in-target (str package &key on-done bindings)
+  "Evaluate STR in the current *eval-target* image over the one eval path: :local
+runs through the local-agent (in-image), a named target through that agent, both
+off the caller thread on the shared pine.eval engine. ON-DONE runs on the eval
+thread for :local; for a remote agent the result comes home as an :agent-result
+(the *jobs* surface) and BINDINGS do not cross the wire. The repl and the editor
+eval commands share this, so `set-eval-target' redirects both."
   (if (or (null *eval-target*) (eq *eval-target* :local))
       (if pine.actor:*local-agent*
           (pine.actor:agent-eval nil pine.actor:*local-agent* str
-                                 :package package
-                                 :bindings (list (cons 'pine.client:*client*
-                                                       (pine.client:current-client)))
-                                 :on-done #'%eval-done)
-          (pine.eval:evaluate-string
-           str :package package
-           :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
-           :on-done #'%eval-done))
-      ;; a remote agent's image: no local bindings cross the wire
+                                 :package package :bindings bindings :on-done on-done)
+          (pine.eval:evaluate-string str :package package
+                                     :bindings bindings :on-done on-done))
       (pine.actor:agent-eval (pine.client:server-of (pine.client:current-client))
-                             *eval-target* str :package package :on-done #'%eval-done)))
+                             *eval-target* str :package package :on-done on-done)))
+
+(defun %eval-form-string (str package)
+  ;; errors reach *on-debug* (local) or come home from a process agent via
+  ;; agent-debug; the client binding rides along for :local.
+  (eval-in-target str package
+                  :on-done #'%eval-done
+                  :bindings (list (cons 'pine.client:*client*
+                                        (pine.client:current-client)))))
 
 (defun eval-defun ()
   "Evaluate the top-level form point is inside (C-M-x), via the buffer's tree."

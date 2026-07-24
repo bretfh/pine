@@ -26,11 +26,12 @@
     (t (eval-lisp input))))
 
 (defun eval-lisp (input)
-  ;; off-thread via pine.eval: a slow/looping/erroring form can't hang the repl,
-  ;; and errors reach the shared debugger surface (*on-debug*).
-  (pine.eval:evaluate-string
+  ;; the one eval path, honouring *eval-target*: :local runs in the daemon image,
+  ;; a set target runs in that agent's image. Off-thread, so a slow/looping/
+  ;; erroring form can't hang the repl and errors reach the debugger surface.
+  (pine.editor:eval-in-target
    input
-   :package (find-package :cl-user)
+   (find-package :cl-user)
    :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
    :on-done
    (lambda (ev)

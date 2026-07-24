@@ -297,6 +297,7 @@
    #:scroll-window
    #:eval-last-sexp
    #:eval-buffer
+   #:eval-in-target
    #:on-minibuffer-accept
    ;; prompt
    #:prompt
