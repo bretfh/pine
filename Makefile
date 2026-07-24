@@ -63,6 +63,11 @@ check-bench:
 check-editor:
 	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine)" --load bench/editor-check.lisp'
 
+# proves cross-image live redefinition: spawn a real :process agent (its own
+# SBCL), redefine a function in it, confirm the change took effect in that image.
+check-agent:
+	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine)" --load bench/agent-check.lisp'
+
 # the GTK-free desktop: attach to the running daemon (make daemon) and run the
 # bar, echo, and panels as wayland layer surfaces (opens surfaces): make wl-desktop
 wl-desktop:
