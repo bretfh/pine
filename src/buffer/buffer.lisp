@@ -303,8 +303,17 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
                                       ;; edit and the actor keeps receiving.
                                       (pine.eval:with-debugger
                                           (:label (format nil "buffer ~a <- ~a" name (first msg)))
-                                        (pine.mode:dispatch-message mode sento.actor:*self*
-                                                                    (first msg) (rest msg))))))))
+                                        ;; RETRY re-runs the edit after a live fix
+                                        ;; (fix the failing defun in this image,
+                                        ;; then pick retry); ABORT (from
+                                        ;; with-debugger) drops it and keeps the
+                                        ;; prior buffer.
+                                        (loop
+                                          (with-simple-restart (retry "Retry this edit")
+                                            (return
+                                              (pine.mode:dispatch-message
+                                               mode sento.actor:*self*
+                                               (first msg) (rest msg)))))))))))
 
 (defun notify-subscribers (subscribers state &optional hl)
   (let ((snap (state->snapshot-with-hl state hl)))

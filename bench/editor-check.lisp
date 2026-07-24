@@ -80,6 +80,9 @@
              (and saw (pine.eval:evaluation-status saw)) :error)
         (chk "buffer state preserved after edit error"
              (sento.actor:ask-s buf '(:get-text) :time-out 5) "hello")
+        (chk "edit boundary offers a RETRY restart"
+             (and (member "RETRY" (mapcar #'first (pine.eval:evaluation-restarts saw))
+                          :test #'string=) t) t)
         (sento.actor:tell buf (list :insert :text "!"))
         (sleep 0.15)
         (let ((tx (sento.actor:ask-s buf '(:get-text) :time-out 5)))
@@ -108,9 +111,11 @@
         (chk "two live debugger sessions" (length pine.editor::*debugger-sessions*) 2)
         (chk "attended is newest fault"
              (pine.editor::dbg-session-agent pine.editor::*attended-session*) "beta")
+        (chk "eval-target follows the attended fault" pine.editor::*eval-target* "beta")
         (pine.command:call-command "debugger-next-session") (sleep 0.05)
         (chk "Tab pages to the other session"
              (pine.editor::dbg-session-agent pine.editor::*attended-session*) "alpha")
+        (chk "eval-target follows on page" pine.editor::*eval-target* "alpha")
         (pine.editor::invoke-pending-restart "ABORT") (sleep 0.05)
         (chk "resolve drops one, advances to remaining"
              (list (length pine.editor::*debugger-sessions*)
@@ -120,6 +125,7 @@
         (chk "last resolve empties the registry"
              (list (length pine.editor::*debugger-sessions*) pine.editor::*attended-session*)
              (list 0 nil))
+        (chk "eval-target restored after the debugger closes" pine.editor::*eval-target* :local)
         ;; --- source fault boundary: record, back off, disable; no swallow ---
         (let ((s (pine.source::make-source :name "probe")))
           (pine.source::%source-fault s (make-condition 'simple-error :format-control "x"))

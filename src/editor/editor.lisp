@@ -186,6 +186,14 @@ from the buffer, or nil."
 (defvar *attended-session* nil "The session the *debugger* buffer currently shows.")
 (defvar *debugger-session-counter* 0)
 
+(defvar *eval-target* :local
+  "Where C-x C-e / eval-defun run: :local (this image), or a registered agent
+name (a :process agent's own image). The one eval path, target swappable.")
+(defvar *eval-target-saved* :local
+  "The eval target from before the debugger opened, restored when it closes:
+while attending a fault the target follows the faulted image, so a fix compiles
+into the image that broke.")
+
 (defun %eval-notify (text)
   "Show TEXT in the echo area and repaint, safely from the eval thread."
   (pine.echo:message text)
@@ -221,8 +229,13 @@ from the buffer, or nil."
 
 (defun %render-session (session)
   "Paint SESSION into the *debugger* buffer, make it the attended one, and switch
-to it. A switcher header names which session of how many is shown."
-  (setf *attended-session* session)
+to it. A switcher header names which session of how many is shown. The eval
+target follows the attended fault, so C-x C-e / recompile land in the image that
+broke -- fix the defun there, then pick retry."
+  (setf *attended-session* session
+        *eval-target* (ecase (dbg-session-kind session)
+                        (:agent (dbg-session-agent session))
+                        (:local :local)))
   (let ((lines nil) (hl nil) (rlines nil) (i 0)
         (restarts (dbg-session-restarts session))
         (ordered (reverse *debugger-sessions*)))        ; oldest first, stable order
@@ -265,7 +278,8 @@ to it. A switcher header names which session of how many is shown."
 time the debugger opens, so resolving the last session lands you back where you
 were before any fault."
   (unless *debugger-sessions*
-    (setf *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name))))
+    (setf *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name))
+          *eval-target-saved* *eval-target*))
   (push session *debugger-sessions*)
   (%render-session session))
 
@@ -282,7 +296,8 @@ live session, or dismiss the buffer and clear the return-to when none remain."
   (setf *debugger-sessions* (remove session *debugger-sessions*))
   (let ((next (first *debugger-sessions*)))
     (cond (next (%render-session next))
-          (t (setf *attended-session* nil)
+          (t (setf *attended-session* nil
+                   *eval-target* *eval-target-saved*)   ; back to the pre-fault target
              (%dismiss-debugger)
              (setf *debugger-return-to* nil)))))
 
@@ -355,10 +370,6 @@ registry (M-x debugger reopens the attended one)."
   (if (and n (< -1 n (length *debugger-restarts*)))
       (invoke-pending-restart (aref *debugger-restarts* n))
       (pine.echo:message (format nil "no restart ~a" n))))
-
-(defvar *eval-target* :local
-  "Where C-x C-e / eval-defun run: :local (this image), or a registered agent
-name (a :process agent's own image). The one eval path, target swappable.")
 
 (defun %eval-form-string (str package)
   ;; one eval path: run STR in the chosen agent, off the caller thread, sharing
