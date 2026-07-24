@@ -366,50 +366,42 @@ the actor system. No thread is killed."
 (defsource :network-scan (system)
   (start-poll system 15 (lambda () (refresh-net "yes"))))
 
-;;;; Media (EMMS via the emacs daemon). Polled into a :media plist cell.
+;;;; Media (MPRIS via playerctl). Polled into a :media plist cell. Replaces the
+;;;; old EMMS-over-emacsclient feed: pine's desktop does not depend on emacs.
 
-(defparameter +emms-elisp+
-  "(let* ((trk (ignore-errors (emms-playlist-current-selected-track))) (playing (and (boundp 'emms-player-playing-p) emms-player-playing-p)) (paused (and (boundp 'emms-player-paused-p) emms-player-paused-p))) (if trk (json-encode (list :title (or (emms-track-get trk 'info-title) \"\") :artist (or (emms-track-get trk 'info-artist) \"\") :length (or (emms-track-get trk 'info-playing-time) 0) :pos (or (and (boundp 'emms-playing-time) emms-playing-time) 0) :file (or (ignore-errors (emms-track-name trk)) \"\") :status (cond (paused \"Paused\") (playing \"Playing\") (t \"Stopped\")))) \"{}\"))")
+(defun %art-path (art-url)
+  "A local file path from an MPRIS artUrl (file://...), or nil (skip remote art)."
+  (when (and (stringp art-url) (uiop:string-prefix-p "file://" art-url))
+    (let ((p (subseq art-url 7)))
+      (when (ignore-errors (probe-file p)) p))))
 
-(defun cover-for (file)
-  "A cover-art image path in FILE's directory, or nil."
-  (when (and (stringp file) (plusp (length file)) (ignore-errors (probe-file file)))
-    (let ((dir (directory-namestring file)))
-      (dolist (name '("cover.jpg" "cover.jpeg" "cover.png" "folder.jpg" "front.jpg") nil)
-        (let ((path (merge-pathnames name dir)))
-          (when (ignore-errors (probe-file path)) (return (namestring path))))))))
+(defun %usec->sec (s)
+  "Microseconds string (playerctl position / mpris:length) to whole seconds."
+  (let ((n (ignore-errors (parse-integer (string-trim '(#\space #\newline) (or s ""))))))
+    (if n (round n 1000000) 0)))
 
-(defun %unquote-elisp (s)
-  "emacsclient -e prints a Lisp string literal; strip the quotes and unescape."
-  (let ((s (string-trim '(#\space #\newline) s)))
-    (when (and (>= (length s) 2) (char= (char s 0) #\")
-               (char= (char s (1- (length s))) #\"))
-      (setf s (subseq s 1 (1- (length s)))))
-    (with-output-to-string (out)
-      (loop with i = 0 with n = (length s)
-            while (< i n)
-            do (let ((c (char s i)))
-                 (if (and (char= c #\\) (< (1+ i) n))
-                     (progn (write-char (char s (1+ i)) out) (incf i 2))
-                     (progn (write-char c out) (incf i))))))))
-
-(defun emms-media ()
-  (let ((raw (sh "emacsclient" "-e" +emms-elisp+)))
-    (when (plusp (length raw))
-      (ignore-errors
-        (let ((h (com.inuoe.jzon:parse (%unquote-elisp raw))))
-          (list :title  (gethash "title" h "")  :artist (gethash "artist" h "")
-                :status (gethash "status" h "Stopped")
-                :pos    (gethash "pos" h 0)      :length (gethash "length" h 0)
-                :file   (gethash "file" h "")))))))
+(defun playerctl-media ()
+  "Now-playing from the active MPRIS player via playerctl, or nil when none.
+pos/length are seconds, matching the panel's progress math."
+  (let ((status (sh "playerctl" "status")))
+    (when (and (plusp (length status)) (not (search "No player" status)))
+      (let ((parts (%split
+                    (sh "playerctl" "metadata" "--format"
+                        (format nil "{{title}}~c{{artist}}~c{{position}}~c{{mpris:length}}~c{{mpris:artUrl}}"
+                                #\Tab #\Tab #\Tab #\Tab))
+                    #\Tab)))
+        (list :title  (or (nth 0 parts) "") :artist (or (nth 1 parts) "")
+              :status status
+              :pos    (%usec->sec (nth 2 parts)) :length (%usec->sec (nth 3 parts))
+              :art    (%art-path (nth 4 parts)))))))
 
 (defsource :media (system)
   (let ((mc (ref-of :media)) (ac (ref-of :art)))
     (start-poll system 1
       (lambda ()
-        (let ((m (emms-media)))
+        (let ((m (playerctl-media)))
           (pine.ref:set-ref mc m)
-          (pine.ref:set-ref ac (or (cover-for (getf m :file)) "")))))))
+          (pine.ref:set-ref ac (or (and m (getf m :art)) "")))))))
 
 ;;;; System stats (cpu / ram / temp) for the control panel.
 

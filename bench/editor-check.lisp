@@ -140,6 +140,8 @@
           (pine.editor:eval-in-target "(+ 1 2)" (find-package :cl-user)
             :on-done (lambda (ev) (setf done (first (pine.eval:evaluation-values ev)))))
           (sleep 0.3)
-          (chk "eval-in-target :local runs through the one eval path" done 3))))))
+          (chk "eval-in-target :local runs through the one eval path" done 3))
+        (chk "playerctl media source evaluates without error (no emacs dep)"
+             (progn (ignore-errors (pine.source::playerctl-media)) t) t)))))
 (format t "~&~d failures~%" *f*)
 (sb-ext:exit :code (if (zerop *f*) 0 1))
