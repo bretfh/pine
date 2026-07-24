@@ -42,7 +42,37 @@
 
 ;;; source primitives
 
-(defstruct source name actor process super (stopped nil))
+(defstruct source name actor process super (stopped nil) (faults 0) (last-fault nil))
+
+(defparameter *source-fault-cap* 6
+  "Consecutive faults before a source is disabled instead of retried, so a broken
+source backs off and stops rather than spinning or swallowing errors silently.")
+
+(defun %source-ok (src)
+  "A refresh succeeded: clear the consecutive-fault counter."
+  (setf (source-faults src) 0))
+
+(defun %source-fault (src condition)
+  "Record a refresh fault on SRC. Disable the source after *source-fault-cap*
+consecutive faults. Returns the seconds to back off before the next attempt
+(exponential, capped)."
+  (incf (source-faults src))
+  (setf (source-last-fault src) (princ-to-string condition))
+  (format *error-output* "~&pine source ~a fault ~d: ~a~%"
+          (or (source-name src) "?") (source-faults src) condition)
+  (when (>= (source-faults src) *source-fault-cap*)
+    (setf (source-stopped src) t)
+    (format *error-output* "~&pine source ~a disabled after ~d faults~%"
+            (or (source-name src) "?") (source-faults src)))
+  (min 60 (* 2 (expt 2 (min 5 (source-faults src))))))
+
+(defvar *running* nil "Started sources, or nil.")
+(defun source-status ()
+  "Every started source as (name faults last-fault stopped) -- so a broken feed
+is visible, not silently dead."
+  (loop for s in *running*
+        collect (list (source-name s) (source-faults s)
+                      (source-last-fault s) (source-stopped s))))
 
 (defvar *actor-counter* 0
   "Serial for unique source-actor names; sento rejects a duplicate name, which
@@ -72,17 +102,21 @@ cleanly. No thread is ever killed."
           (bordeaux-threads:make-thread
            (lambda ()
              (loop until (source-stopped src) do
-               (handler-case
-                   (let ((proc (uiop:launch-program (list "sh" "-c" command) :output :stream)))
-                     (setf (source-process src) proc)
-                     (ignore-errors (funcall refresh-fn))   ; initial read, on this thread
-                     (loop with out = (uiop:process-info-output proc)
-                           for line = (read-line out nil nil)
-                           while line
-                           when (funcall trigger line)
-                             do (ignore-errors (funcall refresh-fn))))  ; on this thread
-                 (error () nil))
-               (unless (source-stopped src) (sleep *stream-backoff*))))
+               (let ((wait *stream-backoff*))
+                 ;; a launch failure or a refresh fault is recorded and backed
+                 ;; off (and disables the source after the cap); a clean EOF is
+                 ;; not a fault, just a relaunch. no silent (error () nil).
+                 (handler-case
+                     (let ((proc (uiop:launch-program (list "sh" "-c" command) :output :stream)))
+                       (setf (source-process src) proc)
+                       (funcall refresh-fn) (%source-ok src)   ; initial read
+                       (loop with out = (uiop:process-info-output proc)
+                             for line = (read-line out nil nil)
+                             while line
+                             when (funcall trigger line)
+                               do (funcall refresh-fn) (%source-ok src)))
+                   (error (e) (setf wait (%source-fault src e))))
+                 (unless (source-stopped src) (sleep wait)))))
            :name "pine-source-stream"))
     src))
 
@@ -95,8 +129,12 @@ stop takes effect promptly."
           (bordeaux-threads:make-thread
            (lambda ()
              (loop until (source-stopped src) do
-               (handler-case (funcall refresh-fn) (error () nil))
-               (loop repeat (max 1 interval) until (source-stopped src) do (sleep 1))))
+               ;; wait the interval on success, the backoff (growing, then
+               ;; disable) on a fault; the fault is recorded, never swallowed.
+               (let ((wait (handler-case
+                               (progn (funcall refresh-fn) (%source-ok src) (max 1 interval))
+                             (error (e) (%source-fault src e)))))
+                 (loop repeat wait until (source-stopped src) do (sleep 1)))))
            :name "pine-source-poll"))
     src))
 
@@ -104,7 +142,6 @@ stop takes effect promptly."
 
 (defvar *source-defs* (make-hash-table :test 'eq)
   "name -> starter function of the actor system.")
-(defvar *running* nil)
 
 (defmacro defsource (name (system) &body body)
   "Define a source NAME. BODY, with SYSTEM bound to the actor system, starts it

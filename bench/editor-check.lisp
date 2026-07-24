@@ -119,6 +119,15 @@
         (pine.editor::invoke-pending-restart "ABORT") (sleep 0.05)
         (chk "last resolve empties the registry"
              (list (length pine.editor::*debugger-sessions*) pine.editor::*attended-session*)
-             (list 0 nil))))))
+             (list 0 nil))
+        ;; --- source fault boundary: record, back off, disable; no swallow ---
+        (let ((s (pine.source::make-source :name "probe")))
+          (pine.source::%source-fault s (make-condition 'simple-error :format-control "x"))
+          (pine.source::%source-ok s)
+          (chk "a successful refresh clears the fault count" (pine.source::source-faults s) 0)
+          (dotimes (i 6)
+            (pine.source::%source-fault s (make-condition 'simple-error :format-control "boom")))
+          (chk "source disabled after the fault cap" (pine.source::source-stopped s) t)
+          (chk "source records the last fault" (and (pine.source::source-last-fault s) t) t))))))
 (format t "~&~d failures~%" *f*)
 (sb-ext:exit :code (if (zerop *f*) 0 1))

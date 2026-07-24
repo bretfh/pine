@@ -105,10 +105,12 @@ echo nodes read through this; there is no separate frame wire message."
                           (paint-focused client)))
                        (:force-render
                         (paint-focused client)))
+                   ;; the renderer runs with its client bound and must not block
+                   ;; (it draws the debugger), so surface non-blocking through the
+                   ;; same command-error path: echo, or the *debugger* under
+                   ;; debug-on-error. never a silent stderr drop.
                    (error (e)
-                     (ignore-errors
-                      (format *error-output* "~&renderer error on ~s: ~a~%"
-                              (first msg) e)))))))))
+                     (ignore-errors (pine.command:command-error e)))))))))
     (setf (pine.client:renderer client) renderer)
     renderer))
 
