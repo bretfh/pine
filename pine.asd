@@ -13,6 +13,7 @@
                #:cffi-libffi
                #:com.inuoe.jzon
                #:pine/vt)
+  :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
   :serial t
   :pathname "src/"
   :components
@@ -62,6 +63,16 @@
     :components ((:file "desktop")))
    (:file "user")
    (:file "main")))
+
+(asdf:defsystem #:pine/test
+  :description "The pine test suite."
+  :depends-on (#:pine #:fiveam)
+  :serial t
+  :pathname "tests/"
+  :components ((:file "suite") (:file "model") (:file "editor") (:file "agent"))
+  :perform (asdf:test-op (o c)
+             (unless (uiop:symbol-call :pine.test :run-tests)
+               (error "pine tests failed"))))
 
 (asdf:defsystem #:pine/vt
   :description "Self-contained terminal emulator (ex hemlock.term) + native pty."
