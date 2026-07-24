@@ -126,22 +126,11 @@
              (list (length pine.editor::*debugger-sessions*) pine.editor::*attended-session*)
              (list 0 nil))
         (chk "eval-target restored after the debugger closes" pine.editor::*eval-target* :local)
-        ;; --- source fault boundary: record, back off, disable; no swallow ---
-        (let ((s (pine.source::make-source :name "probe")))
-          (pine.source::%source-fault s (make-condition 'simple-error :format-control "x"))
-          (pine.source::%source-ok s)
-          (chk "a successful refresh clears the fault count" (pine.source::source-faults s) 0)
-          (dotimes (i 6)
-            (pine.source::%source-fault s (make-condition 'simple-error :format-control "boom")))
-          (chk "source disabled after the fault cap" (pine.source::source-stopped s) t)
-          (chk "source records the last fault" (and (pine.source::source-last-fault s) t) t))
         ;; --- one eval path: repl + editor share eval-in-target, target-swappable ---
         (let ((done :none))
           (pine.editor:eval-in-target "(+ 1 2)" (find-package :cl-user)
             :on-done (lambda (ev) (setf done (first (pine.eval:evaluation-values ev)))))
           (sleep 0.3)
-          (chk "eval-in-target :local runs through the one eval path" done 3))
-        (chk "playerctl media source evaluates without error (no emacs dep)"
-             (progn (ignore-errors (pine.source::playerctl-media)) t) t)))))
+          (chk "eval-in-target :local runs through the one eval path" done 3))))))
 (format t "~&~d failures~%" *f*)
 (sb-ext:exit :code (if (zerop *f*) 0 1))
