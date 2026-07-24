@@ -131,8 +131,13 @@ Color and shape as data. Change the theme and everything downstream re-resolves.
 
 - =defrules= appends to the one stylesheet; user rules win the cascade, and
   redefining a selector replaces it. VALUES are evaluated, so =(color :accent)=
-  resolves against the active theme. =(defrules (".cand-row.sel" :background-color
-  (color :bg-active)))=.
+  resolves against the active theme. Rules broadcast to every attached
+  frontend, so the pixel painters restyle live too. =(defrules
+  (".cand-row.sel" :background-color (color :bg-active)))=.
+- =:opacity= is a rule property; a window view's glass is styled like
+  anything else: =(window "scratch" :class "editor-view")= plus =(defrules
+  (".editor-view" :opacity "0.9"))= -- re-eval the rule and the next frame
+  repaints with it.
 
 * Data
 
@@ -142,14 +147,14 @@ so the surface re-renders when a ref it read changes, and only then.
 | symbol      | form                                | status  |
 |-------------+-------------------------------------+---------|
 | =defref=    | =(defref NAME [default])=             | [have]   |
-| =ref=       | =(ref NAME [default])= (tracked read)  | [have]   |
-| =set!=      | =(set! NAME VALUE)=                   | [have]   |
+| =ref=       | =(ref NAME [default])= -- setf-able    | [have]   |
 | =defpoll=   | =(defpoll NAME SECONDS BODY)=         | [have]   |
 | =defsource= | =(defsource NAME COMMAND PARSE)=      | [have]   |
 | =sh=        | =(sh COMMAND)= run a shell command   | [rename] |
 
-- =ref= is the tracked reader: a surface body that reads a ref re-renders when
-  it changes. =set!= writes one (deduped).
+- =ref= is the one accessor: a surface body that reads a ref re-renders when
+  it changes, and =(setf (ref NAME) V)= writes it (deduped), creating it if
+  missing. No separate setter.
 
 * Behavior
 

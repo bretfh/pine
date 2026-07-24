@@ -74,7 +74,7 @@
    #:defface #:find-face #:face-attr-bits #:install-default-faces
    #:deftheme #:load-theme #:find-theme #:theme-color #:color #:*active-theme*
    #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric #:theme-rules
-   #:add-rules #:*rules-generation*
+   #:add-rules #:install-rules #:*user-rules* #:*rules-generation*
    #:theme #:theme-name #:theme-palette #:theme-metrics #:theme-faces
    #:face-run #:run-start #:run-end #:run-face
    #:display-line #:display-text #:display-runs
@@ -270,12 +270,14 @@
   (:export #:ref #:make-ref #:defref #:find-ref #:ref-name
            #:ref-value #:deref #:set-ref #:update-ref
            #:ref-subscribe #:ref-unsubscribe
-           #:reactive-view #:make-view #:render-view #:dispose-view))
+           #:reactive-view #:make-view #:render-view #:dispose-view)
+  (:documentation "Reactive named values: (ref NAME) reads (tracked),
+(setf (ref NAME) V) writes (deduped, notifying)."))
 
 (defpackage #:pine.source
   (:use #:cl)
   (:export #:start-sources #:stop-sources #:workspaces
-           #:defsource #:defpoll #:set! #:ref-of
+           #:defsource #:defpoll
            #:select! #:act! #:select-sink!))
 
 (defpackage #:pine.style
@@ -283,6 +285,7 @@
   (:export #:style #:st-bg #:st-gradient #:st-fg #:st-border-w #:st-border-color
            #:st-radius #:st-pad-x #:st-pad-y #:st-min-w #:st-min-h
            #:st-font-px #:st-bold #:st-inset #:st-margin #:st-shadow
+           #:st-opacity
            #:resolve #:reset-rules))
 
 (defpackage #:pine.desktop
@@ -417,8 +420,8 @@
                 #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
                 #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
                 #:ask #:tell)
-  (:import-from :pine.ref #:defref #:find-ref #:deref)
-  (:import-from :pine.source #:defsource #:defpoll #:set!)
+  (:import-from :pine.ref #:defref #:ref)
+  (:import-from :pine.source #:defsource #:defpoll)
   (:import-from :pine.command #:call-command #:execute)
   (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode
                 #:dispatch-message #:auto-mode)
@@ -446,7 +449,7 @@
    ;; style
    #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
    ;; data
-   #:defref #:ref #:set! #:defpoll #:defsource #:sh #:launch
+   #:defref #:ref #:defpoll #:defsource #:sh #:launch
    ;; style rules
    #:defrules
    ;; behavior

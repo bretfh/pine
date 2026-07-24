@@ -14,14 +14,24 @@ selector string for replace-on-reload.")
   "Bumped whenever *user-rules* changes, so pine.style's compiled-rules cache
 knows to refresh even when the theme is unchanged.")
 
-(defun add-rules (rules)
+(defun install-rules (rules)
   "Merge RULES (a list of (selector props-plist)) into *user-rules*, replacing
-any rule with the same selector string. Reload-safe; bumps *rules-generation*."
+any rule with the same selector string, and bump *rules-generation* so the
+compiled-rules cache refreshes. The local half of ADD-RULES; frontends install
+rules pushed from the daemon here."
   (dolist (rule rules)
     (setf *user-rules*
           (remove (first rule) *user-rules* :key #'first :test #'string=))
     (push rule *user-rules*))
   (incf *rules-generation*)
+  *user-rules*)
+
+(defun add-rules (rules)
+  "Install RULES locally and broadcast the merged set to every attached app,
+so the pixel painters in the frontend images restyle too. Reload-safe."
+  (install-rules rules)
+  (dolist (c pine.attach:*clients*)
+    (ignore-errors (pine.attach:push-to-app c :rules :rules *user-rules*)))
   *user-rules*)
 
 (defun css-color (role) (color role))

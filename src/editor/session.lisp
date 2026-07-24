@@ -19,11 +19,6 @@ nodes and the editor frontend derive their cell grid from, so a buffer laid out
 at N cols x rows lands exactly in the frontend's cells."
   (pine.buffer:metric :font-px 15))
 
-(defun editor-opacity ()
-  "The editor background alpha from the :editor-opacity ref (1.0 = opaque)."
-  (let ((r (pine.ref:find-ref :editor-opacity)))
-    (if r (pine.ref:deref r) 1.0)))
-
 (defun %in-actor-p ()
   "True on a thread inside an actor's receive, where a blocking ask is
 forbidden (the liveness contract)."
@@ -74,9 +69,7 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
          (name (%buffer-name x buf))
          (w (and buf (%backing-window buf name)))
          (node (apply #'pine.layout:window nil :of w :kind :window
-                      (append props
-                              (list :font-px (editor-font-px)
-                                    :opacity (editor-opacity))))))
+                      (append props (list :font-px (editor-font-px))))))
     (when (and buf pine.client:*client*)
       (pine.render:subscribe-to-buffer buf))
     (unless pine.client:*client*
@@ -96,16 +89,14 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
              (let ((buf (%resolve-buffer x)))
                (and buf (%backing-window buf (%buffer-name x buf)))))))
     (apply #'pine.layout:window nil :of w :kind :modeline
-           (append props (list :font-px (editor-font-px)
-                               :opacity (editor-opacity))))))
+           (append props (list :font-px (editor-font-px))))))
 
 (defun editor-echo-node (&rest props)
   "The echo/minibuffer line as a leaf: the message or the active prompt with
 its input, the completion popup floating above it as an overlay (one in-flow
 row, so the input line never moves), and the minibuffer caret."
   (apply #'pine.layout:window nil :kind :echo :base 1
-         (append props (list :font-px (editor-font-px)
-                             :opacity (editor-opacity)))))
+         (append props (list :font-px (editor-font-px)))))
 
 (defun %default-editor-tree ()
   "The engine's editor surface, used when init.lisp declares none: one window
@@ -180,7 +171,11 @@ it to the app as the `editor' surface."
         (pine.render:relayout))
       (ensure-minibuffer client)
       (let ((s (make-sess :client client :aclient aclient :sink sink)))
-        (when aclient (setf (pine.attach:attached-client-session aclient) s))
+        (when aclient
+          (setf (pine.attach:attached-client-session aclient) s)
+          (when pine.buffer:*user-rules*
+            (pine.attach:push-to-app aclient :rules
+                                     :rules pine.buffer:*user-rules*)))
         (setf (sess-thread s)
               (bordeaux-threads:make-thread (lambda () (session-loop s))
                                             :name "pine-editor-input"))

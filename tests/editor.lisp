@@ -428,5 +428,27 @@ modeline follow, layout-buffer embeds."
     (is (string= "tail" (string-trim " " (car (nth 9 rows)))))))
 
 (test language-surface
-  "current is gone from the language."
-  (is (null (find-symbol "CURRENT" :pine.user))))
+  "current and set! are gone from the language."
+  (is (null (find-symbol "CURRENT" :pine.user)))
+  (is (null (find-symbol "SET!" :pine.user))))
+
+(test rules-wire
+  "add-rules broadcasts the merged user rules to every attached app."
+  (ensure-editor-env)
+  (let* ((got nil)
+         (sys (pine.server:actor-system *server*))
+         (display (sento.actor-context:actor-of sys
+                    :name (format nil "rules-probe-~a" (gensym))
+                    :receive (lambda (msg)
+                               (when (eq (first msg) :rules)
+                                 (setf got (getf (rest msg) :rules)))
+                               nil)))
+         (ac (pine.attach::make-attached-client
+              :id 999 :kind :probe :display display)))
+    (push ac pine.attach:*clients*)
+    (unwind-protect
+         (progn
+           (pine.buffer:add-rules '((".wire-probe" (:opacity "0.5"))))
+           (sleep 0.2)
+           (is (find ".wire-probe" got :key #'first :test #'string=)))
+      (setf pine.attach:*clients* (remove ac pine.attach:*clients*)))))

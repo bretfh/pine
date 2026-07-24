@@ -3,17 +3,13 @@
 ;;;; Data sources feed reactive refs; widgets read those refs and re-render on
 ;;;; change. A source is either a STREAM (a subprocess line stream that triggers
 ;;;; a refresh, event-driven) or a POLL (a refresh on an interval). Either way
-;;;; the actual work (shell reads + set!) runs on a source actor owned by
+;;;; the actual work (shell reads + ref writes) runs on a source actor owned by
 ;;;; the actor system, off both the reader thread and the timer thread. Sources
 ;;;; are declared with defsource / defpoll and started together by start-sources.
 ;;;; This is the runtime behind the widgets' ref reads -- pine's eww broker.
 
 (defun ref-of (name)
   (or (pine.ref:find-ref name) (pine.ref:make-ref :name name)))
-
-(defun set! (name value)
-  "Set reactive ref NAME to VALUE (deduped by the ref)."
-  (pine.ref:set-ref (ref-of name) value))
 
 ;;; shell helpers
 
@@ -201,7 +197,7 @@ the actor system. No thread is killed."
 
 (defsource :workspaces (system)
   (start-stream system "niri msg --json event-stream"
-    (lambda () (set! :workspaces (workspaces)))
+    (lambda () (setf (pine.ref:ref :workspaces) (workspaces)))
     (lambda (line) (search "Workspace" line))))
 
 (defun audio-volume ()
@@ -235,12 +231,12 @@ the actor system. No thread is killed."
   "Make sink NAME the default output. Called from an audio-panel row."
   (when (and name (plusp (length name)))
     (sh "pactl" "set-default-sink" name)
-    (set! :sinks (audio-sinks))))
+    (setf (pine.ref:ref :sinks) (audio-sinks))))
 
 (defsource :audio (system)
   (start-stream system "pactl subscribe"
-    (lambda () (set! :vol (audio-volume)) (set! :muted (audio-muted))
-            (set! :sinks (audio-sinks)))
+    (lambda () (setf (pine.ref:ref :vol) (audio-volume)) (setf (pine.ref:ref :muted) (audio-muted))
+            (setf (pine.ref:ref :sinks) (audio-sinks)))
     (lambda (line) (search "sink" line))))
 
 (defun brightness ()
@@ -268,7 +264,6 @@ the actor system. No thread is killed."
     (nreverse parts)))
 
 (defun %lines (s) (remove "" (%split s #\newline) :test #'string=))
-(defun ref-val (name) (let ((c (pine.ref:find-ref name))) (and c (pine.ref:deref c))))
 
 (defun net-connected ()
   (dolist (line (%lines (sh "nmcli" "-t" "-f" "TYPE,STATE,CONNECTION"
@@ -319,26 +314,26 @@ the actor system. No thread is killed."
           (t                (list (list :label "Connect" :style "go" :kind "connect"))))))
 
 (defun push-actions (rows)
-  (let* ((cur (ref-val :netsel))
+  (let* ((cur (pine.ref:ref :netsel))
          (sel (if (and cur (plusp (length cur))) cur (connected-ssid rows))))
-    (set! :netsel (or sel ""))
-    (set! :netactions (and sel (actions-for sel rows)))))
+    (setf (pine.ref:ref :netsel) (or sel ""))
+    (setf (pine.ref:ref :netactions) (and sel (actions-for sel rows)))))
 
 (defun refresh-net (&optional (rescan "no"))
-  (set! :net (net-connected))
+  (setf (pine.ref:ref :net) (net-connected))
   (let ((rows (wifi-list rescan)))
     (when rows
-      (set! :netlist rows)
+      (setf (pine.ref:ref :netlist) rows)
       (push-actions rows))))
 
 (defun select! (ssid)
   "Select network SSID: update its action set. Called from a panel row."
-  (set! :netsel (or ssid ""))
-  (set! :netactions (and ssid (actions-for ssid (ref-val :netlist)))))
+  (setf (pine.ref:ref :netsel) (or ssid ""))
+  (setf (pine.ref:ref :netactions) (and ssid (actions-for ssid (pine.ref:ref :netlist)))))
 
 (defun act! (kind)
   "Run action KIND on the selected network. Called from a panel button."
-  (let* ((cur (ref-val :netsel))
+  (let* ((cur (pine.ref:ref :netsel))
          (ssid (and cur (plusp (length cur)) cur)))
     (when ssid
       (cond
@@ -351,7 +346,7 @@ the actor system. No thread is killed."
                        (format nil "~a password: " ssid))))
            (when (plusp (length pw))
              (sh "nmcli" "device" "wifi" "connect" ssid "password" pw)))))
-      (set! :netsel "")
+      (setf (pine.ref:ref :netsel) "")
       (refresh-net "yes"))))
 
 (defsource :network (system)
@@ -471,5 +466,5 @@ the actor system. No thread is killed."
 
 (defsource :wintitle (system)
   (start-stream system "niri msg --json event-stream"
-    (lambda () (set! :wintitle (or (focused-title) "")))
+    (lambda () (setf (pine.ref:ref :wintitle) (or (focused-title) "")))
     (lambda (line) (search "Window" line))))

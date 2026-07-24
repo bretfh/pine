@@ -50,9 +50,6 @@ tree arranges it into. Props are node style: :opacity :font-px :class :expand."
 (defun launch (command)
   (lambda () (ignore-errors (uiop:launch-program (list "sh" "-c" command)))))
 
-(defun ref (name &optional default)
-  (let ((r (find-ref name))) (if r (deref r) default)))
-
 ;;;; Behavior.
 
 (defmacro defcommand (name args &body body)

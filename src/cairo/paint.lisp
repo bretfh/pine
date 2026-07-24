@@ -280,11 +280,13 @@ reports for one cell, so a window measures and paints at the same grid."
               (cairo:font-ascent fe)))))
 
 (defmethod paint-px ((n window-node) chain)
-  (declare (ignore chain))
   (multiple-value-bind (x y w h) (node-rect n)
     (destructuring-bind (br bg bb) (pine.buffer:face-bg :window)
       (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0)
-                             (float (window-opacity n) 1d0)))
+                             (float (or (pine.style:st-opacity
+                                         (styled n chain (hovered n)))
+                                        (window-opacity n))
+                                    1d0)))
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:fill-path)
     (let ((fpx (or (font-px n) *default-font-px*))

@@ -285,3 +285,30 @@ generated source and on a real file."
     (multiple-value-bind (new col) (pine.buffer:reindent-line st 1 2 5 4)
       (is (= 7 col))
       (is (string= (format nil "(foo~%     bar)") (pine.buffer:state->string new))))))
+
+;;;; Refs: one accessor, read and setf; reactive views track their reads.
+
+(test refs-setf
+  (is (eql 41 (setf (pine.ref:ref :probe-ref) 41)))
+  (is (eql 41 (pine.ref:ref :probe-ref)))
+  (is (eq :dflt (pine.ref:ref :probe-missing :dflt))))
+
+(test refs-reactive-view
+  "A view re-renders when a setf'd ref it read changes; an equal write is
+deduped and renders nothing."
+  (let ((hits 0) (view nil))
+    (setf (pine.ref:ref :probe-view) 1)
+    (setf view (pine.ref:make-view
+                (lambda () (pine.ref:ref :probe-view))
+                (lambda () (incf hits) (pine.ref:render-view view))))
+    (is (eql 1 (pine.ref:render-view view)))
+    (setf (pine.ref:ref :probe-view) 2)
+    (is (= 1 hits))
+    (setf (pine.ref:ref :probe-view) 2)
+    (is (= 1 hits))
+    (pine.ref:dispose-view view)))
+
+(test style-opacity
+  "An :opacity rule resolves to a float the pixel painter reads."
+  (pine.buffer:install-rules '((".op-probe" (:opacity "0.42"))))
+  (is (= 0.42 (pine.style:st-opacity (pine.style:resolve '(("op-probe")))))))

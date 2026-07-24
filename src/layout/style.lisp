@@ -191,7 +191,15 @@ expanded per CSS rules; NIL when none."
 
 (defstruct (style (:conc-name st-))
   bg gradient fg (border-w 0) border-color (radius 0) pad-x pad-y min-w min-h
-  font-px bold inset margin shadow)
+  font-px bold inset margin shadow opacity)
+
+(defun parse-opacity (s)
+  "A CSS :opacity value as a float 0..1, or nil."
+  (when (stringp s)
+    (let ((v (ignore-errors
+              (with-standard-io-syntax
+                (let ((*read-eval* nil)) (read-from-string s))))))
+      (when (realp v) (float (max 0 (min 1 v)) 1.0)))))
 
 (defun resolve (chain &key hover)
   "Resolve the merged style for a node given its class CHAIN (root..node)."
@@ -216,5 +224,6 @@ expanded per CSS rules; NIL when none."
       (setf (st-min-w st) (first (parse-lengths (prop :min-width)))
             (st-min-h st) (first (parse-lengths (prop :min-height)))
             (st-font-px st) (first (parse-lengths (prop :font-size)))
-            (st-bold st) (equal (prop :font-weight) "bold")))
+            (st-bold st) (equal (prop :font-weight) "bold")
+            (st-opacity st) (parse-opacity (prop :opacity))))
     st))

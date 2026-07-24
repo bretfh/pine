@@ -144,7 +144,16 @@ work for the loop thread."
        (enqueue client (lambda () (on-widgets client surface tree as)))))
     (:panel
      (destructuring-bind (&key name show) (rest msg)
-       (enqueue client (lambda () (on-panel client name show)))))))
+       (enqueue client (lambda () (on-panel client name show)))))
+    (:rules
+     (destructuring-bind (&key rules) (rest msg)
+       (pine.buffer:install-rules rules)
+       (enqueue client
+                (lambda ()
+                  (maphash (lambda (name ls) (declare (ignore name))
+                             (build-tree ls)
+                             (paint-surface ls))
+                           (client-surfaces client))))))))
 
 ;;;; The loop: drain queued wayland work, dispatch pending events, idle.
 

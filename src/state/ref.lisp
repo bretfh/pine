@@ -28,6 +28,18 @@
   "Get or create the named ref (idempotent, so redefining a config file is safe)."
   `(or (find-ref ,name) (make-ref :name ,name :value ,value :test ,test)))
 
+(defun ref (name &optional default)
+  "Read ref NAME by name, DEFAULT when it holds nothing yet. Inside a tracked
+render the read is recorded, so the reader re-renders when the ref changes.
+setf-able: (setf (ref NAME) V) writes it, creating the ref if missing."
+  (let ((r (find-ref name)))
+    (if r (deref r) default)))
+
+(defun (setf ref) (value name &optional default)
+  (declare (ignore default))
+  (set-ref (or (find-ref name) (make-ref :name name)) value)
+  value)
+
 ;;;; Dependency tracking: when bound, collects the refs read during a render.
 
 (defvar *tracking* nil)
