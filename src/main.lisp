@@ -1,19 +1,5 @@
 (in-package :pine)
 
-(defvar *version* "0.0.1")
-
-(defvar *target*
-  #+darwin :macos
-  #+linux :linux
-  #+windows :windows
-  #-(or darwin linux windows) :linux)
-
-(defun desktop? ()
-  (member *target* '(:linux :macos :windows)))
-
-(defun mobile? ()
-  (member *target* '(:android :ios)))
-
 (defun main (&key (workers 4) (remoting-port 0))
   (format t "pine ~a on ~a ~a [~a]~%"
           *version*
@@ -38,13 +24,10 @@
       (values srv cli))))
 
 (defun start-daemon (&key (workers 4) (remoting-port 0))
-  "Boot the headless substrate: server, registries, eval, and remoting. No
-client, no GTK, no rendering. Apps attach over remoting. Returns the server; the
-caller keeps the process alive. This is the daemon."
   (let ((srv (pine.server:start-server :workers workers :remoting-port remoting-port)))
     (setf pine.server:*server* srv)
     (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-    (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime srv))   ; tree-sitter for highlights
+    (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime srv))
       (error () nil))
     (pine.event:make-event-bus srv)
     (pine.actor:start-agent-registry srv)
@@ -59,7 +42,7 @@ caller keeps the process alive. This is the daemon."
     (pine.editor:install-bindings)
     (pine.editor:install-editor-sessions)
     (pine.desktop:install-desktop-sessions)
-    (load-init)                                        ; the user's config IS the desktop
+    (load-init)
     (pine.jobs:install-jobs)
     (ignore-errors (pine.source:start-sources srv))   ; sources feed cells the desktop reads
     (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
@@ -69,10 +52,6 @@ caller keeps the process alive. This is the daemon."
   (cffi:foreign-funcall "setenv" :string name :string value :int 1 :int))
 
 (defun discover-session-env ()
-  "A shepherd service starts outside the wayland session, so WAYLAND_DISPLAY and
-NIRI_SOCKET are unset. Fill them from XDG_RUNTIME_DIR -- a wayland-N socket and
-the newest niri.*.sock -- so the daemon's sources and app launches reach the
-running session. A no-op when already set (an in-session `make daemon` run)."
   (let* ((dir (or (uiop:getenv "XDG_RUNTIME_DIR") "/run/user/1000"))
          (names (ignore-errors (uiop:run-program (list "ls" "-t" dir) :output :lines))))
     (unless (uiop:getenv "WAYLAND_DISPLAY")
@@ -87,10 +66,6 @@ running session. A no-op when already set (an in-session `make daemon` run)."
         (when sock (%setenv "NIRI_SOCKET" (format nil "~a/~a" dir sock)))))))
 
 (defun run-daemon (&key (port pine.server:*port*))
-  "Start the headless daemon and keep the process alive. When run from the built
-binary it then spawns and supervises the frontends (editor + desktop) as their
-own processes; under `make daemon' it stays headless. This is the entry `pine
-daemon' runs."
   (discover-session-env)
   (start-daemon :remoting-port port)
   (if (daemon-is-binary-p)
@@ -120,10 +95,6 @@ daemon' runs."
 ;;;; The control endpoint. The CLI connects, asks one message, prints, exits.
 
 (defun start-control (server)
-  ;; :pinned -- this actor blocks (eval, spawn's connect wait, reload), so it
-  ;; runs on its own thread. On the shared pool it starves the other actors:
-  ;; sento routes each message to a random worker queue, and anything queued
-  ;; behind a blocked worker waits out its full ask timeout.
   (sento.actor-context:actor-of (pine.server:actor-system server) :name "control"
     :dispatcher :pinned
     :receive
@@ -173,7 +144,7 @@ daemon' runs."
              show|hide|toggle NAME}")
 
 (defun cli-request (msg &key (host pine.server:*host*) (port pine.server:*port*))
-  "One-shot: connect, ask the daemon's control actor, print, return. The process
+  "Connect, ask the daemon's control actor, print, return. The process
 exits after, so the ephemeral actor system needs no teardown."
   (let ((sys (sento.actor-system:make-actor-system
               '(:dispatchers (:shared (:workers 1 :strategy :random))))))

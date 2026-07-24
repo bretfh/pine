@@ -466,6 +466,123 @@ LO-BYTE / HI-BYTE restrict the walk to subtrees intersecting that byte window."
     (t nil)))
 
 
+;;;; Indentation. Computes the cl-indent column for a line off the same
+;;;; persistent tree the highlighter and motion use. A head that introduces a
+;;;; body (a special form, a binder, a definer, a with-/do- form) indents its
+;;;; body two past the open paren; anything else aligns its arguments under the
+;;;; first one, or one past the paren when the head stands alone on its line.
+
+(defun %defish-p (name)
+  "Head names that indent a body regardless of the classification tables: the
+def-/with-/do- families, so user macros (defcommand, with-widget, do-thing)
+indent like the built-ins without being enumerated."
+  (and (stringp name)
+       (let ((n (length name)))
+         (or (and (>= n 3) (string= "def" name :end2 3))
+             (and (>= n 5) (string= "with-" name :end2 5))
+             (and (>= n 3) (string= "do-" name :end2 3))
+             (string= name "do")
+             (string= name "loop")))))
+
+(defun body-form-p (language head-name)
+  "True when a form headed by HEAD-NAME indents its body (open-paren + 2) rather
+than aligning arguments under the first one."
+  (and head-name (stringp head-name)
+       (or (%defish-p head-name)
+           (case language
+             (:commonlisp
+              (member (cl-head-kind head-name)
+                      '(:special :binder-nested :binder-flat-all :binder-flat-first
+                        :def-class :def-struct :def-type :def-var :def-package)))
+             (:scheme (and (gethash head-name *scheme-keywords*) t))
+             (t nil)))))
+
+(defun %byte->char (byte index text)
+  (multiple-value-bind (line col) (byte-to-line-col byte index text)
+    (+ (cdr (aref index line)) col)))
+
+(defun %byte-col (byte index text)
+  (nth-value 1 (byte-to-line-col byte index text)))
+
+(defun %byte-line (byte index text)
+  (nth-value 0 (byte-to-line-col byte index text)))
+
+(defun %node-first-char (node index text)
+  (let ((c (%byte->char (ts-node-start-byte node) index text)))
+    (when (< c (length text)) (char text c))))
+
+(defun %opens-form-p (node index text)
+  (member (%node-first-char node index text) '(#\( #\[ #\{)))
+
+(defun %enclosing-form (node lstart index text)
+  "Nearest ancestor of NODE that opens with a bracket and begins before byte
+LSTART (so its opener is on an earlier line than the line starting at LSTART).
+The root/source_file node is excluded: it begins at byte 0, which is often a
+paren, but it is not a form."
+  ;; depth-capped: a well-formed tree bounds this by nesting depth, but the cap
+  ;; guarantees a signal-free walk can never spin the buffer thread past the
+  ;; debugger's reach (a hook catches signals, not loops).
+  (loop for n = node then (ts-node-parent n)
+        for depth from 0 below 4096
+        until (ts-node-is-null n)
+        when (and (< (ts-node-start-byte n) lstart)
+                  (not (ts-node-is-null (ts-node-parent n)))
+                  (%opens-form-p n index text))
+          return n
+        finally (return nil)))
+
+(defun %form-head-name (form index text)
+  "Downcased text of FORM's first named child when it is a single-line symbol,
+else nil (a nested head is not a body operator)."
+  (when (plusp (ts-node-named-child-count form))
+    (let* ((head (ts-node-named-child form 0))
+           (hs (ts-node-start-byte head))
+           (he (ts-node-end-byte head)))
+      (when (= (%byte-line hs index text) (%byte-line (max hs (1- he)) index text))
+        (string-downcase (subseq text (%byte->char hs index text)
+                                      (%byte->char he index text)))))))
+
+(defun %align-column (form open-col index text)
+  "Align under the first argument when it shares the head's line; otherwise one
+past the open paren."
+  (if (>= (ts-node-named-child-count form) 2)
+      (let* ((head (ts-node-named-child form 0))
+             (arg  (ts-node-named-child form 1))
+             (hb (ts-node-start-byte head))
+             (ab (ts-node-start-byte arg)))
+        (if (= (%byte-line hb index text) (%byte-line ab index text))
+            (%byte-col ab index text)
+            (1+ open-col)))
+      (1+ open-col)))
+
+(defun parse-indent (ps line)
+  "Target indentation column for LINE from PS's persistent tree, or nil to leave
+the line as-is (inside a multiline string). 0 at top level. No reparse."
+  (let ((tree (ps-tree ps)) (text (ps-text ps)) (lang (ps-language ps)))
+    (when tree
+      (handler-case
+          (let* ((index (build-line-index text))
+                 (line (max 0 (min line (1- (length index)))))
+                 (lstart (car (aref index line)))
+                 (root (ts-tree-root-node tree))
+                 (node (ts-node-named-descendant-for-byte-range root lstart lstart)))
+            (cond
+              ((ts-node-is-null node) 0)
+              ((and (string= (ts-node-type node) "str_lit")
+                    (< (ts-node-start-byte node) lstart))
+               nil)
+              (t (let ((form (%enclosing-form node lstart index text)))
+                   (if (null form)
+                       0
+                       (let ((open-col (%byte-col (ts-node-start-byte form) index text)))
+                         (if (eql (%node-first-char form index text) #\()
+                             (if (body-form-p lang (%form-head-name form index text))
+                                 (+ open-col 2)
+                                 (%align-column form open-col index text))
+                             (1+ open-col))))))))
+        (error () nil)))))
+
+
 ;;;; Development harness. Prints every highlighted token and its face; a check
 ;;;; that a rule resolves as intended without launching the editor.
 

@@ -67,6 +67,7 @@
    #:move-mark #:set-meta
    #:buffer-local
    #:refresh-highlights #:point-after-move
+   #:line-indent-width #:previous-line-indent #:reindent-line
    #:load-content #:notify-subscribers
    #:line-count-of #:line-at #:region-string
    ;; faces
@@ -145,7 +146,7 @@
    #:defun-bounds-pos
    ;; per-buffer incremental parse state
    #:parse-state #:make-parse-state #:free-parse-state
-   #:reparse! #:parse-full! #:parse-highlights #:parse-motion
+   #:reparse! #:parse-full! #:parse-highlights #:parse-motion #:parse-indent
    ;; highlight harness
    #:walk-highlights #:hl-dump #:hl-dump-file))
 
@@ -263,6 +264,7 @@
    #:repl-buffer
    #:prompt-callback
    #:prompt-active
+   #:minibuffer-buffer #:saved-buffer #:minibuffer-snap #:minibuffer-controller
    #:active-p
    #:candidates
    #:filtered

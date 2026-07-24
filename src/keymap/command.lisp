@@ -2,14 +2,14 @@
   (:use #:cl)
   (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
            #:define-command #:register-command #:find-command #:all-command-names
-           #:execute #:call-command #:dispatch #:self-insert #:self-insert-key-p
+           #:execute #:call-command #:dispatch #:command-error
+           #:self-insert #:self-insert-key-p
            #:prefix-numeric-value #:this-command-key
            #:key-binding #:read-next-key
-           #:*minibuffer-handler* #:*terminal-handler*))
+           #:*terminal-handler*))
 
 (in-package #:pine.command)
 
-(defvar *minibuffer-handler* nil)
 (defvar *terminal-handler* nil)
 
 (defclass command ()
@@ -90,14 +90,34 @@ layer :before/:after/:around methods. ARGUMENT is the raw prefix argument.")
     (apply (command-fn command)
            (gather-arguments command (pine.client:current-client) argument))))
 
+(defun command-error (condition)
+  "Surface an error from the interactive command/edit loop. With :debug-on-error
+non-nil, route it through the same debugger surface evaluations use (*on-debug*
+-> the *debugger* restart menu); otherwise show it in the echo area. Either way
+the command loop lives on -- this never blocks the session thread. Call from a
+handler-bind so the backtrace is captured while the stack is still live."
+  (if (and (ignore-errors (pine.var:variable-value :debug-on-error))
+           pine.eval:*on-debug*)
+      (ignore-errors
+       (funcall pine.eval:*on-debug* (pine.eval:make-error-evaluation condition)))
+      (pine.echo:message (format nil "error: ~a" condition))))
+
+(defmacro %guarding-errors (&body body)
+  "Run BODY; on an unhandled error surface it via %command-error and return NIL.
+The surface runs inside the handler (stack live), then we unwind out of BODY."
+  `(block %guarded
+     (handler-bind ((error (lambda (c)
+                             (command-error c)
+                             (return-from %guarded nil))))
+       ,@body)))
+
 (defun call-command (name-or-command)
   (let ((cmd (find-command name-or-command))
         (client (pine.client:current-client)))
     (when cmd
       (let ((arg (pine.client:prefix-arg client)))
-        (handler-case
-            (execute (pine.mode:active-modes-instance client) cmd arg)
-          (error (c) (pine.echo:message (format nil "error: ~a" c))))
+        (%guarding-errors
+          (execute (pine.mode:active-modes-instance client) cmd arg))
         (setf (pine.client:last-command client) (command-name cmd))
         (unless (command-prefix-p cmd)
           (setf (pine.client:prefix-arg client) nil))))))
@@ -145,13 +165,13 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
     (when reader
       (setf (pine.client:pending-key-reader client) nil)
       (return-from dispatch (funcall reader key))))
-  (when (and *minibuffer-handler* (funcall *minibuffer-handler* client key))
-    (return-from dispatch))
   ;; in a terminal, keys go to the pty — unless a prefix (C-x ...) is pending.
   (when (and *terminal-handler* (null (pine.client:pending-keys client))
              (funcall *terminal-handler* client key))
     (return-from dispatch))
-  (handler-case
+  (%guarding-errors
+    (handler-bind ((error (lambda (c) (declare (ignore c))
+                            (setf (pine.client:pending-keys client) nil))))
       (let* ((pending (pine.client:pending-keys client))
              (entry (if pending
                         (gethash key pending)
@@ -167,7 +187,4 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
            (if (self-insert-key-p key)
                (call-command "self-insert-command")
                ;; an unbound non-self-inserting key still terminates a prefix arg
-               (setf (pine.client:prefix-arg client) nil)))))
-    (error (c)
-      (setf (pine.client:pending-keys client) nil)
-      (pine.echo:message (format nil "error: ~a" c)))))
+               (setf (pine.client:prefix-arg client) nil))))))))

@@ -14,7 +14,7 @@
     (install-variables)
     (install-commands)
     (install-bindings)
-    (setf pine.command:*minibuffer-handler* #'minibuffer-dispatch)
+    (ensure-minibuffer client)
     (setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch)
     (setf pine.eval:*on-debug* #'%eval-error)
     (let ((buf (pine.buffer:make-buffer "scratch")))
@@ -28,8 +28,14 @@
 ;;;; Motion / eval helpers (command implementations)
 
 (defun focused-snap ()
-  (let ((w (pine.client:focused-window (pine.client:current-client))))
-    (when w (pine.buffer:snap w))))
+  "The snapshot commands read for point/line context. While a prompt is active
+this is the minibuffer's snapshot -- the minibuffer is the current buffer, so a
+command like beginning-of-line must see its input, not the window behind it."
+  (let ((c (pine.client:current-client)))
+    (if (pine.client:prompt-active c)
+        (pine.client:minibuffer-snap c)
+        (let ((w (pine.client:focused-window c)))
+          (when w (pine.buffer:snap w))))))
 
 (defun cur-buffer () (pine.client:current-buffer (pine.client:current-client)))
 
@@ -556,7 +562,13 @@ no symbol to complete."
 
 (defun install-variables ()
   (pine.var:define-variable :tab-width :default 8
-    :documentation "Number of spaces the Tab key inserts."))
+    :documentation "Tab stop width for the plain-text indent fallback.")
+  (pine.var:define-variable :format-on-save :default nil
+    :documentation "When non-nil, save-file reindents the whole buffer first.")
+  (pine.var:define-variable :debug-on-error :default nil
+    :documentation "When non-nil, an error in a command opens the *debugger*
+restart menu instead of only echoing the message. Same knob as Emacs's
+debug-on-error; edit-actor and eval errors always reach the debugger."))
 
 (defun %variables-text ()
   (with-output-to-string (out)
@@ -702,7 +714,16 @@ no symbol to complete."
         (handler-case (pine.file:find-file path)
           (error (c) (pine.echo:message (format nil "error: ~a" c)))))))
   (defcmd "save-file" ()
-    (handler-case (pine.file:save-current-buffer)
+    (handler-case
+        (let ((buf (cur-buffer)))
+          ;; opt-in apheleia-style reformat before write; the reindent is a tell
+          ;; and save's :get-state queues behind it in the actor mailbox, so the
+          ;; write sees the formatted text
+          (when (and buf (pine.var:variable-value :format-on-save buf))
+            (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
+              (pine.buffer:tell buf :indent-lines
+                                :from 0 :to (1- (pine.buffer:line-count snap)))))
+          (pine.file:save-current-buffer))
       (error (c) (pine.echo:message (format nil "error: ~a" c)))))
   (defcmd "switch-buffer" ()
     (completing-read "Switch to: " (pine.buffer:list-buffers)
@@ -749,6 +770,10 @@ no symbol to complete."
       (%debugger-quit)))
   (defcmd "debugger-quit" ()
     (%debugger-quit))
+  (defcmd "toggle-debug-on-error" ()
+    (let ((new (not (pine.var:variable-value :debug-on-error))))
+      (pine.var:set-global :debug-on-error new)
+      (pine.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
   (defcmd "jobs" ()
     (%show-help "*jobs*"
       (with-output-to-string (s)
@@ -820,7 +845,35 @@ no symbol to complete."
            (buf (pine.client:current-buffer cli))
            (n (max 0 (pine.var:variable-value :tab-width buf))))
       (when buf
-        (pine.buffer:tell buf :insert :text (make-string n :initial-element #\Space))))))
+        (pine.buffer:tell buf :insert :text (make-string n :initial-element #\Space)))))
+  (defcmd "indent-for-tab-command" ()
+    "Reindent the current line to the column its mode dictates."
+    (let ((buf (cur-buffer)))
+      (when buf (pine.buffer:tell buf :indent-lines))))
+  (defcmd "indent-region" ()
+    "Reindent every line spanned by the region."
+    (let* ((buf (cur-buffer))
+           (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5))))
+      (when state
+        (multiple-value-bind (sl sc el ec) (region-bounds state)
+          (declare (ignore sc ec))
+          (if sl
+              (pine.buffer:tell buf :indent-lines :from sl :to el)
+              (pine.echo:message "no region"))))))
+  (defcmd "format-buffer" ()
+    "Reindent the whole buffer off the parse tree, point preserved (in-image)."
+    (let* ((buf (cur-buffer))
+           (snap (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
+      (when snap
+        (pine.buffer:tell buf :indent-lines
+                          :from 0 :to (1- (pine.buffer:line-count snap))))))
+  ;; minibuffer-mode: the only keys the prompt binds; everything else is the
+  ;; ordinary buffer editing commands, so the prompt edits like any buffer.
+  (defcmd "minibuffer-accept" () (minibuffer-accept))
+  (defcmd "minibuffer-abort" () (minibuffer-abort))
+  (defcmd "minibuffer-complete" () (minibuffer-complete))
+  (defcmd "minibuffer-next-candidate" () (completion-next))
+  (defcmd "minibuffer-prev-candidate" () (completion-prev)))
 
 ;;;; Bindings
 
@@ -863,7 +916,7 @@ no symbol to complete."
     ;; text-mode editing
     (pine.keymap:define-key tm (k "BackSpace") "backspace")
     (pine.keymap:define-key tm (k "Return") "newline")
-    (pine.keymap:define-key tm (k "Tab") "insert-tab")
+    (pine.keymap:define-key tm (k "Tab") "indent-for-tab-command")
     (pine.keymap:define-key tm (k "Up") "previous-line")
     (pine.keymap:define-key tm (k "Down") "next-line")
     (pine.keymap:define-key tm (k "Left") "backward-char")
@@ -902,10 +955,25 @@ no symbol to complete."
     (pine.keymap:define-key tm (k "C-M-a") "beginning-of-defun")
     (pine.keymap:define-key tm (k "C-M-e") "end-of-defun")
     (pine.keymap:define-key tm (k "C-M-space") "mark-sexp")
+    ;; indentation: Tab reindents (mode-aware), completion moves to the Emacs
+    ;; completion binding, region + whole-buffer reformat get their own keys
+    (pine.keymap:define-key tm (k "C-M-\\") "indent-region")
+    ;; minibuffer-mode: accept / abort / complete / candidate motion. All other
+    ;; keys fall through to text-mode, so the prompt has full editing.
+    (let ((mm (pine.mode:mode-keymap (pine.mode:find-mode :minibuffer-mode))))
+      (pine.keymap:define-key mm (k "Return") "minibuffer-accept")
+      (pine.keymap:define-key mm (k "Escape") "minibuffer-abort")
+      (pine.keymap:define-key mm (k "C-g") "minibuffer-abort")
+      (pine.keymap:define-key mm (k "Tab") "minibuffer-complete")
+      (pine.keymap:define-key mm (k "Down") "minibuffer-next-candidate")
+      (pine.keymap:define-key mm (k "C-n") "minibuffer-next-candidate")
+      (pine.keymap:define-key mm (k "Up") "minibuffer-prev-candidate")
+      (pine.keymap:define-key mm (k "C-p") "minibuffer-prev-candidate"))
     ;; lisp-mode: the SLIME chord set (mode-keymap chords resolve fine)
     (let ((lm (pine.mode:mode-keymap (pine.mode:find-mode :lisp-mode))))
       (pine.keymap:define-key lm (list (k "C-c") (k "C-c")) "eval-defun")
       (pine.keymap:define-key lm (list (k "C-c") (k "C-k")) "eval-buffer")
       (pine.keymap:define-key lm (list (k "C-c") (k "C-l")) "load-file")
       (pine.keymap:define-key lm (list (k "C-c") (k "C-d")) "arglist")
-      (pine.keymap:define-key lm (k "Tab") "complete-symbol"))))
+      (pine.keymap:define-key lm (k "C-M-i") "complete-symbol")
+      (pine.keymap:define-key lm (k "M-Tab") "complete-symbol"))))

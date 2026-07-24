@@ -262,15 +262,21 @@ Returns the new cell offset."
                                (if selp :completion-selected :completion))))))))
     ;; echo / minibuffer line
     (let* ((prompt (pine.echo:input-prompt))
+           (mb-snap (and prompt (pine.client:minibuffer-snap (pine.client:current-client))))
+           (input (if (and mb-snap (plusp (pine.buffer:line-count mb-snap)))
+                      (fset:@ (pine.buffer:lines mb-snap) 0)
+                      ""))
            (text (if prompt
-                     (concatenate 'string prompt (pine.echo:input-text))
+                     (concatenate 'string prompt input)
                      (pine.echo:current-message))))
       (setf off (emit-string f off echo-row (%pad text cols)
                              (pine.buffer:face-fg (if prompt :prompt :echo))))
-      ;; cursor sits in the minibuffer while a prompt is active
+      ;; cursor sits at point within the minibuffer input while a prompt is active
       (when prompt
         (setf (pine.buffer:frame-cursor-row f) echo-row
-              (pine.buffer:frame-cursor-col f) (length text))))
+              (pine.buffer:frame-cursor-col f)
+              (+ (length prompt)
+                 (if mb-snap (pine.buffer:point-col mb-snap) (length input))))))
     off))
 
 (defun %term-rgb (plist key default)

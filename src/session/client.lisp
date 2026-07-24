@@ -46,7 +46,14 @@
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
    (repl-buffer     :initarg :repl-buffer     :accessor repl-buffer     :initform nil)
    (prompt-callback :initarg :prompt-callback :accessor prompt-callback :initform nil)
-   (prompt-active   :initarg :prompt-active   :accessor prompt-active   :initform nil)))
+   (prompt-active   :initarg :prompt-active   :accessor prompt-active   :initform nil)
+   ;; the minibuffer as a real buffer: the input buffer, the buffer that was
+   ;; current before the prompt (restored on exit), its latest snapshot (for the
+   ;; renderer), and the controller that re-filters + repaints on each edit.
+   (minibuffer-buffer     :accessor minibuffer-buffer     :initform nil)
+   (saved-buffer          :accessor saved-buffer          :initform nil)
+   (minibuffer-snap       :accessor minibuffer-snap       :initform nil)
+   (minibuffer-controller :accessor minibuffer-controller :initform nil)))
 
 (defvar *client* nil)
 

@@ -5,7 +5,8 @@
            #:evaluation-condition-type #:evaluation-restarts #:evaluation-backtrace
            #:evaluate #:evaluate-string #:evaluate-thunk
            #:list-evaluations #:find-evaluation
-           #:pick-restart #:abort-evaluation #:*on-debug*))
+           #:pick-restart #:abort-evaluation #:*on-debug*
+           #:with-debugger #:call-with-debugger #:make-error-evaluation))
 
 (in-package #:pine.eval)
 
@@ -64,6 +65,20 @@ agent) may start an evaluation concurrently.")
         collect (list (and (restart-name r) (string (restart-name r)))
                       (handler-case (princ-to-string r) (error () "")))))
 
+(defun make-error-evaluation (condition &key label)
+  "Record CONDITION into a fresh EVALUATION (status :error, restarts, backtrace)
+WITHOUT blocking -- for surfacing an error on a thread that must not park, e.g.
+the session command loop. Called from a handler-bind so the restarts/backtrace
+are those live at the signal. Hand the result to *on-debug* to open the menu."
+  (let ((ev (%make-evaluation :form label)))
+    (setf (evaluation-status ev) :error
+          (evaluation-condition ev) (handler-case (princ-to-string condition)
+                                      (error () "<unprintable condition>"))
+          (evaluation-condition-type ev) (string (type-of condition))
+          (evaluation-restarts ev) (%restart-descriptions condition)
+          (evaluation-backtrace ev) (%capture-backtrace))
+    ev))
+
 (defun eval-debugger-hook (ev condition)
   "Runs on the eval thread when an unhandled error propagates. Records the
 condition + restarts + backtrace, notifies the surface, then blocks until a
@@ -75,7 +90,13 @@ restart is chosen and invokes it."
         (evaluation-restarts ev) (%restart-descriptions condition)
         (evaluation-backtrace ev) (%capture-backtrace))
   (let ((surface (or (evaluation-on-error ev) *on-debug*)))
-    (when surface (ignore-errors (funcall surface ev))))
+    ;; No surface can drive a restart choice: abort immediately rather than block
+    ;; this thread forever. A hung worker/actor is exactly the wedge we avoid.
+    (unless surface
+      (let ((r (find-restart 'abort condition)))
+        (when r (invoke-restart r)))
+      (return-from eval-debugger-hook))
+    (ignore-errors (funcall surface ev)))
   (let ((name (bordeaux-threads:with-lock-held ((evaluation-lock ev))
                 (loop until (evaluation-chosen ev)
                       do (bordeaux-threads:condition-wait
@@ -87,6 +108,37 @@ restart is chosen and invokes it."
                  (find-restart 'abort condition))))
       (when r (invoke-restart r)))))
 
+(defmacro with-debugger-hook ((ev) &body body)
+  "Bind SBCL's debugger hook so an unhandled error in BODY is captured into EV
+and surfaced through *on-debug*, blocking this (off-session) thread until a
+restart is picked. The single debugger-entry codepath -- eval workers, buffer
+actors, anything off the session input thread routes through here."
+  `(let ((sb-ext:*invoke-debugger-hook*
+           (lambda (c hook) (declare (ignore hook)) (eval-debugger-hook ,ev c))))
+     ,@body))
+
+(defun call-with-debugger (thunk &key label package)
+  "Run THUNK under the pine debugger with an always-available abort restart: an
+unhandled error opens the *debugger* restart menu (via *on-debug*) and blocks
+THIS thread until a restart is picked; `abort' unwinds out of THUNK. For threads
+OTHER than the session input thread (eval workers, buffer actors) -- blocking
+parks that thread while the surface drives the choice. Returns THUNK's values,
+NIL on abort.
+
+Uses handler-bind, not *invoke-debugger-hook*: an actor's message pump may trap
+errors around receive, so we must catch in the signal's own dynamic context
+(innermost handler wins) before anything upstream sees it. eval-debugger-hook is
+still the single shared debugger-entry."
+  (let ((ev (%make-evaluation :form label :package package)))
+    (with-simple-restart (abort "Abort ~a" (or label "this operation"))
+      (handler-bind ((error (lambda (c) (eval-debugger-hook ev c))))
+        (funcall thunk)))))
+
+(defmacro with-debugger ((&key label package) &body body)
+  "Run BODY off the session thread under the pine debugger (see
+call-with-debugger)."
+  `(call-with-debugger (lambda () ,@body) :label ,label :package ,package))
+
 (defun run-evaluation (ev bindings)
   (let ((*current* ev)
         (out (make-string-output-stream)))
@@ -95,20 +147,19 @@ restart is chosen and invokes it."
            (let ((*standard-output* out)
                  (*error-output* out)
                  (*trace-output* out)
-                 (*package* (or (evaluation-package ev) (find-package :cl-user)))
-                 (sb-ext:*invoke-debugger-hook*
-                   (lambda (c hook) (declare (ignore hook)) (eval-debugger-hook ev c))))
-             (multiple-value-bind (ok abortp)
-                 (with-simple-restart (abort "Abort this evaluation")
-                   (setf (evaluation-values ev)
-                         (multiple-value-list
-                          (if (evaluation-thunk ev)
-                              (funcall (evaluation-thunk ev))
-                              (eval (evaluation-form ev))))
-                         (evaluation-status ev) :ok)
-                   t)
-               (declare (ignore ok))
-               (when abortp (setf (evaluation-status ev) :aborted)))))
+                 (*package* (or (evaluation-package ev) (find-package :cl-user))))
+             (with-debugger-hook (ev)
+               (multiple-value-bind (ok abortp)
+                   (with-simple-restart (abort "Abort this evaluation")
+                     (setf (evaluation-values ev)
+                           (multiple-value-list
+                            (if (evaluation-thunk ev)
+                                (funcall (evaluation-thunk ev))
+                                (eval (evaluation-form ev))))
+                           (evaluation-status ev) :ok)
+                     t)
+                 (declare (ignore ok))
+                 (when abortp (setf (evaluation-status ev) :aborted))))))
       (setf (evaluation-output ev) (get-output-stream-string out))
       (when (evaluation-on-done ev)
         (ignore-errors (funcall (evaluation-on-done ev) ev))))))

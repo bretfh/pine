@@ -25,6 +25,7 @@
 (defclass debugger-mode (base-mode) ())
 
 (defclass overwrite-mode (minor-mode) ())
+(defclass minibuffer-mode (minor-mode) ())
 
 ;;;; Registry (singletons keyed by keyword name) + global keymap
 
@@ -237,8 +238,61 @@ run before the major mode's under CLOS method combination."
         (:newline
          (let* ((snap (pine.buffer:state->snapshot state))
                 (l (pine.buffer:point-line snap))
-                (c (pine.buffer:point-col snap)))
-           (commit (pine.buffer:insert-newline state l c))))
+                (c (pine.buffer:point-col snap))
+                (s1 (pine.buffer:insert-newline state l c)))
+           (if pstate
+               ;; electric: reparse so the new empty line exists in the tree,
+               ;; then indent it to the language's target column
+               (multiple-value-bind (hl1 ps1) (pine.buffer:refresh-highlights pstate s1)
+                 (declare (ignore hl1))
+                 (let* ((target (or (and ps1 (pine.ts:parse-indent ps1 (1+ l))) 0))
+                        (s2 (if (plusp target)
+                                (pine.buffer:insert-string
+                                 s1 (1+ l) 0 (make-string target :initial-element #\Space))
+                                s1))
+                        (final (pine.buffer:move-mark s2 :point (1+ l) target)))
+                   (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights ps1 final)
+                     (setf sento.actor:*state* (list final (cons state undo) nil subs hl2 ps2))
+                     (pine.buffer:notify-subscribers subs final hl2))))
+               (commit s1))))
+        ;; Reindent lines [:from .. :to] (default: the point line). Each line is
+        ;; reindented from the parse tree and the tree reparsed before the next,
+        ;; so column alignment sees the shifted text. Point rides its character:
+        ;; anchored as offset past its line's first non-whitespace, which also
+        ;; lands point on the first non-ws when it sat in the old indentation.
+        ;; This one primitive serves Tab, indent-region, and format-buffer.
+        (:indent-lines
+         (let* ((snap0 (pine.buffer:state->snapshot state))
+                (nlines (pine.buffer:line-count snap0))
+                (from (max 0 (or (getf plist :from) (pine.buffer:point-line snap0))))
+                (to   (min (or (getf plist :to) (pine.buffer:point-line snap0)) (1- nlines)))
+                (pl   (pine.buffer:point-line snap0))
+                (pc   (pine.buffer:point-col snap0))
+                (p-firstnw (pine.buffer:line-indent-width (fset:@ (pine.buffer:lines state) pl)))
+                (p-tail (max 0 (- pc p-firstnw)))
+                (st state) (ps pstate) (changed nil))
+           (loop for l from from to to do
+             (let* ((cur (pine.buffer:line-indent-width (fset:@ (pine.buffer:lines st) l)))
+                    ;; with a tree, parse-indent is authoritative -- nil means
+                    ;; "leave this line" (inside a multiline string), not "fall
+                    ;; back". Only a treeless (plain-text) buffer uses the
+                    ;; previous-line fallback.
+                    (target (if ps
+                                (pine.ts:parse-indent ps l)
+                                (pine.buffer:previous-line-indent st l))))
+               (when (and target (/= target cur))
+                 (setf st (nth-value 0 (pine.buffer:reindent-line st l cur target pc))
+                       changed t)
+                 (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights ps st)
+                   (declare (ignore hl2))
+                   (setf ps ps2)))))
+           (let* ((new-indent (pine.buffer:line-indent-width (fset:@ (pine.buffer:lines st) pl)))
+                  (final (pine.buffer:move-mark st :point pl (+ new-indent p-tail))))
+             (multiple-value-bind (hl3 ps3) (pine.buffer:refresh-highlights ps final)
+               (setf sento.actor:*state*
+                     (list final (if changed (cons state undo) undo) (if changed nil redo)
+                           subs hl3 ps3))
+               (pine.buffer:notify-subscribers subs final hl3)))))
         (:backspace
          (let* ((snap (pine.buffer:state->snapshot state))
                 (l (pine.buffer:point-line snap))
@@ -333,6 +387,11 @@ run before the major mode's under CLOS method combination."
     (register-mode (make-instance 'overwrite-mode :name :overwrite-mode
                                   :precedence 10 :transparent t :indicator "Ovwrt"
                                   :keymap (pine.keymap:make-keymap :name :overwrite)))
+    ;; the minibuffer's completion/exit keys; all other keys fall through to
+    ;; text-mode, so the prompt has full editing
+    (register-mode (make-instance 'minibuffer-mode :name :minibuffer-mode
+                                  :precedence 20 :indicator ""
+                                  :keymap (pine.keymap:make-keymap :name :minibuffer)))
     base))
 
 ;;;; overwrite-mode: transparent augmentation of self-insert. It runs BEFORE

@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check cairo-shot wl-desktop wl-editor bin bench check-bench
+.PHONY: repl dev daemon editor desktop check cairo-shot wl-desktop wl-editor bin bench check-bench check-editor
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -56,6 +56,12 @@ bench:
 # correctness probes only (buffer model, vt goldens, highlight equivalence)
 check-bench:
 	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine)" --load bench/check.lisp --eval "(sb-ext:exit :code (if (pine.check:run-checks) 0 1))"'
+
+# live integration probes over a real server/buffer-actor: minibuffer editing +
+# error trapping (edit errors reach the debugger, command errors route by
+# debug-on-error). Self-exits nonzero on failure.
+check-editor:
+	$(GUIX) sh -c '$(ENV) sbcl --non-interactive --eval "(asdf:load-system :pine)" --load bench/editor-check.lisp'
 
 # the GTK-free desktop: attach to the running daemon (make daemon) and run the
 # bar, echo, and panels as wayland layer surfaces (opens surfaces): make wl-desktop

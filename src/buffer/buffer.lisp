@@ -252,6 +252,36 @@ prefix count repeats correctly."
            (setf l tl c (min c (length (fset:@ lines tl))))))))
     (values l c)))
 
+;;;; Indentation support. LINE-INDENT-WIDTH and PREVIOUS-LINE-INDENT read the
+;;;; buffer; REINDENT-LINE rewrites one line's leading whitespace and reports
+;;;; where point lands. The target column is computed elsewhere (the parse tree
+;;;; for a lisp buffer, PREVIOUS-LINE-INDENT for a plain one).
+
+(defun line-indent-width (line)
+  "Count of leading space/tab characters in LINE."
+  (or (position-if-not (lambda (ch) (or (char= ch #\Space) (char= ch #\Tab))) line)
+      (length line)))
+
+(defun previous-line-indent (state line)
+  "Indent width of the nearest non-blank line above LINE, or 0."
+  (let ((lines (lines state)))
+    (loop for i from (1- line) downto 0
+          for txt = (fset:@ lines i)
+          when (plusp (length (string-trim '(#\Space #\Tab) txt)))
+            return (line-indent-width txt)
+          finally (return 0))))
+
+(defun reindent-line (state line cur-indent target point-col)
+  "Replace LINE's leading whitespace (CUR-INDENT chars) with TARGET spaces.
+Returns (values new-state new-point-col). Point moves to TARGET when it sat
+inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
+  (let* ((s1 (if (plusp cur-indent) (delete-region state line 0 line cur-indent) state))
+         (s2 (if (plusp target)
+                 (insert-string s1 line 0 (make-string target :initial-element #\Space))
+                 s1))
+         (new-col (if (<= point-col cur-indent) target (+ point-col (- target cur-indent)))))
+    (values s2 (max 0 new-col))))
+
 (defun make-buffer-actor (system name &key (content ""))
   (let ((initial (move-mark (set-meta (load-content content) :name name) :point 0 0)))
     (sento.actor-context:actor-of system
@@ -264,8 +294,17 @@ prefix count repeats correctly."
                                            (mode-name (buffer-local state :mode :base-mode))
                                            (mode (or (pine.mode:find-mode mode-name)
                                                      (pine.mode:find-mode :base-mode))))
-                                      (pine.mode:dispatch-message mode sento.actor:*self*
-                                                                  (first msg) (rest msg)))))))
+                                      ;; The buffer runs off the session thread, so
+                                      ;; an edit error opens the *debugger* restart
+                                      ;; menu and parks THIS thread until resolved.
+                                      ;; *state* is committed as each handler's last
+                                      ;; step, so an error before the commit leaves
+                                      ;; the prior buffer intact; `abort' drops the
+                                      ;; edit and the actor keeps receiving.
+                                      (pine.eval:with-debugger
+                                          (:label (format nil "buffer ~a <- ~a" name (first msg)))
+                                        (pine.mode:dispatch-message mode sento.actor:*self*
+                                                                    (first msg) (rest msg))))))))
 
 (defun notify-subscribers (subscribers state &optional hl)
   (let ((snap (state->snapshot-with-hl state hl)))

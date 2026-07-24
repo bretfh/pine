@@ -98,6 +98,7 @@ session today, so BUFFER selects nothing yet."
           (pine.render:relayout)
           (pine.buffer:ensure-frame-cells f))
         (pine.render:subscribe-to-buffer buf)
+        (ensure-minibuffer client)
         (let ((s (make-sess :client client :win w :aclient aclient :sink sink)))
           (when aclient (setf (pine.attach:attached-client-session aclient) s))
           (setf (sess-thread s)
@@ -153,12 +154,16 @@ while a terminal buffer is live."
           (loop until (or (sess-inbox s) (sess-stop s))
                 do (bordeaux-threads:condition-wait (sess-cvar s) (sess-lock s)))
           (setf msgs (sess-inbox s) (sess-inbox s) nil))
-        (dolist (m msgs) (ignore-errors (apply-input s m)))))))
+        ;; No silent swallow: dispatch/call-command already surface command
+        ;; errors through the debugger/echo; anything that still escapes (a
+        ;; :resize handler, say) goes to the same surface rather than vanishing.
+        (dolist (m msgs)
+          (handler-case (apply-input s m)
+            (error (c) (pine.command:command-error c))))))))
 
 (defun install-editor-sessions ()
   (ignore-errors (install-variables))
-  (setf pine.command:*minibuffer-handler* #'minibuffer-dispatch
-        pine.command:*terminal-handler*   #'pine.term:terminal-dispatch
+  (setf pine.command:*terminal-handler*   #'pine.term:terminal-dispatch
         pine.eval:*on-debug*              #'%eval-error)
   ;; a process agent's error comes home to this editor's restart menu; jobs
   ;; chains on top of this hook, so both fire.

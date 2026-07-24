@@ -45,8 +45,9 @@
     :components ((:file "render")))
    (:module "editor"
     :serial t
-    :components ((:file "echo") (:file "kill-ring") (:file "complete")
-                (:file "prompt") (:file "isearch") (:file "file") (:file "repl")
+    :components ((:file "echo") (:file "kill-ring") (:file "completion")
+                (:file "complete") (:file "minibuffer") (:file "prompt")
+                (:file "isearch") (:file "file") (:file "repl")
                 (:file "editor") (:file "editor-session")))
    (:module "desktop"
     :serial t

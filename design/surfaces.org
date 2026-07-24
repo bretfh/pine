@@ -1,0 +1,202 @@
+#+TITLE: pine: structured surfaces
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:3 num:t
+
+* Why this document exists
+
+Some modes are not text. A dired line is a file. A debugger line is a restart or
+a stack frame. A jobs line is an evaluation. A completion line is a candidate.
+The text you see is a projection of an object, and the keys you press act on the
+object, not on the characters.
+
+emacs modes fake this well enough to ship and badly enough to hurt. The pine
+debugger fakes it today with =*debugger-restart-lines*=, an alist from buffer
+line to restart index: the buffer holds characters, and a parallel table off to
+the side remembers that line 7 "is" restart 2. Every such mode grows its own
+parallel table, its own re-derivation on every redraw, its own bespoke
+point-to-object lookup. That is the "raw ass text" problem by another name: the
+buffer does not know what its lines are, so every mode reinvents knowing.
+
+A structured surface is the buffer knowing. Its state carries an ordered (or
+nested) collection of /nodes/; each node is a domain object plus how to draw it;
+the visible text and faces are a pure projection of the nodes; and point on a
+line resolves back to the node with no parallel table. Modes like the debugger,
+dired, jobs, and completion stop being text with side tables and become object
+collections with a projection. This document specifies that model. errors.org's
+debugger is its first and hardest instance.
+
+* What we take from prior art, and what we do not
+
+- *ewoc* (emacs): a list of nodes, each carrying data and a pretty-printer; you
+  insert / delete / invalidate a node and ewoc regenerates that region; point
+  maps to a node by position. We take the core idea: nodes own their data and
+  their rendering, and the buffer is generated from the node list, not edited
+  into shape.
+- *magit-section*: a /tree/ of sections, each an object with a type and value,
+  collapsible, with navigation and actions that dispatch on the type at point.
+  We take the tree (nodes can have children), the collapsibility, and
+  action-dispatch-on-node-type.
+- *text properties carrying the object*: the simplest emacs trick is to stamp the
+  object onto its line as a text property, so line-to-object is intrinsic, not a
+  parallel alist. We take the principle (the projection remembers its origin
+  node) but implement it in the model, not as per-character properties, because
+  pine's buffer state is immutable fset and the node index rides its meta.
+
+What we do not take: emacs's in-place buffer surgery. pine buffer state is an
+immutable value you replace, not a heap you edit. A structured surface reprojects
+by producing a new state from a new node model, the same way every other edit
+produces a new state. No =with-silent-modifications=, no marker juggling.
+
+* The model
+
+#+begin_example
+  surface  = a buffer (or panel) whose state carries a NODE MODEL and projects it
+
+  node
+    value      the domain object: a restart, a file, an evaluation, a candidate
+    render     value -> lines (text + faces), or -> cells / a widget subtree
+    children   nil, or nodes (the magit tree; debugger frames could nest here)
+    collapsed  for a tree node: children hidden
+    actions    what keys do to this node (an alist key->command, or a fn)
+    id         stable identity so selection / point survive a reprojection
+
+  projection = pure fn (node-model) -> ( text+faces , line->node index )
+             the line->node index is produced BY the projection, so it can never
+             drift from the text the way a hand-maintained alist does.
+#+end_example
+
+The node model lives in the buffer's fset meta, beside =:vars= and =:name=. That
+is the low-friction seam: meta already rides every snapshot to every subscriber
+(design/architecture.org, "immutable data is the only thing that crosses"), so a
+structured surface's model reaches the renderer and any remote frontend for free,
+exactly as buffer-local variables do. No separate actor, no second channel.
+
+Point-on-a-line resolves through the projection's index: =node-at-point= is a
+lookup, not a search. A command bound in the surface's mode does its work by
+=node-at-point= then dispatching on =node-actions= or the node's =value= type.
+
+* Projection targets: lines and trees are the same nodes
+
+architecture.org names two wire formats: the styled cell grid (what the editor
+blits) and the declarative widget tree (column / row / label / icon / meter,
+what an app paints). A structured surface projects to one of them depending on
+where it lives:
+
+- editor buffer modes (debugger, dired, jobs, completion) project nodes to
+  /lines with faces/ -- the cell-grid path, through the ordinary buffer render.
+- a desktop panel projects nodes to a /widget subtree/ -- the layout-node path.
+
+The node model is the same; only =render= differs. This is why the candidate
+object pine already has (display, annotation, preview, action, category, source
+-- see the completion work) is a node in all but name: a completion popup
+projects candidates to lines, a richer surface could project the same candidates
+to a widget list, and neither the candidates nor the matching care which. The
+model unifies "structured buffer" and "declarative UI tree" under one
+node-collection idea with two renders; it does not force them to look alike.
+
+* Editable and projected regions coexist
+
+A structured surface is not always read-only. The completion minibuffer is the
+proof already in the tree: an editable input line on top, a read-only projected
+candidate list below, both in one buffer, and every ordinary editing command
+(C-a, M-f, C-k, isearch) works on the input because it is a real buffer region.
+
+So a surface declares which regions are editable text and which are projected
+nodes. Edits in a text region flow through the normal buffer path; the projected
+region reprojects when its model changes; a controller subscribed to the buffer
+re-runs whatever produces the model (the completion sources + styles, the dired
+directory read, the jobs list) on each change. wgrep-style editable projections
+(edit the text, write it back to the objects) are the general form of this and
+fall out of the same split.
+
+* The API, sketched
+
+Grounded in pine's existing CLOS mode/buffer system, not a new framework.
+
+#+begin_example
+  a structured mode is a mode whose buffer carries a node model and whose render
+  is the projection:
+
+    (define-structured-mode debugger-mode (base-mode)
+      :produce   #'debugger-nodes          ; state/origin -> node model
+      :project   #'project-lines)          ; node model  -> text+faces+index
+
+  a node:
+
+    (node :value   restart
+          :render  (lambda (r) (line (format nil "~d  [~a]  ~a" ...) :face :keyword))
+          :actions '(("Return" . invoke-restart-at-point)
+                     ("d"      . describe-restart-at-point)))
+
+  the surface protocol (generic functions on the mode / the node):
+
+    (node-at-point surface)          -> the node under point, via the index
+    (surface-nodes surface)          -> the model
+    (reproject surface)              -> new state from the current model
+    (node-render node)               -> lines or a widget subtree
+    (node-actions node)              -> the key->command map for this node
+
+  a command in a structured mode acts on the node, not the text:
+
+    (defcmd "dired-flag-delete" ()
+      (let ((n (node-at-point (current-surface))))
+        (when n (flag-file-for-delete (node-value n)) (reproject ...))))
+#+end_example
+
+The debugger's =0-9= / =Return= / =q= stop being "parse the digit, index the
+alist" and become "the restart node under point, invoke it" -- the keys are the
+node's actions, resolved through the mode keymap the way every other mode's keys
+already resolve.
+
+* Instances
+
+- *debugger* (errors.org): nodes are the condition header, the restart list
+  (action: invoke, live and irreversible -- the demanding case), and the
+  backtrace frames (action: inspect locals, jump to source). A tree if frames
+  carry nested detail. When the session registry holds several faults, the
+  session switcher is itself a node list.
+- *dired*: nodes are files and directories (a tree when a directory is expanded,
+  the magit-section shape); actions open, mark, flag, rename, act on the file
+  object under point.
+- *jobs*: nodes are evaluations across every agent (architecture.org's jobs
+  surface); actions attend the evaluation's debugger session, kill it, or show
+  its captured output.
+- *completion*: nodes are candidates, which are already objects; the input line
+  is the editable region, the candidate list the projected one; narrowing,
+  preview, and actions are node operations. This is the instance closest to done.
+- *help / apropos*: nodes are symbols and topics; actions describe, find the
+  definition source, or eval an example.
+
+* Open questions
+
+- *reprojection cost*. Reproject-from-model is clean and matches "replace the
+  value." For a dired of ten thousand files or a giant jobs list, reprojecting
+  the whole model on every change is wasteful. ewoc invalidates one node; magit
+  regenerates a section. The node =id= exists so a future incremental projection
+  can diff models and reproject only changed nodes. Start whole, keep the door
+  open. Do not build the incremental path before a surface is large enough to
+  need it, and say so when a surface is capped meanwhile.
+- *tree vs flat*. Children + collapse cover the tree case, but most surfaces are
+  flat. The model supports the tree; instances use it only when they are one
+  (dired, nested frames), and flat surfaces ignore it.
+- *where the model lives*. Buffer meta is the proposed home (rides snapshots,
+  mirrors buffer-local vars). The alternative is a distinct surface actor. Meta
+  wins unless a surface needs identity or lifecycle separate from its buffer;
+  none of the named instances do.
+- *how much rides the wire*. The projected text + faces + line->node index cross
+  to a frontend as usual. Whether the node /values/ cross (so a remote frontend
+  can run a node's action locally) or only their ids (so actions round-trip to
+  the daemon) is the same question architecture.org raises for cross-image
+  redefinition, and should be answered the same way: ids and a round-trip first,
+  richer local objects only where a surface proves it needs them.
+
+* Reference
+
+- The debugger as the forcing instance, and the error substrate it sits on:
+  design/errors.org.
+- Buffers as immutable fset actors, meta, snapshots to subscribers, the wire
+  formats (cell grid, widget tree): design/architecture.org.
+- The candidate object and completion (the near-done structured surface):
+  src/editor/completion.lisp, src/editor/complete.lisp.
+- Modes as CLOS composition, keymap resolution: design/architecture.org "modes";
+  src/keymap/mode.lisp.

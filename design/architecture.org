@@ -250,31 +250,66 @@ Built and running (make dev is a typable GTK editor; make check loads clean):
   <layer-shell-surface> that implements the surface protocol; sources registered
   in the service registry.
 
-The central divergence from this document: the daemon, the editor, and the
-desktop all run in one process today. The freeze that a desktop click could hang
-the editor is a direct result. The real shape is three processes, attached over
-remoting, with sources as isolated agents.
+The multi-process substrate is BUILT and is the default, not a future. run-daemon
+(main.lisp) starts the headless daemon and, from the built binary, spawns the
+editor and desktop as separate OS processes and supervises them (start-frontends,
+main.lisp); each attaches over sento remoting (core/attach.lisp) and renders the
+trees the daemon builds. Both frontends have two implementations: GTK (src/app/)
+and GTK-free wayland + cairo (src/wayland/, src/cairo/). The single-process
+`make dev` still exists for development, which is the only place the old freeze
+can still happen. State of each piece:
 
-Designed here, not yet built:
+- Topology split: BUILT. daemon + editor + desktop are separate images over
+  remoting; a frontend crash is isolated and the supervisor respawns it.
+- :process agents: BUILT. spawn-agent (core/actor.lisp) launches a fresh SBCL
+  that loads :pine and connects back (core/agent.lisp); start-agent-supervisor
+  pings and respawns. Frontends serve themselves as agents "editor"/"desktop"
+  (wayland/editor.lisp, wayland/client.lisp), so the daemon can eval into a live
+  frontend and its errors ship home.
+- Cross-image debugger: BUILT. an agent/frontend error ships its restarts home by
+  name (agent.lisp *on-debug*) to the editor, which drives the choice back via
+  :resume (editor.lisp invoke-pending-restart). Same surface as the local eval
+  debugger.
+- One eval path, swappable target: BUILT. *eval-target* + M-x set-eval-target
+  (editor.lisp) route C-x C-e / eval-defun / load-file into any agent's image via
+  agent-eval; :local goes through the local-agent.
+- Jobs surface: BUILT. pine.jobs + M-x jobs lists every live evaluation across the
+  daemon and every agent.
+- Sources isolated off the shared pool: BUILT. each source runs on its own thread
+  (widget/sources.lisp start-poll / start-stream), never the dispatcher pool.
 
-- Split the topology: headless daemon, editor app, desktop app, each its own
-  process over remoting. This is the load the rest depends on.
-- The no-hang contract enforced everywhere: no shared thread blocks; sources and
-  any blocking IO run isolated.
-- Cross-image errors: an agent or app error surfaces its restarts in the editor
-  by name; the editor drives the choice back.
-- A real :process agent: spawn SBCL (drop the dead ecl path), actor-system with
-  remoting, register back; supervised with death detection and restart policy.
-- One eval path: all editor eval becomes eval-in-agent :local, so the target is
-  swappable.
-- The jobs surface: one buffer listing every live evaluation across every agent.
-- Live cross-image redefinition: ship a form to a target image and compile it
-  there; the state and source-of-truth questions above.
+Genuinely still open (the debugger items are detailed in design/errors.org):
+
+- The debugger is single-slot (*pending-debugger* / *pending-agent-debug*,
+  editor.lisp): concurrent faults from multiple agents or buffers collide. Needs a
+  session registry.
+- Condition boundaries are missing on the renderer (render.lisp logs to stderr)
+  and the data sources (widget/sources.lisp swallow with (error () nil)), so a
+  faulting renderer or source is invisible instead of reaching the debugger.
+- No retry restart on the edit/source boundaries, and *eval-target* does not
+  auto-follow the attended fault, so fix-and-continue is not wired end to end.
+- The repl evals in the daemon image directly (editor/repl.lisp), bypassing the
+  swappable eval target.
+- Live cross-image redefinition of a whole image's state (instance migration;
+  source-of-truth when several images run the same widget code) is still the open
+  design question, though eval/compile-into-a-target already works.
+- Two completion UIs coexist: the editor minibuffer (editor/complete.lisp, cell
+  grid) and the desktop palette (desktop/palette.lisp, widget tree), not unified
+  onto one structured-surface model (design/surfaces.org).
+- :media depends on a running emacs/EMMS via emacsclient (widget/sources.lisp) --
+  a tool pine aims to replace.
+- The GTK editor frontend (app/editor-app.lisp) consumes a :frame rows message;
+  the wayland editor (wayland/editor.lisp) consumes the :widgets tree. The editor
+  wire is not single across the two frontends.
 
 * Reference
 
 - Interactive API (ask / tell / buffer): design/api.org.
 - Client actor and attach model: design/client-actor.org.
+- Conditions, errors, and the debugger (the in-image half of "errors come
+  home"): design/errors.org.
+- Structured object-backed surfaces (the debugger, dired, jobs, completion):
+  design/surfaces.org.
 - Tree-sitter: design/treesitter.org.
 - Task list and system inventory: ~/org/pine-scope.org, ~/org/pine.org.
 - sento (actor library with remoting): vendor/cl-gserver/.

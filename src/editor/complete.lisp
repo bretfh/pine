@@ -7,9 +7,10 @@
   (search (string-downcase input) (string-downcase candidate)))
 
 (defun filter-candidates (input candidates)
-  (if (string= input "")
-      candidates
-      (remove-if-not (lambda (c) (substring-match-p input c)) candidates)))
+  "Match and rank CANDIDATES against INPUT through the completion engine
+(orderless: space-separated components, any order), tightest first. Returns
+display strings, so the current UI consumes it unchanged."
+  (mapcar #'candidate-string (complete input candidates)))
 
 (defun completing-read (prompt-text candidates cb)
   (let ((c (completion)))
@@ -21,7 +22,7 @@
           (pine.client:filtered c) (filter-candidates "" candidates)
           (pine.client:prompt c) prompt-text)
     (show-completions)
-    (pine.echo:show-input prompt-text)))
+    (activate-minibuffer (pine.client:current-client) prompt-text)))
 
 (defun completion-accept ()
   (let* ((c (completion))
@@ -41,6 +42,8 @@
   (pine.echo:message "cancelled"))
 
 (defun completion-cleanup ()
+  "Reset the completion state. The minibuffer buffer + focus are restored
+separately by DEACTIVATE-MINIBUFFER."
   (let ((c (completion)))
     (setf (pine.client:active-p c) nil
           (pine.client:candidates c) nil
@@ -49,8 +52,7 @@
           (pine.client:input c) ""
           (pine.client:callback c) nil
           (pine.client:dynamic-fn c) nil))
-  (pine.echo:hide-completions-area)
-  (pine.echo:hide-input))
+  (pine.echo:hide-completions-area))
 
 (defun completion-next ()
   (let ((c (completion)))
@@ -162,9 +164,8 @@ cannot be read."
           (pine.client:dynamic-fn c) #'file-name-completions
           (pine.client:callback c) cb
           (pine.client:prompt c) prompt-text)
-    (pine.echo:show-input prompt-text)
-    (pine.echo:set-input-text initial)
-    (completion-update-input initial)))
+    (completion-update-input initial)
+    (activate-minibuffer (pine.client:current-client) prompt-text :initial initial)))
 
 (defun file-name-complete ()
   "Tab: extend the path by the entries' common prefix; a lone match completes
@@ -196,4 +197,5 @@ taken; a directory is descended into, a file is opened."
                                  (concatenate 'string target "/")))
         (let ((cb (pine.client:callback c)))
           (completion-cleanup)
-          (when cb (funcall cb target))))))
+          (deactivate-minibuffer (pine.client:current-client))
+          (when cb (%safe-call cb target))))))
