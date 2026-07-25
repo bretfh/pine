@@ -330,3 +330,49 @@ selectors name one class."
   (is (equal '("nm-row" "sel") (pine.layout:class-names '(:nm-row :sel))))
   (is (equal '("nm-row" "sel") (pine.layout:class-names "nm-row sel")))
   (is (null (pine.layout:class-names nil))))
+
+(defun %fresh-store (path)
+  "Open the store on PATH after deleting any prior db (never a real one)."
+  (dolist (f (list path (concatenate 'string path "-wal")
+                   (concatenate 'string path "-shm")))
+    (uiop:delete-file-if-exists f))
+  (pine.store:open-store path))
+
+(test store-facility
+  "The persistence facility: lisp values roundtrip through kv, bounded lists
+keep order/uniqueness/caps, a fresh connection sees the data, and a closed
+store degrades to defaults and no-ops."
+  (let ((path "/tmp/pine-test-store.db"))
+    (%fresh-store path)
+    (setf (pine.store:store :probe-n) 42
+          (pine.store:store :probe-f) 0.5
+          (pine.store:store :probe-s) "hi"
+          (pine.store:store (list :place "/x")) (list 3 7))
+    (is (= 42 (pine.store:store :probe-n)))
+    (is (= 0.5 (pine.store:store :probe-f)))
+    (is (equal "hi" (pine.store:store :probe-s)))
+    (is (equal '(3 7) (pine.store:store (list :place "/x"))))
+    (is (eq :none (pine.store:store :probe-missing :none)))
+    (pine.store:store-forget :probe-n)
+    (is (null (pine.store:store :probe-n)))
+    (pine.store:store-push :probe-log "a")
+    (pine.store:store-push :probe-log "b")
+    (pine.store:store-push :probe-log "c")
+    (is (equal '("c" "b" "a") (pine.store:store-items :probe-log)))
+    (pine.store:store-push :probe-log "a")
+    (is (equal '("a" "c" "b") (pine.store:store-items :probe-log)))
+    (is (equal '("a" "c") (pine.store:store-items :probe-log :limit 2)))
+    (dotimes (i 5) (pine.store:store-push :probe-trim (format nil "t~d" i) :max 3))
+    (is (equal '("t4" "t3" "t2") (pine.store:store-items :probe-trim)))
+    (pine.store:store-clear :probe-log)
+    (is (null (pine.store:store-items :probe-log)))
+    (pine.store:open-store path)
+    (is (equal "hi" (pine.store:store :probe-s)))
+    (pine.store:close-store)
+    (is (eq :closed (pine.store:store :probe-s :closed)))
+    (finishes (setf (pine.store:store :probe-s) "zz"))
+    (is (null (pine.store:store-items :probe-log)))
+    (pine.store:open-store ":memory:")
+    (setf (pine.store:store :probe-m) 1)
+    (is (= 1 (pine.store:store :probe-m)))
+    (pine.store:close-store)))

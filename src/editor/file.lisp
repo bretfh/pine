@@ -16,6 +16,14 @@
     (write-string text s))
   path)
 
+(defun %clamped-place (content line col)
+  "LINE/COL clamped into CONTENT: line to the lines that exist, col to that
+line's length -- stored places must never put point outside the buffer."
+  (let* ((lines (or (uiop:split-string content :separator '(#\Newline)) (list "")))
+         (l (max 0 (min line (1- (length lines)))))
+         (c (max 0 (min col (length (nth l lines))))))
+    (values l c)))
+
 (defun find-file (path)
   (let* ((expanded (merge-pathnames path))
          (exists (probe-file expanded))
@@ -23,9 +31,15 @@
          (name (file-namestring expanded))
          (content (if exists (or (read-file expanded) "") "")))
     (when (string= name "") (setf name namestring))
-    (let ((buf (pine.buffer:make-buffer name :content content)))
+    (let ((buf (pine.buffer:make-buffer name :content content))
+          (place (and exists (pine.store:store (list :place namestring)))))
+      (pine.store:store-push :recent-files namestring :unique t :max 100)
       (sento.actor:tell buf (list :set-local :key :pathname :value namestring))
-      (sento.actor:tell buf (list :move-point :line 0 :col 0))
+      (if place
+          (multiple-value-bind (l c)
+              (%clamped-place content (first place) (second place))
+            (sento.actor:tell buf (list :move-point :line l :col c)))
+          (sento.actor:tell buf (list :move-point :line 0 :col 0)))
       (pine.buffer:switch-buffer name)
       (sento.actor:tell (pine.client:renderer (pine.client:current-client))
                         (list :switch-buffer :buffer buf :name name))
@@ -46,5 +60,25 @@
         (if path
             (progn
               (write-file path text)
+              (record-place buf path)
+              (pine.store:store-push :recent-files path :unique t :max 100)
               (pine.echo:message (format nil "wrote ~a" path)))
             (pine.echo:message "no file path for this buffer"))))))
+
+(defun record-place (buf path)
+  "Store BUF's point under (:place PATH), so the next find-file resumes there."
+  (ignore-errors
+   (multiple-value-bind (line col) (pine.buffer:ask buf :point)
+     (when line
+       (setf (pine.store:store (list :place path)) (list line col))))))
+
+(defun record-places ()
+  "Store the point of every file-backed buffer. The shutdown sweep."
+  (let ((srv pine.server:*server*))
+    (when srv
+      (loop for buf being the hash-values of (or (pine.server:buffer-table srv)
+                                                 (make-hash-table))
+            do (ignore-errors
+                (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
+                       (path (pine.buffer:buffer-local state :pathname)))
+                  (when path (record-place buf path))))))))

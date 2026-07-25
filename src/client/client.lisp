@@ -62,6 +62,12 @@
    (repl-buffer     :initarg :repl-buffer     :accessor repl-buffer     :initform nil)
    (prompt-callback :initarg :prompt-callback :accessor prompt-callback :initform nil)
    (prompt-active   :initarg :prompt-active   :accessor prompt-active   :initform nil)
+   ;; the active prompt's history: the store list it reads/pushes, the cycle
+   ;; position (nil = not cycling, 0 = newest), and the items fetched once at
+   ;; the first M-p.
+   (prompt-history  :accessor prompt-history  :initform nil)
+   (prompt-history-pos :accessor prompt-history-pos :initform nil)
+   (prompt-history-items :accessor prompt-history-items :initform nil)
    ;; the minibuffer as a real buffer: the input buffer, the buffer that was
    ;; current before the prompt (restored on exit), its latest snapshot (for the
    ;; renderer), and the controller that re-filters + repaints on each edit.
@@ -79,7 +85,8 @@
   (let* ((cli (make-instance 'client
                 :server-of server
                 :frame (make-instance 'pine.buffer::frame)
-                :terminal-map (make-hash-table :test 'eq))))
+                :terminal-map (make-hash-table :test 'eq)
+                :kill-ring (pine.store:store :kill-ring))))
     (push cli (pine.server:clients server))
     cli))
 

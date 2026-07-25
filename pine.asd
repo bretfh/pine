@@ -12,6 +12,7 @@
                #:cffi
                #:cffi-libffi
                #:com.inuoe.jzon
+               #:sqlite
                #:pine/vt)
   :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
   :serial t
@@ -30,7 +31,7 @@
     :components ((:file "client")))
    (:module "state"
     :serial t
-    :components ((:file "ref") (:file "var")))
+    :components ((:file "store") (:file "ref") (:file "var")))
    (:module "input"
     :serial t
     :components ((:file "key") (:file "keymap") (:file "command")))

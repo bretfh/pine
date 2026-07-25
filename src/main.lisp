@@ -23,6 +23,11 @@
     (pine.editor:install-bindings)
     (pine.editor:install-editor-sessions)
     (pine.desktop:install-desktop-sessions)
+    (pine.store:open-store)
+    (pine.hooks:add-shutdown-hook :store
+      (lambda ()
+        (pine.file:record-places)
+        (pine.store:close-store)))
     (load-init)
     (pine.jobs:install-jobs)
     (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads

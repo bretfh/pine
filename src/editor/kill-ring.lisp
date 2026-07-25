@@ -15,7 +15,8 @@
                      (pine.client:kill-ring-max client))
               (setf (pine.client:kill-ring client)
                     (subseq (pine.client:kill-ring client) 0
-                            (pine.client:kill-ring-max client)))))))))
+                            (pine.client:kill-ring-max client))))))
+      (setf (pine.store:store :kill-ring) (pine.client:kill-ring client)))))
 
 (defun kill-ring-top ()
   (first (pine.client:kill-ring (pine.client:current-client))))

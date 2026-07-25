@@ -109,7 +109,8 @@
    #:read-file
    #:write-file
    #:find-file
-   #:save-current-buffer))
+   #:save-current-buffer
+   #:record-places))
 
 (defpackage :pine.render
   (:use :cl)
@@ -202,6 +203,16 @@
    #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
    #:toggle-minor-mode #:active-minor-mode-indicators
    #:dispatch-message #:install-default-modes))
+
+(defpackage #:pine.store
+  (:use #:cl)
+  (:export #:store #:store-push #:store-items #:store-clear #:store-forget
+           #:open-store #:close-store)
+  (:documentation "The persistence facility: one SQLite store the daemon
+owns. (store K) reads a durable value, (setf (store K) V) writes;
+store-push/store-items keep bounded lists (histories, recents). Modes
+declare what persists -- via defonce/defref :persist or their own store
+keys -- and never touch files."))
 
 (defpackage :pine.var
   (:use :cl)
@@ -332,6 +343,9 @@
    #:repl-buffer
    #:prompt-callback
    #:prompt-active
+   #:prompt-history
+   #:prompt-history-pos
+   #:prompt-history-items
    #:minibuffer-buffer #:saved-buffer #:minibuffer-snap #:minibuffer-controller
    #:active-p
    #:candidates
@@ -423,6 +437,7 @@
                 #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
                 #:ask #:tell)
   (:import-from :pine.ref #:defref #:ref)
+  (:import-from :pine.store #:store #:store-push #:store-items #:store-clear)
   (:import-from :pine.source #:defsource #:defpoll)
   (:import-from :pine.command #:call-command #:execute)
   (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode
@@ -452,6 +467,8 @@
    #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
    ;; data
    #:defref #:ref #:defpoll #:defsource #:sh #:launch
+   ;; persistence
+   #:store #:store-push #:store-items #:store-clear
    ;; style rules
    #:defrules
    ;; behavior

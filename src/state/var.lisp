@@ -12,25 +12,32 @@
   (default       nil)
   (documentation "")
   (global        nil)
-  (global-set    nil))
+  (global-set    nil)
+  (persist       nil))
 
 (defvar *variables* (make-hash-table :test 'eq))
 
-(defun %declare (name default documentation)
-  (let ((existing (gethash name *variables*)))
-    (if existing
-        (setf (evar-default existing) default
-              (evar-documentation existing) (or documentation ""))
-        (setf (gethash name *variables*)
-              (%make-evar :name name :default default
-                          :documentation (or documentation ""))))
-    (gethash name *variables*)))
+(defun %declare (name default documentation persist)
+  (let* ((existing (gethash name *variables*))
+         (v (or existing
+                (setf (gethash name *variables*)
+                      (%make-evar :name name)))))
+    (setf (evar-default v) default
+          (evar-documentation v) (or documentation "")
+          (evar-persist v) persist)
+    (when (and persist (not (evar-global-set v)))
+      (let ((stored (pine.store:store (list :var name) '%absent)))
+        (unless (eq stored '%absent)
+          (setf (evar-global v) stored (evar-global-set v) t))))
+    v))
 
-(defmacro defonce (name &key default documentation)
+(defmacro defonce (name &key default documentation persist)
   "Declare editor variable NAME. Redeclaring updates the default and the
 documentation but KEEPS a value already set, so reloading init.lisp (and the
-editor's own install-variables) never clobbers a setting."
-  `(%declare ,name ,default ,documentation))
+editor's own install-variables) never clobbers a setting. With PERSIST the
+global value survives restarts: the declaration seeds it from the store and
+every global setf writes through."
+  `(%declare ,name ,default ,documentation ,persist))
 
 (defun find-variable (name)
   (or (gethash name *variables*) (error "No editor variable ~s" name)))
@@ -68,7 +75,9 @@ global, (setf (var NAME BUFFER) V) sets it buffer-locally."
   (if buffer
       (pine.buffer:tell buffer :set-var :key name :value value)
       (let ((v (find-variable name)))
-        (setf (evar-global v) value (evar-global-set v) t)))
+        (setf (evar-global v) value (evar-global-set v) t)
+        (when (evar-persist v)
+          (setf (pine.store:store (list :var name)) value))))
   value)
 
 (defun variable-scope (name &optional (buffer (current-buffer*)))

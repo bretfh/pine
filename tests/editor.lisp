@@ -12,6 +12,7 @@
 
 (defun ensure-editor-env ()
   (unless *client*
+    (%fresh-store "/tmp/pine-editor-test-store.db")
     (let ((srv (pine.server:start-server)))
       (setf pine.server:*server* srv
             *server* srv
@@ -337,6 +338,51 @@ and a dead-end chord echoes undefined instead of self-inserting."
     (is (equal before (pine.buffer:ask (pine.buffer:buffer "scratch") :text)))
     (is (search "undefined" (pine.echo:current-message))))
   (u "(set-buffer-mode (buffer \"scratch\") :text-mode)"))
+
+(test (persistence :depends-on chord-across-keymaps)
+  "The store-backed behaviors end to end: persisted vars and refs reseed
+after a simulated restart, find-file records recents and restores the saved
+place, kills reach the store, prompt history recalls with M-p."
+  (u "(defonce :persist-probe :default 1 :persist t)")
+  (u "(setf (var :persist-probe) 5)")
+  (is (eql 5 (pine.store:store '(:var :persist-probe))))
+  (remhash :persist-probe pine.var::*variables*)
+  (u "(defonce :persist-probe :default 1 :persist t)")
+  (is (eql 5 (u "(var :persist-probe)")))
+  (u "(defref :persist-ref-probe 0 :persist t)")
+  (u "(setf (ref :persist-ref-probe) 9)")
+  (is (eql 9 (pine.store:store '(:ref :persist-ref-probe))))
+  (remhash :persist-ref-probe pine.ref::*refs*)
+  (u "(defref :persist-ref-probe 0 :persist t)")
+  (is (eql 9 (u "(ref :persist-ref-probe)")))
+  (pine.editor::kill-ring-push "persist-kill-probe")
+  (is (member "persist-kill-probe" (pine.store:store :kill-ring) :test #'equal))
+  (let ((tmp "/tmp/pine-place-probe.txt"))
+    (with-open-file (s tmp :direction :output :if-exists :supersede)
+      (format s "one~%two~%three~%"))
+    (pine.file:find-file tmp) (sleep 0.15)
+    (is (member tmp (pine.store:store-items :recent-files) :test #'equal))
+    (let ((buf (pine.buffer:buffer "pine-place-probe.txt")))
+      (sento.actor:tell buf '(:move-point :line 2 :col 1)) (sleep 0.1)
+      (setf (pine.client:current-buffer *client*) buf)
+      (pine.file:save-current-buffer) (sleep 0.1)
+      (is (equal '(2 1) (pine.store:store (list :place tmp)))))
+    (pine.buffer:kill-buffer "pine-place-probe.txt") (sleep 0.1)
+    (pine.file:find-file tmp) (sleep 0.15)
+    (multiple-value-bind (l c)
+        (pine.buffer:ask (pine.buffer:buffer "pine-place-probe.txt") :point)
+      (is (= 2 l))
+      (is (= 1 c)))
+    (pine.buffer:kill-buffer "pine-place-probe.txt") (sleep 0.1))
+  (setf (pine.client:current-buffer *client*) (pine.buffer:buffer "scratch"))
+  (pine.command:call-command "execute-command") (sleep 0.1)
+  (dolist (ch '("l" "i" "s" "t" "-" "b" "u" "f" "f" "e" "r" "s")) (key ch))
+  (key "Return") (sleep 0.1)
+  (is (member "list-buffers" (pine.store:store-items :commands) :test #'equal))
+  (pine.command:call-command "execute-command") (sleep 0.1)
+  (key "M-p") (sleep 0.1)
+  (is (equal "list-buffers" (mbtext)))
+  (key "Escape") (sleep 0.1))
 
 (test (examples-init :depends-on user-language)
   "The shipped worked example loads clean and its definitions land."

@@ -19,6 +19,9 @@
 |             | (setf (ref K) V) writes (deduped)                            |
 | var         | editor variable: defonce declares, (var k [buf]) reads,      |
 |             | (setf (var k [buf])) writes                                  |
+| store       | durable value in the daemon's SQLite store: (store K) reads, |
+|             | (setf (store K) V) writes; store-push / store-items keep     |
+|             | bounded lists; defonce/defref :persist ride it               |
 
 Three display layers only: buffer (content) -> window (view) -> surface
 (placement). Everything else is content vocabulary. There is no "pane"; no

@@ -162,6 +162,31 @@ so the surface re-renders when a ref it read changes, and only then.
   it changes, and =(setf (ref NAME) V)= writes it (deduped), creating it if
   missing. No separate setter.
 
+* Persistence
+
+One engine-owned SQLite store (XDG data home =pine/store.db=), open for the
+daemon's whole life. Values are readable lisp. Nothing else in pine writes
+state files; a mode that wants to persist something marks a variable
+=:persist= or uses its own store key -- never a file of its own.
+
+| symbol        | form                                        | status |
+|---------------+---------------------------------------------+--------|
+| =store=       | =(store KEY [default])= -- setf-able         | [have] |
+| =store-push=  | =(store-push NAME V :max N :unique B)=       | [have] |
+| =store-items= | =(store-items NAME :limit N)= newest first   | [have] |
+| =store-clear= | =(store-clear NAME)=                         | [have] |
+
+- KEY is any readable lisp: =:greeting=, =(:place "/etc/hosts")=. =store= is
+  the durable sibling of =ref= / =var=: =(setf (store :k) v)= writes through.
+- =store-push= keeps a bounded list: =:unique= (the default) moves an equal
+  entry to the front, =:max= trims to the newest N. Histories and recents.
+- =(defonce :name ... :persist t)= and =(defref :name V :persist t)= make the
+  global value survive restarts: the declaration seeds it from the store,
+  every write goes through.
+- Out of the box: kill ring, repl history, prompt histories (M-x, files,
+  eval), recent files (=find-recent=, =C-x C-r=), and save-place (=find-file=
+  reopens at the point you left; recorded on save and daemon shutdown).
+
 * Behavior
 
 What input does.
@@ -215,25 +240,29 @@ Buffer-local-with-global-fallback settings, fset-backed.
 
 | symbol            | form                                       | status |
 |-------------------+--------------------------------------------+--------|
-| =defonce=         | =(defonce :name :default V :documentation ..)= | [have] |
+| =defonce=         | =(defonce :name :default V :documentation .. :persist B)= | [have] |
 | =var=             | =(var :name [buffer])= -- setf-able         | [have] |
 
 - =defonce= semantics: redeclaring updates the default and doc but keeps a
   value already set, so reloading =init.lisp= never clobbers it. One setf-able
   accessor, no separate setters: =(setf (var :tab-width) 2)= sets the global,
-  =(setf (var :tab-width buf) 2)= sets it buffer-locally.
+  =(setf (var :tab-width buf) 2)= sets it buffer-locally. With =:persist t=
+  the global value survives restarts (see Persistence).
 
 * Prompts and echo
 
 | symbol           | form                                   | status |
 |------------------+----------------------------------------+--------|
-| =completing-read=| =(completing-read PROMPT CANDIDATES CB)= | [have] |
-| =read-file-name= | =(read-file-name PROMPT CB)=            | [have] |
-| =prompt=         | =(prompt PROMPT CB)= (a plain string)   | [have] |
+| =completing-read=| =(completing-read PROMPT CANDIDATES CB :history NAME)= | [have] |
+| =read-file-name= | =(read-file-name PROMPT CB :history NAME)=            | [have] |
+| =prompt=         | =(prompt PROMPT CB :history NAME)= (a plain string)   | [have] |
 | =message=        | =(message STRING)= to the echo area     | [have] |
 
 - CB is a function of the chosen string. CANDIDATES is a list of strings or
   candidate objects. These make a =defcommand= interactive.
+- =:history NAME= names a store list: accept pushes the input, M-p / M-n
+  cycle it in the prompt. The built-in prompts use =:commands=, =:files=,
+  =:eval=.
 
 * Layout buffers (tool buffers)
 

@@ -26,6 +26,8 @@
               "sbcl-cl-ppcre-unicode"
               "sbcl-cl-unicode"
               "sbcl-cl-speedy-queue"
+              "sbcl-cl-sqlite"
+              "sbcl-iterate"
               "sbcl-cl-str"
               "sbcl-cl-xkb"
               "sbcl-closer-mop"

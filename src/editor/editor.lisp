@@ -1052,7 +1052,16 @@ switch to it, and enable layout-mode on it. Returns the buffer."
     (read-file-name "Find file: "
       (lambda (path)
         (handler-case (pine.file:find-file path)
-          (error (c) (pine.echo:message (format nil "error: ~a" c)))))))
+          (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+      :history :files))
+  (defcmd "find-recent" ()
+    (let ((items (pine.store:store-items :recent-files)))
+      (if items
+          (completing-read "Recent: " items
+            (lambda (path)
+              (handler-case (pine.file:find-file path)
+                (error (c) (pine.echo:message (format nil "error: ~a" c))))))
+          (pine.echo:message "no recent files"))))
   (defcmd "save-file" ()
     (handler-case
         (let ((buf (cur-buffer)))
@@ -1083,7 +1092,8 @@ switch to it, and enable layout-mode on it. Returns the buffer."
     (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.buffer:list-buffers))))
   (defcmd "execute-command" ()
     (completing-read "M-x " (pine.command:all-command-names)
-      (lambda (name) (pine.command:call-command name))))
+      (lambda (name) (pine.command:call-command name))
+      :history :commands))
   (defcmd "eval-expression" ()
     (prompt "Eval: "
       (lambda (text)
@@ -1091,7 +1101,8 @@ switch to it, and enable layout-mode on it. Returns the buffer."
                      (if buf
                          (%buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
                          (find-package :cl-user)))))
-          (%eval-form-string text pkg)))))
+          (%eval-form-string text pkg)))
+      :history :eval))
   (defcmd "choose-restart" ()
     (let ((names (and *attended-session*
                       (remove nil (mapcar #'first
@@ -1217,7 +1228,9 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   (defcmd "minibuffer-abort" () (minibuffer-abort))
   (defcmd "minibuffer-complete" () (minibuffer-complete))
   (defcmd "minibuffer-next-candidate" () (completion-next))
-  (defcmd "minibuffer-prev-candidate" () (completion-prev)))
+  (defcmd "minibuffer-prev-candidate" () (completion-prev))
+  (defcmd "minibuffer-history-prev" () (minibuffer-history-prev))
+  (defcmd "minibuffer-history-next" () (minibuffer-history-next)))
 
 ;;;; Bindings
 
@@ -1236,6 +1249,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
     (pine.keymap:define-key g (k "C-g") "keyboard-quit")
     (pine.keymap:define-key g (k "Escape") "keyboard-quit")
     (pine.keymap:define-key g (list (k "C-x") (k "C-f")) "find-file")
+    (pine.keymap:define-key g (list (k "C-x") (k "C-r")) "find-recent")
     (pine.keymap:define-key g (list (k "C-x") (k "C-s")) "save-file")
     (pine.keymap:define-key g (list (k "C-x") (k "b")) "switch-buffer")
     (pine.keymap:define-key g (list (k "C-x") (k "2")) "split-window-below")
@@ -1323,7 +1337,9 @@ switch to it, and enable layout-mode on it. Returns the buffer."
       (pine.keymap:define-key mm (k "Down") "minibuffer-next-candidate")
       (pine.keymap:define-key mm (k "C-n") "minibuffer-next-candidate")
       (pine.keymap:define-key mm (k "Up") "minibuffer-prev-candidate")
-      (pine.keymap:define-key mm (k "C-p") "minibuffer-prev-candidate"))
+      (pine.keymap:define-key mm (k "C-p") "minibuffer-prev-candidate")
+      (pine.keymap:define-key mm (k "M-p") "minibuffer-history-prev")
+      (pine.keymap:define-key mm (k "M-n") "minibuffer-history-next"))
     ;; lisp-mode: the SLIME chord set (mode-keymap chords resolve fine)
     (let ((lm (pine.mode:mode-keymap (pine.mode:find-mode :lisp-mode))))
       (pine.keymap:define-key lm (list (k "C-c") (k "C-c")) "eval-defun")

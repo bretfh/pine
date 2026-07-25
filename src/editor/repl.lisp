@@ -7,6 +7,9 @@
   (pine.client:repl-buffer (pine.client:current-client)))
 
 (defun start-repl ()
+  (when (zerop (fset:size *history*))
+    (setf *history* (fset:convert 'fset:seq
+                                  (reverse (pine.store:store-items :repl-history)))))
   (let* ((client (pine.client:current-client))
          (buf (pine.buffer:make-buffer "*repl*" :content "pine> ")))
     (setf (pine.client:repl-buffer client) buf)
@@ -20,6 +23,7 @@
 (defun repl-eval (input)
   (setf *history* (fset:with-last *history* input))
   (setf *history-index* -1)
+  (pine.store:store-push :repl-history input :unique nil :max 500)
   (cond
     ((and (plusp (length input)) (char= (char input 0) #\!))
      (run-shell-command (subseq input 1)))

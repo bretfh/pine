@@ -9,7 +9,7 @@
 candidate OBJECTS; consumers read candidate-string / candidate-value."
   (complete input candidates))
 
-(defun completing-read (prompt-text candidates cb)
+(defun completing-read (prompt-text candidates cb &key history)
   (let ((c (completion)))
     (setf (pine.client:active-p c) t
           (pine.client:candidates c) candidates
@@ -19,6 +19,7 @@ candidate OBJECTS; consumers read candidate-string / candidate-value."
           (pine.client:filtered c) (filter-candidates "" candidates)
           (pine.client:prompt c) prompt-text)
     (show-completions)
+    (setf (pine.client:prompt-history (pine.client:current-client)) history)
     (activate-minibuffer (pine.client:current-client) prompt-text)))
 
 (defun completion-cleanup ()
@@ -140,7 +141,7 @@ cannot be read."
                            (pine.buffer:ask buf :state) :pathname nil)))))
     (if path (directory-namestring path) (namestring (uiop:getcwd)))))
 
-(defun read-file-name (prompt-text cb)
+(defun read-file-name (prompt-text cb &key history)
   (let ((c (completion)) (initial (default-directory)))
     (setf (pine.client:active-p c) t
           (pine.client:candidates c) nil
@@ -148,6 +149,7 @@ cannot be read."
           (pine.client:callback c) cb
           (pine.client:prompt c) prompt-text)
     (completion-update-input initial)
+    (setf (pine.client:prompt-history (pine.client:current-client)) history)
     (activate-minibuffer (pine.client:current-client) prompt-text :initial initial)))
 
 (defun file-name-complete ()
@@ -180,6 +182,7 @@ taken; a directory is descended into, a file is opened."
                                  target
                                  (concatenate 'string target "/")))
         (let ((cb (pine.client:callback c)))
+          (%push-prompt-history (pine.client:current-client) target)
           (completion-cleanup)
           (deactivate-minibuffer (pine.client:current-client))
           (when cb (%safe-call cb target))))))
@@ -283,7 +286,10 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
     (setf (pine.client:current-buffer client) back
           (pine.client:saved-buffer client) nil
           (pine.client:prompt-active client) nil
-          (pine.client:minibuffer-snap client) nil))
+          (pine.client:minibuffer-snap client) nil
+          (pine.client:prompt-history client) nil
+          (pine.client:prompt-history-pos client) nil
+          (pine.client:prompt-history-items client) nil))
   (pine.echo:hide-prompt)
   (let ((r (pine.client:renderer client)))
     (when r (sento.actor:tell r '(:force-render)))))
@@ -292,6 +298,45 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
   (when fn
     (handler-case (funcall fn arg)
       (error (e) (pine.echo:message (format nil "error: ~a" e))))))
+
+;;;; Prompt history. A prompt opened with :history NAME reads and feeds the
+;;;; store list NAME: accept pushes the input, M-p / M-n cycle it (the cycle
+;;;; position and fetched items live on the client for the prompt's duration).
+
+(defun %push-prompt-history (client input)
+  (let ((h (pine.client:prompt-history client)))
+    (when (and h (stringp input) (plusp (length input)))
+      (pine.store:store-push h input :max 200))))
+
+(defun minibuffer-history-prev ()
+  "M-p: replace the input with the previous (older) history entry."
+  (let* ((client (pine.client:current-client))
+         (h (pine.client:prompt-history client)))
+    (when h
+      (unless (pine.client:prompt-history-items client)
+        (setf (pine.client:prompt-history-items client)
+              (pine.store:store-items h :limit 200)))
+      (let* ((items (pine.client:prompt-history-items client))
+             (pos (pine.client:prompt-history-pos client))
+             (next (if pos (1+ pos) 0)))
+        (when (< next (length items))
+          (setf (pine.client:prompt-history-pos client) next)
+          (minibuffer-set-text (nth next items)))))))
+
+(defun minibuffer-history-next ()
+  "M-n: replace the input with the next (newer) entry; past the newest, an
+empty input leaves cycling."
+  (let* ((client (pine.client:current-client))
+         (items (pine.client:prompt-history-items client))
+         (pos (pine.client:prompt-history-pos client)))
+    (when (and items pos)
+      (if (plusp pos)
+          (progn
+            (setf (pine.client:prompt-history-pos client) (1- pos))
+            (minibuffer-set-text (nth (1- pos) items)))
+          (progn
+            (setf (pine.client:prompt-history-pos client) nil)
+            (minibuffer-set-text ""))))))
 
 ;;;; Accept / abort / complete / candidate motion -- the minibuffer-mode command
 ;;;; bodies (the defcmd wrappers live in editor.lisp).
@@ -309,12 +354,14 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
                                                  (pine.client:filtered c)))
                           text))
               (cb (pine.client:callback c)))
+         (%push-prompt-history client result)
          (completion-cleanup)
          (deactivate-minibuffer client)
          (%safe-call cb result)))
       ((pine.client:prompt-callback client)
        (let ((cb (pine.client:prompt-callback client)))
          (setf (pine.client:prompt-callback client) nil)
+         (%push-prompt-history client text)
          (deactivate-minibuffer client)
          (%safe-call cb text)))
       (t (deactivate-minibuffer client)))))
@@ -340,9 +387,10 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
 ;;;; Raw-text prompt (no completion): eval-expression, new-buffer. It activates
 ;;;; the minibuffer with a callback; Return -> minibuffer-accept fires it.
 
-(defun prompt (prompt-text cb)
+(defun prompt (prompt-text cb &key history)
   (let ((client (pine.client:current-client)))
-    (setf (pine.client:prompt-callback client) cb)
+    (setf (pine.client:prompt-callback client) cb
+          (pine.client:prompt-history client) history)
     (activate-minibuffer client prompt-text)))
 
 (defun cancel-prompt ()

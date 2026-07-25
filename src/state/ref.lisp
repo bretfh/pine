@@ -12,21 +12,31 @@
   (value       nil)
   (test        #'equal :type function)
   (subscribers nil)
+  (persist     nil)
   (lock (bordeaux-threads:make-lock)))
 
 (defvar *refs* (make-hash-table :test 'eq)
   "Named ref registry, so widgets bind by name and sources update by name.")
 
-(defun make-ref (&key value (test #'equal) name)
-  (let ((r (%make-ref :value value :test test :name name)))
+(defun make-ref (&key value (test #'equal) name persist)
+  (let ((r (%make-ref :value value :test test :name name :persist persist)))
+    (when (and persist name)
+      (let ((stored (pine.store:store (list :ref name) '%absent)))
+        (unless (eq stored '%absent)
+          (setf (ref-value r) stored))))
     (when name (setf (gethash name *refs*) r))
     r))
 
 (defun find-ref (name) (gethash name *refs*))
 
-(defmacro defref (name &optional value &key (test '#'equal))
-  "Get or create the named ref (idempotent, so redefining a config file is safe)."
-  `(or (find-ref ,name) (make-ref :name ,name :value ,value :test ,test)))
+(defmacro defref (name &optional value &key (test '#'equal) persist)
+  "Get or create the named ref (idempotent, so redefining a config file is
+safe). With PERSIST the value survives restarts: creation seeds it from the
+store and every real change writes through."
+  `(let ((r (find-ref ,name)))
+     (if r
+         (progn (setf (ref-persist r) ,persist) r)
+         (make-ref :name ,name :value ,value :test ,test :persist ,persist))))
 
 (defun ref (name &optional default)
   "Read ref NAME by name, DEFAULT when it holds nothing yet. Inside a tracked
@@ -57,6 +67,8 @@ safe; subscribers run outside the lock. Returns non-nil if it changed."
         (setf (ref-value ref) new changed t
               subs (copy-list (ref-subscribers ref)))))
     (when changed
+      (when (and (ref-persist ref) (ref-name ref))
+        (setf (pine.store:store (list :ref (ref-name ref))) new))
       (dolist (s subs) (ignore-errors (funcall (cdr s)))))
     changed))
 
