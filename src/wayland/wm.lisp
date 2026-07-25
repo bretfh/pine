@@ -165,13 +165,38 @@ window management state, so it runs inside a manage sequence."
 
 ;;;; Actions the daemon asks for.
 
+(defparameter +build-environment+
+  '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
+    "LD_LIBRARY_PATH")
+  "Variables that belong to the environment pine itself was built and run in.
+A window manager may well be started from inside one -- a guix shell over the
+repo's manifest -- and everything it launches would otherwise inherit that
+environment and that working directory, so a terminal would open inside pine's
+build environment instead of the user's session.")
+
+(defun %spawn (command)
+  "Launch COMMAND as the user's own program: their login environment, their
+home directory, and the compositor's display. Only WAYLAND_DISPLAY is carried
+over from this process."
+  (let ((login (format nil "cd \"$HOME\" && exec ~a" command)))
+    (uiop:launch-program (list "sh" "-l" "-c" login)
+                         :environment
+                         (append
+                          (remove-if
+                           (lambda (entry)
+                             (some (lambda (name)
+                                     (let ((prefix (concatenate 'string name "=")))
+                                       (and (>= (length entry) (length prefix))
+                                            (string= prefix entry
+                                                     :end2 (length prefix)))))
+                                   +build-environment+))
+                           (sb-ext:posix-environ))
+                          nil))))
+
 (defun %apply-action (wm plist)
   (destructuring-bind (&key action command id &allow-other-keys) plist
     (case action
-      (:spawn
-       ;; the frontend runs in the compositor's session, so a program it
-       ;; launches inherits WAYLAND_DISPLAY and lands in this session
-       (uiop:launch-program (list "sh" "-c" command)))
+      (:spawn (%spawn command))
       (:close
        (%defer wm (lambda ()
                     (let ((w (or (find id (wm-windows wm)
