@@ -509,7 +509,7 @@ Silently no-ops on nil target."
       (:windows        (pine.client:windows cli))
       (:kill-ring      (pine.client:kill-ring cli))
       (:last-command   (pine.client:last-command cli))
-      (:pending-keys   (pine.client:pending-keys cli))
+      (:pending-keys   (car (pine.client:pending-keys cli)))
       (:describe       +client-verbs+)
       (t (error "unknown :client query ~s; known: ~s" query +client-verbs+)))))
 

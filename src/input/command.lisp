@@ -141,23 +141,45 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
                       (let ((client (pine.client:current-client)))
                         (self-insert client (pine.client:this-command-key client))))))
 
-(defun %resolve (client key)
+(defun %active-tables (client)
+  "Every active keymap's tables in priority order: minor modes first, then
+the major mode with its parent chain, then the global map."
   (loop for km in (pine.mode:active-keymaps client)
-        for entry = (pine.keymap:keymap-lookup km key)
-        when entry return entry))
+        append (pine.keymap:keymap-tables km)))
+
+(defun %step (tables key)
+  "One dispatch step: KEY against TABLES in priority order. The first entry
+found decides -- a command fires, a prefix keeps reading -- and every
+table's continuation for KEY stays live, so a mode's C-c prefix never
+hides a global C-c chord. Returns (values command continuation-tables)."
+  (let ((entries (loop for tbl in tables
+                       for e = (gethash key tbl)
+                       when e collect e)))
+    (if (stringp (first entries))
+        (values (first entries) nil)
+        (values nil (remove-if-not #'hash-table-p entries)))))
 
 (defun key-binding (client key)
-  "KEY's binding in CLIENT's active keymaps: a command name string, a prefix
-sub-keymap, or nil."
-  (%resolve client key))
+  "KEY's binding in CLIENT's active keymaps: a command name string, a list
+of prefix continuation tables, or nil."
+  (multiple-value-bind (cmd conts) (%step (%active-tables client) key)
+    (or cmd conts)))
 
 (defun read-next-key (client fn)
   "Capture the next dispatched key and hand it to FN instead of running its
 binding. One-shot. The basis for describe-key, quoted-insert, etc."
   (setf (pine.client:pending-key-reader client) fn))
 
+(defun %seq-string (pending key)
+  "The chord typed so far as a string: PENDING's prefix (if any) plus KEY."
+  (let ((s (pine.key:key->string key)))
+    (if pending (concatenate 'string (car pending) " " s) s)))
+
 (defun dispatch (client key)
-  "Feed one pine.key:key: resolve via the pending prefix or the active keymaps."
+  "Feed one pine.key:key. Pending state is (SEQ-STRING . TABLES): the chord
+typed so far and the live continuation tables from every active keymap.
+A key that dead-ends a chord echoes \"SEQ is undefined\" -- unless it is
+bound to keyboard-quit at top level, which always escapes a chord."
   (setf (pine.client:this-command-key client) key)
   (let ((reader (pine.client:pending-key-reader client)))
     (when reader
@@ -171,18 +193,25 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
     (handler-bind ((error (lambda (c) (declare (ignore c))
                             (setf (pine.client:pending-keys client) nil))))
       (let* ((pending (pine.client:pending-keys client))
-             (entry (if pending
-                        (gethash key pending)
-                        (%resolve client key))))
-        (cond
-          ((pine.keymap:prefix-p entry)
-           (setf (pine.client:pending-keys client) entry))
-          (entry
-           (setf (pine.client:pending-keys client) nil)
-           (call-command entry))
-          (t
-           (setf (pine.client:pending-keys client) nil)
-           (if (self-insert-key-p key)
-               (call-command "self-insert-command")
-               ;; an unbound non-self-inserting key still terminates a prefix arg
-               (setf (pine.client:prefix-arg client) nil))))))))
+             (tables (if pending (cdr pending) (%active-tables client))))
+        (multiple-value-bind (cmd conts) (%step tables key)
+          (cond
+            (cmd
+             (setf (pine.client:pending-keys client) nil)
+             (call-command cmd))
+            (conts
+             (setf (pine.client:pending-keys client)
+                   (cons (%seq-string pending key) conts)))
+            (pending
+             (setf (pine.client:pending-keys client) nil
+                   (pine.client:prefix-arg client) nil)
+             (let ((top (%step (%active-tables client) key)))
+               (if (equal top "keyboard-quit")
+                   (call-command top)
+                   (pine.echo:message
+                    (format nil "~a is undefined" (%seq-string pending key))))))
+            (t
+             (if (self-insert-key-p key)
+                 (call-command "self-insert-command")
+                 ;; an unbound non-self-inserting key still terminates a prefix arg
+                 (setf (pine.client:prefix-arg client) nil)))))))))

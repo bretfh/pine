@@ -32,6 +32,13 @@ designator: a symbol ('greet) or a string name."
       (let ((p (keymap-parent keymap)))
         (and p (keymap-lookup p key)))))
 
+(defun keymap-tables (keymap)
+  "The keymap's table and every ancestor's table, nearest first. Dispatch
+resolves against tables, not keymaps, so a chord can continue in a parent
+map that the child's own prefix table would otherwise shadow."
+  (loop for m = keymap then (keymap-parent m)
+        while m collect (keymap-table m)))
+
 (defun keymap-bindings (keymap &optional include-parent)
   "List of (KEY-STRING . COMMAND) in KEYMAP. Chords render space-joined. With
 INCLUDE-PARENT, unshadowed parent bindings are appended."

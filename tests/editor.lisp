@@ -314,6 +314,30 @@ major modes, variables, css rules, tool buffers, prompts."
   (is (equal "yy" (symbol-value (find-symbol "*PICKED*" :pine.user))))
   (is (string= "got yy" (pine.echo:current-message))))
 
+(test (chord-across-keymaps :depends-on user-language)
+  "A mode's own C-c prefix must not hide global C-c chords: dispatch keeps
+every active keymap's continuation live, the first complete binding wins,
+and a dead-end chord echoes undefined instead of self-inserting."
+  (u "(defvar *chord* nil)")
+  (u "(defcommand chord-global () (setf *chord* :global))")
+  (u "(defcommand chord-mode () (setf *chord* :mode))")
+  (u "(defmode chord-probe-mode (:parent :text-mode))")
+  (u "(define-key (keymap :chord-probe-mode) (kbd \"C-c C-q\") 'chord-mode)")
+  (u "(global-set-key (kbd \"C-c q\") 'chord-global)")
+  (u "(set-buffer-mode (buffer \"scratch\") :chord-probe-mode)")
+  (setf (pine.client:current-buffer *client*) (pine.buffer:buffer "scratch"))
+  (key "C-c")
+  (is (equal "C-c" (pine.buffer:ask :client :pending-keys)))
+  (key "q") (sleep 0.05)
+  (is (eq :global (symbol-value (find-symbol "*CHORD*" :pine.user))))
+  (key "C-c") (key "C-q") (sleep 0.05)
+  (is (eq :mode (symbol-value (find-symbol "*CHORD*" :pine.user))))
+  (let ((before (pine.buffer:ask (pine.buffer:buffer "scratch") :text)))
+    (key "C-c") (key "j") (sleep 0.05)
+    (is (equal before (pine.buffer:ask (pine.buffer:buffer "scratch") :text)))
+    (is (search "undefined" (pine.echo:current-message))))
+  (u "(set-buffer-mode (buffer \"scratch\") :text-mode)"))
+
 (test (examples-init :depends-on user-language)
   "The shipped worked example loads clean and its definitions land."
   (pine.desktop:install-desktop-sessions)

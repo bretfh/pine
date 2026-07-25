@@ -644,7 +644,7 @@ no symbol to complete."
 (defun %describe-key-text (key)
   (let ((entry (pine.command:key-binding (pine.client:current-client) key))
         (s (pine.key:key->string key)))
-    (cond ((pine.keymap:prefix-p entry) (format nil "~a is a prefix key" s))
+    (cond ((consp entry) (format nil "~a is a prefix key" s))
           ((stringp entry) (format nil "~a runs the command ~a" s entry))
           ((pine.command:self-insert-key-p key)
            (format nil "~a runs self-insert-command" s))

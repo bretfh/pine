@@ -172,7 +172,8 @@
 (defpackage #:pine.keymap
   (:use #:cl)
   (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
-           #:define-key #:keymap-lookup #:prefix-p #:keymap-bindings))
+           #:define-key #:keymap-lookup #:prefix-p #:keymap-tables
+           #:keymap-bindings))
 
 (defpackage #:pine.command
   (:use #:cl)

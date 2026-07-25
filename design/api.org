@@ -82,7 +82,7 @@ valid queries for that target.
 | ~:windows~         | list of windows                          |
 | ~:kill-ring~       | list of strings                          |
 | ~:last-command~    | command name string or nil               |
-| ~:pending-keys~    | active chord-prefix hash or nil          |
+| ~:pending-keys~    | chord typed so far ("C-x") or nil        |
 | ~:describe~        | the verb list                            |
 
 For mode lookup: ~(ask :current :mode)~. For current-buffer name:
