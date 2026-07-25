@@ -28,7 +28,7 @@ press_super() {
 # A hermetic config directory: the harness must not load the developer's own
 # init.lisp, and must not write to it.
 export XDG_CONFIG_HOME="$out/config"
-mkdir -p "$XDG_CONFIG_HOME"
+mkdir -p "$XDG_CONFIG_HOME/pine"
 
 log "scenario start, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}"
 
@@ -37,23 +37,38 @@ log "scenario start, WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-unset}"
 port="${WM_SHOT_PORT:-7411}"
 log "harness daemon port $port"
 
+# The configuration asks for the window manager. Nothing here starts one:
+# the daemon spawns and supervises its frontends, which is the path a real
+# login takes, so this exercises it.
+cat >"$XDG_CONFIG_HOME/pine/init.lisp" <<'LISP'
+(in-package :pine.user)
+(setf *frontends* (list "wm"))
+LISP
+
+env -u WAYLAND_DISPLAY \
 sbcl --no-userinit --non-interactive \
      --eval '(require :asdf)' \
      --eval '(asdf:load-system :pine)' \
      --eval "(pine:run-daemon :port $port)" >"$out/daemon.log" 2>&1 &
 daemon_pid=$!
 log "daemon pid $daemon_pid"
-settle 12
 
+settle 15
+# what river's init does: tell the daemon which display this session is on
+log "announcing display $WAYLAND_DISPLAY"
 sbcl --no-userinit --non-interactive \
      --eval '(require :asdf)' \
-     --eval '(asdf:load-system :pine/wayland)' \
-     --eval "(pine.wl-wm:run-wm :port $port)" >"$out/wm.log" 2>&1 &
-wm_pid=$!
-log "wm pid $wm_pid"
+     --eval '(asdf:load-system :pine)' \
+     --eval "(setf pine.server:*port* $port)" \
+     --eval "(pine::cli (list \"session\"))" \
+     >>"$out/session.log" 2>&1
 
-settle 8
-kill -0 "$wm_pid" 2>/dev/null || log "wm exited early -- see wm.log"
+settle 20
+if pgrep -f "pine.wl-wm:run-wm" >/dev/null; then
+  log "daemon started the window manager"
+else
+  log "NO WINDOW MANAGER: see daemon.log and /tmp/pine-wm.log"
+fi
 shot 00-empty
 
 foot >"$out/client-1.log" 2>&1 &
@@ -93,7 +108,7 @@ settle 3
 shot 07-after-close
 
 log "scenario done"
-kill "$wm_pid" "$daemon_pid" 2>/dev/null || true
+kill "$daemon_pid" 2>/dev/null || true
 
 # river outlives its init; end the session so the harness returns promptly.
 kill "$PPID" 2>/dev/null || true

@@ -18,7 +18,7 @@
 
 (defun %clamped-place (content line col)
   "LINE/COL clamped into CONTENT: line to the lines that exist, col to that
-line's length -- stored places must never put point outside the buffer."
+line's length, so a stored place never puts point outside the buffer."
   (let* ((lines (or (uiop:split-string content :separator '(#\Newline)) (list "")))
          (l (max 0 (min line (1- (length lines)))))
          (c (max 0 (min col (length (nth l lines))))))
@@ -27,7 +27,7 @@ line's length -- stored places must never put point outside the buffer."
 (defun %open-file (path)
   "The silent half of find-file: read PATH into a named buffer with its
 pathname local, mode by extension, and point at the stored place. (values
-BUF NAME EXISTS) -- no switching, no rendering, no echo, so the world
+BUF NAME EXISTS). No switching, no rendering and no echo, so the world
 restore can reopen buffers in bulk."
   (let* ((expanded (merge-pathnames path))
          (exists (probe-file expanded))
@@ -93,8 +93,8 @@ restore can reopen buffers in bulk."
                   (when path (record-place buf path))))))))
 
 ;;;; World: the open files. Computed from the live buffer table at save time
-;;;; -- no shadow list -- and reopened from disk on restore, so a stale entry
-;;;; can only show less, never corrupt.
+;;;; and reopened from disk on restore, so a stale entry can only show less,
+;;;; never corrupt.
 
 (defun %file-buffers ()
   "((PATH MODE-KW) ...) for every live buffer backed by a file."

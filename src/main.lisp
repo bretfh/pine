@@ -39,32 +39,26 @@
 (defun %setenv (name value)
   (cffi:foreign-funcall "setenv" :string name :string value :int 1 :int))
 
-(defun discover-session-env ()
-  "Fill WAYLAND_DISPLAY when the daemon was started outside a graphical
-session, so the frontends it spawns can reach one: the newest wayland socket
-in the runtime directory. Only the socket -- which compositor is running, and
-anything it wants to be told, is the config's business and not the daemon's."
-  (unless (uiop:getenv "WAYLAND_DISPLAY")
-    (handler-case
-        (let* ((dir (uiop:ensure-directory-pathname
-                     (or (uiop:getenv "XDG_RUNTIME_DIR") "/run/user/1000")))
-               ;; the wildcard carries no type, so wayland-1 matches and
-               ;; wayland-1.lock does not
-               (sockets (sort (directory (merge-pathnames "wayland-*" dir))
-                              #'> :key #'file-write-date)))
-          (when sockets
-            (%setenv "WAYLAND_DISPLAY" (file-namestring (first sockets)))))
-      (error (c)
-        (format *error-output* "pine: no wayland display found: ~a~%" c)))))
+(defun session-display ()
+  "Return the wayland display the daemon may start frontends on, or NIL.
+
+Only what the environment says. The daemon never picks a display for itself:
+a guess can land on a compositor that is not this session's, and frontends
+would open somewhere nobody asked for. A session announces itself with
+`pine session'."
+  (let ((display (uiop:getenv "WAYLAND_DISPLAY")))
+    (when (and display (plusp (length display))) display)))
+
+(defun set-session-display (display)
+  "Adopt DISPLAY as the session's, for frontends started from now on."
+  (when (and display (plusp (length display)))
+    (%setenv "WAYLAND_DISPLAY" display)
+    display))
 
 (defun run-daemon (&key (port pine.server:*port*))
-  (discover-session-env)
   (start-daemon :remoting-port port)
-  ;; The daemon owns its frontends whether it runs from the binary or from
-  ;; source: it spawns each as its own process and respawns any that dies.
-  ;; Nothing outside needs to start them.
   (start-frontends)
-  (format t "pine daemon up on ~a:~d -- frontends spawned + supervised.~%"
+  (format t "pine daemon up on ~a:~d, frontends supervised~%"
           pine.server:*host* port)
   (finish-output)
   (loop (sleep 3600)))
@@ -73,8 +67,27 @@ anything it wants to be told, is the config's business and not the daemon's."
 ;;;; commands, and theme. Loaded in :pine.user. An error is surfaced, not fatal:
 ;;;; the daemon stays up with whatever loaded before it.
 
+(defun config-directory ()
+  "Return the directory holding the user's configuration."
+  (merge-pathnames "pine/" (uiop:xdg-config-home)))
+
+(defun register-config-systems ()
+  "Add the config directory to the ASDF registry.
+
+A configuration may be a system of its own, defined in an .asd beside
+init.lisp, with its own package, components and dependencies. Registering the
+directory is what makes (asdf:load-system :mine) find it."
+  (let ((dir (config-directory)))
+    (when (probe-file dir)
+      (pushnew dir asdf:*central-registry* :test #'equal))))
+
 (defun load-init ()
-  (let ((path (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home))))
+  "Load the configuration's entry point, init.lisp, in the PINE.USER package.
+
+The entry point may hold the whole configuration or load a system that does.
+An error is reported and the daemon keeps whatever loaded before it."
+  (register-config-systems)
+  (let ((path (merge-pathnames "init.lisp" (config-directory))))
     (when (probe-file path)
       (handler-case
           (let ((*package* (find-package :pine.user)))
@@ -110,6 +123,9 @@ anything it wants to be told, is the config's business and not the daemon's."
                   (sleep 0.2)
                   (sb-ext:exit :code 0 :abort t))
                 :name "pine-shutdown"))
+              (:session
+               (r (or (set-session-display (second msg))
+                      "no display given")))
               (:reload (load-init)
                        (ignore-errors (pine.desktop:refresh-all))
                        (ignore-errors (pine.editor:reseed-editor-sessions))
@@ -133,9 +149,9 @@ anything it wants to be told, is the config's business and not the daemon's."
 ;;;; start boots it. Not a REPL.
 
 (defparameter *cli-usage*
-  "usage: pine {start | stop | restart | daemon | editor | desktop | status |
-             eval FORM | reload | agents | spawn NAME | kill NAME |
-             show|hide|toggle NAME}")
+  "usage: pine {start | stop | restart | daemon | editor | desktop | wm |
+             session [DISPLAY] | status | eval FORM | reload | agents |
+             spawn NAME | kill NAME | show|hide|toggle NAME}")
 
 (defun cli-request (msg &key (host pine.server:*host*) (port pine.server:*port*))
   "Connect, ask the daemon's control actor, print, return. The process
@@ -223,33 +239,66 @@ environment that made this image loadable, so it can load what this one did."
   "While true the supervisor respawns dead frontends; cleared on daemon stop so
 it does not fight a deliberate shutdown.")
 
+(defconstant +frontend-unavailable+ 70
+  "Exit status a frontend uses to say it cannot run in this session.
+
+The window manager exits with it under a compositor that offers no window
+management. The supervisor then stops starting that frontend until the
+display changes.")
+
+(defvar *frontend-unavailable* (make-hash-table :test 'equal)
+  "Frontend verb to the display on which it reported itself unavailable.")
+
 (defun frontend-attached-p (verb)
-  "True when a frontend of this kind is already attached, whoever started it.
-A session that launches its own is common, and the daemon must not answer it
-with a second."
+  "Return the attached client of VERB's kind, whichever process started it."
   (let ((kind (intern (string-upcase verb) :keyword)))
     (find kind pine.attach:*clients* :key #'pine.attach:attached-client-kind)))
 
-(defun %needs-spawn-p (verb)
-  (let ((p (gethash verb *frontend-procs*)))
-    (and (not (and p (uiop:process-alive-p p)))
+(defun note-frontend-exit (verb display)
+  "Record VERB as unavailable on DISPLAY when its process said so."
+  (let ((process (gethash verb *frontend-procs*)))
+    (when (and process (not (uiop:process-alive-p process))
+               (eql (uiop:wait-process process) +frontend-unavailable+))
+      (setf (gethash verb *frontend-unavailable*) display))))
+
+(defun frontend-runnable-p (verb display)
+  "Return true when the daemon should start VERB on DISPLAY.
+
+False when there is no display, when VERB reported itself unavailable there,
+when the process the daemon started is alive, or when a frontend of that kind
+is attached already."
+  (let ((process (gethash verb *frontend-procs*)))
+    (and display
+         (not (equal (gethash verb *frontend-unavailable*) display))
+         (not (and process (uiop:process-alive-p process)))
          (not (frontend-attached-p verb)))))
 
-(defun start-frontends (&optional (verbs *frontends*))
-  "Spawn each frontend as its own process and keep it alive: a dedicated thread
-respawns any whose process has exited. The daemon is the supervisor, exactly as
-it is for process agents."
+(defun start-frontends ()
+  "Keep the frontends named by `*frontends*' running, one process each.
+
+The decision is made every cycle rather than once, because the configuration
+can change under a reload and the display can appear long after the daemon
+starts. The cycle that first sees a display only observes, leaving a frontend
+started elsewhere time to attach and claim its kind."
   (setf *frontend-supervise* t)
-  (dolist (v verbs)
-    (when (%needs-spawn-p v) (ignore-errors (spawn-frontend v))))
   (bordeaux-threads:make-thread
    (lambda ()
-     (loop while *frontend-supervise* do
-       (sleep 3)
-       (when *frontend-supervise*
-         (dolist (v verbs)
-           (when (%needs-spawn-p v)
-             (ignore-errors (spawn-frontend v)))))))
+     (let ((previous nil))
+       (loop :while *frontend-supervise*
+             :do (let ((display (session-display)))
+                   (cond
+                     ((not (equal display previous))
+                      (clrhash *frontend-unavailable*)
+                      (setf previous display))
+                     (t
+                      (dolist (verb *frontends*)
+                        (note-frontend-exit verb display)
+                        (when (frontend-runnable-p verb display)
+                          (handler-case (spawn-frontend verb)
+                            (error (c)
+                              (format *error-output*
+                                      "pine: cannot start ~a: ~a~%" verb c))))))))
+                 (sleep 3))))
    :name "pine-frontend-supervisor"))
 
 (defun stop-frontends ()
@@ -316,6 +365,9 @@ sure the port is free even if it was an old or wedged daemon."
                                (format t "pine: no wm frontend in this build~%")))
       ((string= verb "status") (cli-request '(:status)))
       ((string= verb "eval")   (cli-request (list :eval (format nil "~{~a~^ ~}" more))))
+      ((string= verb "session")
+       (cli-request (list :session (or (first more)
+                                       (uiop:getenv "WAYLAND_DISPLAY")))))
       ((string= verb "reload") (cli-request '(:reload)))
       ((string= verb "agents") (cli-request '(:agents)))
       ((string= verb "spawn")  (cli-request (list :spawn (first more))))

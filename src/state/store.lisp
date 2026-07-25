@@ -20,7 +20,7 @@
   "VALUE printed to store text. *print-readably* stays off: it would encode a
 base-string as an #A form while a character string prints as \"...\", splitting
 one logical key into two spellings. The fail-loud guarantee is a read-back
-check instead -- a value whose printed form does not read errors at the write."
+check instead: a value whose printed form does not read errors at the write."
   (let ((s (with-standard-io-syntax
              (let ((*print-readably* nil))
                (prin1-to-string value)))))
@@ -29,8 +29,10 @@ check instead -- a value whose printed form does not read errors at the write."
     s))
 
 (defun open-store (&optional path)
-  "Open the store at PATH -- default XDG data home pine/store.db, \":memory:\"
-for a transient one. Idempotent: an already-open store is closed first.
+  "Open the store at PATH, by default XDG data home pine/store.db.
+
+\":memory:\" opens a transient one. Idempotent: an already-open store is
+closed first.
 Returns the path opened."
   (close-store)
   (let ((target (if path

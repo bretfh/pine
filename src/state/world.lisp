@@ -1,10 +1,10 @@
 (in-package #:pine.world)
 
 ;;;; The world: what comes back after a restart. Subsystems register a pair
-;;;; of functions -- :save computes readable data from live state when asked,
-;;;; :restore applies it -- and the data rides ordinary (:world NAME) store
-;;;; keys. This file knows no contributor; each lives with its subsystem.
-;;;; Gated by the :world-save editor variable.
+;;;; of functions. :save computes readable data from live state when asked and
+;;;; :restore applies it; the data rides ordinary (:world NAME) store keys.
+;;;; This file knows no contributor; each lives with its own subsystem.
+;;;; The :world-save editor variable gates the whole thing.
 
 (pine.var:defonce :world-save :default t
   :documentation "When non-nil, the world (buffers, arrangement, scratch)
@@ -29,13 +29,12 @@ restore order."
   "Run NAME's (or every) contributor's :save and store the result under
 (:world NAME). Silent no-op when :world-save is off or no store is open."
   (when (%enabled-p)
-    (loop for (n save . nil) in *contributors*
-          when (and save (or (null name) (eq n name)))
-            do (handler-case
+    (loop :for (n save . nil) :in *contributors*
+          :when (and save (or (null name) (eq n name)))
+            :do (handler-case
                    (let ((data (funcall save)))
-                     ;; nil = nothing to save from here (e.g. no client in
-                     ;; scope); the previous entry stands rather than being
-                     ;; erased by a save from the wrong context.
+                     ;; nil means nothing to save from this context, so the
+                     ;; stored entry stands rather than being erased
                      (when data
                        (setf (pine.store:store (list :world n)) data)))
                  (error (c)
@@ -43,11 +42,11 @@ restore order."
 
 (defun restore-world (&optional name)
   "Read NAME's (or every) contributor's (:world NAME) entry and apply it. A
-failing contributor logs and skips -- the daemon always comes up."
+failing contributor logs and skips, so the daemon always comes up."
   (when (%enabled-p)
-    (loop for (n nil . restore) in *contributors*
-          when (and restore (or (null name) (eq n name)))
-            do (let ((data (pine.store:store (list :world n))))
+    (loop :for (n nil . restore) :in *contributors*
+          :when (and restore (or (null name) (eq n name)))
+            :do (let ((data (pine.store:store (list :world n))))
                  (when data
                    (handler-case (funcall restore data)
                      (error (c)

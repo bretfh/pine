@@ -2,10 +2,8 @@
 ;;;; and render sequence, and carry policy between the compositor and the
 ;;;; daemon. The daemon (pine.wm) decides what the chords are and what they
 ;;;; do; this process registers them with the compositor, reports presses,
-;;;; and applies the actions it is told to -- always inside the sequence the
-;;;; protocol requires. Tiling here is still the placeholder side-by-side
-;;;; policy; design/wm.org's os-window trees replace the bodies of MANAGE and
-;;;; RENDER, not the machinery around them.
+;;;; and applies the actions it is told to, always inside the sequence the
+;;;; protocol requires. design/wm.org is the design.
 
 (defpackage #:pine.wl-wm
   (:use #:cl #:wayflan-client #:pine.river-wm)
@@ -22,11 +20,6 @@
   (outputs nil)                         ; newest first
   (seats nil)
   (bindings nil)                        ; chord string -> binding proxy
-  ;; two generations of geometry: STAGED is what the daemon last sent,
-  ;; RECTS is what the current sequence answers from. Adopting only at
-  ;; manage_start keeps a window's proposed size and its position in the
-  ;; same generation, so a re-tile never renders new positions against old
-  ;; sizes -- one frame of that is a visible flicker.
   (staged nil)
   (rects nil)                           ; (id x y w h) for this generation
   (focus-id nil)                        ; identifier the daemon focused
@@ -157,8 +150,8 @@ window management state, so it runs inside a manage sequence."
       ((null seat)
        (format *error-output* "pine wm: no seat yet, bindings not registered~%"))
       (t
-       (loop for (chord . command) in table
-             do (%register-binding wm seat chord command))
+       (loop :for (chord . command) :in table
+             :do (%register-binding wm seat chord command))
        (format *error-output* "pine wm: registered ~d binding(s)~%"
                (hash-table-count (wm-bindings wm)))
        (finish-output *error-output*)))))
@@ -169,10 +162,9 @@ window management state, so it runs inside a manage sequence."
   '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
     "LD_LIBRARY_PATH")
   "Variables that belong to the environment pine itself was built and run in.
-A window manager may well be started from inside one -- a guix shell over the
-repo's manifest -- and everything it launches would otherwise inherit that
-environment and that working directory, so a terminal would open inside pine's
-build environment instead of the user's session.")
+A window manager started from inside one, such as a guix shell over the
+repo's manifest, would otherwise pass it to everything it launches, and a
+terminal would open in pine's build environment rather than the session.")
 
 (defun %spawn (command)
   "Launch COMMAND as the user's own program: their login environment, their
@@ -211,8 +203,7 @@ over from this process."
 
 (defun %send (wm message)
   "Report MESSAGE to the daemon. A message sent before the daemon is reachable
-is reported rather than dropped in silence -- losing one of these is how the
-output size went missing and the whole arrangement stayed empty."
+is reported rather than dropped in silence."
   (let ((ref (wm-ref wm)))
     (cond
       (ref (sento.actor:tell ref message))
@@ -222,9 +213,9 @@ output size went missing and the whole arrangement stayed empty."
 
 (defun %report-state (wm)
   "Tell the daemon everything the compositor has already reported. The output
-and any existing windows arrive before the attach completes -- and after a
-respawn they were never sent at all -- so the frontend replays them whenever
-it gains a daemon."
+and any existing windows arrive before the attach completes, and after a
+respawn were never sent at all, so the frontend replays them whenever it
+gains a daemon."
   (let ((screen (%screen wm)))
     (when (and screen (out-width screen))
       (%send wm (list :output :width (out-width screen)
@@ -249,8 +240,6 @@ the wayland thread."
     (:arrangement
      (destructuring-bind (&key rects focus) (rest message)
        (%enqueue wm (lambda ()
-                      ;; staged, not applied: the sequence that adopts it
-                      ;; proposes the sizes and places the windows together
                       (setf (wm-staged wm) rects (wm-staged-focus wm) focus)
                       (%ask-manage wm)))))
     (:wm
@@ -264,8 +253,6 @@ the wayland thread."
   (event-case event
     (:dimensions (width height)
      (setf (win-width w) width (win-height w) height))
-    ;; the identifier is the window's name everywhere off this process: the
-    ;; daemon's trees and, later, the saved world are keyed by it
     (:identifier (identifier)
      (setf (win-id w) identifier)
      (%send wm (list :window-added :id identifier
@@ -297,9 +284,6 @@ the wayland thread."
 (defun handle-seat (wm seat &rest event)
   (declare (ignore seat))
   (event-case event
-    ;; a click is a focus request, not a focus change: focus lives in the
-    ;; daemon's tree, so report it and let the next arrangement carry it
-    ;; back. Setting it here would be overwritten by that arrangement.
     (:window-interaction (window)
      (let ((w (%find-win wm window)))
        (when (and w (win-id w))
@@ -310,7 +294,7 @@ the wayland thread."
   "One manage sequence: run whatever was deferred, propose each window the
 size the daemon arranged for it, and focus the window the daemon focused. A
 window with no rect yet is simply not proposed, so it stays undisplayed until
-the daemon's next arrangement -- which is what the protocol expects. Always
+the daemon's next arrangement, which is what the protocol expects. Always
 finishes."
   (setf (wm-dirty wm) nil)
   (when (wm-staged wm)
@@ -398,8 +382,11 @@ manager holds the global."
     (connect wm)
     (unless (wm-manager wm)
       (wl-display-disconnect (wm-display wm))
-      (error "pine wm: no river_window_manager_v1 global -- not river, or ~
-another window manager is bound"))
+      (format *error-output*
+              "pine wm: no river_window_manager_v1 global; this compositor ~
+offers no window management, or another manager holds it~%")
+      (finish-output *error-output*)
+      (uiop:quit pine:+frontend-unavailable+))
     (let ((sys (sento.actor-system:make-actor-system
                 '(:dispatchers (:shared (:workers 2 :strategy :random))))))
       (setf (wm-sys wm) sys)
@@ -411,27 +398,21 @@ another window manager is bound"))
                                              (sento.remoting:remoting-port sys))))
         (format *error-output* "pine wm: attaching to ~a as ~a~%" daemon-uri self-uri)
         (finish-output *error-output*)
-        ;; The attach is a tell, so one sent before the daemon is listening is
-        ;; simply lost and the session would run with no bindings. Keep asking
-        ;; until it answers: session start order is not ours to control.
         (bordeaux-threads:make-thread
          (lambda ()
-           (loop repeat 60
-                 until (wm-ref wm)
-                 do (pine.attach:attach-to-daemon sys daemon-uri self-uri :kind :wm)
-                    (sleep 2))
+           (loop :repeat 60
+                 :until (wm-ref wm)
+                 :do (pine.attach:attach-to-daemon sys daemon-uri self-uri :kind :wm)
+                     (sleep 2))
            (unless (wm-ref wm)
              (format *error-output* "pine wm: no daemon answered at ~a~%" daemon-uri)
              (finish-output *error-output*)))
          :name "pine-wm-attach")))
     (unwind-protect
-         ;; the wayland thread: daemon work first, then everything the
-         ;; compositor has queued, then idle briefly. Sequences are answered
-         ;; from this thread and no other.
-         (loop until (wm-done wm) do
+         (loop :until (wm-done wm) :do
            (%drain-inbox wm)
-           (loop while (wl-display-listen (wm-display wm))
-                 do (wl-display-dispatch-event (wm-display wm)))
+           (loop :while (wl-display-listen (wm-display wm))
+                 :do (wl-display-dispatch-event (wm-display wm)))
            (sleep 0.004))
       (wl-display-disconnect (wm-display wm)))))
 

@@ -1033,7 +1033,7 @@ interaction args) -- the renderer's 'send this id back'."
 
 
 ;;;; Tree surgery. Splitting a leaf, dropping one, and the divider that goes
-;;;; with it are the same operations wherever a live tree is arranged -- the
+;;;; with it are the same operations wherever a live tree is arranged: the
 ;;;; editor's windows and the window manager's os-windows both mutate their
 ;;;; tree this way, so the shape lives here with the node language rather than
 ;;;; in either caller. Each takes and returns a root, because splicing can
@@ -1055,8 +1055,10 @@ interaction args) -- the renderer's 'send this id back'."
     t))
 
 (defun remove-with-divider (parent node)
-  "Remove NODE from PARENT's children along with its adjacent divider -- the
-one before it, else the one after -- so a split's separator leaves with it."
+  "Remove NODE from PARENT's children along with its adjacent divider.
+
+The divider taken is the one before NODE, else the one after, so a split's
+separator leaves with it."
   (let* ((kids (nodes parent))
          (i (position node kids :test #'eq))
          (prev (and i (plusp i) (nth (1- i) kids)))

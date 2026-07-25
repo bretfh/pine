@@ -444,7 +444,8 @@ Gated by the :world-save editor variable."))
    #:run-daemon
    #:stop
    ;; which frontends the daemon spawns and keeps alive; a config sets it
-   #:*frontends*))
+   #:*frontends*
+   #:+frontend-unavailable+))
 
 (defpackage :pine.user
   (:nicknames :pine-user)
