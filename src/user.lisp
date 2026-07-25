@@ -67,16 +67,18 @@ chord) or a list of keys (a sequence), exactly what DEFINE-KEY takes."
     (if (= 1 (length keys)) (first keys) keys)))
 
 (defun keymap (designator)
-  "The keymap named DESIGNATOR: :global for the global map, or a mode keyword
-for that mode's map."
-  (if (eq designator :global)
-      (pine.mode:global-keymap)
-      (let ((m (find-mode designator)))
-        (if m (pine.mode:mode-keymap m) (error "no mode ~s" designator)))))
+  "The keymap named DESIGNATOR: :global for the global map, :wm for the window
+manager's (whose chords the compositor delivers instead of the focused
+window), or a mode keyword for that mode's map."
+  (case designator
+    (:global (pine.mode:global-keymap))
+    (:wm (pine.wm:wm-keymap))
+    (t (let ((m (find-mode designator)))
+         (if m (pine.mode:mode-keymap m) (error "no mode ~s" designator))))))
 
 (defun define-key (where keys command)
-  "Bind KEYS (from KBD) to COMMAND (a command name string) in WHERE -- a keymap,
-:global, or a mode keyword."
+  "Bind KEYS (from KBD) to COMMAND (a command designator) in WHERE -- a keymap,
+:global, :wm, or a mode keyword."
   (pine.keymap:define-key
    (if (pine.keymap:keymap-p where) where (keymap where))
    keys command))

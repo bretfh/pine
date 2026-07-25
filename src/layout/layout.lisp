@@ -1032,6 +1032,91 @@ interaction args) -- the renderer's 'send this id back'."
     (max 0 o)))
 
 
+;;;; Tree surgery. Splitting a leaf, dropping one, and the divider that goes
+;;;; with it are the same operations wherever a live tree is arranged -- the
+;;;; editor's windows and the window manager's os-windows both mutate their
+;;;; tree this way, so the shape lives here with the node language rather than
+;;;; in either caller. Each takes and returns a root, because splicing can
+;;;; replace it.
+
+(defun node-parent (root node)
+  "NODE's parent under ROOT, or nil for the root itself."
+  (labels ((walk (n)
+             (let ((kids (nodes-of n)))
+               (if (member node kids :test #'eq)
+                   n
+                   (some #'walk kids)))))
+    (unless (eq root node) (walk root))))
+
+(defun replace-child (parent old new)
+  "Swap OLD for NEW among PARENT's stacked children. True when it happened."
+  (when (typep parent '(or vstack hstack))
+    (setf (nodes parent) (substitute new old (nodes parent) :test #'eq))
+    t))
+
+(defun remove-with-divider (parent node)
+  "Remove NODE from PARENT's children along with its adjacent divider -- the
+one before it, else the one after -- so a split's separator leaves with it."
+  (let* ((kids (nodes parent))
+         (i (position node kids :test #'eq))
+         (prev (and i (plusp i) (nth (1- i) kids)))
+         (next (and i (nth (1+ i) kids)))
+         (divider (cond ((typep prev 'separator) prev)
+                        ((typep next 'separator) next))))
+    (setf (nodes parent)
+          (remove-if (lambda (k) (or (eq k node) (eq k divider))) kids))))
+
+(defun split-node (root leaf new orient &key divider)
+  "Put NEW beside LEAF along ORIENT (:column below, :row beside), DIVIDER
+between them. NEW joins the parent as a flat sibling when the parent already
+stacks that way, so repeated splits stay flat instead of nesting deeper each
+time; otherwise LEAF wraps in a fresh stack. Returns the root, which changes
+when LEAF was itself the root. Returns nil when the tree cannot take the
+split."
+  (let* ((weight (max 1 (expand-of leaf)))
+         (parent (node-parent root leaf))
+         (same (and parent (typep parent (ecase orient
+                                           (:column 'vstack)
+                                           (:row 'hstack))))))
+    (setf (expand-of new) weight)
+    (cond
+      (same
+       (setf (nodes parent)
+             (loop for k in (nodes parent)
+                   append (cond ((not (eq k leaf)) (list k))
+                                (divider (list k divider new))
+                                (t (list k new)))))
+       root)
+      (t
+       (setf (expand-of leaf) weight)
+       (let* ((kids (if divider (list leaf divider new) (list leaf new)))
+              (container (ecase orient
+                           (:column (apply #'column :align :stretch
+                                                    :expand weight kids))
+                           (:row (apply #'row :align :stretch :spacing 0
+                                             :expand weight kids)))))
+         (cond ((eq root leaf) container)
+               ((and parent (replace-child parent leaf container)) root)
+               (t nil)))))))
+
+(defun remove-node (root leaf)
+  "Drop LEAF and its divider from the tree, splicing out a container left
+holding a single child. Returns the root, which changes when the splice
+reaches it, or nil when LEAF cannot be removed."
+  (let ((parent (node-parent root leaf)))
+    (when (typep parent '(or vstack hstack))
+      (remove-with-divider parent leaf)
+      (let ((kids (nodes parent)))
+        (cond
+          ((and (null (rest kids)) (first kids))
+           (let ((child (first kids))
+                 (grandparent (node-parent root parent)))
+             (setf (expand-of child) (expand-of parent))
+             (cond (grandparent (replace-child grandparent parent child) root)
+                   (t child))))
+          (t root))))))
+
+
 ;;;; Hit-testing -- map an arranged (line col) to the node under it.
 
 (defun %node-contains (n line col)

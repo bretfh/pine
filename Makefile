@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot bin bench test hl vm
+.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test hl vm
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -86,6 +86,11 @@ split-shot:
 # step. No window on any display: make wm-shot
 wm-shot:
 	$(GUIX) sh -c '$(ENV) bench/wm-shot.sh'
+
+# river nested as a window in this session, pine managing it, driven by hand:
+# make wm-nested
+wm-nested:
+	$(GUIX) sh -c '$(ENV) bench/wm-nested.sh'
 
 # render every desktop panel through the cairo backend to PNGs in /tmp,
 # headless (no window, no daemon): make cairo-shot

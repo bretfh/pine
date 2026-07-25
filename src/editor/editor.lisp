@@ -793,22 +793,6 @@ a function, or such a node anywhere below."
   (find (pine.client:focused-window client) (%editor-leaves client)
         :key #'pine.layout:window-of))
 
-(defun %node-parent (root node)
-  "NODE's parent under ROOT, walking nodes-of, or nil for the root itself."
-  (labels ((walk (n)
-             (let ((kids (pine.layout:nodes-of n)))
-               (if (member node kids :test #'eq)
-                   n
-                   (some #'walk kids)))))
-    (unless (eq root node) (walk root))))
-
-(defun %replace-child (parent old new)
-  "Swap OLD for NEW among PARENT's stacked children."
-  (when (typep parent '(or pine.layout:vstack pine.layout:hstack))
-    (setf (pine.layout:nodes parent)
-          (substitute new old (pine.layout:nodes parent) :test #'eq))
-    t))
-
 (defun %focus-leaf (leaf)
   "Focus LEAF's backing window and follow with the current buffer, so typing
 lands in it."
@@ -838,60 +822,23 @@ between; sizes stay even because siblings share one weight."
                                    :opacity (pine.layout:window-opacity leaf)))
            (div (pine.layout:rule :vertical (eq orient :row)
                                   :face :border-inactive))
-           (p (%node-parent tree leaf))
-           (same (and p (typep p (ecase orient
-                                   (:column 'pine.layout:vstack)
-                                   (:row 'pine.layout:hstack))))))
+           (root (pine.layout:split-node tree leaf nn orient :divider div)))
       (setf (pine.buffer:snap nw) (pine.buffer:snap w)
             (pine.buffer:scroll-top nw) (pine.buffer:scroll-top w))
-      (cond
-        (same
-         (setf (pine.layout:nodes p)
-               (loop for k in (pine.layout:nodes p)
-                     append (if (eq k leaf) (list k div nn) (list k)))))
-        (t
-         (setf (pine.layout:expand-of leaf) weight)
-         (let ((container (ecase orient
-                            (:column (pine.layout:column :align :stretch
-                                       :expand weight leaf div nn))
-                            (:row (pine.layout:row :align :stretch :spacing 0
-                                       :expand weight leaf div nn)))))
-           (cond
-             ((eq tree leaf) (setf (pine.client:arrangement client) container))
-             ((and p (%replace-child p leaf container)))
-             (t (pine.echo:message "cannot split here")
-                (return-from %split-window))))))
+      (unless root
+        (pine.echo:message "cannot split here")
+        (return-from %split-window))
+      (setf (pine.client:arrangement client) root)
       (%focus-leaf leaf)
       (pine.render:relayout))))
-
-(defun %remove-with-divider (p leaf)
-  "Remove LEAF from P's children along with its adjacent divider (the one
-before it, else the one after), so a split's separator leaves with it."
-  (let* ((kids (pine.layout:nodes p))
-         (i (position leaf kids :test #'eq))
-         (prev (and i (plusp i) (nth (1- i) kids)))
-         (next (and i (nth (1+ i) kids)))
-         (div (cond ((typep prev 'pine.layout:separator) prev)
-                    ((typep next 'pine.layout:separator) next))))
-    (setf (pine.layout:nodes p)
-          (remove-if (lambda (k) (or (eq k leaf) (eq k div))) kids))))
 
 (defun %delete-leaf (leaf)
   "Remove LEAF and its divider from the live tree, splicing out a container
 left with one child, and dropping its backing window."
   (let* ((client (pine.client:current-client))
-         (tree (pine.client:arrangement client))
-         (p (%node-parent tree leaf)))
-    (when (and p (typep p '(or pine.layout:vstack pine.layout:hstack)))
-      (%remove-with-divider p leaf)
-      (let ((kids (pine.layout:nodes p)))
-        (when (and (null (rest kids)) (first kids))
-          (let ((child (first kids))
-                (gp (%node-parent tree p)))
-            (setf (pine.layout:expand-of child) (pine.layout:expand-of p))
-            (if gp
-                (%replace-child gp p child)
-                (setf (pine.client:arrangement client) child)))))
+         (root (pine.layout:remove-node (pine.client:arrangement client) leaf)))
+    (when root
+      (setf (pine.client:arrangement client) root)
       (pine.buffer:remove-window (pine.layout:window-of leaf))
       t)))
 

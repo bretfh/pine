@@ -76,9 +76,21 @@ press_super j
 settle 2
 shot 04-focus-next
 
+# the arrangement is a live layout tree: a split states where the next window
+# joins the focused one, and the engine's weights do the arithmetic
+press_super 2
+press_super Return
+settle 4
+shot 05-split-below
+
+press_super 3
+press_super Return
+settle 4
+shot 06-split-beside
+
 press_super q
 settle 3
-shot 05-after-close
+shot 07-after-close
 
 log "scenario done"
 kill "$wm_pid" "$daemon_pid" 2>/dev/null || true

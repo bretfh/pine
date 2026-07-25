@@ -22,6 +22,16 @@
   (outputs nil)                         ; newest first
   (seats nil)
   (bindings nil)                        ; chord string -> binding proxy
+  ;; two generations of geometry: STAGED is what the daemon last sent,
+  ;; RECTS is what the current sequence answers from. Adopting only at
+  ;; manage_start keeps a window's proposed size and its position in the
+  ;; same generation, so a re-tile never renders new positions against old
+  ;; sizes -- one frame of that is a visible flicker.
+  (staged nil)
+  (rects nil)                           ; (id x y w h) for this generation
+  (focus-id nil)                        ; identifier the daemon focused
+  (staged-focus nil)
+  (dirty nil)                           ; a manage sequence has been asked for
   (pending nil)                         ; thunks to run in the next manage seq
   (inbox nil)                           ; thunks from the daemon's actor thread
   (lock (bordeaux-threads:make-lock))
@@ -30,8 +40,18 @@
   (sys nil)
   (done nil))
 
-(defstruct win proxy node width height)
+(defstruct win proxy node id title app-id width height)
 (defstruct out proxy x y width height)
+
+;;;; The mirror: the arrangement the daemon computed, keyed by the protocol's
+;;;; window identifier. Sequences are answered from this and nothing else, so
+;;;; the compositor never waits on the daemon.
+
+(defun %rect (wm w)
+  "(values X Y WIDTH HEIGHT) for W from the daemon's arrangement, or nil."
+  (let ((entry (and (win-id w) (assoc (win-id w) (wm-rects wm) :test #'equal))))
+    (when entry
+      (values-list (rest entry)))))
 
 (defun %find-win (wm proxy)
   (find proxy (wm-windows wm) :key #'win-proxy :test #'eq))
@@ -67,9 +87,17 @@
       (setf thunks (nreverse (wm-inbox wm)) (wm-inbox wm) nil))
     (dolist (thunk thunks) (funcall thunk))))
 
+(defun %ask-manage (wm)
+  "Ask the compositor for a manage sequence, once: the protocol starts a new
+one as soon as the current finishes, so raising it per queued item only asks
+for sequences that have nothing left to do."
+  (unless (wm-dirty wm)
+    (setf (wm-dirty wm) t)
+    (river-window-manager-v1.manage-dirty (wm-manager wm))))
+
 (defun %defer (wm thunk)
   (push thunk (wm-pending wm))
-  (river-window-manager-v1.manage-dirty (wm-manager wm)))
+  (%ask-manage wm))
 
 (defun %drain (wm)
   (let ((pending (nreverse (wm-pending wm))))
@@ -138,7 +166,7 @@ window management state, so it runs inside a manage sequence."
 ;;;; Actions the daemon asks for.
 
 (defun %apply-action (wm plist)
-  (destructuring-bind (&key action command direction &allow-other-keys) plist
+  (destructuring-bind (&key action command id &allow-other-keys) plist
     (case action
       (:spawn
        ;; the frontend runs in the compositor's session, so a program it
@@ -146,16 +174,10 @@ window management state, so it runs inside a manage sequence."
        (uiop:launch-program (list "sh" "-c" command)))
       (:close
        (%defer wm (lambda ()
-                    (let ((f (wm-focus wm)))
-                      (when f (river-window-v1.close (win-proxy f)))))))
-      (:focus
-       (%defer wm (lambda ()
-                    (let* ((wins (%tiled wm))
-                           (n (length wins)))
-                      (when (plusp n)
-                        (let* ((i (or (position (wm-focus wm) wins) 0))
-                               (step (if (eq direction :prev) -1 1)))
-                          (setf (wm-focus wm) (nth (mod (+ i step) n) wins))))))))
+                    (let ((w (or (find id (wm-windows wm)
+                                       :key #'win-id :test #'equal)
+                                 (wm-focus wm))))
+                      (when w (river-window-v1.close (win-proxy w)))))))
       (:exit
        (river-window-manager-v1.exit-session (wm-manager wm)))
       (t (format *error-output* "pine wm: unknown action ~s~%" action)))))
@@ -163,8 +185,29 @@ window management state, so it runs inside a manage sequence."
 ;;;; The daemon seam.
 
 (defun %send (wm message)
+  "Report MESSAGE to the daemon. A message sent before the daemon is reachable
+is reported rather than dropped in silence -- losing one of these is how the
+output size went missing and the whole arrangement stayed empty."
   (let ((ref (wm-ref wm)))
-    (when ref (sento.actor:tell ref message))))
+    (cond
+      (ref (sento.actor:tell ref message))
+      (t (format *error-output* "pine wm: no daemon yet, dropped ~s~%"
+                 (first message))
+         (finish-output *error-output*)))))
+
+(defun %report-state (wm)
+  "Tell the daemon everything the compositor has already reported. The output
+and any existing windows arrive before the attach completes -- and after a
+respawn they were never sent at all -- so the frontend replays them whenever
+it gains a daemon."
+  (let ((screen (%screen wm)))
+    (when (and screen (out-width screen))
+      (%send wm (list :output :width (out-width screen)
+                      :height (out-height screen)))))
+  (dolist (w (%tiled wm))
+    (when (win-id w)
+      (%send wm (list :window-added :id (win-id w)
+                      :title (win-title w) :app-id (win-app-id w))))))
 
 (defun handle-daemon (wm message)
   "Runs on the daemon's actor thread: decide nothing here, hand the work to
@@ -173,10 +216,18 @@ the wayland thread."
     (:attached
      (destructuring-bind (&key id client-uri) (rest message)
        (declare (ignore id))
-       (setf (wm-ref wm) (sento.remoting:make-remote-ref (wm-sys wm) client-uri))))
+       (setf (wm-ref wm) (sento.remoting:make-remote-ref (wm-sys wm) client-uri))
+       (%enqueue wm (lambda () (%report-state wm)))))
     (:bindings
      (destructuring-bind (&key table) (rest message)
        (%enqueue wm (lambda () (%install-bindings wm table)))))
+    (:arrangement
+     (destructuring-bind (&key rects focus) (rest message)
+       (%enqueue wm (lambda ()
+                      ;; staged, not applied: the sequence that adopts it
+                      ;; proposes the sizes and places the windows together
+                      (setf (wm-staged wm) rects (wm-staged-focus wm) focus)
+                      (%ask-manage wm)))))
     (:wm
      (let ((plist (rest message)))
        (%enqueue wm (lambda () (%apply-action wm plist)))))
@@ -188,10 +239,21 @@ the wayland thread."
   (event-case event
     (:dimensions (width height)
      (setf (win-width w) width (win-height w) height))
+    ;; the identifier is the window's name everywhere off this process: the
+    ;; daemon's trees and, later, the saved world are keyed by it
+    (:identifier (identifier)
+     (setf (win-id w) identifier)
+     (%send wm (list :window-added :id identifier
+                     :title (win-title w) :app-id (win-app-id w))))
+    (:title (title)
+     (setf (win-title w) title))
+    (:app-id (app-id)
+     (setf (win-app-id w) app-id))
     (:closed ()
      (setf (wm-windows wm) (remove w (wm-windows wm)))
      (when (eq (wm-focus wm) w)
        (setf (wm-focus wm) (first (wm-windows wm))))
+     (when (win-id w) (%send wm (list :window-closed :id (win-id w))))
      (when (win-node w) (river-node-v1.destroy (win-node w)))
      (river-window-v1.destroy (win-proxy w)))
     (t (&rest args) (declare (ignore args)))))
@@ -200,7 +262,8 @@ the wayland thread."
   (event-case event
     (:position (x y) (setf (out-x o) x (out-y o) y))
     (:dimensions (width height)
-     (setf (out-width o) width (out-height o) height))
+     (setf (out-width o) width (out-height o) height)
+     (%send wm (list :output :width width :height height)))
     (:removed ()
      (setf (wm-outputs wm) (remove o (wm-outputs wm)))
      (river-output-v1.destroy (out-proxy o)))
@@ -209,40 +272,49 @@ the wayland thread."
 (defun handle-seat (wm seat &rest event)
   (declare (ignore seat))
   (event-case event
+    ;; a click is a focus request, not a focus change: focus lives in the
+    ;; daemon's tree, so report it and let the next arrangement carry it
+    ;; back. Setting it here would be overwritten by that arrangement.
     (:window-interaction (window)
      (let ((w (%find-win wm window)))
-       (when w (setf (wm-focus wm) w))))
+       (when (and w (win-id w))
+         (%send wm (list :window-focused :id (win-id w))))))
     (t (&rest args) (declare (ignore args)))))
 
 (defun manage (wm)
-  "One manage sequence: run whatever was deferred, propose equal side-by-side
-widths on the screen, and focus the current window. Always finishes."
+  "One manage sequence: run whatever was deferred, propose each window the
+size the daemon arranged for it, and focus the window the daemon focused. A
+window with no rect yet is simply not proposed, so it stays undisplayed until
+the daemon's next arrangement -- which is what the protocol expects. Always
+finishes."
+  (setf (wm-dirty wm) nil)
+  (when (wm-staged wm)
+    (setf (wm-rects wm) (wm-staged wm)
+          (wm-focus-id wm) (wm-staged-focus wm)
+          (wm-staged wm) nil))
   (%drain wm)
-  (let ((screen (%screen wm))
-        (wins (%tiled wm)))
-    (when (and screen wins (out-width screen))
-      (let ((cw (max 1 (floor (out-width screen) (length wins)))))
-        (dolist (w wins)
-          (river-window-v1.propose-dimensions
-           (win-proxy w) cw (out-height screen)))))
-    (let ((f (or (wm-focus wm) (first (wm-windows wm)))))
-      (when f
-        (dolist (s (wm-seats wm))
-          (river-seat-v1.focus-window s (win-proxy f))))))
+  (dolist (w (%tiled wm))
+    (multiple-value-bind (x y width height) (%rect wm w)
+      (declare (ignore x y))
+      (when width
+        (river-window-v1.propose-dimensions (win-proxy w) width height))))
+  (let ((f (or (find (wm-focus-id wm) (wm-windows wm)
+                     :key #'win-id :test #'equal)
+               (wm-focus wm))))
+    (when f
+      (setf (wm-focus wm) f)
+      (dolist (s (wm-seats wm))
+        (river-seat-v1.focus-window s (win-proxy f)))))
   (river-window-manager-v1.manage-finish (wm-manager wm)))
 
 (defun render (wm)
-  "One render sequence: place windows left to right at their actual widths.
-Always finishes."
-  (let ((screen (%screen wm))
-        (wins (%tiled wm)))
-    (when screen
-      (let ((x (or (out-x screen) 0))
-            (y (or (out-y screen) 0)))
-        (dolist (w wins)
-          (when (and (win-node w) (win-width w))
-            (river-node-v1.set-position (win-node w) x y)
-            (incf x (win-width w)))))))
+  "One render sequence: put every window where the daemon placed it. Always
+finishes."
+  (dolist (w (%tiled wm))
+    (multiple-value-bind (x y width height) (%rect wm w)
+      (declare (ignore width height))
+      (when (and x (win-node w))
+        (river-node-v1.set-position (win-node w) x y))))
   (river-window-manager-v1.render-finish (wm-manager wm)))
 
 (defun handle-manager (wm &rest event)
@@ -314,7 +386,19 @@ another window manager is bound"))
                                              (sento.remoting:remoting-port sys))))
         (format *error-output* "pine wm: attaching to ~a as ~a~%" daemon-uri self-uri)
         (finish-output *error-output*)
-        (pine.attach:attach-to-daemon sys daemon-uri self-uri :kind :wm)))
+        ;; The attach is a tell, so one sent before the daemon is listening is
+        ;; simply lost and the session would run with no bindings. Keep asking
+        ;; until it answers: session start order is not ours to control.
+        (bordeaux-threads:make-thread
+         (lambda ()
+           (loop repeat 60
+                 until (wm-ref wm)
+                 do (pine.attach:attach-to-daemon sys daemon-uri self-uri :kind :wm)
+                    (sleep 2))
+           (unless (wm-ref wm)
+             (format *error-output* "pine wm: no daemon answered at ~a~%" daemon-uri)
+             (finish-output *error-output*)))
+         :name "pine-wm-attach")))
     (unwind-protect
          ;; the wayland thread: daemon work first, then everything the
          ;; compositor has queued, then idle briefly. Sequences are answered

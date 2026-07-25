@@ -217,8 +217,8 @@ keys -- and never touch files."))
 (defpackage #:pine.wm
   (:use #:cl)
   (:export #:wm-keymap #:binding-table #:push-bindings #:run-binding
-           #:attached-p #:install-wm-sessions
-           #:spawn #:close-window #:focus-next #:focus-prev #:exit-session)
+           #:attached-p #:install-wm-sessions #:leaves #:focused-leaf
+           #:spawn #:close-window #:focus-step #:split #:exit-session)
   (:documentation "Window management policy: the keymap whose chords are
 registered with the compositor, the commands they run, and the actions sent
 to the wm frontend. design/wm.org is the contract."))
@@ -273,6 +273,9 @@ Gated by the :world-save editor variable."))
    #:render #:resolve-styles! #:raster->rows #:class-names
    #:defwidget
    #:node->wire #:wire->node #:arranged-p
+   ;; live-tree surgery, shared by every arranged tree
+   #:node-parent #:replace-child #:remove-with-divider
+   #:split-node #:remove-node
    ;; hit-testing + selection
    #:node-at #:action-at #:click-thunk #:slider-value-at #:hint-at
    #:collect-selectables

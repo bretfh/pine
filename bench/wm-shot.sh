@@ -28,7 +28,7 @@ WLR_BACKENDS=headless \
 WLR_HEADLESS_OUTPUTS=1 \
 XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
   timeout --signal=TERM "${WM_SHOT_TIMEOUT:-120}" \
-  river -log-level error -c "$init" >"$out/river.log" 2>&1 || true
+  river -log-level "${WM_SHOT_LOG:-error}" -c "$init" >"$out/river.log" 2>&1 || true
 
 echo "shots + logs in $out"
 ls "$out"/*.png 2>/dev/null || echo "no shots captured -- read $out/wm.log and $out/river.log"

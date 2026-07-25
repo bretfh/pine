@@ -235,6 +235,36 @@ Emacs voice. A =defcommand= is reachable by key once bound.
   WHERE is a keymap, =:global=, or a mode keyword. CMD is a command
   designator: a symbol ('greet -- completes and reads) or a name string.
 
+* Window management
+
+Under river, pine is the window manager: application windows are leaves in
+a layout tree the daemon owns, arranged by the engine that fits editor
+windows. Chords in the =:wm= keymap are registered with the compositor,
+which delivers them to pine instead of to the focused window.
+
+| symbol            | form                                    | status |
+|-------------------+-----------------------------------------+--------|
+| =(keymap :wm)=    | the window manager's keymap             | [have] |
+| =wm-terminal=     | launch =:wm-terminal= (defaults to foot) | [have] |
+| =wm-focus-next=   | focus the next window                   | [have] |
+| =wm-focus-prev=   | focus the previous window               | [have] |
+| =wm-split-below=  | the next window opens below the focused one | [have] |
+| =wm-split-beside= | the next window opens beside it         | [have] |
+| =wm-close-window= | ask the focused window to close         | [have] |
+| =wm-exit=         | end the wayland session                 | [have] |
+
+- Bindings are set the way editor keys are, and that keymap is the only
+  place chords come from -- the frontend registers exactly what it holds:
+  =(define-key (keymap :wm) (kbd "s-Return") 'wm-terminal)=.
+- The defaults are on Super: =s-Return= a terminal, =s-j= / =s-k= focus,
+  =s-2= / =s-3= split below / beside, =s-q= close, =s-S-e= exit.
+- A window manager cannot show one window twice, so a split states where
+  the NEXT window lands rather than dividing the current one -- then
+  =wm-terminal= (or anything else that opens a window) fills it.
+- =make wm-nested= runs river as a window in the current session for
+  driving by hand; =make wm-shot= runs it headless and screenshots each
+  step. design/wm.org is the design.
+
 * Modes
 
 =defmode= / =defminor= make a real CLOS class named NAME and register a mode

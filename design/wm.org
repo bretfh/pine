@@ -173,6 +173,27 @@ The sequence of first steps:
    configuration (river-input-management-v1, river-libinput-config-v1,
    river-xkb-config-v1), and the os-arrangement world contributor.
 
+Steps 1 through 3 are built. river 0.4.5 is packaged (guix/river.scm),
+both protocols are bound (src/wayland/river-wm.lisp, river-xkb.lisp),
+and the frontend (src/wayland/wm.lisp) pumps sequences from a mirror
+the daemon (src/wm/wm.lisp) fills: os-window leaves in a live tree,
+split and focus and close as commands, chords from the =:wm= keymap
+registered with the compositor. The tree surgery those commands use
+lives with the node language (pine.layout: split-node, remove-node,
+node-parent, replace-child, remove-with-divider) and the editor's own
+window commands call the same functions.
+
+Two harnesses verify it: =make wm-shot= runs river on the wlroots
+headless backend with pine managing it and captures the compositor's
+output per step, and =make wm-nested= runs river as a window in the
+current session for driving by hand. Neither needs the VM, which is
+now only the acceptance run.
+
+What step 3 still lacks: prefix chords (the protocol's
+ensure_next_key_eaten and ate_unbound_key, which pine's pending-chord
+dispatch maps onto directly), and moving a window within the tree
+rather than only splitting where the next one lands.
+
 * Omitted
 
 - A compositor of pine's own. river's split makes the compositor a
