@@ -19,15 +19,3 @@ seats, render nodes, decorations, shell surfaces."))
                         (error "GUIX_ENVIRONMENT unset: build inside guix shell -m manifest.scm"))))
   :export t)
 
-(defpackage #:pine.river-xkb
-  (:use #:cl #:wayflan-client #:pine.river-wm)
-  (:documentation "river_xkb_bindings_v1 client bindings: compositor-side
-keyboard chords delivered to the window manager."))
-(in-package #:pine.river-xkb)
-
-(xyz.shunter.wayflan.client.scanner:wl-include
-  (merge-pathnames "share/river-protocols/stable/river-xkb-bindings-v1.xml"
-                   (uiop:ensure-directory-pathname
-                    (or (uiop:getenv "GUIX_ENVIRONMENT")
-                        (error "GUIX_ENVIRONMENT unset: build inside guix shell -m manifest.scm"))))
-  :export t)

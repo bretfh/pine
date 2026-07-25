@@ -107,6 +107,6 @@ library for the raw protocol."
   :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
   :serial t
   :pathname "src/wayland/"
-  :components ((:file "layer-shell") (:file "river-wm") (:file "surface")
-               (:file "input") (:file "client")
+  :components ((:file "layer-shell") (:file "river-wm") (:file "river-xkb")
+               (:file "surface") (:file "input") (:file "client")
                (:file "editor") (:file "editor-keys") (:file "wm")))

@@ -12,6 +12,13 @@ SBCL := sbcl --no-userinit --eval "(require :asdf)"
 repl:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --eval "(asdf:load-system :pine)"'
 
+# build the pine OS (river session, pine as wm/daemon/frontends) and run it
+# as a qemu vm: a window opens, auto-logs in, and the session starts.
+vm:
+	script=$$(guix system vm -L guix guix/os.scm) && \
+	  echo "vm script: $$script" && \
+	  $$script -m 4096 -smp 4 -vga virtio
+
 # build the standalone `pine` CLI: save-lisp-and-die the cli entry into .pine.bin
 # and a wrapper that carries the guix env the binary needs when run outside a
 # `guix shell' -- LD_LIBRARY_PATH for the shared libs, and GUIX_ENVIRONMENT so
