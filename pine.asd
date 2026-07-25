@@ -31,7 +31,7 @@
     :components ((:file "client")))
    (:module "state"
     :serial t
-    :components ((:file "store") (:file "ref") (:file "var")))
+    :components ((:file "store") (:file "ref") (:file "var") (:file "world")))
    (:module "input"
     :serial t
     :components ((:file "key") (:file "keymap") (:file "command")))

@@ -22,6 +22,8 @@
 | store       | durable value in the daemon's SQLite store: (store K) reads, |
 |             | (setf (store K) V) writes; store-push / store-items keep     |
 |             | bounded lists; defonce/defref :persist ride it               |
+| world       | what restarts restore: registered :save/:restore pairs over  |
+|             | (:world NAME) store keys -- buffers, arrangement, scratch    |
 
 Three display layers only: buffer (content) -> window (view) -> surface
 (placement). Everything else is content vocabulary. There is no "pane"; no

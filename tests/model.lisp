@@ -376,3 +376,40 @@ store degrades to defaults and no-ops."
     (setf (pine.store:store :probe-m) 1)
     (is (= 1 (pine.store:store :probe-m)))
     (pine.store:close-store)))
+
+(test world-protocol
+  "The world protocol: contributors save/restore through the store, a
+throwing restore skips without breaking the rest, a nil save keeps the
+previous entry, and :world-save gates both directions."
+  (pine.store:open-store ":memory:")
+  (setf (pine.var:var :world-save) t)
+  (let ((a nil) (b nil))
+    (pine.world:register :probe-a
+      :save (lambda () :init) :restore (lambda (d) (setf a d)))
+    (pine.world:register :probe-bad
+      :save (lambda () :x)
+      :restore (lambda (d) (declare (ignore d)) (error "boom")))
+    (pine.world:register :probe-b
+      :save (lambda () '(1 2)) :restore (lambda (d) (setf b d)))
+    (pine.world:save-world)
+    (is (eq :init (pine.store:store '(:world :probe-a))))
+    (pine.world:restore-world)
+    (is (eq :init a))
+    (is (equal '(1 2) b))
+    (pine.world:register :probe-a
+      :save (lambda () nil) :restore (lambda (d) (setf a d)))
+    (pine.world:save-world :probe-a)
+    (is (eq :init (pine.store:store '(:world :probe-a))))
+    (setf (pine.var:var :world-save) nil)
+    (setf (pine.store:store '(:world :probe-b)) :stale)
+    (pine.world:save-world :probe-b)
+    (is (eq :stale (pine.store:store '(:world :probe-b))))
+    (setf b :untouched)
+    (pine.world:restore-world :probe-b)
+    (is (eq :untouched b))
+    (setf (pine.var:var :world-save) t)
+    (setf pine.world::*contributors*
+          (remove-if (lambda (e)
+                       (member (first e) '(:probe-a :probe-bad :probe-b)))
+                     pine.world::*contributors*)))
+  (pine.store:close-store))

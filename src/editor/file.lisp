@@ -24,7 +24,11 @@ line's length -- stored places must never put point outside the buffer."
          (c (max 0 (min col (length (nth l lines))))))
     (values l c)))
 
-(defun find-file (path)
+(defun %open-file (path)
+  "The silent half of find-file: read PATH into a named buffer with its
+pathname local, mode by extension, and point at the stored place. (values
+BUF NAME EXISTS) -- no switching, no rendering, no echo, so the world
+restore can reopen buffers in bulk."
   (let* ((expanded (merge-pathnames path))
          (exists (probe-file expanded))
          (namestring (namestring expanded))
@@ -40,16 +44,21 @@ line's length -- stored places must never put point outside the buffer."
               (%clamped-place content (first place) (second place))
             (sento.actor:tell buf (list :move-point :line l :col c)))
           (sento.actor:tell buf (list :move-point :line 0 :col 0)))
-      (pine.buffer:switch-buffer name)
-      (sento.actor:tell (pine.client:renderer (pine.client:current-client))
-                        (list :switch-buffer :buffer buf :name name))
-      (pine.render:subscribe-to-buffer buf)
       (let ((mode-kw (or (pine.mode:mode-for-file namestring) :text-mode)))
         (pine.mode:set-buffer-mode buf mode-kw))
-      (pine.echo:message
-              (if exists (format nil "~a" namestring)
-                  (format nil "(new file) ~a" namestring)))
-      buf)))
+      (values buf name exists namestring))))
+
+(defun find-file (path)
+  (multiple-value-bind (buf name exists namestring) (%open-file path)
+    (pine.buffer:switch-buffer name)
+    (sento.actor:tell (pine.client:renderer (pine.client:current-client))
+                      (list :switch-buffer :buffer buf :name name))
+    (pine.render:subscribe-to-buffer buf)
+    (pine.world:save-world :buffers)
+    (pine.echo:message
+            (if exists (format nil "~a" namestring)
+                (format nil "(new file) ~a" namestring)))
+    buf))
 
 (defun save-current-buffer ()
   (let ((buf (pine.client:current-buffer (pine.client:current-client))))
@@ -82,3 +91,31 @@ line's length -- stored places must never put point outside the buffer."
                 (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
                        (path (pine.buffer:buffer-local state :pathname)))
                   (when path (record-place buf path))))))))
+
+;;;; World: the open files. Computed from the live buffer table at save time
+;;;; -- no shadow list -- and reopened from disk on restore, so a stale entry
+;;;; can only show less, never corrupt.
+
+(defun %file-buffers ()
+  "((PATH MODE-KW) ...) for every live buffer backed by a file."
+  (let ((srv pine.server:*server*) (acc nil))
+    (when (and srv (pine.server:buffer-table srv))
+      (loop for buf being the hash-values of (pine.server:buffer-table srv)
+            do (ignore-errors
+                (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
+                       (path (pine.buffer:buffer-local state :pathname)))
+                  (when path
+                    (push (list path (pine.buffer:buffer-local state :mode))
+                          acc))))))
+    acc))
+
+(pine.world:register :buffers
+  :save #'%file-buffers
+  :restore (lambda (entries)
+             (loop for (path mode) in entries
+                   when (probe-file path)
+                     do (ignore-errors
+                         (let ((buf (%open-file path)))
+                           (when (and mode
+                                      (not (eq mode (pine.mode:mode-for-file path))))
+                             (pine.mode:set-buffer-mode buf mode)))))))

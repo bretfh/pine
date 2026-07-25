@@ -187,6 +187,28 @@ state files; a mode that wants to persist something marks a variable
   eval), recent files (=find-recent=, =C-x C-r=), and save-place (=find-file=
   reopens at the point you left; recorded on save and daemon shutdown).
 
+** The world
+
+What comes back after a restart: open file buffers (reread from disk, mode
+kept), scratch's text, and the window arrangement -- splits, weights, which
+buffer where, focus. The arrangement also survives killing just the editor
+window. Structure saves write-through on every mutation; content saves at
+shutdown. Terminals restore as scratch windows (the pty died with the
+daemon); unsaved file edits are not the world's job.
+
+| symbol        | form                                       | status |
+|---------------+--------------------------------------------+--------|
+| =register=    | =(register NAME :save FN :restore FN)=     | [have] |
+| =:world-save= | =(setf (var :world-save) nil)= to opt out  | [have] |
+
+- =register= is the extension point: =:save= is () -> readable data (its
+  world entry), =:restore= applies it on the next start. The data rides a
+  =(:world NAME)= store key -- inspect yours with =(store '(:world
+  :arrangement))=; the arrangement reads in the same builder language the
+  editor form uses.
+- Reloading init (=:reload= / =C-M-x= on the editor form) is the declared
+  reset: the builder reseeds the tree and becomes the new saved world.
+
 * Behavior
 
 What input does.

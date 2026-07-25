@@ -214,6 +214,13 @@ store-push/store-items keep bounded lists (histories, recents). Modes
 declare what persists -- via defonce/defref :persist or their own store
 keys -- and never touch files."))
 
+(defpackage #:pine.world
+  (:use #:cl)
+  (:export #:register #:save-world #:restore-world)
+  (:documentation "What comes back after a restart. Subsystems register
+:save/:restore function pairs; the data rides (:world NAME) store keys.
+Gated by the :world-save editor variable."))
+
 (defpackage :pine.var
   (:use :cl)
   (:export
@@ -227,7 +234,7 @@ keys -- and never touch files."))
   (:use :cl)
   (:export
    ;; nodes
-   #:node #:key-of #:parent #:face #:hint #:expand-of
+   #:node #:key-of #:parent #:face #:hint #:expand-of #:css-class
    #:radius #:fill-of #:grad #:font-px #:hovered #:nodes-of
    #:*text-size* #:*default-font-px*
    #:start-line #:start-col #:end-line #:end-col
@@ -438,6 +445,7 @@ keys -- and never touch files."))
                 #:ask #:tell)
   (:import-from :pine.ref #:defref #:ref)
   (:import-from :pine.store #:store #:store-push #:store-items #:store-clear)
+  (:import-from :pine.world #:register)
   (:import-from :pine.source #:defsource #:defpoll)
   (:import-from :pine.command #:call-command #:execute)
   (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode
@@ -468,7 +476,7 @@ keys -- and never touch files."))
    ;; data
    #:defref #:ref #:defpoll #:defsource #:sh #:launch
    ;; persistence
-   #:store #:store-push #:store-items #:store-clear
+   #:store #:store-push #:store-items #:store-clear #:register
    ;; style rules
    #:defrules
    ;; behavior

@@ -815,7 +815,8 @@ lands in it."
   (let ((client (pine.client:current-client))
         (w (pine.layout:window-of leaf)))
     (pine.buffer:focus-window w)
-    (setf (pine.client:current-buffer client) (pine.buffer:buffer-ref w))))
+    (setf (pine.client:current-buffer client) (pine.buffer:buffer-ref w))
+    (pine.world:save-world :arrangement)))
 
 (defun %split-window (orient)
   "Split the focused window along ORIENT (:column below, :row beside): a new

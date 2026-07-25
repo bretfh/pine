@@ -231,8 +231,11 @@ the tree, or nil when the client has none."
       tree)))
 
 (defun relayout ()
-  "Re-arrange the current client's live editor tree at the frame size."
-  (arrange-editor-tree (pine.client:current-client)))
+  "Re-arrange the current client's live editor tree at the frame size, and
+save the arrangement to the world -- every structural mutation ends here, so
+a crash never loses the split shape."
+  (prog1 (arrange-editor-tree (pine.client:current-client))
+    (pine.world:save-world :arrangement)))
 
 
 ;;;; Cell emission

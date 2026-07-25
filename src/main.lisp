@@ -26,6 +26,7 @@
     (pine.store:open-store)
     (pine.hooks:add-shutdown-hook :store
       (lambda ()
+        (pine.world:save-world)
         (pine.file:record-places)
         (pine.store:close-store)))
     (load-init)
