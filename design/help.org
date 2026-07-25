@@ -4,73 +4,77 @@
 
 * Why this document exists
 
-The feature that made Emacs learnable from inside is that every
-question about the system is answered BY the system: describe any key,
-any function, any variable, and jump from the answer to the source.
-pine already committed to the seed of this -- every ask target answers
-:describe with its verb list, every defonce carries documentation,
-docstrings are enforced across the tree -- and the discipline has paid
-for itself repeatedly: the API stayed honest because it could be
-interrogated. This document prescribes growing that seed into
-describe-anything, and states the rule that keeps it true.
+Emacs is learnable from inside because every question about the system
+is answered by the system: any key, function, or variable can be
+described, and the answer links to the source. pine has the seed of
+this: every ask target answers :describe with its verb list, every
+defonce carries documentation, and docstrings are maintained across
+the tree. This document specifies how that seed grows into a full
+help system, and the rule that keeps it accurate.
 
 * The rule
 
-Help is a query against the live system, never prose beside it. A help
-buffer is computed at ask time from the registries and docstrings of
-the running image -- if it can drift from the code, it is built wrong.
-The org files (doc/, design/) describe intent and architecture; what a
-thing IS right now, only the image may answer.
+Help is computed from the running system, not written beside it. A
+help buffer is built at ask time from the registries and docstrings of
+the running image. Text that could disagree with the code it describes
+does not belong in the help system; the org files under doc/ and
+design/ record intent and architecture, and the current state of any
+definition is answered only by the image.
 
-* What exists, named
+* What exists
 
-- (ask TARGET :describe) on :server, :client, :project (charted), and
-  every buffer -- the verb lists.
-- describe-key (%describe-key-text, editor.lisp): what a key runs,
-  now correct across keymaps since chords resolve against every
-  active map.
-- %bindings-text / %variables-text (editor.lisp): the active bindings
-  and declared variables as text with docstrings.
+- (ask TARGET :describe) on :server, :client, :project (specified in
+  project.org), and every buffer: the verb lists.
+- describe-key (%describe-key-text, editor.lisp): reports what a key
+  runs, resolving across all active keymaps.
+- %bindings-text and %variables-text (editor.lisp): active bindings
+  and declared variables with their documentation, as plain text.
 - defonce :documentation, defcommand docstrings, mode indicators, the
-  faces and modes registries on the server, store keys inspectable
-  from scratch.
+  server's faces and modes registries, and store keys readable from
+  scratch.
 
-* Charted
+* Specified
 
-- describe-command / describe-function / describe-variable /
-  describe-mode / describe-key as layout buffers (show-layout), not
-  echo strings: name, docstring, bindings that reach it, mode that owns
-  it, and a source jump via the intelligence :definition verb -- help
-  and intelligence share that seam, which is why help deepens as
-  intelligence lands.
-- apropos: one prompt, matching over every registry at once --
-  commands, variables, modes, faces, refs, buffer verbs, store keys --
-  results grouped by kind in a layout buffer, Return describes,
-  M-. jumps. The orderless completion engine already ranks; apropos is
-  a candidates producer over the registries.
-- bindings and variables become interactive tool buffers: rows,
-  Return describes, editable where sensible ((setf (var ...)) from the
-  variables buffer with the same prompt machinery).
-- The api.org words table becomes queryable: (ask :server :words) or a
-  help command rendering it, so the vocabulary is one keystroke away
-  when writing init code.
-- Every new system's registries join apropos as they land: project
-  verbs, vc commands, intelligence producers, world contributors.
+- describe-command, describe-function, describe-variable,
+  describe-mode, and describe-key as layout buffers (show-layout)
+  rather than echo strings: name, docstring, the bindings that reach
+  it, the mode that owns it, and a source jump through the
+  intelligence :definition verb. Help and intelligence share that
+  seam, so help buffers gain source jumps when intelligence.org is
+  built.
+- apropos: one prompt matching across all registries -- commands,
+  variables, modes, faces, refs, buffer verbs, store keys -- with
+  results grouped by kind in a layout buffer; Return describes the
+  item, M-. jumps to its source. The orderless completion engine
+  provides the matching; apropos is a candidates producer over the
+  registries.
+- The bindings and variables listings become interactive tool
+  buffers: rows, Return describes, and variables are settable in
+  place through the prompt machinery and (setf (var ...)).
+- The vocabulary table in api.org becomes queryable -- (ask :server
+  :words) or a help command rendering it -- so the word list is
+  available while writing init code.
+- Each new system's registries join apropos as they are built:
+  project verbs, vc commands, intelligence producers, world
+  contributors.
 
-* Refused
+* Omitted
 
-- Help text maintained by hand anywhere a registry can answer.
-- A help mode with its own navigation conventions: help buffers are
+- Hand-written help text wherever a registry can answer. A missing or
+  wrong docstring is fixed at the definition, not papered over in the
+  help system.
+- A dedicated help mode with its own navigation. Help buffers are
   layout buffers with the same selection and Return behavior as every
   other tool.
-- Documentation coverage tooling beyond the existing discipline; the
-  fix for a missing docstring is writing it.
+- Documentation coverage tooling. The docstring discipline is
+  maintained in review, not enforced by machinery.
 
 * Open questions
 
-- Whether describe buffers show the CURRENT effective value/binding
+- Whether describe buffers show the effective value and binding
   context (this client, this buffer's modes) or the global view with
-  the local diff marked; leaning effective-with-diff, since the locals
-  are usually the question.
-- Whether apropos should search docstring bodies or names only;
-  names-first with a flag is the cheap start.
+  local differences marked. The effective view with differences
+  marked is the likely answer, since the local state is usually what
+  prompted the question.
+- Whether apropos matches docstring bodies or names only. Names
+  first; body search can be a flag later.
