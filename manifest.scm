@@ -2,7 +2,7 @@
 (add-to-load-path (string-append (dirname (current-filename)) "/guix"))
 (use-modules (tree-sitter-commonlisp) (pine-pty) (sento)
              (timer-wheel) (local-time-duration) (pure-tls)
-             (cl-cancel) (precise-time))
+             (cl-cancel) (precise-time) (river))
 
 (concatenate-manifests
  (list (specifications->manifest
@@ -70,4 +70,4 @@
        (packages->manifest (list tree-sitter-commonlisp pine-pty sbcl-sento
                                  sbcl-timer-wheel sbcl-local-time-duration
                                  sbcl-pure-tls sbcl-cl-cancel
-                                 sbcl-precise-time))))
+                                 sbcl-precise-time river-0.4))))
