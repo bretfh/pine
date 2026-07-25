@@ -67,6 +67,15 @@ vc and intelligence are independent of each other; either can be built
 first once project exists. help grows with each system whose
 registries it can describe, so its groundwork can start at any point.
 
+6. wm.org -- window management, on a parallel track. river 0.4
+   separates the Wayland compositor from the window manager and
+   delegates all policy to an external client over a stable protocol.
+   pine is already a Wayland client in Lisp, so window management
+   policy joins the system: os-window leaves arranged by the same
+   layout trees and commands as editor windows, in a supervised wm
+   frontend, with the compositor surviving its crashes. Independent
+   of the editor-side order above.
+
 * Refusals
 
 Each document also states what its system deliberately omits, and
