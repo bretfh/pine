@@ -39,7 +39,7 @@
        (setf (wm-focus wm) (first (wm-windows wm))))
      (when (win-node w) (ignore-errors (river-node-v1.destroy (win-node w))))
      (ignore-errors (river-window-v1.destroy (win-proxy w))))
-    (t ())))
+    (t (&rest args) (declare (ignore args)))))
 
 (defun handle-output (wm o &rest event)
   (event-case event
@@ -49,7 +49,7 @@
     (:removed ()
      (setf (wm-outputs wm) (remove o (wm-outputs wm)))
      (ignore-errors (river-output-v1.destroy (out-proxy o))))
-    (t ())))
+    (t (&rest args) (declare (ignore args)))))
 
 (defun handle-seat (wm seat &rest event)
   (declare (ignore seat))
@@ -57,7 +57,7 @@
     (:window-interaction (window)
      (let ((w (%find-win wm window)))
        (when w (setf (wm-focus wm) w))))
-    (t ())))
+    (t (&rest args) (declare (ignore args)))))
 
 (defun manage (wm)
   "One manage sequence: equal side-by-side proposals on the screen, focus to
@@ -112,7 +112,7 @@ Always finishes."
      (format *error-output* "pine wm: window management unavailable~%")
      (setf (wm-done wm) t))
     (:finished () (setf (wm-done wm) t))
-    (t ())))
+    (t (&rest args) (declare (ignore args)))))
 
 (defun run-wm ()
   "Connect to the compositor, bind river_window_manager_v1, and run the

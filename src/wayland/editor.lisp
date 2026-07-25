@@ -47,6 +47,9 @@ buffer rows were laid out for."
    (queue   :initform nil :accessor ed-queue)
    (qlock   :initform (bt:make-lock) :reader ed-qlock)
    (dirty   :initform nil :accessor ed-dirty)
+   ;; no buffer may be attached before the first xdg_surface.configure --
+   ;; river enforces what niri tolerated
+   (configured :initform nil :accessor ed-configured)
    (done    :initform nil :accessor ed-done)
    ;; client-side key repeat: wayland compositors do not repeat for clients.
    ;; The compositor's repeat_info sets rate/delay; a held key resends its wire
@@ -180,6 +183,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
     (push (evelambda
             (:configure (serial)
              (xdg-surface.ack-configure xdg-surface serial)
+             (setf (ed-configured ed) t)
              (paint-editor ed)))
           (wl-proxy-hooks xdg-surface))
     (push (evlambda
@@ -224,7 +228,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
     (loop until (ed-done ed) do
       (drain ed)
       (check-repeat ed)
-      (when (ed-dirty ed) (paint-editor ed))
+      (when (and (ed-dirty ed) (ed-configured ed)) (paint-editor ed))
       (loop while (wl-display-listen display) do (wl-display-dispatch-event display))
       (sleep 0.006))))
 

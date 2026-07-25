@@ -17,6 +17,7 @@
   #:use-module (tree-sitter-commonlisp)
   #:use-module (pine-pty)
   #:use-module (river)
+  #:use-module (wayflan)
   #:export (pine))
 
 ;; pine built as a guix package: the same save-lisp-and-die image `make bin'
@@ -50,11 +51,11 @@
                "sbcl-cl-utilities" "sbcl-flexi-streams" "sbcl-fset"
                "sbcl-idna" "sbcl-ironclad" "sbcl-jzon" "sbcl-local-time"
                "sbcl-log4cl" "sbcl-posix-shm" "sbcl-trivial-features"
-               "sbcl-trivial-gray-streams" "sbcl-usocket" "sbcl-wayflan")))
+               "sbcl-trivial-gray-streams" "sbcl-usocket")))
 
 (define %local-deps
   (list sbcl-sento sbcl-timer-wheel sbcl-local-time-duration sbcl-pure-tls
-        sbcl-cl-cancel sbcl-precise-time))
+        sbcl-cl-cancel sbcl-precise-time sbcl-wayflan))
 
 (define-public pine
   (package

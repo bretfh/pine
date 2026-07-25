@@ -11,7 +11,7 @@
              (guix gexp)
              (pine)
              (river))
-(use-service-modules dbus desktop)
+(use-service-modules dbus desktop networking ssh)
 (use-package-modules fonts fontutils terminals nss)
 
 (define pine-river-init
@@ -46,6 +46,7 @@
                 (name "bfh")
                 (comment "pine")
                 (group "users")
+                (password (crypt "pine" "$6$pine.vm"))
                 (supplementary-groups
                  '("wheel" "audio" "video" "input" "tty")))
                %base-user-accounts))
@@ -59,6 +60,10 @@
   (services
    (cons* (service elogind-service-type)
           (service dbus-root-service-type)
+          (service dhcpcd-service-type)
+          (service openssh-service-type
+                   (openssh-configuration
+                    (password-authentication? #t)))
           (simple-service 'pine-session etc-service-type
                           (list `("profile.d/pine-session.sh"
                                   ,pine-session-profile)))
