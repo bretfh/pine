@@ -114,6 +114,22 @@ carry over like :replace-content; point is clamped into the new content."
                     state :vars (fset:with vars (getf plist :key) (getf plist :value)))))
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
          (pine.buffer:notify-subscribers subs new hl)))
+      ;; overlays: transient per-line annotations riding the meta (and so
+      ;; every snapshot); the renderer draws them after the line's text.
+      ;; Any text edit clears them.
+      (:overlay
+       (let* ((ovs (or (fset:@ (pine.buffer:meta state) :overlays) (fset:empty-map)))
+              (new (pine.buffer:set-meta
+                    state :overlays
+                    (fset:with ovs (getf plist :line)
+                               (list (getf plist :text)
+                                     (or (getf plist :class) :eval-result))))))
+         (setf sento.actor:*state* (list new undo redo subs hl pstate))
+         (pine.buffer:notify-subscribers subs new hl)))
+      (:clear-overlays
+       (let ((new (pine.buffer:set-meta state :overlays nil)))
+         (setf sento.actor:*state* (list new undo redo subs hl pstate))
+         (pine.buffer:notify-subscribers subs new hl)))
       ;; the buffer as a layout buffer: BUILDER (state -> node tree) is
       ;; stored and run; lines become the row texts; the rows and the arranged
       ;; tree ride the meta for the renderer and point->node lookup. History
@@ -154,7 +170,7 @@ carry over like :replace-content; point is clamped into the new content."
     ;; edits push the old state onto UNDO, clear REDO, and reparse the tree
     ;; incrementally so the notified snapshot already carries fresh highlights.
     (macrolet ((commit (new-state)
-                 `(let ((new ,new-state))
+                 `(let ((new (pine.buffer:set-meta ,new-state :overlays nil)))
                     (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights pstate new)
                       (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 ps2))
                       (pine.buffer:notify-subscribers subs new hl2)))))
@@ -179,7 +195,9 @@ carry over like :replace-content; point is clamped into the new content."
                                 (pine.buffer:insert-string
                                  s1 (1+ l) 0 (make-string target :initial-element #\Space))
                                 s1))
-                        (final (pine.buffer:move-mark s2 :point (1+ l) target)))
+                        (final (pine.buffer:set-meta
+                                (pine.buffer:move-mark s2 :point (1+ l) target)
+                                :overlays nil)))
                    (multiple-value-bind (hl2 ps2) (pine.buffer:refresh-highlights ps1 final)
                      (setf sento.actor:*state* (list final (cons state undo) nil subs hl2 ps2))
                      (pine.buffer:notify-subscribers subs final hl2))))
@@ -216,7 +234,9 @@ carry over like :replace-content; point is clamped into the new content."
                    (declare (ignore hl2))
                    (setf ps ps2)))))
            (let* ((new-indent (pine.buffer:line-indent-width (fset:@ (pine.buffer:lines st) pl)))
-                  (final (pine.buffer:move-mark st :point pl (+ new-indent p-tail))))
+                  (final (pine.buffer:set-meta
+                          (pine.buffer:move-mark st :point pl (+ new-indent p-tail))
+                          :overlays nil)))
              (multiple-value-bind (hl3 ps3) (pine.buffer:refresh-highlights ps final)
                (setf sento.actor:*state*
                      (list final (if changed (cons state undo) undo) (if changed nil redo)

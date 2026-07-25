@@ -14,15 +14,25 @@ selector string for replace-on-reload.")
   "Bumped whenever *user-rules* changes, so pine.style's compiled-rules cache
 knows to refresh even when the theme is unchanged.")
 
+(defun selector-string (sel)
+  "Canonicalize a selector: a keyword or symbol is one class (.name), a list
+of symbols a compound (.a.b), a string is the selector DSL as written."
+  (etypecase sel
+    (string sel)
+    (symbol (format nil ".~(~a~)" (symbol-name sel)))
+    (list (format nil "~{.~(~a~)~}" (mapcar #'symbol-name sel)))))
+
 (defun install-rules (rules)
   "Merge RULES (a list of (selector props-plist)) into *user-rules*, replacing
-any rule with the same selector string, and bump *rules-generation* so the
-compiled-rules cache refreshes. The local half of ADD-RULES; frontends install
-rules pushed from the daemon here."
+any rule with the same selector, and bump *rules-generation* so the
+compiled-rules cache refreshes. Selectors may be keywords, symbol lists, or
+selector strings. The local half of ADD-RULES; frontends install rules pushed
+from the daemon here."
   (dolist (rule rules)
-    (setf *user-rules*
-          (remove (first rule) *user-rules* :key #'first :test #'string=))
-    (push rule *user-rules*))
+    (let ((sel (selector-string (first rule))))
+      (setf *user-rules*
+            (remove sel *user-rules* :key #'first :test #'string=))
+      (push (cons sel (rest rule)) *user-rules*)))
   (incf *rules-generation*)
   *user-rules*)
 
@@ -205,6 +215,7 @@ so the pixel painters in the frontend images restyle too. Reload-safe."
       (".restart.sel" (:background-color ,(p :bg-active)))
       (".restart.sel .restart-lbl" (:color ,(p :accent-fg)))
       (".dbg-bt" (:color ,(p :blue-faint)))
+      (".eval-result" (:color ,(p :green-cooler) :font-weight "bold"))
       (".job-row.sel" (:background-color ,(p :bg-active)))
       (".help-head" (:color ,(p :cyan-warmer) :font-weight "bold"))
       (".help-entry" (:color ,(p :fg)))

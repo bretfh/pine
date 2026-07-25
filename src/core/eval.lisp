@@ -162,7 +162,11 @@ call-with-debugger)."
                  (when abortp (setf (evaluation-status ev) :aborted))))))
       (setf (evaluation-output ev) (get-output-stream-string out))
       (when (evaluation-on-done ev)
-        (ignore-errors (funcall (evaluation-on-done ev) ev))))))
+        ;; under the same bindings as the eval, so a callback that reaches
+        ;; for *client* (echo + repaint) works the moment the eval finishes
+        (ignore-errors
+         (progv (mapcar #'car bindings) (mapcar #'cdr bindings)
+           (funcall (evaluation-on-done ev) ev)))))))
 
 (defun evaluate (form &key thunk (package *package*) bindings on-done on-error)
   "Evaluate FORM (or call THUNK) on a fresh thread. Returns the EVALUATION

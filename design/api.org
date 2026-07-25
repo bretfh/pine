@@ -204,6 +204,8 @@ src/mode/edit.lisp). tell sends any of them; ask wraps the synchronous ones.
 | =:undo= / =:redo= |                             | history |
 | =:set-local= / =:set-meta= | =:key :value=      | set a meta key (:mode reparses) |
 | =:set-var=        | =:key :value=               | set a buffer-local variable |
+| =:overlay=        | =:line :text [:class]=      | inline annotation after the line (dies on edit) |
+| =:clear-overlays= |                             | drop every overlay |
 | =:replace-content= | =:content=                 | fresh content, identity kept |
 | =:set-layout=       | =:builder :width :selection= | become a layout buffer |
 | =:reproject=      | =[:width] [:selection]=     | re-run the stored layout builder |

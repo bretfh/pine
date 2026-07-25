@@ -177,6 +177,7 @@
 (defpackage #:pine.command
   (:use #:cl)
   (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
+           #:command-key
            #:define-command #:register-command #:find-command #:all-command-names
            #:execute #:call-command #:dispatch #:command-error
            #:self-insert #:self-insert-key-p
@@ -241,7 +242,7 @@
    ;; layout protocol
    #:measure #:arrange #:paint #:*hover-face*
    ;; layout -> cell rows (layout buffers + the chrome popup)
-   #:render #:resolve-styles! #:raster->rows
+   #:render #:resolve-styles! #:raster->rows #:class-names
    #:defwidget
    #:node->wire #:wire->node #:arranged-p
    ;; hit-testing + selection

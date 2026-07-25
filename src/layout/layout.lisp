@@ -769,9 +769,18 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
 ;;;; in the same (fg bg attr) run values. The arranged tree rides along so any
 ;;;; rendered (line col) maps back to its node with no side table.
 
+(defun class-names (c)
+  "Normalize a :class value to a list of class-name strings: a keyword or
+symbol is its downcased name, a list is the class set, a string splits on
+spaces."
+  (etypecase c
+    (null nil)
+    (symbol (list (string-downcase (symbol-name c))))
+    (string (remove "" (uiop:split-string c :separator '(#\space)) :test #'string=))
+    (list (mapcan #'class-names c))))
+
 (defun node-classes (n)
-  (let ((c (css-class n)))
-    (if c (remove "" (uiop:split-string c :separator '(#\space)) :test #'string=) nil)))
+  (class-names (css-class n)))
 
 (defun %scale-rgb (c)
   "pine.style colours are 0..1; cells carry 0..255."

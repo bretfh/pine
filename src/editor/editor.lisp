@@ -193,9 +193,16 @@ into the image that broke.")
   (let ((r (ignore-errors (pine.client:renderer (pine.client:current-client)))))
     (when r (sento.actor:tell r '(:force-render)))))
 
-(defun %eval-done (ev)
+(defun %eval-done (ev &optional at)
+  "Surface a finished eval: the result echoes, and lands inline as an overlay
+on the form's line when AT is (BUFFER . LINE)."
   (case (pine.eval:evaluation-status ev)
-    (:ok (%eval-notify (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
+    (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
+           (when at
+             (ignore-errors
+              (sento.actor:tell (car at)
+                                (list :overlay :line (cdr at) :text txt))))
+           (%eval-notify txt)))
     (:aborted (%eval-notify "aborted"))))
 
 ;;;; The debugger buffer is a layout buffer: restart rows are selectable
@@ -414,11 +421,12 @@ eval commands share this, so `set-eval-target' redirects both."
       (pine.actor:agent-eval (pine.client:server-of (pine.client:current-client))
                              *eval-target* str :package package :on-done on-done)))
 
-(defun %eval-form-string (str package)
+(defun %eval-form-string (str package &key at)
   ;; errors reach *on-debug* (local) or come home from a process agent via
-  ;; agent-debug; the client binding rides along for :local.
+  ;; agent-debug; the client binding rides along for :local. AT = (BUFFER .
+  ;; LINE) puts the result inline on the form's line.
   (eval-in-target str package
-                  :on-done #'%eval-done
+                  :on-done (lambda (ev) (%eval-done ev at))
                   :bindings (list (cons 'pine.client:*client*
                                         (pine.client:current-client)))))
 
@@ -439,7 +447,8 @@ eval commands share this, so `set-eval-target' redirects both."
               (if sl
                   (%eval-form-string
                    (subseq text (%lc->offset text sl sc) (%lc->offset text el ec))
-                   (%buffer-package state))
+                   (%buffer-package state)
+                   :at (cons buf el))
                   (eval-last-sexp))))))))
 
 (defun %offset->lc (text offset)
@@ -568,7 +577,8 @@ no symbol to complete."
              (offset (min (%point->offset snap) (length text))))
         (multiple-value-bind (start end) (%preceding-sexp-bounds text offset)
           (if start
-              (%eval-form-string (subseq text start end) (%buffer-package state))
+              (%eval-form-string (subseq text start end) (%buffer-package state)
+                                 :at (cons buf (%offset->lc text end)))
               (pine.echo:message "no form before point")))))))
 
 (defun eval-buffer ()

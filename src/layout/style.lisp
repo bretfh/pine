@@ -112,13 +112,18 @@
 (defun parts-nth (parts i) (string-trim " " (nth i parts)))
 
 (defun parse-lengths (s)
-  "The px integers in a length list like \"10px 12px\"; ignores rem/% tokens."
-  (when s
-    (loop for tok in (split-ws s)
-          for n = (and (digit-char-p (char tok 0))
-                       (not (search "rem" tok)) (not (find #\% tok))
-                       (parse-integer tok :junk-allowed t))
-          when n collect n)))
+  "The px integers of a length value: a number is that many px, a list of
+numbers likewise, a string is parsed (\"10px 12px\"; rem/% tokens ignored)."
+  (etypecase s
+    (null nil)
+    (real (list (round s)))
+    (list (mapcar #'round s))
+    (string
+     (loop for tok in (split-ws s)
+           for n = (and (digit-char-p (char tok 0))
+                        (not (search "rem" tok)) (not (find #\% tok))
+                        (parse-integer tok :junk-allowed t))
+           when n collect n))))
 
 (defun box-xy (s)
   "(values pad-x pad-y) from a CSS box shorthand, averaging asymmetric sides."
@@ -133,7 +138,8 @@
 
 (defun parse-radius (s)
   (cond ((null s) 0)
-        ((search "100%" s) :round)
+        ((realp s) (round s))
+        ((and (stringp s) (search "100%" s)) :round)
         (t (or (first (parse-lengths s)) 0))))
 
 (defun parse-gradient (s)
@@ -194,12 +200,14 @@ expanded per CSS rules; NIL when none."
   font-px bold inset margin shadow opacity)
 
 (defun parse-opacity (s)
-  "A CSS :opacity value as a float 0..1, or nil."
-  (when (stringp s)
-    (let ((v (ignore-errors
-              (with-standard-io-syntax
-                (let ((*read-eval* nil)) (read-from-string s))))))
-      (when (realp v) (float (max 0 (min 1 v)) 1.0)))))
+  "An :opacity value as a float 0..1: a real directly, or a string parsed."
+  (let ((v (if (realp s)
+               s
+               (and (stringp s)
+                    (ignore-errors
+                     (with-standard-io-syntax
+                       (let ((*read-eval* nil)) (read-from-string s))))))))
+    (when (realp v) (float (max 0 (min 1 v)) 1.0))))
 
 (defun resolve (chain &key hover)
   "Resolve the merged style for a node given its class CHAIN (root..node)."

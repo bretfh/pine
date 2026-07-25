@@ -312,3 +312,21 @@ deduped and renders nothing."
   "An :opacity rule resolves to a float the pixel painter reads."
   (pine.buffer:install-rules '((".op-probe" (:opacity "0.42"))))
   (is (= 0.42 (pine.style:st-opacity (pine.style:resolve '(("op-probe")))))))
+
+(test style-lisp-values
+  "Rules take lisp values: numbers for opacity and px props; keyword
+selectors name one class."
+  (pine.buffer:install-rules
+   '((:num-probe (:opacity 0.42 :min-width 28 :border-radius 6 :padding 4))))
+  (let ((st (pine.style:resolve '(("num-probe")))))
+    (is (= 0.42 (pine.style:st-opacity st)))
+    (is (= 28 (pine.style:st-min-w st)))
+    (is (= 6 (pine.style:st-radius st)))
+    (is (= 4 (pine.style:st-pad-x st)))))
+
+(test class-names
+  "Node classes normalize from keywords, lists, and strings alike."
+  (is (equal '("a") (pine.layout:class-names :a)))
+  (is (equal '("nm-row" "sel") (pine.layout:class-names '(:nm-row :sel))))
+  (is (equal '("nm-row" "sel") (pine.layout:class-names "nm-row sel")))
+  (is (null (pine.layout:class-names nil))))

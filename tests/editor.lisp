@@ -394,6 +394,56 @@ modeline follow, layout-buffer embeds."
     (let ((tx (btext (pine.buffer:buffer "*wt-probe*"))))
       (is (and (stringp tx) (search "wt" tx))))))
 
+(test (symbol-commands :depends-on user-language)
+  "Commands answer to symbols in definition, binding, and calling."
+  (u "(defcommand sym-probe () (setf *ran* :sym))")
+  (u "(global-set-key (kbd \"C-c y\") 'sym-probe)")
+  (setf (pine.client:current-buffer *client*) (pine.buffer:buffer "scratch"))
+  (key "C-c") (key "y") (sleep 0.05)
+  (is (eq :sym (symbol-value (find-symbol "*RAN*" :pine.user))))
+  (u "(setf *ran* nil)")
+  (pine.command:call-command 'sym-probe)
+  (is (eq :sym (symbol-value (find-symbol "*RAN*" :pine.user)))))
+
+(test (overlays :depends-on live-tree)
+  "The overlay primitive: a per-line annotation renders after the line's
+text and dies on the next edit."
+  (let ((ob (pine.buffer:make-buffer "overlay-probe")))
+    (pine.mode:set-buffer-mode ob :text-mode)
+    (sento.actor:tell ob (list :insert :text "abc"))
+    (sleep 0.1)
+    (sento.actor:tell ob (list :overlay :line 0 :text "=> 3"))
+    (sleep 0.1)
+    (setf (pine.client:windows *client*) nil
+          (pine.client:focused-window *client*) nil)
+    (let* ((wn (pine.editor:editor-window-node "overlay-probe" :expand 1))
+           (tree (pine.layout:column :align :stretch
+                   wn (pine.editor:editor-echo-node)
+                   (pine.editor:editor-modeline-node))))
+      (setf (pine.client:arrangement *client*) tree)
+      (pine.buffer:focus-window (pine.layout:window-of wn))
+      (setf (pine.client:current-buffer *client*) ob)
+      (sleep 0.2)
+      (pine.render:refresh-editor-tree *client*)
+      (is (search "=> 3" (car (first (pine.layout:window-rows wn)))))
+      (sento.actor:tell ob (list :insert :text "d"))
+      (sleep 0.15)
+      (pine.render:refresh-editor-tree *client*)
+      (is (not (search "=>" (car (first (pine.layout:window-rows wn)))))))))
+
+(test (inline-eval :depends-on overlays)
+  "eval-last-sexp leaves its result inline on the form's line."
+  (let ((eb (pine.buffer:make-buffer "eval-probe")))
+    (pine.mode:set-buffer-mode eb :text-mode)
+    (setf (pine.client:current-buffer *client*) eb)
+    (sento.actor:tell eb (list :insert :text "(+ 1 2)"))
+    (sleep 0.1)
+    (pine.editor:eval-last-sexp)
+    (sleep 0.5)
+    (let ((ovs (pine.buffer:buffer-local
+                (sento.actor:ask-s eb '(:get-state) :time-out 5) :overlays)))
+      (is (and ovs (search "=> 3" (first (fset:@ ovs 0))) t)))))
+
 (test (kill-yank :depends-on live-tree)
   "kill/yank round-trips multi-line text with its line structure."
   (let ((kb (pine.buffer:make-buffer "yank-probe")))

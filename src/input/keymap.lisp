@@ -11,9 +11,11 @@
 (defun prefix-p (entry) (hash-table-p entry))
 
 (defun define-key (keymap keys command)
-  "KEYS is a pine.key:key or a list of them (a chord). COMMAND is a string name."
+  "KEYS is a pine.key:key or a list of them (a chord). COMMAND is a command
+designator: a symbol ('greet) or a string name."
   (let ((table (keymap-table keymap))
-        (keys (if (listp keys) keys (list keys))))
+        (keys (if (listp keys) keys (list keys)))
+        (command (pine.command:command-key command)))
     (loop for (k . rest) on keys do
       (if rest
           (let ((next (gethash k table)))

@@ -135,12 +135,17 @@ after the class exists. Returns :NAME."
 ;;;; (color :accent) resolves against the active theme.
 
 (defmacro defrules (&rest rules)
-  "Add CSS rules. Each is (SELECTOR PROP VALUE ...); redefining a selector
-replaces it. Reload-safe."
+  "Add style rules. Each is (SELECTOR PROP VALUE ...): SELECTOR is a keyword
+(one class), a list of keywords (compound), or a selector string; values are
+lisp values (numbers for px/opacity) or CSS strings. Redefining a selector
+replaces it. Reload-safe; the rules reach every attached frontend."
   `(pine.buffer:add-rules
     (list ,@(mapcar (lambda (rule)
                       (destructuring-bind (sel &rest props) rule
-                        `(list ,sel (list ,@props))))
+                        `(list ,(if (and (consp sel) (every #'keywordp sel))
+                                    `',sel
+                                    sel)
+                               (list ,@props))))
                     rules))))
 
 ;;;; Processes. SPAWN / SUPERVISE / KILL take the running server implicitly.

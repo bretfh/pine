@@ -286,14 +286,14 @@ the tree, or nil when the client has none."
                            (aref prios c) p)))))
     slots))
 
-(defun emit-string (f off row str fg &optional bg (attr 0))
-  "Write STR at ROW (col 0..) into F's cells with FG (list r g b), optional BG,
-and packed text ATTR bits. Returns the new cell offset."
+(defun emit-string (f off row str fg &optional bg (attr 0) (col0 0))
+  "Write STR at ROW starting COL0 into F's cells with FG (list r g b),
+optional BG, and packed text ATTR bits. Returns the new cell offset."
   (let ((cells (pine.buffer:frame-cells f)))
     (loop for i from 0 below (length str)
           for ch = (char-code (char str i))
           do (setf (svref cells (+ off 0)) row
-                   (svref cells (+ off 1)) i
+                   (svref cells (+ off 1)) (+ col0 i)
                    (svref cells (+ off 2)) ch
                    (svref cells (+ off 3)) (first fg)
                    (svref cells (+ off 4)) (second fg)
@@ -448,11 +448,21 @@ mark (buffer meta) and point, or nil when no mark is set."
 
 (defun selection-bg () (pine.buffer:face-bg :selection))
 
+(defun %overlay-cell-style (class)
+  "(values fg-rgb attr) for an overlay CLASS through the stylesheet, falling
+back to the comment face."
+  (let* ((st (pine.style:resolve (list (pine.layout:class-names class))))
+         (fg (pine.style:st-fg st)))
+    (values (if fg
+                (mapcar (lambda (c) (round (* 255 c))) fg)
+                (pine.buffer:face-fg :comment))
+            (if (pine.style:st-bold st) 1 0))))
+
 (defun render-window-rows (w)
   "Window W's buffer rendered to wire rows at W's size: visible lines with
 highlights and region (text), the emulator grid (terminal buffer), or the
-buffer's layout rows (layout buffer). Returns (values rows crow ccol), the
-point position within the rows or -1 -1."
+buffer's layout rows (layout buffer). Overlays draw after their line's text.
+Returns (values rows crow ccol), the point position within the rows or -1 -1."
   (when (pine.buffer:snap w)
     (pine.buffer:ensure-point-visible w)
     (pine.buffer:ensure-col-visible w)
@@ -483,11 +493,23 @@ point position within the rows or -1 -1."
              for row from 0 below (pine.buffer:win-height w)
              do (setf off (emit-row f off row (car row-cells) (cdr row-cells) wid))))
       (s
-       (loop for d in dl
+       (loop with overlays = (pine.buffer:buffer-local s :overlays)
+             for d in dl
              for row from 0
              for text = (pine.buffer:display-text d)
              for buf-line-idx = (+ row (pine.buffer:scroll-top w))
-             do (let* ((line-hl (when hl-table (gethash row hl-table)))
+             for overlay = (and overlays (fset:@ overlays buf-line-idx))
+             do (when overlay
+                  (destructuring-bind (otext oclass) overlay
+                    (multiple-value-bind (orgb oattr) (%overlay-cell-style oclass)
+                      (let* ((col0 (+ (length text) 2))
+                             (room (- wid col0)))
+                        (when (plusp room)
+                          (setf off (emit-string
+                                     f off row
+                                     (subseq otext 0 (min (length otext) room))
+                                     orgb nil oattr col0)))))))
+                (let* ((line-hl (when hl-table (gethash row hl-table)))
                        (buf-line-len (if (< buf-line-idx (pine.buffer:line-count s))
                                          (length (fset:@ (pine.buffer:lines s) buf-line-idx))
                                          0))

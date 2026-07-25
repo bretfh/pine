@@ -14,20 +14,28 @@
 
 (defvar *commands* (make-hash-table :test 'equal))
 
+(defun command-key (designator)
+  "A command's registry name: a string as-is, a symbol downcased -- so
+'greet and \"greet\" name the same command."
+  (etypecase designator
+    (string designator)
+    (symbol (string-downcase (symbol-name designator)))))
+
 (defun register-command (command)
   (setf (gethash (command-name command) *commands*) command))
 
 (defun find-command (name)
   (etypecase name
     (command name)
-    (string  (gethash name *commands*))))
+    ((or string symbol) (gethash (command-key name) *commands*))))
 
 (defun all-command-names ()
   (sort (loop for k being the hash-keys of *commands* collect k) #'string<))
 
 (defmacro define-command (name (&rest lambda-list) &body body)
-  "Define and register a command. An optional interactive spec may lead the
-body as (:interactive DESCRIPTOR...) or (:prefix); the descriptors gather the
+  "Define and register a command. NAME is a symbol (registered by its
+downcased name) or a string. An optional interactive spec may lead the body
+as (:interactive DESCRIPTOR...) or (:prefix); the descriptors gather the
 LAMBDA-LIST arguments before the body runs."
   (let ((arguments nil) (prefix-p nil))
     (loop while (and (consp (first body)) (keywordp (car (first body))))
@@ -37,7 +45,7 @@ LAMBDA-LIST arguments before the body runs."
                (:prefix      (setf prefix-p t))
                (t (push clause body) (loop-finish))))
     `(register-command
-      (make-instance 'command :name ,name
+      (make-instance 'command :name (command-key ',name)
                      :arguments ',arguments :prefix-p ,prefix-p
                      :fn (lambda ,lambda-list ,@body)))))
 

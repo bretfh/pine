@@ -133,14 +133,17 @@ Color and shape as data. Change the theme and everything downstream re-resolves.
 | =defrules= | =(defrules (SELECTOR PROP VALUE ..) ..)=   | [have] |
 
 - =defrules= appends to the one stylesheet; user rules win the cascade, and
-  redefining a selector replaces it. VALUES are evaluated, so =(color :accent)=
-  resolves against the active theme. Rules broadcast to every attached
-  frontend, so the pixel painters restyle live too. =(defrules
-  (".cand-row.sel" :background-color (color :bg-active)))=.
+  redefining a selector replaces it. Selectors are keywords (=:tool-title=,
+  one class), keyword lists (=(:tool-row :sel)=, compound), or selector
+  strings for the full DSL. Values are lisp values -- numbers for px and
+  opacity -- or CSS strings; =(color :accent)= resolves against the active
+  theme. Rules broadcast to every attached frontend, so the pixel painters
+  restyle live too.
 - =:opacity= is a rule property; a window view's glass is styled like
-  anything else: =(window "scratch" :class "editor-view")= plus =(defrules
-  (".editor-view" :opacity "0.9"))= -- re-eval the rule and the next frame
-  repaints with it.
+  anything else: =(window "scratch" :class :editor-view)= plus =(defrules
+  (:editor-view :opacity 0.9))= -- re-eval the rule and the next frame
+  repaints with it. Node =:class= takes a keyword, a keyword list, or a
+  string.
 
 * Data
 
@@ -165,7 +168,7 @@ What input does.
 
 | symbol       | form                             | status |
 |--------------+----------------------------------+--------|
-| =defcommand= | =(defcommand NAME (args) BODY)=   | [have] |
+| =defcommand= | =(defcommand NAME (args) BODY)= -- NAME a symbol | [have] |
 | =:on-click=  | widget keyword                   | [have] |
 | =:on-change= | widget keyword (slider)          | [have] |
 | =:hint=      | widget keyword (echo hint)       | [have] |
@@ -182,7 +185,8 @@ Emacs voice. A =defcommand= is reachable by key once bound.
 | =global-set-key= | =(global-set-key (kbd ..) CMD)=  | [have] |
 
 - =kbd= parses a chord ("C-x C-f", "M-.", "Return") into a key or a sequence.
-  WHERE is a keymap, =:global=, or a mode keyword. CMD is a command name string.
+  WHERE is a keymap, =:global=, or a mode keyword. CMD is a command
+  designator: a symbol ('greet -- completes and reads) or a name string.
 
 * Modes
 
@@ -346,10 +350,10 @@ subcommands.
 
 (defsurface editor (:as :toplevel)
   (column :align :stretch
-    (window "scratch" :class "editor-view" :expand 1)
+    (window "scratch" :class :editor-view :expand 1)
     (echo)
     (modeline)))
-(defrules (".editor-view" :opacity "0.9"))
+(defrules (:editor-view :opacity 0.9))
 
 (defcommand scratch () (show-buffer "*scratch*"))
 (bind "C-c s" 'scratch)
