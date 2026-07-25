@@ -158,6 +158,10 @@ it. The editor attaches to the running daemon as its own process.")
   "Set by the frontend layer to the desktop frontend runner; `pine desktop' calls
 it. The desktop attaches to the running daemon as its own process.")
 
+(defvar *wm-hook* nil
+  "Set by the frontend layer to the river window manager runner; `pine wm'
+calls it. Only meaningful under river (design/wm.org).")
+
 ;;;; Frontends are agents. The editor and the desktop are not part of this
 ;;;; process: the daemon spawns each as its own OS image -- `pine editor' /
 ;;;; `pine desktop', the same binary re-invoked -- so one can crash, be killed,
@@ -270,6 +274,8 @@ sure the port is free even if it was an old or wedged daemon."
                                    (format t "pine: no editor frontend in this build~%")))
       ((string= verb "desktop") (if *desktop-hook* (funcall *desktop-hook*)
                                     (format t "pine: no desktop frontend in this build~%")))
+      ((string= verb "wm") (if *wm-hook* (funcall *wm-hook*)
+                               (format t "pine: no wm frontend in this build~%")))
       ((string= verb "status") (cli-request '(:status)))
       ((string= verb "eval")   (cli-request (list :eval (format nil "~{~a~^ ~}" more))))
       ((string= verb "reload") (cli-request '(:reload)))
