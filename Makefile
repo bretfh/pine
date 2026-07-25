@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot bin bench test hl
+.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot bin bench test hl vm
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -80,6 +80,12 @@ shot:
 # paint-arranged (the frontend's exact path), with tree dumps: make split-shot
 split-shot:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --load bench/split-shot.lisp'
+
+# the same eyes for the window manager: headless river, pine wm driving it,
+# test clients spawned in sequence, a PNG of the compositor's own output per
+# step. No window on any display: make wm-shot
+wm-shot:
+	$(GUIX) sh -c '$(ENV) bench/wm-shot.sh'
 
 # render every desktop panel through the cairo backend to PNGs in /tmp,
 # headless (no window, no daemon): make cairo-shot

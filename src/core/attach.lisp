@@ -33,8 +33,16 @@ ON-INPUT (client message) handles input from that app."
   (setf (gethash kind *app-handlers*) (cons on-attach on-input)))
 
 (defun on-client-input (client msg)
+  "Run the app kind's input handler. An error here is reported, never
+swallowed: a handler that fails silently makes the app look dead while the
+daemon looks healthy."
   (let ((h (gethash (attached-client-kind client) *app-handlers*)))
-    (when (and h (cdr h)) (ignore-errors (funcall (cdr h) client msg)))))
+    (when (and h (cdr h))
+      (handler-case (funcall (cdr h) client msg)
+        (error (c)
+          (format *error-output* "pine: ~a input handler failed on ~s: ~a~%"
+                  (attached-client-kind client) (first msg) c)
+          (finish-output *error-output*))))))
 
 (defun push-to-app (client &rest message)
   "Daemon -> app: tell the app's display actor MESSAGE (async, plain data)."
@@ -60,7 +68,12 @@ ON-INPUT (client message) handles input from that app."
                        :receive (lambda (m) (on-client-input client m))))
                (push client *clients*)
                (let ((h (gethash kind *app-handlers*)))
-                 (when (and h (car h)) (ignore-errors (funcall (car h) client))))
+                 (when (and h (car h))
+                   (handler-case (funcall (car h) client)
+                     (error (c)
+                       (format *error-output* "pine: ~a attach handler failed: ~a~%"
+                               kind c)
+                       (finish-output *error-output*)))))
                (sento.actor:tell display
                  (list :attached :id id
                        :client-uri (format nil "~aclient-~d" (daemon-base-uri server) id)))

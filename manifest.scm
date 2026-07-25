@@ -7,6 +7,11 @@
 (concatenate-manifests
  (list (specifications->manifest
         (list "sbcl"
+              ;; the wm harness (bench/wm-shot.sh): capture, a test client,
+              ;; and synthetic key presses against headless river
+              "grim"
+              "foot"
+              "wtype"
               "cairo"
               "tree-sitter"
               "wlr-protocols"

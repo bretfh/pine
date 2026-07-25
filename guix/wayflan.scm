@@ -25,5 +25,7 @@
               (("\\(car \\(or \\(find value table :key #'cdr :test #'=\\)")
                "(car (or (find value table :key #'cdr :test #'=) (cons value value)"))
             (substitute* "src/wire.lisp"
-              ((":max-chars \\(1- nul-length\\)")
-               ":max-chars (max 0 (1- nul-length))"))))))))
+              (("\\(cffi:foreign-string-to-lisp")
+               "(if (< nul-length 2) (and (plusp nul-length) \"\") (cffi:foreign-string-to-lisp")
+              (("^        :encoding :utf-8\\)")
+               "        :encoding :utf-8))"))))))))

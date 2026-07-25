@@ -62,6 +62,9 @@
    (:module "desktop"
     :serial t
     :components ((:file "desktop")))
+   (:module "wm"
+    :serial t
+    :components ((:file "wm")))
    (:file "user")
    (:file "main")))
 

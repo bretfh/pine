@@ -23,6 +23,7 @@
     (pine.editor:install-bindings)
     (pine.editor:install-editor-sessions)
     (pine.desktop:install-desktop-sessions)
+    (pine.wm:install-wm-sessions)
     (pine.store:open-store)
     (pine.hooks:add-shutdown-hook :store
       (lambda ()

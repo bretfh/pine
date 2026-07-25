@@ -136,6 +136,14 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                   (if (l:arranged-p (ed-tree ed))
                       (l:paint-arranged (ed-tree ed))
                       (l:paint-tree (ed-tree ed) width height)))))
+            ;; ground-truth eyes: with PINE_FRAME_DUMP set, every committed
+            ;; frame is also written as pine painted it, so a corrupted
+            ;; display can be split into painter vs compositor halves
+            (when (uiop:getenv "PINE_FRAME_DUMP")
+              (ignore-errors
+               (c:with-surface-and-context
+                   (dbg (c:create-image-surface-for-data data :argb32 width height stride))
+                 (c:surface-write-to-png dbg (uiop:getenv "PINE_FRAME_DUMP")))))
             (wl-surface.attach wl-surface buffer 0 0)
             (wl-surface.damage-buffer wl-surface 0 0 width height)
             (wl-surface.commit wl-surface)

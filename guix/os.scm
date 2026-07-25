@@ -12,12 +12,13 @@
              (pine)
              (river))
 (use-service-modules dbus desktop networking ssh)
-(use-package-modules fonts fontutils terminals nss)
+(use-package-modules fonts fontutils image terminals nss)
 
 (define pine-river-init
   ;; river -c runs this once the compositor is up.
   (program-file "pine-river-init"
     #~(begin
+        (setenv "PINE_FRAME_DUMP" "/tmp/pine-frame.png")
         (system (string-append #$pine "/bin/pine wm >/tmp/pine-wm.log 2>&1 &"))
         (execl (string-append #$pine "/bin/pine") "pine" "start"))))
 
@@ -25,7 +26,9 @@
   ;; exec river on the auto-logged-in tty; everything else is a normal shell.
   (mixed-text-file "pine-session.sh"
     "if [ \"$(tty)\" = /dev/tty1 ] && [ -z \"$WAYLAND_DISPLAY\" ]; then\n"
-    "  exec " river-0.4 "/bin/river -c " pine-river-init "\n"
+    "  export WLR_NO_HARDWARE_CURSORS=1\n"
+    "  exec " river-0.4 "/bin/river -log-level debug -c " pine-river-init
+    " > /tmp/river.log 2>&1\n"
     "fi\n"))
 
 (operating-system
@@ -52,7 +55,8 @@
                %base-user-accounts))
 
   (packages (cons* pine river-0.4
-                   foot
+                   foot grim
+                   (specification->package "font-maple-mono-nf")
                    font-dejavu fontconfig
                    nss-certs
                    %base-packages))

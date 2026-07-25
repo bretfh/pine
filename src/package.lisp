@@ -214,6 +214,15 @@ store-push/store-items keep bounded lists (histories, recents). Modes
 declare what persists -- via defonce/defref :persist or their own store
 keys -- and never touch files."))
 
+(defpackage #:pine.wm
+  (:use #:cl)
+  (:export #:wm-keymap #:binding-table #:push-bindings #:run-binding
+           #:attached-p #:install-wm-sessions
+           #:spawn #:close-window #:focus-next #:focus-prev #:exit-session)
+  (:documentation "Window management policy: the keymap whose chords are
+registered with the compositor, the commands they run, and the actions sent
+to the wm frontend. design/wm.org is the contract."))
+
 (defpackage #:pine.world
   (:use #:cl)
   (:export #:register #:save-world #:restore-world)
