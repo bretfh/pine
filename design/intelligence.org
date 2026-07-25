@@ -1,0 +1,125 @@
+#+TITLE: pine: intelligence, image-first
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+* Why this document exists
+
+Intelligence is the editor answering questions about code: where is
+this defined, who uses it, what completes here, what is wrong with this
+file, what does this take as arguments. pine has seeds -- arglist and
+complete-symbol against the image (editor.lisp), tree-sitter structural
+motion and indentation, one eval path whose conditions reach a real
+debugger -- but no protocol, so M-. is only as smart as the symbol
+under point and nothing knows which files count. This document
+prescribes the protocol and its two native producers, and states
+pine's position on LSP once, precisely.
+
+* The claim
+
+For Lisp, the image IS the language server. The definitions, callers,
+arglists, and documentation of everything loaded are runtime facts SBCL
+already indexes (sb-introspect: find-definition-sources, who-calls,
+function-lambda-list); the compiler emits notes with source locations
+as a matter of course; and macroexpansion is an eval away. No external
+process could know more than the image knows about itself.
+
+pine sharpens this past SLIME: the eval path already targets any image
+(*eval-target* -- the daemon or any agent over remoting), so every
+intelligence verb answered by "the image" is answered by WHICHEVER
+image you are driving. Jump to a definition inside a running agent's
+world, ask who calls a function in the frontend's image. Cross-image
+intelligence is the same one remoting hop the debugger already makes.
+
+LSP therefore cannot be the shape of this system. It is a producer
+category -- see the single paragraph below -- behind verbs that exist
+regardless.
+
+* The verbs
+
+Buffer asks, producers registered per mode, documented in api.org:
+
+  (ask BUF :definition [:of SYMBOL])   -> ((FILE LINE COL KIND) ...)
+  (ask BUF :references [:of SYMBOL])   -> same shape
+  (ask BUF :complete PREFIX)           -> candidates (the existing
+                                          completion machinery's shape)
+  (ask BUF :arglist [:of SYMBOL])      -> string (exists; joins here)
+  (ask BUF :hover [:at (L . C)])       -> string or nil
+  (ask BUF :diagnostics)               -> properties already tell this
+                                          story; the verb lists them
+
+A producer is a function registered for a mode keyword against a verb
+-- the same register-and-dispatch shape completion sources use
+(register-source, editor.lisp). Multiple producers answer in
+registration order; first non-nil wins for point queries (:definition,
+:hover), union for set queries (:references, :complete). No scoring
+system; two producers is not a ranking problem.
+
+* Producer one: the live image
+
+- :definition / :references from sb-introspect against the target
+  image, package-aware via the buffer's :package local. Results map
+  through source locations to (FILE LINE COL); files open with
+  find-file, so save-place and project scoping apply.
+- :complete from the package system (what complete-symbol does today,
+  become a producer).
+- :hover is documentation + arglist -- the echo-area answer.
+- :diagnostics from compilation: load-file / eval-buffer / load-system
+  capture compiler conditions WITH their source ranges and write them
+  as :until-edit properties (properties.org) with the condition text
+  as payload. The debugger keeps handling the errors; notes and
+  warnings become visible geography instead of scrollback.
+
+All of it honors *eval-target*, which is the sentence SLIME cannot say.
+
+* Producer two: tree-sitter
+
+For every language with a grammar and no image to ask: definitions and
+references syntactically. The ts tree already in buffer meta answers
+in-buffer queries; project-wide queries parse across (ask :project
+:files) filtered by extension, on demand, through pine.jobs so the
+session never blocks. Syntactic answers are honest about being
+syntactic: :references from ts is "same identifier", and the results
+buffer says so. This producer is what makes M-. work in every C or
+Scheme file the day the protocol lands, at grep truthfulness with
+structure instead of text.
+
+* Surfaces
+
+- M-. : (ask BUF :definition), jump if one result; several results into
+  the xref layout buffer -- show-layout rows, Return jumps, the visited
+  region propertized briefly. M-, pops the jump ring (a store list,
+  session-durable like everything else).
+- M-? : :references into the same buffer shape.
+- Completion, arglist echo, and eval flows keep their commands; their
+  guts become producers so every mode gets them by registration
+  instead of special cases.
+
+* LSP, once
+
+When a non-Lisp language matters enough to want semantic depth --
+types, rename, cross-file references that syntax cannot see -- an LSP
+client joins as a third producer behind these same verbs, and an LSP
+server is exactly what pine's process agents were built to hold: spawn
+it, supervise it, let its crashes come home by name while the daemon
+stays up. Nothing about that future changes a verb, a surface, or a
+producer that exists by then. No LSP work is charted; this paragraph
+is the whole position.
+
+* Refused
+
+- LSP as the protocol shape: pine's verbs are not modeled on another
+  system's wire format (positions, capabilities, negotiation); they
+  are modeled on what the surfaces ask.
+- Per-language analyzers in the daemon: anything heavier than ts
+  parsing runs in a job or an agent.
+- Surfaces bypassing the verbs: no command reaches into sb-introspect
+  or the ts tree directly once the protocol exists; the verbs are the
+  seam that keeps producers swappable.
+
+* Open questions
+
+- Whether :references (image) should include who-macroexpands and
+  who-binds alongside who-calls, or expose :kind filtering; first real
+  use decides.
+- The jump ring's depth and whether it is global or per-project;
+  either is one store key.

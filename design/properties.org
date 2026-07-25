@@ -1,0 +1,116 @@
+#+TITLE: pine: region properties
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+* Why this document exists
+
+pine has two annotation mechanisms today and both are shaped by their
+first consumer. Highlights (:set-highlights, mode/edit.lisp) are runs
+of (line start end face) computed by tree-sitter or handed over by tool
+buffers; they restyle text but carry no payload and die wholesale on
+reparse. Overlays (:overlay / :clear-overlays, mode/edit.lisp) are
+per-line annotations in the buffer meta under :overlays -- text after
+the line, styled by class, cleared by the next edit; they exist because
+eval results wanted an inline home.
+
+Every system charted next needs the general form of the same idea:
+compiler diagnostics want a squiggle under columns 14..23 of line 40
+with the condition text as payload; project search wants every match
+highlighted in the hits it jumps to; blame wants per-line commit data;
+VC wants hunk markers spanning line ranges. All of it is: data attached
+to a REGION of a buffer, styled by class, surviving edits by a stated
+rule. This document prescribes that one mechanism.
+
+* What we take from prior art, and what we do not
+
+Emacs built this twice and made users learn both. Text properties live
+in the text (copy text, properties come along; edits move them
+naturally; reading them is fast) while overlays live beside it (per
+buffer, with priorities, before/after strings, and their own keymaps;
+historically O(n) cliffs that plists were invented to work around).
+Packages pick one, discover the other's advantages later, and carry
+compatibility code forever.
+
+pine picks one mechanism. What we keep from Emacs: regions with start
+and end that adjust under edits, a payload, and appearance resolved
+through faces -- here, classes through the one stylesheet the cairo
+painter and the cell render both read. What we refuse: keymaps on
+regions (behavior belongs to modes and commands, not to spans of
+text), before/after display strings (the line overlay already renders
+trailing annotation text; anything richer is a layout buffer's job),
+and a priority system (a cell takes the classes of every property
+covering it, and the stylesheet cascade resolves appearance the same
+way it does everywhere else).
+
+* The model
+
+A property is readable data in the buffer's state:
+
+  region   start (line . col) to end (line . col), end exclusive
+  class    a keyword, styled via the stylesheet (defrules reaches it)
+  data     a plist payload, anything readable; nil for pure styling
+  policy   how edits treat it (below)
+
+Properties live in buffer state exactly as :overlays does today -- an
+fset structure in the meta, updated actor-atomically by the edit verbs
+-- so they ride every snapshot to every renderer and every image for
+free, and undo restores them with the text they annotated. There is no
+side table and no separate notification channel; a property change is a
+state change like any insert.
+
+Adjustment policy is stated, not emergent. An edit wholly before a
+property shifts it. An edit wholly after leaves it. An edit inside it
+grows or shrinks it. An edit that removes its whole region kills it.
+Policy :until-edit kills the property on ANY edit to the buffer -- the
+eval-result behavior, and the right default for anything a producer
+recomputes (diagnostics, search hits). Policy :sticky applies the
+shift/grow/kill rules and is for annotations that genuinely follow text
+(blame, bookmarks). Two policies; a consumer wanting something fancier
+recomputes from its own source of truth.
+
+* The verbs
+
+Base-mode grows three verbs beside the existing ones (mode/edit.lisp,
+documented in api.org's verb table):
+
+  (tell BUF :propertize :from (L . C) :to (L . C)
+            :class K [:data PLIST] [:policy :until-edit|:sticky])
+  (tell BUF :clear-properties [:class K])
+  (ask  BUF :properties [:at (L . C)] [:class K])
+
+:overlay and :clear-overlays remain as the line-shaped sugar -- an
+:overlay is a :propertize of the line's end with the annotation text as
+data and :until-edit policy; nothing that uses them changes behavior.
+:set-highlights becomes a producer: the ts highlighter writes its face
+runs through the same channel, which removes the last annotation state
+that does not ride buffer meta.
+
+:properties :at is the point query -- what is under the cursor -- and
+is what help and intelligence surfaces use to show a diagnostic's text
+in the echo area when point enters its region.
+
+* Render
+
+render-window-rows (render/render.lisp) already merges highlight runs
+into cell styles and appends overlay text after lines. It becomes one
+pass over the property set visible in the window: class -> style via
+the same resolution everything uses, trailing annotation data rendered
+where overlays render today. The frontend knows nothing new; styled
+cells cross the wire as they always did.
+
+* Instances, day one
+
+  eval results        :until-edit line annotation (existing, resugared)
+  ts highlighting     :sticky styling runs, producer-owned
+  search hits         :until-edit styling, cleared by the next search
+  compiler notes      :until-edit with the condition text as data
+  region highlight    the active region as a property, one consumer
+
+* Open questions
+
+- Whether the fset structure is a map keyed by region or an interval
+  tree; the answer is a measurement (buffers with thousands of ts runs
+  are the sizing case), not a design choice, and it is private to the
+  buffer.
+- Whether :properties :at should also answer across overlapping
+  properties in class order; first consumer decides.

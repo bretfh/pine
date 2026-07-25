@@ -1,0 +1,81 @@
+#+TITLE: pine: the next systems
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+* Why this document exists
+
+The core is built and tested: the daemon holds every buffer as an actor
+over fset state, frontends are disposable processes over remoting,
+agents are real SBCL images whose errors come home to the editor's
+debugger, one layout language renders a buffer window and a layer-shell
+bar through one arranger, rules restyle every attached image live, and
+the store/world pair means a restart gives you back your buffers, your
+splits, your histories, your kill ring.
+
+Measured against the predecessors, that core is not catching up; on the
+process model, the state model, and the display model it is past them.
+What trails is the surface: the accumulated verbs of forty years of
+Emacs, and four systems that decide whether pine converges on a daily
+driver or stalls as an architecture demo. This document names those
+systems, fixes their order, and points at the doc that prescribes each.
+The individual docs are the contract; this one is the map.
+
+* The standing rule
+
+Every system below lands as verbs on buffers, modes, commands, and tool
+buffers -- on primitives that already exist. None of them reopens the
+core. If a design here seems to need a new kind of state, a new global,
+or a second copy of an existing mechanism, the design is wrong; go back
+to the primitive.
+
+The editing long tail -- isearch across the buffer, query-replace,
+registers, rectangles, keyboard macros -- is deliberately NOT a system
+in this chart. Those are accumulated commands on the buffer verb
+protocol, each cheap, none needing a design document. They land as they
+are wanted.
+
+* The order, and why it is an order
+
+1. properties.org -- region properties. The substrate. Diagnostics
+   ranges, search highlights, blame annotations, VC hunk markers are
+   all the same thing: data attached to a region of a buffer that
+   survives edits. Today pine has face runs (:set-highlights) and
+   line overlays (:overlay); both become instances of one region
+   mechanism that rides buffer state like everything else. Everything
+   below consumes it.
+
+2. project.org -- project awareness. What codebase is this buffer in:
+   the root, the file set, and for Lisp the ASDF system. VC and
+   intelligence both stand on it, and it is mostly a thin layer over
+   answers git already has.
+
+3. vc.org -- version control, git-honest. libgit2 in a supervised
+   process agent; status, hunks, blame, log as data over remoting;
+   surfaces built from refs, properties, and layout buffers. The
+   generic layer is pine's existing primitives, not a backend
+   abstraction.
+
+4. intelligence.org -- definitions, references, completion,
+   diagnostics as buffer verbs with pluggable producers. For Lisp the
+   producer is the live image itself, including every agent's image
+   over remoting; tree-sitter is the syntactic producer for every
+   other language. LSP, when a non-Lisp language matters enough, is a
+   third producer behind the same verbs, not the protocol.
+
+5. help.org -- self-documentation, cutting across all of it. The
+   :describe convention grown into describe-anything and apropos,
+   with every answer computed from the live system and every
+   definition one jump away.
+
+vc and intelligence are siblings; either can land first once project
+exists. help deepens with each system it can describe, so it starts
+early and never finishes.
+
+* What each system refuses
+
+Refusals are as binding as prescriptions. properties refuses overlay
+keymaps and priority arms races. project refuses a project-file format
+of its own. vc refuses the N-backend abstraction and porcelain parsing.
+intelligence refuses LSP as the protocol shape. help refuses prose that
+can drift from the running system. The full statements live in each
+doc.
