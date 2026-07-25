@@ -442,7 +442,9 @@ Gated by the :world-save editor variable."))
    #:main
    #:start-daemon
    #:run-daemon
-   #:stop))
+   #:stop
+   ;; which frontends the daemon spawns and keeps alive; a config sets it
+   #:*frontends*))
 
 (defpackage :pine.user
   (:nicknames :pine-user)
@@ -473,7 +475,10 @@ Gated by the :world-save editor variable."))
                 #:show-layout #:layout-node-at-point #:layout-select
                 #:layout-activate)
   (:import-from :pine.echo #:message)
+  (:import-from :pine #:*frontends*)
   (:export
+   ;; the frontends the daemon owns
+   #:*frontends*
    ;; surfaces
    #:defsurface #:show #:hide #:toggle
    ;; widgets: containers
