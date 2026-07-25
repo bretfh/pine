@@ -83,7 +83,8 @@ tree first if there is none. Leaves it arranged so hit-testing is exact."
   "Create an anchored layer surface. LAYER is :background/:bottom/:top/:overlay,
 ANCHOR a list of :top/:bottom/:left/:right. WIDTH/HEIGHT 0 on an axis anchored to
 both edges lets the compositor size it. TREE-FN returns the layout node to paint.
-NAMESPACE defaults to gtk-layer-shell so niri's blur rule still matches."
+NAMESPACE defaults to gtk-layer-shell, which compositor blur and shadow
+rules commonly match on."
   (let* ((ls (make-instance 'layer-surface :conn conn
                             :width width :height height :tree-fn tree-fn
                             :on-closed on-closed))

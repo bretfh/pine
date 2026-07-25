@@ -40,29 +40,32 @@
   (cffi:foreign-funcall "setenv" :string name :string value :int 1 :int))
 
 (defun discover-session-env ()
-  (let* ((dir (or (uiop:getenv "XDG_RUNTIME_DIR") "/run/user/1000"))
-         (names (ignore-errors (uiop:run-program (list "ls" "-t" dir) :output :lines))))
-    (unless (uiop:getenv "WAYLAND_DISPLAY")
-      (let ((wl (find-if (lambda (n) (and (uiop:string-prefix-p "wayland-" n)
-                                          (not (uiop:string-suffix-p ".lock" n))))
-                         names)))
-        (when wl (%setenv "WAYLAND_DISPLAY" wl))))
-    (unless (uiop:getenv "NIRI_SOCKET")
-      (let ((sock (find-if (lambda (n) (and (uiop:string-prefix-p "niri." n)
-                                            (uiop:string-suffix-p ".sock" n)))
-                           names)))
-        (when sock (%setenv "NIRI_SOCKET" (format nil "~a/~a" dir sock)))))))
+  "Fill WAYLAND_DISPLAY when the daemon was started outside a graphical
+session, so the frontends it spawns can reach one: the newest wayland socket
+in the runtime directory. Only the socket -- which compositor is running, and
+anything it wants to be told, is the config's business and not the daemon's."
+  (unless (uiop:getenv "WAYLAND_DISPLAY")
+    (handler-case
+        (let* ((dir (uiop:ensure-directory-pathname
+                     (or (uiop:getenv "XDG_RUNTIME_DIR") "/run/user/1000")))
+               ;; the wildcard carries no type, so wayland-1 matches and
+               ;; wayland-1.lock does not
+               (sockets (sort (directory (merge-pathnames "wayland-*" dir))
+                              #'> :key #'file-write-date)))
+          (when sockets
+            (%setenv "WAYLAND_DISPLAY" (file-namestring (first sockets)))))
+      (error (c)
+        (format *error-output* "pine: no wayland display found: ~a~%" c)))))
 
 (defun run-daemon (&key (port pine.server:*port*))
   (discover-session-env)
   (start-daemon :remoting-port port)
-  (if (daemon-is-binary-p)
-      (progn
-        (start-frontends)
-        (format t "pine daemon up on ~a:~d -- frontends spawned + supervised.~%"
-                pine.server:*host* port))
-      (format t "pine daemon up on ~a:~d -- attach editor/desktop apps.~%"
-              pine.server:*host* port))
+  ;; The daemon owns its frontends whether it runs from the binary or from
+  ;; source: it spawns each as its own process and respawns any that dies.
+  ;; Nothing outside needs to start them.
+  (start-frontends)
+  (format t "pine daemon up on ~a:~d -- frontends spawned + supervised.~%"
+          pine.server:*host* port)
   (finish-output)
   (loop (sleep 3600)))
 
@@ -179,17 +182,39 @@ init.lisp may rebind this to choose which frontends come up.")
   "frontend verb -> its uiop process, so the supervisor can see it has died.")
 
 (defun daemon-is-binary-p ()
-  "True when this daemon runs from the built `pine' binary (so it can re-invoke
-itself to spawn a frontend). Under `make daemon' argv0 is sbcl and there is no
-binary to spawn -- then the daemon stays headless and frontends are run by hand."
+  "True when this daemon runs from the built `pine' binary, which can re-invoke
+itself with a verb. Under `make daemon' argv0 is sbcl, which cannot."
   (let ((self (first sb-ext:*posix-argv*)))
     (and self (not (search "sbcl" (namestring self))))))
 
+(defvar *frontend-forms*
+  '(("editor"  . "(pine.wl-editor:run-editor)")
+    ("desktop" . "(pine.wayland:run-desktop)")
+    ("wm"      . "(pine.wl-wm:run-wm)"))
+  "The form that runs each frontend, for a daemon started from source. The
+built binary takes the verb instead.")
+
+(defun frontend-command (verb)
+  "The command that starts frontend VERB as its own process. From the binary
+that is the binary and the verb. From source it is this same sbcl run again on
+the wayland system: argv0 is sbcl and takes no verb, but the child inherits the
+environment that made this image loadable, so it can load what this one did."
+  (if (daemon-is-binary-p)
+      (list (first sb-ext:*posix-argv*) verb)
+      (let ((form (cdr (assoc verb *frontend-forms* :test #'string=))))
+        (unless form
+          (error "no way to start frontend ~s from source" verb))
+        (list (namestring sb-ext:*runtime-pathname*)
+              "--no-userinit" "--non-interactive"
+              "--eval" "(require :asdf)"
+              "--eval" "(asdf:load-system :pine/wayland)"
+              "--eval" form))))
+
 (defun spawn-frontend (verb)
-  "Launch one frontend (`pine VERB') as its own process, logging to /tmp."
+  "Launch one frontend as its own process, logging to /tmp."
   (let ((log (format nil "/tmp/pine-~a.log" verb)))
     (setf (gethash verb *frontend-procs*)
-          (uiop:launch-program (list (first sb-ext:*posix-argv*) verb)
+          (uiop:launch-program (frontend-command verb)
                                :output log :error-output log
                                :if-output-exists :supersede
                                :if-error-output-exists :supersede))))
@@ -198,21 +223,33 @@ binary to spawn -- then the daemon stays headless and frontends are run by hand.
   "While true the supervisor respawns dead frontends; cleared on daemon stop so
 it does not fight a deliberate shutdown.")
 
+(defun frontend-attached-p (verb)
+  "True when a frontend of this kind is already attached, whoever started it.
+A session that launches its own is common, and the daemon must not answer it
+with a second."
+  (let ((kind (intern (string-upcase verb) :keyword)))
+    (find kind pine.attach:*clients* :key #'pine.attach:attached-client-kind)))
+
+(defun %needs-spawn-p (verb)
+  (let ((p (gethash verb *frontend-procs*)))
+    (and (not (and p (uiop:process-alive-p p)))
+         (not (frontend-attached-p verb)))))
+
 (defun start-frontends (&optional (verbs *frontends*))
   "Spawn each frontend as its own process and keep it alive: a dedicated thread
 respawns any whose process has exited. The daemon is the supervisor, exactly as
 it is for process agents."
   (setf *frontend-supervise* t)
-  (dolist (v verbs) (ignore-errors (spawn-frontend v)))
+  (dolist (v verbs)
+    (when (%needs-spawn-p v) (ignore-errors (spawn-frontend v))))
   (bordeaux-threads:make-thread
    (lambda ()
      (loop while *frontend-supervise* do
        (sleep 3)
        (when *frontend-supervise*
          (dolist (v verbs)
-           (let ((p (gethash v *frontend-procs*)))
-             (unless (and p (uiop:process-alive-p p))
-               (ignore-errors (spawn-frontend v))))))))
+           (when (%needs-spawn-p v)
+             (ignore-errors (spawn-frontend v)))))))
    :name "pine-frontend-supervisor"))
 
 (defun stop-frontends ()

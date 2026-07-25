@@ -163,11 +163,17 @@ the editor never notices, beyond a restart menu it can choose to ignore.
 
 * Data sources are supervised agents
 
-A data source (niri workspaces, pactl volume, nmcli) is an agent, registered and
-supervised like any other. It runs its blocking subprocess IO in its own
-isolated context, its own thread or its own process, never on a shared pool of
-the daemon or an app. It publishes into a reactive cell. The desktop app
-subscribes to that cell and rebuilds its widget tree.
+A data source is an agent, registered and supervised like any other. It runs
+its blocking subprocess IO in its own isolated context, its own thread or its
+own process, never on a shared pool of the daemon or an app. It publishes into
+a reactive cell. The desktop app subscribes to that cell and rebuilds its
+widget tree.
+
+The engine ships no sources. What a source runs -- which compositor is asked
+for workspaces, which mixer for volume, which player for a track -- is declared
+in the config, because naming any of it here would make pine wrong on every
+machine running something else. pine supplies the supervision, the interval,
+and the forms to declare one.
 
 So a source is neither the desktop's private thing nor daemon core work: the
 core brokers and supervises it, the source owns its own IO, the desktop is the

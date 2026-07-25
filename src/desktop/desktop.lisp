@@ -103,7 +103,7 @@ close it if it is already the open one."
     (case (first msg)
       (:widget-action
        ;; run the handler through pine.eval (its own thread), never inline on the
-       ;; pool -- a handler that blocks (nmcli) or errors can't stall the daemon.
+       ;; pool -- a handler that blocks on IO or errors cannot stall the daemon.
        (destructuring-bind (&key id args) (rest msg)
          (let ((cb (and s (gethash id (dsession-actions s)))))
            (when cb

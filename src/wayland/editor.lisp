@@ -48,7 +48,7 @@ buffer rows were laid out for."
    (qlock   :initform (bt:make-lock) :reader ed-qlock)
    (dirty   :initform nil :accessor ed-dirty)
    ;; no buffer may be attached before the first xdg_surface.configure --
-   ;; river enforces what niri tolerated
+   ;; river enforces this where some compositors tolerate it
    (configured :initform nil :accessor ed-configured)
    (done    :initform nil :accessor ed-done)
    ;; client-side key repeat: wayland compositors do not repeat for clients.

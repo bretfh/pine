@@ -152,15 +152,39 @@ so the surface re-renders when a ref it read changes, and only then.
 
 | symbol      | form                                | status  |
 |-------------+-------------------------------------+---------|
-| =defref=    | =(defref NAME [default])=             | [have]   |
-| =ref=       | =(ref NAME [default])= -- setf-able    | [have]   |
-| =defpoll=   | =(defpoll NAME SECONDS BODY)=         | [have]   |
-| =defsource= | =(defsource NAME COMMAND PARSE)=      | [have]   |
-| =sh=        | =(sh COMMAND)= run a shell command   | [rename] |
+| =defref=       | =(defref NAME [default])=            | [have] |
+| =ref=          | =(ref NAME [default])= -- setf-able   | [have] |
+| =defpoll=      | =(defpoll NAME SECONDS BODY)=        | [have] |
+| =defsource=    | =(defsource NAME (SYSTEM) BODY)=     | [have] |
+| =start-stream= | =(start-stream SYSTEM COMMAND REFRESH [TRIGGER])= | [have] |
+| =start-poll=   | =(start-poll SYSTEM SECONDS REFRESH)= | [have] |
+| =sh=           | =(sh COMMAND)= run a shell command   | [have] |
+| helpers        | =lines= =split= =starts-with= =first-number= =read-int-file= =json= | [have] |
 
 - =ref= is the one accessor: a surface body that reads a ref re-renders when
   it changes, and =(setf (ref NAME) V)= writes it (deduped), creating it if
   missing. No separate setter.
+- *pine ships no sources.* Which compositor reports workspaces, which mixer
+  reports volume, which player reports what is playing: none of that is the
+  engine's business, and naming it there would make pine wrong on every
+  machine that runs something else. What pine provides is the supervised
+  subprocess, the interval, the fault cap that stops a broken source instead
+  of spinning, and these forms. The config declares the rest.
+- A stream source runs a command and refreshes when a line matches; a poll
+  refreshes on an interval. Both run on their own source actor, so a slow or
+  flooding command cannot starve the daemon, and both are restarted with
+  backoff if the command dies.
+
+#+begin_src lisp
+;; event-driven: refresh when the compositor says a workspace changed
+(defsource :workspaces (system)
+  (start-stream system "niri msg --json event-stream"
+    (lambda () (setf (ref :workspaces) (my-workspaces)))
+    (lambda (line) (search "Workspace" line))))
+
+;; on an interval
+(defpoll :uptime 60 (uptime-string))
+#+end_src
 
 * Persistence
 

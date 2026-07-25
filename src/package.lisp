@@ -308,9 +308,11 @@ Gated by the :world-save editor variable."))
 
 (defpackage #:pine.source
   (:use #:cl)
-  (:export #:start-sources #:stop-sources #:workspaces
-           #:defsource #:defpoll
-           #:select! #:act! #:select-sink!))
+  (:export #:start-sources #:stop-sources #:source-status
+           #:defsource #:defpoll #:start-stream #:start-poll #:ref-of
+           ;; helpers a declared source needs
+           #:sh #:split #:lines #:starts-with #:first-number
+           #:read-int-file #:json))
 
 (defpackage #:pine.style
   (:use #:cl)
@@ -458,7 +460,9 @@ Gated by the :world-save editor variable."))
   (:import-from :pine.ref #:defref #:ref)
   (:import-from :pine.store #:store #:store-push #:store-items #:store-clear)
   (:import-from :pine.world #:register)
-  (:import-from :pine.source #:defsource #:defpoll)
+  (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
+                #:split #:lines #:starts-with #:first-number #:read-int-file
+                #:json)
   (:import-from :pine.command #:call-command #:execute)
   (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode
                 #:dispatch-message #:auto-mode)
@@ -487,6 +491,9 @@ Gated by the :world-save editor variable."))
    #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
    ;; data
    #:defref #:ref #:defpoll #:defsource #:sh #:launch
+   ;; writing a source: the stream/poll primitives and their helpers
+   #:start-stream #:start-poll
+   #:split #:lines #:starts-with #:first-number #:read-int-file #:json
    ;; persistence
    #:store #:store-push #:store-items #:store-clear #:register
    ;; style rules
