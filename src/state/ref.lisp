@@ -69,7 +69,10 @@ safe; subscribers run outside the lock. Returns non-nil if it changed."
     (when changed
       (when (and (ref-persist ref) (ref-name ref))
         (setf (pine.store:store (list :ref (ref-name ref))) new))
-      (dolist (s subs) (ignore-errors (funcall (cdr s)))))
+      ;; one subscriber's failure is its own: the rest still see the change
+      (dolist (s subs)
+        (pine.eval:attempt (cdr s)
+                           (format nil "ref ~a subscriber" (ref-name ref)))))
     changed))
 
 (defun update-ref (ref fn)

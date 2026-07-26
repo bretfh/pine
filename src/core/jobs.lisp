@@ -30,8 +30,9 @@ already installed (the editor's cross-image debugger surfacing) so both fire."
   (let ((prev pine.actor:*agent-debug-hook*))
     (setf pine.actor:*agent-debug-hook*
           (lambda (msg)
-            (when prev (ignore-errors (funcall prev msg)))
-            (ignore-errors (record msg))))))
+            (when prev
+              (pine.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+            (pine.eval:attempt (lambda () (record msg)) "jobs record")))))
 
 (defun list-jobs ()
   "Every live job: the daemon's local evaluations plus every agent's reported

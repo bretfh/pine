@@ -419,6 +419,8 @@ much output arrived, and nothing at all while no terminal is producing any."
   (let ((prev pine.actor:*agent-debug-hook*))
     (setf pine.actor:*agent-debug-hook*
           (lambda (msg)
-            (when prev (ignore-errors (funcall prev msg)))
-            (ignore-errors (%agent-debug-surface msg)))))
+            (when prev
+              (pine.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+            (pine.eval:attempt (lambda () (%agent-debug-surface msg))
+                               "agent debug surface"))))
   nil)

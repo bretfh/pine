@@ -6,7 +6,8 @@
            #:evaluate #:evaluate-string #:evaluate-thunk
            #:list-evaluations #:find-evaluation
            #:pick-restart #:abort-evaluation #:*on-debug*
-           #:with-debugger #:call-with-debugger #:make-error-evaluation))
+           #:with-debugger #:call-with-debugger #:make-error-evaluation
+           #:attempt #:report-failure))
 
 (in-package #:pine.eval)
 
@@ -48,6 +49,48 @@ agent) may start an evaluation concurrently.")
   (lock (bordeaux-threads:make-lock))
   (cvar (bordeaux-threads:make-condition-variable))
   (chosen nil))
+
+;;;; Failures on the paths that cannot stop to ask.
+;;;;
+;;;; The debugger below runs an evaluation in its own thread and waits for a
+;;;; restart to be chosen. A ref notify, a surface build or a broadcast to
+;;;; every attached app cannot wait for that, and must not vanish either. So
+;;;; the condition becomes a value the caller decides about, and is recorded
+;;;; where the debug surface shows it.
+
+(defun report-failure (condition context)
+  "Record CONDITION as a failed evaluation named by CONTEXT, and show it.
+
+Returns the evaluation. Nothing blocks: there are no restarts to choose from
+by the time this is called, so the surface only has to display it."
+  (let ((ev (%make-evaluation :form context :status :error
+                              :condition (handler-case (princ-to-string condition)
+                                           (error () "<unprintable condition>"))
+                              :condition-type (string (type-of condition))
+                              :backtrace (%capture-backtrace))))
+    (bordeaux-threads:with-lock-held (*registry-lock*)
+      (push ev *evaluations*))
+    (let ((surface *on-debug*))
+      (if surface
+          (handler-case (funcall surface ev)
+            (error (c)
+              (format *error-output* "pine: the error surface failed on ~a: ~a~%"
+                      context c)
+              (finish-output *error-output*)))
+          (progn
+            (format *error-output* "pine: ~a: ~a~%" context condition)
+            (finish-output *error-output*))))
+    ev))
+
+(defun attempt (thunk context)
+  "Run THUNK. Returns (values result nil), or (values nil condition) when it
+fails, having reported it under CONTEXT.
+
+For the callbacks pine invokes on behalf of something else -- a configuration's
+builder, a subscriber, a source -- where the failure belongs to that thing and
+the caller still has work to finish."
+  (handler-case (values (funcall thunk) nil)
+    (error (c) (values nil (report-failure c context)))))
 
 (defun list-evaluations ()
   (bordeaux-threads:with-lock-held (*registry-lock*) (copy-list *evaluations*)))
@@ -164,9 +207,10 @@ call-with-debugger)."
       (when (evaluation-on-done ev)
         ;; under the same bindings as the eval, so a callback that reaches
         ;; for *client* (echo + repaint) works the moment the eval finishes
-        (ignore-errors
-         (progv (mapcar #'car bindings) (mapcar #'cdr bindings)
-           (funcall (evaluation-on-done ev) ev)))))))
+        (attempt (lambda ()
+                   (progv (mapcar #'car bindings) (mapcar #'cdr bindings)
+                     (funcall (evaluation-on-done ev) ev)))
+                 "evaluation completion")))))
 
 (defun evaluate (form &key thunk (package *package*) bindings on-done on-error)
   "Evaluate FORM (or call THUNK) on a fresh thread. Returns the EVALUATION

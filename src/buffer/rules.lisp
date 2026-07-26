@@ -41,7 +41,8 @@ from the daemon here."
 so the pixel painters in the frontend images restyle too. Reload-safe."
   (install-rules rules)
   (dolist (c pine.attach:*clients*)
-    (ignore-errors (pine.attach:push-to-app c :rules :rules *user-rules*)))
+    (pine.eval:attempt (lambda () (pine.attach:push-to-app c :rules :rules *user-rules*))
+                       "rules broadcast"))
   *user-rules*)
 
 (defun css-color (role) (color role))

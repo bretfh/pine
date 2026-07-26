@@ -96,3 +96,41 @@ asked, so the loop can be watched without a display."))
       (pine.frontend:close-pump pump)
       (is-true ran "one bad thunk must not strand the others")
       (is (search "probe" report) "and it must say so"))))
+
+;;;; Failures on the callback paths. The rule is that a broken callback is
+;;;; reported and returned, never swallowed: a surface that fails to build
+;;;; must not look like a surface that had nothing to draw.
+
+(test attempt-returns-the-condition-as-a-value
+  (multiple-value-bind (result failure)
+      (let ((*error-output* (make-broadcast-stream)))
+        (pine.eval:attempt (lambda () (error "probe")) "probe context"))
+    (is (null result))
+    (is (typep failure 'pine.eval:evaluation)
+        "the failure comes back as something the caller can inspect")
+    (is (eq :error (pine.eval:evaluation-status failure)))
+    (is (search "probe" (pine.eval:evaluation-condition failure)))
+    (is (equal "probe context" (pine.eval:evaluation-form failure))
+        "named by where it happened, not by the condition alone")))
+
+(test attempt-passes-the-value-through-when-it-works
+  (multiple-value-bind (result failure)
+      (pine.eval:attempt (lambda () :fine) "probe context")
+    (is (eq :fine result))
+    (is (null failure))))
+
+(test a-failure-reaches-the-debug-surface
+  (let ((seen nil))
+    (let ((pine.eval:*on-debug* (lambda (ev) (push ev seen))))
+      (pine.eval:attempt (lambda () (error "probe")) "probe context"))
+    (is (= 1 (length seen)) "the editor's debugger is told, once")
+    (is (search "probe" (pine.eval:evaluation-condition (first seen))))))
+
+(test a-broken-ref-subscriber-does-not-stop-the-others
+  (let* ((ref (pine.ref:make-ref :name :probe-ref :value 0))
+         (ran nil))
+    (pine.ref:ref-subscribe ref (lambda () (error "probe")))
+    (pine.ref:ref-subscribe ref (lambda () (setf ran t)))
+    (let ((*error-output* (make-broadcast-stream)))
+      (pine.ref:set-ref ref 1))
+    (is-true ran "the second subscriber still sees the change")))

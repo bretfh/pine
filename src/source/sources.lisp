@@ -176,13 +176,16 @@ alongside the other agents. A source is the desktop's data adapter."
     (let ((system (pine.server:actor-system server)))
       (setf *running*
             (loop for name being the hash-keys of *source-defs* using (hash-value starter)
-                  for s = (ignore-errors (funcall starter system))
+                  for s = (pine.eval:attempt (lambda () (funcall starter system))
+                                       (format nil "source ~a" name))
                   when s
                     do (setf (source-name s) name)
-                       (ignore-errors
-                        (pine.actor:register-agent
-                         server (format nil "source:~(~a~)" name)
-                         :source (source-actor s) :meta (list :ref name)))
+                       (pine.eval:attempt
+                        (lambda ()
+                          (pine.actor:register-agent
+                           server (format nil "source:~(~a~)" name)
+                           :source (source-actor s) :meta (list :ref name)))
+                        (format nil "registering source ~a" name))
                     and collect s)))))
 
 (defun stop-sources ()

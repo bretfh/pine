@@ -56,7 +56,9 @@ old ones), and push it to the app."
   (let (view)
     (setf view (pine.ref:make-view
                 (lambda () (push-surface aclient name))
-                (lambda () (ignore-errors (pine.ref:render-view view)))))
+                (lambda ()
+                  (pine.eval:attempt (lambda () (pine.ref:render-view view))
+                                     (format nil "surface ~a" name)))))
     view))
 
 (defun make-desktop-session (aclient)

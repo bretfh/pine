@@ -167,7 +167,9 @@ its restart list here, by name, and the helm drives the choice back."
   (sento.actor-context:actor-of (pine.server:actor-system server)
     :name "agent-debug"
     :receive (lambda (msg)
-               (when *agent-debug-hook* (ignore-errors (funcall *agent-debug-hook* msg)))
+               (when *agent-debug-hook*
+                 (pine.eval:attempt (lambda () (funcall *agent-debug-hook* msg))
+                                    "agent debug relay"))
                nil)))
 
 (defun spawn-agent (server name)
