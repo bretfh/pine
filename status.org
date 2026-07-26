@@ -150,9 +150,9 @@ Each attached :editor app gets a session: a pine client + a scratch buffer
   Highlights come back offset to buffer lines. The ts-actor lives in render.lisp.
 
 The editor commands, minibuffer routing, completion, and eval all run in this
-session with *client* bound. install-editor-sessions replicates what start-editor
-would set globally (*minibuffer-handler* etc.) -- the daemon does not call
-start-editor.
+session with *client* bound. src/editor/session.lisp sets the hooks at load
+time (*terminal-handler*, *on-debug*, *agent-debug-hook*) -- the daemon does
+not call start-editor.
 
 * The daemon-side desktop (desktop/desktop.lisp)
 
