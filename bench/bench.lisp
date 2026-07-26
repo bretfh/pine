@@ -139,6 +139,91 @@
                                 (pine.layout:render tree 80)))) rows)
       (print-table "widget view build (per push / per frame)" (nreverse rows)))))
 
+;;;; The push path: what a frame costs to put on the wire. The other groups
+;;;; measure functions; this one measures a message, because the size of what
+;;;; crosses is the thing that was never looked at.
+
+(defun %row (cols runs)
+  "One wire row: COLS characters of text, RUNS face runs, as frame->rows emits."
+  (cons (make-string cols :initial-element #\a)
+        (loop :for i :below runs
+              :collect (list (* i (max 1 (floor cols (max 1 runs))))
+                             200 200 200 30 30 40 0))))
+
+(defun %editor-wire (cols rows runs)
+  "The wire form of an editor tree of ROWS lines at COLS columns, each line
+carrying RUNS face runs."
+  (pine.layout:node->wire
+   (pine.layout:column
+    (pine.layout:window (loop :repeat rows :collect (%row cols runs)) :kind :window)
+    (pine.layout:window (list (%row cols 1)) :kind :echo)
+    (pine.layout:window (list (%row cols 2)) :kind :modeline))))
+
+(defun %frame-bytes (wire)
+  "(values PAYLOAD FRAME) bytes: the serialized message, and the envelope the
+transport actually writes, which re-encodes those bytes as decimal text."
+  (let* ((payload (flexi-streams:string-to-octets
+                   (write-to-string wire :readably t) :external-format :utf-8))
+         (frame (flexi-streams:string-to-octets
+                 (write-to-string (list :target-path "/user/display" :sender-path nil
+                                        :message (coerce payload 'list)
+                                        :message-type :tell :correlation-id nil)
+                                  :readably t)
+                 :external-format :utf-8)))
+    (values (length payload) (length frame))))
+
+(defun print-sizes (title entries)
+  (format t "~&~%#+CAPTION: ~a~%" title)
+  (format t "| push | payload B | frame B | x | ceiling |~%")
+  (format t "|-~%")
+  (dolist (e entries)
+    (destructuring-bind (label payload frame) e
+      (format t "| ~a | ~:d | ~:d | ~,1f | ~,1f% |~%"
+              label payload frame (/ frame (max 1 payload))
+              (* 100d0 (/ frame 2097152d0)))))
+  (finish-output))
+
+(defun bench-push ()
+  (let ((pine.server:*server* (make-instance 'pine.server:server)))
+    (ignore-errors (pine.buffer:install-default-faces))
+    (let ((shapes (list (list "bar (the tree benched above)" (pine.layout:node->wire (sample-tree)))
+                        (list "editor 88x25, plain" (%editor-wire 88 25 1))
+                        (list "editor 88x25, highlighted" (%editor-wire 88 25 15))
+                        (list "editor 284x78, plain" (%editor-wire 284 78 1))
+                        (list "editor 284x78, highlighted" (%editor-wire 284 78 40))))
+          sizes rows)
+      (dolist (s shapes)
+        (multiple-value-bind (payload frame) (%frame-bytes (second s))
+          (push (list (first s) payload frame) sizes)))
+      (print-sizes "one push on the wire (2 MB frame cap)" (nreverse sizes))
+      (let ((wire (%editor-wire 88 25 15)))
+        (push (%safe (lambda () (defbench "node->wire (editor 88x25 highlighted)"
+                                  (%editor-wire 88 25 15)))) rows)
+        (push (%safe (lambda ()
+                       (let ((payload (flexi-streams:string-to-octets
+                                       (write-to-string wire :readably t)
+                                       :external-format :utf-8)))
+                         (defbench "envelope encode (the transport's second pass)"
+                           (write-to-string
+                            (list :target-path "/user/display" :sender-path nil
+                                  :message (coerce payload 'list)
+                                  :message-type :tell :correlation-id nil)
+                            :readably t))))) rows)
+        (push (%safe (lambda ()
+                       (let* ((payload (flexi-streams:string-to-octets
+                                        (write-to-string wire :readably t)
+                                        :external-format :utf-8))
+                              (frame (write-to-string
+                                      (list :target-path "/user/display" :sender-path nil
+                                            :message (coerce payload 'list)
+                                            :message-type :tell :correlation-id nil)
+                                      :readably t)))
+                         (defbench "envelope decode (parse the bytes back)"
+                           (read-from-string frame))))) rows)
+        (push (%safe (lambda () (defbench "wire->node (editor 88x25 highlighted)"
+                                  (pine.layout:wire->node wire)))) rows))
+      (print-table "the push path, per frame" (nreverse rows)))))
+
 (defun bench-ts ()
   (handler-case
       (let* ((rt (pine.ts:make-ts-runtime)) rows)
@@ -254,7 +339,7 @@ home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
 (defun run-all ()
   (machine-header)
   (dolist (g (list #'bench-buffer #'bench-load-content #'bench-vt
-                   #'bench-widget #'bench-ts #'bench-eval
+                   #'bench-widget #'bench-push #'bench-ts #'bench-eval
                    #'bench-paint #'bench-agent))
     (handler-case (funcall g)
       (error (e) (format t "~&(group ~a failed: ~a)~%" g e))))
