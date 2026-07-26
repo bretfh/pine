@@ -41,6 +41,46 @@ carry over like :replace-content; point is clamped into the new content."
              (pl (min (pine.text.buffer:point-line snap) (max 0 (1- (length texts))))))
         (pine.text.buffer:move-mark new :point pl 0)))))
 
+(defun apply-indent-targets (state undo subs hl link targets)
+  "Reindent each (LINE . COLUMN) of TARGETS, commit and repaint.
+
+Point rides its character: anchored as an offset past its line's first
+non-whitespace, which also lands it on the first non-whitespace when it sat
+inside the old indentation. Shared by the treeless path, which computes targets
+itself, and by the parser's :indent-region answer."
+  (let* ((snap (pine.text.buffer:state->snapshot state))
+         (pl (pine.text.buffer:point-line snap))
+         (pc (pine.text.buffer:point-col snap))
+         (p-firstnw (pine.text.buffer:line-indent-width
+                     (fset:@ (pine.text.buffer:lines state) pl)))
+         (p-tail (max 0 (- pc p-firstnw)))
+         (st state)
+         (changed nil)
+         (bytes 0)
+         (lo most-positive-fixnum)
+         (hi 0))
+    (loop :for (line . target) :in targets
+          :for cur = (pine.text.buffer:line-indent-width
+                      (fset:@ (pine.text.buffer:lines st) line))
+          :do (when (/= target cur)
+                (setf st (nth-value 0 (pine.text.buffer:reindent-line st line cur target pc))
+                      changed t
+                      lo (min lo line)
+                      hi (max hi line))
+                (incf bytes (- target cur))))
+    (if (not changed)
+        (setf sento.actor:*state* (list state undo nil subs hl link))
+        (let* ((new-indent (pine.text.buffer:line-indent-width
+                            (fset:@ (pine.text.buffer:lines st) pl)))
+               (final (pine.text.buffer:set-meta
+                       (pine.text.buffer:move-mark st :point pl (+ new-indent p-tail))
+                       :overlays nil))
+               (span (1+ (- hi lo))))
+          (setf sento.actor:*state* (list final (cons state undo) nil subs hl link))
+          (pine.text.buffer:notify-subscribers subs final hl)
+          (pine.text.buffer:request-parse link final
+                                          :extra (list :edit (list lo span span bytes)))))))
+
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:base-mode) self tag plist)
   (declare (ignore self))
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
@@ -48,6 +88,9 @@ carry over like :replace-content; point is clamped into the new content."
       (:get-state (sento.actor:reply state))
       (:get-snapshot (sento.actor:reply (pine.text.buffer:state->snapshot state)))
       (:get-text (sento.actor:reply (pine.text.buffer:state->string state)))
+      ;; the face runs the buffer currently holds. A snapshot carries them only
+      ;; when one is built for a subscriber, so this is how anything else asks.
+      (:get-highlights (sento.actor:reply hl))
       (:get-local
        (sento.actor:reply
         (pine.text.buffer:buffer-local state (getf plist :key) (getf plist :default))))
@@ -59,6 +102,25 @@ carry over like :replace-content; point is clamped into the new content."
       (:unsubscribe
        (let ((r (getf plist :renderer)))
          (setf sento.actor:*state* (list state undo redo (remove r subs :test #'eq) hl pstate))))
+      ;; The parser's answers. Both carry the tick they were computed for and are
+      ;; dropped when the buffer has moved on, because a late answer describes
+      ;; text that no longer exists.
+      (:highlights
+       (let ((new-hl (getf plist :hl))
+             (link pstate))
+         (when link
+           (setf (pine.ts.parser::parse-link-inflight link) nil))
+         (when (eql (getf plist :tick) (pine.text.buffer:tick state))
+           (setf sento.actor:*state* (list state undo redo subs new-hl link))
+           ;; a repaint only earns itself when the colours actually moved
+           (unless (equal new-hl hl)
+             (pine.text.buffer:notify-subscribers subs state new-hl)))
+         ;; edits landed while that parse was out: send the newest lines now
+         (when (and link (pine.ts.parser:link-dirty link))
+           (pine.text.buffer:request-parse link (first sento.actor:*state*)))))
+      (:indent-region
+       (when (eql (getf plist :tick) (pine.text.buffer:tick state))
+         (apply-indent-targets state undo subs hl pstate (getf plist :targets))))
       ;; explicit highlights for tool buffers (debugger, help): the buffer's
       ;; face runs are handed in as data instead of computed from a parse tree
       (:set-highlights
@@ -83,37 +145,51 @@ carry over like :replace-content; point is clamped into the new content."
            (pine.text.buffer:notify-subscribers subs new hl))))
       ;; structural motion off the persistent tree; no reparse, no whole-buffer
       ;; string, computed from the buffer's own point.
+      ;; the parser answers with :move-point, so a structural jump in a large
+      ;; buffer waits on nothing here
       (:ts-motion
-       (when pstate
-         (let ((snap (pine.text.buffer:state->snapshot state)))
-           (multiple-value-bind (l c)
-               (pine.ts.runtime:parse-motion pstate (getf plist :kind)
-                                     (pine.text.buffer:point-line snap)
-                                     (pine.text.buffer:point-col snap))
-             (when l
-               (let ((new (pine.text.buffer:move-mark state :point l c)))
-                 (setf sento.actor:*state* (list new undo redo subs hl pstate))
-                 (pine.text.buffer:notify-subscribers subs new hl)))))))
+       (let ((link (pine.text.buffer:ensure-parser
+                    state pstate (pine.text.buffer:buffer-local state :name "")))
+             (snap (pine.text.buffer:state->snapshot state)))
+         (when link
+           (setf sento.actor:*state* (list state undo redo subs hl link))
+           (pine.text.buffer:request-parse
+            link state :verb :motion
+            :extra (list :kind (getf plist :kind)
+                         :line (pine.text.buffer:point-line snap)
+                         :col (pine.text.buffer:point-col snap))))))
+      ;; the buffer's parser, so KILL-BUFFER can stop it with the buffer
+      (:get-parser
+       (sento.actor:reply (and pstate (pine.ts.parser:link-actor pstate))))
+      ;; Undo and redo swap whole states, so there is no edit to describe: the
+      ;; parser rebuilds. It does that on its own thread like any other parse,
+      ;; and the old highlights stay on screen until it answers.
       (:undo
        (when undo
-         (let ((prev (first undo)))
-           (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate prev)
-             (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl2 ps2))
-             (pine.text.buffer:notify-subscribers subs prev hl2)))))
+         (let ((prev (first undo))
+               (link (pine.text.buffer:ensure-parser
+                      state pstate (pine.text.buffer:buffer-local state :name ""))))
+           (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl link))
+           (pine.text.buffer:notify-subscribers subs prev hl)
+           (pine.text.buffer:request-parse link prev))))
       (:redo
        (when redo
-         (let ((next (first redo)))
-           (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate next)
-             (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl2 ps2))
-             (pine.text.buffer:notify-subscribers subs next hl2)))))
+         (let ((next (first redo))
+               (link (pine.text.buffer:ensure-parser
+                      state pstate (pine.text.buffer:buffer-local state :name ""))))
+           (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl link))
+           (pine.text.buffer:notify-subscribers subs next hl)
+           (pine.text.buffer:request-parse link next))))
       ((:set-local :set-meta)
        (let ((new (pine.text.buffer:set-meta state (getf plist :key) (getf plist :value))))
          ;; a mode change (re)builds the parse-state and highlights immediately,
          ;; so opening a file or setting lisp-mode colours it at once.
          (if (eq (getf plist :key) :mode)
-             (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate new)
-               (setf sento.actor:*state* (list new undo redo subs hl2 ps2))
-               (pine.text.buffer:notify-subscribers subs new hl2))
+             (let ((link (pine.text.buffer:ensure-parser
+                          new nil (pine.text.buffer:buffer-local new :name ""))))
+               (setf sento.actor:*state* (list new undo redo subs hl link))
+               (pine.text.buffer:notify-subscribers subs new hl)
+               (pine.text.buffer:request-parse link new))
              (progn
                (setf sento.actor:*state* (list new undo redo subs hl pstate))
                (pine.text.buffer:notify-subscribers subs new hl)))))
@@ -126,10 +202,11 @@ carry over like :replace-content; point is clamped into the new content."
        (let ((new-range (cons (getf plist :from) (getf plist :to)))
              (old-range (pine.text.buffer:buffer-local state :viewport)))
          (unless (equal new-range old-range)
+           ;; scrolling asks for the new window's colours; what is on screen
+           ;; stays until they arrive
            (let ((new (pine.text.buffer:set-meta state :viewport new-range)))
-             (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate new)
-               (setf sento.actor:*state* (list new undo redo subs hl2 ps2))
-               (pine.text.buffer:notify-subscribers subs new hl2))))))
+             (setf sento.actor:*state* (list new undo redo subs hl pstate))
+             (pine.text.buffer:request-parse pstate new)))))
       (:set-var
        (let* ((vars (or (fset:@ (pine.text.buffer:meta state) :vars) (fset:empty-map)))
               (new (pine.text.buffer:set-meta
@@ -183,104 +260,135 @@ carry over like :replace-content; point is clamped into the new content."
                                (if present (pine.text.buffer:set-meta st key val) st)))
                            '(:name :mode :pathname :vars)
                            :initial-value (pine.text.buffer:load-content (getf plist :content)))))
-         (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate new)
-           (setf sento.actor:*state* (list new nil nil subs hl2 ps2))
-           (pine.text.buffer:notify-subscribers subs new hl2)))))))
+         ;; new content shares nothing with the old, so the tree is rebuilt; the
+         ;; buffer shows the text immediately and takes its colours when they come
+         (let ((link (pine.text.buffer:ensure-parser
+                      new pstate (pine.text.buffer:buffer-local new :name ""))))
+           (setf sento.actor:*state* (list new nil nil subs nil link))
+           (pine.text.buffer:notify-subscribers subs new nil)
+           (pine.text.buffer:request-parse link new))))
+      ;; The end of the mode chain. A verb nobody claimed is a caller's mistake,
+      ;; and dropping it silently is how a wrong message looks exactly like a
+      ;; message that did nothing. A mode that means to ignore a verb says so,
+      ;; the way terminal-mode lists the edits it has no use for.
+      (t (error "Buffer ~a has no handler for ~s~@[ ~s~]."
+                (pine.text.buffer:buffer-local state :name "?") tag plist)))))
 
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:text-mode) self tag plist)
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
     ;; edits push the old state onto UNDO, clear REDO, and reparse the tree
     ;; incrementally so the notified snapshot already carries fresh highlights.
-    (macrolet ((commit (new-state)
-                 `(let ((new (pine.text.buffer:set-meta ,new-state :overlays nil)))
-                    (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate new)
-                      (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 ps2))
-                      (pine.text.buffer:notify-subscribers subs new hl2)))))
+    ;; An edit commits and paints at once; the parse happens on the parser's own
+    ;; thread and its highlights arrive later as a message. EDIT is
+    ;; (line old-lines new-lines byte-delta), which the parser needs to shift its
+    ;; tree instead of rebuilding it; LINE and DELTA carry the same change to the
+    ;; highlights already on screen so the lines below an inserted one do not
+    ;; briefly wear the colours of their old neighbours.
+    (macrolet ((commit (new-state &key edit)
+                 `(let* ((new (pine.text.buffer:set-meta ,new-state :overlays nil))
+                         (descriptor ,edit)
+                         (hl2 (if descriptor
+                                  (pine.text.buffer:shift-highlights
+                                   hl (first descriptor)
+                                   (- (third descriptor) (second descriptor)))
+                                  hl))
+                         (link (pine.text.buffer:ensure-parser
+                                new pstate (pine.text.buffer:buffer-local new :name ""))))
+                    (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 link))
+                    (pine.text.buffer:notify-subscribers subs new hl2)
+                    (pine.text.buffer:request-parse
+                     link new :extra (list :edit descriptor)))))
       (case tag
         (:insert
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))
-                (c (pine.text.buffer:point-col snap)))
-           (commit (pine.text.buffer:insert-string state l c (getf plist :text)))))
+                (c (pine.text.buffer:point-col snap))
+                (text (getf plist :text)))
+           (commit (pine.text.buffer:insert-string state l c text)
+                   ;; pasted text carries its own newlines, so one line can
+                   ;; become several
+                   :edit (list l 1 (1+ (count #\Newline text))
+                               (pine.ts.index:string-bytes text)))))
+        ;; The newline lands now and the electric indent follows as a message:
+        ;; the line appears the moment it is typed however long the parse takes,
+        ;; and the parser answers with :indent-region when it knows the column.
         (:newline
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))
-                (c (pine.text.buffer:point-col snap))
-                (s1 (pine.text.buffer:insert-newline state l c)))
-           (if pstate
-               ;; electric: reparse so the new empty line exists in the tree,
-               ;; then indent it to the language's target column
-               (multiple-value-bind (hl1 ps1) (pine.text.buffer:refresh-highlights pstate s1)
-                 (declare (ignore hl1))
-                 (let* ((target (or (and ps1 (pine.ts.highlight:parse-indent ps1 (1+ l))) 0))
-                        (s2 (if (plusp target)
-                                (pine.text.buffer:insert-string
-                                 s1 (1+ l) 0 (make-string target :initial-element #\Space))
-                                s1))
-                        (final (pine.text.buffer:set-meta
-                                (pine.text.buffer:move-mark s2 :point (1+ l) target)
-                                :overlays nil)))
-                   (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights ps1 final)
-                     (setf sento.actor:*state* (list final (cons state undo) nil subs hl2 ps2))
-                     (pine.text.buffer:notify-subscribers subs final hl2))))
-               (commit s1))))
+                (c (pine.text.buffer:point-col snap)))
+           (commit (pine.text.buffer:move-mark
+                    (pine.text.buffer:insert-newline state l c) :point (1+ l) 0)
+                   :edit (list l 1 2 1))
+           (destructuring-bind (new undo2 redo2 subs2 hl2 link)
+               sento.actor:*state*
+             (declare (ignore undo2 redo2 subs2 hl2))
+             (pine.text.buffer:request-parse link new :verb :indent
+                                             :extra (list :from (1+ l) :to (1+ l))))))
         ;; Reindent lines [:from .. :to] (default: the point line). Each line is
         ;; reindented from the parse tree and the tree reparsed before the next,
         ;; so column alignment sees the shifted text. Point rides its character:
         ;; anchored as offset past its line's first non-whitespace, which also
         ;; lands point on the first non-ws when it sat in the old indentation.
         ;; This one primitive serves Tab, indent-region, and format-buffer.
+        ;; A treeless buffer indents from its previous line, here and now. A
+        ;; buffer with a tree asks its parser for every target in the region at
+        ;; once and applies them when :indent-region comes back, so Tab on a
+        ;; thousand lines costs one parse instead of one per line.
         (:indent-lines
          (let* ((snap0 (pine.text.buffer:state->snapshot state))
                 (nlines (pine.text.buffer:line-count snap0))
                 (from (max 0 (or (getf plist :from) (pine.text.buffer:point-line snap0))))
-                (to   (min (or (getf plist :to) (pine.text.buffer:point-line snap0)) (1- nlines)))
-                (pl   (pine.text.buffer:point-line snap0))
-                (pc   (pine.text.buffer:point-col snap0))
-                (p-firstnw (pine.text.buffer:line-indent-width (fset:@ (pine.text.buffer:lines state) pl)))
-                (p-tail (max 0 (- pc p-firstnw)))
-                (st state) (ps pstate) (changed nil))
-           (loop for l from from to to do
-             (let* ((cur (pine.text.buffer:line-indent-width (fset:@ (pine.text.buffer:lines st) l)))
-                    ;; with a tree, parse-indent is authoritative -- nil means
-                    ;; "leave this line" (inside a multiline string), not "fall
-                    ;; back". Only a treeless (plain-text) buffer uses the
-                    ;; previous-line fallback.
-                    (target (if ps
-                                (pine.ts.highlight:parse-indent ps l)
-                                (pine.text.buffer:previous-line-indent st l))))
-               (when (and target (/= target cur))
-                 (setf st (nth-value 0 (pine.text.buffer:reindent-line st l cur target pc))
-                       changed t)
-                 (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights ps st)
-                   (declare (ignore hl2))
-                   (setf ps ps2)))))
-           (let* ((new-indent (pine.text.buffer:line-indent-width (fset:@ (pine.text.buffer:lines st) pl)))
-                  (final (pine.text.buffer:set-meta
-                          (pine.text.buffer:move-mark st :point pl (+ new-indent p-tail))
-                          :overlays nil)))
-             (multiple-value-bind (hl3 ps3) (pine.text.buffer:refresh-highlights ps final)
-               (setf sento.actor:*state*
-                     (list final (if changed (cons state undo) undo) (if changed nil redo)
-                           subs hl3 ps3))
-               (pine.text.buffer:notify-subscribers subs final hl3)))))
+                (to   (min (or (getf plist :to) (pine.text.buffer:point-line snap0))
+                           (1- nlines)))
+                (link (pine.text.buffer:ensure-parser
+                       state pstate (pine.text.buffer:buffer-local state :name ""))))
+           (if link
+               (progn
+                 (setf sento.actor:*state* (list state undo redo subs hl link))
+                 (pine.text.buffer:request-parse link state :verb :indent
+                                                 :extra (list :from from :to to)))
+               (apply-indent-targets
+                state undo subs hl link
+                (loop :for l :from from :to to
+                      :for target = (pine.text.buffer:previous-line-indent state l)
+                      :when target :collect (cons l target))))))
         (:backspace
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))
                 (c (pine.text.buffer:point-col snap)))
            (cond
              ((plusp c)
-              (commit (pine.text.buffer:move-mark
-                       (pine.text.buffer:delete-char state l (1- c)) :point l (1- c))))
+              (let* ((line (fset:@ (pine.text.buffer:lines state) l))
+                     (gone (pine.ts.index:string-bytes (string (char line (1- c))))))
+                (commit (pine.text.buffer:move-mark
+                         (pine.text.buffer:delete-char state l (1- c)) :point l (1- c))
+                        :edit (list l 1 1 (- gone)))))
              ((plusp l)
+              ;; joining two lines: the pair becomes one and the newline goes
               (let ((prev-len (length (fset:@ (pine.text.buffer:lines state) (1- l)))))
                 (commit (pine.text.buffer:move-mark
                          (pine.text.buffer:delete-char state (1- l) prev-len)
-                         :point (1- l) prev-len)))))))
+                         :point (1- l) prev-len)
+                        :edit (list (1- l) 2 1 -1)))))))
         (:delete-region
-         (commit (pine.text.buffer:delete-region state
-                                            (getf plist :start-line) (getf plist :start-col)
-                                            (getf plist :end-line) (getf plist :end-col))))
+         ;; a region command can name an end past the buffer (the text shrank
+         ;; under it), and delete-region clamps. The descriptor is measured
+         ;; against the same clamped bounds, so it describes what was removed
+         ;; rather than what was asked for.
+         (let* ((lines (pine.text.buffer:lines state))
+                (last (1- (pine.text.buffer:line-count-of state)))
+                (sl (max 0 (min (getf plist :start-line) last)))
+                (el (max 0 (min (getf plist :end-line) last)))
+                (sc (max 0 (min (getf plist :start-col) (length (fset:@ lines sl)))))
+                (ec (max 0 (min (getf plist :end-col) (length (fset:@ lines el)))))
+                (removed (pine.ts.index:string-bytes
+                          (pine.text.buffer:region-string state sl sc el ec))))
+           (commit (pine.text.buffer:delete-region state
+                                                   (getf plist :start-line)
+                                                   (getf plist :start-col)
+                                                   (getf plist :end-line)
+                                                   (getf plist :end-col))
+                   :edit (list sl (1+ (- el sl)) 1 (- removed)))))
         (:append-with-prompt
          (let* ((text (getf plist :text)) (pr (getf plist :prompt))
                 (snap (pine.text.buffer:state->snapshot state))

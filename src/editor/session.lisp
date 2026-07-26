@@ -37,11 +37,6 @@ nodes and the editor frontend derive their cell grid from, so a buffer laid out
 at N cols x rows lands exactly in the frontend's cells."
   (pine.ui.face:metric :font-px 15))
 
-(defun %in-actor-p ()
-  "True on a thread inside an actor's receive, where a blocking ask is
-forbidden (the liveness contract)."
-  (and (boundp 'sento.actor:*self*) sento.actor:*self*))
-
 (defun %resolve-buffer (x)
   "Coerce X to a buffer actor: an actor passes through; a name string resolves
 through the client when one is in scope (creating the buffer if missing), else
@@ -74,7 +69,7 @@ fetches one only off-actor, so seeding never blocks a receive."
   (let ((w (if pine.editor.frame:*client*
                (pine.editor.frame:make-window buf name)
                (make-instance 'pine.text.window:window :buffer buf :name name))))
-    (unless (or pine.editor.frame:*client* (%in-actor-p))
+    (unless (or pine.editor.frame:*client* (pine.core.actor:in-actor-p))
       (setf (pine.text.window:snap w) (ignore-errors (pine.editor.ask:ask buf :snapshot))))
     w))
 
@@ -318,7 +313,7 @@ shutdown sweep can save it."
          (buf (and srv (pine.core.server:buffer-table srv)
                    (gethash "scratch" (pine.core.server:buffer-table srv))))
          (text (and buf (ignore-errors
-                         (sento.actor:ask-s buf '(:get-text) :time-out 2)))))
+                         (pine.core.actor:ask buf '(:get-text) :timeout 2)))))
     (and (stringp text) (plusp (length text)) text)))
 
 (pine.state.world:register :scratch
@@ -411,7 +406,11 @@ much output arrived, and nothing at all while no terminal is producing any."
        ;; the frontend is holding a frame this session cannot patch onto;
        ;; forget what was sent so the next push carries the whole tree
        (setf (sess-sent-wire s) nil)
-       (sento.actor:tell (pine.editor.frame:renderer client) '(:force-render))))))
+       (sento.actor:tell (pine.editor.frame:renderer client) '(:force-render)))
+      ;; An input message this daemon does not know is two images disagreeing
+      ;; about the protocol, which is worth hearing about the first time rather
+      ;; than as a feature that quietly does nothing.
+      (t (error "This daemon has no handler for the input message ~s." msg)))))
 
 (defun session-loop (s)
   (let ((pine.editor.frame:*client* (sess-client s)))
@@ -447,7 +446,8 @@ much output arrived, and nothing at all while no terminal is producing any."
 (pine.core.attach:register-app (make-instance 'editor-app))
 
 (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch
-      pine.core.eval:*on-debug*            #'pine.editor.debugger:eval-error)
+      pine.core.eval:*on-debug*            #'pine.editor.debugger:eval-error
+      pine.core.eval:*attended-p*          #'pine.editor.debugger:attended-eval-p)
 
 (let ((prev pine.core.actor:*agent-debug-hook*))
   (setf pine.core.actor:*agent-debug-hook*

@@ -23,7 +23,8 @@
     (pine.ui.render:start-renderer client)
     (pine.editor.minibuffer:ensure-minibuffer client)
     (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
-    (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error)
+    (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error
+          pine.core.eval:*attended-p* #'pine.editor.debugger:attended-eval-p)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -161,7 +162,7 @@
         ;; and save's :get-state queues behind it in the actor mailbox, so the
         ;; write sees the formatted text
         (when (and buf (pine.state.var:var :format-on-save buf))
-          (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
+          (let ((snap (pine.core.actor:ask buf '(:get-snapshot) :timeout 5)))
             (pine.editor.ask:tell buf :indent-lines
                               :from 0 :to (1- (pine.text.buffer:line-count snap)))))
         (pine.editor.file:save-current-buffer))
@@ -191,7 +192,7 @@
     (lambda (text)
       (let ((pkg (let ((buf (pine.editor.motion:cur-buffer)))
                    (if buf
-                       (pine.editor.motion:buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
+                       (pine.editor.motion:buffer-package (pine.core.actor:ask buf '(:get-state) :timeout 5))
                        (find-package :cl-user)))))
         (pine.editor.evaluate:eval-form-string text pkg)))
     :history :eval))
@@ -248,14 +249,13 @@
     (lambda (name)
       (let ((buf (pine.editor.frame:make-buffer name))) (pine.ui.render:subscribe-to-buffer buf)))))
 (defcmd "open-repl" ()
-  (handler-case
-      (let* ((client (pine.editor.frame:current-client))
-             (buf (or (pine.editor.frame:repl-buffer client) (pine.editor.repl:start-repl))))
-        (pine.editor.frame:switch-buffer "*repl*")
-        (pine.ui.render:subscribe-to-buffer buf)
-        (sento.actor:tell (pine.editor.frame:renderer client)
-                          (list :switch-buffer :buffer buf :name "*repl*")))
-    (error (c) (pine.editor.echo:message (format nil "error: ~a" c)))))
+  (let* ((client (pine.editor.frame:current-client))
+         (name pine.editor.repl:+buffer-name+)
+         (buf (or (pine.editor.repl:repl-buffer) (pine.editor.repl:start-repl))))
+    (pine.editor.frame:switch-buffer name)
+    (pine.ui.render:subscribe-to-buffer buf)
+    (sento.actor:tell (pine.editor.frame:renderer client)
+                      (list :switch-buffer :buffer buf :name name))))
 (defcmd "terminal" ()
   (handler-case
       (let* ((client (pine.editor.frame:current-client))
@@ -296,7 +296,7 @@
 (defcmd "indent-region" ()
   "Reindent every line spanned by the region."
   (let* ((buf (pine.editor.motion:cur-buffer))
-         (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5))))
+         (state (and buf (pine.core.actor:ask buf '(:get-state) :timeout 5))))
     (when state
       (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds state)
         (declare (ignore sc ec))
@@ -306,7 +306,7 @@
 (defcmd "format-buffer" ()
   "Reindent the whole buffer off the parse tree, point preserved (in-image)."
   (let* ((buf (pine.editor.motion:cur-buffer))
-         (snap (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
+         (snap (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
     (when snap
       (pine.editor.ask:tell buf :indent-lines
                         :from 0 :to (1- (pine.text.buffer:line-count snap))))))
@@ -319,8 +319,8 @@
 (defcmd "minibuffer-accept" () (pine.editor.minibuffer:minibuffer-accept))
 (defcmd "minibuffer-abort" () (pine.editor.minibuffer:minibuffer-abort))
 (defcmd "minibuffer-complete" () (pine.editor.minibuffer:minibuffer-complete))
-(defcmd "minibuffer-next-candidate" () (completion-next))
-(defcmd "minibuffer-prev-candidate" () (completion-prev))
+(defcmd "minibuffer-next-candidate" () (pine.editor.minibuffer:completion-next))
+(defcmd "minibuffer-prev-candidate" () (pine.editor.minibuffer:completion-prev))
 (defcmd "minibuffer-history-prev" () (pine.editor.minibuffer:minibuffer-history-prev))
 (defcmd "minibuffer-history-next" () (pine.editor.minibuffer:minibuffer-history-next))
 

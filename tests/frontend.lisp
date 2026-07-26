@@ -167,6 +167,43 @@ on the caller's thread and takes an ordinary LET instead."
     (is (eq :aborted (pine.core.eval:evaluation-status done))
         "with nobody to choose a restart the worker aborts instead of parking")))
 
+(defmacro with-park-deadline ((seconds &key attended) &body body)
+  "Run BODY with the unattended park bounded at SECONDS and ATTENDED installed as
+the attended check. Both are set globally for the same reason the surface is: the
+thread that waits is the eval's own."
+  (let ((s (gensym "SECONDS")) (a (gensym "ATTENDED")))
+    `(let ((,s pine.core.eval:*park-seconds*)
+           (,a pine.core.eval:*attended-p*))
+       (setf pine.core.eval:*park-seconds* ,seconds
+             pine.core.eval:*attended-p* ,attended)
+       (unwind-protect (progn ,@body)
+         (setf pine.core.eval:*park-seconds* ,s
+               pine.core.eval:*attended-p* ,a)))))
+
+(test an-unattended-park-aborts-itself-on-the-deadline
+  (let ((done nil))
+    (with-park-deadline (1)
+      (with-debug-surface ((lambda (ev) (declare (ignore ev)) nil))
+        (pine.core.eval:evaluate-thunk (lambda () (error "probe"))
+                                       :on-done (lambda (ev) (setf done ev)))
+        (sleep 2.5)))
+    (is (not (null done))
+        "a surface that took the fault and never answered held the thread past its deadline")
+    (is (eq :aborted (pine.core.eval:evaluation-status done)))))
+
+(test an-attended-park-waits-past-the-deadline-and-resumes
+  (let ((done nil) (surfaced nil))
+    (with-park-deadline (1 :attended (lambda (ev) (declare (ignore ev)) t))
+      (with-debug-surface ((lambda (ev) (setf surfaced ev)))
+        (pine.core.eval:evaluate-thunk (lambda () (error "probe"))
+                                       :on-done (lambda (ev) (setf done ev)))
+        (sleep 2.0)
+        (is (null done) "an attended fault must keep its restarts, deadline or not")
+        (is (eq :error (pine.core.eval:evaluation-status surfaced)))
+        (pine.core.eval:pick-restart surfaced "ABORT")
+        (sleep 0.5)))
+    (is (not (null done)) "the restart chosen late must still resume the thread")))
+
 (test a-restart-picked-by-name-resumes-the-blocked-evaluation
   (let ((done nil)
         (surfaced nil))

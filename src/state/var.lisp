@@ -56,7 +56,7 @@ every global setf writes through."
 
 (defun %buffer-vars (buffer)
   (and buffer
-       (let ((state (sento.actor:ask-s buffer '(:get-state) :time-out 5)))
+       (let ((state (pine.core.actor:ask buffer '(:get-state) :timeout 5)))
          (and state (fset:@ (pine.text.buffer:meta state) :vars)))))
 
 (defun %buffer-var (buffer name)

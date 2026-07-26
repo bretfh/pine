@@ -75,6 +75,9 @@ attached frontend -- the editor session's sink refreshes the live tree
          (renderer
            (sento.actor-context:actor-of sys
              :name (format nil "renderer-~a" (gensym "R"))
+             ;; the frame path owns its thread: nothing else's receive can be in
+             ;; front of a repaint
+             :dispatcher :pinned
              :state nil
              :receive
              (lambda (msg)

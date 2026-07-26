@@ -1,6 +1,6 @@
 (defpackage #:pine.editor.debugger
   (:use #:cl)
-  (:export #:agent-debug-surface #:attend-session #:debugger-quit #:eval-done #:eval-error #:eval-notify #:jobs-builder #:resolve-session #:text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
+  (:export #:agent-debug-surface #:attend-session #:attended-eval-p #:debugger-quit #:eval-done #:eval-error #:eval-notify #:jobs-builder #:resolve-session #:text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
 
 (in-package #:pine.editor.debugger)
 
@@ -138,6 +138,17 @@ live session, or dismiss the buffer and clear the return-to when none remain."
                    pine.editor.target:*eval-target* pine.editor.target:*eval-target-saved*)   ; back to the pre-fault target
              (%dismiss-debugger)
              (setf *debugger-return-to* nil)))))
+
+(defun attended-eval-p (ev)
+  "Whether EV still has a debugger session someone can pick a restart in.
+
+Installed as pine.core.eval:*attended-p*: the faulted thread waits while its
+session is live and an app is attached to show it, and stops waiting once the
+session was resolved or every app is gone. The supervisor reaps clients that
+died, so an empty client list means nobody is coming."
+  (and (find ev *debugger-sessions* :key #'dbg-session-ev)
+       pine.core.attach:*clients*
+       t))
 
 (defun eval-error (ev)
   (%push-session

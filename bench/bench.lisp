@@ -243,37 +243,43 @@ transport actually writes, which re-encodes those bytes as decimal text."
       (let* ((rt (pine.ts.runtime:make-ts-runtime)) rows)
         (dolist (n '(20 200))
           (let* ((text (lisp-source n))
+                 (lines (fset:convert 'fset:seq
+                                      (uiop:split-string text :separator '(#\Newline))))
                  (ps (pine.ts.runtime:make-parse-state rt :commonlisp)))
             (unless ps (error "no commonlisp grammar"))
-            (pine.ts.runtime:parse-full! ps text)
-            (push (defbench (format nil "reparse! full, ~d forms (~d B)" n (length text))
-                    (pine.ts.runtime:reparse! ps text)) rows)
+            (pine.ts.runtime:parse-lines! ps lines)
+            (push (defbench (format nil "parse from lines, ~d forms (~d B)" n (length text))
+                    (pine.ts.runtime:parse-lines! ps lines)) rows)
             (push (defbench (format nil "highlight full walk, ~d forms" n)
                     (progn (setf (pine.ts.runtime::ps-hl-cache ps) nil)
-                           (pine.ts.highlight:parse-highlights ps text))) rows)
-            ;; the typing path: one small edit, reparse, re-highlight
-            (let* ((mid (floor (length text) 2))
-                   (alt (concatenate 'string (subseq text 0 mid) "x" (subseq text mid)))
-                   (cur text))
-              (pine.ts.runtime:reparse! ps cur)
-              (pine.ts.highlight:parse-highlights ps cur)
+                           (pine.ts.highlight:parse-highlights ps))) rows)
+            ;; the typing path: one line edited, tree shifted, window re-walked.
+            ;; This is what the parser actor does per keystroke, minus the
+            ;; message hop that takes it off the buffer's thread.
+            (let* ((mid (floor (fset:size lines) 2))
+                   (was (fset:@ lines mid))
+                   (alt-lines (fset:with lines mid (concatenate 'string was "x")))
+                   (cur lines))
               (push (defbench (format nil "edit+reparse+highlight, ~d forms" n)
-                      (progn (setf cur (if (eq cur text) alt text))
-                             (pine.ts.runtime:reparse! ps cur)
-                             (pine.ts.highlight:parse-highlights ps cur)))
+                      (let ((next (if (eq cur lines) alt-lines lines)))
+                        (pine.ts.runtime:parse-lines!
+                         ps next :edit (list mid 1 1 (if (eq next alt-lines) 1 -1)))
+                        (setf cur next)
+                        (pine.ts.highlight:parse-highlights ps)))
                     rows)
               ;; the same keystroke against a 30-line window, which is what a
               ;; buffer with a viewport actually walks
-              (let ((top (max 0 (- (floor (count #\Newline text) 2) 15))))
+              (let ((top (max 0 (- (floor (fset:size lines) 2) 15))))
                 (push (defbench (format nil "edit+reparse+highlight window, ~d forms" n)
-                        (progn (setf cur (if (eq cur text) alt text))
-                               (pine.ts.runtime:reparse! ps cur)
-                               (pine.ts.highlight:parse-highlights
-                                ps cur :from-line top :to-line (+ top 30))))
+                        (let ((next (if (eq cur lines) alt-lines lines)))
+                          (pine.ts.runtime:parse-lines!
+                           ps next :edit (list mid 1 1 (if (eq next alt-lines) 1 -1)))
+                          (setf cur next)
+                          (pine.ts.highlight:parse-highlights
+                           ps :from-line top :to-line (+ top 30))))
                       rows))
               (push (defbench (format nil "highlight window only, ~d forms" n)
-                      (pine.ts.highlight:parse-highlights
-                       ps cur :from-line 0 :to-line 30))
+                      (pine.ts.highlight:parse-highlights ps :from-line 0 :to-line 30))
                     rows))))
         (print-table "tree-sitter reparse + highlight" (nreverse rows)))
     (error (e) (format t "~&(ts group skipped: ~a)~%" e))))
@@ -288,10 +294,15 @@ transport actually writes, which re-encodes those bytes as decimal text."
         state)))
 
 (defun bench-refresh ()
-  "The cycle a lisp buffer runs per keystroke, through the function the editor
-actually calls: the buffer's text, the incremental reparse, and the highlight of
-what a window shows. The windowless rows are the same cycle before the viewport
-existed, so the pair is the measurement."
+  "The work a keystroke causes: the incremental reparse and the highlight of what
+a window shows. The editor runs this on the buffer's parser actor rather than in
+the buffer's receive, so these rows are the cost itself, without the message hop
+that takes it off the edit path. The windowless rows are the same cycle before
+the viewport existed, so the pair is the measurement.
+
+The edit descriptor is passed exactly as a buffer passes it: without one the tree
+cannot be shifted and every call would reparse the file from scratch, which is a
+different measurement wearing the same name."
   (handler-case
       (let ((rt (pine.ts.runtime:make-ts-runtime))
             rows)
@@ -310,7 +321,9 @@ existed, so the pair is the measurement."
                         (progn (setf flip (not flip))
                                (setf ps (nth-value
                                          1 (pine.text.buffer:refresh-highlights
-                                            ps (if flip typed quiet))))))
+                                            ps (if flip typed quiet)
+                                            ;; line 3 gained or lost one character
+                                            :edit (list 3 1 1 (if flip 1 -1)))))))
                       rows)))))
         (print-table "the per-keystroke cycle (buffer text + reparse + highlight)"
                      (nreverse rows)))
@@ -386,6 +399,40 @@ home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
               (ignore-errors (pine.core.actor:unregister-agent srv "bench-agent"))))))
     (error (e) (format t "~&(agent group skipped: ~a)~%" e))))
 
+(defun bench-mailbox ()
+  "What a buffer's own thread costs. A buffer actor is pinned: its own thread and
+mailbox, so a receive that parks in the debugger cannot take a worker the
+renderer or the input path needs. These rows are the price of that isolation,
+measured against the same receive on the shared dispatcher."
+  (handler-case
+      (let* ((srv (pine.core.server:start-server))
+             (sys (pine.core.server:actor-system srv))
+             (echo (lambda (msg)
+                     (when (eq (first msg) :ping) (sento.actor:reply :pong)))))
+        (setf pine.core.server:*server* srv)
+        (unwind-protect
+             (let ((pinned (sento.actor-context:actor-of sys :name "bench-pinned"
+                                                             :dispatcher :pinned
+                                                             :state nil :receive echo))
+                   (shared (sento.actor-context:actor-of sys :name "bench-shared"
+                                                             :state nil :receive echo))
+                   (buffer (pine.text.buffer:make-buffer-actor sys "bench-mailbox"))
+                   rows)
+               (push (defbench "ask round-trip, pinned mailbox"
+                       (sento.actor:ask-s pinned '(:ping) :time-out 5))
+                     rows)
+               (push (defbench "ask round-trip, shared dispatcher"
+                       (sento.actor:ask-s shared '(:ping) :time-out 5))
+                     rows)
+               (push (defbench "buffer insert then read back (a keystroke, end to end)"
+                       (progn (sento.actor:tell buffer '(:insert :char #\a))
+                              (sento.actor:ask-s buffer '(:get-snapshot) :time-out 5)))
+                     rows)
+               (print-table "the mailbox (what a buffer's own thread costs)"
+                            (nreverse rows)))
+          (pine.core.server:stop-server srv)))
+    (error (e) (format t "~&(mailbox group skipped: ~a)~%" e))))
+
 (defun machine-header ()
   (format t "~&#+BEGIN_EXAMPLE~%")
   (format t "sbcl:   ~a~%" (lisp-implementation-version))
@@ -404,7 +451,7 @@ home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
   (machine-header)
   (dolist (g (list #'bench-buffer #'bench-load-content #'bench-vt
                    #'bench-widget #'bench-push #'bench-ts #'bench-refresh
-                   #'bench-eval #'bench-paint #'bench-agent))
+                   #'bench-eval #'bench-mailbox #'bench-paint #'bench-agent))
     (handler-case (funcall g)
       (error (e) (format t "~&(group ~a failed: ~a)~%" g e))))
   (finish-output))

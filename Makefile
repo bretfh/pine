@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test hl vm
+.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress hl vm
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -67,6 +67,11 @@ bench:
 # agents. Exits nonzero on failure.
 test:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:test-system :pine)"'
+
+# load and faults under volume: hundreds of buffers, thousands of messages,
+# concurrent writers, fault storms, edits off the end of a buffer: make stress
+stress:
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/test)" --eval "(unless (fiveam:run! :pine.stress) (sb-ext:exit :code 1))"'
 
 # print each highlighted token of a source file and its face: make hl FILE=x.lisp
 hl:

@@ -99,6 +99,12 @@ conditions the daemon does."
   (unwind-protect (&body)
     (open-fresh-store)))
 
+(defmacro within-seconds (seconds &body body)
+  "Run BODY, failing rather than hanging if it takes longer than SECONDS."
+  `(handler-case (sb-ext:with-timeout ,seconds ,@body)
+     (sb-ext:timeout ()
+       (fail "did not finish within ~d second~:p; a receive is wedged" ,seconds))))
+
 (defun press (spec)
   "Dispatch the chord SPEC names and let the actors settle."
   (pine.editor.command::dispatch *client* (pine.editor.key::parse-key spec))
@@ -111,10 +117,10 @@ conditions the daemon does."
   (loop :for ch :across string :do (press (string ch))))
 
 (defun btext (buffer)
-  (sento.actor:ask-s (pine.editor.frame::buffer buffer) '(:get-text) :time-out 5))
+  (pine.core.actor:ask (pine.editor.frame::buffer buffer) '(:get-text) :timeout 5))
 
 (defun bsnap (buffer)
-  (sento.actor:ask-s (pine.editor.frame::buffer buffer) '(:get-snapshot) :time-out 5))
+  (pine.core.actor:ask (pine.editor.frame::buffer buffer) '(:get-snapshot) :timeout 5))
 
 (defun minibuffer-input ()
   (btext (pine.editor.frame::minibuffer-buffer *client*)))

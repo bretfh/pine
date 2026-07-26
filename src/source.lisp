@@ -86,9 +86,10 @@ would silently drop every source after the first.")
 (defun %actor (system)
   "A lightweight identity actor for a source, so it is addressable in the service
 registry. The source's blocking IO does NOT run here -- it runs on the source's
-own dedicated thread, never on this actor's shared pool worker."
+own dedicated thread."
   (sento.actor-context:actor-of system
     :name (format nil "pine-source-~d" (incf *actor-counter*))
+    :dispatcher :pinned
     :receive (lambda (msg) (declare (ignore msg)) nil)))
 
 (defparameter *stream-backoff* 2

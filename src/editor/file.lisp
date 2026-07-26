@@ -72,7 +72,7 @@ restore can reopen buffers in bulk."
 (defun save-current-buffer ()
   (let ((buf (pine.editor.frame:current-buffer (pine.editor.frame:current-client))))
     (when buf
-      (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
+      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
              (path (pine.text.buffer:buffer-local state :pathname))
              (text (pine.text.buffer:state->string state)))
         (if path
@@ -97,7 +97,7 @@ restore can reopen buffers in bulk."
       (loop for buf being the hash-values of (or (pine.core.server:buffer-table srv)
                                                  (make-hash-table))
             do (ignore-errors
-                (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
+                (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 2))
                        (path (pine.text.buffer:buffer-local state :pathname)))
                   (when path (record-place buf path))))))))
 
@@ -111,7 +111,7 @@ restore can reopen buffers in bulk."
     (when (and srv (pine.core.server:buffer-table srv))
       (loop for buf being the hash-values of (pine.core.server:buffer-table srv)
             do (ignore-errors
-                (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
+                (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 2))
                        (path (pine.text.buffer:buffer-local state :pathname)))
                   (when path
                     (push (list path (pine.text.buffer:buffer-local state :mode))

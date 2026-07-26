@@ -32,7 +32,6 @@
    #:terminals
    #:terminal-map
    #:terminal-wake
-   #:repl-buffer
    #:prompt-callback
    #:prompt-active
    #:prompt-history
@@ -126,7 +125,6 @@
    (terminals       :initarg :terminals       :accessor terminals       :initform nil)
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
    (terminal-wake   :accessor terminal-wake   :initform (sb-thread:make-semaphore))
-   (repl-buffer     :initarg :repl-buffer     :accessor repl-buffer     :initform nil)
    (prompt-callback :initarg :prompt-callback :accessor prompt-callback :initform nil)
    (prompt-active   :initarg :prompt-active   :accessor prompt-active   :initform nil)
    ;; the active prompt's history: the store list it reads/pushes, the cycle
@@ -306,6 +304,14 @@ Dispatch flattens each one's own parent chain into the table list."
       (when (eq actor (current-buffer c))
         (setf (current-buffer c) nil))
       (remhash name table)
+      ;; the buffer's parser is its own actor and its own thread, so it goes
+      ;; with the buffer rather than outliving it. Asked before the stop, from
+      ;; this thread, which is not a receive.
+      (let ((parser (ignore-errors (pine.core.actor:ask actor '(:get-parser) :timeout 2))))
+        (when (and parser (typep parser 'sento.actor:actor))
+          (ignore-errors
+           (sento.actor:tell parser '(:stop))
+           (sento.actor-context:stop (pine.core.server:actor-system srv) parser))))
       (sento.actor-context:stop (pine.core.server:actor-system srv) actor)
       (sento.actor:tell (pine.core.server:buffer-registry srv)
                         (list :unregister :name name)))))
@@ -331,13 +337,13 @@ Dispatch flattens each one's own parent chain into the table list."
   (let* ((c (current-client))
          (buf (current-buffer c)))
     (when buf
-      (sento.actor:ask-s buf '(:get-text) :time-out 5))))
+      (pine.core.actor:ask buf '(:get-text) :timeout 5))))
 
 (defun current-buffer-snapshot ()
   (let* ((c (current-client))
          (buf (current-buffer c)))
     (when buf
-      (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
+      (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
 
 
 (defun buffer (x)

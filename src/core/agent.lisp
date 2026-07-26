@@ -45,6 +45,7 @@ frontend serving itself up for eval and debugging."
                       "pine agent ~a: could not report a fault home: ~a~%" name c)
               (finish-output *error-output*)))))
   (sento.actor-context:actor-of sys :name "agent"
+    :dispatcher :pinned
     :receive
     (lambda (msg)
       (case (first msg)

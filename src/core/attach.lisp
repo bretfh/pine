@@ -143,6 +143,7 @@ app's process, so a refused connection is the app being gone."
   (let ((sys (pine.core.server:actor-system server)))
     (sento.actor-context:actor-of sys
       :name "attach"
+      :dispatcher :pinned
       :receive
       (lambda (msg)
         (case (first msg)
@@ -155,6 +156,8 @@ app's process, so a refused connection is the app being gone."
                (setf (attached-client-input client)
                      (sento.actor-context:actor-of sys
                        :name (format nil "client-~d" id)
+                       ;; one app's input never queues behind another's
+                       :dispatcher :pinned
                        :receive (lambda (m) (on-client-input client m))))
                (push client *clients*)
                (let ((app (%app-of client)))

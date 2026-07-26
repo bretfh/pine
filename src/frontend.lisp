@@ -149,6 +149,7 @@ repeated until it does."
          (sys (sento.actor-system:make-actor-system pine.core.server:*app-actor-config*)))
     (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
     (sento.actor-context:actor-of sys :name "display"
+      :dispatcher :pinned
       :receive (lambda (msg) (funcall handler msg) nil))
     (let* ((self-port (sento.remoting:remoting-port sys))
            (daemon (pine.core.server:daemon-uri "attach" :host host :port port))

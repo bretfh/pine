@@ -27,8 +27,8 @@
 
 (defun full-highlights (text)
   (with-parse-state (ps :commonlisp)
-    (pine.ts.runtime:parse-full! ps text)
-    (sorted-highlights (pine.ts.highlight:parse-highlights ps text))))
+    (pine.ts.runtime:parse-text! ps text)
+    (sorted-highlights (pine.ts.highlight:parse-highlights ps))))
 
 (defun generated-source (nforms)
   (with-output-to-string (out)
@@ -93,15 +93,15 @@
                                 :elements (gen-integer :min 0 :max 4095))))
     (with-parse-state (ps :commonlisp)
       (let ((text (generated-source 8)))
-        (pine.ts.runtime:parse-full! ps text)
-        (pine.ts.highlight:parse-highlights ps text)
+        (pine.ts.runtime:parse-text! ps text)
+        (pine.ts.highlight:parse-highlights ps)
         (loop :for (op pos) :on script :by #'cddr
               :while pos
               :do (setf text (mutate text op pos))
-                  (pine.ts.runtime:reparse! ps text)
+                  (pine.ts.runtime:parse-text! ps text)
                     (is (equal (full-highlights text)
                                (sorted-highlights
-                                (pine.ts.highlight:parse-highlights ps text))))))))))
+                                (pine.ts.highlight:parse-highlights ps))))))))))
 
 (test incremental-highlighting-equals-the-full-walk-on-a-real-file
   (let ((path (merge-pathnames "../src/text/buffer.lisp"
@@ -114,15 +114,15 @@
                                   :elements (gen-integer :min 0 :max 65535))))
         (with-parse-state (ps :commonlisp)
           (let ((text source))
-            (pine.ts.runtime:parse-full! ps text)
-            (pine.ts.highlight:parse-highlights ps text)
+            (pine.ts.runtime:parse-text! ps text)
+            (pine.ts.highlight:parse-highlights ps)
             (loop :for (op pos) :on script :by #'cddr
                   :while pos
                   :do (setf text (mutate text op pos))
-                      (pine.ts.runtime:reparse! ps text)
+                      (pine.ts.runtime:parse-text! ps text)
                       (is (equal (full-highlights text)
                                  (sorted-highlights
-                                  (pine.ts.highlight:parse-highlights ps text)))))))))))
+                                  (pine.ts.highlight:parse-highlights ps)))))))))))
 
 (test a-viewport-walk-agrees-with-the-full-walk-inside-the-viewport
   "The window a buffer paints is highlighted by walking only its lines. That is
@@ -135,14 +135,14 @@ emit, which is what the descent from the root buys."
       (with-parse-state (ps :commonlisp)
         (let ((text (generated-source forms))
               (to (+ from span)))
-          (pine.ts.runtime:parse-full! ps text)
+          (pine.ts.runtime:parse-text! ps text)
           (flet ((inside (highlights)
                    (sorted-highlights
                     (remove-if-not (lambda (tuple) (<= from (first tuple) to))
                                    highlights))))
-            (is (equal (inside (pine.ts.highlight:parse-highlights ps text))
+            (is (equal (inside (pine.ts.highlight:parse-highlights ps))
                        (inside (pine.ts.highlight:parse-highlights
-                                ps text :from-line from :to-line to)))
+                                ps :from-line from :to-line to)))
                 "viewport ~d..~d over ~d forms" from to forms)))))))
 
 (test a-windowed-walk-stays-correct-across-edits-in-the-window
@@ -155,8 +155,8 @@ edit touched. Every call must still agree with a walk of the whole file."
       (with-parse-state (ps :commonlisp)
         (let ((text (generated-source 10))
               (to (+ from 20)))
-          (pine.ts.runtime:parse-full! ps text)
-          (pine.ts.highlight:parse-highlights ps text :from-line from :to-line to)
+          (pine.ts.runtime:parse-text! ps text)
+          (pine.ts.highlight:parse-highlights ps :from-line from :to-line to)
           (flet ((inside (highlights)
                    (sorted-highlights
                     (remove-if-not (lambda (tuple) (<= from (first tuple) to))
@@ -164,10 +164,10 @@ edit touched. Every call must still agree with a walk of the whole file."
             (loop :for (op pos) :on script :by #'cddr
                   :while pos
                   :do (setf text (mutate text op pos))
-                      (pine.ts.runtime:reparse! ps text)
+                      (pine.ts.runtime:parse-text! ps text)
                       (is (equal (inside (full-highlights text))
                                  (inside (pine.ts.highlight:parse-highlights
-                                          ps text :from-line from :to-line to)))
+                                          ps :from-line from :to-line to)))
                           "viewport ~d..~d" from to))))))))
 
 (test a-viewport-walk-costs-less-than-the-whole-file
@@ -175,13 +175,13 @@ edit touched. Every call must still agree with a walk of the whole file."
 fraction of what the full walk does."
   (with-parse-state (ps :commonlisp)
     (let ((text (generated-source 200)))
-      (pine.ts.runtime:parse-full! ps text)
+      (pine.ts.runtime:parse-text! ps text)
       (let* ((before (sb-ext:get-bytes-consed))
-             (full (progn (pine.ts.highlight:parse-highlights ps text)
+             (full (progn (pine.ts.highlight:parse-highlights ps)
                           (- (sb-ext:get-bytes-consed) before)))
              (mark (sb-ext:get-bytes-consed))
              (windowed (progn (pine.ts.highlight:parse-highlights
-                               ps text :from-line 100 :to-line 130)
+                               ps :from-line 100 :to-line 130)
                               (- (sb-ext:get-bytes-consed) mark))))
         (is (< (* 4 windowed) full)
             "a 30-line window allocated ~:d bytes against the full walk's ~:d"
@@ -189,7 +189,7 @@ fraction of what the full walk does."
 
 (test indent-columns-follow-the-tree
   (with-parse-state (ps :commonlisp)
-    (pine.ts.runtime:parse-full!
+    (pine.ts.runtime:parse-text!
      ps (format nil "(defun f (x)~%(let ((a 1)~%(b 2))~%(+ a~%b)))~%(foo bar~%baz)"))
     (is (equal '(0 2 6 2 3 0 5)
                (loop :for i :from 0 :to 6
@@ -197,7 +197,7 @@ fraction of what the full walk does."
 
 (test a-multiline-string-interior-is-left-alone
   (with-parse-state (ps :commonlisp)
-    (pine.ts.runtime:parse-full!
+    (pine.ts.runtime:parse-text!
      ps (concatenate 'string "(defvar *x*" (string #\Newline)
                      (string #\") "a" (string #\Newline) "b"
                      (string #\") (string #\Newline) "1)"))
@@ -207,7 +207,7 @@ fraction of what the full walk does."
 
 (test a-user-def-macro-indents-its-body
   (with-parse-state (ps :commonlisp)
-    (pine.ts.runtime:parse-full! ps (format nil "(defcommand foo ()~%(bar))"))
+    (pine.ts.runtime:parse-text! ps (format nil "(defcommand foo ()~%(bar))"))
     (is (equal '(0 2)
                (list (pine.ts.highlight:parse-indent ps 0)
                      (pine.ts.highlight:parse-indent ps 1))))))

@@ -1,5 +1,5 @@
 (defpackage #:pine.ts.highlight
-  (:use #:cl #:pine.ts.runtime)
+  (:use #:cl #:pine.ts.runtime #:pine.ts.index)
   (:export
    ;; highlights from a parse tree
    #:parse-highlights #:compute-highlights #:walk-highlights
@@ -154,27 +154,25 @@
 
 ;;;; Common Lisp walk
 
-(defun cl-highlights (root text index &key lo-byte hi-byte forms)
-  "Highlights (line start-col end-col face) for the CL parse tree ROOT over TEXT.
+(defun cl-highlights (root src &key lo-byte hi-byte forms)
+  "Highlights (line start-col end-col face) for the CL parse tree ROOT over SRC,
+a byte index over the buffer's lines.
 With LO-BYTE / HI-BYTE, subtrees wholly outside that byte window are skipped.
 FORMS names the top-level forms to walk instead of descending from ROOT, which
 is how a window avoids enumerating every form in the file; a top-level form has
 no enclosing context, so depth and quote state start where they would anyway."
   (let ((acc nil))
     (labels
-        ((char-at (byte)
-           (multiple-value-bind (line col) (byte-to-line-col byte index text)
-             (+ (cdr (aref index line)) col)))
-         (down (node)
-           (string-downcase (subseq text (char-at (ts-node-start-byte node))
-                                    (char-at (ts-node-end-byte node)))))
+        ((down (node)
+           (string-downcase (source-substring src (ts-node-start-byte node)
+                                              (ts-node-end-byte node))))
          (emit (start-byte end-byte face)
            ;; zero-width spans paint nothing and would straddle the incremental
            ;; window boundary (a comment's extent ends at col 0 of the next
            ;; line), so they are never emitted
            (when face
-             (multiple-value-bind (sl sc) (byte-to-line-col start-byte index text)
-               (multiple-value-bind (el ec) (byte-to-line-col end-byte index text)
+             (multiple-value-bind (sl sc) (source-line-col src start-byte)
+               (multiple-value-bind (el ec) (source-line-col src end-byte)
                  (if (= sl el)
                      (when (> ec sc)
                        (push (list sl sc ec face) acc))
@@ -424,18 +422,15 @@ no enclosing context, so depth and quote state start where they would anyway."
     "case" "when" "unless" "and" "or" "begin" "do" "set!" "quote" "quasiquote"
     "unquote" "delay" "parameterize" "guard" "syntax-rules" "else"))
 
-(defun scheme-highlights (root text index &key lo-byte hi-byte forms)
+(defun scheme-highlights (root src &key lo-byte hi-byte forms)
   (let ((acc nil))
     (labels
-        ((char-at (byte)
-           (multiple-value-bind (line col) (byte-to-line-col byte index text)
-             (+ (cdr (aref index line)) col)))
-         (down (node)
-           (string-downcase (subseq text (char-at (ts-node-start-byte node))
-                                    (char-at (ts-node-end-byte node)))))
+        ((down (node)
+           (string-downcase (source-substring src (ts-node-start-byte node)
+                                              (ts-node-end-byte node))))
          (emit (start-byte end-byte face)
-           (multiple-value-bind (sl sc) (byte-to-line-col start-byte index text)
-             (multiple-value-bind (el ec) (byte-to-line-col end-byte index text)
+           (multiple-value-bind (sl sc) (source-line-col src start-byte)
+             (multiple-value-bind (el ec) (source-line-col src end-byte)
                (if (= sl el)
                    (when (> ec sc)
                      (push (list sl sc ec face) acc))
@@ -481,15 +476,15 @@ no enclosing context, so depth and quote state start where they would anyway."
 
 ;;;; Dispatch
 
-(defun walk-highlights (language root text index &key lo-byte hi-byte forms)
-  "Highlights for LANGUAGE's parse tree ROOT over TEXT, using the line INDEX.
+(defun walk-highlights (language root src &key lo-byte hi-byte forms)
+  "Highlights for LANGUAGE's parse tree ROOT, reading source through SRC.
 LO-BYTE / HI-BYTE restrict the walk to subtrees intersecting that byte window;
 FORMS names the top-level forms to walk instead of all of ROOT's."
   (case language
-    (:commonlisp (cl-highlights root text index :lo-byte lo-byte :hi-byte hi-byte
-                                               :forms forms))
-    (:scheme (scheme-highlights root text index :lo-byte lo-byte :hi-byte hi-byte
-                                               :forms forms))
+    (:commonlisp (cl-highlights root src :lo-byte lo-byte :hi-byte hi-byte
+                                         :forms forms))
+    (:scheme (scheme-highlights root src :lo-byte lo-byte :hi-byte hi-byte
+                                         :forms forms))
     (t nil)))
 
 
@@ -524,24 +519,19 @@ than aligning arguments under the first one."
              (:scheme (and (gethash head-name *scheme-keywords*) t))
              (t nil)))))
 
-(defun %byte->char (byte index text)
-  (multiple-value-bind (line col) (byte-to-line-col byte index text)
-    (+ (cdr (aref index line)) col)))
+(defun %byte-col (byte src)
+  (nth-value 1 (source-line-col src byte)))
 
-(defun %byte-col (byte index text)
-  (nth-value 1 (byte-to-line-col byte index text)))
+(defun %byte-line (byte src)
+  (nth-value 0 (source-line-col src byte)))
 
-(defun %byte-line (byte index text)
-  (nth-value 0 (byte-to-line-col byte index text)))
+(defun %node-first-char (node src)
+  (source-char-at src (ts-node-start-byte node)))
 
-(defun %node-first-char (node index text)
-  (let ((c (%byte->char (ts-node-start-byte node) index text)))
-    (when (< c (length text)) (char text c))))
+(defun %opens-form-p (node src)
+  (member (%node-first-char node src) '(#\( #\[ #\{)))
 
-(defun %opens-form-p (node index text)
-  (member (%node-first-char node index text) '(#\( #\[ #\{)))
-
-(defun %enclosing-form (node lstart index text)
+(defun %enclosing-form (node lstart src)
   "Nearest ancestor of NODE that opens with a bracket and begins before byte
 LSTART (so its opener is on an earlier line than the line starting at LSTART).
 The root/source_file node is excluded: it begins at byte 0, which is often a
@@ -554,22 +544,21 @@ paren, but it is not a form."
         until (ts-node-is-null n)
         when (and (< (ts-node-start-byte n) lstart)
                   (not (ts-node-is-null (ts-node-parent n)))
-                  (%opens-form-p n index text))
+                  (%opens-form-p n src))
           return n
         finally (return nil)))
 
-(defun %form-head-name (form index text)
+(defun %form-head-name (form src)
   "Downcased text of FORM's first named child when it is a single-line symbol,
 else nil (a nested head is not a body operator)."
   (when (plusp (ts-node-named-child-count form))
     (let* ((head (ts-node-named-child form 0))
            (hs (ts-node-start-byte head))
            (he (ts-node-end-byte head)))
-      (when (= (%byte-line hs index text) (%byte-line (max hs (1- he)) index text))
-        (string-downcase (subseq text (%byte->char hs index text)
-                                      (%byte->char he index text)))))))
+      (when (= (%byte-line hs src) (%byte-line (max hs (1- he)) src))
+        (string-downcase (source-substring src hs he))))))
 
-(defun %align-column (form open-col index text)
+(defun %align-column (form open-col src)
   "Align under the first argument when it shares the head's line; otherwise one
 past the open paren."
   (if (>= (ts-node-named-child-count form) 2)
@@ -577,20 +566,19 @@ past the open paren."
              (arg  (ts-node-named-child form 1))
              (hb (ts-node-start-byte head))
              (ab (ts-node-start-byte arg)))
-        (if (= (%byte-line hb index text) (%byte-line ab index text))
-            (%byte-col ab index text)
+        (if (= (%byte-line hb src) (%byte-line ab src))
+            (%byte-col ab src)
             (1+ open-col)))
       (1+ open-col)))
 
 (defun parse-indent (ps line)
   "Target indentation column for LINE from PS's persistent tree, or nil to leave
 the line as-is (inside a multiline string). 0 at top level. No reparse."
-  (let ((tree (ps-tree ps)) (text (ps-text ps)) (lang (ps-language ps)))
-    (when tree
+  (let ((tree (ps-tree ps)) (src (ps-byte-index ps)) (lang (ps-language ps)))
+    (when (and tree src)
       (handler-case
-          (let* ((index (line-index ps text))
-                 (line (max 0 (min line (1- (length index)))))
-                 (lstart (car (aref index line)))
+          (let* ((line (max 0 (min line (1- (index-line-count src)))))
+                 (lstart (line-start src line))
                  (root (ts-tree-root-node tree))
                  (node (ts-node-named-descendant-for-byte-range root lstart lstart)))
             (cond
@@ -598,14 +586,14 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
               ((and (string= (ts-node-type node) "str_lit")
                     (< (ts-node-start-byte node) lstart))
                nil)
-              (t (let ((form (%enclosing-form node lstart index text)))
+              (t (let ((form (%enclosing-form node lstart src)))
                    (if (null form)
                        0
-                       (let ((open-col (%byte-col (ts-node-start-byte form) index text)))
-                         (if (eql (%node-first-char form index text) #\()
-                             (if (body-form-p lang (%form-head-name form index text))
+                       (let ((open-col (%byte-col (ts-node-start-byte form) src)))
+                         (if (eql (%node-first-char form src) #\()
+                             (if (body-form-p lang (%form-head-name form src))
                                  (+ open-col 2)
-                                 (%align-column form open-col index text))
+                                 (%align-column form open-col src))
                              (1+ open-col))))))))
         (error () nil)))))
 
@@ -621,8 +609,10 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
         (format t "~&no grammar loaded for ~a~%" language)
         (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
                              'vector)))
-          (reparse! ps source)
-          (dolist (h (parse-highlights ps source))
+          (parse-lines! ps (fset:convert 'fset:seq
+                                         (uiop:split-string source
+                                                            :separator '(#\Newline))))
+          (dolist (h (parse-highlights ps))
             (destructuring-bind (line start-col end-col face) h
               (let* ((text (if (< line (length lines)) (aref lines line) ""))
                      (end (min end-col (length text))))
@@ -640,24 +630,25 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
 ;;;; the language walks live here, so the dispatch does too.
 
 (defun compute-highlights (runtime language text)
-  (let ((entry (ensure-language runtime language)))
-    (unless entry (return-from compute-highlights nil))
-    (handler-case
-        (cffi:with-foreign-string (cstr text :encoding :utf-8)
-          (let ((tree (ts-parser-parse-string (entry-parser entry) (cffi:null-pointer)
-                                              cstr (byte-length text))))
-            (when (and tree (not (cffi:null-pointer-p tree)))
-              (unwind-protect
-                   (walk-highlights language (ts-tree-root-node tree) text
-                                    (build-line-index text))
-                (ts-tree-delete tree)))))
-      (error () nil))))
+  "Highlights for TEXT in one shot, with a parse state of its own. For callers
+holding a string rather than a buffer: a tool, a test, a snippet."
+  (let ((ps (make-parse-state runtime language)))
+    (when ps
+      (unwind-protect
+           (handler-case
+               (progn
+                 (parse-lines! ps (fset:convert 'fset:seq
+                                                (uiop:split-string
+                                                 text :separator '(#\Newline))))
+                 (parse-highlights ps))
+             (error () nil))
+        (free-parse-state ps)))))
 
-(defun %viewport-bytes (index from-line to-line)
+(defun %viewport-bytes (src from-line to-line)
   "The byte range covering lines FROM-LINE to TO-LINE inclusive."
-  (let ((last (1- (length index))))
-    (values (%line-start-byte (max 0 (min from-line last)) index)
-            (%line-start-byte (1+ (max 0 (min to-line last))) index))))
+  (let ((last (1- (index-line-count src))))
+    (values (line-start src (max 0 (min from-line last)))
+            (line-start src (1+ (max 0 (min to-line last)))))))
 
 (defun %form-at-or-before (root byte count)
   "Index of the last of ROOT's named children starting at or before BYTE.
@@ -683,30 +674,30 @@ call through the by-value TSNode binding allocates."
             :when (> (ts-node-end-byte form) lo-byte)
               :collect form))))
 
-(defun %hl-window (ps tree text from-line to-line)
+(defun %hl-window (ps tree from-line to-line)
   "Walk the top-level forms covering lines FROM-LINE to TO-LINE, and cache them."
-  (let ((index (line-index ps text))
+  (let ((src (ps-byte-index ps))
         (root (ts-tree-root-node tree)))
-    (multiple-value-bind (lo-byte hi-byte) (%viewport-bytes index from-line to-line)
-      (let ((hl (walk-highlights (ps-language ps) root text index
+    (multiple-value-bind (lo-byte hi-byte) (%viewport-bytes src from-line to-line)
+      (let ((hl (walk-highlights (ps-language ps) root src
                                  :lo-byte lo-byte :hi-byte hi-byte
                                  :forms (%forms-in-window root lo-byte hi-byte))))
-        (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
+        (setf (ps-hl-cache ps) hl (ps-hl-lines ps) (ps-lines ps)
               (ps-hl-window ps) (cons from-line to-line)
               (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
         hl))))
 
-(defun %hl-window-incremental (ps tree text from-line to-line)
+(defun %hl-window-incremental (ps tree from-line to-line)
   "Re-walk only the forms the edit touched and keep the rest of the window's
 cached tuples. Sound because the caller has established that no line moved, so
 every cached tuple outside the re-walked lines still describes its own line."
   (destructuring-bind (lo hi delta) (ps-hl-pending ps)
     (declare (ignore delta))
-    (let* ((index (line-index ps text))
+    (let* ((src (ps-byte-index ps))
            (root (ts-tree-root-node tree))
-           (last (1- (length index)))
-           (lo-byte (%line-start-byte (max 0 (min lo last)) index))
-           (hi-byte (%line-start-byte (1+ (max 0 (min hi last))) index))
+           (last (1- (index-line-count src)))
+           (lo-byte (line-start src (max 0 (min lo last))))
+           (hi-byte (line-start src (1+ (max 0 (min hi last)))))
            (forms nil))
       ;; Widen to whole forms and then to whole lines until stable, so that a
       ;; cached tuple is dropped exactly where a fresh one is emitted. Without
@@ -719,22 +710,22 @@ every cached tuple outside the re-walked lines still describes its own line."
                   (let ((s (ts-node-start-byte form)) (e (ts-node-end-byte form)))
                     (when (< s lo-byte) (setf lo-byte s grew t))
                     (when (> e hi-byte) (setf hi-byte e grew t))))
-                (let ((ll (%line-start-byte (line-of-byte lo-byte index) index))
-                      (hh (%line-start-byte
-                           (1+ (line-of-byte (max lo-byte (1- hi-byte)) index))
-                           index)))
+                (let ((ll (line-start src (nth-value 0 (byte-line src lo-byte))))
+                      (hh (line-start
+                           src
+                           (1+ (nth-value 0 (byte-line src (max lo-byte (1- hi-byte))))))))
                   (when (< ll lo-byte) (setf lo-byte ll grew t))
                   (when (> hh hi-byte) (setf hi-byte hh grew t)))
             :while grew)
-      (let* ((lo-line (line-of-byte lo-byte index))
-             (hi-line (line-of-byte (max lo-byte (1- hi-byte)) index))
-             (fresh (walk-highlights (ps-language ps) root text index
+      (let* ((lo-line (nth-value 0 (byte-line src lo-byte)))
+             (hi-line (nth-value 0 (byte-line src (max lo-byte (1- hi-byte)))))
+             (fresh (walk-highlights (ps-language ps) root src
                                      :lo-byte lo-byte :hi-byte hi-byte
                                      :forms forms))
              (kept (remove-if (lambda (tuple) (<= lo-line (first tuple) hi-line))
                               (ps-hl-cache ps)))
              (merged (nconc kept fresh)))
-        (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
+        (setf (ps-hl-cache ps) merged (ps-hl-lines ps) (ps-lines ps)
               (ps-hl-window ps) (cons from-line to-line)
               (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
         merged))))
@@ -747,8 +738,13 @@ which is what makes the window's cached tuples still usable."
          (destructuring-bind (lo hi delta) pending
            (and (zerop delta) (>= lo from-line) (<= hi to-line))))))
 
-(defun parse-highlights (ps text &key from-line to-line)
-  "Highlights (line start-col end-col face) from PS's persistent tree over TEXT.
+(defun parse-highlights (ps &key from-line to-line)
+  "Highlights (line start-col end-col face) from PS's persistent tree.
+
+The source is PS's own lines and byte index, the ones its tree was parsed from,
+so a caller cannot hand this a text the tree does not describe. Cache identity is
+EQ on the lines: the seq is immutable, so an unchanged buffer is one comparison
+rather than a walk over the file.
 
 With FROM-LINE and TO-LINE, walks only the tree covering those lines. The
 descent from the root still runs, so quote state, form depth and head kind stay
@@ -760,56 +756,55 @@ Without a range, the whole buffer is walked and cached. Incremental: when
 exactly one edit was recorded since the last call, only the changed top-level
 forms are re-walked and the cached tuples outside them are kept (shifted by the
 line delta). Anything unexpected falls back to the full walk."
-  (let ((tree (ps-tree ps)))
-    (when tree
+  (let ((tree (ps-tree ps))
+        (lines (ps-lines ps)))
+    (when (and tree (ps-byte-index ps))
       (handler-case
           (if (and from-line to-line)
               (let ((same-window (equal (ps-hl-window ps) (cons from-line to-line))))
                 (cond
                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
                         (null (ps-hl-pending ps))
-                        (string= text (or (ps-hl-text ps) "")))
+                        (eq lines (ps-hl-lines ps)))
                    (ps-hl-cache ps))
                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
-                        (%window-edit-is-local-p ps from-line to-line)
-                        (string= text (ps-text ps)))
-                   (%hl-window-incremental ps tree text from-line to-line))
-                  (t (%hl-window ps tree text from-line to-line))))
+                        (%window-edit-is-local-p ps from-line to-line))
+                   (%hl-window-incremental ps tree from-line to-line))
+                  (t (%hl-window ps tree from-line to-line))))
               (cond
                 ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
-                      (string= text (or (ps-hl-text ps) "")))
+                      (eq lines (ps-hl-lines ps)))
                  (ps-hl-cache ps))
-                ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps))
-                      (string= text (ps-text ps)))
-                 (%hl-incremental ps tree text))
-                (t (%hl-full ps tree text))))
+                ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps)))
+                 (%hl-incremental ps tree))
+                (t (%hl-full ps tree))))
         (error ()
-          (setf (ps-hl-cache ps) nil (ps-hl-text ps) nil
+          (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil
                 (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
           (handler-case
-              (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
-                               (line-index ps text))
+              (walk-highlights (ps-language ps) (ts-tree-root-node tree)
+                               (ps-byte-index ps))
             (error () nil)))))))
 
-(defun %hl-full (ps tree text)
-  (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
-                             (line-index ps text))))
-    (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
+(defun %hl-full (ps tree)
+  (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree)
+                             (ps-byte-index ps))))
+    (setf (ps-hl-cache ps) hl (ps-hl-lines ps) (ps-lines ps)
           (ps-hl-window ps) nil
           (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
     hl))
 
-(defun %hl-incremental (ps tree text)
+(defun %hl-incremental (ps tree)
   "Re-walk only the top-level forms covering the recorded edit and merge with
 the cached tuples: keep lines above, shift lines below by the edit's delta.
 The re-walk window is widened to whole lines and whole top-level forms (to a
 fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
   (destructuring-bind (lo hi delta) (ps-hl-pending ps)
-    (let* ((index (line-index ps text))
+    (let* ((src (ps-byte-index ps))
            (root (ts-tree-root-node tree))
-           (nlines (length index))
-           (lo-byte (%line-start-byte (min lo (1- nlines)) index))
-           (hi-byte (%line-start-byte (1+ hi) index)))
+           (nlines (index-line-count src))
+           (lo-byte (line-start src (min lo (1- nlines))))
+           (hi-byte (line-start src (1+ hi))))
       ;; widen to whole lines and whole top-level forms until stable; the
       ;; window only grows and is bounded by the file, so this terminates
       (loop for grew = nil
@@ -822,21 +817,21 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
                           (setf lo-byte (min lo-byte s)
                                 hi-byte (max hi-byte e)
                                 grew t)))
-               (let ((ll (%line-start-byte (line-of-byte lo-byte index) index))
-                     (hl (%line-start-byte
-                          (1+ (line-of-byte (max lo-byte (1- hi-byte)) index))
-                          index)))
+               (let ((ll (line-start src (nth-value 0 (byte-line src lo-byte))))
+                     (hl (line-start
+                          src
+                          (1+ (nth-value 0 (byte-line src (max lo-byte (1- hi-byte))))))))
                  (when (< ll lo-byte) (setf lo-byte ll grew t))
                  (when (> hl hi-byte) (setf hi-byte hl grew t)))
             while grew)
       ;; a window that swallowed most of the file: the merge bookkeeping buys
       ;; nothing over the plain full walk
-      (when (>= (- hi-byte lo-byte) (* 3 (floor (max 1 (byte-length text)) 4)))
-        (return-from %hl-incremental (%hl-full ps tree text)))
-      (let* ((lo-line (line-of-byte lo-byte index))
-             (hi-line (line-of-byte (max lo-byte (1- hi-byte)) index))
+      (when (>= (- hi-byte lo-byte) (* 3 (floor (max 1 (index-total src)) 4)))
+        (return-from %hl-incremental (%hl-full ps tree)))
+      (let* ((lo-line (nth-value 0 (byte-line src lo-byte)))
+             (hi-line (nth-value 0 (byte-line src (max lo-byte (1- hi-byte)))))
              (old-hi-line (- hi-line delta))
-             (fresh (walk-highlights (ps-language ps) root text index
+             (fresh (walk-highlights (ps-language ps) root src
                                      :lo-byte lo-byte :hi-byte hi-byte))
              (merged nil))
         (dolist (tup (ps-hl-cache ps))
@@ -852,10 +847,7 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
                 (push (list (+ line delta) (second tup) (third tup) (fourth tup))
                       below))))
           (setf merged (nconc merged (nreverse below))))
-        (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
+        (setf (ps-hl-cache ps) merged (ps-hl-lines ps) (ps-lines ps)
               (ps-hl-window ps) nil
               (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
         merged))))
-
-(defun %line-start-byte (line index)
-  (if (< line (length index)) (car (aref index line)) most-positive-fixnum))

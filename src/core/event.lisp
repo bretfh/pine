@@ -13,6 +13,7 @@
     (setf (pine.core.server:event-bus server)
           (sento.actor-context:actor-of sys
             :name "event-bus"
+            :dispatcher :pinned
             :state (make-hash-table :test 'eq)
             :receive
             (lambda (msg)
@@ -35,7 +36,7 @@
   (sento.actor:tell bus (list :publish :topic topic :payload payload)))
 
 (defun subscribe (bus topic handler)
-  (sento.actor:ask-s bus (list :subscribe :topic topic :handler handler) :time-out 5))
+  (pine.core.actor:ask bus (list :subscribe :topic topic :handler handler) :timeout 5))
 
 (defun unsubscribe (bus topic handler)
-  (sento.actor:ask-s bus (list :unsubscribe :topic topic :handler handler) :time-out 5))
+  (pine.core.actor:ask bus (list :unsubscribe :topic topic :handler handler) :timeout 5))

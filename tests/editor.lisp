@@ -541,7 +541,7 @@
       (pine.editor.evaluate:eval-last-sexp)
       (sleep 0.5)
       (let ((overlays (pine.text.buffer:buffer-local
-                       (sento.actor:ask-s buf '(:get-state) :time-out 5)
+                       (pine.core.actor:ask buf '(:get-state) :timeout 5)
                        :overlays)))
         (is (not (null overlays)))
         (is (search "=> 3" (first (fset:@ overlays 0))))))))
@@ -593,7 +593,11 @@
       (sento.actor:tell buf (list :move-point :line 0 :col 11))
       (sleep 0.05)
       (pine.editor.ask:tell buf :newline)
-      (sleep 0.2)
-      (multiple-value-bind (l c) (pine.editor.ask:ask buf :point)
-        (is (= 1 l))
-        (is (= 2 c) "the new line is indented into the defun body")))))
+      ;; the line lands at once and the parser answers with its column, so the
+      ;; indent is waited for rather than assumed to have already happened
+      (is (wait-for (lambda ()
+                      (multiple-value-bind (l c) (pine.editor.ask:ask buf :point)
+                        (and (= 1 l) (= 2 c))))
+                    :seconds 10)
+          "the new line is indented into the defun body; point is at ~a"
+          (multiple-value-list (pine.editor.ask:ask buf :point))))))

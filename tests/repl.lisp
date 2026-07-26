@@ -4,15 +4,8 @@
 
 ;;;; The repl submits from inside the buffer actor's receive, so everything it
 ;;;; touches has to be reachable from there. Reaching for the client is not: no
-;;;; buffer actor binds *client*, and a fault in a receive parks a worker of the
-;;;; shared dispatcher. Every test here is bounded, so a receive that wedges
-;;;; fails the suite instead of hanging it.
-
-(defmacro within-seconds (seconds &body body)
-  "Run BODY, failing rather than hanging if it takes longer than SECONDS."
-  `(handler-case (sb-ext:with-timeout ,seconds ,@body)
-     (sb-ext:timeout ()
-       (fail "did not finish within ~d second~:p; a receive is wedged" ,seconds))))
+;;;; buffer actor binds *client*. Every test here is bounded, so a receive that
+;;;; wedges fails the suite instead of hanging it.
 
 (defun repl-text ()
   "The repl buffer's text. A wedged actor answers an ask with a handler-error

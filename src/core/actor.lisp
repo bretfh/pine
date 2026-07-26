@@ -1,5 +1,9 @@
 (defpackage #:pine.core.actor
   (:use :cl :ac :act :asys :rem)
+  ;; sento.actor exports ASK, its own non-blocking one. Pine's is a different
+  ;; function with a rule attached, so it gets its own symbol rather than
+  ;; redefining the library's.
+  (:shadow #:ask)
   (:export
    #:agent-info
    #:agent-info-name #:agent-info-type #:agent-info-actor
@@ -10,9 +14,45 @@
    #:start-local-agent #:start-agent-debug #:*agent-debug-hook*
    #:start-agent-supervisor #:supervise-agent #:unsupervise-agent
    #:agent-alive-p #:request
-   #:spawn-agent #:kill-agent))
+   #:spawn-agent #:kill-agent
+   #:ask #:in-actor-p #:blocking-ask-in-receive
+   #:blocking-ask-target #:blocking-ask-message))
 
 (in-package #:pine.core.actor)
+
+;;;; The liveness contract. An actor's receive runs on a thread that owes its
+;;;; mailbox an answer, so it must never wait for one. Waiting on itself is a
+;;;; deadlock; waiting on anything else holds a thread the daemon needs for the
+;;;; next message. ASK is the one blocking query, and it refuses from inside a
+;;;; receive rather than hanging there: a receive reads the state it was handed,
+;;;; or TELLs and lets the reply arrive as a message.
+
+(define-condition blocking-ask-in-receive (error)
+  ((target :initarg :target :reader blocking-ask-target)
+   (message :initarg :message :reader blocking-ask-message))
+  (:report (lambda (c stream)
+             (format stream "Blocking ask of ~a from inside an actor's receive: ~s.
+Read the state the receive was handed, or tell and take the reply as a message."
+                     (blocking-ask-target c) (blocking-ask-message c))))
+  (:documentation "Signalled by ASK when called on a thread running a receive."))
+
+(defun in-actor-p ()
+  "True on a thread inside an actor's receive, where a blocking ask is
+forbidden.
+
+Read in value position on purpose: act:*self* is a symbol macro over the cell's
+own variable, so asking BOUNDP about the symbol answers about the macro name and
+is false everywhere, receive or not."
+  (and act:*self* t))
+
+(defun ask (target message &key (timeout 5))
+  "Send MESSAGE to TARGET and wait up to TIMEOUT seconds for its reply.
+
+Signals BLOCKING-ASK-IN-RECEIVE when called from inside a receive, which is the
+one place this may not be used."
+  (when (in-actor-p)
+    (error 'blocking-ask-in-receive :target target :message message))
+  (act:ask-s target message :time-out timeout))
 
 (defstruct agent-info
   name type actor meta port)
@@ -22,6 +62,7 @@
     (setf (pine.core.server:agent-registry server)
           (ac:actor-of sys
             :name "agent-registry"
+            :dispatcher :pinned
             :state (make-hash-table :test 'equal)
             :receive
             (lambda (msg)
@@ -53,19 +94,19 @@
                 (t (reply (list :error :unknown msg)))))))))
 
 (defun register-agent (server name type actor &key meta port)
-  (act:ask-s (pine.core.server:agent-registry server)
-             (list :register :info (make-agent-info :name name :type type
-                                                    :actor actor :meta meta :port port))
-             :time-out 5))
+  (ask (pine.core.server:agent-registry server)
+       (list :register :info (make-agent-info :name name :type type
+                                              :actor actor :meta meta :port port))
+       :timeout 5))
 
 (defun unregister-agent (server name)
-  (act:ask-s (pine.core.server:agent-registry server) (list :unregister :name name) :time-out 5))
+  (ask (pine.core.server:agent-registry server) (list :unregister :name name) :timeout 5))
 
 (defun find-agent (server name)
-  (act:ask-s (pine.core.server:agent-registry server) (list :lookup :name name) :time-out 5))
+  (ask (pine.core.server:agent-registry server) (list :lookup :name name) :timeout 5))
 
 (defun list-agents (server)
-  (act:ask-s (pine.core.server:agent-registry server) '(:list) :time-out 5))
+  (ask (pine.core.server:agent-registry server) '(:list) :timeout 5))
 
 (defun resolve-agent (server agent-or-name)
   "The actor ref for AGENT-OR-NAME (an agent-info, a registered name, or a ref)."
@@ -105,13 +146,14 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
   (let* ((sys (pine.core.server:actor-system server))
          (local (ac:actor-of sys
                   :name "local-agent"
+                  :dispatcher :pinned
                   :receive
                   (lambda (msg)
                     (case (first msg)
                       ;; Evaluation runs through pine.core.eval on its own thread, so
                       ;; a looping or erroring form can neither block this actor's
-                      ;; mailbox (and the shared dispatcher behind it) nor drop to
-                      ;; a console debugger. Fire-and-forget: the result reaches
+                      ;; mailbox nor drop to a console debugger. Fire-and-forget:
+                      ;; the result reaches
                       ;; ON-DONE and errors reach the shared *on-debug* surface,
                       ;; not a synchronous reply.
                       ((:eval :compile)
@@ -180,6 +222,7 @@ The editor (the helm) installs this to show the restart menu and drive resume.")
 its restart list here, by name, and the helm drives the choice back."
   (sento.actor-context:actor-of (pine.core.server:actor-system server)
     :name "agent-debug"
+    :dispatcher :pinned
     :receive (lambda (msg)
                (when *agent-debug-hook*
                  (pine.core.eval:attempt (lambda () (funcall *agent-debug-hook* msg))
@@ -216,7 +259,7 @@ without touching the daemon or any app. Returns the agent-info once it connects.
 (defun agent-alive-p (server name)
   (let ((info (ignore-errors (find-agent server name))))
     (and info
-         (ignore-errors (eq :pong (act:ask-s (agent-info-actor info) '(:ping) :time-out 2))))))
+         (ignore-errors (eq :pong (ask (agent-info-actor info) '(:ping) :timeout 2))))))
 
 (defun start-agent-supervisor (server &key (interval 3))
   "Watch every supervised process agent; respawn any that has died. Runs on its
@@ -243,6 +286,6 @@ Apps ask the registry for a tool rather than reinventing it."
   (let ((info (find-agent server name)))
     (when info
       (handler-case
-          (act:ask-s (agent-info-actor info) '(:shutdown) :time-out 5)
+          (ask (agent-info-actor info) '(:shutdown) :timeout 5)
         (error () nil))
       (unregister-agent server name))))

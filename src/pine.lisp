@@ -219,7 +219,7 @@ exits after, so the ephemeral actor system needs no teardown."
     (handler-case
         (let ((ref (sento.remoting:make-remote-ref
                     sys (pine.core.server:daemon-uri "control" :host host :port port))))
-          (format t "~a~%" (sento.actor:ask-s ref msg :time-out 5)))
+          (format t "~a~%" (pine.core.actor:ask ref msg :timeout 5)))
       (error () (format t "pine: no daemon at ~a:~d~%" host port)))))
 
 ;;;; Frontends are agents. The editor and the desktop are not part of this
@@ -381,9 +381,9 @@ sure the port is free even if it was an old or wedged daemon."
                 '(:dispatchers (:shared (:workers 1 :strategy :random))))))
       (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
       (ignore-errors
-        (sento.actor:ask-s
+        (pine.core.actor:ask
          (sento.remoting:make-remote-ref sys (pine.core.server:daemon-uri "control" :port port))
-         '(:stop) :time-out 3))))
+         '(:stop) :timeout 3))))
   (sleep 0.4)
   (unless (port-free-p port) (kill-port port))
   (format t "pine: stopped~%"))

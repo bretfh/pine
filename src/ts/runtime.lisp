@@ -9,10 +9,11 @@
    #:grammar-language-pointer #:load-language-entry
    ;; the per-buffer incremental parse state
    #:parse-state #:make-parse-state #:free-parse-state
-   #:parse-full! #:reparse! #:parse-motion
-   #:ps-language #:ps-parser #:ps-tree #:ps-text
-   #:ps-hl-cache #:ps-hl-text #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
-   #:line-index
+   #:parse-lines! #:parse-text! #:parse-motion
+   #:ps-language #:ps-parser #:ps-tree
+   #:ps-byte-index #:ps-lines #:ps-scratch #:ps-read-buffer
+   #:call-with-input #:+read-chunk+
+   #:ps-hl-cache #:ps-hl-lines #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
    ;; structural motion
    #:call-with-root #:forward-sexp-pos #:backward-sexp-pos #:defun-bounds-pos
    ;; bytes, characters and lines
@@ -49,6 +50,26 @@
   (parser :pointer) (language :pointer))
 (cffi:defcfun ("ts_parser_parse_string" ts-parser-parse-string) :pointer
   (parser :pointer) (old-tree :pointer) (string :pointer) (length :uint32))
+
+;;;; Parsing from the lines themselves. ts_parser_parse takes a TSInput by value
+;;;; and calls its read callback for the byte ranges it actually needs, which
+;;;; after an edit is a small neighbourhood rather than the file. Serving those
+;;;; from the fset seq means no flat copy of the buffer exists: at a million
+;;;; lines the copy alone was 43 ms and 88 MB of garbage per keystroke.
+;;;;
+;;;; The callback runs on the thread that called ts_parser_parse, synchronously,
+;;;; so the state it reads is bound per thread rather than passed as a payload.
+
+(cffi:defcstruct ts-input
+  (payload :pointer)
+  (read :pointer)
+  (encoding :int)
+  (decode :pointer))
+
+(defconstant +input-encoding-utf8+ 0)
+
+(cffi:defcfun ("ts_parser_parse" ts-parser-parse) :pointer
+  (parser :pointer) (old-tree :pointer) (input (:struct ts-input)))
 (cffi:defcfun ("ts_tree_delete" ts-tree-delete) :void (tree :pointer))
 (cffi:defcfun ("ts_tree_root_node" ts-tree-root-node) (:struct ts-node)
   (tree :pointer))
@@ -87,6 +108,83 @@
   (new-end-point (:struct ts-point)))
 
 (cffi:defcfun ("ts_tree_edit" ts-tree-edit) :void (tree :pointer) (edit :pointer))
+
+;;;; Serving the parser from the lines. The callback runs on the thread inside
+;;;; ts_parser_parse, so what it reads is bound per thread rather than passed
+;;;; through the payload pointer.
+
+(defparameter +read-chunk+ 8192
+  "Bytes served per read call. The parser asks for the ranges it needs, which
+after an edit is a neighbourhood, not the file.")
+
+(defvar *reading* nil
+  "(LINES INDEX SCRATCH SIZE) the read callback is serving, bound per parse.")
+
+(defun %fill-scratch (lines index byte scratch size)
+  "Copy up to SIZE bytes of LINES from byte offset BYTE into SCRATCH. Answers how
+many were written, which is zero at the end of the buffer."
+  (multiple-value-bind (line offset) (pine.ts.index:byte-line index byte)
+    (let ((written 0)
+          (n (fset:size lines)))
+      (block filling
+        (loop :while (< line n)
+              :do (let* ((octets (sb-ext:string-to-octets (fset:@ lines line)
+                                                          :external-format :utf-8))
+                         (len (length octets)))
+                    (loop :for i :from (min offset len) :below len
+                          :do (when (>= written size) (return-from filling))
+                              (setf (cffi:mem-aref scratch :unsigned-char written)
+                                    (aref octets i))
+                              (incf written))
+                    ;; every line but the last is followed by its newline
+                    (when (< line (1- n))
+                      (when (>= written size) (return-from filling))
+                      (setf (cffi:mem-aref scratch :unsigned-char written) 10)
+                      (incf written))
+                    (setf offset 0)
+                    (incf line))))
+      written)))
+
+;; TSPoint is declared :uint64 rather than (:struct ts-point) because CFFI
+;; cannot take a struct by value in a callback: %defcallback accepts scalars
+;; only. TSPoint is two uint32, so it is an eight-byte integer-class composite
+;; and both x86-64 SysV and aarch64 pass it in one general-purpose register,
+;; which is what :uint64 names. The position is not read here in any case; what
+;; matters is that the argument after it, bytes_read, lands in the right place.
+(cffi:defcallback %ts-read :pointer
+    ((payload :pointer) (byte :uint32) (point :uint64)
+     (bytes-read (:pointer :uint32)))
+  (declare (ignore payload point))
+  ;; A condition must not unwind into C, so a failure here ends the read (and so
+  ;; the parse) rather than the process, and says why on the way out.
+  (handler-case
+      (destructuring-bind (&optional lines index scratch size) *reading*
+        (if (null lines)
+            (progn (setf (cffi:mem-ref bytes-read :uint32) 0) (cffi:null-pointer))
+            (let ((written (%fill-scratch lines index byte scratch size)))
+              (setf (cffi:mem-ref bytes-read :uint32) written)
+              (if (zerop written) (cffi:null-pointer) scratch))))
+    (error (c)
+      (format *error-output* "pine: the parser read failed at byte ~d: ~a~%" byte c)
+      (finish-output *error-output*)
+      (setf (cffi:mem-ref bytes-read :uint32) 0)
+      (cffi:null-pointer))))
+
+(defun call-with-input (lines index scratch fn)
+  "Call FN with a TSInput reading LINES through INDEX, as a foreign value."
+  (let ((*reading* (list lines index scratch +read-chunk+)))
+    (cffi:with-foreign-object (input '(:struct ts-input))
+      (setf (cffi:foreign-slot-value input '(:struct ts-input) 'payload)
+            (cffi:null-pointer)
+            (cffi:foreign-slot-value input '(:struct ts-input) 'read)
+            (cffi:callback %ts-read)
+            (cffi:foreign-slot-value input '(:struct ts-input) 'encoding)
+            +input-encoding-utf8+
+            (cffi:foreign-slot-value input '(:struct ts-input) 'decode)
+            (cffi:null-pointer))
+      ;; the struct is filled in foreign memory and handed over as a value, so
+      ;; nothing here depends on how CFFI spells a struct on the Lisp side
+      (funcall fn (cffi:mem-ref input '(:struct ts-input))))))
 
 ;;;; Changed ranges: which regions of the new tree differ from the old one.
 ;;;; The truth for incremental re-highlighting -- the edit span alone
@@ -346,21 +444,23 @@ end-line end-col), or nil."
   ((language :initarg :language :accessor ps-language)
    (parser   :initarg :parser   :accessor ps-parser)   ; own TSParser*
    (tree     :initform nil      :accessor ps-tree)      ; persistent TSTree* or nil
-   (text     :initform ""       :accessor ps-text)      ; text the tree reflects
-   ;; incremental highlight state: the last full tuple list, the text it was
-   ;; computed for, and the one edit recorded since (rows in the NEW text plus
+   ;; incremental highlight state: the last full tuple list, the lines it was
+   ;; computed for, and the one edit recorded since (rows in the NEW lines plus
    ;; the line delta old->new). More than one edit between highlight calls, or
    ;; any doubt, sets hl-stale and the next call walks the whole tree.
    (hl-cache   :initform nil :accessor ps-hl-cache)
-   (hl-text    :initform nil :accessor ps-hl-text)
+   ;; the lines the cache was computed for; EQ against the current ones says
+   ;; whether it still applies, because the seq is immutable
+   (hl-lines   :initform nil :accessor ps-hl-lines)
    (hl-pending :initform nil :accessor ps-hl-pending)   ; (lo-row hi-row delta)
    (hl-stale   :initform nil :accessor ps-hl-stale)
    ;; the line range the cache covers as (FROM . TO), or nil for the whole file
    (hl-window  :initform nil :accessor ps-hl-window)
-   ;; the line index and the text it was built for: every walk in one keystroke
-   ;; asks for the same index, and building it is a pass over the whole file
-   (index      :initform nil :accessor ps-index)
-   (index-text :initform nil :accessor ps-index-text)))
+   ;; parsing from the lines: the byte index over the seq the tree reflects, and
+   ;; the foreign buffer the read callback serves out of
+   (byte-index :initform nil :accessor ps-byte-index)
+   (lines      :initform nil :accessor ps-lines)
+   (scratch    :initform nil :accessor ps-scratch)))
 
 (defun make-parse-state (runtime language)
   "A parse-state for LANGUAGE, or nil if the grammar is unavailable."
@@ -370,128 +470,113 @@ end-line end-col), or nil."
         (ts-parser-set-language parser (entry-language-ptr entry))
         (make-instance 'parse-state :language language :parser parser)))))
 
-(defun line-index (ps text)
-  "PS's line index for TEXT, rebuilt only when TEXT is not the string it was
-built for. One keystroke hands the same string to the reparse, the highlight
-walk and the indent lookup, and building the index is a pass over the file."
-  (if (and (ps-index ps) (eq text (ps-index-text ps)))
-      (ps-index ps)
-      (setf (ps-index-text ps) text
-            (ps-index ps) (build-line-index text))))
-
 (defun free-parse-state (ps)
   (when ps
     (when (ps-tree ps) (ignore-errors (ts-tree-delete (ps-tree ps))) (setf (ps-tree ps) nil))
-    (when (ps-parser ps) (ignore-errors (ts-parser-delete (ps-parser ps))) (setf (ps-parser ps) nil))))
+    (when (ps-parser ps) (ignore-errors (ts-parser-delete (ps-parser ps))) (setf (ps-parser ps) nil))
+    (when (ps-scratch ps)
+      (ignore-errors (cffi:foreign-free (ps-scratch ps)))
+      (setf (ps-scratch ps) nil))))
 
-(defun parse-full! (ps text)
-  "Parse TEXT from scratch, replacing PS's tree. Used for the first parse and
-whenever there is no old tree to edit from."
-  (when (ps-tree ps) (ts-tree-delete (ps-tree ps)) (setf (ps-tree ps) nil))
-  (handler-case
-      (cffi:with-foreign-string (cstr text :encoding :utf-8)
-        (let ((tree (ts-parser-parse-string (ps-parser ps) (cffi:null-pointer)
-                                            cstr (byte-length text))))
-          (setf (ps-tree ps) (if (cffi:null-pointer-p tree) nil tree))))
-    (error () (setf (ps-tree ps) nil)))
-  (setf (ps-text ps) text
-        (ps-hl-cache ps) nil
-        (ps-hl-text ps) nil
-        (ps-hl-window ps) nil
-        (ps-hl-pending ps) nil
-        (ps-hl-stale ps) nil)
-  ps)
+(defun ps-read-buffer (ps)
+  "PS's foreign read buffer, allocated on first use."
+  (or (ps-scratch ps)
+      (setf (ps-scratch ps) (cffi:foreign-alloc :unsigned-char :count +read-chunk+))))
 
-(defun %char->byte-point (text char-index)
-  "UTF-8 byte offset of CHAR-INDEX in TEXT, and its (row . byte-col) TSPoint."
-  (let ((byte 0) (row 0) (line-start 0)
-        (n (min char-index (length text))))
-    (dotimes (i n)
-      (let ((ch (char text i)))
-        (if (char= ch #\Newline)
-            (progn (incf byte) (incf row) (setf line-start byte))
-            (incf byte (char-byte-length ch)))))
-    (values byte (cons row (- byte line-start)))))
+(defun %tree-edit (tree start-byte old-end-byte new-end-byte
+                   start-row old-end-row new-end-row)
+  "Shift TREE's positions for a change spanning whole lines. Columns are zero
+because the span runs from the start of one line to the start of another, which
+is what makes this arithmetic-free."
+  (cffi:with-foreign-object (edit '(:struct ts-input-edit))
+    (setf (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'start-byte) start-byte
+          (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'old-end-byte) old-end-byte
+          (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'new-end-byte) new-end-byte)
+    (%set-point edit 'start-point (cons start-row 0))
+    (%set-point edit 'old-end-point (cons old-end-row 0))
+    (%set-point edit 'new-end-point (cons new-end-row 0))
+    (ts-tree-edit tree edit)))
 
-(defun %text-edit (old-text new-text)
-  "A generic tree-sitter edit descriptor for the change OLD-TEXT -> NEW-TEXT,
-from the common prefix and suffix. Correct for any change (insert, delete,
-undo/redo, replace), so no per-edit-op bookkeeping is needed. Returns
-start/old-end/new-end byte offsets and their three TSPoints."
-  (let* ((la (length old-text)) (lb (length new-text))
-         (prefix (loop for i from 0 below (min la lb)
-                       unless (char= (char old-text i) (char new-text i)) return i
-                       finally (return (min la lb))))
-         (max-suffix (- (min la lb) prefix))
-         (suffix (loop for k from 0 below max-suffix
-                       unless (char= (char old-text (- la 1 k))
-                                     (char new-text (- lb 1 k)))
-                         return k
-                       finally (return max-suffix))))
-    (multiple-value-bind (sb sp) (%char->byte-point old-text prefix)
-      (multiple-value-bind (obe oep) (%char->byte-point old-text (- la suffix))
-        (multiple-value-bind (nbe nep) (%char->byte-point new-text (- lb suffix))
-          (values sb obe nbe sp oep nep))))))
+(defun parse-lines! (ps lines &key edit)
+  "Parse LINES into PS's tree, reading the bytes straight from the seq.
+
+EDIT is (LINE OLD-LINES NEW-LINES BYTE-DELTA): at LINE, OLD-LINES lines became
+NEW-LINES lines and the buffer grew by BYTE-DELTA bytes. Given one, the tree is
+shifted and reused and the byte index is carried forward; without one, both are
+built from scratch."
+  (let* ((old-tree (ps-tree ps))
+         (old-index (ps-byte-index ps))
+         (incremental (and edit old-index old-tree))
+         (index nil))
+    (when incremental
+      (destructuring-bind (line old-lines new-lines byte-delta) edit
+        ;; the old side has to be read before the index moves under it
+        (let ((start (pine.ts.index:line-start old-index line))
+              (old-end (pine.ts.index:line-start old-index (+ line old-lines))))
+          (setf index (pine.ts.index:index-edit old-index lines line byte-delta
+                                                (- new-lines old-lines)))
+          (%tree-edit old-tree start old-end
+                      (pine.ts.index:line-start index (+ line new-lines))
+                      line (+ line old-lines) (+ line new-lines)))))
+    (unless index (setf index (pine.ts.index:build-index lines)))
+    (let ((new (call-with-input
+                lines index (ps-read-buffer ps)
+                (lambda (input)
+                  (ts-parser-parse (ps-parser ps)
+                                   (if incremental old-tree (cffi:null-pointer))
+                                   input)))))
+      (cond
+        ((or (null new) (cffi:null-pointer-p new)) nil)
+        (t (if incremental
+               (destructuring-bind (line old-lines new-lines byte-delta) edit
+                 (declare (ignore byte-delta))
+                 (%record-hl-edit ps old-tree new line (+ line old-lines)
+                                  (+ line new-lines)))
+               (setf (ps-hl-cache ps) nil
+                     (ps-hl-lines ps) nil
+                     (ps-hl-window ps) nil
+                     (ps-hl-pending ps) nil
+                     (ps-hl-stale ps) nil))
+           (when (and old-tree (not (cffi:pointer-eq new old-tree)))
+             (ts-tree-delete old-tree))
+           (setf (ps-tree ps) new
+                 (ps-byte-index ps) index
+                 (ps-lines ps) lines)
+           ps)))))
+
+(defun parse-text! (ps text)
+  "Parse TEXT from scratch by splitting it into lines. For callers holding a
+string rather than a buffer: a tool, a test, a snippet. A buffer's own edits go
+through PARSE-LINES! with an edit descriptor and never build a string."
+  (parse-lines! ps (fset:convert 'fset:seq
+                                 (uiop:split-string text :separator '(#\Newline)))))
 
 (defun %set-point (edit slot point)
   (let ((p (cffi:foreign-slot-pointer edit '(:struct ts-input-edit) slot)))
     (setf (cffi:foreign-slot-value p '(:struct ts-point) 'row)    (car point)
           (cffi:foreign-slot-value p '(:struct ts-point) 'column) (cdr point))))
 
-(defun reparse! (ps new-text)
-  "Incrementally reparse PS to NEW-TEXT, editing its persistent tree from the
-diff against the text it currently reflects, and record the changed line span
-for incremental highlighting. Falls back to a full parse when there is no tree
-yet or the incremental parse fails."
-  (if (null (ps-tree ps))
-      (parse-full! ps new-text)
-      (handler-case
-          (multiple-value-bind (sb obe nbe sp oep nep) (%text-edit (ps-text ps) new-text)
-            (cffi:with-foreign-object (edit '(:struct ts-input-edit))
-              (setf (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'start-byte) sb
-                    (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'old-end-byte) obe
-                    (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'new-end-byte) nbe)
-              (%set-point edit 'start-point sp)
-              (%set-point edit 'old-end-point oep)
-              (%set-point edit 'new-end-point nep)
-              (ts-tree-edit (ps-tree ps) edit))
-            (cffi:with-foreign-string (cstr new-text :encoding :utf-8)
-              (let* ((old (ps-tree ps))
-                     (new (ts-parser-parse-string (ps-parser ps) old cstr
-                                                  (byte-length new-text))))
-                (cond
-                  ((cffi:null-pointer-p new) (parse-full! ps new-text))
-                  (t (%record-hl-edit ps old new (car sp) (car oep) (car nep))
-                     (unless (cffi:pointer-eq new old) (ts-tree-delete old))
-                     (setf (ps-tree ps) new (ps-text ps) new-text)))))
-            ps)
-        (error () (parse-full! ps new-text)))))
-
 (defun parse-motion (ps kind line col)
   "A structural target from PS's persistent tree at LINE/COL, no reparse. KIND
 is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Returns
 (values line col) or nil."
-  (let ((tree (ps-tree ps)) (text (ps-text ps)))
-    (when tree
+  (let ((tree (ps-tree ps)) (src (ps-byte-index ps)))
+    (when (and tree src)
       (handler-case
-          (let* ((index (build-line-index text))
-                 (byte (pos-to-byte text line col index))
-                 (root (ts-tree-root-node tree)))
-            (ecase kind
-              (:forward-sexp
-               (let ((b (%forward-sexp-byte root byte)))
-                 (when b (byte-to-line-col b index text))))
-              (:backward-sexp
-               (let ((b (%backward-sexp-byte root byte)))
-                 (when b (byte-to-line-col b index text))))
-              (:beginning-of-defun
-               (multiple-value-bind (s e) (%defun-bytes root byte)
-                 (declare (ignore e))
-                 (when s (byte-to-line-col s index text))))
-              (:end-of-defun
-               (multiple-value-bind (s e) (%defun-bytes root byte)
-                 (declare (ignore s))
-                 (when e (byte-to-line-col e index text))))))
+          (let ((byte (pine.ts.index:source-byte src line col))
+                (root (ts-tree-root-node tree)))
+            (flet ((at (b) (when b (pine.ts.index:source-line-col src b))))
+              (ecase kind
+                (:forward-sexp (at (%forward-sexp-byte root byte)))
+                (:backward-sexp (at (%backward-sexp-byte root byte)))
+                (:beginning-of-defun
+                 (multiple-value-bind (s e) (%defun-bytes root byte)
+                   (declare (ignore e))
+                   (at s)))
+                (:end-of-defun
+                 (multiple-value-bind (s e) (%defun-bytes root byte)
+                   (declare (ignore s))
+                   (at e))))))
         (error () nil)))))
 
 (defun %record-hl-edit (ps old new start-row old-end-row new-end-row)

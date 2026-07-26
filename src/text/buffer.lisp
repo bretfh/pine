@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:set-meta #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -118,7 +118,17 @@ the middle parts become whole lines. Point lands after the inserted text."
                 :tick (1+ (tick state)))))
 
 (defun insert-string (state line-idx col string)
-  "Insert STRING at LINE-IDX/COL, splitting on any newlines it holds."
+  "Insert STRING at LINE-IDX/COL, splitting on any newlines it holds. LINE-IDX
+may be the line after the last, which is where an append lands.
+
+Both arguments are checked, because both have a quiet failure. NIL is a sequence,
+so a message that arrived without its text would concatenate nothing and report an
+edit that never happened; a line index off the end would pad the line seq with
+holes that only fault later, on the next read."
+  (check-type string string)
+  (let ((n (fset:size (lines state))))
+    (unless (and (integerp line-idx) (<= 0 line-idx n))
+      (error "Insert at line ~s, but the buffer has ~d line~:p." line-idx n)))
   (if (find #\Newline string)
       (%insert-multiline state line-idx col string)
       (let* ((ls (lines state))
@@ -253,10 +263,68 @@ end-col), normalized so start precedes end. Nil when there is no mark."
 (defun %ts-runtime ()
   (when pine.core.server:*server* (pine.core.server:ts-runtime pine.core.server:*server*)))
 
-(defun refresh-highlights (pstate new-state)
-  "Reparse PSTATE to NEW-STATE's text (creating the parse-state if the buffer has
-a tree-sitter language and none exists yet) and return (values highlights
+(defun shift-highlights (hl line delta)
+  "HL with every tuple at or after LINE moved by DELTA lines.
+
+What a buffer paints between an edit and the parse that describes it. The colours
+on the edited line may be a moment out of date; the lines below it are not, which
+is what keeps a big file from flickering while its parse catches up."
+  (if (or (null hl) (zerop delta))
+      hl
+      (loop :for tuple :in hl
+            :collect (if (>= (first tuple) line)
+                         (list (+ (first tuple) delta) (second tuple)
+                               (third tuple) (fourth tuple))
+                         tuple))))
+
+(defun ensure-parser (state link name)
+  "LINK, starting the buffer's parser actor the first time its mode names a
+language. NIL when the buffer has no language or the grammar is unavailable."
+  (or link
+      (let ((lang (%state-language state))
+            (rt (%ts-runtime))
+            (srv pine.core.server:*server*))
+        (when (and lang rt srv)
+          (let ((actor (pine.ts.parser:start-parser
+                        (pine.core.server:actor-system srv) rt lang name)))
+            (when actor (pine.ts.parser:make-parse-link actor)))))))
+
+(defun request-parse (link state &key (verb :parse) extra)
+  "Ask LINK's parser for STATE, unless a request is already out: then mark it
+dirty so the answer's arrival sends the newest lines instead.
+
+One request in flight per buffer is the whole backpressure story. A burst of
+typing costs one parse per completed parse, and the parser's mailbox cannot grow
+behind a file that parses slowly."
+  (when link
+    (if (and (eq verb :parse) (pine.ts.parser:link-inflight link))
+        (setf (pine.ts.parser::parse-link-dirty link) t)
+        (progn
+          (when (eq verb :parse)
+            (setf (pine.ts.parser::parse-link-inflight link) t
+                  (pine.ts.parser::parse-link-dirty link) nil))
+          (setf (pine.ts.parser::parse-link-tick link) (tick state))
+          (sento.actor:tell (pine.ts.parser:link-actor link)
+                            (list* verb
+                                   :lines (lines state)
+                                   :tick (tick state)
+                                   :viewport (buffer-local state :viewport)
+                                   :buffer sento.actor:*self*
+                                   extra)))))
+  link)
+
+(defun refresh-highlights (pstate new-state &key edit)
+  "Parse and walk NEW-STATE's lines here and now, answering (values highlights
 pstate). No language available -> (values nil pstate), leaving highlights off.
+
+This is the synchronous path, for benchmarks and tools that want the cost on
+their own thread. A buffer does not use it: an edit sends its parser a message
+and keeps going, because at a million lines this call is over a second.
+
+EDIT is the (line old-lines new-lines byte-delta) descriptor for the change, when
+the caller has one: with it the tree is shifted and reused, without it both tree
+and byte index are rebuilt. Nothing here ever builds a string, so the cost does
+not grow with the file.
 
 Highlights cover NEW-STATE's :viewport when it has one: the windows showing this
 buffer only ever paint the lines they show, so walking the whole tree to throw
@@ -269,14 +337,13 @@ buffer, a buffer being restored -- has no viewport and gets the whole file."
         (let ((ps (or pstate (pine.ts.runtime:make-parse-state rt lang))))
           (if (null ps)
               (values nil nil)
-              (let ((new-text (state->string new-state))
-                    (viewport (buffer-local new-state :viewport)))
-                (pine.ts.runtime:reparse! ps new-text)
+              (let ((viewport (buffer-local new-state :viewport)))
+                (pine.ts.runtime:parse-lines! ps (lines new-state) :edit edit)
                 (values (if viewport
                             (pine.ts.highlight:parse-highlights
-                             ps new-text
+                             ps
                              :from-line (car viewport) :to-line (cdr viewport))
-                            (pine.ts.highlight:parse-highlights ps new-text))
+                            (pine.ts.highlight:parse-highlights ps))
                         ps)))))))
 
 (defun point-after-move (snap unit n)
@@ -344,9 +411,19 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
     (values s2 (max 0 new-col))))
 
 (defun make-buffer-actor (system name &key (content ""))
+  "A buffer as an actor on SYSTEM: NAME holding CONTENT, dispatching each message
+through its mode on a thread of its own."
   (let ((initial (move-mark (set-meta (load-content content) :name name) :point 0 0)))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)
+                                  ;; A buffer runs on its own thread, not a worker
+                                  ;; of the shared dispatcher. A receive that
+                                  ;; parks in the debugger then costs this buffer
+                                  ;; and nothing else: the renderer, the attach
+                                  ;; actors carrying input, the registries and
+                                  ;; every other buffer keep running. KILL-BUFFER
+                                  ;; stops the actor, which ends the thread.
+                                  :dispatcher :pinned
                                   ;; state tuple: (STATE UNDO REDO SUBSCRIBERS HIGHLIGHTS PARSE-STATE)
                                   :state (list initial nil nil nil nil nil)
                                   :receive
@@ -357,7 +434,8 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
                                                      (pine.editor.mode:find-mode :base-mode))))
                                       ;; The buffer runs off the session thread, so
                                       ;; an edit error opens the *debugger* restart
-                                      ;; menu and parks THIS thread until resolved.
+                                      ;; menu and parks THIS thread while the fault
+                                      ;; is attended, aborting if it is not.
                                       ;; *state* is committed as each handler's last
                                       ;; step, so an error before the commit leaves
                                       ;; the prior buffer intact; `abort' drops the
@@ -394,6 +472,7 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
     (setf (pine.core.server:buffer-registry server)
           (sento.actor-context:actor-of sys
                                         :name "buffer-registry"
+                                        :dispatcher :pinned
                                         :state (fset:empty-map)
                                         :receive
                                         (lambda (msg)

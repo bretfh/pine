@@ -6,6 +6,7 @@
            #:evaluate #:evaluate-string #:evaluate-thunk
            #:list-evaluations #:find-evaluation
            #:pick-restart #:abort-evaluation #:*on-debug*
+           #:*attended-p* #:*park-seconds* #:attended-p #:await-restart
            #:with-debugger #:call-with-debugger #:make-error-evaluation
            #:attempt #:report-failure))
 
@@ -15,6 +16,22 @@
   "Default surface for an evaluation that enters the debugger: a function of the
 evaluation, installed by the editor. Any eval path (C-x C-e, repl, widget
 onclick, remote) reaches the same debugger through it.")
+
+(defvar *attended-p* nil
+  "Function of an evaluation answering whether a restart can still be chosen for
+it, installed by the layer that owns the debugger sessions.
+
+A faulted thread waits for a decision, so something has to say whether a decision
+is still coming. Without this there is no attended fault at all and every park
+resolves itself on the deadline.")
+
+(defparameter *park-seconds* 300
+  "How long a faulted thread waits with nobody attending it before aborting
+itself. The wait restarts while the fault is attended, so a backtrace under
+someone's eyes is never taken away; NIL waits for as long as it stays attended.
+
+An unattended park is a thread that never comes back, and this is the bound that
+makes that impossible rather than unlikely.")
 
 ;;;; Evaluation as a first-class, off-UI-thread operation. Each eval runs on its
 ;;;; own thread (so it can block or run forever without touching the editor) and
@@ -136,10 +153,46 @@ it would wait forever."
            (finish-output *error-output*)
            nil))))
 
+(defun attended-p (ev)
+  "Whether a restart can still be chosen for EV, per *attended-p*."
+  (and *attended-p*
+       (handler-case (funcall *attended-p* ev)
+         (error (c)
+           (format *error-output* "pine: the attended check failed on ~a: ~a~%"
+                   (evaluation-form ev) c)
+           (finish-output *error-output*)
+           nil))))
+
+(defun await-restart (ev)
+  "Wait for a restart to be chosen for EV and answer its name.
+
+Answers NIL when the fault went unattended for *park-seconds*, which is the
+caller's cue to abort: a thread that waits on a decision nobody is coming to
+make is a thread the daemon has lost. The deadline restarts for as long as the
+fault is attended."
+  (let* ((cap (and *park-seconds*
+                   (round (* *park-seconds* internal-time-units-per-second))))
+         (deadline (and cap (+ (get-internal-real-time) cap))))
+    (loop
+      (bordeaux-threads:with-lock-held ((evaluation-lock ev))
+        (when (evaluation-chosen ev)
+          (return (evaluation-chosen ev)))
+        (bordeaux-threads:condition-wait (evaluation-cvar ev) (evaluation-lock ev)
+                                         :timeout 0.5))
+      (cond ((attended-p ev)
+             (when cap (setf deadline (+ (get-internal-real-time) cap))))
+            ((and deadline (> (get-internal-real-time) deadline))
+             (format *error-output*
+                     "pine: no restart chosen for ~a within ~d unattended second~:p; aborting it~%"
+                     (evaluation-form ev) *park-seconds*)
+             (finish-output *error-output*)
+             (return nil))))))
+
 (defun eval-debugger-hook (ev condition)
   "Runs on the eval thread when an unhandled error propagates. Records the
-condition + restarts + backtrace, notifies the surface, then blocks until a
-restart is chosen and invokes it."
+condition + restarts + backtrace, notifies the surface, then waits for a restart
+to be chosen and invokes it. Aborts instead when no surface took the fault, or
+when the wait went unattended past *park-seconds*."
   (setf (evaluation-status ev) :error
         (evaluation-condition ev) (handler-case (princ-to-string condition)
                                     (error () "<unprintable condition>"))
@@ -156,11 +209,7 @@ restart is chosen and invokes it."
       (let ((r (find-restart 'abort condition)))
         (when r (invoke-restart r)))
       (return-from eval-debugger-hook)))
-  (let ((name (bordeaux-threads:with-lock-held ((evaluation-lock ev))
-                (loop until (evaluation-chosen ev)
-                      do (bordeaux-threads:condition-wait
-                          (evaluation-cvar ev) (evaluation-lock ev)))
-                (evaluation-chosen ev))))
+  (let ((name (await-restart ev)))
     (let ((r (or (find name (compute-restarts condition)
                        :key (lambda (x) (and (restart-name x) (string (restart-name x))))
                        :test (lambda (a b) (and a b (string-equal a b))))
@@ -169,20 +218,21 @@ restart is chosen and invokes it."
 
 (defmacro with-debugger-hook ((ev) &body body)
   "Bind SBCL's debugger hook so an unhandled error in BODY is captured into EV
-and surfaced through *on-debug*, blocking this (off-session) thread until a
-restart is picked. The single debugger-entry codepath -- eval workers, buffer
-actors, anything off the session input thread routes through here."
+and surfaced through *on-debug*, waiting on this (off-session) thread until a
+restart is picked or the fault goes unattended. The single debugger-entry
+codepath -- eval workers, buffer actors, anything off the session input thread
+routes through here."
   `(let ((sb-ext:*invoke-debugger-hook*
            (lambda (c hook) (declare (ignore hook)) (eval-debugger-hook ,ev c))))
      ,@body))
 
 (defun call-with-debugger (thunk &key label package)
   "Run THUNK under the pine debugger with an always-available abort restart: an
-unhandled error opens the *debugger* restart menu (via *on-debug*) and blocks
-THIS thread until a restart is picked; `abort' unwinds out of THUNK. For threads
-OTHER than the session input thread (eval workers, buffer actors) -- blocking
-parks that thread while the surface drives the choice. Returns THUNK's values,
-NIL on abort.
+unhandled error opens the *debugger* restart menu (via *on-debug*) and waits on
+THIS thread for a restart; `abort' unwinds out of THUNK. For threads OTHER than
+the session input thread (eval workers, buffer actors) -- the wait parks that
+thread while the surface drives the choice, and ends in an abort if the choice
+never comes. Returns THUNK's values, NIL on abort.
 
 Uses handler-bind, not *invoke-debugger-hook*: an actor's message pump may trap
 errors around receive, so we must catch in the signal's own dynamic context

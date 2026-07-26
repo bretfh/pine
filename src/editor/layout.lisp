@@ -15,7 +15,7 @@
   (pine.editor.frame:current-buffer (pine.editor.frame:current-client)))
 
 (defun %layout-snap (&optional (buf (%layout-buffer)))
-  (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
+  (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5)))
 
 (defun layout-tree (&optional (snap (%layout-snap)))
   (and snap (pine.text.buffer:buffer-local snap :layout-tree)))
