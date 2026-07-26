@@ -135,7 +135,6 @@ compositor starts before the session is up passes it, and the attach is
 repeated until it does."
   (unless pine.server:*server*
     (setf pine.server:*server* (make-instance 'pine.server:server)))
-  (pine.buffer:install-default-faces)
   (let* ((name (string-downcase (symbol-name kind)))
          (sys (sento.actor-system:make-actor-system pine.server:*app-actor-config*)))
     (sento.remoting:enable-remoting sys :host pine.server:*host* :port 0)

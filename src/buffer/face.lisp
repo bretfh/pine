@@ -12,13 +12,10 @@
    (italic    :initarg :italic    :accessor italic    :initform nil)
    (underline :initarg :underline :accessor underline :initform nil)))
 
-(defun faces-table ()
-  "The face table of the server this image runs. Faces are server-scoped, and
-every image -- daemon, frontend, shot harness -- has exactly one server, so
-this never asks a client which one it belongs to."
-  (let ((srv pine.server:*server*))
-    (or (pine.server:faces srv)
-        (setf (pine.server:faces srv) (make-hash-table :test 'eq)))))
+(defvar *faces* (make-hash-table :test 'eq)
+  "Face name -> face, for this image. A theme replaces the whole table.")
+
+(defun faces-table () *faces*)
 
 (defun defface (name &key fg bg bold italic underline)
   (setf (gethash name (faces-table))
@@ -125,12 +122,9 @@ this never asks a client which one it belongs to."
   `(register-theme (build-theme ',name ',palette ',metrics ',faces)))
 
 (defun load-theme (name)
-  (setf (pine.server:faces pine.server:*server*) (theme-faces (find-theme name))
+  (setf *faces* (theme-faces (find-theme name))
         *active-theme* (theme-key name))
   *active-theme*)
-
-(defun install-default-faces ()
-  (load-theme :ef-dream))
 
 (deftheme ef-dream
   :palette (bg        "#232025"   bg-dim    "#322f34"   bg-alt "#3b393e"
@@ -198,6 +192,10 @@ this never asks a client which one it belongs to."
           (:ring-disk      :fg green)
           (:ring-temp      :fg yellow)
           (:ring-track     :fg bg-active)))
+
+;;;; The theme every image starts on. A config's load-theme replaces it.
+
+(load-theme :ef-dream)
 
 
 ;;;; Face runs -- attributed text

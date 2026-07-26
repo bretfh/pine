@@ -21,10 +21,6 @@
       (pine.actor:start-agent-registry srv)
       (pine.actor:start-local-agent srv)
       (pine.buffer:start-buffer-registry srv)
-      (pine.buffer:install-default-faces)
-      (pine.mode:install-default-modes)
-      (pine.editor:install-commands)
-      (pine.editor:install-bindings)
       ;; the world gate stays off for the suite -- tree tests assert seeded
       ;; shapes; the world-save test flips it on around itself.
       (setf (pine.var:var :world-save) nil)
@@ -140,7 +136,6 @@ its prior state and recovers. A failing command routes by :debug-on-error."
     (sleep 0.15)
     (let ((tx (btext buf)))
       (is (and (= 6 (length tx)) (search "hello" tx))))
-    (pine.editor::install-variables)
     (pine.command:define-command "probe-boom" () (error "boom"))
     (setf pine.eval:*on-debug* (lambda (ev) (setf saw2 ev)))
     (setf (pine.var:var :debug-on-error) t)
@@ -442,7 +437,6 @@ contributor; foreign nodes refuse to serialize."
 
 (test (examples-init :depends-on user-language)
   "The shipped worked example loads clean and its definitions land."
-  (pine.desktop:install-desktop-sessions)
   (finishes
     (load (merge-pathnames "../examples/init.lisp"
                            #.(or *compile-file-truename* *load-truename*))))

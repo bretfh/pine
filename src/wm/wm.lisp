@@ -27,14 +27,13 @@ commands run in the same context every command does, and the live tree with
 its focused leaf."
   app client tree focus (output nil) (split :row))
 
-(defvar *keymap* nil
+(defvar *keymap* (pine.keymap:make-keymap :name :wm)
   "The window manager's keymap. Chords here are registered with the
 compositor, which delivers them to the window manager rather than to the
-focused window.")
+focused window. It has no parent: a window manager has no buffer and no mode
+to fall back through.")
 
-(defun wm-keymap ()
-  "The window manager keymap, created on first use."
-  (or *keymap* (setf *keymap* (pine.keymap:make-keymap :name :wm))))
+(defun wm-keymap () *keymap*)
 
 (defvar *session* nil
   "The running window manager session, or nil when none is attached.")
@@ -205,42 +204,48 @@ way. A window manager cannot show the same window twice, so a split states
 where the next one lands rather than dividing the current one immediately."
   (setf (session-split *session*) orient))
 
-(defun install-commands ()
-  (pine.var:defonce :wm-terminal :default "foot"
-    :documentation "The program wm-terminal launches.")
-  (pine.command:define-command wm-terminal ()
-    "Launch the terminal named by the :wm-terminal variable."
-    (spawn (pine.var:var :wm-terminal)))
-  (pine.command:define-command wm-close-window ()
-    "Ask the focused window to close."
-    (close-window))
-  (pine.command:define-command wm-focus-next ()
-    "Focus the next window."
-    (focus-step 1))
-  (pine.command:define-command wm-focus-prev ()
-    "Focus the previous window."
-    (focus-step -1))
-  (pine.command:define-command wm-split-below ()
-    "The next window opens below the focused one."
-    (split :column))
-  (pine.command:define-command wm-split-beside ()
-    "The next window opens beside the focused one."
-    (split :row))
-  (pine.command:define-command wm-exit ()
-    "End the Wayland session."
-    (exit-session)))
+(pine.var:defonce :wm-terminal :default "foot"
+  :documentation "The program wm-terminal launches.")
 
-(defun install-bindings ()
-  "The default window manager chords. init.lisp rebinds them the same way it
-rebinds editor keys: (define-key (keymap :wm) (kbd \"s-Return\") 'wm-terminal)."
-  (let ((m (wm-keymap)))
-    (pine.keymap:define-key m (pine.key:parse-key "s-Return") "wm-terminal")
-    (pine.keymap:define-key m (pine.key:parse-key "s-q") "wm-close-window")
-    (pine.keymap:define-key m (pine.key:parse-key "s-j") "wm-focus-next")
-    (pine.keymap:define-key m (pine.key:parse-key "s-k") "wm-focus-prev")
-    (pine.keymap:define-key m (pine.key:parse-key "s-2") "wm-split-below")
-    (pine.keymap:define-key m (pine.key:parse-key "s-3") "wm-split-beside")
-    (pine.keymap:define-key m (pine.key:parse-key "s-S-e") "wm-exit")))
+(pine.command:define-command wm-terminal ()
+  "Launch the terminal named by the :wm-terminal variable."
+  (spawn (pine.var:var :wm-terminal)))
+
+(pine.command:define-command wm-close-window ()
+  "Ask the focused window to close."
+  (close-window))
+
+(pine.command:define-command wm-focus-next ()
+  "Focus the next window."
+  (focus-step 1))
+
+(pine.command:define-command wm-focus-prev ()
+  "Focus the previous window."
+  (focus-step -1))
+
+(pine.command:define-command wm-split-below ()
+  "The next window opens below the focused one."
+  (split :column))
+
+(pine.command:define-command wm-split-beside ()
+  "The next window opens beside the focused one."
+  (split :row))
+
+(pine.command:define-command wm-exit ()
+  "End the Wayland session."
+  (exit-session))
+
+;;;; The default chords. init.lisp rebinds them the same way it rebinds editor
+;;;; keys: (define-key (keymap :wm) (kbd "s-Return") 'wm-terminal).
+
+(pine.keymap:define-keys *keymap*
+  "s-Return"  "wm-terminal"
+  "s-q"       "wm-close-window"
+  "s-j"       "wm-focus-next"
+  "s-k"       "wm-focus-prev"
+  "s-2"       "wm-split-below"
+  "s-3"       "wm-split-beside"
+  "s-S-e"     "wm-exit")
 
 ;;;; The binding table crossing the wire: (CHORD-STRING . COMMAND-NAME) pairs,
 ;;;; which is exactly what keymap-bindings already produces. The frontend
@@ -313,7 +318,3 @@ frontend; the next one to attach reports them again."
 
 (pine.attach:register-app (make-instance 'wm-app))
 
-(defun install-wm-sessions ()
-  (install-commands)
-  (install-bindings)
-  nil)

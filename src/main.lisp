@@ -17,13 +17,6 @@
     (pine.buffer:start-buffer-registry srv)
     (pine.attach:start-attach-listener srv)
     (start-control srv)
-    (pine.buffer:install-default-faces)
-    (pine.mode:install-default-modes)
-    (pine.editor:install-commands)
-    (pine.editor:install-bindings)
-    (pine.editor:install-editor-sessions)
-    (pine.desktop:install-desktop-sessions)
-    (pine.wm:install-wm-sessions)
     (pine.store:open-store)
     (pine.hooks:add-shutdown-hook :store
       (lambda ()
@@ -31,7 +24,6 @@
         (pine.file:record-places)
         (pine.store:close-store)))
     (load-init)
-    (pine.jobs:install-jobs)
     (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads
     (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
     srv))

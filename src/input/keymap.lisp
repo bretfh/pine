@@ -27,6 +27,23 @@ not exist yet."
           (setf (gethash k table) command)))
     command))
 
+;;;; The keymap of a thing that has one. A mode answers with its own, the
+;;;; window manager app with the map whose chords the compositor delivers, so
+;;;; nothing outside a thing needs to know which slot or special holds it.
+
+(defgeneric keymap (object)
+  (:documentation "OBJECT's keymap.")
+  (:method ((k keymap)) k))
+
+(defmacro define-keys (designator &body pairs)
+  "Bind CHORD COMMAND pairs in the keymap DESIGNATOR names. A group of
+top-level bindings, written where the commands they name are defined."
+  (let ((map (gensym "MAP")))
+    `(let ((,map (keymap ,designator)))
+       ,@(loop :for (chord command) :on pairs :by #'cddr
+               :collect `(define-key ,map (pine.key:parse-chord ,chord) ,command))
+       ,map)))
+
 (defun keymap-lookup (keymap key)
   "Command name, prefix sub-table, or nil. Local bindings shadow the parent."
   (or (gethash key (keymap-table keymap))

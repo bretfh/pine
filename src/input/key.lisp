@@ -31,6 +31,15 @@
       (incf i 2))
     (make-key (subseq spec i) :ctrl ctrl :meta meta :shift shift :super super)))
 
+(defun parse-chord (spec)
+  "Parse a whole chord -- \"C-x C-f\", \"M-.\", \"Return\" -- into one key or a
+list of them, which is what DEFINE-KEY takes. Space separates the keys of a
+sequence, so a chord is written the way it is typed."
+  (let ((keys (mapcar #'parse-key
+                      (remove "" (uiop:split-string spec :separator '(#\Space))
+                              :test #'string=))))
+    (if (rest keys) keys (first keys))))
+
 (defun key->string (k)
   (with-output-to-string (s)
     (when (key-ctrl k)  (write-string "C-" s))

@@ -432,17 +432,18 @@ much output arrived, and nothing at all while no terminal is producing any."
 
 (pine.attach:register-app (make-instance 'editor-app))
 
-(defun install-editor-sessions ()
-  (ignore-errors (install-variables))
-  (setf pine.command:*terminal-handler*   #'pine.term:terminal-dispatch
-        pine.eval:*on-debug*              #'%eval-error)
-  ;; a process agent's error comes home to this editor's restart menu; jobs
-  ;; chains on top of this hook, so both fire.
-  (let ((prev pine.actor:*agent-debug-hook*))
-    (setf pine.actor:*agent-debug-hook*
-          (lambda (msg)
-            (when prev
-              (pine.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-            (pine.eval:attempt (lambda () (%agent-debug-surface msg))
-                               "agent debug surface"))))
-  nil)
+;;;; The hooks this image answers: a key in a terminal buffer goes to the pty,
+;;;; an evaluation that faults opens the restart menu, and a process agent's
+;;;; error comes home to it. Each chains whatever is already there, so the
+;;;; jobs registry and this surface both fire.
+
+(setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch
+      pine.eval:*on-debug*            #'%eval-error)
+
+(let ((prev pine.actor:*agent-debug-hook*))
+  (setf pine.actor:*agent-debug-hook*
+        (lambda (msg)
+          (when prev
+            (pine.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+          (pine.eval:attempt (lambda () (%agent-debug-surface msg))
+                             "agent debug surface"))))

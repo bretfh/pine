@@ -88,44 +88,11 @@ window), or a mode keyword for that mode's map."
   (pine.keymap:define-key (pine.mode:global-keymap) keys
                           (pine.command:command-key command)))
 
-;;;; Modes. DEFMODE / DEFMINOR make a real CLOS class (named NAME) and register
-;;;; a mode instance (keyword :NAME) with its own keymap. Behaviour is plain
-;;;; CLOS on the class: (defmethod dispatch-message ((m NAME) self tag plist) ..)
-;;;; for buffer actions, (defmethod execute ((m NAME) command arg) ..) for
-;;;; command layering. Activate with :NAME (set-buffer-mode / auto-mode) or
-;;;; enable-minor-mode. Reload-safe: redefining replaces the class and the mode.
-
-(defmacro defmode (name (&key (parent :text-mode) (indicator "") ts-language)
-                   &body body)
-  "Define major mode NAME (a symbol) deriving from PARENT (a mode keyword). Its
-keymap is parented to PARENT's. BODY (bindings, defmethods) runs after the class
-exists. Returns the mode keyword :NAME."
-  (let ((kw (intern (string-upcase (string name)) :keyword)))
-    `(let* ((parent-mode (or (find-mode ,parent)
-                             (error "defmode: no parent mode ~s" ,parent))))
-       (c2mop:ensure-class ',name :direct-superclasses (list (class-of parent-mode)))
-       (pine.mode:register-mode
-        (make-instance ',name :name ,kw :parent-mode parent-mode
-                       :indicator ,indicator :ts-language ,ts-language
-                       :keymap (pine.keymap:make-keymap
-                                :name ,kw
-                                :parent (pine.mode:mode-keymap parent-mode))))
-       ,@body
-       ,kw)))
-
-(defmacro defminor (name (&key (precedence 5) transparent (indicator "")) &body body)
-  "Define minor mode NAME (a symbol) with its own standalone keymap. BODY runs
-after the class exists. Returns :NAME."
-  (let ((kw (intern (string-upcase (string name)) :keyword)))
-    `(progn
-       (c2mop:ensure-class ',name
-                           :direct-superclasses (list (find-class 'pine.mode:minor-mode)))
-       (pine.mode:register-mode
-        (make-instance ',name :name ,kw :precedence ,precedence
-                       :transparent ,transparent :indicator ,indicator
-                       :keymap (pine.keymap:make-keymap :name ,kw)))
-       ,@body
-       ,kw)))
+;;;; Modes. DEFMODE / DEFMINOR come from pine.mode, which is where pine's own
+;;;; modes are defined with them: one form makes the class, gives it a keymap
+;;;; parented to its parent mode's, and registers the singleton. Behaviour is
+;;;; plain CLOS on the class -- (defmethod dispatch-message ((m NAME) ..)) for
+;;;; buffer actions, (defmethod execute ((m NAME) ..)) for command layering.
 
 ;;;; Minor-mode toggles, client-implicit.
 

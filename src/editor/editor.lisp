@@ -10,10 +10,6 @@
     (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime server))
       (error () nil))
     (pine.render:start-renderer client)
-    (pine.mode:install-default-modes)
-    (install-variables)
-    (install-commands)
-    (install-bindings)
     (ensure-minibuffer client)
     (setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch)
     (setf pine.eval:*on-debug* #'%eval-error)
@@ -637,15 +633,16 @@ no symbol to complete."
                                       #'string< :key #'car)
             do (format out "~16a  ~a~%" keys cmd)))))
 
-(defun install-variables ()
-  (pine.var:defonce :tab-width :default 8
-    :documentation "Tab stop width for the plain-text indent fallback.")
-  (pine.var:defonce :format-on-save :default nil
-    :documentation "When non-nil, save-file reindents the whole buffer first.")
-  (pine.var:defonce :debug-on-error :default nil
-    :documentation "When non-nil, an error in a command opens the *debugger*
+(pine.var:defonce :tab-width :default 8
+  :documentation "Tab stop width for the plain-text indent fallback.")
+
+(pine.var:defonce :format-on-save :default nil
+  :documentation "When non-nil, save-file reindents the whole buffer first.")
+
+(pine.var:defonce :debug-on-error :default nil
+  :documentation "When non-nil, an error in a command opens the *debugger*
 restart menu instead of only echoing the message. Same knob as Emacs's
-debug-on-error; edit-actor and eval errors always reach the debugger."))
+debug-on-error; edit-actor and eval errors always reach the debugger.")
 
 (defun %variables-text ()
   (with-output-to-string (out)
@@ -869,407 +866,415 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 (defmacro defcmd (name (&rest args) &body body)
   `(pine.command:define-command ,name ,args ,@body))
 
-(defun install-commands ()
-  (defcmd "keyboard-quit" ()
-    (setf (pine.client:pending-keys (pine.client:current-client)) nil)
-    ;; C-g while attending a local eval interrupts it into its abort restart
-    ;; (kills a runaway loop) and resolves the session.
-    (let ((s *attended-session*))
-      (when (and s (eq (dbg-session-kind s) :local) (dbg-session-ev s))
-        (pine.eval:abort-evaluation (dbg-session-ev s))
-        (%resolve-session s)))
-    (let ((buf (cur-buffer)))
-      (when buf
-        (sento.actor:tell buf (list :set-meta :key :mark-line :value nil))
-        (sento.actor:tell buf (list :set-meta :key :mark-col :value nil))))
-    (cancel-prompt))
-  (defcmd "backspace" ()
-    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:backspace)))))
-  (defcmd "delete-char" ()
-    (let ((buf (cur-buffer)) (snap (focused-snap)))
-      (when (and buf snap)
-        (sento.actor:tell buf
-          (list :delete-region
-                :start-line (pine.buffer:point-line snap) :start-col (pine.buffer:point-col snap)
-                :end-line (pine.buffer:point-line snap) :end-col (1+ (pine.buffer:point-col snap)))))))
-  (defcmd "newline" ()
-    (let ((buf (cur-buffer))) (when buf (pine.ask:tell buf :newline))))
-  (defcmd "undo" ()
-    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:undo)))))
-  (defcmd "redo" ()
-    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:redo)))))
+;;;; Commands. Top-level: define-command registers as it is read, so loading
+;;;; this file is what makes them reachable.
 
-  (defcmd "forward-char" (n)  (:interactive :number) (move-chars n))
-  (defcmd "backward-char" (n) (:interactive :number) (move-chars (- n)))
-  (defcmd "next-line" (n)     (:interactive :number) (move-lines n))
-  (defcmd "previous-line" (n) (:interactive :number) (move-lines (- n)))
-  (defcmd "forward-word" (n)  (:interactive :number) (move-words n))
-  (defcmd "backward-word" (n) (:interactive :number) (move-words (- n)))
-  (defcmd "kill-word" (n)          (:interactive :number) (kill-words-cmd n))
-  (defcmd "backward-kill-word" (n) (:interactive :number) (kill-words-cmd (- n)))
-  (defcmd "isearch-forward" ()  (isearch-start :forward))
-  (defcmd "isearch-backward" () (isearch-start :backward))
-  (defcmd "universal-argument" () (:prefix)
-    (let ((c (pine.client:current-client)))
+(defcmd "keyboard-quit" ()
+  (setf (pine.client:pending-keys (pine.client:current-client)) nil)
+  ;; C-g while attending a local eval interrupts it into its abort restart
+  ;; (kills a runaway loop) and resolves the session.
+  (let ((s *attended-session*))
+    (when (and s (eq (dbg-session-kind s) :local) (dbg-session-ev s))
+      (pine.eval:abort-evaluation (dbg-session-ev s))
+      (%resolve-session s)))
+  (let ((buf (cur-buffer)))
+    (when buf
+      (sento.actor:tell buf (list :set-meta :key :mark-line :value nil))
+      (sento.actor:tell buf (list :set-meta :key :mark-col :value nil))))
+  (cancel-prompt))
+(defcmd "backspace" ()
+  (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:backspace)))))
+(defcmd "delete-char" ()
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap)
+      (sento.actor:tell buf
+        (list :delete-region
+              :start-line (pine.buffer:point-line snap) :start-col (pine.buffer:point-col snap)
+              :end-line (pine.buffer:point-line snap) :end-col (1+ (pine.buffer:point-col snap)))))))
+(defcmd "newline" ()
+  (let ((buf (cur-buffer))) (when buf (pine.ask:tell buf :newline))))
+(defcmd "undo" ()
+  (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:undo)))))
+(defcmd "redo" ()
+  (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:redo)))))
+
+(defcmd "forward-char" (n)  (:interactive :number) (move-chars n))
+(defcmd "backward-char" (n) (:interactive :number) (move-chars (- n)))
+(defcmd "next-line" (n)     (:interactive :number) (move-lines n))
+(defcmd "previous-line" (n) (:interactive :number) (move-lines (- n)))
+(defcmd "forward-word" (n)  (:interactive :number) (move-words n))
+(defcmd "backward-word" (n) (:interactive :number) (move-words (- n)))
+(defcmd "kill-word" (n)          (:interactive :number) (kill-words-cmd n))
+(defcmd "backward-kill-word" (n) (:interactive :number) (kill-words-cmd (- n)))
+(defcmd "isearch-forward" ()  (isearch-start :forward))
+(defcmd "isearch-backward" () (isearch-start :backward))
+(defcmd "universal-argument" () (:prefix)
+  (let ((c (pine.client:current-client)))
+    (setf (pine.client:prefix-arg c)
+          (list (* 4 (pine.command:prefix-numeric-value
+                      (pine.client:prefix-arg c)))))))
+(defcmd "digit-argument" () (:prefix)
+  (let* ((c (pine.client:current-client))
+         (key (pine.client:this-command-key c))
+         (d (and key (digit-char-p (char (pine.key:key-sym key) 0))))
+         (cur (pine.client:prefix-arg c)))
+    (when d
       (setf (pine.client:prefix-arg c)
-            (list (* 4 (pine.command:prefix-numeric-value
-                        (pine.client:prefix-arg c)))))))
-  (defcmd "digit-argument" () (:prefix)
-    (let* ((c (pine.client:current-client))
-           (key (pine.client:this-command-key c))
-           (d (and key (digit-char-p (char (pine.key:key-sym key) 0))))
-           (cur (pine.client:prefix-arg c)))
-      (when d
-        (setf (pine.client:prefix-arg c)
-              (cond ((eq cur '-) (- d))
-                    ((and (integerp cur) (minusp cur)) (- (+ (* 10 (- cur)) d)))
-                    ((integerp cur) (+ (* 10 cur) d))
-                    (t d))))))
-  (defcmd "negative-argument" () (:prefix)
-    (let* ((c (pine.client:current-client))
-           (cur (pine.client:prefix-arg c)))
-      (setf (pine.client:prefix-arg c)
-            (cond ((eq cur '-) nil)
-                  ((integerp cur) (- cur))
-                  (t '-)))))
+            (cond ((eq cur '-) (- d))
+                  ((and (integerp cur) (minusp cur)) (- (+ (* 10 (- cur)) d)))
+                  ((integerp cur) (+ (* 10 cur) d))
+                  (t d))))))
+(defcmd "negative-argument" () (:prefix)
+  (let* ((c (pine.client:current-client))
+         (cur (pine.client:prefix-arg c)))
+    (setf (pine.client:prefix-arg c)
+          (cond ((eq cur '-) nil)
+                ((integerp cur) (- cur))
+                (t '-)))))
 
-  (defcmd "beginning-of-line" ()
-    (let ((buf (cur-buffer)) (snap (focused-snap)))
-      (when (and buf snap)
-        (sento.actor:tell buf (list :move-point :line (pine.buffer:point-line snap) :col 0)))))
-  (defcmd "end-of-line" ()
-    (let ((buf (cur-buffer)) (snap (focused-snap)))
-      (when (and buf snap)
-        (let ((len (length (fset:@ (pine.buffer:lines snap) (pine.buffer:point-line snap)))))
-          (sento.actor:tell buf (list :move-point :line (pine.buffer:point-line snap) :col len))))))
-  (defcmd "beginning-of-buffer" ()
-    (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf (list :move-point :line 0 :col 0)))))
-  (defcmd "end-of-buffer" ()
-    (let ((buf (cur-buffer)) (snap (focused-snap)))
-      (when (and buf snap)
-        (let* ((ll (1- (pine.buffer:line-count snap)))
-               (lc (length (fset:@ (pine.buffer:lines snap) ll))))
-          (sento.actor:tell buf (list :move-point :line ll :col lc))))))
+(defcmd "beginning-of-line" ()
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap)
+      (sento.actor:tell buf (list :move-point :line (pine.buffer:point-line snap) :col 0)))))
+(defcmd "end-of-line" ()
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap)
+      (let ((len (length (fset:@ (pine.buffer:lines snap) (pine.buffer:point-line snap)))))
+        (sento.actor:tell buf (list :move-point :line (pine.buffer:point-line snap) :col len))))))
+(defcmd "beginning-of-buffer" ()
+  (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf (list :move-point :line 0 :col 0)))))
+(defcmd "end-of-buffer" ()
+  (let ((buf (cur-buffer)) (snap (focused-snap)))
+    (when (and buf snap)
+      (let* ((ll (1- (pine.buffer:line-count snap)))
+             (lc (length (fset:@ (pine.buffer:lines snap) ll))))
+        (sento.actor:tell buf (list :move-point :line ll :col lc))))))
 
-  (defcmd "scroll-down" ()
-    (let ((w (pine.client:focused-window (pine.client:current-client))))
-      (when w (scroll-window (- (pine.buffer:win-height w) 2)))))
-  (defcmd "scroll-up" ()
-    (let ((w (pine.client:focused-window (pine.client:current-client))))
-      (when w (scroll-window (- 2 (pine.buffer:win-height w))))))
+(defcmd "scroll-down" ()
+  (let ((w (pine.client:focused-window (pine.client:current-client))))
+    (when w (scroll-window (- (pine.buffer:win-height w) 2)))))
+(defcmd "scroll-up" ()
+  (let ((w (pine.client:focused-window (pine.client:current-client))))
+    (when w (scroll-window (- 2 (pine.buffer:win-height w))))))
 
-  (defcmd "forward-sexp" ()      (%sexp-move :forward-sexp))
-  (defcmd "backward-sexp" ()     (%sexp-move :backward-sexp))
-  (defcmd "beginning-of-defun" () (%sexp-move :beginning-of-defun))
-  (defcmd "end-of-defun" ()      (%sexp-move :end-of-defun))
-  (defcmd "mark-sexp" ()
-    (set-mark)
-    (%sexp-move :forward-sexp))
+(defcmd "forward-sexp" ()      (%sexp-move :forward-sexp))
+(defcmd "backward-sexp" ()     (%sexp-move :backward-sexp))
+(defcmd "beginning-of-defun" () (%sexp-move :beginning-of-defun))
+(defcmd "end-of-defun" ()      (%sexp-move :end-of-defun))
+(defcmd "mark-sexp" ()
+  (set-mark)
+  (%sexp-move :forward-sexp))
 
-  (defcmd "set-mark" ()     (set-mark))
-  (defcmd "kill-line" ()    (kill-line-cmd))
-  (defcmd "kill-region" ()  (kill-region-cmd))
-  (defcmd "copy-region" ()  (copy-region-cmd))
-  (defcmd "yank" ()         (yank-cmd))
-  (defcmd "yank-pop" ()     (yank-pop-cmd))
+(defcmd "set-mark" ()     (set-mark))
+(defcmd "kill-line" ()    (kill-line-cmd))
+(defcmd "kill-region" ()  (kill-region-cmd))
+(defcmd "copy-region" ()  (copy-region-cmd))
+(defcmd "yank" ()         (yank-cmd))
+(defcmd "yank-pop" ()     (yank-pop-cmd))
 
-  (defcmd "find-file" ()
-    (read-file-name "Find file: "
-      (lambda (path)
-        (handler-case (pine.file:find-file path)
-          (error (c) (pine.echo:message (format nil "error: ~a" c)))))
-      :history :files))
-  (defcmd "find-recent" ()
-    (let ((items (pine.store:store-items :recent-files)))
-      (if items
-          (completing-read "Recent: " items
-            (lambda (path)
-              (handler-case (pine.file:find-file path)
-                (error (c) (pine.echo:message (format nil "error: ~a" c))))))
-          (pine.echo:message "no recent files"))))
-  (defcmd "save-file" ()
-    (handler-case
-        (let ((buf (cur-buffer)))
-          ;; opt-in apheleia-style reformat before write; the reindent is a tell
-          ;; and save's :get-state queues behind it in the actor mailbox, so the
-          ;; write sees the formatted text
-          (when (and buf (pine.var:var :format-on-save buf))
-            (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
-              (pine.ask:tell buf :indent-lines
-                                :from 0 :to (1- (pine.buffer:line-count snap)))))
-          (pine.file:save-current-buffer))
-      (error (c) (pine.echo:message (format nil "error: ~a" c)))))
-  (defcmd "split-window-below" () (%split-window :column))
-  (defcmd "split-window-right" () (%split-window :row))
-  (defcmd "delete-window" () (delete-window-cmd))
-  (defcmd "delete-other-windows" () (delete-other-windows-cmd))
-  (defcmd "other-window" () (other-window-cmd))
-  (defcmd "switch-buffer" ()
-    (completing-read "Switch to: " (pine.client:list-buffers)
-      (lambda (name)
-        (let* ((client (pine.client:current-client))
-               (buf (pine.client:switch-buffer name)))
-          (when buf
-            (sento.actor:tell (pine.client:renderer client)
-                              (list :switch-buffer :buffer buf :name name))
-            (pine.render:subscribe-to-buffer buf))))))
-  (defcmd "list-buffers" ()
-    (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.client:list-buffers))))
-  (defcmd "execute-command" ()
-    (completing-read "M-x " (pine.command:all-command-names)
-      (lambda (name) (pine.command:call-command name))
-      :history :commands))
-  (defcmd "eval-expression" ()
-    (prompt "Eval: "
-      (lambda (text)
-        (let ((pkg (let ((buf (cur-buffer)))
-                     (if buf
-                         (%buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
-                         (find-package :cl-user)))))
-          (%eval-form-string text pkg)))
-      :history :eval))
-  (defcmd "choose-restart" ()
-    (let ((names (and *attended-session*
-                      (remove nil (mapcar #'first
-                                          (dbg-session-restarts *attended-session*))))))
-      (if names
-          (completing-read "Restart: " names
-            (lambda (name) (invoke-pending-restart name)))
-          (pine.echo:message "no evaluation in the debugger"))))
-  (defcmd "debugger-abort" ()
-    (invoke-pending-restart "ABORT"))
-  (defcmd "debugger-quit" ()
-    (%debugger-quit))
-  (defcmd "debugger-next-session" ()
-    "Page to the next live debugger session without resolving the current one."
-    (let ((ordered (reverse *debugger-sessions*)))
-      (if (> (length ordered) 1)
-          (let* ((pos (or (position *attended-session* ordered) 0))
-                 (next (nth (mod (1+ pos) (length ordered)) ordered)))
-            (%attend-session next))
-          (pine.echo:message "only one debugger session"))))
-  (defcmd "debugger" ()
-    "Reopen the *debugger* on the attended session (after q), if one is parked."
-    (if *attended-session*
-        (%attend-session *attended-session*)
-        (pine.echo:message "no debugger session")))
-  (defcmd "toggle-debug-on-error" ()
-    (let ((new (not (pine.var:var :debug-on-error))))
-      (setf (pine.var:var :debug-on-error) new)
-      (pine.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
-  (defcmd "jobs" ()
-    (show-layout "*jobs*" (%jobs-builder)))
-  (defcmd "eval-last-sexp" () (eval-last-sexp))
-  (defcmd "eval-defun" ()     (eval-defun))
-  (defcmd "eval-buffer" ()    (eval-buffer))
-  (defcmd "find-definition" () (find-definition))
-  (defcmd "arglist" ()        (symbol-arglist))
-  (defcmd "complete-symbol" () (complete-symbol))
-  (defcmd "load-file" ()      (load-file))
-  (defcmd "set-eval-target" ()
-    (completing-read
-     "Eval in: "
-     (cons "local"
-           (mapcar #'pine.actor:agent-info-name
-                   (pine.actor:list-agents
-                    (pine.client:server-of (pine.client:current-client)))))
-     (lambda (name)
-       (setf pine.target:*eval-target* (if (string= name "local") :local name))
-       (pine.echo:message (format nil "eval target: ~a" name)))))
-  (defcmd "new-buffer" ()
-    (prompt "New buffer: "
-      (lambda (name)
-        (let ((buf (pine.client:make-buffer name))) (pine.render:subscribe-to-buffer buf)))))
-  (defcmd "open-repl" ()
-    (handler-case
-        (let* ((client (pine.client:current-client))
-               (buf (or (pine.client:repl-buffer client) (pine.repl:start-repl))))
-          (pine.client:switch-buffer "*repl*")
-          (pine.render:subscribe-to-buffer buf)
+(defcmd "find-file" ()
+  (read-file-name "Find file: "
+    (lambda (path)
+      (handler-case (pine.file:find-file path)
+        (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+    :history :files))
+(defcmd "find-recent" ()
+  (let ((items (pine.store:store-items :recent-files)))
+    (if items
+        (completing-read "Recent: " items
+          (lambda (path)
+            (handler-case (pine.file:find-file path)
+              (error (c) (pine.echo:message (format nil "error: ~a" c))))))
+        (pine.echo:message "no recent files"))))
+(defcmd "save-file" ()
+  (handler-case
+      (let ((buf (cur-buffer)))
+        ;; opt-in apheleia-style reformat before write; the reindent is a tell
+        ;; and save's :get-state queues behind it in the actor mailbox, so the
+        ;; write sees the formatted text
+        (when (and buf (pine.var:var :format-on-save buf))
+          (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
+            (pine.ask:tell buf :indent-lines
+                              :from 0 :to (1- (pine.buffer:line-count snap)))))
+        (pine.file:save-current-buffer))
+    (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+(defcmd "split-window-below" () (%split-window :column))
+(defcmd "split-window-right" () (%split-window :row))
+(defcmd "delete-window" () (delete-window-cmd))
+(defcmd "delete-other-windows" () (delete-other-windows-cmd))
+(defcmd "other-window" () (other-window-cmd))
+(defcmd "switch-buffer" ()
+  (completing-read "Switch to: " (pine.client:list-buffers)
+    (lambda (name)
+      (let* ((client (pine.client:current-client))
+             (buf (pine.client:switch-buffer name)))
+        (when buf
           (sento.actor:tell (pine.client:renderer client)
-                            (list :switch-buffer :buffer buf :name "*repl*")))
-      (error (c) (pine.echo:message (format nil "error: ~a" c)))))
-  (defcmd "terminal" ()
-    (handler-case
-        (let* ((client (pine.client:current-client))
-               (f (pine.client:frame client))
-               (cols (pine.buffer:frame-cols f))
-               (rows (max 1 (- (pine.buffer:frame-rows f) 2)))
-               (buf (pine.client:make-buffer "*terminal*")))
-          (pine.term:open-terminal client buf :rows rows :cols cols)
-          (pine.client:set-buffer-mode buf :terminal-mode)
-          (pine.client:switch-buffer "*terminal*")
-          (sento.actor:tell (pine.client:renderer client)
-                            (list :switch-buffer :buffer buf :name "*terminal*")))
-      (error (c) (pine.echo:message (format nil "error: ~a" c)))))
-  (defcmd "overwrite-mode" ()
-    (let ((on (pine.client:toggle-minor-mode (pine.client:current-client) :overwrite-mode)))
-      (pine.echo:message (if on "Overwrite mode enabled" "Overwrite mode disabled"))))
-  (defcmd "describe-key" ()
-    (pine.echo:message "Describe key: ")
-    (pine.command:read-next-key
-     (pine.client:current-client)
-     (lambda (key) (pine.echo:message (%describe-key-text key)))))
-  (defcmd "describe-bindings" ()
-    (show-layout "*bindings*" (%text-layout (%bindings-text))))
-  (defcmd "describe-mode" ()
-    (show-layout "*mode*" (%text-layout (%mode-text))))
-  (defcmd "describe-variables" ()
-    (show-layout "*variables*" (%text-layout (%variables-text))))
-  (defcmd "insert-tab" ()
-    (let* ((c (pine.client:current-client))
-           (buf (pine.client:current-buffer c))
-           (n (max 0 (pine.var:var :tab-width buf))))
-      (when buf
-        (pine.ask:tell buf :insert :text (make-string n :initial-element #\Space)))))
-  (defcmd "indent-for-tab-command" ()
-    "Reindent the current line to the column its mode dictates."
-    (let ((buf (cur-buffer)))
-      (when buf (pine.ask:tell buf :indent-lines))))
-  (defcmd "indent-region" ()
-    "Reindent every line spanned by the region."
-    (let* ((buf (cur-buffer))
-           (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5))))
-      (when state
-        (multiple-value-bind (sl sc el ec) (pine.buffer:region-bounds state)
-          (declare (ignore sc ec))
-          (if sl
-              (pine.ask:tell buf :indent-lines :from sl :to el)
-              (pine.echo:message "no region"))))))
-  (defcmd "format-buffer" ()
-    "Reindent the whole buffer off the parse tree, point preserved (in-image)."
-    (let* ((buf (cur-buffer))
-           (snap (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
-      (when snap
-        (pine.ask:tell buf :indent-lines
-                          :from 0 :to (1- (pine.buffer:line-count snap))))))
-  ;; layout buffers: selection nav + activation on the node tree
-  (defcmd "layout-next" () (layout-select 1))
-  (defcmd "layout-prev" () (layout-select -1))
-  (defcmd "layout-activate" () (layout-activate))
-  ;; minibuffer-mode: the only keys the prompt binds; everything else is the
-  ;; ordinary buffer editing commands, so the prompt edits like any buffer.
-  (defcmd "minibuffer-accept" () (minibuffer-accept))
-  (defcmd "minibuffer-abort" () (minibuffer-abort))
-  (defcmd "minibuffer-complete" () (minibuffer-complete))
-  (defcmd "minibuffer-next-candidate" () (completion-next))
-  (defcmd "minibuffer-prev-candidate" () (completion-prev))
-  (defcmd "minibuffer-history-prev" () (minibuffer-history-prev))
-  (defcmd "minibuffer-history-next" () (minibuffer-history-next)))
+                            (list :switch-buffer :buffer buf :name name))
+          (pine.render:subscribe-to-buffer buf))))))
+(defcmd "list-buffers" ()
+  (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.client:list-buffers))))
+(defcmd "execute-command" ()
+  (completing-read "M-x " (pine.command:all-command-names)
+    (lambda (name) (pine.command:call-command name))
+    :history :commands))
+(defcmd "eval-expression" ()
+  (prompt "Eval: "
+    (lambda (text)
+      (let ((pkg (let ((buf (cur-buffer)))
+                   (if buf
+                       (%buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
+                       (find-package :cl-user)))))
+        (%eval-form-string text pkg)))
+    :history :eval))
+(defcmd "choose-restart" ()
+  (let ((names (and *attended-session*
+                    (remove nil (mapcar #'first
+                                        (dbg-session-restarts *attended-session*))))))
+    (if names
+        (completing-read "Restart: " names
+          (lambda (name) (invoke-pending-restart name)))
+        (pine.echo:message "no evaluation in the debugger"))))
+(defcmd "debugger-abort" ()
+  (invoke-pending-restart "ABORT"))
+(defcmd "debugger-quit" ()
+  (%debugger-quit))
+(defcmd "debugger-next-session" ()
+  "Page to the next live debugger session without resolving the current one."
+  (let ((ordered (reverse *debugger-sessions*)))
+    (if (> (length ordered) 1)
+        (let* ((pos (or (position *attended-session* ordered) 0))
+               (next (nth (mod (1+ pos) (length ordered)) ordered)))
+          (%attend-session next))
+        (pine.echo:message "only one debugger session"))))
+(defcmd "debugger" ()
+  "Reopen the *debugger* on the attended session (after q), if one is parked."
+  (if *attended-session*
+      (%attend-session *attended-session*)
+      (pine.echo:message "no debugger session")))
+(defcmd "toggle-debug-on-error" ()
+  (let ((new (not (pine.var:var :debug-on-error))))
+    (setf (pine.var:var :debug-on-error) new)
+    (pine.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
+(defcmd "jobs" ()
+  (show-layout "*jobs*" (%jobs-builder)))
+(defcmd "eval-last-sexp" () (eval-last-sexp))
+(defcmd "eval-defun" ()     (eval-defun))
+(defcmd "eval-buffer" ()    (eval-buffer))
+(defcmd "find-definition" () (find-definition))
+(defcmd "arglist" ()        (symbol-arglist))
+(defcmd "complete-symbol" () (complete-symbol))
+(defcmd "load-file" ()      (load-file))
+(defcmd "set-eval-target" ()
+  (completing-read
+   "Eval in: "
+   (cons "local"
+         (mapcar #'pine.actor:agent-info-name
+                 (pine.actor:list-agents
+                  (pine.client:server-of (pine.client:current-client)))))
+   (lambda (name)
+     (setf pine.target:*eval-target* (if (string= name "local") :local name))
+     (pine.echo:message (format nil "eval target: ~a" name)))))
+(defcmd "new-buffer" ()
+  (prompt "New buffer: "
+    (lambda (name)
+      (let ((buf (pine.client:make-buffer name))) (pine.render:subscribe-to-buffer buf)))))
+(defcmd "open-repl" ()
+  (handler-case
+      (let* ((client (pine.client:current-client))
+             (buf (or (pine.client:repl-buffer client) (pine.repl:start-repl))))
+        (pine.client:switch-buffer "*repl*")
+        (pine.render:subscribe-to-buffer buf)
+        (sento.actor:tell (pine.client:renderer client)
+                          (list :switch-buffer :buffer buf :name "*repl*")))
+    (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+(defcmd "terminal" ()
+  (handler-case
+      (let* ((client (pine.client:current-client))
+             (f (pine.client:frame client))
+             (cols (pine.buffer:frame-cols f))
+             (rows (max 1 (- (pine.buffer:frame-rows f) 2)))
+             (buf (pine.client:make-buffer "*terminal*")))
+        (pine.term:open-terminal client buf :rows rows :cols cols)
+        (pine.client:set-buffer-mode buf :terminal-mode)
+        (pine.client:switch-buffer "*terminal*")
+        (sento.actor:tell (pine.client:renderer client)
+                          (list :switch-buffer :buffer buf :name "*terminal*")))
+    (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+(defcmd "overwrite-mode" ()
+  (let ((on (pine.client:toggle-minor-mode (pine.client:current-client) :overwrite-mode)))
+    (pine.echo:message (if on "Overwrite mode enabled" "Overwrite mode disabled"))))
+(defcmd "describe-key" ()
+  (pine.echo:message "Describe key: ")
+  (pine.command:read-next-key
+   (pine.client:current-client)
+   (lambda (key) (pine.echo:message (%describe-key-text key)))))
+(defcmd "describe-bindings" ()
+  (show-layout "*bindings*" (%text-layout (%bindings-text))))
+(defcmd "describe-mode" ()
+  (show-layout "*mode*" (%text-layout (%mode-text))))
+(defcmd "describe-variables" ()
+  (show-layout "*variables*" (%text-layout (%variables-text))))
+(defcmd "insert-tab" ()
+  (let* ((c (pine.client:current-client))
+         (buf (pine.client:current-buffer c))
+         (n (max 0 (pine.var:var :tab-width buf))))
+    (when buf
+      (pine.ask:tell buf :insert :text (make-string n :initial-element #\Space)))))
+(defcmd "indent-for-tab-command" ()
+  "Reindent the current line to the column its mode dictates."
+  (let ((buf (cur-buffer)))
+    (when buf (pine.ask:tell buf :indent-lines))))
+(defcmd "indent-region" ()
+  "Reindent every line spanned by the region."
+  (let* ((buf (cur-buffer))
+         (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5))))
+    (when state
+      (multiple-value-bind (sl sc el ec) (pine.buffer:region-bounds state)
+        (declare (ignore sc ec))
+        (if sl
+            (pine.ask:tell buf :indent-lines :from sl :to el)
+            (pine.echo:message "no region"))))))
+(defcmd "format-buffer" ()
+  "Reindent the whole buffer off the parse tree, point preserved (in-image)."
+  (let* ((buf (cur-buffer))
+         (snap (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
+    (when snap
+      (pine.ask:tell buf :indent-lines
+                        :from 0 :to (1- (pine.buffer:line-count snap))))))
+;; layout buffers: selection nav + activation on the node tree
+(defcmd "layout-next" () (layout-select 1))
+(defcmd "layout-prev" () (layout-select -1))
+(defcmd "layout-activate" () (layout-activate))
+;; minibuffer-mode: the only keys the prompt binds; everything else is the
+;; ordinary buffer editing commands, so the prompt edits like any buffer.
+(defcmd "minibuffer-accept" () (minibuffer-accept))
+(defcmd "minibuffer-abort" () (minibuffer-abort))
+(defcmd "minibuffer-complete" () (minibuffer-complete))
+(defcmd "minibuffer-next-candidate" () (completion-next))
+(defcmd "minibuffer-prev-candidate" () (completion-prev))
+(defcmd "minibuffer-history-prev" () (minibuffer-history-prev))
+(defcmd "minibuffer-history-next" () (minibuffer-history-next))
 
-;;;; Bindings
 
-(defun k (spec) (pine.key:parse-key spec))
+;;;; Bindings. Top-level, grouped by the keymap they go into, beside the
+;;;; commands they name. Nothing installs them; loading this file is what
+;;;; binds them, and a config's define-key afterwards is never overwritten.
 
-(defun install-bindings ()
-  (let ((g (pine.mode:global-keymap))
-        (tm (pine.mode:mode-keymap (pine.mode:find-mode :text-mode)))
-        (dm (pine.mode:mode-keymap (pine.mode:find-mode :debugger-mode))))
-    ;; debugger-mode: restart rows answer to the surface interaction
-    ;; (Return/C-n/C-p from layout-mode); these are the extras
-    (pine.keymap:define-key dm (k "a") "debugger-abort")
-    (pine.keymap:define-key dm (k "q") "debugger-quit")
-    (pine.keymap:define-key dm (k "Tab") "debugger-next-session")
-    ;; global: quit, chords, M-x
-    (pine.keymap:define-key g (k "C-g") "keyboard-quit")
-    (pine.keymap:define-key g (k "Escape") "keyboard-quit")
-    (pine.keymap:define-key g (list (k "C-x") (k "C-f")) "find-file")
-    (pine.keymap:define-key g (list (k "C-x") (k "C-r")) "find-recent")
-    (pine.keymap:define-key g (list (k "C-x") (k "C-s")) "save-file")
-    (pine.keymap:define-key g (list (k "C-x") (k "b")) "switch-buffer")
-    (pine.keymap:define-key g (list (k "C-x") (k "2")) "split-window-below")
-    (pine.keymap:define-key g (list (k "C-x") (k "3")) "split-window-right")
-    (pine.keymap:define-key g (list (k "C-x") (k "0")) "delete-window")
-    (pine.keymap:define-key g (list (k "C-x") (k "1")) "delete-other-windows")
-    (pine.keymap:define-key g (list (k "C-x") (k "o")) "other-window")
-    (pine.keymap:define-key g (list (k "C-x") (k "n")) "new-buffer")
-    (pine.keymap:define-key g (list (k "C-x") (k "r")) "open-repl")
-    (pine.keymap:define-key g (list (k "C-x") (k "t")) "terminal")
-    (pine.keymap:define-key g (list (k "C-x") (k "C-e")) "eval-last-sexp")
-    (pine.keymap:define-key g (k "C-M-x") "eval-defun")
-    (pine.keymap:define-key g (k "M-.") "find-definition")
-    (pine.keymap:define-key g (k "M-x") "execute-command")
-    (pine.keymap:define-key g (k "Insert") "overwrite-mode")
-    ;; prefix argument
-    (pine.keymap:define-key g (k "C-u") "universal-argument")
-    (pine.keymap:define-key g (k "M--") "negative-argument")
-    (dotimes (d 10)
-      (pine.keymap:define-key g (k (format nil "M-~d" d)) "digit-argument"))
-    ;; help
-    (pine.keymap:define-key g (list (k "C-h") (k "k")) "describe-key")
-    (pine.keymap:define-key g (list (k "C-h") (k "b")) "describe-bindings")
-    (pine.keymap:define-key g (list (k "C-h") (k "m")) "describe-mode")
-    (pine.keymap:define-key g (list (k "C-h") (k "v")) "describe-variables")
-    ;; text-mode editing
-    (pine.keymap:define-key tm (k "BackSpace") "backspace")
-    (pine.keymap:define-key tm (k "Return") "newline")
-    (pine.keymap:define-key tm (k "Tab") "indent-for-tab-command")
-    (pine.keymap:define-key tm (k "Up") "previous-line")
-    (pine.keymap:define-key tm (k "Down") "next-line")
-    (pine.keymap:define-key tm (k "Left") "backward-char")
-    (pine.keymap:define-key tm (k "Right") "forward-char")
-    (pine.keymap:define-key tm (k "C-f") "forward-char")
-    (pine.keymap:define-key tm (k "C-b") "backward-char")
-    (pine.keymap:define-key tm (k "C-n") "next-line")
-    (pine.keymap:define-key tm (k "C-p") "previous-line")
-    (pine.keymap:define-key tm (k "C-a") "beginning-of-line")
-    (pine.keymap:define-key tm (k "C-e") "end-of-line")
-    (pine.keymap:define-key tm (k "C-d") "delete-char")
-    (pine.keymap:define-key tm (k "M-f") "forward-word")
-    (pine.keymap:define-key tm (k "M-b") "backward-word")
-    (pine.keymap:define-key tm (k "M-d") "kill-word")
-    (pine.keymap:define-key tm (k "M-BackSpace") "backward-kill-word")
-    (pine.keymap:define-key tm (k "C-s") "isearch-forward")
-    (pine.keymap:define-key tm (k "C-r") "isearch-backward")
-    (pine.keymap:define-key tm (k "M-<") "beginning-of-buffer")
-    (pine.keymap:define-key tm (k "M->") "end-of-buffer")
-    (pine.keymap:define-key tm (k "C-space") "set-mark")
-    (pine.keymap:define-key tm (k "C-k") "kill-line")
-    (pine.keymap:define-key tm (k "C-w") "kill-region")
-    (pine.keymap:define-key tm (k "M-w") "copy-region")
-    (pine.keymap:define-key tm (k "C-y") "yank")
-    (pine.keymap:define-key tm (k "M-y") "yank-pop")
-    (pine.keymap:define-key tm (k "C-v") "scroll-down")
-    (pine.keymap:define-key tm (k "M-v") "scroll-up")
-    (pine.keymap:define-key tm (k "Prior") "scroll-up")
-    (pine.keymap:define-key tm (k "Next") "scroll-down")
-    (pine.keymap:define-key tm (k "C-z") "undo")
-    (pine.keymap:define-key tm (k "C-/") "undo")
-    (pine.keymap:define-key tm (k "C-?") "redo")
-    ;; structural navigation (tree-sitter)
-    (pine.keymap:define-key tm (k "C-M-f") "forward-sexp")
-    (pine.keymap:define-key tm (k "C-M-b") "backward-sexp")
-    (pine.keymap:define-key tm (k "C-M-a") "beginning-of-defun")
-    (pine.keymap:define-key tm (k "C-M-e") "end-of-defun")
-    (pine.keymap:define-key tm (k "C-M-space") "mark-sexp")
-    ;; indentation: Tab reindents (mode-aware), completion moves to the Emacs
-    ;; completion binding, region + whole-buffer reformat get their own keys
-    (pine.keymap:define-key tm (k "C-M-\\") "indent-region")
-    ;; layout-mode: selection nav + activation on a layout buffer
-    (let ((sm (pine.mode:mode-keymap (pine.mode:find-mode :layout-mode))))
-      (pine.keymap:define-key sm (k "Down") "layout-next")
-      (pine.keymap:define-key sm (k "C-n") "layout-next")
-      (pine.keymap:define-key sm (k "Up") "layout-prev")
-      (pine.keymap:define-key sm (k "C-p") "layout-prev")
-      (pine.keymap:define-key sm (k "Return") "layout-activate"))
-    ;; minibuffer-mode: accept / abort / complete / candidate motion. All other
-    ;; keys fall through to text-mode, so the prompt has full editing.
-    (let ((mm (pine.mode:mode-keymap (pine.mode:find-mode :minibuffer-mode))))
-      (pine.keymap:define-key mm (k "Return") "minibuffer-accept")
-      (pine.keymap:define-key mm (k "Escape") "minibuffer-abort")
-      (pine.keymap:define-key mm (k "C-g") "minibuffer-abort")
-      (pine.keymap:define-key mm (k "Tab") "minibuffer-complete")
-      (pine.keymap:define-key mm (k "Down") "minibuffer-next-candidate")
-      (pine.keymap:define-key mm (k "C-n") "minibuffer-next-candidate")
-      (pine.keymap:define-key mm (k "Up") "minibuffer-prev-candidate")
-      (pine.keymap:define-key mm (k "C-p") "minibuffer-prev-candidate")
-      (pine.keymap:define-key mm (k "M-p") "minibuffer-history-prev")
-      (pine.keymap:define-key mm (k "M-n") "minibuffer-history-next"))
-    ;; lisp-mode: the SLIME chord set (mode-keymap chords resolve fine)
-    (let ((lm (pine.mode:mode-keymap (pine.mode:find-mode :lisp-mode))))
-      (pine.keymap:define-key lm (list (k "C-c") (k "C-c")) "eval-defun")
-      (pine.keymap:define-key lm (list (k "C-c") (k "C-k")) "eval-buffer")
-      (pine.keymap:define-key lm (list (k "C-c") (k "C-l")) "load-file")
-      (pine.keymap:define-key lm (list (k "C-c") (k "C-d")) "arglist")
-      (pine.keymap:define-key lm (k "C-M-i") "complete-symbol")
-      (pine.keymap:define-key lm (k "M-Tab") "complete-symbol"))))
+(pine.keymap:define-keys :global
+  "C-g"      "keyboard-quit"
+  "Escape"   "keyboard-quit"
+  "C-x C-f"  "find-file"
+  "C-x C-r"  "find-recent"
+  "C-x C-s"  "save-file"
+  "C-x b"    "switch-buffer"
+  "C-x 2"    "split-window-below"
+  "C-x 3"    "split-window-right"
+  "C-x 0"    "delete-window"
+  "C-x 1"    "delete-other-windows"
+  "C-x o"    "other-window"
+  "C-x n"    "new-buffer"
+  "C-x r"    "open-repl"
+  "C-x t"    "terminal"
+  "C-x C-e"  "eval-last-sexp"
+  "C-M-x"    "eval-defun"
+  "M-."      "find-definition"
+  "M-x"      "execute-command"
+  "Insert"   "overwrite-mode"
+  ;; prefix argument
+  "C-u"      "universal-argument"
+  "M--"      "negative-argument"
+  ;; help
+  "C-h k"    "describe-key"
+  "C-h b"    "describe-bindings"
+  "C-h m"    "describe-mode"
+  "C-h v"    "describe-variables")
+
+(let ((map (pine.keymap:keymap :global)))
+  (dotimes (d 10)
+    (pine.keymap:define-key map (pine.key:parse-chord (format nil "M-~d" d))
+                            "digit-argument")))
+
+(pine.keymap:define-keys :text-mode
+  "BackSpace"   "backspace"
+  "Return"      "newline"
+  "Tab"         "indent-for-tab-command"
+  "Up"          "previous-line"
+  "Down"        "next-line"
+  "Left"        "backward-char"
+  "Right"       "forward-char"
+  "C-f"         "forward-char"
+  "C-b"         "backward-char"
+  "C-n"         "next-line"
+  "C-p"         "previous-line"
+  "C-a"         "beginning-of-line"
+  "C-e"         "end-of-line"
+  "C-d"         "delete-char"
+  "M-f"         "forward-word"
+  "M-b"         "backward-word"
+  "M-d"         "kill-word"
+  "M-BackSpace" "backward-kill-word"
+  "C-s"         "isearch-forward"
+  "C-r"         "isearch-backward"
+  "M-<"         "beginning-of-buffer"
+  "M->"         "end-of-buffer"
+  "C-space"     "set-mark"
+  "C-k"         "kill-line"
+  "C-w"         "kill-region"
+  "M-w"         "copy-region"
+  "C-y"         "yank"
+  "M-y"         "yank-pop"
+  "C-v"         "scroll-down"
+  "M-v"         "scroll-up"
+  "Prior"       "scroll-up"
+  "Next"        "scroll-down"
+  "C-z"         "undo"
+  "C-/"         "undo"
+  "C-?"         "redo"
+  ;; structural navigation (tree-sitter)
+  "C-M-f"       "forward-sexp"
+  "C-M-b"       "backward-sexp"
+  "C-M-a"       "beginning-of-defun"
+  "C-M-e"       "end-of-defun"
+  "C-M-space"   "mark-sexp"
+  ;; Tab reindents (mode-aware); completion has the Emacs binding, and
+  ;; region and whole-buffer reformat get their own keys
+  "C-M-\\"      "indent-region")
+
+;;;; lisp-mode: the SLIME chord set.
+(pine.keymap:define-keys :lisp-mode
+  "C-c C-c"  "eval-defun"
+  "C-c C-k"  "eval-buffer"
+  "C-c C-l"  "load-file"
+  "C-c C-d"  "arglist"
+  "C-M-i"    "complete-symbol"
+  "M-Tab"    "complete-symbol")
+
+;;;; debugger-mode: the restart rows answer to layout-mode's Return/C-n/C-p;
+;;;; these are the extras.
+(pine.keymap:define-keys :debugger-mode
+  "a"    "debugger-abort"
+  "q"    "debugger-quit"
+  "Tab"  "debugger-next-session")
+
+;;;; layout-mode: selection nav and activation on a layout buffer.
+(pine.keymap:define-keys :layout-mode
+  "Down"    "layout-next"
+  "C-n"     "layout-next"
+  "Up"      "layout-prev"
+  "C-p"     "layout-prev"
+  "Return"  "layout-activate")
+
+;;;; minibuffer-mode: accept, abort, complete, candidate motion. Every other
+;;;; key falls through to text-mode, so the prompt has full editing.
+(pine.keymap:define-keys :minibuffer-mode
+  "Return"  "minibuffer-accept"
+  "Escape"  "minibuffer-abort"
+  "C-g"     "minibuffer-abort"
+  "Tab"     "minibuffer-complete"
+  "Down"    "minibuffer-next-candidate"
+  "C-n"     "minibuffer-next-candidate"
+  "Up"      "minibuffer-prev-candidate"
+  "C-p"     "minibuffer-prev-candidate"
+  "M-p"     "minibuffer-history-prev"
+  "M-n"     "minibuffer-history-next")

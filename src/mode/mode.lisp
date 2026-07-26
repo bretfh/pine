@@ -17,21 +17,17 @@
   ((precedence  :initarg :precedence  :reader precedence  :initform 0)
    (transparent :initarg :transparent :reader transparent :initform nil)))
 
-(defclass base-mode (major-mode) ())
-(defclass text-mode (base-mode) ())
-(defclass lisp-mode (text-mode) ())
-(defclass repl-mode (text-mode) ())
-(defclass terminal-mode (base-mode) ())
-(defclass debugger-mode (base-mode) ())
+(defmethod pine.keymap:keymap ((m mode)) (mode-keymap m))
 
-(defclass overwrite-mode (minor-mode) ())
-(defclass minibuffer-mode (minor-mode) ())
-(defclass layout-mode (minor-mode) ())
+;;;; The global map is the one keymap no mode owns: it applies whatever mode a
+;;;; buffer is in, and it is what global-set-key writes into. Every other map
+;;;; is a mode's, reached through KEYMAP.
 
-;;;; Registry (singletons keyed by keyword name) + global keymap
+(defvar *global-keymap* (pine.keymap:make-keymap :name :global))
+
+;;;; Registry: mode singletons, keyed by keyword name.
 
 (defvar *modes* (make-hash-table :test 'eq))
-(defvar *global-keymap* nil)
 
 (defun register-mode (m) (setf (gethash (mode-name m) *modes*) m))
 (defun find-mode (name) (gethash name *modes*))
@@ -41,6 +37,57 @@
   (loop :for name :being :the :hash-keys :of *modes* :collect name))
 
 (defun global-keymap () *global-keymap*)
+
+(defmethod pine.keymap:keymap ((name symbol))
+  "Resolve a keymap designator: :global for the map no mode owns, or a mode
+keyword for that mode's."
+  (if (eq name :global)
+      *global-keymap*
+      (let ((m (find-mode name)))
+        (unless m (error "no keymap or mode named ~s" name))
+        (mode-keymap m))))
+
+;;;; Defining a mode is what registers it. DEFMODE makes the class, gives it a
+;;;; keymap parented to its parent mode's, and registers the singleton; a
+;;;; caller that wants a keymap of its own hands one in with :keymap. There is
+;;;; no second way to define a mode, and no step afterwards that installs it.
+
+(defmacro defmode (name (&key (parent :text-mode) (indicator "") ts-language keymap)
+                   &body body)
+  "Define major mode NAME (a symbol) deriving from PARENT (a mode keyword) and
+register it as :NAME. Its keymap is parented to PARENT's unless KEYMAP is
+given. BODY runs after the class exists, for the methods that give the mode
+its behaviour. Redefining replaces the class, the keymap and the registration
+together."
+  (let ((key (intern (string-upcase (string name)) :keyword)))
+    `(let ((parent-mode (or (find-mode ,parent)
+                            (error "defmode ~s: no parent mode ~s" ',name ,parent))))
+       (c2mop:ensure-class ',name :direct-superclasses (list (class-of parent-mode)))
+       (register-mode
+        (make-instance ',name :name ,key :parent-mode parent-mode
+                       :indicator ,indicator :ts-language ,ts-language
+                       :keymap (or ,keymap
+                                   (pine.keymap:make-keymap
+                                    :name ,key
+                                    :parent (pine.keymap:keymap parent-mode)))))
+       ,@body
+       ,key)))
+
+(defmacro defminor (name (&key (precedence 5) transparent (indicator "") keymap)
+                    &body body)
+  "Define minor mode NAME (a symbol) and register it as :NAME. Its keymap
+stands alone: a minor mode augments whatever major mode is on, so it inherits
+from none. Higher PRECEDENCE is consulted first."
+  (let ((key (intern (string-upcase (string name)) :keyword)))
+    `(progn
+       (c2mop:ensure-class ',name
+                           :direct-superclasses (list (find-class 'minor-mode)))
+       (register-mode
+        (make-instance ',name :name ,key :precedence ,precedence
+                       :transparent ,transparent :indicator ,indicator
+                       :keymap (or ,keymap (pine.keymap:make-keymap :name ,key))))
+       ,@body
+       ,key)))
 
 
 (defvar *auto-modes* (make-hash-table :test 'equalp)
@@ -83,45 +130,26 @@ Replaces any prior mapping, so reloading init.lisp is safe."
 SELF, under MODE. Specialize on the mode class; call-next-method layers a
 subclass over its parent."))
 
-;;;; Defaults
+;;;; The modes pine ships, in derivation order. base-mode is the root, so it
+;;;; is the one that cannot use DEFMODE: it has no parent to derive from.
 
-(defun install-default-modes ()
-  (setf *global-keymap* (pine.keymap:make-keymap :name :global))
-  (let* ((base (register-mode
-                (make-instance 'base-mode :name :base-mode :indicator "BASE"
-                               :keymap (pine.keymap:make-keymap :name :base))))
-         (text (register-mode
-                (make-instance 'text-mode :name :text-mode :parent-mode base
-                               :indicator "TEXT"
-                               :keymap (pine.keymap:make-keymap
-                                        :name :text :parent (mode-keymap base))))))
-    (register-mode (make-instance 'lisp-mode :name :lisp-mode :parent-mode text
-                                  :ts-language :commonlisp :indicator "LISP"
-                                  :keymap (pine.keymap:make-keymap
-                                           :name :lisp :parent (mode-keymap text))))
-    (register-mode (make-instance 'repl-mode :name :repl-mode :parent-mode text
-                                  :indicator "REPL"
-                                  :keymap (pine.keymap:make-keymap
-                                           :name :repl :parent (mode-keymap text))))
-    (register-mode (make-instance 'terminal-mode :name :terminal-mode :parent-mode base
-                                  :indicator "TERM"
-                                  :keymap (pine.keymap:make-keymap
-                                           :name :term :parent (mode-keymap base))))
-    (register-mode (make-instance 'debugger-mode :name :debugger-mode :parent-mode base
-                                  :indicator "DEBUG"
-                                  :keymap (pine.keymap:make-keymap
-                                           :name :debugger :parent (mode-keymap base))))
-    (register-mode (make-instance 'overwrite-mode :name :overwrite-mode
-                                  :precedence 10 :transparent t :indicator "Ovwrt"
-                                  :keymap (pine.keymap:make-keymap :name :overwrite)))
-    ;; the minibuffer's completion/exit keys; all other keys fall through to
-    ;; text-mode, so the prompt has full editing
-    (register-mode (make-instance 'minibuffer-mode :name :minibuffer-mode
-                                  :precedence 20 :indicator ""
-                                  :keymap (pine.keymap:make-keymap :name :minibuffer)))
-    ;; layout buffers: selection nav + activation on the node tree
-    (register-mode (make-instance 'layout-mode :name :layout-mode
-                                  :precedence 15 :indicator ""
-                                  :keymap (pine.keymap:make-keymap :name :layout)))
-    base))
+(defclass base-mode (major-mode) ())
+
+(register-mode (make-instance 'base-mode :name :base-mode :indicator "BASE"
+                              :keymap (pine.keymap:make-keymap :name :base-mode)))
+
+(defmode text-mode (:parent :base-mode :indicator "TEXT"))
+(defmode lisp-mode (:parent :text-mode :indicator "LISP" :ts-language :commonlisp))
+(defmode repl-mode (:parent :text-mode :indicator "REPL"))
+(defmode terminal-mode (:parent :base-mode :indicator "TERM"))
+(defmode debugger-mode (:parent :base-mode :indicator "DEBUG"))
+
+(defminor overwrite-mode (:precedence 10 :transparent t :indicator "Ovwrt"))
+
+;;;; The minibuffer's completion and exit keys. Every other key falls through
+;;;; to text-mode, so the prompt has full editing.
+(defminor minibuffer-mode (:precedence 20))
+
+;;;; Layout buffers: selection nav and activation over the node tree.
+(defminor layout-mode (:precedence 15))
 

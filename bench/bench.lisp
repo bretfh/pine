@@ -128,7 +128,6 @@
 
 (defun bench-widget ()
   (let ((pine.server:*server* (make-instance 'pine.server:server)))
-    (ignore-errors (pine.buffer:install-default-faces))
     (let* ((tree (sample-tree))
            (wire (pine.layout:node->wire tree)) rows)
       (push (%safe (lambda () (defbench "node->wire (serialize bar)"
@@ -185,7 +184,6 @@ transport actually writes, which re-encodes those bytes as decimal text."
 
 (defun bench-push ()
   (let ((pine.server:*server* (make-instance 'pine.server:server)))
-    (ignore-errors (pine.buffer:install-default-faces))
     (let ((shapes (list (list "bar (the tree benched above)" (pine.layout:node->wire (sample-tree)))
                         (list "editor 88x25, plain" (%editor-wire 88 25 1))
                         (list "editor 88x25, highlighted" (%editor-wire 88 25 15))
@@ -288,7 +286,6 @@ surface, headless -- the same path the wayland clients run per frame."
       (progn
         (unless pine.server:*server*
           (setf pine.server:*server* (make-instance 'pine.server:server)))
-        (ignore-errors (pine.buffer:install-default-faces))
         (let ((tree (sample-tree)) rows)
           (pine.layout:with-cairo-layout
             (let ((surface (cairo:create-image-surface :argb32 560 120)))

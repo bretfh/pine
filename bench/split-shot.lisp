@@ -17,11 +17,6 @@
   (pine.actor:start-agent-registry srv)
   (pine.actor:start-local-agent srv)
   (pine.buffer:start-buffer-registry srv)
-  (pine.buffer:install-default-faces)
-  (pine.mode:install-default-modes)
-  (pine.editor:install-commands)
-  (pine.editor:install-bindings)
-  (pine.editor:install-editor-sessions)
   (let* ((sess (pine.editor:make-editor-session
                 nil :sink (lambda (&rest _) (declare (ignore _)) nil)))
          (client (pine.editor::sess-client sess))

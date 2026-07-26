@@ -147,9 +147,9 @@ for."
 
 (pine.attach:register-app (make-instance 'desktop-app))
 
-(defun install-desktop-sessions ()
-  "Wire the daemon to host a desktop session per attaching :desktop app."
-  (pine.command:define-command "reload-desktop" () (refresh-all)))
+(pine.command:define-command "reload-desktop" ()
+  "Re-push every surface for every attached desktop client."
+  (refresh-all))
 
 (defun refresh-all ()
   "Re-push every surface for every attached desktop client. Call it (M-x

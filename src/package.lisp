@@ -11,7 +11,6 @@
    #:buffer-table
    #:commands
    #:global-keymap
-   #:faces
    #:ts-runtime
    #:modes
    #:clients
@@ -72,7 +71,7 @@
    #:line-count-of #:line-at #:region-string #:buffer-table
    ;; faces
    #:face #:fg #:bg #:bold #:italic #:underline
-   #:defface #:find-face #:face-attr-bits #:install-default-faces
+   #:defface #:find-face #:face-attr-bits
    #:deftheme #:load-theme #:find-theme #:theme-color #:color #:*active-theme*
    #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric #:theme-rules
    #:add-rules #:install-rules #:*user-rules* #:*rules-generation*
@@ -170,13 +169,13 @@ of them."))
   (:use #:cl)
   (:export #:key #:key-p #:make-key
            #:key-sym #:key-ctrl #:key-meta #:key-shift #:key-super
-           #:key= #:parse-key #:key->string))
+           #:key= #:parse-key #:parse-chord #:key->string))
 
 (defpackage #:pine.keymap
   (:use #:cl)
   (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
-           #:define-key #:keymap-lookup #:prefix-p #:keymap-tables
-           #:keymap-bindings))
+           #:define-key #:define-keys #:keymap-lookup #:prefix-p
+           #:keymap-tables #:keymap-bindings))
 
 (defpackage #:pine.command
   (:use #:cl)
@@ -206,7 +205,8 @@ methods only; it exports nothing."))
    #:register-mode #:find-mode #:all-mode-names #:global-keymap
    #:mode-for-file #:auto-mode #:*auto-modes*
    #:modes-dispatch-class
-   #:dispatch-message #:install-default-modes))
+   #:defmode #:defminor
+   #:dispatch-message))
 
 (defpackage #:pine.store
   (:use #:cl)
@@ -221,7 +221,7 @@ keys -- and never touch files."))
 (defpackage #:pine.wm
   (:use #:cl)
   (:export #:wm-keymap #:binding-table #:push-bindings #:run-binding
-           #:attached-p #:install-wm-sessions #:leaves #:focused-leaf
+           #:attached-p #:leaves #:focused-leaf
            #:spawn #:close-window #:focus-step #:split #:exit-session)
   (:documentation "Window management policy: the keymap whose chords are
 registered with the compositor, the commands they run, and the actions sent
@@ -302,7 +302,7 @@ Gated by the :world-save editor variable."))
 
 (defpackage #:pine.jobs
   (:use #:cl)
-  (:export #:install-jobs #:list-jobs #:*agent-jobs*))
+  (:export #:list-jobs #:*agent-jobs*))
 
 (defpackage #:pine.ref
   (:use #:cl)
@@ -331,8 +331,7 @@ Gated by the :world-save editor variable."))
 
 (defpackage #:pine.desktop
   (:use #:cl)
-  (:export #:install-desktop-sessions
-           #:defsurface #:set-surface-role #:push-surface #:show-panel #:hide-panel
+  (:export #:defsurface #:set-surface-role #:push-surface #:show-panel #:hide-panel
            #:refresh-all #:*surface-client*))
 
 (defpackage :pine.client
@@ -412,9 +411,6 @@ modes and commands, so it can read the registries that hold them."))
   (:use :cl)
   (:export
    #:start-editor
-   #:install-commands
-   #:install-bindings
-   #:install-editor-sessions
    #:make-editor-session
    #:session-feed
    #:reseed-editor-sessions
@@ -493,7 +489,8 @@ modes and commands, so it can read the registries that hold them."))
                 #:split #:lines #:starts-with #:first-number #:read-int-file
                 #:json)
   (:import-from :pine.command #:call-command #:execute)
-  (:import-from :pine.mode #:find-mode #:dispatch-message #:auto-mode)
+  (:import-from :pine.mode #:find-mode #:dispatch-message #:auto-mode
+                #:defmode #:defminor)
   (:import-from :pine.client #:current-buffer-mode #:set-buffer-mode)
   (:import-from :pine.var #:defonce)
   (:import-from :pine.client #:current-client #:current-buffer)

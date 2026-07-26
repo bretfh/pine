@@ -16,11 +16,6 @@
     (pine.actor:start-agent-registry srv)
     (pine.actor:start-local-agent srv)
     (pine.buffer:start-buffer-registry srv)
-    (pine.buffer:install-default-faces)
-    (pine.mode:install-default-modes)
-    (pine.editor:install-commands)
-    (pine.editor:install-bindings)
-    (pine.editor:install-editor-sessions)
     srv))
 
 (defun frame-shot (&key (path "/tmp/pine-shot.png")
@@ -59,7 +54,6 @@ session, its tree refreshed and cell-rendered through pine.layout:render."
 (defun ensure-env ()
   (unless pine.server:*server*
     (setf pine.server:*server* (make-instance 'pine.server:server)))
-  (pine.buffer:install-default-faces)
   (let ((init (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home))))
     (when (probe-file init)
       (let ((*package* (find-package :pine.user))) (load init)))))
