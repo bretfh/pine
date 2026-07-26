@@ -10,6 +10,15 @@ STATUS: the renames this document prescribes are DONE (pine.cell -> pine.ref,
 the surface disambiguation: pine.display for the painter, layouts for projected
 buffers, surface = wayland placement only). Kept as the record of why.
 
+The client side was reorganised later, on the same principle: a directory per
+package and the path is the package name. =src/frontend= is what a frontend is,
+=src/wayland= is the backing that implements it, =src/protocol= holds every
+generated binding. The seven packages that named a protocol or a windowing
+system -- pine.wl-loop, pine.wl-editor, pine.wl-wm, pine.wlr-layer-shell and
+three pine.river-* -- are gone. A package is a namespace; the interfaces are
+the generic functions: attached / received / detached / run-frontend on an app,
+and wait-for-work / dispatch-pending / shutdown on a backing.
+
 * The map
 
 ** substrate
@@ -52,7 +61,6 @@ buffers, surface = wayland placement only). Kept as the record of why.
 - =pine.cairo= :: the cairo widget-tree backend.
 - =pine.frontend= =pine.wayland= =pine.protocol= :: what a frontend is, the
   wayland backing that implements it, and the generated protocol bindings.
-- =pine.gtk= =pine.desktop-app= :: the GTK editor and desktop (the fallback).
 
 ** user
 - =pine.user= :: the config vocabulary written in init.lisp.

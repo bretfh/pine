@@ -72,8 +72,9 @@ thing being kept alive is a whole parallel Lisp world, not one thread.
 * Apps attach, they do not embed
 
 An app is a separate operating-system process that brings its own surface and
-its own renderer. The editor blits a cell grid through GTK; the desktop paints
-cairo through the wayland layer shell. They attach over remoting: an app spins up
+its own renderer. The editor paints cairo into an xdg-shell toplevel; the
+desktop paints cairo through the wayland layer shell; the window manager paints
+nothing at all. They attach over remoting: an app spins up
 a client actor inside the daemon's actor-system and holds a reference back to its
 own display.
 
@@ -82,8 +83,8 @@ an agent, builds a declarative view: a styled cell grid, a widget tree of
 column, row, label, meter, with no coordinates and no fonts. It ships that value.
 The app measures, arranges, and paints it locally with its own metrics and its
 own backend. So the cell grid and the widget tree are the wire format between
-"some image builds the view" and "some surface paints it," and fonts, cairo, and
-GTK live only in the app. Because only immutable values cross, and every message
+"some image builds the view" and "some surface paints it," and fonts and cairo
+live only in the app. Because only immutable values cross, and every message
 is a tag with a keyword plist that an unknown receiver drops rather than errors
 on, an app can hang, spin, or segfault and the rest never feels it. The freeze
 where a desktop click stalled the editor was possible only because they were

@@ -2,6 +2,11 @@
 #+AUTHOR: Bret Horne
 #+OPTIONS: toc:3 num:t
 
+STATUS: nothing here is built. Not =define-structured-mode=, not
+=node-at-point=, =surface-nodes=, =reproject=, =node-render= or
+=node-actions=. The debugger and the completion list still fake it the way
+this document describes. Read it as the specification it is.
+
 * Why this document exists
 
 Some modes are not text. A dired line is a file. A debugger line is a restart or

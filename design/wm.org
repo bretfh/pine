@@ -174,8 +174,8 @@ The sequence of first steps:
    river-xkb-config-v1), and the os-arrangement world contributor.
 
 Steps 1 through 3 are built. river 0.4.5 is packaged (guix/river.scm),
-both protocols are bound (src/wayland/river-wm.lisp, river-xkb.lisp),
-and the frontend (src/wayland/wm.lisp) pumps sequences from a mirror
+its protocols are bound (src/protocol/), and the frontend
+(src/wayland/wm.lisp) pumps sequences from a mirror
 the daemon (src/wm/wm.lisp) fills: os-window leaves in a live tree,
 split and focus and close as commands, chords from the =:wm= keymap
 registered with the compositor. The tree surgery those commands use
@@ -189,10 +189,30 @@ output per step, and =make wm-nested= runs river as a window in the
 current session for driving by hand. Neither needs the VM, which is
 now only the acceptance run.
 
+Chrome is the compositor's, driven from here. Every window is told
+use_ssd so its client stops decorating itself, and set_tiled so a client
+that cannot be told drops its shadows and rounded corners; the border is
+drawn by set_borders in the theme's colours, the focused one in
+=:border-active=. A window's dimensions are its content, and borders are
+drawn outside that, so an os-window leaf carries the frame as its layout
+margin -- without that reservation neighbouring windows draw over each
+other. A client that never bound xdg-decoration reports
+=only_supports_csd= and keeps its own titlebar; there is nothing the
+protocol can do about that one.
+
+river delegates layer shell too. It closes every layer surface on sight
+unless the window manager has bound =river_layer_shell_v1=, so the bar
+and the echo strip did not exist under river until the frontend did.
+The window manager also takes each output's =non_exclusive_area= as the
+area windows tile into, which is how the bar's exclusive zone reserves
+its strip.
+
 What step 3 still lacks: prefix chords (the protocol's
 ensure_next_key_eaten and ate_unbound_key, which pine's pending-chord
-dispatch maps onto directly), and moving a window within the tree
-rather than only splitting where the next one lands.
+dispatch maps onto directly), moving a window within the tree rather
+than only splitting where the next one lands, and fullscreen, which the
+protocol offers in full (fullscreen / exit_fullscreen /
+fullscreen_requested) and the frontend does not answer at all.
 
 * Omitted
 

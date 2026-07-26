@@ -34,7 +34,7 @@ a Lisp Machine than emacs does.
 
 * The daemon is the substrate
 
-One headless SBCL process. One actor-system. No GTK, no cairo, no fonts, no
+One headless SBCL process. One actor-system. No cairo, no fonts, no
 rendering: it cannot draw and does not try. It owns:
 
 - buffers, as actors over immutable fset state;
@@ -57,9 +57,10 @@ An app is a separate OS process. It brings its own surface and its own renderer.
 It attaches over sento remoting: it spins up a client actor inside the daemon's
 actor-system and holds a ref back to its own display process.
 
-- the editor: a GTK window, a cell-grid renderer, keyboard and mouse input.
-- the desktop: a layer-shell backing surface (the wayland desktop shell:
-  bars, panels, the echo strip), a cairo renderer.
+- the editor: an xdg-shell toplevel, a cairo renderer, keyboard input.
+- the desktop: layer-shell surfaces (bars, panels, the echo strip), a cairo
+  renderer.
+- the window manager: a river-window-management-v1 client, no renderer at all.
 
 They share nothing but messages and serialized fset values. No shared thread, no
 shared heap. So the desktop can hang, spin, or segfault and the editor never
@@ -129,9 +130,8 @@ buggy peer. That is the robustness floor.
 The daemon ships data, never pixels. It, or an agent, produces a declarative UI
 tree: a value, column / row / label / icon / meter, no coordinates, no fonts. It
 ships the tree. The app measures, arranges, and paints it locally with its own
-metrics and its own backend: the editor blits a cell grid, the desktop paints
-cairo through the layer-shell. Fonts, cairo, GTK all live in the app, never in
-the daemon.
+metrics and its own backend: both the editor and the desktop paint cairo into
+shm buffers. Fonts and cairo live in the app, never in the daemon.
 
 That is why the daemon stays headless and an app could be a tty or a GPU surface
 without the daemon knowing. The styled cell grid and the widget tree are wire
@@ -228,19 +228,21 @@ dropped a stack and kept the idea.
   network, immutable fset buffers, the client / server split, the cell-grid
   surface, the agent registry, the layout node tree. Dropped QML, ECL, mobile,
   roswell.
-- pine: SBCL, sento with remoting, fset, closer-mop, GTK4 and cairo, gtk4-layer-
-  shell. Adds pine.eval and reactive cells.
+- pine: SBCL, sento with remoting, fset, closer-mop, cairo, wayflan. Adds
+  pine.eval and reactive refs.
 
 * Status
 
-Built and running (make dev is a typable GTK editor; make check loads clean):
+Built and running (make check loads clean; make test is green):
 
 - server / client split; per-session state on the client; the runtime on the
   server; typed actor messages.
 - buffers: immutable fset actors, edits as messages, snapshots to subscribers,
   undo, registry.
-- surface protocol with a GTK cell-grid surface and a headless test surface; the
-  cell-grid wire; a UI-thread render pump.
+- the frontend interface: pine.frontend:run is the loop, and a backing answers
+  wait-for-work / dispatch-pending / shutdown. The wayland connection is one
+  such backing; a probe backing in the test suite runs the loop with no
+  compositor behind it.
 - modes: the CLOS composition backbone (major and minor, keymap layer plus
   execute method-combination layer), precedence, transparent modes. commands as
   objects, prefix argument, argument descriptors, M-x, editor-variables,
@@ -258,12 +260,11 @@ Built and running (make dev is a typable GTK editor; make check loads clean):
 
 The multi-process substrate is BUILT and is the default, not a future. run-daemon
 (main.lisp) starts the headless daemon and, from the built binary, spawns the
-editor and desktop as separate OS processes and supervises them (start-frontends,
-main.lisp); each attaches over sento remoting (core/attach.lisp) and renders the
-trees the daemon builds. Both frontends have two implementations: GTK (src/app/)
-and GTK-free wayland + cairo (src/wayland/, src/cairo/). The single-process
-`make dev` still exists for development, which is the only place the old freeze
-can still happen. State of each piece:
+editor, desktop and window manager as separate OS processes and supervises them
+(start-frontends, main.lisp); each attaches over sento remoting
+(core/attach.lisp) and renders the trees the daemon builds. There is one
+backing, wayland (src/wayland/, src/cairo/), behind one frontend interface
+(src/frontend/). State of each piece:
 
 - Topology split: BUILT. daemon + editor + desktop are separate images over
   remoting; a frontend crash is isolated and the supervisor respawns it.
@@ -304,9 +305,10 @@ Genuinely still open (the debugger items are detailed in design/errors.org):
   onto one structured-surface model (design/surfaces.org).
 - :media depends on a running emacs/EMMS via emacsclient (widget/sources.lisp) --
   a tool pine aims to replace.
-- The GTK editor frontend (app/editor-app.lisp) consumes a :frame rows message;
-  the wayland editor (wayland/editor.lisp) consumes the :widgets tree. The editor
-  wire is not single across the two frontends.
+- The push path is unmeasured and known to be wasteful: sento's transport
+  serializes a widget tree twice (the sexp, then the text of its bytes), a view
+  rebuilds its whole subscription set per render, and every repaint re-resolves
+  each node against all the theme rules.
 
 * Reference
 
