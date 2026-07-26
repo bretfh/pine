@@ -122,6 +122,20 @@ are those live at the signal. Hand the result to *on-debug* to open the menu."
           (evaluation-backtrace ev) (%capture-backtrace))
     ev))
 
+(defun surfaced-p (surface ev)
+  "Show EV on SURFACE, and answer whether it is now showing.
+
+False when there is no surface or it signalled. The failure is reported rather
+than swallowed: a surface that cannot show a fault is why the thread waiting on
+it would wait forever."
+  (and surface
+       (handler-case (progn (funcall surface ev) t)
+         (error (c)
+           (format *error-output* "pine: the debug surface failed on ~a: ~a~%"
+                   (evaluation-form ev) c)
+           (finish-output *error-output*)
+           nil))))
+
 (defun eval-debugger-hook (ev condition)
   "Runs on the eval thread when an unhandled error propagates. Records the
 condition + restarts + backtrace, notifies the surface, then blocks until a
@@ -133,13 +147,15 @@ restart is chosen and invokes it."
         (evaluation-restarts ev) (%restart-descriptions condition)
         (evaluation-backtrace ev) (%capture-backtrace))
   (let ((surface (or (evaluation-on-error ev) *on-debug*)))
-    ;; No surface can drive a restart choice: abort immediately rather than block
-    ;; this thread forever. A hung worker/actor is exactly the wedge we avoid.
-    (unless surface
+    ;; Nothing can drive a restart choice unless a surface actually took the
+    ;; fault, so abort rather than block this thread forever. A surface that
+    ;; signalled is no better than none: it is not showing anything, and a
+    ;; parked thread here is a worker of the shared dispatcher that never comes
+    ;; back. A hung worker/actor is exactly the wedge we avoid.
+    (unless (surfaced-p surface ev)
       (let ((r (find-restart 'abort condition)))
         (when r (invoke-restart r)))
-      (return-from eval-debugger-hook))
-    (ignore-errors (funcall surface ev)))
+      (return-from eval-debugger-hook)))
   (let ((name (bordeaux-threads:with-lock-held ((evaluation-lock ev))
                 (loop until (evaluation-chosen ev)
                       do (bordeaux-threads:condition-wait

@@ -94,7 +94,8 @@
                (:file "buffer") (:file "vt") (:file "ts")
                (:file "layout") (:file "style") (:file "wire")
                (:file "state") (:file "keys") (:file "completion")
-               (:file "isearch") (:file "term") (:file "wm") (:file "source")
+               (:file "isearch") (:file "repl") (:file "term") (:file "wm")
+               (:file "source")
                (:file "packages") (:file "editor") (:file "agent")
                (:file "frontend"))
   ;; run! is explain! over run: it prints the report and answers the status.

@@ -35,21 +35,26 @@ minibuffer. Returns the server."
     (pine.text.buffer:start-buffer-registry srv)
     (setf (pine.state.var:var :world-save) nil)
     (let ((client (pine.editor.frame::start-client srv)))
-      (setf pine.editor.frame::*client* client
-            *client* client)
+      ;; *client* is NOT set globally. The daemon binds it per thread -- the
+      ;; session loop, the renderer actor, the minibuffer controller each bind
+      ;; their own -- and a buffer actor never does. Setting the global here
+      ;; would let a buffer actor reach a current client in tests and fault in
+      ;; the daemon, which is how a wedged repl reached a running session.
+      (setf *client* client)
       (pine.ui.render:start-renderer client)
       (setf (pine.editor.frame::paint-sink client)
             (lambda (&rest args) (declare (ignore args)) nil))
-      (let ((buf (pine.editor.frame::make-buffer "scratch")))
-        (pine.editor.frame::make-window buf "scratch"
-                                        :row 0 :col 0 :width 80 :height 29
-                                        :focused t)
-        (setf (pine.editor.frame::current-buffer client) buf)
-        (pine.editor.frame::set-buffer-mode buf :text-mode)
-        ;; the window needs snapshots for the commands that read point through
-        ;; the focused window, which is what a live session's renderer does
-        (pine.ui.render:subscribe-to-buffer buf))
-      (pine.editor.minibuffer:ensure-minibuffer client)
+      (let ((pine.editor.frame::*client* client))
+        (let ((buf (pine.editor.frame::make-buffer "scratch")))
+          (pine.editor.frame::make-window buf "scratch"
+                                          :row 0 :col 0 :width 80 :height 29
+                                          :focused t)
+          (setf (pine.editor.frame::current-buffer client) buf)
+          (pine.editor.frame::set-buffer-mode buf :text-mode)
+          ;; the window needs snapshots for the commands that read point through
+          ;; the focused window, which is what a live session's renderer does
+          (pine.ui.render:subscribe-to-buffer buf))
+        (pine.editor.minibuffer:ensure-minibuffer client))
       (sleep 0.2))
     srv))
 
@@ -77,7 +82,11 @@ argument, the debugger sessions and the world gate."
           (pine.editor.frame::set-buffer-mode scratch :text-mode))))))
 
 (def-fixture substrate ()
-  "The live daemon substrate with *client* bound, reset around the body."
+  "The live daemon substrate, reset around the body.
+
+*client* is bound for this thread only, the way the session loop binds it. The
+actors have their own threads and bind their own, so a test runs under the same
+conditions the daemon does."
   (unless *client* (build-substrate))
   (let ((pine.editor.frame::*client* *client*))
     (reset-session)
