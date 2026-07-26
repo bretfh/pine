@@ -278,6 +278,44 @@ transport actually writes, which re-encodes those bytes as decimal text."
         (print-table "tree-sitter reparse + highlight" (nreverse rows)))
     (error (e) (format t "~&(ts group skipped: ~a)~%" e))))
 
+(defun lisp-state (nforms viewport)
+  "A lisp-mode buffer state of NFORMS forms, carrying VIEWPORT when given."
+  (let ((state (pine.text.buffer:set-meta
+                (pine.text.buffer:load-content (lisp-source nforms))
+                :mode :lisp-mode)))
+    (if viewport
+        (pine.text.buffer:set-meta state :viewport viewport)
+        state)))
+
+(defun bench-refresh ()
+  "The cycle a lisp buffer runs per keystroke, through the function the editor
+actually calls: the buffer's text, the incremental reparse, and the highlight of
+what a window shows. The windowless rows are the same cycle before the viewport
+existed, so the pair is the measurement."
+  (handler-case
+      (let ((rt (pine.ts.runtime:make-ts-runtime))
+            rows)
+        (unless pine.core.server:*server*
+          (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
+        (setf (pine.core.server:ts-runtime pine.core.server:*server*) rt)
+        (dolist (nforms '(40 400))
+          (dolist (viewport (list nil (cons 0 30)))
+            (let* ((quiet (lisp-state nforms viewport))
+                   (typed (pine.text.buffer:insert-char quiet 3 0 #\x))
+                   (ps (nth-value 1 (pine.text.buffer:refresh-highlights nil quiet)))
+                   (flip nil))
+              (when ps
+                (push (defbench (format nil "refresh-highlights, ~d forms~a"
+                                        nforms (if viewport ", window" ""))
+                        (progn (setf flip (not flip))
+                               (setf ps (nth-value
+                                         1 (pine.text.buffer:refresh-highlights
+                                            ps (if flip typed quiet))))))
+                      rows)))))
+        (print-table "the per-keystroke cycle (buffer text + reparse + highlight)"
+                     (nreverse rows)))
+    (error (e) (format t "~&(refresh group skipped: ~a)~%" e))))
+
 (defun bench-eval ()
   (let ((sem (sb-thread:make-semaphore)) rows)
     (push (defbench "evaluate-thunk round-trip (thread spawn)"
@@ -365,8 +403,8 @@ home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
 (defun run-all ()
   (machine-header)
   (dolist (g (list #'bench-buffer #'bench-load-content #'bench-vt
-                   #'bench-widget #'bench-push #'bench-ts #'bench-eval
-                   #'bench-paint #'bench-agent))
+                   #'bench-widget #'bench-push #'bench-ts #'bench-refresh
+                   #'bench-eval #'bench-paint #'bench-agent))
     (handler-case (funcall g)
       (error (e) (format t "~&(group ~a failed: ~a)~%" g e))))
   (finish-output))

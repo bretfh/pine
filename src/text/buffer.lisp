@@ -57,11 +57,24 @@
     snap))
 
 (defun state->string (state)
-  (let ((ls (lines state)))
-    (with-output-to-string (s)
-      (loop for i from 0 below (fset:size ls)
-            do (when (plusp i) (write-char #\Newline s))
-               (write-string (fset:@ ls i) s)))))
+  "STATE's lines joined by newlines.
+
+Measured once for the exact size and filled in one pass: a growing output stream
+reallocates its buffer as it doubles, and this runs on every edit of a buffer
+that has a tree-sitter language."
+  (let ((ls (lines state))
+        (total 0))
+    (fset:do-seq (line ls) (incf total (1+ (length line))))
+    (let ((out (make-string (max 0 (1- total))))
+          (pos 0)
+          (firstp t))
+      (fset:do-seq (line ls)
+        (if firstp
+            (setf firstp nil)
+            (progn (setf (char out pos) #\Newline) (incf pos)))
+        (replace out line :start1 pos)
+        (incf pos (length line)))
+      out)))
 
 (defun copy-state (state &key (lines nil lines-p) (marks nil marks-p)
                            (meta nil meta-p) (tick nil tick-p))

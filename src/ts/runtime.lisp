@@ -12,6 +12,7 @@
    #:parse-full! #:reparse! #:parse-motion
    #:ps-language #:ps-parser #:ps-tree #:ps-text
    #:ps-hl-cache #:ps-hl-text #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
+   #:line-index
    ;; structural motion
    #:call-with-root #:forward-sexp-pos #:backward-sexp-pos #:defun-bounds-pos
    ;; bytes, characters and lines
@@ -355,7 +356,11 @@ end-line end-col), or nil."
    (hl-pending :initform nil :accessor ps-hl-pending)   ; (lo-row hi-row delta)
    (hl-stale   :initform nil :accessor ps-hl-stale)
    ;; the line range the cache covers as (FROM . TO), or nil for the whole file
-   (hl-window  :initform nil :accessor ps-hl-window)))
+   (hl-window  :initform nil :accessor ps-hl-window)
+   ;; the line index and the text it was built for: every walk in one keystroke
+   ;; asks for the same index, and building it is a pass over the whole file
+   (index      :initform nil :accessor ps-index)
+   (index-text :initform nil :accessor ps-index-text)))
 
 (defun make-parse-state (runtime language)
   "A parse-state for LANGUAGE, or nil if the grammar is unavailable."
@@ -364,6 +369,15 @@ end-line end-col), or nil."
       (let ((parser (ts-parser-new)))
         (ts-parser-set-language parser (entry-language-ptr entry))
         (make-instance 'parse-state :language language :parser parser)))))
+
+(defun line-index (ps text)
+  "PS's line index for TEXT, rebuilt only when TEXT is not the string it was
+built for. One keystroke hands the same string to the reparse, the highlight
+walk and the indent lookup, and building the index is a pass over the file."
+  (if (and (ps-index ps) (eq text (ps-index-text ps)))
+      (ps-index ps)
+      (setf (ps-index-text ps) text
+            (ps-index ps) (build-line-index text))))
 
 (defun free-parse-state (ps)
   (when ps

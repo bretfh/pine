@@ -588,7 +588,7 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
   (let ((tree (ps-tree ps)) (text (ps-text ps)) (lang (ps-language ps)))
     (when tree
       (handler-case
-          (let* ((index (build-line-index text))
+          (let* ((index (line-index ps text))
                  (line (max 0 (min line (1- (length index)))))
                  (lstart (car (aref index line)))
                  (root (ts-tree-root-node tree))
@@ -685,7 +685,7 @@ call through the by-value TSNode binding allocates."
 
 (defun %hl-window (ps tree text from-line to-line)
   "Walk the top-level forms covering lines FROM-LINE to TO-LINE, and cache them."
-  (let ((index (build-line-index text))
+  (let ((index (line-index ps text))
         (root (ts-tree-root-node tree)))
     (multiple-value-bind (lo-byte hi-byte) (%viewport-bytes index from-line to-line)
       (let ((hl (walk-highlights (ps-language ps) root text index
@@ -702,7 +702,7 @@ cached tuples. Sound because the caller has established that no line moved, so
 every cached tuple outside the re-walked lines still describes its own line."
   (destructuring-bind (lo hi delta) (ps-hl-pending ps)
     (declare (ignore delta))
-    (let* ((index (build-line-index text))
+    (let* ((index (line-index ps text))
            (root (ts-tree-root-node tree))
            (last (1- (length index)))
            (lo-byte (%line-start-byte (max 0 (min lo last)) index))
@@ -788,12 +788,12 @@ line delta). Anything unexpected falls back to the full walk."
                 (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
           (handler-case
               (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
-                               (build-line-index text))
+                               (line-index ps text))
             (error () nil)))))))
 
 (defun %hl-full (ps tree text)
   (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
-                             (build-line-index text))))
+                             (line-index ps text))))
     (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
           (ps-hl-window ps) nil
           (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
@@ -805,7 +805,7 @@ the cached tuples: keep lines above, shift lines below by the edit's delta.
 The re-walk window is widened to whole lines and whole top-level forms (to a
 fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
   (destructuring-bind (lo hi delta) (ps-hl-pending ps)
-    (let* ((index (build-line-index text))
+    (let* ((index (line-index ps text))
            (root (ts-tree-root-node tree))
            (nlines (length index))
            (lo-byte (%line-start-byte (min lo (1- nlines)) index))

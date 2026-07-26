@@ -252,8 +252,44 @@ when the edit moved no line and landed inside the window; anything else re-walks
 the window.
 
 What is left in that 906 us is =reparse!= (254 us of it), which is tree-sitter's
-own incremental parse plus the =state->string= that feeds it. That is the next
-item below, and it is now the dominant cost rather than a fraction of one.
+own incremental parse plus the =state->string= that feeds it.
+
+*** The cycle end to end
+
+The rows above measure pieces. This one goes through =refresh-highlights=, the
+function the buffer actor calls on every edit of a buffer with a language, so it
+includes the buffer's text, the reparse and the highlight together. The
+windowless rows are the same cycle with no viewport set, which is what it cost
+before.
+
+#+CAPTION: refresh-highlights, one keystroke
+| op                        | no window ns/op | window ns/op | no window bytes | window bytes |
+|---------------------------+-----------------+--------------+-----------------+--------------|
+| 40 forms (~200 lines)     |         781,266 |      269,536 |         597,644 |      170,131 |
+| 400 forms (~2,000 lines)  |       7,500,125 |    2,015,656 |       5,745,784 |    1,208,532 |
+
+Two further changes are in those numbers. =state->string= is measured for its
+exact size and filled in one pass instead of growing an output stream, and the
+line index is cached on the parse state against the string it was built for,
+because one keystroke hands the same string to the reparse, the highlight walk
+and the indent lookup.
+
+#+CAPTION: before -> after (exact-size fill, no growing buffer)
+| op                           | before ns/op | after ns/op | before bytes | after bytes |
+|------------------------------+--------------+-------------+--------------+-------------|
+| state->string, 1000 lines    |       47,853 |      33,448 |      332,578 |     164,016 |
+| state->string, 10000 lines   |      601,573 |     371,101 |    4,326,406 |   1,640,016 |
+
+*** What the TSInput callback would not buy
+
+The direction recorded below was to feed tree-sitter through a =TSInput= read
+callback so no contiguous copy of the file exists. Measurement says not to. The
+copy is =with-foreign-string= inside =reparse!=, and =reparse!= is 254 us for
+11 KB, of which a memcpy of 11 KB is single digit microseconds. The cost in that
+row is tree-sitter's own incremental parse, not the handoff. A callback from C
+into Lisp on every read, with the GC interaction that implies, would buy under a
+percent at ordinary file sizes and perhaps a tenth at 400 KB. Not done, and not
+worth doing until something shows the copy mattering.
 
 ** widget, eval, paint, agent
 
@@ -280,14 +316,16 @@ The two new measurements close the review's open questions:
 
 * What remains, honestly
 
-- =state->string= is O(n) per call (601 us / 4.3 MB at 10k lines) and the
-  highlight cycle calls it per edit to feed the reparse diff, which itself
-  re-scans both strings. It is no longer a fraction of the cycle: with the
-  viewport walk landing the keystroke path at 906 us, =reparse!= and the string
-  it is handed are most of what is left. Making it O(edit) means the buffer
-  describing its own edits to the parse state instead of diffing full strings,
-  and feeding tree-sitter through a =TSInput= read callback over the fset seq so
-  no contiguous copy of the file exists. Next.
+- =state->string= is still O(n) per call, now 371 us / 1.6 MB at 10k lines
+  rather than 601 us / 4.3 MB. It is one allocation of the exact size, so what
+  is left is the copy itself. Making it O(edit) means the buffer describing its
+  own edits to the parse state rather than handing it a whole string, which is a
+  change to how the buffer talks to the parse state and worth doing when files
+  get big. The =TSInput= half of that idea is measured and rejected above.
+- =%text-edit= still derives the edit by scanning the old and new strings for a
+  common prefix and suffix, though the buffer knew exactly what changed. Two
+  linear scans of simple strings, so it is small next to the parse; the reason to
+  fix it is that the buffer should not have to be diffed to say what it did.
 - The highlight full-walk fallback allocates via by-value TSNode plists. A
   pointer-based node representation would cut the walk's consing several-fold;
   that is a bindings rewrite, separate from this work.
