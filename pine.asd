@@ -49,7 +49,8 @@
                           :components ((:file "buffer") (:file "window")))
                  (:module "state"
                           :serial t
-                          :components ((:file "store") (:file "ref") (:file "var") (:file "world")))
+                          :components ((:file "store") (:file "journal") (:file "ref")
+                                       (:file "var") (:file "world")))
                  (:module "frame"
                           :serial t :pathname "editor/"
                           :components ((:file "frame")))
@@ -96,6 +97,7 @@
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")
                              (:file "isearch") (:file "repl") (:file "liveness") (:file "async")
+                             (:file "journal")
                              (:file "term") (:file "wm")
                              (:file "source")
                              (:file "packages") (:file "editor") (:file "agent")

@@ -410,10 +410,21 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
          (new-col (if (<= point-col cur-indent) target (+ point-col (- target cur-indent)))))
     (values s2 (max 0 new-col))))
 
-(defun make-buffer-actor (system name &key (content ""))
+(defun buffer-id ()
+  "A fresh buffer identity: unique here and, with the host in it, elsewhere."
+  (format nil "~a-~36r-~36r" (machine-instance) (get-universal-time) (random (expt 2 48))))
+
+(defun make-buffer-actor (system name &key (content "") id)
   "A buffer as an actor on SYSTEM: NAME holding CONTENT, dispatching each message
-through its mode on a thread of its own."
-  (let ((initial (move-mark (set-meta (load-content content) :name name) :point 0 0)))
+through its mode on a thread of its own.
+
+ID names the buffer durably, for the store and for another pine following it; a
+restored buffer is created with the id it had."
+  (let ((initial (move-mark (set-meta (set-meta (load-content content) :name name)
+                                      ;; identity that outlives the name and does
+                                      ;; not collide with another host's scratch
+                                      :id (or id (buffer-id)))
+                            :point 0 0)))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)
                                   ;; A buffer runs on its own thread, not a worker

@@ -1,7 +1,8 @@
 (defpackage #:pine.state.store
   (:use #:cl)
   (:export #:store #:store-push #:store-items #:store-clear #:store-forget
-           #:open-store #:close-store)
+           #:open-store #:close-store
+           #:with-db #:read-value #:write-value)
   (:documentation "The persistence facility: one SQLite store the daemon
 owns. (store K) reads a durable value, (setf (store K) V) writes;
 store-push/store-items keep bounded lists (histories, recents). Modes
@@ -38,6 +39,22 @@ check instead: a value whose printed form does not read errors at the write."
       (error () (error "pine.state.store: unstorable value ~s" value)))
     s))
 
+(defun read-value (string) (%read string))
+(defun write-value (value) (%write value))
+
+(defmacro with-db ((var) &body body)
+  "Run BODY with VAR bound to the open connection, under the store's lock.
+
+The store owns the file, the lock and the printing rules; anything keeping its
+own schema in there (the buffer journal) goes through this rather than opening a
+second connection. With no store open, BODY does not run and the answer is NIL,
+which is how images that never open one (frontends, agents, benches) pay
+nothing."
+  `(bordeaux-threads:with-lock-held (*db-lock*)
+     (when *db*
+       (let ((,var *db*))
+         ,@body))))
+
 (defun open-store (&optional path)
   "Open the store at PATH, by default XDG data home pine/store.db.
 
@@ -60,6 +77,20 @@ Returns the path opened."
          db "CREATE TABLE IF NOT EXISTS log (name TEXT NOT NULL, value TEXT NOT NULL)")
         (sqlite:execute-non-query
          db "CREATE INDEX IF NOT EXISTS log_name ON log (name)")
+        ;; working state: a snapshot per buffer and the edits since it. ID is
+        ;; stable across hosts because both boxes have a scratch; ORIGIN says
+        ;; which daemon produced the row, so a replica's edits and this image's
+        ;; can live in one table without pretending to be each other.
+        (sqlite:execute-non-query
+         db "CREATE TABLE IF NOT EXISTS buffer (
+               id TEXT PRIMARY KEY, name TEXT NOT NULL, origin TEXT NOT NULL,
+               tick INTEGER NOT NULL, meta TEXT NOT NULL, content TEXT NOT NULL)")
+        (sqlite:execute-non-query
+         db "CREATE TABLE IF NOT EXISTS journal (
+               id TEXT NOT NULL, tick INTEGER NOT NULL, origin TEXT NOT NULL,
+               verb TEXT NOT NULL)")
+        (sqlite:execute-non-query
+         db "CREATE INDEX IF NOT EXISTS journal_id ON journal (id, tick)")
         (setf *db* db)))
     target))
 

@@ -25,6 +25,11 @@
     (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
     (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error
           pine.core.eval:*attended-p* #'pine.editor.debugger:attended-eval-p)
+    ;; buffers become durable here: the writer commits edits off every actor's
+    ;; thread, and compaction asks this layer for a buffer's content because the
+    ;; store cannot reach up into it
+    (setf pine.state.journal:*snapshot-source* #'pine.editor.frame:snapshot-source)
+    (pine.state.journal:start-journal-writer)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)

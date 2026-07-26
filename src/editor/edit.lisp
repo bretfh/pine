@@ -26,7 +26,7 @@ carry over like :replace-content; point is clamped into the new content."
                                 (multiple-value-bind (val present)
                                     (fset:lookup old-meta key)
                                   (if present (pine.text.buffer:set-meta st key val) st)))
-                              '(:name :mode :pathname :vars)
+                              '(:id :name :mode :pathname :vars)
                               :initial-value
                               (pine.text.buffer:load-content
                                (format nil "~{~a~^~%~}" texts))))
@@ -258,7 +258,7 @@ itself, and by the parser's :indent-region answer."
               (new (reduce (lambda (st key)
                              (multiple-value-bind (val present) (fset:lookup old key)
                                (if present (pine.text.buffer:set-meta st key val) st)))
-                           '(:name :mode :pathname :vars)
+                           '(:id :name :mode :pathname :vars)
                            :initial-value (pine.text.buffer:load-content (getf plist :content)))))
          ;; new content shares nothing with the old, so the tree is rebuilt; the
          ;; buffer shows the text immediately and takes its colours when they come
@@ -296,6 +296,12 @@ itself, and by the parser's :indent-region answer."
                                 new pstate (pine.text.buffer:buffer-local new :name ""))))
                     (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 link))
                     (pine.text.buffer:notify-subscribers subs new hl2)
+                    ;; the edit is durable from here: a row on a queue, committed
+                    ;; by the journal writer on its own thread
+                    (pine.state.journal:record!
+                     (pine.text.buffer:buffer-local new :id)
+                     (pine.text.buffer:tick new)
+                     (cons tag plist))
                     (pine.text.buffer:request-parse
                      link new :extra (list :edit descriptor)))))
       (case tag
