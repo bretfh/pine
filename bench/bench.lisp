@@ -143,9 +143,9 @@
 ;;;; measure functions; this one measures a message, because the size of what
 ;;;; crosses is the thing that was never looked at.
 
-(defun %row (cols runs)
+(defun %row (cols runs &optional (char #\a))
   "One wire row: COLS characters of text, RUNS face runs, as frame->rows emits."
-  (cons (make-string cols :initial-element #\a)
+  (cons (make-string cols :initial-element char)
         (loop :for i :below runs
               :collect (list (* i (max 1 (floor cols (max 1 runs))))
                              200 200 200 30 30 40 0))))
@@ -196,6 +196,22 @@ transport actually writes, which re-encodes those bytes as decimal text."
         (multiple-value-bind (payload frame) (%frame-bytes (second s))
           (push (list (first s) payload frame) sizes)))
       (print-sizes "one push on the wire (2 MB frame cap)" (nreverse sizes))
+      ;; the same frame, as a patch: one line of it changed
+      (let* ((before (%editor-wire 88 25 15))
+             (after (let ((f (%editor-wire 88 25 15)))
+                      (setf (getf (second (first (pine.layout:wire-windows f))) :rows)
+                            (let ((rows (copy-list
+                                         (getf (second (first (pine.layout:wire-windows f)))
+                                               :rows))))
+                              (setf (nth 12 rows) (%row 88 15 #\b))
+                              rows))
+                      f))
+             (patch (pine.layout:rows-patch before after))
+             (whole nil))
+        (declare (ignorable whole))
+        (multiple-value-bind (payload frame) (%frame-bytes (list :rows-patch patch))
+          (print-sizes "one changed line, as a patch"
+                       (list (list "editor 88x25 highlighted, 1 line" payload frame)))))
       (let ((wire (%editor-wire 88 25 15)))
         (push (%safe (lambda () (defbench "node->wire (editor 88x25 highlighted)"
                                   (%editor-wire 88 25 15)))) rows)

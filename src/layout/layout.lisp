@@ -964,6 +964,85 @@ id to embed."
   "True when N carries an arranged rect (from its own arrange, or the wire)."
   (or (plusp (end-col n)) (plusp (end-line n))))
 
+;;;; Sending only what moved.
+;;;;
+;;;; Nearly all of an editor frame is the rendered lines inside its window
+;;;; nodes, and a keystroke changes one of them. These compare two wire forms
+;;;; and produce the lines that differ, so a push can carry those instead of
+;;;; the screen. Everything here is plain data, the same as the wire itself.
+
+(defun wire-windows (form)
+  "Every :window form in FORM, in tree order."
+  (let (acc)
+    (labels ((walk (f)
+               (when (and (consp f) (keywordp (first f)))
+                 (when (eq (first f) :window) (push f acc))
+                 (dolist (child (cddr f)) (walk child)))))
+      (walk form))
+    (nreverse acc)))
+
+(defun wire-shape (form)
+  "FORM with everything a patch can carry removed: the rows and the cursor.
+
+Two forms with the same shape differ only in what a patch can express, which
+is the test for whether one may be sent."
+  (if (and (consp form) (keywordp (first form)))
+      (let ((props (copy-list (second form))))
+        (when (eq (first form) :window)
+          (remf props :rows) (remf props :crow) (remf props :ccol))
+        (list* (first form) props (mapcar #'wire-shape (cddr form))))
+      form))
+
+(defun rows-patch (old new)
+  "What changed between two wire forms, or NIL when a patch cannot say it.
+
+The patch is one entry per window, (INDEX CROW CCOL (LINE . ROW)...), carrying
+only the lines that differ. NIL means the caller must send FORM whole: a
+different tree, a different number of lines, or no previous form at all."
+  (when (and old new (equal (wire-shape old) (wire-shape new)))
+    (let ((olds (wire-windows old))
+          (news (wire-windows new)))
+      (when (= (length olds) (length news))
+        (loop :for o :in olds
+              :for n :in news
+              :for index :from 0
+              :for o-rows := (getf (second o) :rows)
+              :for n-rows := (getf (second n) :rows)
+              :unless (= (length o-rows) (length n-rows))
+                :do (return-from rows-patch nil)
+              :collect (list index
+                             (getf (second n) :crow)
+                             (getf (second n) :ccol)
+                             (loop :for a :in o-rows
+                                   :for b :in n-rows
+                                   :for line :from 0
+                                   :unless (equal a b)
+                                     :collect (cons line b))))))))
+
+(defun apply-rows-patch (form patch)
+  "FORM with PATCH applied: a fresh wire form carrying the patched lines."
+  (let ((windows (wire-windows form))
+        (index -1))
+    (labels ((patched (f)
+               (if (and (consp f) (keywordp (first f)))
+                   (if (eq (first f) :window)
+                       (let* ((entry (assoc (incf index) patch))
+                              (props (copy-list (second f))))
+                         (cond
+                           ((null entry) f)
+                           (t (destructuring-bind (crow ccol lines) (rest entry)
+                                (setf (getf props :crow) crow
+                                      (getf props :ccol) ccol
+                                      (getf props :rows)
+                                      (let ((rows (copy-list (getf props :rows))))
+                                        (dolist (line lines rows)
+                                          (setf (nth (car line) rows) (cdr line)))))
+                                (list* :window props (cddr f))))))
+                       (list* (first f) (second f) (mapcar #'patched (cddr f))))
+                   f)))
+      (declare (ignorable windows))
+      (patched form))))
+
 (defun wire->node (form &key on-action)
   "Rebuild a node from wire FORM, restoring its arranged rect when the wire
 carries one. ON-ACTION, given an id, returns a handler (a function of any

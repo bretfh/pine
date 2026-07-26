@@ -273,7 +273,8 @@ Gated by the :world-save editor variable."))
    ;; layout -> cell rows (layout buffers + the chrome popup)
    #:render #:resolve-styles! #:raster->rows #:class-names
    #:defwidget
-   #:node->wire #:wire->node #:arranged-p
+   #:node->wire #:wire->node
+           #:rows-patch #:apply-rows-patch #:wire-shape #:wire-windows #:arranged-p
    ;; live-tree surgery, shared by every arranged tree
    #:node-parent #:replace-child #:remove-with-divider
    #:split-node #:remove-node
