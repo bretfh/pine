@@ -242,11 +242,14 @@ or nil when tree-sitter reports no changed ranges."
 (defun ts-loaded-p (runtime) (libs-loaded runtime))
 
 (defun ensure-ts (runtime)
+  "Load libtree-sitter once. A pine built without it still edits, so this reports
+rather than refuses, and LIBS-LOADED stays false."
   (unless (libs-loaded runtime)
     (handler-case
         (progn (cffi:load-foreign-library 'libtree-sitter)
                (setf (libs-loaded runtime) t))
-      (error () nil)))
+      (error (c)
+        (pine.core.eval:report-failure c "loading libtree-sitter"))))
   runtime)
 
 (defun grammar-library-candidates (library-name)
@@ -270,7 +273,9 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
       (when (load-grammar-library library-name)
         (let ((fn (cffi:foreign-symbol-pointer fn-name)))
           (when fn (cffi:foreign-funcall-pointer fn () :pointer))))
-    (error () nil)))
+    (error (c)
+      (pine.core.eval:report-failure
+       c (format nil "loading the ~a grammar" library-name)))))
 
 (defun load-language-entry (language)
   (destructuring-bind (&optional library fn-name) (cdr (assoc language *grammars*))
@@ -354,7 +359,8 @@ converts both ways without assuming one byte per character."
               (when (and tree (not (cffi:null-pointer-p tree)))
                 (unwind-protect (funcall fn (ts-tree-root-node tree))
                   (ts-tree-delete tree)))))
-        (error () nil)))))
+        (error (c)
+          (pine.core.eval:report-failure c (format nil "parsing ~a source" language)))))))
 
 (defun pos-to-byte (text line col index)
   "UTF-8 byte offset of the character position LINE/COL."
@@ -577,7 +583,11 @@ is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Returns
                  (multiple-value-bind (s e) (%defun-bytes root byte)
                    (declare (ignore s))
                    (at e))))))
-        (error () nil)))))
+        ;; no target is a real answer (point is already at the edge of the
+        ;; tree), a failure is not
+        (error (c)
+          (pine.core.eval:report-failure c (format nil "~a from line ~d" kind line))
+          nil)))))
 
 (defun %record-hl-edit (ps old new start-row old-end-row new-end-row)
   "Note one edit for incremental highlighting: rows from tree-sitter's changed

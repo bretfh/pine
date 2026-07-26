@@ -2,18 +2,6 @@
 
 (def-suite* :pine.agent :in :pine)
 
-(defparameter +agent-port+ 17055)
-
-(defun ensure-remoting ()
-  (let ((server *server*))
-    (unless (pine.core.server:remoting-port server)
-      (sento.remoting:enable-remoting (pine.core.server:actor-system server)
-                                      :host pine.core.server:*host*
-                                      :port +agent-port+)
-      (setf (pine.core.server:remoting-port server) +agent-port+)
-      (pine.core.actor:start-agent-debug server))
-    server))
-
 (defun agent-file-read (path)
   (with-open-file (s path :if-does-not-exist nil)
     (when s (read s nil nil))))

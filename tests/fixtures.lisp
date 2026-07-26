@@ -99,6 +99,21 @@ conditions the daemon does."
   (unwind-protect (&body)
     (open-fresh-store)))
 
+(defparameter +agent-port+ 17055
+  "The port the suite's daemon listens on when a test needs remoting: process
+agents, and the attach handshake.")
+
+(defun ensure-remoting ()
+  "Turn on remoting for the suite's server, once. Returns the server."
+  (let ((server *server*))
+    (unless (pine.core.server:remoting-port server)
+      (sento.remoting:enable-remoting (pine.core.server:actor-system server)
+                                      :host pine.core.server:*host*
+                                      :port +agent-port+)
+      (setf (pine.core.server:remoting-port server) +agent-port+)
+      (pine.core.actor:start-agent-debug server))
+    server))
+
 (defmacro within-seconds (seconds &body body)
   "Run BODY, failing rather than hanging if it takes longer than SECONDS."
   `(handler-case (sb-ext:with-timeout ,seconds ,@body)

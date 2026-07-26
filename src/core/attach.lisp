@@ -1,6 +1,7 @@
 (defpackage #:pine.core.attach
   (:use #:cl)
   (:export #:start-attach-listener
+           #:protocol-version #:version-accepted-p
            #:attach-to-daemon
            #:app #:app-kind #:register-app #:find-app
            #:attached #:received #:detached #:run-frontend
@@ -15,16 +16,32 @@
 ;;;; async tells, both directions -- never a blocking remote ask, so neither side
 ;;;; can hang the other:
 ;;;;
-;;;;   app  -> daemon "attach" actor : (:attach :display-uri U :kind K)
+;;;;   app  -> daemon "attach" actor : (:attach :display-uri U :kind K :version V)
 ;;;;   daemon creates a client (bound to a remote-ref to the app's display) and a
 ;;;;   per-client input actor, then
-;;;;   daemon -> app display : (:attached :id N :client-uri V)
+;;;;   daemon -> app display : (:attached :id N :client-uri V :version V)
+;;;;   or, when the two do not speak the same protocol,
+;;;;   daemon -> app display : (:refused :reason R :version V)
 ;;;;   app makes a remote-ref to V and sends input to it:
 ;;;;   app  -> daemon client-N   : (:key ...) (:resize ...) ...
 ;;;;   daemon -> app display     : (:widgets ...) (:panel ...) ...
 ;;;;
 ;;;; Only plain data crosses (the sexp wire): lists, numbers, strings, keywords,
 ;;;; vectors. fset/CLOS values are rendered to plain data at the edge.
+
+(defun protocol-version ()
+  "The version two images must agree on to talk: pine's own, from the .asd, so
+there is no second place to bump it.
+
+The verbs crossing the wire are a contract between separately built images. An
+unknown one now faults rather than vanishing, which is loud but late: this is
+what makes a mismatch say so at attach, before a keystroke goes anywhere."
+  (or (asdf:component-version (asdf:find-system :pine nil)) "unknown"))
+
+(defun version-accepted-p (theirs)
+  "Whether an app reporting THEIRS may attach. Exact match while the protocol is
+still moving; a range belongs here once it stops."
+  (equal theirs (protocol-version)))
 
 (defun daemon-base-uri (server)
   (pine.core.server:daemon-uri "" :port (pine.core.server:remoting-port server)))
@@ -138,6 +155,43 @@ app's process, so a refused connection is the app being gone."
   (let ((d (attached-client-display client)))
     (when d (sento.actor:tell d message))))
 
+(defun %refuse-attach (display kind version)
+  "Turn away an app that does not speak this protocol, and say why."
+  (format *error-output*
+          "pine: refused a ~(~a~) attach: it speaks ~a, this daemon ~a~%"
+          kind (or version "no version") (protocol-version))
+  (finish-output *error-output*)
+  (sento.actor:tell display
+    (list :refused
+          :reason (format nil "this daemon speaks protocol ~a, you speak ~a"
+                          (protocol-version) (or version "none"))
+          :version (protocol-version))))
+
+(defun %accept-attach (sys server display display-uri kind)
+  "Register an attaching app: a client, its own input actor, the app's own
+attach handler, and the reply telling it where to send input."
+  (let* ((id (incf *client-counter*))
+         (client (make-attached-client :id id :kind kind :display display
+                                       :uri display-uri)))
+    (setf (attached-client-input client)
+          (sento.actor-context:actor-of sys
+            :name (format nil "client-~d" id)
+            ;; one app's input never queues behind another's
+            :dispatcher :pinned
+            :receive (lambda (m) (on-client-input client m))))
+    (push client *clients*)
+    (let ((app (%app-of client)))
+      (when app
+        (handler-case (attached app client)
+          (error (c)
+            (format *error-output* "pine: ~a attach handler failed: ~a~%" kind c)
+            (finish-output *error-output*)))))
+    (sento.actor:tell display
+      (list :attached :id id
+            :client-uri (format nil "~aclient-~d" (daemon-base-uri server) id)
+            :version (protocol-version)))
+    nil))
+
 (defun start-attach-listener (server)
   "Daemon-side: the actor apps connect to in order to attach. Returns it."
   (let ((sys (pine.core.server:actor-system server)))
@@ -148,29 +202,14 @@ app's process, so a refused connection is the app being gone."
       (lambda (msg)
         (case (first msg)
           (:attach
-           (destructuring-bind (&key display-uri kind) (rest msg)
-             (let* ((id (incf *client-counter*))
-                    (display (sento.remoting:make-remote-ref sys display-uri))
-                    (client (make-attached-client :id id :kind kind :display display
-                                                  :uri display-uri)))
-               (setf (attached-client-input client)
-                     (sento.actor-context:actor-of sys
-                       :name (format nil "client-~d" id)
-                       ;; one app's input never queues behind another's
-                       :dispatcher :pinned
-                       :receive (lambda (m) (on-client-input client m))))
-               (push client *clients*)
-               (let ((app (%app-of client)))
-                 (when app
-                   (handler-case (attached app client)
-                     (error (c)
-                       (format *error-output* "pine: ~a attach handler failed: ~a~%"
-                               kind c)
-                       (finish-output *error-output*)))))
-               (sento.actor:tell display
-                 (list :attached :id id
-                       :client-uri (format nil "~aclient-~d" (daemon-base-uri server) id)))
-               nil)))
+           (destructuring-bind (&key display-uri kind version) (rest msg)
+             (let ((display (sento.remoting:make-remote-ref sys display-uri)))
+               ;; a build that does not speak this protocol is turned away here,
+               ;; where it can be told why, rather than left to find out one
+               ;; unknown verb at a time
+               (if (version-accepted-p version)
+                   (%accept-attach sys server display display-uri kind)
+                   (%refuse-attach display kind version)))))
           (t nil))))))
 
 (defun attach-to-daemon (app-sys daemon-attach-uri display-uri &key (kind :app))
@@ -179,5 +218,6 @@ arrives asynchronously at the app's own display actor (display-uri), which then
 makes a remote-ref to the client actor for sending input. Returns the remote-ref
 to the daemon's attach actor (kept so it is not GC'd)."
   (let ((attach (sento.remoting:make-remote-ref app-sys daemon-attach-uri)))
-    (sento.actor:tell attach (list :attach :display-uri display-uri :kind kind))
+    (sento.actor:tell attach (list :attach :display-uri display-uri :kind kind
+                                           :version (protocol-version)))
     attach))

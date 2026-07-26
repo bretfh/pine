@@ -165,6 +165,65 @@ on taking edits, keeping the colours it already had."
           (is (stringp (btext "scratch"))
               "the rest of the daemon stopped answering"))))))
 
+;;;; The attach handshake. The verbs crossing between images are a contract, and
+;;;; an image that does not speak this one should hear about it at attach rather
+;;;; than one unknown verb at a time.
+
+(test the-protocol-version-comes-from-the-asd
+  (is (equal (asdf:component-version (asdf:find-system :pine))
+             (pine.core.attach:protocol-version))
+      "the version of record is the .asd, so there is no second place to bump")
+  (is-true (pine.core.attach:version-accepted-p (pine.core.attach:protocol-version)))
+  (is-false (pine.core.attach:version-accepted-p "0.0.0-not-this"))
+  (is-false (pine.core.attach:version-accepted-p nil)
+            "an app that reports no version at all is not accepted either"))
+
+(defun attach-probe (name version)
+  "Send the daemon an attach announcing VERSION, and answer what it replies.
+
+The daemon answers a display actor by remote ref, so the probe stands one up in
+this image and hands over its uri: the same path a frontend takes, without a
+second process."
+  (ensure-remoting)
+  (let* ((sys (pine.core.server:actor-system *server*))
+         (heard nil)
+         (display (sento.actor-context:actor-of
+                   sys :name name :dispatcher :pinned :state nil
+                   :receive (lambda (m) (push m heard) nil)))
+         (listener (pine.core.attach:start-attach-listener *server*)))
+    (unwind-protect
+         (progn
+           (sento.actor:tell listener
+             (list :attach
+                   :display-uri (pine.core.server:local-uri name +agent-port+)
+                   :kind :probe :version version))
+           (wait-for (lambda () heard) :seconds 15)
+           (first heard))
+      (sento.actor-context:stop sys display)
+      (sento.actor-context:stop sys listener))))
+
+(test an-attach-of-the-wrong-version-is-refused-with-a-reason
+  (with-fixture substrate ()
+    (within-seconds 60
+      (let ((reply (attach-probe (format nil "vprobe-bad-~a" (gensym)) "0.0.0-not-this")))
+        (is (eq :refused (first reply))
+            "a wrong-version attach should be refused, the daemon said ~s" reply)
+        (when (eq :refused (first reply))
+          (is (search (pine.core.attach:protocol-version) (getf (rest reply) :reason))
+              "the refusal should name the version this daemon speaks: ~s"
+              (getf (rest reply) :reason)))))))
+
+(test an-attach-of-the-right-version-is-accepted
+  (with-fixture substrate ()
+    (within-seconds 60
+      (let ((reply (attach-probe (format nil "vprobe-good-~a" (gensym))
+                                 (pine.core.attach:protocol-version))))
+        (is (eq :attached (first reply))
+            "a matching attach should be accepted, the daemon said ~s" reply)
+        (when (eq :attached (first reply))
+          (is (equal (pine.core.attach:protocol-version) (getf (rest reply) :version))
+              "the acceptance carries the daemon's version too"))))))
+
 (test killing-a-buffer-takes-its-parser-with-it
   (with-fixture substrate ()
     (within-seconds 60

@@ -595,7 +595,11 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
                                  (+ open-col 2)
                                  (%align-column form open-col src))
                              (1+ open-col))))))))
-        (error () nil)))))
+        ;; NIL is a real answer here: leave the line where it is. A failure is
+        ;; not that answer, so it says so before falling back to it.
+        (error (c)
+          (pine.core.eval:report-failure c (format nil "indenting line ~d" line))
+          nil)))))
 
 
 ;;;; Development harness. Prints every highlighted token and its face; a check
@@ -635,13 +639,11 @@ holding a string rather than a buffer: a tool, a test, a snippet."
   (let ((ps (make-parse-state runtime language)))
     (when ps
       (unwind-protect
-           (handler-case
-               (progn
-                 (parse-lines! ps (fset:convert 'fset:seq
-                                                (uiop:split-string
-                                                 text :separator '(#\Newline))))
-                 (parse-highlights ps))
-             (error () nil))
+           (progn
+             (parse-lines! ps (fset:convert 'fset:seq
+                                            (uiop:split-string
+                                             text :separator '(#\Newline))))
+             (parse-highlights ps))
         (free-parse-state ps)))))
 
 (defun %viewport-bytes (src from-line to-line)
@@ -778,13 +780,18 @@ line delta). Anything unexpected falls back to the full walk."
                 ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps)))
                  (%hl-incremental ps tree))
                 (t (%hl-full ps tree))))
-        (error ()
+        ;; The cached tuples are the likeliest thing to be wrong, so they are
+        ;; dropped and the tree walked once more from scratch. That retry is
+        ;; recovery, not concealment: the condition is reported either way, and
+        ;; a second failure is the walk's own and belongs to the caller.
+        (error (c)
+          (pine.core.eval:report-failure
+           c (format nil "highlighting ~a, retrying without the cache"
+                     (ps-language ps)))
           (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil
                 (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
-          (handler-case
-              (walk-highlights (ps-language ps) (ts-tree-root-node tree)
-                               (ps-byte-index ps))
-            (error () nil)))))))
+          (walk-highlights (ps-language ps) (ts-tree-root-node tree)
+                           (ps-byte-index ps)))))))
 
 (defun %hl-full (ps tree)
   (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree)

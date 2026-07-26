@@ -455,10 +455,16 @@ through its mode on a thread of its own."
                                                (first msg) (rest msg)))))))))))
 
 (defun notify-subscribers (subscribers state &optional hl)
+  "Send SNAPSHOT to every subscriber. One that cannot be reached does not stop
+the others, and does not pass unnoticed either: a renderer that stopped taking
+snapshots is a window that has quietly stopped painting."
   (let ((snap (state->snapshot-with-hl state hl)))
     (dolist (ref subscribers)
       (handler-case (sento.actor:tell ref (list :snapshot :snapshot snap))
-        (error () nil)))))
+        (error (c)
+          (pine.core.eval:report-failure
+           c (format nil "notifying a subscriber of ~a"
+                     (buffer-local state :name "a buffer"))))))))
 
 
 ;;;; Buffer Registry

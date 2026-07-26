@@ -150,7 +150,16 @@ repeated until it does."
     (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
     (sento.actor-context:actor-of sys :name "display"
       :dispatcher :pinned
-      :receive (lambda (msg) (funcall handler msg) nil))
+      :receive (lambda (msg)
+                 ;; a daemon that speaks a different protocol says so instead of
+                 ;; leaving this image waiting for an :attached that is not
+                 ;; coming. Loud here, because a frontend has nowhere to show it.
+                 (when (eq (first msg) :refused)
+                   (format *error-output* "pine ~(~a~): the daemon refused: ~a~%"
+                           kind (getf (rest msg) :reason))
+                   (finish-output *error-output*))
+                 (funcall handler msg)
+                 nil))
     (let* ((self-port (sento.remoting:remoting-port sys))
            (daemon (pine.core.server:daemon-uri "attach" :host host :port port))
            (self (pine.core.server:local-uri "display" self-port)))
