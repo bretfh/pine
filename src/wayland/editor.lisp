@@ -41,6 +41,8 @@ buffer rows were laid out for."
    (sent-cols :initform -1 :accessor ed-sent-cols)
    (sent-rows :initform -1 :accessor ed-sent-rows)
    (pump    :initarg :pump :reader ed-pump)
+   (wire    :initform nil :accessor ed-wire)   ; the frame being held
+   (generation :initform 0 :accessor ed-generation)
    (dirty   :initform nil :accessor ed-dirty)
    ;; no buffer may be attached before the first xdg_surface.configure --
    ;; river enforces this where some compositors tolerate it
@@ -220,14 +222,41 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
     ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
     ;; -- the buffer's rows ride inside the window node -- and repaint.
     (:widgets
-     (destructuring-bind (&key surface tree as) (rest msg)
+     (destructuring-bind (&key surface tree as generation) (rest msg)
        (declare (ignore surface as))
-       (pine.frontend:enqueue (ed-pump ed) (lambda ()
-                     (setf (ed-tree ed)
-                           (l:wire->node tree :on-action
-                                         (lambda (id) (declare (ignore id))
-                                           (lambda (&rest args) (declare (ignore args)) nil)))
-                           (ed-dirty ed) t)))))))
+       (pine.frontend:enqueue (ed-pump ed) (lambda () (adopt-frame ed tree generation)))))
+    (:rows-patch
+     (destructuring-bind (&key surface patch generation) (rest msg)
+       (declare (ignore surface))
+       (pine.frontend:enqueue (ed-pump ed) (lambda () (patch-frame ed patch generation)))))))
+
+(defun %build-tree (ed form)
+  (setf (ed-wire ed) form
+        (ed-tree ed) (l:wire->node form :on-action
+                                   (lambda (id) (declare (ignore id))
+                                     (lambda (&rest args) (declare (ignore args)) nil)))
+        (ed-dirty ed) t))
+
+(defun adopt-frame (ed form generation)
+  "Take a whole frame."
+  (setf (ed-generation ed) generation)
+  (%build-tree ed form))
+
+(defun patch-frame (ed patch generation)
+  "Apply the lines that changed to the frame being held.
+
+A patch names the frame it follows. Holding a different one means a frame was
+missed, which makes this frontend wrong rather than merely stale, so it asks
+for a whole one instead of applying."
+  (cond
+    ((and (ed-wire ed) (eql generation (1+ (ed-generation ed))))
+     (setf (ed-generation ed) generation)
+     (%build-tree ed (l:apply-rows-patch (ed-wire ed) patch)))
+    (t
+     (format *error-output* "pine editor: frame ~a does not follow ~a, refetching~%"
+             generation (ed-generation ed))
+     (finish-output *error-output*)
+     (send-input ed (list :refresh)))))
 
 (defun editor-loop (ed)
   (pine.frontend:run (ed-backing ed) (ed-pump ed)

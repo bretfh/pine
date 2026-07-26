@@ -5,7 +5,11 @@
   (inbox nil)
   (lock (bordeaux-threads:make-lock))
   (cvar (bordeaux-threads:make-condition-variable))
-  (stop nil) thread pump)
+  (stop nil) thread pump
+  ;; the frame this session last sent, so the next one can carry only the
+  ;; lines that moved, and the generation the frontend must be holding for a
+  ;; patch to mean anything
+  (sent-wire nil) (generation 0))
 
 ;;;; The editor as a live tree. The `editor' surface's node tree is seeded once
 ;;;; per session (from init.lisp's builder or the engine default) and then LIVES:
@@ -260,14 +264,27 @@ engine default. Focus lands on the saved focus or the first window leaf."
                             '(:force-render)))))))
 
 (defun push-editor-surface (aclient s)
-  "Refresh the session's live tree (arrange, fit, render its leaves) and push
-it to the app as the `editor' surface."
+  "Refresh the session's live tree and push it as the `editor' surface.
+
+Sends the lines that changed when the frame differs from the last one only in
+its rows and cursor, and the whole tree otherwise. Nearly all of a frame is
+those rows, and a keystroke moves one of them."
   (let* ((client (sess-client s))
          (tree (pine.render:refresh-editor-tree client)))
     (when tree
-      (pine.attach:push-to-app aclient :widgets :surface "editor"
-                               :tree (pine.layout:node->wire tree)
-                               :as :toplevel))))
+      (let* ((wire (pine.layout:node->wire tree))
+             (patch (pine.layout:rows-patch (sess-sent-wire s) wire)))
+        (incf (sess-generation s))
+        (cond
+          (patch
+           (pine.attach:push-to-app aclient :rows-patch :surface "editor"
+                                    :patch patch
+                                    :generation (sess-generation s)))
+          (t
+           (pine.attach:push-to-app aclient :widgets :surface "editor"
+                                    :tree wire :as :toplevel
+                                    :generation (sess-generation s))))
+        (setf (sess-sent-wire s) wire)))))
 
 (defun editor-frame (aclient)
   "Renderer trigger for an editor session: refresh the live tree and push it."
@@ -375,7 +392,12 @@ much output arrived, and nothing at all while no terminal is producing any."
               client (pine.key:make-key str :ctrl ctrl :meta meta :shift shift :super super))
              (sento.actor:tell (pine.client:renderer client) '(:force-render))))))
       (:resize
-       (sento.actor:tell (pine.client:renderer client) msg)))))
+       (sento.actor:tell (pine.client:renderer client) msg))
+      (:refresh
+       ;; the frontend is holding a frame this session cannot patch onto;
+       ;; forget what was sent so the next push carries the whole tree
+       (setf (sess-sent-wire s) nil)
+       (sento.actor:tell (pine.client:renderer client) '(:force-render))))))
 
 (defun session-loop (s)
   (let ((pine.client:*client* (sess-client s)))
