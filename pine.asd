@@ -133,6 +133,7 @@ wayland surfaces through the :pine/cairo backend."
                  (:file "river-xkb") (:file "river-layer-shell")))
    (:module "wayland"
     :serial t
-    :components ((:file "connection") (:file "surface") (:file "input")
-                 (:file "desktop") (:file "editor") (:file "editor-keys")
-                 (:file "wm")))))
+    :components ((:file "connection") (:file "surface") (:file "input")))
+   (:module "app"
+    :serial t :pathname "wayland/app/"
+    :components ((:file "editor") (:file "keys") (:file "desktop") (:file "wm")))))

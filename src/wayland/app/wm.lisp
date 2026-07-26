@@ -1,3 +1,13 @@
+(defpackage #:pine.wayland.app.wm
+  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection)
+  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
+                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
+                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
+                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
+  (:export #:%apply-action #:%area #:%ask-manage #:%border-rgba #:%chord-keysym+modifiers #:%defer #:%drain #:%draw-borders #:%draws-own-chrome-p #:%enqueue #:%find-win #:%install-bindings #:%rect #:%register-binding #:%report-area #:%report-state #:%screen #:%send #:%spawn #:%take-chrome #:%tiled #:%watch-layer-output #:+build-environment+ #:connect-wm #:handle-layer-output #:handle-layer-seat #:handle-manager #:handle-output #:handle-window #:handle-wm-message #:handle-wm-seat #:make-win #:make-wm #:manage #:render #:run-wm #:win #:win-area #:win-been #:win-by #:win-client #:win-decoration_hint #:win-defstruct #:win-framed #:win-has #:win-height #:win-hint #:win-it #:win-layer #:win-left #:win-out #:win-p #:win-proxy #:win-river_layer_shell_output_v1 #:win-shell #:win-ssd #:win-surfaces #:win-the #:win-to #:win-told #:win-use #:win-whether #:win-width #:win-x #:win-y #:wm #:wm-a #:wm-actor #:wm-and #:wm-as #:wm-asked #:wm-backing #:wm-been #:wm-binding #:wm-bindings #:wm-bindings-global #:wm-border #:wm-chord #:wm-client #:wm-colours #:wm-connection #:wm-daemon #:wm-dirty #:wm-display #:wm-done #:wm-fill #:wm-first #:wm-focus #:wm-focus-id #:wm-focused #:wm-for #:wm-generation #:wm-h #:wm-has #:wm-id #:wm-identifier #:wm-in #:wm-layer-focus #:wm-layer-shell #:wm-manage #:wm-manager #:wm-newest #:wm-next #:wm-nil #:wm-on #:wm-or #:wm-outputs #:wm-p #:wm-pending #:wm-proxy #:wm-pump #:wm-queue #:wm-rects #:wm-ref #:wm-river_layer_shell_v1 #:wm-river_xkb_bindings_v1 #:wm-run #:wm-seats #:wm-seq #:wm-sequence #:wm-something #:wm-staged #:wm-staged-focus #:wm-string #:wm-sys #:wm-the #:wm-this #:wm-threads #:wm-thunks #:wm-to #:wm-w #:wm-wait #:wm-width #:wm-windows #:wm-x #:wm-y))
+
+(in-package #:pine.wayland.app.wm)
+
 ;;;; The river window manager frontend: bind the global, answer every manage
 ;;;; and render sequence, and carry policy between the compositor and the
 ;;;; daemon. The daemon (pine.wm) decides what the chords are and what they
@@ -5,8 +15,6 @@
 ;;;; and applies the actions it is told to, always inside the sequence the
 ;;;; protocol requires. design/wm.org is the design.
 
-
-(in-package #:pine.wayland)
 
 (defstruct (wm (:constructor %make-wm))
   display

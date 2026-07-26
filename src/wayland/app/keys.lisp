@@ -1,4 +1,12 @@
-(in-package #:pine.wayland)
+(defpackage #:pine.wayland.app.keys
+  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection #:pine.wayland.app.editor)
+  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
+                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
+                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
+                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
+  (:export #:*ekb* #:+modifier-keysyms+ #:ekb #:handle-keyboard #:key->wire #:mod-active #:modifier-key-p))
+
+(in-package #:pine.wayland.app.keys)
 
 ;;;; xkb keyboard for the wayland editor. Sets *keyboard-handler* at load time so
 ;;;; run-editor types. A key becomes a printable utf8 string, or else the keysym

@@ -1,4 +1,12 @@
-(in-package #:pine.wayland)
+(defpackage #:pine.wayland.app.editor
+  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection)
+  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
+                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
+                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
+                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
+  (:export #:%build-tree #:*keyboard-handler* #:*x0* #:adopt-frame #:check-repeat #:connect-editor #:ed-ascent #:ed-backing #:ed-cell-h #:ed-cell-w #:ed-cols #:ed-configured #:ed-dirty #:ed-display #:ed-done #:ed-generation #:ed-height #:ed-held-keycode #:ed-held-msg #:ed-held-since-ms #:ed-last-repeat-ms #:ed-metricsp #:ed-pump #:ed-ref #:ed-repeat-delay-ms #:ed-repeat-rate #:ed-rows #:ed-sent-cols #:ed-sent-rows #:ed-sys #:ed-tree #:ed-width #:ed-wire #:editor #:editor-loop #:ensure-metrics #:font-px #:handle-editor-message #:handle-editor-seat #:maybe-resize #:now-ms #:open-window #:paint-editor #:patch-frame #:repeat-deadline #:run-editor #:send-input))
+
+(in-package #:pine.wayland.app.editor)
 
 ;;;; The editor frontend: an xdg-shell toplevel that attaches to the daemon as
 ;;;; :kind :editor and renders the `editor' surface -- one (:widgets ...) widget

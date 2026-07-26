@@ -1,15 +1,12 @@
-(defpackage #:pine.wayland
+(defpackage #:pine.wayland.connection
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol)
   (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
                     (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
                     (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
                     (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
-  (:export #:run-desktop #:run-editor #:run-wm #:*keyboard-handler*)
-  (:documentation "The wayland backing: the compositor connection and its event
-pump, shm and cairo surfaces, pointer input, and the three programs pine runs
-as wayland clients."))
+  (:export #:backing #:connect-display #:display #:display-path #:fd))
 
-(in-package #:pine.wayland)
+(in-package #:pine.wayland.connection)
 
 ;;;; The compositor connection and the wait.
 ;;;;

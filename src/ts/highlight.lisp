@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.highlight
   (:use #:cl #:pine.ts)
-  (:export #:%align-column #:%byte->char #:%byte-col #:%byte-line #:%defish-p #:%enclosing-form #:%form-head-name #:%hl-full #:%hl-incremental #:%intern-table #:%line-start-byte #:%node-first-char #:%opens-form-p #:%record-hl-edit #:*cl-builtins* #:*cl-class-definers* #:*cl-constants* #:*cl-flat-all-binders* #:*cl-flat-first-binders* #:*cl-nested-binders* #:*cl-special-forms* #:*cl-struct-definers* #:*cl-type-definers* #:*cl-var-definers* #:*scheme-keywords* #:body-form-p #:cl-head-face #:cl-head-kind #:cl-highlights #:compute-highlights #:delimiter-face #:hl-dump #:hl-dump-file #:lambda-list-keyword-p #:parse-highlights #:parse-indent #:scheme-highlights #:ts-field #:ts-named-children #:ts-type #:ts-type= #:walk-highlights))
+  (:export #:%align-column #:%byte->char #:%byte-col #:%byte-line #:%defish-p #:%enclosing-form #:%form-head-name #:%hl-full #:%hl-incremental #:%intern-table #:%line-start-byte #:%node-first-char #:%opens-form-p #:*cl-builtins* #:*cl-class-definers* #:*cl-constants* #:*cl-flat-all-binders* #:*cl-flat-first-binders* #:*cl-nested-binders* #:*cl-special-forms* #:*cl-struct-definers* #:*cl-type-definers* #:*cl-var-definers* #:*scheme-keywords* #:body-form-p #:cl-head-face #:cl-head-kind #:cl-highlights #:compute-highlights #:delimiter-face #:hl-dump #:hl-dump-file #:lambda-list-keyword-p #:parse-highlights #:parse-indent #:scheme-highlights #:ts-field #:ts-named-children #:ts-type #:ts-type= #:walk-highlights))
 
 (in-package #:pine.ts.highlight)
 
@@ -718,25 +718,6 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
         (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
               (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
         merged))))
-
-(defun %record-hl-edit (ps old new start-row old-end-row new-end-row)
-  "Note one edit for incremental highlighting: rows from tree-sitter's changed
-ranges unioned with the raw edit's rows (a pure line insert shifts everything
-below while changing no named ranges), plus the line delta. A second edit before
-the next highlight call, or any failure here, marks the cache stale."
-  (when (ps-hl-cache ps)
-    (if (ps-hl-pending ps)
-        (setf (ps-hl-stale ps) t)
-        (handler-case
-            (let ((lo start-row)
-                  (hi new-end-row)
-                  (delta (- new-end-row old-end-row)))
-              (unless (cffi:pointer-eq new old)
-                (multiple-value-bind (rlo rhi) (%changed-row-span old new)
-                  (when rlo
-                    (setf lo (min lo rlo) hi (max hi rhi)))))
-              (setf (ps-hl-pending ps) (list lo hi delta)))
-          (error () (setf (ps-hl-stale ps) t))))))
 
 (defun %line-start-byte (line index)
   (if (< line (length index)) (car (aref index line)) most-positive-fixnum))

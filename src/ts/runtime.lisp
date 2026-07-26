@@ -451,3 +451,22 @@ is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Returns
                  (declare (ignore s))
                  (when e (byte-to-line-col e index text))))))
         (error () nil)))))
+
+(defun %record-hl-edit (ps old new start-row old-end-row new-end-row)
+  "Note one edit for incremental highlighting: rows from tree-sitter's changed
+ranges unioned with the raw edit's rows (a pure line insert shifts everything
+below while changing no named ranges), plus the line delta. A second edit before
+the next highlight call, or any failure here, marks the cache stale."
+  (when (ps-hl-cache ps)
+    (if (ps-hl-pending ps)
+        (setf (ps-hl-stale ps) t)
+        (handler-case
+            (let ((lo start-row)
+                  (hi new-end-row)
+                  (delta (- new-end-row old-end-row)))
+              (unless (cffi:pointer-eq new old)
+                (multiple-value-bind (rlo rhi) (%changed-row-span old new)
+                  (when rlo
+                    (setf lo (min lo rlo) hi (max hi rhi)))))
+              (setf (ps-hl-pending ps) (list lo hi delta)))
+          (error () (setf (ps-hl-stale ps) t))))))
