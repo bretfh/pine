@@ -1,6 +1,16 @@
 (defpackage #:pine.ui.layout
   (:use #:cl #:pine.ui.node #:pine.ui.raster)
-  (:export #:%cb-parts #:%line-h #:%list-items #:%text-size #:%window-overlay-count #:*default-font-px* #:*text-size* #:arrange #:click-thunk #:collect-selectables #:measure #:node-at #:nodes-of #:paint #:remove-node #:slider-value-at #:split-node))
+  (:export
+   ;; the three passes, and what each class contains
+   #:measure #:arrange #:paint #:nodes-of
+   ;; text metrics: a character is one cell unless *text-size* says otherwise
+   #:*text-size* #:*default-font-px* #:text-size #:line-height
+   ;; tree surgery, shared by the editor's windows and the window manager's
+   #:split-node #:remove-node
+   ;; hit-testing and selection
+   #:node-at #:click-thunk #:slider-value-at #:collect-selectables
+   ;; what a container holds, for the walks that need it
+   #:centerbox-parts #:list-items #:window-overlay-count))
 
 (in-package #:pine.ui.layout)
 
@@ -11,13 +21,13 @@
 measure through it (pixel/cairo mode); otherwise a character is one cell.")
 (defvar *default-font-px* 13)
 
-(defun %text-size (text font-px)
+(defun text-size (text font-px)
   (if *text-size*
       (funcall *text-size* text (or font-px *default-font-px*))
       (values (length text) 1)))
 
-(defun %line-h (font-px)
-  (if *text-size* (nth-value 1 (%text-size "M" font-px)) 1))
+(defun line-height (font-px)
+  (if *text-size* (nth-value 1 (text-size "M" font-px)) 1))
 
 (defgeneric nodes-of (node)
   (:documentation "NODE's children, in the order they are laid out and painted.
@@ -94,7 +104,7 @@ the node's border-box (and everything it lays out inside) sits within its margin
   "Fill the node's rect background: the hover face when hovered, else its own."
   (let ((f (if (and (hovered n) *hover-face*) *hover-face* (face n))))
     (when f
-      (multiple-value-bind (fr fg fb br bg bb attr) (%face-cell-rgb f)
+      (multiple-value-bind (fr fg fb br bg bb attr) (face-cell-rgb f)
         (declare (ignore fr fg fb attr))
         (when (>= br 0)
           (loop for row from (start-line n) to (end-line n) do
@@ -106,13 +116,13 @@ the node's border-box (and everything it lays out inside) sits within its margin
 ;;; Leaves
 
 (defmethod measure ((n text-node) aw ah)
-  (declare (ignore aw ah)) (%text-size (content n) (font-px n)))
+  (declare (ignore aw ah)) (text-size (content n) (font-px n)))
 (defmethod paint ((n text-node) r)
   (let ((s (content n)) (w (%node-width n)))
     (loop for i from 0 below (min (length s) w)
           do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
 
-(defun %window-overlay-count (n)
+(defun window-overlay-count (n)
   "How many of N's leading rows are overlay (drawn above the arranged rect)."
   (let ((base (window-base n)))
     (if base (max 0 (- (length (window-rows n)) base)) 0)))
@@ -121,13 +131,13 @@ the node's border-box (and everything it lays out inside) sits within its margin
   (declare (ignore aw ah))
   (let* ((rows (window-rows n))
          (cols (reduce #'max rows :initial-value 1 :key (lambda (row) (length (car row)))))
-         (nrows (max 1 (- (length rows) (%window-overlay-count n)))))
+         (nrows (max 1 (- (length rows) (window-overlay-count n)))))
     (if *text-size*
-        (multiple-value-bind (cw ch) (%text-size "M" (font-px n))
+        (multiple-value-bind (cw ch) (text-size "M" (font-px n))
           (values (* cols cw) (* nrows ch)))
         (values cols nrows))))
 (defmethod paint ((n window-node) r)
-  (let ((over (%window-overlay-count n)))
+  (let ((over (window-overlay-count n)))
     (loop for row in (window-rows n)
           for y from (- (start-line n) over)
           do (blit-row r y (start-col n) (car row) (cdr row)))))
@@ -155,7 +165,7 @@ reporting AW/AH here would eat the whole axis as natural size."
 
 (defmethod measure ((n slider) aw ah)
   (declare (ignore aw ah))
-  (if *text-size* (values (* 8 (track n)) (%line-h (font-px n))) (values (track n) 1)))
+  (if *text-size* (values (* 8 (track n)) (line-height (font-px n))) (values (track n) 1)))
 (defmethod paint ((n slider) r)
   (let* ((w (track n))
          (span (max 1 (- (max-of n) (min-of n))))
@@ -294,10 +304,10 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
           (arrange c (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch))))))
 (defmethod paint ((n center) r) (when (node n) (paint (node n) r)))
 
-(defun %cb-parts (n) (remove nil (list (cb-start n) (cb-center n) (cb-end n))))
+(defun centerbox-parts (n) (remove nil (list (cb-start n) (cb-center n) (cb-end n))))
 (defmethod measure ((n centerbox) aw ah)
   (let ((w 0) (h 0))
-    (dolist (c (%cb-parts n))
+    (dolist (c (centerbox-parts n))
       (multiple-value-bind (cw ch) (measure c aw ah) (setf w (max w cw)) (incf h ch)))
     (values w h)))
 (defmethod arrange ((n centerbox) x y w h)
@@ -310,7 +320,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
                 (arrange e x (+ y (- h eh)) w eh)))
       (when c (multiple-value-bind (cw ch) (measure c w h) (declare (ignore cw))
                 (arrange c x (+ y (max 0 (floor (- h ch) 2))) w ch))))))
-(defmethod paint ((n centerbox) r) (dolist (c (%cb-parts n)) (paint c r)))
+(defmethod paint ((n centerbox) r) (dolist (c (centerbox-parts n)) (paint c r)))
 
 (defmethod measure ((n scroll) aw ah)
   (declare (ignore ah))
@@ -325,7 +335,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
       (arrange (node n) x (- y (scroll-offset n)) w ch))))
 (defmethod paint ((n scroll) r)
   (when (node n)
-    (%with-clip (r (start-col n) (start-line n) (end-col n) (+ (start-line n) (vheight n)))
+    (with-clip (r (start-col n) (start-line n) (end-col n) (+ (start-line n) (vheight n)))
       (paint (node n) r))))
 
 (defmethod measure ((n selectable) aw ah)
@@ -352,7 +362,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
         (arrange (node n) (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch)))))
 (defmethod paint ((n action) r) (when (node n) (paint (node n) r)))
 
-(defun %list-items (n)
+(defun list-items (n)
   (let* ((is (items n)) (mx (max-visible n))
          (vis (if mx (subseq is 0 (min mx (length is))) is)))
     (setf (rendered n)
@@ -360,7 +370,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
 
 (defmethod measure ((n list-node) aw ah)
   (let ((w 0) (h 0))
-    (dolist (c (%list-items n))
+    (dolist (c (list-items n))
       (multiple-value-bind (cw ch) (measure c aw ah) (setf w (max w cw)) (incf h ch)))
     (values w h)))
 (defmethod arrange ((n list-node) x y w h)
@@ -502,7 +512,7 @@ reaches it, or nil when LEAF cannot be removed."
 
 (defmethod pine.ui.layout:nodes-of ((n vstack)) (nodes n))
 (defmethod pine.ui.layout:nodes-of ((n hstack)) (nodes n))
-(defmethod pine.ui.layout:nodes-of ((n centerbox)) (pine.ui.layout:%cb-parts n))
+(defmethod pine.ui.layout:nodes-of ((n centerbox)) (pine.ui.layout:centerbox-parts n))
 (defmethod pine.ui.layout:nodes-of ((n grid)) (apply #'append (cells n)))
 (defmethod pine.ui.layout:nodes-of ((n list-node)) (rendered n))
 (defmethod pine.ui.layout:nodes-of ((n box)) (and (node n) (list (node n))))

@@ -85,13 +85,22 @@
 
 (asdf:defsystem #:pine/test
   :description "The pine test suite."
-  :depends-on (#:pine #:fiveam)
+  ;; the wayland and cairo backings load headless, and the package tests can
+  ;; only check the packages that are present
+  :depends-on (#:pine #:pine/cairo #:pine/wayland #:fiveam)
   :serial t
   :pathname "tests/"
-  :components ((:file "suite") (:file "model") (:file "editor") (:file "agent")
-               (:file "frontend") (:file "deps"))
+  :components ((:file "suite") (:file "fixtures")
+               (:file "buffer") (:file "vt") (:file "ts")
+               (:file "layout") (:file "style") (:file "wire")
+               (:file "state") (:file "keys") (:file "completion")
+               (:file "isearch") (:file "term") (:file "wm") (:file "source")
+               (:file "packages") (:file "editor") (:file "agent")
+               (:file "frontend"))
+  ;; run! is explain! over run: it prints the report and answers the status.
+  ;; The error is what carries a failure out to the shell as an exit code.
   :perform (asdf:test-op (o c)
-             (unless (uiop:symbol-call :pine.test :run-tests)
+             (unless (uiop:symbol-call :fiveam :run! :pine)
                (error "pine tests failed"))))
 
 (asdf:defsystem #:pine/vt

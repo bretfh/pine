@@ -31,11 +31,19 @@ frontend serving itself up for eval and debugging."
   ;; an error in this image ships its restart list home, by name
   (setf pine.core.eval:*on-debug*
         (lambda (ev)
-          (ignore-errors
-           (sento.actor:tell *master-debug*
-             (list :agent-debug :agent name :eval-id (gethash ev *ev-ids*)
-                   :condition (princ-to-string (pine.core.eval:evaluation-condition ev))
-                   :restarts (mapcar #'first (pine.core.eval:evaluation-restarts ev)))))))
+          ;; Reported here rather than through ATTEMPT: attempt reports via
+          ;; *on-debug*, which is this lambda, so a failing tell would recur.
+          ;; A lost message means the eval thread waits for a restart the
+          ;; master was never told to offer, so it must be loud.
+          (handler-case
+              (sento.actor:tell *master-debug*
+                (list :agent-debug :agent name :eval-id (gethash ev *ev-ids*)
+                      :condition (princ-to-string (pine.core.eval:evaluation-condition ev))
+                      :restarts (mapcar #'first (pine.core.eval:evaluation-restarts ev))))
+            (error (c)
+              (format *error-output*
+                      "pine agent ~a: could not report a fault home: ~a~%" name c)
+              (finish-output *error-output*)))))
   (sento.actor-context:actor-of sys :name "agent"
     :receive
     (lambda (msg)
@@ -49,12 +57,19 @@ frontend serving itself up for eval and debugging."
                        form :package pkg
                        :on-done
                        (lambda (ev)
-                         (ignore-errors
-                          (sento.actor:tell *master-debug*
-                            (list :agent-result :agent name :eval-id id
-                                  :status (pine.core.eval:evaluation-status ev)
-                                  :values (mapcar #'prin1-to-string
-                                                  (pine.core.eval:evaluation-values ev)))))))))
+                         (pine.core.eval:attempt
+                          (lambda ()
+                            (sento.actor:tell *master-debug*
+                              (list :agent-result :agent name :eval-id id
+                                    :status (pine.core.eval:evaluation-status ev)
+                                    :values (mapcar #'prin1-to-string
+                                                    (pine.core.eval:evaluation-values ev)))))
+                          "agent result home")
+                         ;; on-done runs after any debugger resolves, so the
+                         ;; eval is finished with: drop it rather than pin it
+                         ;; and everything it captured for the image's life.
+                         (remhash id *evals*)
+                         (remhash ev *ev-ids*)))))
              (setf (gethash id *evals*) ev (gethash ev *ev-ids*) id)
              (sento.actor:reply (list :started id)))))
         (:resume

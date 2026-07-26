@@ -284,7 +284,7 @@ reports for one cell, so a window measures and paints at the same grid."
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:fill-path)
     (let ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
-          (over (pine.ui.layout:%window-overlay-count n)))
+          (over (pine.ui.layout:window-overlay-count n)))
       (multiple-value-bind (cw ch asc) (cairo-cell-metrics fpx)
         ;; the overlay block (completion popup) floats above the rect, over
         ;; whatever the flow put there; no clip to the rect
@@ -336,8 +336,8 @@ reports for one cell, so a window measures and paints at the same grid."
 (defmethod pine.ui.layout:measure ((n calendar) aw ah)
   (declare (ignore aw ah))
   (let* ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
-         (cw (+ 10 (nth-value 0 (pine.ui.layout:%text-size "00" fpx))))
-         (ch (+ 8 (pine.ui.layout:%line-h fpx))))
+         (cw (+ 10 (nth-value 0 (pine.ui.layout:text-size "00" fpx))))
+         (ch (+ 8 (pine.ui.layout:line-height fpx))))
     (values (* 7 cw) (* 8 ch))))
 
 (defun draw-cell-text (s cx cy cw ch role &optional bold)

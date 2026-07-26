@@ -1,12 +1,16 @@
 (defpackage #:pine.ui.raster
   (:use #:cl #:pine.ui.node)
-  (:export #:%cell-off #:%face-cell-rgb #:%in-raster #:%with-clip #:blit-row #:make-raster #:raster #:raster-cells #:raster-clip #:raster-cols #:raster-p #:raster-put #:raster-put-bg #:raster-put-rgb #:raster-rows))
+  (:export
+   #:raster #:raster-p #:make-raster
+   #:raster-cols #:raster-rows #:raster-cells #:raster-clip #:cell-offset
+   #:raster-put #:raster-put-bg #:raster-put-rgb #:blit-row #:with-clip
+   #:face-cell-rgb))
 
 (in-package #:pine.ui.raster)
 
 ;;;; Faces -> cell colours
 
-(defun %face-cell-rgb (designator)
+(defun face-cell-rgb (designator)
   "(values fr fg fb br bg bb attr) for a face DESIGNATOR; bg -1 means none, attr
 is the packed bold/italic/underline bits. DESIGNATOR is a face name resolved
 through the active theme, or a precomputed (FG BG ATTR) tuple -- FG/BG (r g b)
@@ -43,8 +47,8 @@ lists or nil -- installed by RESOLVE-STYLES! for the cell render."
               (svref v (+ off 9)) 0)))
     (%make-raster :cols cols :rows rows :cells v)))
 
-(declaim (inline %cell-off %in-raster))
-(defun %cell-off (r row col) (* 10 (+ (* row (raster-cols r)) col)))
+(declaim (inline cell-offset %in-raster))
+(defun cell-offset (r row col) (* 10 (+ (* row (raster-cols r)) col)))
 (defun %in-raster (r row col)
   (and (>= row 0) (< row (raster-rows r)) (>= col 0) (< col (raster-cols r))
        (let ((c (raster-clip r)))
@@ -52,7 +56,7 @@ lists or nil -- installed by RESOLVE-STYLES! for the cell render."
              (and (>= col (first c)) (< col (third c))
                   (>= row (second c)) (< row (fourth c)))))))
 
-(defmacro %with-clip ((r x0 y0 x1 y1) &body body)
+(defmacro with-clip ((r x0 y0 x1 y1) &body body)
   "Restrict raster writes to the rect [X0 X1) x [Y0 Y1) within BODY."
   (let ((rr (gensym)) (old (gensym)))
     `(let* ((,rr ,r) (,old (raster-clip ,rr)))
@@ -61,8 +65,8 @@ lists or nil -- installed by RESOLVE-STYLES! for the cell render."
 
 (defun raster-put (r row col ch face)
   (when (%in-raster r row col)
-    (multiple-value-bind (fr fg fb br bg bb attr) (%face-cell-rgb face)
-      (let ((off (%cell-off r row col)) (v (raster-cells r)))
+    (multiple-value-bind (fr fg fb br bg bb attr) (face-cell-rgb face)
+      (let ((off (cell-offset r row col)) (v (raster-cells r)))
         (setf (svref v (+ off 2)) (char-code ch)
               (svref v (+ off 3)) fr (svref v (+ off 4)) fg (svref v (+ off 5)) fb
               (svref v (+ off 9)) attr)
@@ -71,13 +75,13 @@ lists or nil -- installed by RESOLVE-STYLES! for the cell render."
 
 (defun raster-put-bg (r row col br bg bb)
   (when (%in-raster r row col)
-    (let ((off (%cell-off r row col)) (v (raster-cells r)))
+    (let ((off (cell-offset r row col)) (v (raster-cells r)))
       (setf (svref v (+ off 6)) br (svref v (+ off 7)) bg (svref v (+ off 8)) bb))))
 
 (defun raster-put-rgb (r row col ch fr fg fb br bg bb attr)
   "Write a cell with explicit colours (not a face), for blitting cell rows."
   (when (%in-raster r row col)
-    (let ((off (%cell-off r row col)) (v (raster-cells r)))
+    (let ((off (cell-offset r row col)) (v (raster-cells r)))
       (setf (svref v (+ off 2)) (char-code ch)
             (svref v (+ off 3)) fr (svref v (+ off 4)) fg (svref v (+ off 5)) fb
             (svref v (+ off 9)) (or attr 0))

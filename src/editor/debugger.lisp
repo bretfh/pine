@@ -1,6 +1,6 @@
 (defpackage #:pine.editor.debugger
   (:use #:cl)
-  (:export #:%agent-debug-surface #:%attend-session #:%debugger-quit #:%eval-done #:%eval-error #:%eval-notify #:%jobs-builder #:%resolve-session #:%text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
+  (:export #:agent-debug-surface #:attend-session #:debugger-quit #:eval-done #:eval-error #:eval-notify #:jobs-builder #:resolve-session #:text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
 
 (in-package #:pine.editor.debugger)
 
@@ -30,13 +30,13 @@
 (defvar *attended-session* nil "The session the *debugger* buffer currently shows.")
 (defvar *debugger-session-counter* 0)
 
-(defun %eval-notify (text)
+(defun eval-notify (text)
   "Show TEXT in the echo area and repaint, safely from the eval thread."
   (pine.editor.echo:message text)
   (let ((r (ignore-errors (pine.editor.frame:renderer (pine.editor.frame:current-client)))))
     (when r (sento.actor:tell r '(:force-render)))))
 
-(defun %eval-done (ev &optional at)
+(defun eval-done (ev &optional at)
   "Surface a finished eval: the result echoes, and lands inline as an overlay
 on the form's line when AT is (BUFFER . LINE)."
   (case (pine.core.eval:evaluation-status ev)
@@ -45,8 +45,8 @@ on the form's line when AT is (BUFFER . LINE)."
              (ignore-errors
               (sento.actor:tell (car at)
                                 (list :overlay :line (cdr at) :text txt))))
-           (%eval-notify txt)))
-    (:aborted (%eval-notify "aborted"))))
+           (eval-notify txt)))
+    (:aborted (eval-notify "aborted"))))
 
 ;;;; The debugger buffer is a layout buffer: restart rows are selectable
 ;;;; nodes whose activation invokes that restart, so Return / C-n / C-p are the
@@ -99,7 +99,7 @@ invokes that restart -- and the backtrace."
                      (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-bt"))
                              (pine.text.buffer:split-lines (dbg-session-backtrace session)))))))))
 
-(defun %attend-session (session)
+(defun attend-session (session)
   "Open SESSION in the *debugger* buffer, make it the attended one, and switch
 to it. The eval target follows the attended fault, so C-x C-e / recompile land
 in the image that broke -- fix the defun there, then pick retry."
@@ -119,7 +119,7 @@ were before any fault."
     (setf *debugger-return-to* (ignore-errors (pine.editor.ask:ask :current :name))
           pine.editor.target:*eval-target-saved* pine.editor.target:*eval-target*))
   (push session *debugger-sessions*)
-  (%attend-session session))
+  (attend-session session))
 
 (defun %dismiss-debugger ()
   "Hide the *debugger* buffer and return to the pre-debugger buffer. Does not
@@ -128,18 +128,18 @@ resolve anything -- any sessions still in the registry stay parked."
     (%switch-to-buffer *debugger-return-to*))
   (ignore-errors (pine.editor.frame:kill-buffer "*debugger*")))
 
-(defun %resolve-session (session)
+(defun resolve-session (session)
   "Drop SESSION from the registry (its thread was just resumed); attend the next
 live session, or dismiss the buffer and clear the return-to when none remain."
   (setf *debugger-sessions* (remove session *debugger-sessions*))
   (let ((next (first *debugger-sessions*)))
-    (cond (next (%attend-session next))
+    (cond (next (attend-session next))
           (t (setf *attended-session* nil
                    pine.editor.target:*eval-target* pine.editor.target:*eval-target-saved*)   ; back to the pre-fault target
              (%dismiss-debugger)
              (setf *debugger-return-to* nil)))))
 
-(defun %eval-error (ev)
+(defun eval-error (ev)
   (%push-session
    (make-dbg-session
     :id (incf *debugger-session-counter*) :kind :local :ev ev
@@ -147,10 +147,10 @@ live session, or dismiss the buffer and clear the return-to when none remain."
     :condition (pine.core.eval:evaluation-condition ev)
     :restarts (pine.core.eval:evaluation-restarts ev)
     :backtrace (pine.core.eval:evaluation-backtrace ev)))
-  (%eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
+  (eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
                         (pine.core.eval:evaluation-condition-type ev))))
 
-(defun %agent-debug-surface (msg)
+(defun agent-debug-surface (msg)
   "A process agent's error, surfaced in the editor: show its restarts and drive
 the resume back to that agent. Move the decision, not the handler."
   (when (eq (first msg) :agent-debug)
@@ -163,7 +163,7 @@ the resume back to that agent. Move the decision, not the handler."
         :condition (or condition "")
         :restarts (mapcar (lambda (r) (list r nil)) (remove nil restarts))
         :backtrace nil))
-      (%eval-notify (format nil "agent ~a error (0-9/Return picks a restart)" agent)))))
+      (eval-notify (format nil "agent ~a error (0-9/Return picks a restart)" agent)))))
 
 (defun %session-resume (session name)
   "Send NAME to where SESSION's restart is live: pick-restart on the blocked
@@ -189,16 +189,16 @@ next live session, or dismiss the debugger)."
     (cond
       ((null session) (pine.editor.echo:message "no evaluation in the debugger") nil)
       (t (%session-resume session name)
-         (%resolve-session session)
+         (resolve-session session)
          (pine.editor.echo:message (format nil "invoked ~a" name))
          t))))
 
-(defun %debugger-quit ()
+(defun debugger-quit ()
   "Dismiss the *debugger* view without resolving; parked sessions stay in the
 registry (M-x debugger reopens the attended one)."
   (%dismiss-debugger))
 
-(defun %text-layout (text)
+(defun text-layout (text)
   "A read-only layout from TEXT: the first line styled as the heading, the
 rest as entries."
   (lambda (state)
@@ -223,10 +223,10 @@ status."
                                   (getf j :id))))))
             *debugger-sessions*)))
     (if s
-        (%attend-session s)
+        (attend-session s)
         (pine.editor.echo:message (format nil "job ~a: ~a" (getf j :id) (getf j :status))))))
 
-(defun %jobs-builder ()
+(defun jobs-builder ()
   "The *jobs* layout: every live evaluation across the daemon and the agents,
 one selectable row each; Return attends an errored one's debugger session."
   (lambda (state)

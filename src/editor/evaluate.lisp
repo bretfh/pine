@@ -1,18 +1,18 @@
 (defpackage #:pine.editor.evaluate
   (:use #:cl)
-  (:export #:%eval-form-string #:complete-symbol #:eval-buffer #:eval-defun #:eval-last-sexp #:find-definition #:load-file #:symbol-arglist))
+  (:export #:eval-form-string #:complete-symbol #:eval-buffer #:eval-defun #:eval-last-sexp #:find-definition #:load-file #:symbol-arglist))
 
 (in-package #:pine.editor.evaluate)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (require :sb-introspect))
 
-(defun %eval-form-string (str package &key at)
+(defun eval-form-string (str package &key at)
   ;; errors reach *on-debug* (local) or come home from a process agent via
   ;; agent-debug; the client binding rides along for :local. AT = (BUFFER .
   ;; LINE) puts the result inline on the form's line.
   (pine.editor.target:eval-in-target str package
-                  :on-done (lambda (ev) (pine.editor.debugger:%eval-done ev at))
+                  :on-done (lambda (ev) (pine.editor.debugger:eval-done ev at))
                   :bindings (list (cons 'pine.editor.frame:*client*
                                         (pine.editor.frame:current-client)))))
 
@@ -23,17 +23,17 @@
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
-             (lang (pine.editor.motion:%buffer-ts-lang)))
+             (lang (pine.editor.motion:buffer-ts-language)))
         (if (null lang)
             (eval-last-sexp)
             (multiple-value-bind (sl sc el ec)
-                (pine.ts.runtime:defun-bounds-pos (pine.editor.motion:%ts-runtime) lang text
+                (pine.ts.runtime:defun-bounds-pos (pine.editor.motion:ts-runtime) lang text
                                           (pine.text.buffer:point-line snap)
                                           (pine.text.buffer:point-col snap))
               (if sl
-                  (%eval-form-string
-                   (subseq text (pine.editor.motion:%lc->offset text sl sc) (pine.editor.motion:%lc->offset text el ec))
-                   (pine.editor.motion:%buffer-package state)
+                  (eval-form-string
+                   (subseq text (pine.editor.motion:line-col->offset text sl sc) (pine.editor.motion:line-col->offset text el ec))
+                   (pine.editor.motion:buffer-package state)
                    :at (cons buf el))
                   (eval-last-sexp))))))))
 
@@ -45,8 +45,8 @@
 (defun %token-at (text offset)
   "The symbol token surrounding OFFSET, bounded by sexp delimiters."
   (let ((s (min offset (length text))) (e (min offset (length text))) (n (length text)))
-    (loop while (and (> s 0) (not (pine.editor.motion:%sexp-delim-p (char text (1- s))))) do (decf s))
-    (loop while (and (< e n) (not (pine.editor.motion:%sexp-delim-p (char text e)))) do (incf e))
+    (loop while (and (> s 0) (not (pine.editor.motion:sexp-delimiter-p (char text (1- s))))) do (decf s))
+    (loop while (and (< e n) (not (pine.editor.motion:sexp-delimiter-p (char text e)))) do (incf e))
     (when (< s e) (subseq text s e))))
 
 (defun %open-definition (label srcs)
@@ -73,9 +73,9 @@
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
-             (off (min (pine.editor.motion:%point->offset snap) (length text)))
+             (off (min (pine.editor.motion:point->offset snap) (length text)))
              (tok (%token-at text off))
-             (pkg (pine.editor.motion:%buffer-package state)))
+             (pkg (pine.editor.motion:buffer-package state)))
         (if (null tok)
             (pine.editor.echo:message "no symbol at point")
             (let* ((sym (let ((*package* pkg)) (ignore-errors (read-from-string tok))))
@@ -89,7 +89,7 @@
 
 (defun %token-start (text offset)
   (let ((s (min offset (length text))))
-    (loop while (and (> s 0) (not (pine.editor.motion:%sexp-delim-p (char text (1- s))))) do (decf s))
+    (loop while (and (> s 0) (not (pine.editor.motion:sexp-delimiter-p (char text (1- s))))) do (decf s))
     s))
 
 (defun %symbol-candidates (prefix pkg)
@@ -110,10 +110,10 @@ no symbol to complete."
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
-             (off (min (pine.editor.motion:%point->offset snap) (length text)))
+             (off (min (pine.editor.motion:point->offset snap) (length text)))
              (start (%token-start text off))
              (prefix (subseq text start off))
-             (pkg (pine.editor.motion:%buffer-package state)))
+             (pkg (pine.editor.motion:buffer-package state)))
         (if (zerop (length prefix))
             (pine.editor.command:call-command "insert-tab")
             (let ((cands (%symbol-candidates prefix pkg)))
@@ -134,9 +134,9 @@ no symbol to complete."
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
-             (off (min (pine.editor.motion:%point->offset snap) (length text)))
+             (off (min (pine.editor.motion:point->offset snap) (length text)))
              (tok (%token-at text off))
-             (pkg (pine.editor.motion:%buffer-package state)))
+             (pkg (pine.editor.motion:buffer-package state)))
         (when tok
           (let ((sym (let ((*package* pkg)) (ignore-errors (read-from-string tok)))))
             (if (and (symbolp sym) (fboundp sym))
@@ -150,7 +150,7 @@ no symbol to complete."
          (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5)))
          (path (and state (pine.text.buffer:buffer-local state :pathname nil))))
     (if path
-        (%eval-form-string (format nil "(load (compile-file ~s))" (namestring path))
+        (eval-form-string (format nil "(load (compile-file ~s))" (namestring path))
                            (find-package :cl-user))
         (pine.editor.echo:message "buffer has no file"))))
 
@@ -160,10 +160,10 @@ no symbol to complete."
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
-             (offset (min (pine.editor.motion:%point->offset snap) (length text))))
-        (multiple-value-bind (start end) (pine.editor.motion:%preceding-sexp-bounds text offset)
+             (offset (min (pine.editor.motion:point->offset snap) (length text))))
+        (multiple-value-bind (start end) (pine.editor.motion:preceding-sexp-bounds text offset)
           (if start
-              (%eval-form-string (subseq text start end) (pine.editor.motion:%buffer-package state)
+              (eval-form-string (subseq text start end) (pine.editor.motion:buffer-package state)
                                  :at (cons buf (%offset->lc text end)))
               (pine.editor.echo:message "no form before point")))))))
 
@@ -176,7 +176,7 @@ no symbol to complete."
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.text.buffer:state->string state))
-             (package (pine.editor.motion:%buffer-package state))
+             (package (pine.editor.motion:buffer-package state))
              (c (pine.editor.frame:current-client))
              (thunk (lambda ()
                       (let ((pine.editor.frame:*client* c) (*package* package)
@@ -187,7 +187,7 @@ no symbol to complete."
                             (when (eq form :eof) (return count))
                             (eval form) (incf count) (setf pos new-pos))))))
              (done (lambda (ev)
-                     (pine.editor.debugger:%eval-notify
+                     (pine.editor.debugger:eval-notify
                       (case (pine.core.eval:evaluation-status ev)
                         (:ok (format nil "eval-buffer: ~a forms"
                                      (first (pine.core.eval:evaluation-values ev))))

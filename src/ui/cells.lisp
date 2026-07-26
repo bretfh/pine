@@ -72,7 +72,7 @@ frame, the chrome, and layout buffer rows."
     (loop for row from 0 below (raster-rows r) collect
       (let ((text (make-string cols :initial-element #\space)) (runs nil) (prev nil))
         (dotimes (c cols)
-          (let* ((off (%cell-off r row c))
+          (let* ((off (cell-offset r row c))
                  (style (list (svref v (+ off 3)) (svref v (+ off 4)) (svref v (+ off 5))
                               (svref v (+ off 6)) (svref v (+ off 7)) (svref v (+ off 8))
                               (svref v (+ off 9)))))

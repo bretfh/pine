@@ -34,6 +34,22 @@
   (char #\Space :type character)
   (face nil :type (or null face-attrs)))
 
+(defun face-attrs-equal (a b)
+  (cond
+    ((and (null a) (null b)) t)
+    ((or (null a) (null b)) nil)
+    (t (and (equal (face-fg a) (face-fg b))
+            (equal (face-bg a) (face-bg b))
+            (eq (face-bold a) (face-bold b))
+            (eq (face-faint a) (face-faint b))
+            (eq (face-italic a) (face-italic b))
+            (eq (face-underline a) (face-underline b))
+            (eq (face-inverse a) (face-inverse b))
+            (eq (face-conceal a) (face-conceal b))
+            (eq (face-crossed a) (face-crossed b))
+            (equal (face-underline-color a) (face-underline-color b))
+            (eq (face-blink a) (face-blink b))))))
+
 (defun make-osc-buf ()
   (make-array 64 :element-type 'character :adjustable t :fill-pointer 0))
 

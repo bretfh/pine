@@ -4,10 +4,10 @@
 
 (in-package #:pine.editor.completion)
 
-;;;; The pine.editor.minibuffer:completion mechanism, UI-agnostic. Three pieces, mirroring the real
+;;;; The completion mechanism, UI-agnostic. Three pieces, mirroring the real
 ;;;; primitive the editor packages are built on, not the packages themselves:
 ;;;;
-;;;;   candidate   a pine.editor.minibuffer:completion value plus its metadata (display, annotation,
+;;;;   candidate   a completion value plus its metadata (display, annotation,
 ;;;;               preview, action, category); the matched spans are filled in.
 ;;;;   table       a source of candidates: a list, or a function of the current
 ;;;;               input returning (values candidates metadata). This is the
@@ -21,7 +21,7 @@
 ;;;; the readers consume COMPLETE's output; they are policy on top of this API.
 
 (defstruct (candidate (:constructor %make-candidate) (:copier nil))
-  (string "" :type string)   ; the pine.editor.minibuffer:completion text
+  (string "" :type string)   ; the completion text
   (annotation nil)           ; right-column metadata string, or nil
   (preview nil)              ; thunk run transiently when selection lands here
   (action nil)               ; thunk run on accept, or nil
@@ -136,7 +136,7 @@ order the UI can page through."
 ;;;; Sources and actions. A source is a named table (any table the engine
 ;;;; accepts); actions are per-category alists of (label . function-of-value),
 ;;;; run on the selected candidate's value. One registry pair for every
-;;;; pine.editor.minibuffer:completion surface -- minibuffer popup and desktop widget alike.
+;;;; completion surface -- minibuffer popup and desktop widget alike.
 
 (defvar *sources* (make-hash-table :test 'eq))
 (defun register-source (name table) (setf (gethash name *sources*) table))

@@ -4,16 +4,19 @@
   (:import-from :pine.ui.build
                 #:column #:row #:centerbox #:label #:icon #:button #:ring
                 #:gap #:rule #:rows #:choice)
-  (:import-from :pine.editor.commands
+  (:import-from :pine.editor.completion
                 #:candidate #:register-source #:register-actions
                 #:candidate-actions #:completion-widget)
   (:import-from :pine.ui.face
                 #:deftheme #:defface #:load-theme #:color #:metric #:face-fg)
   (:import-from :pine.editor.frame
-                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers)
+                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
+                #:current-client #:current-buffer
+                #:current-buffer-mode #:set-buffer-mode)
   (:import-from :pine.editor.ask #:ask #:tell)
   (:import-from :pine.state.ref #:defref #:ref)
   (:import-from :pine.state.store #:store #:store-push #:store-items #:store-clear)
+  (:import-from :pine.state.var #:defonce)
   (:import-from :pine.state.world #:register)
   (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
                 #:split #:lines #:starts-with #:first-number #:read-int-file
@@ -21,9 +24,6 @@
   (:import-from :pine.editor.command #:call-command #:execute)
   (:import-from :pine.editor.mode #:find-mode #:dispatch-message #:auto-mode
                 #:defmode #:defminor)
-  (:import-from :pine.editor.frame #:current-buffer-mode #:set-buffer-mode)
-  (:import-from :pine.state.var #:defonce)
-  (:import-from :pine.editor.frame #:current-client #:current-buffer)
   (:import-from :pine.editor.minibuffer
                 #:completing-read #:read-file-name #:prompt)
   (:import-from :pine.editor.echo #:message)
@@ -44,7 +44,7 @@
    #:button #:slider #:ring #:choice #:rows
    ;; widgets: views -- a window is a live view of the buffer you name
    #:calendar #:window #:buffer #:terminal #:modeline #:echo #:minibuffer
-   ;; pine.editor.minibuffer:completion facility
+   ;; completion facility
    #:candidate #:register-source #:register-actions #:candidate-actions
    #:completion-widget
    ;; style

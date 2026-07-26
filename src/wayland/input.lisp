@@ -1,9 +1,8 @@
 (defpackage #:pine.wayland.input
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection #:pine.wayland.surface)
-  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
-                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
-                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
+  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
+        #:pine.wayland.surface)
+  (:local-nicknames (#:a #:alexandria) (#:node #:pine.ui.node)
+                    (#:lay #:pine.ui.layout))
   (:export #:*on-hover* #:clear-hover #:connect-desktop #:drag-to #:handle-desktop-seat #:handle-pointer #:pointer-click #:pointer-node #:pointer-press #:pointer-release #:update-hover))
 
 (in-package #:pine.wayland.input)

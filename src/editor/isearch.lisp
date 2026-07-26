@@ -1,6 +1,11 @@
 (defpackage #:pine.editor.isearch
   (:use #:cl)
-  (:export #:*isearch* #:*isearch-last* #:isearch #:isearch-at #:isearch-captured #:isearch-current #:isearch-direction #:isearch-entry #:isearch-failing #:isearch-fset #:isearch-line #:isearch-lines #:isearch-match #:isearch-match-col #:isearch-match-line #:isearch-nil #:isearch-of #:isearch-origin-col #:isearch-origin-line #:isearch-p #:isearch-seq #:isearch-start #:isearch-string #:isearch-the #:isearch-while #:isearch-wrapped #:make-isearch))
+  (:export #:*isearch* #:*isearch-last*
+           #:isearch #:make-isearch #:isearch-p
+           #:isearch-string #:isearch-direction
+           #:isearch-origin-line #:isearch-origin-col #:isearch-lines
+           #:isearch-match-line #:isearch-match-col #:isearch-wrapped
+           #:isearch-start))
 
 (in-package #:pine.editor.isearch)
 

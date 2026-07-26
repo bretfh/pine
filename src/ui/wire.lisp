@@ -66,7 +66,7 @@ id to embed."
                           (kids (list (node n)))))
         (center    (list* :centered (%wire-base n) (kids (list (node n)))))
         (list-node (list* :column (list* :spacing 0 :align :start (%wire-base n))
-                          (kids (pine.ui.layout:%list-items n))))
+                          (kids (pine.ui.layout:list-items n))))
         (grid      (list* :grid (list* :col-widths (col-widths n)
                                        :ncols (length (col-widths n)) (%wire-base n))
                           (kids (apply #'append (cells n)))))
@@ -84,7 +84,7 @@ id to embed."
 
 ;;;; Sending only what moved.
 ;;;;
-;;;; Nearly all of an editor frame is the rendered lines inside its pine.ui.build:window
+;;;; Nearly all of an editor frame is the rendered lines inside its window
 ;;;; nodes, and a keystroke changes one of them. These compare two wire forms
 ;;;; and produce the lines that differ, so a push can carry those instead of
 ;;;; the screen. Everything here is plain data, the same as the wire itself.
@@ -100,7 +100,7 @@ id to embed."
     (nreverse acc)))
 
 (defun wire-shape (form)
-  "FORM with everything a patch can carry removed: the pine.ui.build:rows and the cursor.
+  "FORM with everything a patch can carry removed: the rows and the cursor.
 
 Two forms with the same shape differ only in what a patch can express, which
 is the test for whether one may be sent."
@@ -114,7 +114,7 @@ is the test for whether one may be sent."
 (defun rows-patch (old new)
   "What changed between two wire forms, or NIL when a patch cannot say it.
 
-The patch is one entry per pine.ui.build:window, (INDEX CROW CCOL (LINE . ROW)...), carrying
+The patch is one entry per window, (INDEX CROW CCOL (LINE . ROW)...), carrying
 only the lines that differ. NIL means the caller must send FORM whole: a
 different tree, a different number of lines, or no previous form at all."
   (when (and old new (equal (wire-shape old) (wire-shape new)))
@@ -152,9 +152,9 @@ different tree, a different number of lines, or no previous form at all."
                                 (setf (getf props :crow) crow
                                       (getf props :ccol) ccol
                                       (getf props :rows)
-                                      (let ((pine.ui.build:rows (copy-list (getf props :rows))))
-                                        (dolist (line lines pine.ui.build:rows)
-                                          (setf (nth (car line) pine.ui.build:rows) (cdr line)))))
+                                      (let ((rows (copy-list (getf props :rows))))
+                                        (dolist (line lines rows)
+                                          (setf (nth (car line) rows) (cdr line)))))
                                 (list* :window props (cddr f))))))
                        (list* (first f) (second f) (mapcar #'patched (cddr f))))
                    f)))
@@ -180,7 +180,8 @@ interaction args) -- the renderer's 'send this id back'."
   (flet ((kids () (mapcar (lambda (c) (wire->node c :on-action on-action)) children))
          (handler (id) (and id on-action (funcall on-action id))))
     (ecase type
-          (:label    (apply #'pine.ui.build:label (getf props :content "") (%wire-clean props :content)))
+          (:label    (apply #'pine.ui.build:label (getf props :content "")
+                            (%wire-clean props :content)))
           (:rule     (apply #'pine.ui.build:rule :char (code-char (getf props :char #x2500))
                             :vertical (getf props :vertical)
                             (%wire-clean props :char :vertical)))

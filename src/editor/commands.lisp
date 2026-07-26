@@ -2,20 +2,7 @@
   (:use :cl #:pine.editor.kill-ring #:pine.editor.isearch)
   (:export
    #:start-editor
-   #:make-editor-session
-   #:session-feed
-   #:reseed-editor-sessions
-   ;; the editor's live tree: view leaves the render walk refreshes
-   #:editor-window-node
-   #:editor-terminal-node
-   #:editor-modeline-node
-   #:editor-echo-node
-   
-   ;; layout buffers (authorable tool buffers)
-   ;; pine.editor.frame:prompt
-   #:prompt
-   #:cancel-prompt
-   ;; kill ring
+   ;; the kill ring, which this package uses and the editor's commands drive
    #:kill-ring-push
    #:kill-ring-top
    #:set-mark
@@ -23,24 +10,7 @@
    #:kill-line-cmd
    #:copy-region-cmd
    #:yank-cmd
-   #:yank-pop-cmd
-   ;; the pine.editor.minibuffer:completion facility: candidates, sources, actions, builders
-   #:candidate #:to-candidate
-   #:candidate-string #:candidate-annotation #:candidate-value
-   #:candidate-category #:candidate-source
-   #:register-source #:source-table
-   #:register-actions #:candidate-actions
-   #:completion-popup #:completion-widget
-   ;; pine.editor.minibuffer:completing-read
-   #:completing-read
-   #:read-file-name
-   #:file-completion-active-p
-   #:file-name-complete
-   #:file-name-accept
-   #:completion-next
-   #:completion-prev
-   #:completion-update-input
-   #:completing-read-active-p))
+   #:yank-pop-cmd))
 
 (in-package #:pine.editor.commands)
 
@@ -53,7 +23,7 @@
     (pine.ui.render:start-renderer client)
     (pine.editor.minibuffer:ensure-minibuffer client)
     (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
-    (setf pine.core.eval:*on-debug* #'pine.editor.debugger:%eval-error)
+    (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -74,7 +44,7 @@
   (let ((s pine.editor.debugger:*attended-session*))
     (when (and s (eq (pine.editor.debugger:dbg-session-kind s) :local) (pine.editor.debugger:dbg-session-ev s))
       (pine.core.eval:abort-evaluation (pine.editor.debugger:dbg-session-ev s))
-      (pine.editor.debugger:%resolve-session s)))
+      (pine.editor.debugger:resolve-session s)))
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
       (sento.actor:tell buf (list :set-meta :key :mark-line :value nil))
@@ -155,13 +125,13 @@
   (let ((w (pine.editor.frame:focused-window (pine.editor.frame:current-client))))
     (when w (pine.editor.window:scroll-window (- 2 (pine.text.window:win-height w))))))
 
-(defcmd "forward-sexp" ()      (pine.editor.motion:%sexp-move :forward-sexp))
-(defcmd "backward-sexp" ()     (pine.editor.motion:%sexp-move :backward-sexp))
-(defcmd "beginning-of-defun" () (pine.editor.motion:%sexp-move :beginning-of-defun))
-(defcmd "end-of-defun" ()      (pine.editor.motion:%sexp-move :end-of-defun))
+(defcmd "forward-sexp" ()      (pine.editor.motion:move-sexp :forward-sexp))
+(defcmd "backward-sexp" ()     (pine.editor.motion:move-sexp :backward-sexp))
+(defcmd "beginning-of-defun" () (pine.editor.motion:move-sexp :beginning-of-defun))
+(defcmd "end-of-defun" ()      (pine.editor.motion:move-sexp :end-of-defun))
 (defcmd "mark-sexp" ()
   (set-mark)
-  (pine.editor.motion:%sexp-move :forward-sexp))
+  (pine.editor.motion:move-sexp :forward-sexp))
 
 (defcmd "set-mark" ()     (set-mark))
 (defcmd "kill-line" ()    (kill-line-cmd))
@@ -196,8 +166,8 @@
                               :from 0 :to (1- (pine.text.buffer:line-count snap)))))
         (pine.editor.file:save-current-buffer))
     (error (c) (pine.editor.echo:message (format nil "error: ~a" c)))))
-(defcmd "split-window-below" () (pine.editor.window:%split-window :column))
-(defcmd "split-window-right" () (pine.editor.window:%split-window :row))
+(defcmd "split-window-below" () (pine.editor.window:split-window :column))
+(defcmd "split-window-right" () (pine.editor.window:split-window :row))
 (defcmd "delete-window" () (pine.editor.window:delete-window-cmd))
 (defcmd "delete-other-windows" () (pine.editor.window:delete-other-windows-cmd))
 (defcmd "other-window" () (pine.editor.window:other-window-cmd))
@@ -217,13 +187,13 @@
     (lambda (name) (pine.editor.command:call-command name))
     :history :commands))
 (defcmd "eval-expression" ()
-  (pine.editor.frame:prompt "Eval: "
+  (pine.editor.minibuffer:prompt "Eval: "
     (lambda (text)
       (let ((pkg (let ((buf (pine.editor.motion:cur-buffer)))
                    (if buf
-                       (pine.editor.motion:%buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
+                       (pine.editor.motion:buffer-package (sento.actor:ask-s buf '(:get-state) :time-out 5))
                        (find-package :cl-user)))))
-        (pine.editor.evaluate:%eval-form-string text pkg)))
+        (pine.editor.evaluate:eval-form-string text pkg)))
     :history :eval))
 (defcmd "choose-restart" ()
   (let ((names (and pine.editor.debugger:*attended-session*
@@ -236,26 +206,26 @@
 (defcmd "debugger-abort" ()
   (pine.editor.debugger:invoke-pending-restart "ABORT"))
 (defcmd "debugger-quit" ()
-  (pine.editor.debugger:%debugger-quit))
+  (pine.editor.debugger:debugger-quit))
 (defcmd "debugger-next-session" ()
   "Page to the next live debugger session without resolving the current one."
   (let ((ordered (reverse pine.editor.debugger:*debugger-sessions*)))
     (if (> (length ordered) 1)
         (let* ((pos (or (position pine.editor.debugger:*attended-session* ordered) 0))
                (next (nth (mod (1+ pos) (length ordered)) ordered)))
-          (pine.editor.debugger:%attend-session next))
+          (pine.editor.debugger:attend-session next))
         (pine.editor.echo:message "only one debugger session"))))
 (defcmd "debugger" ()
   "Reopen the *debugger* on the attended session (after q), if one is parked."
   (if pine.editor.debugger:*attended-session*
-      (pine.editor.debugger:%attend-session pine.editor.debugger:*attended-session*)
+      (pine.editor.debugger:attend-session pine.editor.debugger:*attended-session*)
       (pine.editor.echo:message "no debugger session")))
 (defcmd "toggle-debug-on-error" ()
   (let ((new (not (pine.state.var:var :debug-on-error))))
     (setf (pine.state.var:var :debug-on-error) new)
     (pine.editor.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
 (defcmd "jobs" ()
-  (pine.editor.layout:show-layout "*jobs*" (pine.editor.debugger:%jobs-builder)))
+  (pine.editor.layout:show-layout "*jobs*" (pine.editor.debugger:jobs-builder)))
 (defcmd "eval-last-sexp" () (pine.editor.evaluate:eval-last-sexp))
 (defcmd "eval-defun" ()     (pine.editor.evaluate:eval-defun))
 (defcmd "eval-buffer" ()    (pine.editor.evaluate:eval-buffer))
@@ -274,7 +244,7 @@
      (setf pine.editor.target:*eval-target* (if (string= name "local") :local name))
      (pine.editor.echo:message (format nil "eval target: ~a" name)))))
 (defcmd "new-buffer" ()
-  (pine.editor.frame:prompt "New buffer: "
+  (pine.editor.minibuffer:prompt "New buffer: "
     (lambda (name)
       (let ((buf (pine.editor.frame:make-buffer name))) (pine.ui.render:subscribe-to-buffer buf)))))
 (defcmd "open-repl" ()
@@ -306,13 +276,13 @@
   (pine.editor.echo:message "Describe key: ")
   (pine.editor.command:read-next-key
    (pine.editor.frame:current-client)
-   (lambda (key) (pine.editor.echo:message (pine.editor.help:%describe-key-text key)))))
+   (lambda (key) (pine.editor.echo:message (pine.editor.help:describe-key-text key)))))
 (defcmd "describe-bindings" ()
-  (pine.editor.layout:show-layout "*bindings*" (pine.editor.debugger:%text-layout (pine.editor.help:%bindings-text))))
+  (pine.editor.layout:show-layout "*bindings*" (pine.editor.debugger:text-layout (pine.editor.help:bindings-text))))
 (defcmd "describe-mode" ()
-  (pine.editor.layout:show-layout "*mode*" (pine.editor.debugger:%text-layout (pine.editor.help:%mode-text))))
+  (pine.editor.layout:show-layout "*mode*" (pine.editor.debugger:text-layout (pine.editor.help:mode-text))))
 (defcmd "describe-variables" ()
-  (pine.editor.layout:show-layout "*variables*" (pine.editor.debugger:%text-layout (pine.editor.help:%variables-text))))
+  (pine.editor.layout:show-layout "*variables*" (pine.editor.debugger:text-layout (pine.editor.help:variables-text))))
 (defcmd "insert-tab" ()
   (let* ((c (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer c))
@@ -344,13 +314,13 @@
 (defcmd "layout-next" () (pine.editor.layout:layout-select 1))
 (defcmd "layout-prev" () (pine.editor.layout:layout-select -1))
 (defcmd "layout-activate" () (pine.editor.layout:layout-activate))
-;; minibuffer-mode: the only keys the pine.editor.frame:prompt binds; everything else is the
-;; ordinary buffer editing commands, so the pine.editor.frame:prompt edits like any buffer.
+;; minibuffer-mode: the only keys the prompt binds; everything else is the
+;; ordinary buffer editing commands, so the prompt edits like any buffer.
 (defcmd "minibuffer-accept" () (pine.editor.minibuffer:minibuffer-accept))
 (defcmd "minibuffer-abort" () (pine.editor.minibuffer:minibuffer-abort))
 (defcmd "minibuffer-complete" () (pine.editor.minibuffer:minibuffer-complete))
-(defcmd "minibuffer-next-candidate" () (pine.editor.minibuffer:completion-next))
-(defcmd "minibuffer-prev-candidate" () (pine.editor.minibuffer:completion-prev))
+(defcmd "minibuffer-next-candidate" () (completion-next))
+(defcmd "minibuffer-prev-candidate" () (completion-prev))
 (defcmd "minibuffer-history-prev" () (pine.editor.minibuffer:minibuffer-history-prev))
 (defcmd "minibuffer-history-next" () (pine.editor.minibuffer:minibuffer-history-next))
 
@@ -431,7 +401,7 @@
   "C-M-a"       "beginning-of-defun"
   "C-M-e"       "end-of-defun"
   "C-M-space"   "mark-sexp"
-  ;; Tab reindents (mode-aware); pine.editor.minibuffer:completion has the Emacs binding, and
+  ;; Tab reindents (mode-aware); completion has the Emacs binding, and
   ;; region and whole-buffer reformat get their own keys
   "C-M-\\"      "indent-region")
 
@@ -459,8 +429,8 @@
   "C-p"     "layout-prev"
   "Return"  "layout-activate")
 
-;;;; minibuffer-mode: accept, abort, pine.editor.completion:complete, pine.editor.completion:candidate motion. Every other
-;;;; key falls through to text-mode, so the pine.editor.frame:prompt has full editing.
+;;;; minibuffer-mode: accept, abort, complete, candidate motion. Every other
+;;;; key falls through to text-mode, so the prompt has full editing.
 (pine.editor.keymap:define-keys :minibuffer-mode
   "Return"  "minibuffer-accept"
   "Escape"  "minibuffer-abort"

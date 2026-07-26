@@ -1,6 +1,31 @@
 (defpackage #:pine.ts.runtime
   (:use :cl)
-  (:export #:%changed-row-span #:%line-of-byte #:*grammars* #:backward-sexp-pos #:build-line-index #:byte-length #:byte-to-line-col #:call-with-root #:char-byte-length #:defun-bounds-pos #:ensure-language #:ensure-ts #:entry-language-ptr #:entry-parser #:forward-sexp-pos #:free-parse-state #:grammar-language-pointer #:grammar-library-candidates #:languages #:libs-loaded #:load-grammar-library #:load-language-entry #:make-parse-state #:make-ts-runtime #:parse-full! #:parse-motion #:parse-state #:pos-to-byte #:ps-hl-cache #:ps-hl-pending #:ps-hl-stale #:ps-hl-text #:ps-language #:ps-parser #:ps-text #:ps-tree #:reparse! #:ts-entry #:ts-loaded-p #:ts-node-child-by-field-name #:ts-node-end-byte #:ts-node-is-null #:ts-node-named-child #:ts-node-named-child-count #:ts-node-named-descendant-for-byte-range #:ts-node-parent #:ts-node-start-byte #:ts-node-type #:ts-parser-delete #:ts-parser-new #:ts-parser-parse-string #:ts-parser-set-language #:ts-runtime #:ts-tree-delete #:ts-tree-edit #:ts-tree-get-changed-ranges #:ts-tree-root-node))
+  (:export
+   ;; the runtime and its per-language entries
+   #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
+   #:languages #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
+   ;; grammars
+   #:*grammars* #:grammar-library-candidates #:load-grammar-library
+   #:grammar-language-pointer #:load-language-entry
+   ;; the per-buffer incremental parse state
+   #:parse-state #:make-parse-state #:free-parse-state
+   #:parse-full! #:reparse! #:parse-motion
+   #:ps-language #:ps-parser #:ps-tree #:ps-text
+   #:ps-hl-cache #:ps-hl-text #:ps-hl-pending #:ps-hl-stale
+   ;; structural motion
+   #:call-with-root #:forward-sexp-pos #:backward-sexp-pos #:defun-bounds-pos
+   ;; bytes, characters and lines
+   #:build-line-index #:line-of-byte #:byte-to-line-col #:pos-to-byte
+   #:byte-length #:char-byte-length
+   ;; the tree-sitter C surface the language walks read
+   #:ts-parser-new #:ts-parser-delete #:ts-parser-set-language
+   #:ts-parser-parse-string
+   #:ts-tree-delete #:ts-tree-edit #:ts-tree-root-node
+   #:ts-tree-get-changed-ranges
+   #:ts-node-type #:ts-node-is-null #:ts-node-parent
+   #:ts-node-start-byte #:ts-node-end-byte
+   #:ts-node-named-child #:ts-node-named-child-count
+   #:ts-node-child-by-field-name #:ts-node-named-descendant-for-byte-range))
 
 (in-package #:pine.ts.runtime)
 
@@ -186,7 +211,7 @@ converts both ways without assuming one byte per character."
              (when (char= ch #\Newline) (push (cons bpos ci) index)))
     (coerce (nreverse index) 'vector)))
 
-(defun %line-of-byte (byte-pos index)
+(defun line-of-byte (byte-pos index)
   "Greatest line whose start byte is <= BYTE-POS."
   (let ((lo 0) (hi (1- (length index))))
     (loop while (< lo hi)
@@ -198,7 +223,7 @@ converts both ways without assuming one byte per character."
 
 (defun byte-to-line-col (byte-pos index text)
   "Map a UTF-8 BYTE-POS to (values line char-col) using the line INDEX and TEXT."
-  (let* ((line (%line-of-byte byte-pos index))
+  (let* ((line (line-of-byte byte-pos index))
          (b (car (aref index line)))
          (ci (cdr (aref index line)))
          (len (length text))

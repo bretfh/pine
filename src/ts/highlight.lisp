@@ -1,6 +1,21 @@
 (defpackage #:pine.ts.highlight
   (:use #:cl #:pine.ts.runtime)
-  (:export #:%align-column #:%byte->char #:%byte-col #:%byte-line #:%defish-p #:%enclosing-form #:%form-head-name #:%hl-full #:%hl-incremental #:%intern-table #:%line-start-byte #:%node-first-char #:%opens-form-p #:*cl-builtins* #:*cl-class-definers* #:*cl-constants* #:*cl-flat-all-binders* #:*cl-flat-first-binders* #:*cl-nested-binders* #:*cl-special-forms* #:*cl-struct-definers* #:*cl-type-definers* #:*cl-var-definers* #:*scheme-keywords* #:body-form-p #:cl-head-face #:cl-head-kind #:cl-highlights #:compute-highlights #:delimiter-face #:hl-dump #:hl-dump-file #:lambda-list-keyword-p #:parse-highlights #:parse-indent #:scheme-highlights #:ts-field #:ts-named-children #:ts-type #:ts-type= #:walk-highlights))
+  (:export
+   ;; highlights from a parse tree
+   #:parse-highlights #:compute-highlights #:walk-highlights
+   #:cl-highlights #:scheme-highlights
+   ;; indentation from the same tree
+   #:parse-indent #:body-form-p
+   ;; the classification tables and what they answer
+   #:*cl-special-forms* #:*cl-builtins* #:*cl-constants*
+   #:*cl-nested-binders* #:*cl-flat-all-binders* #:*cl-flat-first-binders*
+   #:*cl-class-definers* #:*cl-struct-definers* #:*cl-type-definers*
+   #:*cl-var-definers* #:*scheme-keywords*
+   #:cl-head-kind #:cl-head-face #:delimiter-face #:lambda-list-keyword-p
+   ;; node helpers over the runtime's C surface
+   #:ts-type #:ts-type= #:ts-field #:ts-named-children
+   ;; printing every token and the face it resolves to
+   #:hl-dump #:hl-dump-file))
 
 (in-package #:pine.ts.highlight)
 
@@ -685,9 +700,9 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
                           (setf lo-byte (min lo-byte s)
                                 hi-byte (max hi-byte e)
                                 grew t)))
-               (let ((ll (%line-start-byte (%line-of-byte lo-byte index) index))
+               (let ((ll (%line-start-byte (line-of-byte lo-byte index) index))
                      (hl (%line-start-byte
-                          (1+ (%line-of-byte (max lo-byte (1- hi-byte)) index))
+                          (1+ (line-of-byte (max lo-byte (1- hi-byte)) index))
                           index)))
                  (when (< ll lo-byte) (setf lo-byte ll grew t))
                  (when (> hl hi-byte) (setf hi-byte hl grew t)))
@@ -696,8 +711,8 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
       ;; nothing over the plain full walk
       (when (>= (- hi-byte lo-byte) (* 3 (floor (max 1 (byte-length text)) 4)))
         (return-from %hl-incremental (%hl-full ps tree text)))
-      (let* ((lo-line (%line-of-byte lo-byte index))
-             (hi-line (%line-of-byte (max lo-byte (1- hi-byte)) index))
+      (let* ((lo-line (line-of-byte lo-byte index))
+             (hi-line (line-of-byte (max lo-byte (1- hi-byte)) index))
              (old-hi-line (- hi-line delta))
              (fresh (walk-highlights (ps-language ps) root text index
                                      :lo-byte lo-byte :hi-byte hi-byte))

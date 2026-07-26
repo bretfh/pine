@@ -19,7 +19,7 @@
   (pine.text.buffer:start-buffer-registry srv)
   (let* ((sess (pine.editor.session:make-editor-session
                 nil :sink (lambda (&rest _) (declare (ignore _)) nil)))
-         (client (pine.editor.commands::sess-client sess))
+         (client (pine.editor.session:sess-client sess))
          (w (* *cols* *cw*))
          (h (* *rows* *ch*)))
     (let ((buf (pine.editor.frame:current-buffer client)))

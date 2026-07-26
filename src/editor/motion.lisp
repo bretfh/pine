@@ -1,6 +1,6 @@
 (defpackage #:pine.editor.motion
   (:use #:cl)
-  (:export #:%buffer-package #:%buffer-ts-lang #:%lc->offset #:%point->offset #:%preceding-sexp-bounds #:%sexp-delim-p #:%sexp-move #:%ts-runtime #:cur-buffer #:focused-snap #:move-chars #:move-lines #:move-words))
+  (:export #:buffer-package #:buffer-ts-language #:line-col->offset #:point->offset #:preceding-sexp-bounds #:sexp-delimiter-p #:move-sexp #:ts-runtime #:cur-buffer #:focused-snap #:move-chars #:move-lines #:move-words))
 
 (in-package #:pine.editor.motion)
 
@@ -21,14 +21,14 @@ command like beginning-of-line must see its input, not the window behind it."
 (defun %fresh-snap ()
   (let ((buf (cur-buffer))) (when buf (pine.editor.ask:ask buf :snapshot))))
 
-(defun %buffer-ts-lang ()
+(defun buffer-ts-language ()
   (let ((mode (pine.editor.frame:current-buffer-mode)))
     (and (typep mode 'pine.editor.mode:major-mode) (pine.editor.mode:ts-language mode))))
 
-(defun %ts-runtime ()
+(defun ts-runtime ()
   (pine.core.server:ts-runtime (pine.editor.frame:server-of (pine.editor.frame:current-client))))
 
-(defun %sexp-move (kind)
+(defun move-sexp (kind)
   "Move point structurally via the buffer's persistent tree (no reparse). The
 buffer walks its own tree from its own point and moves; nothing blocks here."
   (let ((buf (cur-buffer)))
@@ -50,7 +50,7 @@ computes the target from its own state, so this never blocks on a round-trip."
   (let ((buf (cur-buffer)))
     (when buf (sento.actor:tell buf (list :move-by :unit :word :n n)))))
 
-(defun %point->offset (snap)
+(defun point->offset (snap)
   (let ((pl (pine.text.buffer:point-line snap))
         (pc (pine.text.buffer:point-col snap))
         (lines (pine.text.buffer:lines snap)))
@@ -59,7 +59,7 @@ computes the target from its own state, so this never blocks on a round-trip."
 (defun %whitespace-p (c)
   (or (char= c #\Space) (char= c #\Tab) (char= c #\Newline) (char= c #\Return)))
 
-(defun %sexp-delim-p (c)
+(defun sexp-delimiter-p (c)
   (or (%whitespace-p c) (char= c #\() (char= c #\)) (char= c #\")))
 
 (defun %match-paren-backward (text close-pos)
@@ -91,13 +91,13 @@ computes the target from its own state, so this never blocks on a round-trip."
 
 (defun %atom-start-backward (text end-inclusive)
   (let ((i end-inclusive))
-    (loop while (and (>= i 0) (not (%sexp-delim-p (char text i)))) do (decf i))
+    (loop while (and (>= i 0) (not (sexp-delimiter-p (char text i)))) do (decf i))
     (1+ i)))
 
-(defun %preceding-sexp-bounds (text end)
+(defun preceding-sexp-bounds (text end)
   (let ((i (1- end)))
     (loop while (and (>= i 0) (%whitespace-p (char text i))) do (decf i))
-    (when (minusp i) (return-from %preceding-sexp-bounds nil))
+    (when (minusp i) (return-from preceding-sexp-bounds nil))
     (let ((c (char text i)))
       (cond
         ((char= c #\)) (let ((s (%match-paren-backward text i))) (when s (values s (1+ i)))))
@@ -119,12 +119,12 @@ from the buffer, or nil."
               (setf pos (if (and new (> new idx)) new (1+ idx)))))
     result))
 
-(defun %buffer-package (state)
+(defun buffer-package (state)
   (let ((inferred (%infer-package (pine.text.buffer:state->string state)))
         (name (pine.text.buffer:buffer-local state :package nil)))
     (or inferred (and name (find-package name)) (find-package :cl-user))))
 
-(defun %lc->offset (text line col)
+(defun line-col->offset (text line col)
   "Character offset of LINE/COL in TEXT."
   (let ((i 0) (l 0) (n (length text)))
     (loop while (and (< i n) (< l line))

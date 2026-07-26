@@ -1,16 +1,14 @@
 (in-package :pine.test)
 
-(def-suite :pine.frontend :in :pine)
-(in-suite :pine.frontend)
+(def-suite* :pine.frontend :in :pine)
 
-;;;; The loop, on a backing that has no compositor behind it. What is under
-;;;; test is the part with no pixels in it: that queued work runs, that a
-;;;; deadline is honoured, and that the loop never settles down to wait while
-;;;; it still owes something.
+;;;; The loop, on a backing with no compositor behind it. What is under test is
+;;;; the part with no pixels in it: that queued work runs, that a deadline is
+;;;; honoured, and that the loop never settles down to wait while it still owes
+;;;; something.
 
 (defclass probe (pine.frontend:backing)
-  ((waits :initform 0 :accessor probe-waits
-          :documentation "How many times the loop chose to wait.")
+  ((waits :initform 0 :accessor probe-waits)
    (dispatches :initform 0 :accessor probe-dispatches)
    (timeouts :initform nil :accessor probe-timeouts
              :documentation "The timeout asked for at each wait, newest last."))
@@ -27,54 +25,50 @@ asked, so the loop can be watched without a display."))
   nil)
 
 (defun run-probe (&key ready pending deadline (passes 3))
-  "Run the loop PASSES times over a fresh probe. Returns the probe and pump."
-  (let* ((backing (make-instance 'probe))
-         (pump (pine.frontend:make-pump))
-         (n 0))
+  "Run the loop PASSES times over a fresh probe. Returns the probe."
+  (let ((backing (make-instance 'probe))
+        (pump (pine.frontend:make-pump))
+        (n 0))
     (unwind-protect
          (pine.frontend:run backing pump
                             :done (lambda () (> (incf n) passes))
                             :ready ready :pending pending :deadline deadline)
       (pine.frontend:close-pump pump))
-    (values backing pump)))
+    backing))
 
-(test loop-dispatches-every-pass
-  (let ((backing (run-probe :passes 3)))
-    (is (= 3 (probe-dispatches backing)))))
+(test the-loop-dispatches-every-pass
+  (is (= 3 (probe-dispatches (run-probe :passes 3)))))
 
-(test loop-waits-when-idle
+(test the-loop-waits-when-it-is-idle
   (let ((backing (run-probe :passes 3)))
     (is (= 3 (probe-waits backing)))
     (is (every (lambda (ms) (= ms -1)) (probe-timeouts backing))
-        "with no deadline the loop waits indefinitely")))
+        "with no deadline the loop waits for as long as it takes")))
 
-(test loop-does-not-wait-while-work-is-pending
+(test the-loop-does-not-block-while-it-owes-a-repaint
   (let ((backing (run-probe :pending (constantly t) :passes 3)))
-    (is (zerop (probe-waits backing))
-        "a frontend that owes a repaint must not block first")
+    (is (zerop (probe-waits backing)))
     (is (= 3 (probe-dispatches backing)))))
 
-(test loop-carries-the-deadline
-  (let ((backing (run-probe :deadline (constantly 40) :passes 2)))
-    (is (equal '(40 40) (probe-timeouts backing)))))
+(test the-loop-carries-the-deadline-to-the-wait
+  (is (equal '(40 40) (probe-timeouts (run-probe :deadline (constantly 40)
+                                                 :passes 2)))))
 
-(test loop-runs-queued-work
-  (let* ((backing (make-instance 'probe))
-         (pump (pine.frontend:make-pump))
-         (ran nil)
-         (n 0))
+(test a-thunk-queued-from-another-thread-runs-on-the-loop
+  (let ((backing (make-instance 'probe))
+        (pump (pine.frontend:make-pump))
+        (ran nil)
+        (n 0))
     (pine.frontend:enqueue pump (lambda () (setf ran t)))
     (unwind-protect
          (pine.frontend:run backing pump :done (lambda () (> (incf n) 1)))
       (pine.frontend:close-pump pump))
-    (is-true ran "a thunk queued from another thread runs on the loop")))
+    (is-true ran)))
 
-(test loop-does-not-wait-with-a-thunk-queued
-  (let* ((backing (make-instance 'probe))
-         (pump (pine.frontend:make-pump))
-         (n 0))
-    ;; queue from inside the first pass, the way a daemon message arrives
-    ;; mid-loop; the second pass has nothing left and settles down to wait
+(test the-pass-that-queued-work-goes-round-again-instead-of-blocking
+  (let ((backing (make-instance 'probe))
+        (pump (pine.frontend:make-pump))
+        (n 0))
     (unwind-protect
          (pine.frontend:run backing pump
                             :done (lambda () (> (incf n) 2))
@@ -83,35 +77,43 @@ asked, so the loop can be watched without a display."))
                                        (pine.frontend:enqueue
                                         pump (lambda () nil)))))
       (pine.frontend:close-pump pump))
-    (is (= 1 (probe-waits backing))
-        "the pass that queued work goes round again instead of blocking")))
+    (is (= 1 (probe-waits backing)))))
 
 (test a-queued-thunk-that-signals-is-reported-and-the-rest-still-run
-  (let* ((pump (pine.frontend:make-pump))
-         (ran nil))
+  (let ((pump (pine.frontend:make-pump))
+        (ran nil))
     (pine.frontend:enqueue pump (lambda () (error "probe")))
     (pine.frontend:enqueue pump (lambda () (setf ran t)))
     (let ((report (with-output-to-string (*error-output*)
                     (pine.frontend:drain pump))))
       (pine.frontend:close-pump pump)
-      (is-true ran "one bad thunk must not strand the others")
-      (is (search "probe" report) "and it must say so"))))
+      (is-true ran)
+      (is (search "probe" report)))))
 
-;;;; Failures on the callback paths. The rule is that a broken callback is
-;;;; reported and returned, never swallowed: a surface that fails to build
-;;;; must not look like a surface that had nothing to draw.
+(test the-pump-reports-whether-anything-is-queued
+  (let ((pump (pine.frontend:make-pump)))
+    (unwind-protect
+         (progn
+           (is-false (pine.frontend:pump-queued-p pump))
+           (pine.frontend:enqueue pump (lambda () nil))
+           (is-true (pine.frontend:pump-queued-p pump))
+           (pine.frontend:drain pump)
+           (is-false (pine.frontend:pump-queued-p pump)))
+      (pine.frontend:close-pump pump))))
+
+;;;; Failures on the callback paths. A broken callback is reported and
+;;;; returned, never swallowed: a surface that fails to build must not look
+;;;; like a surface that had nothing to draw.
 
 (test attempt-returns-the-condition-as-a-value
   (multiple-value-bind (result failure)
       (let ((*error-output* (make-broadcast-stream)))
         (pine.core.eval:attempt (lambda () (error "probe")) "probe context"))
     (is (null result))
-    (is (typep failure 'pine.core.eval:evaluation)
-        "the failure comes back as something the caller can inspect")
+    (is (typep failure 'pine.core.eval:evaluation))
     (is (eq :error (pine.core.eval:evaluation-status failure)))
     (is (search "probe" (pine.core.eval:evaluation-condition failure)))
-    (is (equal "probe context" (pine.core.eval:evaluation-form failure))
-        "named by where it happened, not by the condition alone")))
+    (is (equal "probe context" (pine.core.eval:evaluation-form failure)))))
 
 (test attempt-passes-the-value-through-when-it-works
   (multiple-value-bind (result failure)
@@ -119,86 +121,68 @@ asked, so the loop can be watched without a display."))
     (is (eq :fine result))
     (is (null failure))))
 
-(test a-failure-reaches-the-debug-surface
-  (let ((seen nil))
-    (let ((pine.core.eval:*on-debug* (lambda (ev) (push ev seen))))
-      (pine.core.eval:attempt (lambda () (error "probe")) "probe context"))
-    (is (= 1 (length seen)) "the editor's debugger is told, once")
+(test a-failure-reaches-the-debug-surface-once
+  (let* ((seen nil)
+         (pine.core.eval:*on-debug* (lambda (ev) (push ev seen))))
+    (pine.core.eval:attempt (lambda () (error "probe")) "probe context")
+    (is (= 1 (length seen)))
     (is (search "probe" (pine.core.eval:evaluation-condition (first seen))))))
 
-(test a-broken-ref-subscriber-does-not-stop-the-others
-  (let* ((ref (pine.state.ref:make-ref :name :probe-ref :value 0))
-         (ran nil))
-    (pine.state.ref:ref-subscribe ref (lambda () (error "probe")))
-    (pine.state.ref:ref-subscribe ref (lambda () (setf ran t)))
-    (let ((*error-output* (make-broadcast-stream)))
-      (pine.state.ref:set-ref ref 1))
-    (is-true ran "the second subscriber still sees the change")))
+(test a-failure-with-no-surface-is-loud-on-the-error-stream
+  (let ((pine.core.eval:*on-debug* nil))
+    (let ((report (with-output-to-string (*error-output*)
+                    (pine.core.eval:report-failure
+                     (make-condition 'simple-error :format-control "probe text")
+                     "probe context"))))
+      (is (search "probe context" report))
+      (is (search "probe text" report)))))
 
-;;;; Rows patching. The invariant: applying a patch to the form the frontend
-;;;; holds yields exactly the form the daemon built. A patch that cannot say
-;;;; the difference must refuse, so the caller sends the tree whole.
+(test an-evaluation-records-its-values-its-output-and-its-status
+  (let ((done nil))
+    (pine.core.eval:evaluate-thunk (lambda () (princ "said") 7)
+                                   :on-done (lambda (ev) (setf done ev)))
+    (sleep 0.3)
+    (is (not (null done)))
+    (is (eq :ok (pine.core.eval:evaluation-status done)))
+    (is (equal '(7) (pine.core.eval:evaluation-values done)))
+    (is (string= "said" (pine.core.eval:evaluation-output done)))))
 
-(defun %bench-row (cols text)
-  (cons (let ((s (make-string cols :initial-element #\space)))
-          (replace s text)
-          s)
-        (list (list 0 200 200 200 30 30 40 0))))
+(defmacro with-debug-surface ((surface) &body body)
+  "Install SURFACE globally around BODY, for the paths that surface from an
+eval's own thread, which a dynamic binding here would not reach. ATTEMPT runs
+on the caller's thread and takes an ordinary LET instead."
+  (let ((saved (gensym "SAVED")))
+    `(let ((,saved pine.core.eval:*on-debug*))
+       (setf pine.core.eval:*on-debug* ,surface)
+       (unwind-protect (progn ,@body)
+         (setf pine.core.eval:*on-debug* ,saved)))))
 
-(defun %editor-form (lines &key (cols 40) (crow 0) (ccol 0))
-  (pine.ui.wire:node->wire
-   (pine.ui.build:column
-    (pine.ui.build:window (mapcar (lambda (l) (%bench-row cols l)) lines)
-                        :kind :window :crow crow :ccol ccol)
-    (pine.ui.build:window (list (%bench-row cols "")) :kind :echo))))
+(test an-evaluation-with-no-surface-aborts-rather-than-parking-its-thread
+  (let ((done nil))
+    (with-debug-surface (nil)
+      (pine.core.eval:evaluate-thunk (lambda () (error "probe"))
+                                     :on-done (lambda (ev) (setf done ev)))
+      (sleep 0.5))
+    (is (not (null done)))
+    (is (eq :aborted (pine.core.eval:evaluation-status done))
+        "with nobody to choose a restart the worker aborts instead of parking")))
 
-(test a-patch-applied-equals-the-tree-the-daemon-built
-  (let* ((old (%editor-form '("alpha" "beta" "gamma")))
-         (new (%editor-form '("alpha" "BETA!" "gamma")))
-         (patch (pine.ui.wire:rows-patch old new)))
-    (is-true patch "one changed line is patchable")
-    (is (equal new (pine.ui.wire:apply-rows-patch old patch))
-        "the patched form is the form, exactly")))
+(test a-restart-picked-by-name-resumes-the-blocked-evaluation
+  (let ((done nil)
+        (surfaced nil))
+    (with-debug-surface ((lambda (ev)
+                           (setf surfaced ev)
+                           (pine.core.eval:pick-restart ev "ABORT")))
+      (pine.core.eval:evaluate-thunk (lambda () (error "probe"))
+                                     :on-done (lambda (ev) (setf done ev)))
+      (sleep 0.5))
+    (is (not (null surfaced)))
+    (is (member "ABORT" (mapcar #'first (pine.core.eval:evaluation-restarts surfaced))
+                :test #'string=))
+    (is (not (null done)))))
 
-(test a-patch-carries-only-the-lines-that-moved
-  (let* ((old (%editor-form '("a" "b" "c" "d" "e")))
-         (new (%editor-form '("a" "b" "CHANGED" "d" "e")))
-         (patch (pine.ui.wire:rows-patch old new))
-         (lines (fourth (first patch))))
-    (is (= 1 (length lines)) "one line differs, one line ships")
-    (is (= 2 (car (first lines))) "and it is the third")))
-
-(test the-cursor-moving-is-patchable-without-any-line
-  (let* ((old (%editor-form '("a" "b") :crow 0 :ccol 0))
-         (new (%editor-form '("a" "b") :crow 1 :ccol 3))
-         (patch (pine.ui.wire:rows-patch old new)))
-    (is-true patch)
-    (is (null (fourth (first patch))) "no line changed")
-    (is (equal new (pine.ui.wire:apply-rows-patch old patch)))))
-
-(test a-changed-tree-refuses-to-patch
-  (let ((old (%editor-form '("a" "b")))
-        (new (pine.ui.wire:node->wire
-              (pine.ui.build:column
-               (pine.ui.build:window (list (%bench-row 40 "a")) :kind :window)
-               (pine.ui.build:window (list (%bench-row 40 "b")) :kind :window)
-               (pine.ui.build:window (list (%bench-row 40 "")) :kind :echo)))))
-    (is (null (pine.ui.wire:rows-patch old new))
-        "a split changes the shape, so the tree goes whole")))
-
-(test a-changed-line-count-refuses-to-patch
-  (let ((old (%editor-form '("a" "b")))
-        (new (%editor-form '("a" "b" "c"))))
-    (is (null (pine.ui.wire:rows-patch old new))
-        "a resized window goes whole")))
-
-(test no-previous-form-refuses-to-patch
-  (is (null (pine.ui.wire:rows-patch nil (%editor-form '("a"))))))
-
-(test scrolling-every-line-is-still-correct-when-patched
-  (let* ((old (%editor-form '("1" "2" "3" "4")))
-         (new (%editor-form '("5" "6" "7" "8")))
-         (patch (pine.ui.wire:rows-patch old new)))
-    (is (= 4 (length (fourth (first patch)))) "every line differs")
-    (is (equal new (pine.ui.wire:apply-rows-patch old patch))
-        "and applying it is still exact")))
+(test every-evaluation-joins-the-registry-and-can-be-found-by-id
+  (let ((ev (pine.core.eval:evaluate-thunk (lambda () 1))))
+    (sleep 0.2)
+    (is (eq ev (pine.core.eval:find-evaluation (pine.core.eval:evaluation-id ev))))
+    (is (member ev (pine.core.eval:list-evaluations)))))

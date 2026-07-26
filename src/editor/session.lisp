@@ -1,6 +1,16 @@
 (defpackage #:pine.editor.session
   (:use #:cl)
-  (:export #:*world-restored* #:apply-input #:editor-app #:editor-echo-node #:editor-font-px #:editor-frame #:editor-modeline-node #:editor-terminal-node #:editor-window-node #:make-editor-session #:make-sess #:push-editor-surface #:reseed-editor-sessions #:sess #:sess-a #:sess-aclient #:sess-and #:sess-anything #:sess-be #:sess-bordeaux-threads #:sess-can #:sess-carry #:sess-client #:sess-cvar #:sess-for #:sess-frame #:sess-frontend #:sess-generation #:sess-holding #:sess-inbox #:sess-last #:sess-lines #:sess-lock #:sess-mean #:sess-moved #:sess-must #:sess-next #:sess-nil #:sess-one #:sess-only #:sess-p #:sess-patch #:sess-pump #:sess-sent #:sess-sent-wire #:sess-session #:sess-signal #:sess-sink #:sess-so #:sess-stop #:sess-that #:sess-the #:sess-this #:sess-thread #:sess-to #:session-feed #:session-input #:session-loop #:start-term-pump #:stop-session))
+  (:export #:*world-restored*
+           #:sess #:make-sess #:sess-p
+           #:sess-client #:sess-aclient #:sess-sink #:sess-inbox #:sess-lock
+           #:sess-cvar #:sess-stop #:sess-thread #:sess-pump
+           #:sess-sent-wire #:sess-generation #:sess-signal
+           #:editor-app #:editor-font-px #:editor-frame
+           #:editor-window-node #:editor-terminal-node
+           #:editor-modeline-node #:editor-echo-node
+           #:make-editor-session #:reseed-editor-sessions
+           #:push-editor-surface #:start-term-pump #:stop-session
+           #:session-input #:session-feed #:session-loop #:apply-input))
 
 (in-package #:pine.editor.session)
 
@@ -437,12 +447,12 @@ much output arrived, and nothing at all while no terminal is producing any."
 (pine.core.attach:register-app (make-instance 'editor-app))
 
 (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch
-      pine.core.eval:*on-debug*            #'pine.editor.debugger:%eval-error)
+      pine.core.eval:*on-debug*            #'pine.editor.debugger:eval-error)
 
 (let ((prev pine.core.actor:*agent-debug-hook*))
   (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)
           (when prev
             (pine.core.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-          (pine.core.eval:attempt (lambda () (pine.editor.debugger:%agent-debug-surface msg))
+          (pine.core.eval:attempt (lambda () (pine.editor.debugger:agent-debug-surface msg))
                              "agent debug surface"))))

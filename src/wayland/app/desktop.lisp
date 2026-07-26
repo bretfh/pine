@@ -1,9 +1,8 @@
 (defpackage #:pine.wayland.app.desktop
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection #:pine.wayland.surface #:pine.wayland.input)
-  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
-                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
-                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
+  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
+        #:pine.wayland.surface #:pine.wayland.input)
+  (:local-nicknames (#:a #:alexandria) (#:node #:pine.ui.node)
+                    (#:uiw #:pine.ui.wire))
   (:export #:action-sender #:create-surface #:default-role #:desktop-client #:destroy-surface #:handle-desktop-message #:on-panel #:on-widgets #:run-desktop #:send-hint #:send-refresh #:send-widget-action #:spec-for-role #:surface-tree-fn))
 
 (in-package #:pine.wayland.app.desktop)

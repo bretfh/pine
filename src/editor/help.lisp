@@ -1,13 +1,13 @@
 (defpackage #:pine.editor.help
   (:use #:cl)
-  (:export #:%bindings-text #:%describe-key-text #:%mode-text #:%variables-text))
+  (:export #:bindings-text #:describe-key-text #:mode-text #:variables-text))
 
 (in-package #:pine.editor.help)
 
 ;;;; Help / self-documentation. Help buffers are read-only layout buffers
-;;;; (pine.editor.debugger:%text-layout via pine.editor.layout:show-layout); describe-key echoes.
+;;;; (pine.editor.debugger:text-layout via pine.editor.layout:show-layout); describe-key echoes.
 
-(defun %describe-key-text (key)
+(defun describe-key-text (key)
   (let ((entry (pine.editor.command:key-binding (pine.editor.frame:current-client) key))
         (s (pine.editor.key:key->string key)))
     (cond ((consp entry) (format nil "~a is a prefix key" s))
@@ -16,7 +16,7 @@
            (format nil "~a runs self-insert-command" s))
           (t (format nil "~a is undefined" s)))))
 
-(defun %bindings-text ()
+(defun bindings-text ()
   (let* ((client (pine.editor.frame:current-client))
          (rows (loop for km in (pine.editor.frame:active-keymaps client)
                      append (pine.editor.keymap:keymap-bindings km t))))
@@ -38,7 +38,7 @@
 restart menu instead of only echoing the message. Same knob as Emacs's
 debug-on-error; edit-actor and eval errors always reach the debugger.")
 
-(defun %variables-text ()
+(defun variables-text ()
   (with-output-to-string (out)
     (format out "Editor variables~%~%")
     (dolist (name (pine.state.var:all-variable-names))
@@ -50,7 +50,7 @@ debug-on-error; edit-actor and eval errors always reach the debugger.")
                 (let ((d (pine.state.var:evar-documentation v)))
                   (if (plusp (length d)) (format nil "~%    ~a" d) "")))))))
 
-(defun %mode-text ()
+(defun mode-text ()
   (let* ((client (pine.editor.frame:current-client))
          (major (pine.editor.frame:current-buffer-mode))
          (minors (pine.editor.frame:active-minor-modes client)))

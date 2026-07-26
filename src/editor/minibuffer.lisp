@@ -196,7 +196,7 @@ taken; a directory is descended into, a file is opened."
 ;;;; the current buffer, so every editing command -- motion, kill, yank, word
 ;;;; ops, isearch -- operates on the input through the ordinary dispatch, exactly
 ;;;; like any buffer. minibuffer-mode (a minor mode) adds only the completion and
-;;;; exit keys. A controller subscribed to the buffer re-filters the pine.editor.completion:candidate
+;;;; exit keys. A controller subscribed to the buffer re-filters the candidate
 ;;;; list and repaints on every edit, so the completion UI stays live no matter
 ;;;; which command changed the input.
 
@@ -342,7 +342,7 @@ empty input leaves cycling."
             (setf (pine.editor.frame:prompt-history-pos client) nil)
             (minibuffer-set-text ""))))))
 
-;;;; Accept / abort / pine.editor.completion:complete / pine.editor.completion:candidate motion -- the minibuffer-mode command
+;;;; Accept / abort / complete / candidate motion -- the minibuffer-mode command
 ;;;; bodies (the defcmd wrappers live in editor.lisp).
 
 (defun minibuffer-accept ()
@@ -380,7 +380,7 @@ empty input leaves cycling."
 (defun minibuffer-complete ()
   (cond ((file-completion-active-p) (file-name-complete))
         ((completing-read-active-p)
-         ;; insert the selected pine.editor.completion:candidate as the input
+         ;; insert the selected candidate as the input
          (let* ((c (completion))
                 (i (pine.editor.frame:index c))
                 (f (pine.editor.frame:filtered c)))

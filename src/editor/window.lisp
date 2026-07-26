@@ -1,6 +1,6 @@
 (defpackage #:pine.editor.window
   (:use #:cl)
-  (:export #:%split-window #:delete-other-windows-cmd #:delete-window-cmd #:other-window-cmd #:scroll-window))
+  (:export #:split-window #:delete-other-windows-cmd #:delete-window-cmd #:other-window-cmd #:scroll-window))
 
 (in-package #:pine.editor.window)
 
@@ -34,7 +34,7 @@ lands in it."
     (setf (pine.editor.frame:current-buffer client) (pine.text.window:buffer-ref w))
     (pine.state.world:save-world :arrangement)))
 
-(defun %split-window (orient)
+(defun split-window (orient)
   "Split the focused window along ORIENT (:column below, :row beside): a new
 window on the same buffer joins the parent as a flat sibling when the parent
 already stacks that way, else the leaf wraps in a fresh stack. A divider sits
@@ -44,7 +44,7 @@ between; sizes stay even because siblings share one weight."
          (leaf (%focused-leaf client)))
     (unless leaf
       (pine.editor.echo:message "no window to split")
-      (return-from %split-window))
+      (return-from split-window))
     (let* ((w (pine.ui.node:window-of leaf))
            (buf (pine.text.window:buffer-ref w))
            (weight (max 1 (pine.ui.node:expand-of leaf)))
@@ -59,7 +59,7 @@ between; sizes stay even because siblings share one weight."
             (pine.text.window:scroll-top nw) (pine.text.window:scroll-top w))
       (unless root
         (pine.editor.echo:message "cannot split here")
-        (return-from %split-window))
+        (return-from split-window))
       (setf (pine.editor.frame:arrangement client) root)
       (%focus-leaf leaf)
       (pine.ui.render:relayout))))

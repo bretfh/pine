@@ -1,10 +1,20 @@
 (defpackage #:pine.wayland.surface
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection)
-  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
-                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
-                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
-  (:export #:build-tree #:conn-surface->ls #:layer-surface #:ls-conn #:ls-height #:ls-hover #:ls-layer-surf #:ls-on-closed #:ls-tree #:ls-tree-fn #:ls-width #:ls-wl-surface #:make-wl-conn #:measure-panel #:open-layer-surface #:paint-surface #:wl-conn #:wl-conn-a #:wl-conn-alist #:wl-conn-backing #:wl-conn-being #:wl-conn-compositor #:wl-conn-display #:wl-conn-drag #:wl-conn-focus #:wl-conn-layer-surface #:wl-conn-nil #:wl-conn-or #:wl-conn-p #:wl-conn-pointer #:wl-conn-ptr-serial #:wl-conn-ptr-x #:wl-conn-ptr-y #:wl-conn-scrubbed #:wl-conn-seat #:wl-conn-shell #:wl-conn-shm #:wl-conn-slider #:wl-conn-surfaces #:wl-conn-wl-surface-proxy))
+  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection)
+  (:local-nicknames (#:c #:cl-cairo2) (#:shm #:posix-shm)
+                    (#:paint #:pine.cairo.paint))
+  (:export
+   ;; the connection and its bound globals
+   #:wl-conn #:wl-conn-p #:make-wl-conn
+   #:wl-conn-display #:wl-conn-backing #:wl-conn-compositor #:wl-conn-shm
+   #:wl-conn-shell #:wl-conn-seat #:wl-conn-pointer #:wl-conn-surfaces
+   ;; the live pointer state
+   #:wl-conn-focus #:wl-conn-ptr-x #:wl-conn-ptr-y #:wl-conn-ptr-serial
+   #:wl-conn-drag #:conn-surface->ls
+   ;; a layer surface and the tree it last built
+   #:layer-surface #:open-layer-surface #:measure-panel
+   #:ls-conn #:ls-wl-surface #:ls-layer-surf #:ls-width #:ls-height
+   #:ls-tree-fn #:ls-tree #:ls-hover #:ls-on-closed
+   #:build-tree #:paint-surface))
 
 (in-package #:pine.wayland.surface)
 

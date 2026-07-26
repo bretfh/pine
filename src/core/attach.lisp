@@ -1,6 +1,6 @@
 (defpackage #:pine.core.attach
   (:use #:cl)
-  (:export #:start-attach-listener #:attach-listener
+  (:export #:start-attach-listener
            #:attach-to-daemon
            #:app #:app-kind #:register-app #:find-app
            #:attached #:received #:detached #:run-frontend

@@ -1,6 +1,5 @@
 (defpackage #:pine.ui.render
-  (:use :cl)
-  (:export #:%window-leaves #:frame->rows #:refresh-editor-tree #:relayout #:render-window-rows #:start-renderer #:subscribe-to-buffer)
+  (:use #:cl)
   (:export
    #:start-renderer
    #:subscribe-to-buffer
@@ -10,6 +9,7 @@
    #:echo-rows
    #:arrange-editor-tree
    #:refresh-editor-tree
+   #:window-leaves
    #:frame->rows
    #:relayout))
 
@@ -32,26 +32,26 @@
   "Encode FRAME's cells as wire rows (text . runs), each run
 (col fr fg fb br bg bb attr) extending to the next run's col. Cells carry
 their own (row col); scatter by those."
-  (let ((pine.ui.node:cells (pine.text.window:frame-cells frame))
+  (let ((cells (pine.text.window:frame-cells frame))
         (cols (pine.text.window:frame-cols frame))
-        (pine.ui.build:rows (pine.text.window:frame-rows frame))
+        (nrows (pine.text.window:frame-rows frame))
         (count (pine.text.window:frame-cell-count frame)))
-    (when (and pine.ui.node:cells (plusp pine.ui.build:rows))
-      (let ((chars  (make-array pine.ui.build:rows))
-            (styles (make-array pine.ui.build:rows)))
-        (dotimes (r pine.ui.build:rows)
+    (when (and cells (plusp nrows))
+      (let ((chars  (make-array nrows))
+            (styles (make-array nrows)))
+        (dotimes (r nrows)
           (setf (aref chars r) (make-string cols :initial-element #\space)
                 (aref styles r) (make-array cols :initial-element nil)))
-        (loop for i from 0 below count by 10
-              for pine.ui.build:row = (svref pine.ui.node:cells i)
-              for col = (svref pine.ui.node:cells (+ i 1))
-              when (and (integerp pine.ui.build:row) (< -1 pine.ui.build:row pine.ui.build:rows) (integerp col) (< -1 col cols))
-                do (setf (char (aref chars pine.ui.build:row) col) (code-char (svref pine.ui.node:cells (+ i 2)))
-                         (aref (aref styles pine.ui.build:row) col)
-                         (list (svref pine.ui.node:cells (+ i 3)) (svref pine.ui.node:cells (+ i 4)) (svref pine.ui.node:cells (+ i 5))
-                               (svref pine.ui.node:cells (+ i 6)) (svref pine.ui.node:cells (+ i 7)) (svref pine.ui.node:cells (+ i 8))
-                               (svref pine.ui.node:cells (+ i 9)))))
-        (loop for r from 0 below pine.ui.build:rows collect
+        (loop :for i :from 0 :below count :by 10
+              :for row = (svref cells i)
+              :for col = (svref cells (+ i 1))
+              :when (and (integerp row) (< -1 row nrows) (integerp col) (< -1 col cols))
+                :do (setf (char (aref chars row) col) (code-char (svref cells (+ i 2)))
+                          (aref (aref styles row) col)
+                          (list (svref cells (+ i 3)) (svref cells (+ i 4)) (svref cells (+ i 5))
+                                (svref cells (+ i 6)) (svref cells (+ i 7)) (svref cells (+ i 8))
+                                (svref cells (+ i 9)))))
+        (loop :for r :from 0 :below nrows :collect
           (let ((text (aref chars r)) (row-styles (aref styles r)) (runs nil) (prev nil))
             (dotimes (c cols)
               (let ((style (or (aref row-styles c)
@@ -86,17 +86,17 @@ attached frontend -- the editor session's sink refreshes the live tree
                           (apply-snapshot snapshot)
                           (paint-frame client)))
                        (:resize
-                        (destructuring-bind (&key cols pine.ui.build:rows width height cell-w cell-h)
+                        (destructuring-bind (&key cols rows width height cell-w cell-h)
                             (rest msg)
                           (let ((f (pine.editor.frame:frame client)))
                             (setf (pine.text.window:frame-cols f) cols
-                                  (pine.text.window:frame-rows f) pine.ui.build:rows
+                                  (pine.text.window:frame-rows f) rows
                                   (pine.editor.frame:px-width client) width
                                   (pine.editor.frame:px-height client) height
                                   (pine.editor.frame:cell-w client) cell-w
                                   (pine.editor.frame:cell-h client) cell-h))
                           (relayout)
-                          (pine.term:resize-active-terminal cols pine.ui.build:rows)
+                          (pine.term:resize-active-terminal cols rows)
                           ;; a layout buffer laid out for an old width
                           ;; reprojects at its window's new one
                           (dolist (w (pine.editor.frame:windows client))
@@ -147,7 +147,7 @@ attached frontend -- the editor session's sink refreshes the live tree
             (pine.text.window:win-display w) nil)))
   (rs-update :dirty t))
 
-(defun %window-leaves (tree)
+(defun window-leaves (tree)
   "The view leaves under TREE (window nodes carrying a kind), in tree order."
   (let (acc)
     (labels ((walk (n)
@@ -196,7 +196,7 @@ leaf's rect sizes its backing window. Returns the leaves."
       (multiple-value-bind (cw ch pw ph) (%px-metrics client)
         (let ((aw (if cw pw (pine.text.window:frame-cols f)))
               (ah (if cw ph (pine.text.window:frame-rows f)))
-              (leaves (%window-leaves tree)))
+              (leaves (window-leaves tree)))
           (dolist (n leaves)
             (setf (pine.ui.node:window-rows n) nil
                   (pine.ui.node:window-crow n) -1
@@ -227,8 +227,8 @@ the tree, or nil when the client has none."
             (:window
              (let ((w (pine.ui.node:window-of n)))
                (when w
-                 (multiple-value-bind (pine.ui.build:rows crow ccol) (render-window-rows w)
-                   (setf (pine.ui.node:window-rows n) pine.ui.build:rows)
+                 (multiple-value-bind (rows crow ccol) (render-window-rows w)
+                   (setf (pine.ui.node:window-rows n) rows)
                    (when (and (eq w focused) (not prompt))
                      (setf (pine.ui.node:window-crow n) crow
                            (pine.ui.node:window-ccol n) ccol))))))
@@ -238,9 +238,9 @@ the tree, or nil when the client has none."
                  (setf (pine.ui.node:window-rows n)
                        (modeline-rows w (%leaf-cols client n))))))
             (:echo
-             (multiple-value-bind (pine.ui.build:rows crow ccol)
+             (multiple-value-bind (rows crow ccol)
                  (echo-rows client (%leaf-cols client n))
-               (setf (pine.ui.node:window-rows n) pine.ui.build:rows
+               (setf (pine.ui.node:window-rows n) rows
                      (pine.ui.node:window-crow n) crow
                      (pine.ui.node:window-ccol n) ccol))))))
       tree)))
@@ -265,16 +265,16 @@ a crash never loses the split shape."
 (defun build-highlight-table (highlights scroll-top visible-rows)
   (let ((table (make-hash-table)))
     (dolist (h highlights)
-      (let ((line (first h)) (sc (second h)) (ec (third h)) (pine.ui.node:face (fourth h)))
+      (let ((line (first h)) (sc (second h)) (ec (third h)) (face (fourth h)))
         (when (and (>= line scroll-top) (< line (+ scroll-top visible-rows)))
-          (push (list sc ec pine.ui.node:face) (gethash (- line scroll-top) table)))))
+          (push (list sc ec face) (gethash (- line scroll-top) table)))))
     (maphash (lambda (k v)
                (setf (gethash k table) (nreverse v)))
              table)
     table))
 
-(defun face-priority (pine.ui.node:face)
-  (case pine.ui.node:face
+(defun face-priority (face)
+  (case face
     (:keyword        10)
     (:function-name   8)
     (:function-call   8)
@@ -295,31 +295,31 @@ a crash never loses the split shape."
     (dolist (h line-hl)
       (let* ((sc (first h))
              (ec (min (second h) line-length))
-             (pine.ui.node:face (third h))
-             (p (face-priority pine.ui.node:face)))
-        (when pine.ui.node:face
+             (face (third h))
+             (p (face-priority face)))
+        (when face
           (loop for c from (max 0 sc) below ec
                 when (> p (aref prios c))
-                  do (setf (aref slots c) pine.ui.node:face
+                  do (setf (aref slots c) face
                            (aref prios c) p)))))
     slots))
 
-(defun emit-string (f off pine.ui.build:row str fg &optional bg (attr 0) (col0 0))
+(defun emit-string (f off row str fg &optional bg (attr 0) (col0 0))
   "Write STR at ROW starting COL0 into F's cells with FG (list r g b),
 optional BG, and packed text ATTR bits. Returns the new cell offset."
-  (let ((pine.ui.node:cells (pine.text.window:frame-cells f)))
+  (let ((cells (pine.text.window:frame-cells f)))
     (loop for i from 0 below (length str)
           for ch = (char-code (char str i))
-          do (setf (svref pine.ui.node:cells (+ off 0)) pine.ui.build:row
-                   (svref pine.ui.node:cells (+ off 1)) (+ col0 i)
-                   (svref pine.ui.node:cells (+ off 2)) ch
-                   (svref pine.ui.node:cells (+ off 3)) (first fg)
-                   (svref pine.ui.node:cells (+ off 4)) (second fg)
-                   (svref pine.ui.node:cells (+ off 5)) (third fg)
-                   (svref pine.ui.node:cells (+ off 6)) (if bg (first bg) -1)
-                   (svref pine.ui.node:cells (+ off 7)) (if bg (second bg) -1)
-                   (svref pine.ui.node:cells (+ off 8)) (if bg (third bg) -1)
-                   (svref pine.ui.node:cells (+ off 9)) attr)
+          do (setf (svref cells (+ off 0)) row
+                   (svref cells (+ off 1)) (+ col0 i)
+                   (svref cells (+ off 2)) ch
+                   (svref cells (+ off 3)) (first fg)
+                   (svref cells (+ off 4)) (second fg)
+                   (svref cells (+ off 5)) (third fg)
+                   (svref cells (+ off 6)) (if bg (first bg) -1)
+                   (svref cells (+ off 7)) (if bg (second bg) -1)
+                   (svref cells (+ off 8)) (if bg (third bg) -1)
+                   (svref cells (+ off 9)) attr)
              (incf off 10))
     off))
 
@@ -328,33 +328,33 @@ optional BG, and packed text ATTR bits. Returns the new cell offset."
     (concatenate 'string s (make-string (max 0 (- width (length s)))
                                         :initial-element #\Space))))
 
-(defun emit-row (f off pine.ui.build:row text runs cols)
+(defun emit-row (f off row text runs cols)
   "Blit one rendered (TEXT . RUNS) row -- the pine.ui.cells:render format, which
 is also the frame wire format -- into F's cells at ROW, clipped to COLS.
 Returns the new cell offset."
-  (let ((pine.ui.node:cells (pine.text.window:frame-cells f)))
+  (let ((cells (pine.text.window:frame-cells f)))
     (loop for (run . more) on runs do
       (destructuring-bind (col fr fg fb br bg bb attr) run
         (let ((end (min (if more (car (first more)) (length text)) cols)))
           (loop for c from col below end
-                do (setf (svref pine.ui.node:cells (+ off 0)) pine.ui.build:row
-                         (svref pine.ui.node:cells (+ off 1)) c
-                         (svref pine.ui.node:cells (+ off 2)) (char-code (char text c))
-                         (svref pine.ui.node:cells (+ off 3)) fr
-                         (svref pine.ui.node:cells (+ off 4)) fg
-                         (svref pine.ui.node:cells (+ off 5)) fb
-                         (svref pine.ui.node:cells (+ off 6)) br
-                         (svref pine.ui.node:cells (+ off 7)) bg
-                         (svref pine.ui.node:cells (+ off 8)) bb
-                         (svref pine.ui.node:cells (+ off 9)) attr)
+                do (setf (svref cells (+ off 0)) row
+                         (svref cells (+ off 1)) c
+                         (svref cells (+ off 2)) (char-code (char text c))
+                         (svref cells (+ off 3)) fr
+                         (svref cells (+ off 4)) fg
+                         (svref cells (+ off 5)) fb
+                         (svref cells (+ off 6)) br
+                         (svref cells (+ off 7)) bg
+                         (svref cells (+ off 8)) bb
+                         (svref cells (+ off 9)) attr)
                    (incf off 10))))))
   off)
 
-(defun %scratch-frame (cols pine.ui.build:rows)
+(defun %scratch-frame (cols rows)
   "A fresh frame sized COLS x ROWS for one render pass."
   (let ((f (make-instance 'pine.text.window:frame)))
     (setf (pine.text.window:frame-cols f) cols
-          (pine.text.window:frame-rows f) pine.ui.build:rows)
+          (pine.text.window:frame-rows f) rows)
     (pine.text.window:ensure-frame-cells f)
     f))
 
@@ -418,11 +418,11 @@ returns a vector, SGR truecolor a 3-list."
 Returns (values rows crow ccol)."
   (let* ((term (pine.term:terminal-term tobj))
          (f (%scratch-frame (pine.text.window:win-width w) (pine.text.window:win-height w)))
-         (pine.ui.node:cells (pine.text.window:frame-cells f))
-         (pine.ui.build:rows (min (pine.vt:term-height term) (pine.text.window:win-height w)))
+         (cells (pine.text.window:frame-cells f))
+         (rows (min (pine.vt:term-height term) (pine.text.window:win-height w)))
          (cols (min (pine.vt:term-width term) (pine.text.window:win-width w)))
          (off 0))
-    (dotimes (y pine.ui.build:rows)
+    (dotimes (y rows)
       (multiple-value-bind (chars faces) (pine.vt:term-render-line term y)
         (let ((cur nil))
           (dotimes (x cols)
@@ -430,19 +430,19 @@ Returns (values rows crow ccol)."
               (when change (setf cur (second change))))
             (let ((fg (%term-rgb cur :fg (pine.ui.face:face-fg :default)))
                   (bg (%term-rgb cur :bg nil)))
-              (setf (svref pine.ui.node:cells (+ off 0)) y
-                    (svref pine.ui.node:cells (+ off 1)) x
-                    (svref pine.ui.node:cells (+ off 2)) (char-code (char chars x))
-                    (svref pine.ui.node:cells (+ off 3)) (first fg)
-                    (svref pine.ui.node:cells (+ off 4)) (second fg)
-                    (svref pine.ui.node:cells (+ off 5)) (third fg)
-                    (svref pine.ui.node:cells (+ off 6)) (if bg (first bg) -1)
-                    (svref pine.ui.node:cells (+ off 7)) (if bg (second bg) -1)
-                    (svref pine.ui.node:cells (+ off 8)) (if bg (third bg) -1)
-                    (svref pine.ui.node:cells (+ off 9)) 0)
+              (setf (svref cells (+ off 0)) y
+                    (svref cells (+ off 1)) x
+                    (svref cells (+ off 2)) (char-code (char chars x))
+                    (svref cells (+ off 3)) (first fg)
+                    (svref cells (+ off 4)) (second fg)
+                    (svref cells (+ off 5)) (third fg)
+                    (svref cells (+ off 6)) (if bg (first bg) -1)
+                    (svref cells (+ off 7)) (if bg (second bg) -1)
+                    (svref cells (+ off 8)) (if bg (third bg) -1)
+                    (svref cells (+ off 9)) 0)
               (incf off 10))))))
     (values (%frame-rows f off)
-            (max 0 (min (pine.vt:term-cursor-y term) (1- (max 1 pine.ui.build:rows))))
+            (max 0 (min (pine.vt:term-cursor-y term) (1- (max 1 rows))))
             (max 0 (min (pine.vt:term-cursor-x term) (1- (max 1 cols)))))))
 
 (defun %snapshot-region (s)
@@ -494,7 +494,7 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
          (s (pine.text.window:snap w))
          (dl (and s (pine.text.window:win-display w)))
          (wid (pine.text.window:win-width w))
-         (pine.ui.node:cells (pine.text.window:frame-cells f))
+         (cells (pine.text.window:frame-cells f))
          (left (pine.text.window:col w))
          (hl (and s (pine.text.buffer:highlights s)))
          (hl-table (when hl
@@ -508,14 +508,14 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
       ((and s (pine.text.buffer:buffer-local s :layout-rows))
        (loop for row-cells in (nthcdr (pine.text.window:scroll-top w)
                                       (pine.text.buffer:buffer-local s :layout-rows))
-             for pine.ui.build:row from 0 below (pine.text.window:win-height w)
-             do (setf off (emit-row f off pine.ui.build:row (car row-cells) (cdr row-cells) wid))))
+             for row from 0 below (pine.text.window:win-height w)
+             do (setf off (emit-row f off row (car row-cells) (cdr row-cells) wid))))
       (s
        (loop with overlays = (pine.text.buffer:buffer-local s :overlays)
              for d in dl
-             for pine.ui.build:row from 0
+             for row from 0
              for text = (pine.ui.face:display-text d)
-             for buf-line-idx = (+ pine.ui.build:row (pine.text.window:scroll-top w))
+             for buf-line-idx = (+ row (pine.text.window:scroll-top w))
              for overlay = (and overlays (fset:@ overlays buf-line-idx))
              do (when overlay
                   (destructuring-bind (otext oclass) overlay
@@ -524,10 +524,10 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
                              (room (- wid col0)))
                         (when (plusp room)
                           (setf off (emit-string
-                                     f off pine.ui.build:row
+                                     f off row
                                      (subseq otext 0 (min (length otext) room))
                                      orgb nil oattr col0)))))))
-                (let* ((line-hl (when hl-table (gethash pine.ui.build:row hl-table)))
+                (let* ((line-hl (when hl-table (gethash row hl-table)))
                        (buf-line-len (if (< buf-line-idx (pine.text.buffer:line-count s))
                                          (length (fset:@ (pine.text.buffer:lines s) buf-line-idx))
                                          0))
@@ -536,22 +536,22 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
                   (loop for i from 0 below (min (length text) wid)
                         for ch = (char-code (char text i))
                         for buf-col = (+ i left)
-                        for pine.ui.node:face = (when (and face-slots (< buf-col (length face-slots)))
+                        for face = (when (and face-slots (< buf-col (length face-slots)))
                                      (aref face-slots buf-col))
-                        for rgb = (face-rgb pine.ui.node:face)
-                        for attr = (face-attrs pine.ui.node:face)
+                        for rgb = (face-rgb face)
+                        for attr = (face-attrs face)
                         for bg = (when (and region (%in-region-p region buf-line-idx buf-col))
                                    (selection-bg))
-                        do (setf (svref pine.ui.node:cells (+ off 0)) pine.ui.build:row
-                                 (svref pine.ui.node:cells (+ off 1)) i
-                                 (svref pine.ui.node:cells (+ off 2)) ch
-                                 (svref pine.ui.node:cells (+ off 3)) (first rgb)
-                                 (svref pine.ui.node:cells (+ off 4)) (second rgb)
-                                 (svref pine.ui.node:cells (+ off 5)) (third rgb)
-                                 (svref pine.ui.node:cells (+ off 6)) (if bg (first bg) -1)
-                                 (svref pine.ui.node:cells (+ off 7)) (if bg (second bg) -1)
-                                 (svref pine.ui.node:cells (+ off 8)) (if bg (third bg) -1)
-                                 (svref pine.ui.node:cells (+ off 9)) attr)
+                        do (setf (svref cells (+ off 0)) row
+                                 (svref cells (+ off 1)) i
+                                 (svref cells (+ off 2)) ch
+                                 (svref cells (+ off 3)) (first rgb)
+                                 (svref cells (+ off 4)) (second rgb)
+                                 (svref cells (+ off 5)) (third rgb)
+                                 (svref cells (+ off 6)) (if bg (first bg) -1)
+                                 (svref cells (+ off 7)) (if bg (second bg) -1)
+                                 (svref cells (+ off 8)) (if bg (third bg) -1)
+                                 (svref cells (+ off 9)) attr)
                            (incf off 10))))))
     (values (%frame-rows f off)
             (if s
