@@ -1,10 +1,6 @@
 (defpackage #:pine.ui.style
   (:use #:cl)
-  (:export #:style #:st-bg #:st-gradient #:st-fg #:st-border-w #:st-border-color
-           #:st-radius #:st-pad-x #:st-pad-y #:st-min-w #:st-min-h
-           #:st-font-px #:st-bold #:st-inset #:st-margin #:st-shadow
-           #:st-opacity
-           #:resolve #:reset-rules))
+  (:export #:resolve #:st-bg #:st-bold #:st-border-color #:st-border-w #:st-fg #:st-font-px #:st-gradient #:st-inset #:st-margin #:st-min-h #:st-min-w #:st-opacity #:st-pad-x #:st-pad-y #:st-radius #:st-shadow))
 
 (in-package #:pine.ui.style)
 

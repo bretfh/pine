@@ -132,10 +132,10 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
               (ensure-metrics ed)
               (maybe-resize ed)
               (when (ed-tree ed)
-                (l:with-cairo-layout
-                  (if (l:arranged-p (ed-tree ed))
-                      (l:paint-arranged (ed-tree ed))
-                      (l:paint-tree (ed-tree ed) width height)))))
+                (paint:with-cairo-layout
+                  (if (uiw:arranged-p (ed-tree ed))
+                      (paint:paint-arranged (ed-tree ed))
+                      (paint:paint-tree (ed-tree ed) width height)))))
             ;; ground-truth eyes: with PINE_FRAME_DUMP set, every committed
             ;; frame is also written as pine painted it, so a corrupted
             ;; display can be split into painter vs compositor halves
@@ -232,7 +232,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
 
 (defun %build-tree (ed form)
   (setf (ed-wire ed) form
-        (ed-tree ed) (l:wire->node form :on-action
+        (ed-tree ed) (uiw:wire->node form :on-action
                                    (lambda (id) (declare (ignore id))
                                      (lambda (&rest args) (declare (ignore args)) nil)))
         (ed-dirty ed) t))
@@ -251,7 +251,7 @@ for a whole one instead of applying."
   (cond
     ((and (ed-wire ed) (eql generation (1+ (ed-generation ed))))
      (setf (ed-generation ed) generation)
-     (%build-tree ed (l:apply-rows-patch (ed-wire ed) patch)))
+     (%build-tree ed (uiw:apply-rows-patch (ed-wire ed) patch)))
     (t
      (format *error-output* "pine editor: frame ~a does not follow ~a, refetching~%"
              generation (ed-generation ed))

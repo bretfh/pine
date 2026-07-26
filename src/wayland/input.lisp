@@ -2,7 +2,7 @@
 
 ;;;; Pointer input for layer surfaces: bind wl_seat -> wl_pointer, track the
 ;;;; focused surface and cursor position, and drive the layout engine's own
-;;;; hit-testing (pine.ui.node:node-at / click-thunk) against the retained,
+;;;; hit-testing (node-at / click-thunk) against the retained,
 ;;;; arranged tree -- so hover highlights and clicks land on exactly what is
 ;;;; painted. wayflan delivers pointer x/y already in surface pixels.
 
@@ -86,12 +86,12 @@
   "The interactive node under the cursor on the focused surface, or nil."
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-tree ls)
-      (l:node-at (ls-tree ls) (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn))))))
+      (lay:node-at (ls-tree ls) (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn))))))
 
 (defun clear-hover (conn)
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-hover ls)
-      (setf (l:hovered (ls-hover ls)) nil (ls-hover ls) nil)
+      (setf (node:hovered (ls-hover ls)) nil (ls-hover ls) nil)
       (when *on-hover* (funcall *on-hover* nil))
       (paint-surface ls))))
 
@@ -99,8 +99,8 @@
   (a:when-let ((ls (wl-conn-focus conn)))
     (let ((hit (pointer-node conn)))
       (unless (eq hit (ls-hover ls))
-        (when (ls-hover ls) (setf (l:hovered (ls-hover ls)) nil))
-        (when hit (setf (l:hovered hit) t))
+        (when (ls-hover ls) (setf (node:hovered (ls-hover ls)) nil))
+        (when hit (setf (node:hovered hit) t))
         (setf (ls-hover ls) hit)
         (when *on-hover* (funcall *on-hover* hit))
         (paint-surface ls)))))
@@ -110,7 +110,7 @@
 else runs its action now and rebuilds the surface."
   (let ((hit (pointer-node conn)))
     (cond
-      ((typep hit 'l:slider)
+      ((typep hit 'node:slider)
        (setf (wl-conn-drag conn) hit)
        (drag-to conn))
       (t (pointer-click conn)))))
@@ -119,15 +119,15 @@ else runs its action now and rebuilds the surface."
   "Move the dragged slider's knob to the cursor and repaint, without firing the
 callback (that waits for release, so a scrub does not spam the action)."
   (a:when-let ((slider (wl-conn-drag conn)) (ls (wl-conn-focus conn)))
-    (setf (l:value slider) (l:slider-value-at slider (round (wl-conn-ptr-x conn))))
+    (setf (node:value slider) (lay:slider-value-at slider (round (wl-conn-ptr-x conn))))
     (paint-surface ls)))
 
 (defun pointer-release (conn)
   "End a drag: fire the slider's on-change once with the final value."
   (a:when-let ((slider (wl-conn-drag conn)))
     (setf (wl-conn-drag conn) nil)
-    (a:when-let ((fn (l:on-change slider)))
-      (pine.core.eval:attempt (lambda () (funcall fn (l:value slider)))
+    (a:when-let ((fn (node:on-change slider)))
+      (pine.core.eval:attempt (lambda () (funcall fn (node:value slider)))
                          "slider drag"))))
 
 (defun pointer-click (conn)
@@ -135,7 +135,7 @@ callback (that waits for release, so a scrub does not spam the action)."
 action may have changed the refs the tree reads)."
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-tree ls)
-      (let ((thunk (l:click-thunk (ls-tree ls)
+      (let ((thunk (lay:click-thunk (ls-tree ls)
                                   (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn)))))
         (when thunk
           (pine.core.eval:attempt thunk "widget action")

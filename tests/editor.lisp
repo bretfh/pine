@@ -193,23 +193,23 @@ activation resolves and advances; the eval target follows the fault."
     (is (search "local" txt))))
 
 (test (layout-render :depends-on jobs-buffer)
-  "pine.ui.node:render: row texts, face and css styling, node-at."
+  "pine.ui.cells:render: row texts, face and css styling, node-at."
   (multiple-value-bind (rows root)
-      (pine.ui.node:render
-       (pine.ui.node:column :align :stretch
-         (pine.ui.node:label "head" :face :keyword)
-         (pine.ui.node:choice (pine.ui.node:label "aaa"))
-         (pine.ui.node:choice (pine.ui.node:label "bbb")))
+      (pine.ui.cells:render
+       (pine.ui.build:column :align :stretch
+         (pine.ui.build:label "head" :face :keyword)
+         (pine.ui.build:choice (pine.ui.build:label "aaa"))
+         (pine.ui.build:choice (pine.ui.build:label "bbb")))
        10 :selection 1)
     (is (equal '("head" "  aaa" "> bbb")
                (mapcar (lambda (r) (string-right-trim " " (car r))) rows)))
     (is (equal (pine.text.buffer:face-fg :keyword)
                (subseq (rest (first (cdr (first rows)))) 0 3)))
-    (let ((hit (pine.ui.node:node-at root 2 3)))
+    (let ((hit (pine.ui.layout:node-at root 2 3)))
       (is (and hit (typep hit 'pine.ui.node:selectable)
                (pine.ui.node:selectedp hit)))))
   (multiple-value-bind (rows root)
-      (pine.ui.node:render (pine.ui.node:label "x" :class "nm-title") 6)
+      (pine.ui.cells:render (pine.ui.build:label "x" :class "nm-title") 6)
     (declare (ignore root))
     (let ((run (rest (first (cdr (first rows))))))
       (is (equal (multiple-value-bind (r g b)
@@ -225,12 +225,12 @@ fires, reproject takes a new width."
     (sento.actor:tell buf
       (list :set-layout :width 12 :builder
             (lambda (state) (declare (ignore state))
-              (pine.ui.node:column :align :stretch
-                (pine.ui.node:label "hd" :face :keyword)
-                (pine.ui.node:choice :data (lambda () (setf fired :one))
-                  (pine.ui.node:label "one"))
-                (pine.ui.node:choice :data (lambda () (setf fired :two))
-                  (pine.ui.node:label "two"))))))
+              (pine.ui.build:column :align :stretch
+                (pine.ui.build:label "hd" :face :keyword)
+                (pine.ui.build:choice :data (lambda () (setf fired :one))
+                  (pine.ui.build:label "one"))
+                (pine.ui.build:choice :data (lambda () (setf fired :two))
+                  (pine.ui.build:label "two"))))))
     (sleep 0.15)
     (is (string= (format nil "hd~%> one~%  two") (btext buf)))
     (setf (pine.editor.frame::current-buffer *client*) buf)
@@ -284,7 +284,7 @@ major modes, variables, css rules, tool buffers, prompts."
   (is (eql 42 (u "(var :user-probe-var)")))
   (u "(defrules (\".uprobe\" :color (color :accent)))")
   (multiple-value-bind (rows root)
-      (pine.ui.node:render (pine.ui.node:label "x" :class "uprobe") 6)
+      (pine.ui.cells:render (pine.ui.build:label "x" :class "uprobe") 6)
     (declare (ignore root))
     (is (equal (multiple-value-bind (r g b)
                    (pine.text.buffer:hex-rgb (pine.text.buffer:color :accent))
@@ -428,7 +428,7 @@ contributor; foreign nodes refuse to serialize."
     (sento.actor:tell scratch '(:replace-content :content "")) (sleep 0.1)
     (pine.state.world:restore-world :scratch) (sleep 0.1)
     (is (search "world-scratch" (btext scratch))))
-  (is (null (pine.editor::%tree->form (pine.ui.node:label "x"))))
+  (is (null (pine.editor::%tree->form (pine.ui.build:label "x"))))
   (pine.editor.frame::kill-buffer "pine-world-probe.txt")
   (setf (pine.state.var:var :world-save) nil)
   (pine.editor::%seed-editor-tree *client* :world nil)
@@ -464,8 +464,8 @@ modeline follow, layout-buffer embeds."
           (pine.editor.frame::focused-window *client*) nil)
     (let* ((wa (pine.editor:editor-window-node "scratch" :expand 1))
            (wb (pine.editor:editor-window-node "editor-b2" :expand 1))
-           (tree (pine.ui.node:column :align :stretch
-                   (pine.ui.node:row :align :stretch :expand 1 wa wb)
+           (tree (pine.ui.build:column :align :stretch
+                   (pine.ui.build:row :align :stretch :expand 1 wa wb)
                    (pine.editor:editor-echo-node)
                    (pine.editor:editor-modeline-node))))
       (setf (pine.editor.frame::arrangement *client*) tree)
@@ -489,7 +489,7 @@ modeline follow, layout-buffer embeds."
     (is (search "x" (btext b2)))
     (is (not (search "x" (btext scratch))))
     (pine.ui.render:refresh-editor-tree *client*)
-    (let ((ml (find :modeline (pine.ui.render::%window-leaves
+    (let ((ml (find :modeline (pine.ui.render:%window-leaves
                                (pine.editor.frame::arrangement *client*))
                     :key #'pine.ui.node:window-kind)))
       (is (search "editor-b2" (car (first (pine.ui.node:window-rows ml)))))
@@ -507,8 +507,8 @@ modeline follow, layout-buffer embeds."
         (setf pine.editor.frame::*client* prev)))
     (pine.editor.layout:show-layout "*wt-probe*"
       (lambda (state) (declare (ignore state))
-        (pine.ui.node:column :align :stretch
-          (pine.ui.node:label "wt" :face :keyword)
+        (pine.ui.build:column :align :stretch
+          (pine.ui.build:label "wt" :face :keyword)
           (pine.editor:editor-window-node "editor-b2"))))
     (sleep 0.3)
     (let ((tx (btext (pine.editor.frame::buffer "*wt-probe*"))))
@@ -537,7 +537,7 @@ text and dies on the next edit."
     (setf (pine.editor.frame::windows *client*) nil
           (pine.editor.frame::focused-window *client*) nil)
     (let* ((wn (pine.editor:editor-window-node "overlay-probe" :expand 1))
-           (tree (pine.ui.node:column :align :stretch
+           (tree (pine.ui.build:column :align :stretch
                    wn (pine.editor:editor-echo-node)
                    (pine.editor:editor-modeline-node))))
       (setf (pine.editor.frame::arrangement *client*) tree)
@@ -588,11 +588,11 @@ text and dies on the next edit."
   "Two half-slack expanders must not round the tail child off the rect."
   (ensure-editor-env)
   (multiple-value-bind (rows tree)
-      (pine.ui.node:render
-       (pine.ui.node:column :align :stretch
-         (pine.ui.node:label "a" :expand 1)
-         (pine.ui.node:label "b" :expand 1)
-         (pine.ui.node:label "tail"))
+      (pine.ui.cells:render
+       (pine.ui.build:column :align :stretch
+         (pine.ui.build:label "a" :expand 1)
+         (pine.ui.build:label "b" :expand 1)
+         (pine.ui.build:label "tail"))
        10 :height 10)
     (declare (ignore tree))
     (is (string= "tail" (string-trim " " (car (nth 9 rows)))))))

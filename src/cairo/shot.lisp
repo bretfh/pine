@@ -26,7 +26,7 @@
     (when (> sum y) (format t \"~a: ~s~%\" x sum))
     (pine.util:combine sum y :key)))"))
   "Render the editor's live tree for TEXT to a PNG at PATH, headless: a real
-session, its tree refreshed and cell-rendered through pine.ui.node:render."
+session, its tree refreshed and cell-rendered through pine.ui.cells:render."
   (unless pine.core.server:*server* (%shot-substrate))
   (let* ((sess (pine.editor:make-editor-session
                 nil :sink (lambda (&rest args) (declare (ignore args)) nil)))
@@ -39,7 +39,7 @@ session, its tree refreshed and cell-rendered through pine.ui.node:render."
            (tree (pine.ui.render:refresh-editor-tree client))
            (f (pine.editor.frame:frame client))
            (rows (and tree
-                      (nth-value 0 (pine.ui.node:render
+                      (nth-value 0 (pine.ui.cells:render
                                     tree (pine.text.buffer:frame-cols f)
                                     :height (pine.text.buffer:frame-rows f))))))
       (cond (rows (pine.display:render-frame-to-png rows path)
@@ -102,19 +102,19 @@ session, its tree refreshed and cell-rendered through pine.ui.node:render."
 cairo pass, the same shape the live editor surface ships."
   (let* ((rows (sample-editor-rows))
          (n (length rows))
-         (tree (pine.ui.node:column :align :stretch
-                 (pine.ui.node:window (subseq rows 0 (- n 2))
+         (tree (pine.ui.build:column :align :stretch
+                 (pine.ui.build:window (subseq rows 0 (- n 2))
                                      :crow 3 :ccol 8 :expand 1
                                      :font-px 15 :opacity 0.9)
-                 (pine.ui.node:window (list (nth (- n 2) rows)) :font-px 15)
-                 (pine.ui.node:window (list (nth (1- n) rows)) :font-px 15)))
+                 (pine.ui.build:window (list (nth (- n 2) rows)) :font-px 15)
+                 (pine.ui.build:window (list (nth (1- n) rows)) :font-px 15)))
          (w 560) (h 480) (path (format nil "~a/pine-cairo-editor.png" dir)))
-    (pine.ui.node:with-cairo-layout
+    (pine.cairo.paint:with-cairo-layout
       (let ((surface (cairo:create-image-surface :argb32 w h)))
         (cairo:with-context ((cairo:create-context surface))
           (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb (pine.text.buffer:color :bg-alt))
             (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
-          (pine.ui.node:paint-tree tree w h))
+          (pine.cairo.paint:paint-tree tree w h))
         (cairo:surface-write-to-png surface path)))
     (cons "editor" (list :w w :h h :path path))))
 
@@ -128,6 +128,6 @@ cairo pass, the same shape the live editor surface ships."
            for builder = (gethash name surfaces)
            when builder
              collect (let ((path (format nil "~a/pine-cairo-~a.png" dir name)))
-                       (cons name (pine.ui.node:render-tree-to-png (funcall builder nil) path
+                       (cons name (pine.cairo.paint:render-tree-to-png (funcall builder nil) path
                                     :avail-w (if (string= name "bar") 120 440)))))
      (list (ignore-errors (editor-shot dir))))))

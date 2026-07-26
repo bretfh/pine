@@ -72,7 +72,7 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
   (let* ((buf (%resolve-buffer x))
          (name (%buffer-name x buf))
          (w (and buf (%backing-window buf name)))
-         (node (apply #'pine.ui.node:window nil :of w :kind :window
+         (node (apply #'pine.ui.build:window nil :of w :kind :window
                       (append props (list :font-px (editor-font-px))))))
     (when (and buf pine.editor.frame:*client*)
       (pine.ui.render:subscribe-to-buffer buf))
@@ -92,20 +92,20 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
   (let ((w (when x
              (let ((buf (%resolve-buffer x)))
                (and buf (%backing-window buf (%buffer-name x buf)))))))
-    (apply #'pine.ui.node:window nil :of w :kind :modeline
+    (apply #'pine.ui.build:window nil :of w :kind :modeline
            (append props (list :font-px (editor-font-px))))))
 
 (defun editor-echo-node (&rest props)
   "The echo/minibuffer line as a leaf: the message or the active prompt with
 its input, the completion popup floating above it as an overlay (one in-flow
 row, so the input line never moves), and the minibuffer caret."
-  (apply #'pine.ui.node:window nil :kind :echo :base 1
+  (apply #'pine.ui.build:window nil :kind :echo :base 1
          (append props (list :font-px (editor-font-px)))))
 
 (defun %default-editor-tree ()
   "The engine's editor surface, used when init.lisp declares none: one window
 on scratch, the echo line, the mode line."
-  (pine.ui.node:column :align :stretch
+  (pine.ui.build:column :align :stretch
     (editor-window-node "scratch" :expand 1)
     (editor-echo-node)
     (editor-modeline-node)))
@@ -177,10 +177,10 @@ points at nothing (killed buffers, dead terminals)."
                      (editor-modeline-node (%live-name (first rest)))
                      (editor-modeline-node)))
       (:echo (editor-echo-node))
-      (:rule (pine.ui.node:rule))
+      (:rule (pine.ui.build:rule))
       ((:column :row)
        (multiple-value-bind (props kids) (%split-props rest)
-         (apply (if (eq tag :column) #'pine.ui.node:column #'pine.ui.node:row)
+         (apply (if (eq tag :column) #'pine.ui.build:column #'pine.ui.build:row)
                 (append props (mapcar #'%form->tree kids))))))))
 
 (defun %arrangement-data ()
@@ -272,8 +272,8 @@ those rows, and a keystroke moves one of them."
   (let* ((client (sess-client s))
          (tree (pine.ui.render:refresh-editor-tree client)))
     (when tree
-      (let* ((wire (pine.ui.node:node->wire tree))
-             (patch (pine.ui.node:rows-patch (sess-sent-wire s) wire)))
+      (let* ((wire (pine.ui.wire:node->wire tree))
+             (patch (pine.ui.wire:rows-patch (sess-sent-wire s) wire)))
         (incf (sess-generation s))
         (cond
           (patch

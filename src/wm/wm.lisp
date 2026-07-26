@@ -69,7 +69,7 @@ dropping window state silently is how geometry goes missing."
                  (when (and (typep n 'pine.ui.node:window-node)
                             (eq (pine.ui.node:window-kind n) :os-window))
                    (push n acc))
-                 (dolist (c (pine.ui.node:nodes-of n)) (walk c))))
+                 (dolist (c (pine.ui.layout:nodes-of n)) (walk c))))
         (walk tree)))
     (nreverse acc)))
 
@@ -93,11 +93,11 @@ and each one's border is drawn over the other's content."
 
 (defun %leaf (window)
   "A fresh os-window leaf for WINDOW, holding room for its chrome."
-  (pine.ui.node:window nil :of window :kind :os-window :expand 1
+  (pine.ui.build:window nil :of window :kind :os-window :expand 1
                           :margin (%frame)))
 
 (defun %divider (orient)
-  (pine.ui.node:rule :vertical (eq orient :row) :face :border-inactive))
+  (pine.ui.build:rule :vertical (eq orient :row) :face :border-inactive))
 
 (defun add-window (id title app-id)
   "Put a newly mapped window into the tree, beside the focused one."
@@ -110,7 +110,7 @@ and each one's border is drawn over the other's content."
        (setf (session-tree session) leaf))
       (t
        (let* ((orient (session-split session))
-              (root (pine.ui.node:split-node
+              (root (pine.ui.layout:split-node
                      (session-tree session) focus leaf orient
                      :divider (%divider orient))))
          (cond (root (setf (session-tree session) root))
@@ -124,7 +124,7 @@ and each one's border is drawn over the other's content."
   (let* ((session *session*)
          (leaf (find-leaf id session)))
     (when leaf
-      (let ((root (pine.ui.node:remove-node (session-tree session) leaf)))
+      (let ((root (pine.ui.layout:remove-node (session-tree session) leaf)))
         (setf (session-tree session)
               (cond (root root)
                     ((eq (session-tree session) leaf) nil)
@@ -144,12 +144,12 @@ of the output first."
          (output (and session (session-output session))))
     (when (and tree output)
       (destructuring-bind (x y width height) output
-        (let ((pine.ui.node:*text-size*
+        (let ((pine.ui.layout:*text-size*
                 (lambda (text font-px)
                   (declare (ignore font-px))
                   (values (length text) 1))))
-          (pine.ui.node:measure tree width height)
-          (pine.ui.node:arrange tree x y width height))
+          (pine.ui.layout:measure tree width height)
+          (pine.ui.layout:arrange tree x y width height))
         (mapcar (lambda (leaf)
                   (list (leaf-id leaf)
                         (pine.ui.node:start-col leaf)

@@ -52,9 +52,10 @@
    (:module "input-dispatch"
     :serial t :pathname "input/"
     :components ((:file "command")))
-   (:module "layout"
+   (:module "ui"
     :serial t
-    :components ((:file "style") (:file "layout")))
+    :components ((:file "style") (:file "node") (:file "build") (:file "raster")
+                (:file "layout") (:file "cells") (:file "wire")))
    (:module "source"
     :serial t
     :components ((:file "sources")))
@@ -65,8 +66,8 @@
    (:module "term"
     :serial t
     :components ((:file "term")))
-   (:module "render"
-    :serial t
+   (:module "ui-render"
+    :serial t :pathname "ui/"
     :components ((:file "render")))
    (:module "editor"
     :serial t

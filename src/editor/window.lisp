@@ -17,7 +17,7 @@
                             (eq (pine.ui.node:window-kind n) :window)
                             (pine.ui.node:window-of n))
                    (push n acc))
-                 (dolist (c (pine.ui.node:nodes-of n)) (walk c))))
+                 (dolist (c (pine.ui.layout:nodes-of n)) (walk c))))
         (walk tree)))
     (nreverse acc)))
 
@@ -49,12 +49,12 @@ between; sizes stay even because siblings share one weight."
            (buf (pine.text.buffer:buffer-ref w))
            (weight (max 1 (pine.ui.node:expand-of leaf)))
            (nw (pine.editor.frame:make-window buf (pine.text.buffer:window-name w)))
-           (nn (pine.ui.node:window nil :of nw :kind :window :expand weight
+           (nn (pine.ui.build:window nil :of nw :kind :window :expand weight
                                    :font-px (pine.ui.node:font-px leaf)
                                    :opacity (pine.ui.node:window-opacity leaf)))
-           (div (pine.ui.node:rule :vertical (eq orient :row)
+           (div (pine.ui.build:rule :vertical (eq orient :row)
                                   :face :border-inactive))
-           (root (pine.ui.node:split-node tree leaf nn orient :divider div)))
+           (root (pine.ui.layout:split-node tree leaf nn orient :divider div)))
       (setf (pine.text.buffer:snap nw) (pine.text.buffer:snap w)
             (pine.text.buffer:scroll-top nw) (pine.text.buffer:scroll-top w))
       (unless root
@@ -68,7 +68,7 @@ between; sizes stay even because siblings share one weight."
   "Remove LEAF and its divider from the live tree, splicing out a container
 left with one child, and dropping its backing window."
   (let* ((client (pine.editor.frame:current-client))
-         (root (pine.ui.node:remove-node (pine.editor.frame:arrangement client) leaf)))
+         (root (pine.ui.layout:remove-node (pine.editor.frame:arrangement client) leaf)))
     (when root
       (setf (pine.editor.frame:arrangement client) root)
       (pine.editor.frame:remove-window (pine.ui.node:window-of leaf))

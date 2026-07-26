@@ -25,7 +25,7 @@
   (let* ((snap (%layout-snap))
          (tree (layout-tree snap)))
     (when tree
-      (pine.ui.node:node-at tree (pine.text.buffer:point-line snap)
+      (pine.ui.layout:node-at tree (pine.text.buffer:point-line snap)
                            (pine.text.buffer:point-col snap)))))
 
 (defun layout-select (delta)
@@ -36,13 +36,13 @@ mailbox, so the tree we read is the reprojected one."
          (snap (%layout-snap buf))
          (tree (layout-tree snap)))
     (when tree
-      (let* ((n (length (pine.ui.node:collect-selectables tree)))
+      (let* ((n (length (pine.ui.layout:collect-selectables tree)))
              (cur (pine.text.buffer:buffer-local snap :layout-selection 0))
              (new (if (plusp n) (mod (+ cur delta) n) 0)))
         (sento.actor:tell buf (list :reproject :selection new))
         (let* ((snap2 (%layout-snap buf))
                (tree2 (layout-tree snap2))
-               (sel (and tree2 (nth new (pine.ui.node:collect-selectables tree2)))))
+               (sel (and tree2 (nth new (pine.ui.layout:collect-selectables tree2)))))
           (when sel
             (sento.actor:tell buf (list :move-point
                                         :line (pine.ui.node:start-line sel)
@@ -56,18 +56,18 @@ a function, or such a node anywhere below."
     (pine.ui.node:action (pine.ui.node:callback node))
     (pine.ui.node:selectable
      (let ((d (pine.ui.node:data node)))
-       (if (functionp d) d (some #'%node-activation (pine.ui.node:nodes-of node)))))
-    (t (some #'%node-activation (pine.ui.node:nodes-of node)))))
+       (if (functionp d) d (some #'%node-activation (pine.ui.layout:nodes-of node)))))
+    (t (some #'%node-activation (pine.ui.layout:nodes-of node)))))
 
 (defun layout-activate ()
   "Run the activation under point, else the selected row's."
   (let* ((snap (%layout-snap))
          (tree (layout-tree snap)))
     (when tree
-      (let* ((at (pine.ui.node:node-at tree (pine.text.buffer:point-line snap)
+      (let* ((at (pine.ui.layout:node-at tree (pine.text.buffer:point-line snap)
                                       (pine.text.buffer:point-col snap)))
              (sel (nth (pine.text.buffer:buffer-local snap :layout-selection 0)
-                       (pine.ui.node:collect-selectables tree)))
+                       (pine.ui.layout:collect-selectables tree)))
              (thunk (or (%node-activation at) (%node-activation sel))))
         (if thunk
             (funcall thunk)

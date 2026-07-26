@@ -55,11 +55,11 @@ tree first if there is none. Leaves it arranged so hit-testing is exact."
                 (setf buffer (wl-shm-pool.create-buffer pool 0 width height stride :argb8888)))
               (c:with-surface-and-context
                   (surf (c:create-image-surface-for-data data :argb32 width height stride))
-                (l:with-cairo-layout
+                (paint:with-cairo-layout
                   (c:set-operator :source)              ; start fully transparent
                   (c:set-source-rgba 0d0 0d0 0d0 0d0) (c:paint)
                   (c:set-operator :over)
-                  (l:paint-tree (ls-tree ls) width height)))
+                  (paint:paint-tree (ls-tree ls) width height)))
               (wl-surface.attach surface buffer 0 0)
               (wl-surface.damage-buffer surface 0 0 width height)
               (wl-surface.commit surface)
@@ -104,4 +104,4 @@ rules commonly match on."
 
 (defun measure-panel (tree-fn &key (avail-w 460))
   "Measure the tree a builder produces, for sizing an overlay to its content."
-  (l:with-cairo-layout (l:measure-tree (funcall tree-fn) avail-w)))
+  (paint:with-cairo-layout (paint:measure-tree (funcall tree-fn) avail-w)))

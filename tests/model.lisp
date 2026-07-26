@@ -326,10 +326,10 @@ selectors name one class."
 
 (test class-names
   "Node classes normalize from keywords, lists, and strings alike."
-  (is (equal '("a") (pine.ui.node:class-names :a)))
-  (is (equal '("nm-row" "sel") (pine.ui.node:class-names '(:nm-row :sel))))
-  (is (equal '("nm-row" "sel") (pine.ui.node:class-names "nm-row sel")))
-  (is (null (pine.ui.node:class-names nil))))
+  (is (equal '("a") (pine.ui.cells:class-names :a)))
+  (is (equal '("nm-row" "sel") (pine.ui.cells:class-names '(:nm-row :sel))))
+  (is (equal '("nm-row" "sel") (pine.ui.cells:class-names "nm-row sel")))
+  (is (null (pine.ui.cells:class-names nil))))
 
 (defun %fresh-store (path)
   "Open the store on PATH after deleting any prior db (never a real one)."

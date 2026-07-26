@@ -78,7 +78,7 @@
    ;; (filesystem path completion), instead of filtering a fixed list.
    (dynamic-fn :initarg :dynamic-fn :accessor dynamic-fn :initform nil)
    ;; the candidate list rendered to styled rows + its arranged tree
-   ;; (pine.ui.node:render output); render-chrome blits the rows above the
+   ;; (render output); render-chrome blits the rows above the
    ;; echo row while the prompt is active.
    (popup-rows :initarg :popup-rows :accessor popup-rows :initform nil)
    (popup-tree :initarg :popup-tree :accessor popup-tree :initform nil)))

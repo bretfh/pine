@@ -1,7 +1,7 @@
 (defpackage :pine.user
   (:nicknames :pine-user)
   (:use :cl)
-  (:import-from :pine.ui.node
+  (:import-from :pine.ui.build
                 #:column #:row #:centerbox #:label #:icon #:button #:ring
                 #:gap #:rule #:rows #:choice)
   (:import-from :pine.editor
@@ -90,12 +90,12 @@
 ;;;; Widget renames. The layout constructors carry terser class names; the
 ;;;; language uses the plain ones.
 
-(defun center (&rest args) (apply #'pine.ui.node:centered args))
-(defun box    (&rest args) (apply #'pine.ui.node:boxed args))
-(defun scroll (&rest args) (apply #'pine.ui.node:viewport args))
-(defun slider (&rest args) (apply #'pine.ui.node:meter args))
-(defun calendar (&rest args) (apply #'pine.ui.node:cal args))
-(defun image  (path &rest args) (apply #'pine.ui.node:pic path args))
+(defun center (&rest args) (apply #'pine.ui.build:centered args))
+(defun box    (&rest args) (apply #'pine.ui.build:boxed args))
+(defun scroll (&rest args) (apply #'pine.ui.build:viewport args))
+(defun slider (&rest args) (apply #'pine.ui.build:meter args))
+(defun calendar (&rest args) (apply #'pine.ui.build:cal args))
+(defun image  (path &rest args) (apply #'pine.ui.build:pic path args))
 
 ;;;; Views. A WINDOW is a live view of exactly the buffer you name; in the
 ;;;; editor surface the declared tree is the LIVE arrangement the split

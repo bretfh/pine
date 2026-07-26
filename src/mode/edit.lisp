@@ -19,7 +19,7 @@ lines are the row texts, meta carries :layout-builder, :layout-rows,
 carry over like :replace-content; point is clamped into the new content."
   (let* ((sel (or selection (pine.text.buffer:buffer-local state :layout-selection 0)))
          (tree0 (funcall builder state)))
-    (multiple-value-bind (rows tree) (pine.ui.node:render tree0 width :selection sel)
+    (multiple-value-bind (rows tree) (pine.ui.cells:render tree0 width :selection sel)
       (let* ((texts (mapcar (lambda (r) (string-right-trim " " (car r))) rows))
              (old-meta (pine.text.buffer:meta state))
              (carried (reduce (lambda (st key)

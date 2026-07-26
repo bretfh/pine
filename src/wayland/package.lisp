@@ -10,7 +10,9 @@ and layer shell."))
 (defpackage #:pine.wayland
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.protocol)
   (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:l #:pine.ui.node) (#:wire #:xyz.shunter.wayflan.wire))
+                    (#:node #:pine.ui.node) (#:lay #:pine.ui.layout)
+                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint)
+                    (#:ev #:pine.core.eval) (#:wire #:xyz.shunter.wayflan.wire))
   (:export #:run-desktop #:run-editor #:run-wm #:*keyboard-handler*)
   (:documentation "The wayland backing: the compositor connection and its event
 pump, shm and cairo surfaces, pointer input, and the three programs pine runs

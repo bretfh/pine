@@ -46,7 +46,7 @@ old ones), and push it to the app."
       (dolist (id (gethash name (dsession-surface-ids s)))
         (remhash id (dsession-actions s)))
       (setf (gethash name (dsession-surface-ids s)) nil)
-      (let ((data (pine.ui.node:node->wire
+      (let ((data (pine.ui.wire:node->wire
                    (let ((*surface-client* aclient)) (funcall builder aclient))
                    :on-action (lambda (cb)
                                 (let ((id (incf (dsession-counter s))))

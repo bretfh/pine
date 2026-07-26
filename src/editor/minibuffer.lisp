@@ -72,12 +72,12 @@ for render-chrome to blit above the echo row."
          (filtered (pine.editor.frame:filtered c))
          (n (length filtered))
          (idx (max 0 (pine.editor.frame:index c)))
-         (off (pine.ui.node:scroll-to-selection idx 0 max-visible))
+         (off (pine.ui.wire:scroll-to-selection idx 0 max-visible))
          (visible (subseq filtered (min off n) (min (+ off max-visible) n)))
          (cols (pine.text.buffer:frame-cols
                 (pine.editor.frame:frame (pine.editor.frame:current-client)))))
     (multiple-value-bind (rows tree)
-        (pine.ui.node:render (pine.editor.completion:completion-popup visible) (max 10 cols)
+        (pine.ui.cells:render (pine.editor.completion:completion-popup visible) (max 10 cols)
                             :selection (and visible (- idx off)))
       (setf (pine.editor.frame:popup-rows c) rows
             (pine.editor.frame:popup-tree c) tree))))

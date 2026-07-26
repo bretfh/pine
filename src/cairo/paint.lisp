@@ -1,4 +1,8 @@
-(in-package :pine.ui.node)
+(defpackage #:pine.cairo.paint
+  (:use #:cl #:pine.ui.node)
+  (:export #:measure-tree #:paint-arranged #:paint-tree #:render-tree-to-png #:with-cairo-layout))
+
+(in-package #:pine.cairo.paint)
 
 ;;;; The cairo backend for the widget engine. measure/arrange already run in
 ;;;; pixels when *text-size* is bound; here we bind it to a cairo text measurer
@@ -30,7 +34,7 @@
 (defun styled (n chain hover)
   "The resolved style for N given its ancestor class CHAIN (root-first). The
 non-hover style is cached for the render; hover re-resolves."
-  (let ((full (append chain (list (node-classes n)))))
+  (let ((full (append chain (list (pine.ui.cells:node-classes n)))))
     (if hover
         (pine.ui.style:resolve full :hover t)
         (or (and *style-cache* (gethash n *style-cache*))
@@ -38,7 +42,7 @@ non-hover style is cached for the render; hover re-resolves."
               (when *style-cache* (setf (gethash n *style-cache*) st))
               st)))))
 
-(defun child-chain (n chain) (append chain (list (node-classes n))))
+(defun child-chain (n chain) (append chain (list (pine.ui.cells:node-classes n))))
 
 (defun apply-styles! (n chain)
   "Fold CSS padding / min-size / font-size into the node before layout, so
@@ -54,7 +58,7 @@ Caches the resolved style for the paint pass."
     (when (pine.ui.style:st-margin st) (setf (node-margin n) (pine.ui.style:st-margin st)))
     (when (and (pine.ui.style:st-font-px st) (null (font-px n)))
       (setf (font-px n) (pine.ui.style:st-font-px st)))
-    (dolist (c (nodes-of n)) (apply-styles! c full))))
+    (dolist (c (pine.ui.layout:nodes-of n)) (apply-styles! c full))))
 
 ;;;; Cairo helpers.
 
@@ -162,7 +166,7 @@ is the ancestor class-set list, root-first, for style resolution."))
 (defun paint-children (n chain list)
   (let ((cc (child-chain n chain))) (dolist (c list) (when c (paint-px c cc)))))
 
-(defmethod paint-px ((n node) chain) (paint-children n chain (nodes-of n)))
+(defmethod paint-px ((n node) chain) (paint-children n chain (pine.ui.layout:nodes-of n)))
 
 (defmethod paint-px ((n scroll) chain)
   "Clip to the viewport rect before painting the (taller, offset) content."
@@ -170,7 +174,7 @@ is the ancestor class-set list, root-first, for style resolution."))
     (cairo:save)
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:clip)
-    (paint-children n chain (nodes-of n))
+    (paint-children n chain (pine.ui.layout:nodes-of n))
     (cairo:restore)))
 
 (defmethod paint-px ((n text-node) chain)
@@ -179,7 +183,7 @@ is the ancestor class-set list, root-first, for style resolution."))
 (defun paint-glyph-run (n chain text)
   (when (plusp (length text))
     (let* ((st (styled n chain (hovered n)))
-           (fpx (or (font-px n) (pine.ui.style:st-font-px st) *default-font-px*)))
+           (fpx (or (font-px n) (pine.ui.style:st-font-px st) pine.ui.layout:*default-font-px*)))
       (cairo:select-font-face *cairo-font* :normal (if (pine.ui.style:st-bold st) :bold :normal))
       (cairo:set-font-size (float fpx 1d0))
       (multiple-value-bind (r g b) (content-color n st) (cairo:set-source-rgb r g b))
@@ -211,7 +215,7 @@ is the ancestor class-set list, root-first, for style resolution."))
   (multiple-value-bind (x y w h) (node-rect n)
     (let* ((frac (slider-fraction n))
            (th 10) (ty (+ y (floor (- h th) 2)))
-           (cls (node-classes n))
+           (cls (pine.ui.cells:node-classes n))
            (fill-role (if (member "bri" cls :test #'string=) :yellow :accent))
            (fillw (max th (round (* frac w)))))
       (rounded-rect x ty w th (/ th 2.0)) (set-hex (pine.text.buffer:color :bg)) (cairo:fill-path)
@@ -223,7 +227,7 @@ is the ancestor class-set list, root-first, for style resolution."))
         (cairo:arc (float kx 1d0) (float (+ ty (/ th 2.0)) 1d0) 7d0 0d0 (* 2d0 pi))
         (set-hex (pine.text.buffer:color :fg)) (cairo:fill-path)))))
 
-(defmethod paint-px ((n ring) chain)
+(defmethod paint-px ((n pine.ui.node:ring) chain)
   (multiple-value-bind (x y w h) (node-rect n)
     (let* ((d (min w h)) (th (float (thickness n) 1d0))
            (cx (float (+ x (/ w 2.0)) 1d0)) (cy (float (+ y (/ h 2.0)) 1d0))
@@ -279,8 +283,8 @@ reports for one cell, so a window measures and paints at the same grid."
                                     1d0)))
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:fill-path)
-    (let ((fpx (or (font-px n) *default-font-px*))
-          (over (%window-overlay-count n)))
+    (let ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
+          (over (pine.ui.layout:%window-overlay-count n)))
       (multiple-value-bind (cw ch asc) (cairo-cell-metrics fpx)
         ;; the overlay block (completion popup) floats above the rect, over
         ;; whatever the flow put there; no clip to the rect
@@ -329,11 +333,11 @@ reports for one cell, so a window measures and paints at the same grid."
   #("January" "February" "March" "April" "May" "June"
     "July" "August" "September" "October" "November" "December"))
 
-(defmethod measure ((n calendar) aw ah)
+(defmethod pine.ui.layout:measure ((n calendar) aw ah)
   (declare (ignore aw ah))
-  (let* ((fpx (or (font-px n) *default-font-px*))
-         (cw (+ 10 (nth-value 0 (%text-size "00" fpx))))
-         (ch (+ 8 (%line-h fpx))))
+  (let* ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
+         (cw (+ 10 (nth-value 0 (pine.ui.layout:%text-size "00" fpx))))
+         (ch (+ 8 (pine.ui.layout:%line-h fpx))))
     (values (* 7 cw) (* 8 ch))))
 
 (defun draw-cell-text (s cx cy cw ch role &optional bold)
@@ -351,7 +355,7 @@ reports for one cell, so a window measures and paints at the same grid."
 (defmethod paint-px ((n calendar) chain)
   (declare (ignore chain))
   (multiple-value-bind (x y w h) (node-rect n)
-    (let* ((fpx (or (font-px n) *default-font-px*))
+    (let* ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
            (cw (/ w 7.0)) (ch (/ h 8.0))
            (year (cal-year n)) (mo (cal-month n)) (day (cal-day n))
            (ndays (%days-in-month mo year)) (fdow (%first-dow mo year)))
@@ -377,7 +381,7 @@ reports for one cell, so a window measures and paints at the same grid."
   "Bind the dynamic state the cairo layout pass needs: the theme font, the
 *text-size* hook (pixel measurement), and a fresh per-render style cache."
   `(let ((*cairo-font* (pine.text.buffer:metric :font "Maple Mono NF"))
-         (*text-size* #'cairo-text-size)
+         (pine.ui.layout:*text-size* #'cairo-text-size)
          (*style-cache* (make-hash-table :test 'eq)))
      ,@body))
 
@@ -387,7 +391,7 @@ inside WITH-CAIRO-LAYOUT."
   (let ((s (cairo:create-image-surface :argb32 8 8)))
     (cairo:with-context ((cairo:create-context s))
       (apply-styles! node nil)
-      (measure node avail-w 100000))))
+      (pine.ui.layout:measure node avail-w 100000))))
 
 (defun paint-arranged (node)
   "Paint NODE at the rects it already carries -- the daemon's one arrange,
@@ -400,8 +404,8 @@ shipped over the wire -- resolving styles but running no second layout."
 context. For a fixed-size surface (a layer surface the compositor sized). The
 caller sets up WITH-CAIRO-LAYOUT, the context, and any wallpaper/clear."
   (apply-styles! node nil)
-  (measure node width height)
-  (arrange node 0 0 width height)
+  (pine.ui.layout:measure node width height)
+  (pine.ui.layout:arrange node 0 0 width height)
   (paint-px node nil))
 
 (defun render-tree-to-png (node path &key (pad 20) (avail-w 420) (bg :bg-alt))
@@ -414,7 +418,7 @@ so the glass surfaces read. Returns (:w W :h H :path PATH)."
         (cairo:with-context ((cairo:create-context surface))
           (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb (pine.text.buffer:color bg))
             (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
-          (arrange node pad pad mw mh)
+          (pine.ui.layout:arrange node pad pad mw mh)
           (paint-px node nil))
         (cairo:surface-write-to-png surface path)
         (list :w w :h h :path path)))))

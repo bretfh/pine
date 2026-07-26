@@ -2,7 +2,7 @@
 
 ;;;; The daemon-attached desktop client. It attaches to the running daemon as
 ;;;; :kind :desktop, receives (:widgets :surface NAME :tree DATA) pushes,
-;;;; rebuilds each surface's node tree with pine.ui.node:wire->node (click
+;;;; rebuilds each surface's node tree with wire->node (click
 ;;;; handlers become ids sent back), and paints it onto a wlr-layer-shell
 ;;;; surface with cairo. Panels toggle via (:panel :name :show). Interaction
 ;;;; sends (:widget-action)/(:hint) to the daemon, which runs the closures --
@@ -47,7 +47,7 @@ sends it back with any interaction args (the slider value, or none for buttons).
 
 (defun surface-tree-fn (client name)
   (lambda ()
-    (l:wire->node (gethash name (client-wire client))
+    (uiw:wire->node (gethash name (client-wire client))
                   :on-action (action-sender client))))
 
 ;;;; Per-surface layout: how each named surface anchors and sizes. :axis says
@@ -162,7 +162,7 @@ the daemon (make daemon) must already be up."
   (let* ((conn (connect-desktop))
          (client (make-instance 'desktop-client :conn conn
                                 :pump (pine.frontend:make-pump))))
-    (setf *on-hover* (lambda (node) (send-hint client (or (and node (l:hint node)) ""))))
+    (setf *on-hover* (lambda (node) (send-hint client (or (and node (node:hint node)) ""))))
     (setf (client-sys client)
           (pine.frontend:attach :desktop (lambda (msg) (handle-desktop-message client msg))
                                 :host host :port port))

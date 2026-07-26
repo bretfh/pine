@@ -72,31 +72,31 @@ live), header, condition, one selectable restart row per restart -- activation
 invokes that restart -- and the backtrace."
   (lambda (state)
     (declare (ignore state))
-    (apply #'pine.ui.node:column :align :stretch
+    (apply #'pine.ui.build:column :align :stretch
            (append
             (when (> (length ordered) 1)
-              (list (pine.ui.node:label
+              (list (pine.ui.build:label
                      (format nil "session ~d/~d  (Tab: next)   ~{~a~^  |  ~}"
                              (1+ (or (position session ordered) 0)) (length ordered)
                              (mapcar #'dbg-session-header ordered))
                      :class "dbg-switch")
-                    (pine.ui.node:label "")))
-            (list (pine.ui.node:label (dbg-session-header session) :class "dbg-header")
-                  (pine.ui.node:label ""))
-            (mapcar (lambda (l) (pine.ui.node:label l :class "dbg-cond"))
+                    (pine.ui.build:label "")))
+            (list (pine.ui.build:label (dbg-session-header session) :class "dbg-header")
+                  (pine.ui.build:label ""))
+            (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-cond"))
                     (pine.text.buffer:split-lines (dbg-session-condition session)))
-            (list (pine.ui.node:label "")
-                  (pine.ui.node:label "Restarts (Return on a line):" :class "dbg-note"))
+            (list (pine.ui.build:label "")
+                  (pine.ui.build:label "Restarts (Return on a line):" :class "dbg-note"))
             (loop for (name report) in (dbg-session-restarts session) collect
-              (pine.ui.node:choice
+              (pine.ui.build:choice
                :class "restart" :prefix-selected "" :prefix-unselected ""
                :data (let ((nm name)) (lambda () (invoke-pending-restart nm)))
-               (pine.ui.node:label (format nil "  [~a]  ~a" (or name "") (or report ""))
+               (pine.ui.build:label (format nil "  [~a]  ~a" (or name "") (or report ""))
                                   :class "restart-lbl")))
             (when (dbg-session-backtrace session)
-              (list* (pine.ui.node:label "")
-                     (pine.ui.node:label "Backtrace:" :class "dbg-note")
-                     (mapcar (lambda (l) (pine.ui.node:label l :class "dbg-bt"))
+              (list* (pine.ui.build:label "")
+                     (pine.ui.build:label "Backtrace:" :class "dbg-note")
+                     (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-bt"))
                              (pine.text.buffer:split-lines (dbg-session-backtrace session)))))))))
 
 (defun %attend-session (session)
@@ -204,9 +204,9 @@ rest as entries."
   (lambda (state)
     (declare (ignore state))
     (let ((lines (pine.text.buffer:split-lines text)))
-      (apply #'pine.ui.node:column :align :stretch
-             (cons (pine.ui.node:label (or (first lines) "") :class "help-head")
-                   (mapcar (lambda (l) (pine.ui.node:label l :class "help-entry"))
+      (apply #'pine.ui.build:column :align :stretch
+             (cons (pine.ui.build:label (or (first lines) "") :class "help-head")
+                   (mapcar (lambda (l) (pine.ui.build:label l :class "help-entry"))
                            (rest lines)))))))
 
 (defun %attend-job (j)
@@ -231,18 +231,18 @@ status."
 one selectable row each; Return attends an errored one's debugger session."
   (lambda (state)
     (declare (ignore state))
-    (apply #'pine.ui.node:column :align :stretch
-           (list* (pine.ui.node:label "Jobs  (Return attends an errored one)"
+    (apply #'pine.ui.build:column :align :stretch
+           (list* (pine.ui.build:label "Jobs  (Return attends an errored one)"
                                      :class "help-head")
-                  (pine.ui.node:label (format nil "~4@a  ~10a ~9a ~a"
+                  (pine.ui.build:label (format nil "~4@a  ~10a ~9a ~a"
                                              "id" "agent" "status" "form / condition")
                                      :class "dbg-note")
                   (loop for j in (pine.core.jobs:list-jobs) collect
                     (let ((j j))
-                      (pine.ui.node:choice
+                      (pine.ui.build:choice
                        :class "job-row" :prefix-selected "" :prefix-unselected ""
                        :data (lambda () (%attend-job j))
-                       (pine.ui.node:label
+                       (pine.ui.build:label
                         (format nil "~4@a  ~10a ~9a ~a"
                                 (getf j :id) (getf j :agent) (getf j :status)
                                 (or (getf j :form) (getf j :condition) ""))
