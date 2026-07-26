@@ -63,18 +63,18 @@ Caches the resolved style for the paint pass."
 ;;;; Cairo helpers.
 
 (defun set-hex (hex)
-  (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb hex)
+  (multiple-value-bind (r g b) (pine.ui.face:hex-rgb hex)
     (when r (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)))))
 
 (defun set-face-rgb (face)
-  (destructuring-bind (r g b) (pine.text.buffer:face-fg face)
+  (destructuring-bind (r g b) (pine.ui.face:face-fg face)
     (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0))))
 
 (defun content-color (n st)
   "(values r g b) 0..1 for a node's text: its style colour, else its face fg,
 else the theme default."
   (cond ((pine.ui.style:st-fg st) (values-list (pine.ui.style:st-fg st)))
-        (t (destructuring-bind (r g b) (pine.text.buffer:face-fg (or (face n) :default))
+        (t (destructuring-bind (r g b) (pine.ui.face:face-fg (or (face n) :default))
              (values (/ r 255.0) (/ g 255.0) (/ b 255.0))))))
 
 (defun rounded-rect (x y w h r)
@@ -218,14 +218,14 @@ is the ancestor class-set list, root-first, for style resolution."))
            (cls (pine.ui.cells:node-classes n))
            (fill-role (if (member "bri" cls :test #'string=) :yellow :accent))
            (fillw (max th (round (* frac w)))))
-      (rounded-rect x ty w th (/ th 2.0)) (set-hex (pine.text.buffer:color :bg)) (cairo:fill-path)
+      (rounded-rect x ty w th (/ th 2.0)) (set-hex (pine.ui.face:color :bg)) (cairo:fill-path)
       (when (plusp frac)
         (rounded-rect x ty fillw th (/ th 2.0))
-        (set-hex (pine.text.buffer:color fill-role)) (cairo:fill-path))
+        (set-hex (pine.ui.face:color fill-role)) (cairo:fill-path))
       (let ((kx (max (+ x 7) (min (- (+ x w) 7) (+ x (round (* frac w)))))))
         (cairo:new-sub-path)
         (cairo:arc (float kx 1d0) (float (+ ty (/ th 2.0)) 1d0) 7d0 0d0 (* 2d0 pi))
-        (set-hex (pine.text.buffer:color :fg)) (cairo:fill-path)))))
+        (set-hex (pine.ui.face:color :fg)) (cairo:fill-path)))))
 
 (defmethod paint-px ((n pine.ui.node:ring) chain)
   (multiple-value-bind (x y w h) (node-rect n)
@@ -275,7 +275,7 @@ reports for one cell, so a window measures and paints at the same grid."
 
 (defmethod paint-px ((n window-node) chain)
   (multiple-value-bind (x y w h) (node-rect n)
-    (destructuring-bind (br bg bb) (pine.text.buffer:face-bg :window)
+    (destructuring-bind (br bg bb) (pine.ui.face:face-bg :window)
       (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0)
                              (float (or (pine.ui.style:st-opacity
                                          (styled n chain (hovered n)))
@@ -291,8 +291,8 @@ reports for one cell, so a window measures and paints at the same grid."
         (when (plusp over)
           (let ((top (- y (* over ch)))
                 (orows (subseq (window-rows n) 0 over)))
-            (destructuring-bind (br bg bb) (or (pine.text.buffer:face-bg :completion)
-                                               (pine.text.buffer:face-bg :window)
+            (destructuring-bind (br bg bb) (or (pine.ui.face:face-bg :completion)
+                                               (pine.ui.face:face-bg :window)
                                                (list 0 0 0))
               (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0) 0.95d0))
             (cairo:rectangle (float x 1d0) (float top 1d0)
@@ -300,16 +300,16 @@ reports for one cell, so a window measures and paints at the same grid."
             (cairo:fill-path)
             (cairo:save)
             (cairo:translate 0d0 (float top 1d0))
-            (pine.display:paint-rows orows cw ch asc (float x 1d0))
+            (pine.cairo.grid:paint-rows orows cw ch asc (float x 1d0))
             (cairo:restore)))
         (cairo:save)
         (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
         (cairo:clip)
         (cairo:translate 0d0 (float y 1d0))
-        (pine.display:paint-rows (subseq (window-rows n) over) cw ch asc (float x 1d0))
+        (pine.cairo.grid:paint-rows (subseq (window-rows n) over) cw ch asc (float x 1d0))
         ;; the point (a hollow caret), when this window carries one
         (when (>= (window-crow n) 0)
-          (destructuring-bind (br bg bb) (pine.text.buffer:face-bg :cursor)
+          (destructuring-bind (br bg bb) (pine.ui.face:face-bg :cursor)
             (cairo:set-source-rgb (/ br 255.0) (/ bg 255.0) (/ bb 255.0)))
           (cairo:rectangle (+ (float x 1d0) (* (window-ccol n) cw)) (* (window-crow n) ch) cw ch)
           (cairo:set-line-width 1.5d0) (cairo:stroke))
@@ -342,7 +342,7 @@ reports for one cell, so a window measures and paints at the same grid."
 
 (defun draw-cell-text (s cx cy cw ch role &optional bold)
   (cairo:select-font-face *cairo-font* :normal (if bold :bold :normal))
-  (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb (pine.text.buffer:color role))
+  (multiple-value-bind (r g b) (pine.ui.face:hex-rgb (pine.ui.face:color role))
     (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)))
   (multiple-value-bind (xb yb tw th ax) (cairo:text-extents s)
     (declare (ignore xb yb tw th))
@@ -370,7 +370,7 @@ reports for one cell, so a window measures and paints at the same grid."
             for cy = (+ y (* (+ 2 (floor pos 7)) ch))
             do (when (= d day)
                  (rounded-rect (+ cx 2) (+ cy 2) (- cw 4) (- ch 4) 6)
-                 (set-hex (pine.text.buffer:color :accent)) (cairo:fill-path))
+                 (set-hex (pine.ui.face:color :accent)) (cairo:fill-path))
                (draw-cell-text (princ-to-string d) cx cy cw ch
                                (if (= d day) :accent-fg :fg))))))
 
@@ -380,7 +380,7 @@ reports for one cell, so a window measures and paints at the same grid."
 (defmacro with-cairo-layout (&body body)
   "Bind the dynamic state the cairo layout pass needs: the theme font, the
 *text-size* hook (pixel measurement), and a fresh per-render style cache."
-  `(let ((*cairo-font* (pine.text.buffer:metric :font "Maple Mono NF"))
+  `(let ((*cairo-font* (pine.ui.face:metric :font "Maple Mono NF"))
          (pine.ui.layout:*text-size* #'cairo-text-size)
          (*style-cache* (make-hash-table :test 'eq)))
      ,@body))
@@ -416,7 +416,7 @@ so the glass surfaces read. Returns (:w W :h H :path PATH)."
       (let* ((w (+ mw (* 2 pad))) (h (+ mh (* 2 pad)))
              (surface (cairo:create-image-surface :argb32 w h)))
         (cairo:with-context ((cairo:create-context surface))
-          (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb (pine.text.buffer:color bg))
+          (multiple-value-bind (r g b) (pine.ui.face:hex-rgb (pine.ui.face:color bg))
             (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
           (pine.ui.layout:arrange node pad pad mw mh)
           (paint-px node nil))

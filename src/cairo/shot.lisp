@@ -1,7 +1,7 @@
-(defpackage #:pine.cairo
+(defpackage #:pine.cairo.shot
   (:use #:cl)
   (:export #:shot #:frame-shot))
-(in-package #:pine.cairo)
+(in-package #:pine.cairo.shot)
 
 ;;;; The typed-frame shot: a real editor session on a minimal substrate, fed a
 ;;;; buffer of TEXT, its rendered frame written to a PNG -- headless eyes for
@@ -40,9 +40,9 @@ session, its tree refreshed and cell-rendered through pine.ui.cells:render."
            (f (pine.editor.frame:frame client))
            (rows (and tree
                       (nth-value 0 (pine.ui.cells:render
-                                    tree (pine.text.buffer:frame-cols f)
-                                    :height (pine.text.buffer:frame-rows f))))))
-      (cond (rows (pine.display:render-frame-to-png rows path)
+                                    tree (pine.text.window:frame-cols f)
+                                    :height (pine.text.window:frame-rows f))))))
+      (cond (rows (pine.cairo.grid:render-grid-to-png rows path)
                   (format t "~&wrote ~a~%" path) path)
             (t (format t "~&shot: no frame captured~%") nil)))))
 
@@ -112,7 +112,7 @@ cairo pass, the same shape the live editor surface ships."
     (pine.cairo.paint:with-cairo-layout
       (let ((surface (cairo:create-image-surface :argb32 w h)))
         (cairo:with-context ((cairo:create-context surface))
-          (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb (pine.text.buffer:color :bg-alt))
+          (multiple-value-bind (r g b) (pine.ui.face:hex-rgb (pine.ui.face:color :bg-alt))
             (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)) (cairo:paint))
           (pine.cairo.paint:paint-tree tree w h))
         (cairo:surface-write-to-png surface path)))

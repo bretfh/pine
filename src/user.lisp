@@ -7,9 +7,8 @@
   (:import-from :pine.editor
                 #:candidate #:register-source #:register-actions
                 #:candidate-actions #:completion-widget)
-  (:import-from :pine.text.buffer
-                #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
-                )
+  (:import-from :pine.ui.face
+                #:deftheme #:defface #:load-theme #:color #:metric #:face-fg)
   (:import-from :pine.editor.frame
                 #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers)
   (:import-from :pine.editor.ask #:ask #:tell)
@@ -201,7 +200,7 @@ default), else global, else the declared default."
 (one class), a list of keywords (compound), or a selector string; values are
 lisp values (numbers for px/opacity) or CSS strings. Redefining a selector
 replaces it. Reload-safe; the rules reach every attached frontend."
-  `(pine.text.buffer:add-rules
+  `(pine.ui.rules:add-rules
     (list ,@(mapcar (lambda (rule)
                       (destructuring-bind (sel &rest props) rule
                         `(list ,(if (and (consp sel) (every #'keywordp sel))

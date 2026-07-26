@@ -143,7 +143,7 @@
 ;; constructor and the wire tag stay `window' -- the user language reads
 ;; (window "scratch") and pine.text.buffer's window (the scroll/focus view) keeps
 ;; its own name in its own package. OF backs a live view with that
-;; pine.text.buffer:window; KIND (:window :modeline :echo) marks what the editor's
+;; pine.text.window:window; KIND (:window :modeline :echo) marks what the editor's
 ;; render walk refreshes; neither crosses the wire.
 (defclass window-node (node)
   ((rows :initarg :rows :accessor window-rows :initform nil)

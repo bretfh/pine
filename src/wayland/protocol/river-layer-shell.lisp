@@ -2,7 +2,7 @@
 ;;;; layer surfaces. River closes every layer surface immediately while no
 ;;;; manager has bound this.
 
-(in-package #:pine.protocol)
+(in-package #:pine.wayland.protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include
   (merge-pathnames "share/river-protocols/stable/river-layer-shell-v1.xml"

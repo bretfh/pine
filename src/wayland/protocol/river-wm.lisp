@@ -5,7 +5,7 @@
 ;;;; Read before the protocols that reference river_output_v1 and
 ;;;; river_seat_v1, which the scanner interns as it meets them.
 
-(in-package #:pine.protocol)
+(in-package #:pine.wayland.protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include
   (merge-pathnames "share/river-protocols/stable/river-window-management-v1.xml"

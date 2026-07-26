@@ -143,7 +143,7 @@ work for the loop thread."
        (pine.frontend:enqueue (client-pump client) (lambda () (on-panel client name show)))))
     (:rules
      (destructuring-bind (&key rules) (rest msg)
-       (pine.text.buffer:install-rules rules)
+       (pine.ui.rules:install-rules rules)
        (pine.frontend:enqueue (client-pump client)
                 (lambda ()
                   (maphash (lambda (name ls) (declare (ignore name))

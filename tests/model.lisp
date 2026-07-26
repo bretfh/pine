@@ -250,7 +250,7 @@ generated source and on a real file."
                (pine.ts:parse-full!
                 ps (format nil "(defun f (x)~%(let ((a 1)~%(b 2))~%(+ a~%b)))~%(foo bar~%baz)"))
                (is (equal '(0 2 6 2 3 0 5)
-                          (loop for i from 0 to 6 collect (pine.ts:parse-indent ps i)))))
+                          (loop for i from 0 to 6 collect (pine.ts.highlight:parse-indent ps i)))))
           (pine.ts:free-parse-state ps)))))
 
 (test indent-string-interior
@@ -265,7 +265,7 @@ generated source and on a real file."
                                 (string #\") "a" (string #\newline) "b"
                                 (string #\") (string #\newline) "1)"))
                (is (equal '(0 2 nil 2)
-                          (loop for i from 0 to 3 collect (pine.ts:parse-indent ps i)))))
+                          (loop for i from 0 to 3 collect (pine.ts.highlight:parse-indent ps i)))))
           (pine.ts:free-parse-state ps)))))
 
 (test indent-user-def-macro
@@ -277,7 +277,7 @@ generated source and on a real file."
              (progn
                (pine.ts:parse-full! ps (format nil "(defcommand foo ()~%(bar))"))
                (is (equal '(0 2)
-                          (list (pine.ts:parse-indent ps 0) (pine.ts:parse-indent ps 1)))))
+                          (list (pine.ts.highlight:parse-indent ps 0) (pine.ts.highlight:parse-indent ps 1)))))
           (pine.ts:free-parse-state ps)))))
 
 (test reindent-line
@@ -310,13 +310,13 @@ deduped and renders nothing."
 
 (test style-opacity
   "An :opacity rule resolves to a float the pixel painter reads."
-  (pine.text.buffer:install-rules '((".op-probe" (:opacity "0.42"))))
+  (pine.ui.rules:install-rules '((".op-probe" (:opacity "0.42"))))
   (is (= 0.42 (pine.ui.style:st-opacity (pine.ui.style:resolve '(("op-probe")))))))
 
 (test style-lisp-values
   "Rules take lisp values: numbers for opacity and px props; keyword
 selectors name one class."
-  (pine.text.buffer:install-rules
+  (pine.ui.rules:install-rules
    '((:num-probe (:opacity 0.42 :min-width 28 :border-radius 6 :padding 4))))
   (let ((st (pine.ui.style:resolve '(("num-probe")))))
     (is (= 0.42 (pine.ui.style:st-opacity st)))

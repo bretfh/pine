@@ -1,5 +1,8 @@
-(in-package :pine.text.buffer)
+(defpackage #:pine.text.window
+  (:use #:cl #:pine.text.buffer #:pine.ui.face)
+  (:export #:bg-face #:buffer-ref #:col #:ensure-col-visible #:ensure-frame-cells #:ensure-point-visible #:focusedp #:frame #:frame-cell-count #:frame-cells #:frame-cols #:frame-cursor-col #:frame-cursor-row #:frame-dirtyp #:frame-rows #:frame-scroll-pixel #:row #:scroll-top #:snap #:win-display #:win-height #:win-width #:window #:window-display-lines #:window-name #:windows))
 
+(in-package #:pine.text.window)
 
 ;;;; ================================================================
 ;;;; Windows -- views into buffers

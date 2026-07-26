@@ -101,7 +101,7 @@
    (cell-w          :initarg :cell-w          :accessor cell-w          :initform nil)
    (cell-h          :initarg :cell-h          :accessor cell-h          :initform nil)
    (windows         :initarg :windows         :accessor windows         :initform nil)
-   ;; the window arrangement: a pine.text.buffer:window leaf, or (:column ...) /
+   ;; the window arrangement: a pine.text.window:window leaf, or (:column ...) /
    ;; (:row ...) over such trees -- the split shape C-x 2/3/0/1 rewrite.
    ;; nil means the single window in WINDOWS.
    (arrangement     :initarg :arrangement     :accessor arrangement     :initform nil)
@@ -155,7 +155,7 @@
 (defun start-client (server)
   (let* ((c (make-instance 'client
                 :server-of server
-                :frame (make-instance 'pine.text.buffer::frame)
+                :frame (make-instance 'pine.text.window:frame)
                 :terminal-map (make-hash-table :test 'eq)
                 :kill-ring (pine.state.store:store :kill-ring))))
     (push c (pine.core.server:clients server))
@@ -169,7 +169,7 @@
   "A window on BUFFER-ACTOR, registered on the client in scope when there is
 one. Without a client the window is detached: a read-only view for a panel or
 a layout buffer."
-  (let ((w (make-instance 'pine.text.buffer:window
+  (let ((w (make-instance 'pine.text.window:window
              :buffer buffer-actor :name name
              :row row :col col :width width :height height
              :focused focused))
@@ -190,8 +190,8 @@ a layout buffer."
   (let ((c *client*))
     (when c
       (let ((prev (focused-window c)))
-        (when prev (setf (pine.text.buffer:focusedp prev) nil)))
-      (setf (pine.text.buffer:focusedp w) t
+        (when prev (setf (pine.text.window:focusedp prev) nil)))
+      (setf (pine.text.window:focusedp w) t
             (focused-window c) w))))
 
 (defun stop-client (c)
@@ -201,3 +201,164 @@ a layout buffer."
   (when (eq *client* c)
     (setf *client* nil))
   c)
+
+(defun buffer-mode (buffer-or-snap)
+  (let ((name (pine.text.buffer:buffer-local buffer-or-snap :mode :base-mode)))
+    (or (pine.editor.mode:find-mode name) (pine.editor.mode:find-mode :base-mode))))
+
+(defun current-buffer-mode ()
+  (let* ((c (current-client))
+         (buf (current-buffer c))
+         (name (and buf (gethash buf (buffer-modes c)))))
+    (or (and name (pine.editor.mode:find-mode name)) (pine.editor.mode:find-mode :base-mode))))
+
+(defun set-buffer-mode (buffer-actor mode-name)
+  (unless (pine.editor.mode:find-mode mode-name) (error "No mode named ~s" mode-name))
+  ;; the buffer's own :mode meta drives highlighting, so set it first and
+  ;; unconditionally; recording it on the client (for the modeline) is
+  ;; best-effort and must not stop the buffer from learning its mode.
+  (sento.actor:tell buffer-actor (list :set-local :key :mode :value mode-name))
+  (let ((c *client*))
+    (when c
+      (setf (gethash buffer-actor (buffer-modes c)) mode-name)))
+  (pine.editor.mode:find-mode mode-name))
+
+;;;; Minor modes. Per-buffer, precedence-numbered (higher = more specific).
+;;;; The enabled set feeds both the active-keymap list and the synthesized
+;;;; dispatch class, so a minor mode augments via keymap bindings and via
+;;;; execute method combination (:before/:after transparent, :around opaque).
+
+(defun %minor-names (client)
+  (gethash (current-buffer client) (buffer-minor-modes client)))
+
+(defun (setf %minor-names) (names client)
+  (setf (gethash (current-buffer client) (buffer-minor-modes client)) names))
+
+(defun active-minor-modes (client)
+  "Active minor-mode singletons for the current buffer, most specific first."
+  (stable-sort
+   (loop :for name :in (%minor-names client)
+         :for m = (pine.editor.mode:find-mode name)
+         :when (typep m 'pine.editor.mode:minor-mode) :collect m)
+   #'> :key #'pine.editor.mode:precedence))
+
+(defun minor-mode-enabled-p (client name)
+  (and (member name (%minor-names client)) t))
+
+(defun enable-minor-mode (client name)
+  (unless (typep (pine.editor.mode:find-mode name) 'pine.editor.mode:minor-mode)
+    (error "~s is not a minor mode" name))
+  (pushnew name (%minor-names client))
+  t)
+
+(defun disable-minor-mode (client name)
+  (setf (%minor-names client) (remove name (%minor-names client)))
+  nil)
+
+(defun toggle-minor-mode (client name)
+  (if (minor-mode-enabled-p client name)
+      (disable-minor-mode client name)
+      (enable-minor-mode client name)))
+
+(defun active-minor-mode-indicators (client)
+  (loop :for m :in (active-minor-modes client)
+        :collect (pine.editor.mode:mode-indicator m)))
+
+;;;; Active modes -> keymaps + a synthesized dispatch class
+
+(defun buffer-active-modes (client)
+  "Minor modes (most specific first) then the major mode. This is the
+superclass order of the synthesized dispatch class, so minor-mode methods
+run before the major mode's under CLOS method combination."
+  (append (active-minor-modes client) (list (current-buffer-mode))))
+
+(defun active-keymaps (client)
+  "Minor-mode maps most specific first, then the major mode's, then global.
+Dispatch flattens each one's own parent chain into the table list."
+  (append (mapcar #'pine.editor.keymap:keymap (active-minor-modes client))
+          (list (pine.editor.keymap:keymap (current-buffer-mode))
+                (pine.editor.mode:global-keymap))))
+
+(defun active-modes-instance (client)
+  (make-instance (pine.editor.mode:modes-dispatch-class
+                  (mapcar #'class-of (buffer-active-modes client)))))
+
+(defun make-buffer (name &key (content ""))
+  (let* ((c (current-client))
+         (srv (server-of c))
+         (table (pine.text.buffer:buffer-table srv))
+         (existing (gethash name table)))
+    (when existing (return-from make-buffer existing))
+    (let ((actor (pine.text.buffer:make-buffer-actor (pine.core.server:actor-system srv) name :content content)))
+      (setf (gethash name table) actor)
+      (sento.actor:tell (pine.core.server:buffer-registry srv)
+                        (list :register :name name :actor actor))
+      (when (null (current-buffer c))
+        (setf (current-buffer c) actor))
+      actor)))
+
+(defun kill-buffer (name)
+  (let* ((c (current-client))
+         (srv (server-of c))
+         (table (pine.text.buffer:buffer-table srv))
+         (actor (gethash name table)))
+    (when actor
+      (when (eq actor (current-buffer c))
+        (setf (current-buffer c) nil))
+      (remhash name table)
+      (sento.actor-context:stop (pine.core.server:actor-system srv) actor)
+      (sento.actor:tell (pine.core.server:buffer-registry srv)
+                        (list :unregister :name name)))))
+
+(defun switch-buffer (name)
+  (let* ((c (current-client))
+         (srv (server-of c))
+         (actor (gethash name (pine.text.buffer:buffer-table srv))))
+    (when actor
+      (setf (current-buffer c) actor)
+      actor)))
+
+
+(defun list-buffers ()
+  (let ((srv (server-of (current-client))))
+    (loop for k being the hash-keys of (pine.text.buffer:buffer-table srv) collect k)))
+
+(defun buffer-count ()
+  (let ((srv (server-of (current-client))))
+    (hash-table-count (pine.text.buffer:buffer-table srv))))
+
+(defun current-buffer-text ()
+  (let* ((c (current-client))
+         (buf (current-buffer c)))
+    (when buf
+      (sento.actor:ask-s buf '(:get-text) :time-out 5))))
+
+(defun current-buffer-snapshot ()
+  (let* ((c (current-client))
+         (buf (current-buffer c)))
+    (when buf
+      (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
+
+
+(defun buffer (x)
+  "Coerce X to a buffer actor.
+- nil            -> nil
+- string         -> lookup by name in current server's buffer-table
+- :current       -> current client's current-buffer
+- :focused       -> focused window's buffer-ref
+- actor ref      -> passthrough
+Unknown keywords error; nothing silently falls through."
+  (cond
+    ((null x) nil)
+    ((stringp x)
+     (let ((srv (server-of (current-client))))
+       (gethash x (pine.text.buffer:buffer-table srv))))
+    ((eq x :current)
+     (current-buffer (current-client)))
+    ((eq x :focused)
+     (let ((w (focused-window (current-client))))
+       (when w (pine.text.window:buffer-ref w))))
+    ((keywordp x)
+     (error "unknown buffer target ~s; use :current, :focused, or a string name"
+            x))
+    (t x)))

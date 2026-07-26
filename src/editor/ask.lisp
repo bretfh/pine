@@ -35,7 +35,7 @@ Silently no-ops on nil target."
       (:clients     (pine.core.server:clients srv))
       (:modes       (pine.editor.mode:all-mode-names))
       (:commands    (pine.editor.command:all-command-names))
-      (:faces       (pine.text.buffer::faces-table))
+      (:faces       (pine.ui.face:faces-table))
       (:actor-system (pine.core.server:actor-system srv))
       (:describe    +server-verbs+)
       (t (error "unknown :server query ~s; known: ~s" query +server-verbs+)))))

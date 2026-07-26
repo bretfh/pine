@@ -21,7 +21,7 @@
   "The editor's cell font size -- the one theme metric both the daemon's window
 nodes and the editor frontend derive their cell grid from, so a buffer laid out
 at N cols x rows lands exactly in the frontend's cells."
-  (pine.text.buffer:metric :font-px 15))
+  (pine.ui.face:metric :font-px 15))
 
 (defun %in-actor-p ()
   "True on a thread inside an actor's receive, where a blocking ask is
@@ -52,16 +52,16 @@ itself, or a reverse lookup in the server's buffer table."
         name)))
 
 (defun %backing-window (buf name)
-  "A pine.text.buffer:window viewing BUF. Registered on the client's window list
+  "A pine.text.window:window viewing BUF. Registered on the client's window list
 when one is in scope (an editor view the commands can focus and split), else
 detached (a read-only view in a panel or a layout buffer). The snapshot comes
 through the renderer subscription for client windows; a detached window
 fetches one only off-actor, so seeding never blocks a receive."
   (let ((w (if pine.editor.frame:*client*
                (pine.editor.frame:make-window buf name)
-               (make-instance 'pine.text.buffer:window :buffer buf :name name))))
+               (make-instance 'pine.text.window:window :buffer buf :name name))))
     (unless (or pine.editor.frame:*client* (%in-actor-p))
-      (setf (pine.text.buffer:snap w) (ignore-errors (pine.editor.ask:ask buf :snapshot))))
+      (setf (pine.text.window:snap w) (ignore-errors (pine.editor.ask:ask buf :snapshot))))
     w))
 
 (defun editor-window-node (x &rest props)
@@ -78,7 +78,7 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
       (pine.ui.render:subscribe-to-buffer buf))
     (unless pine.editor.frame:*client*
       (when w
-        (setf (pine.text.buffer:win-width w) 80 (pine.text.buffer:win-height w) 24)
+        (setf (pine.text.window:win-width w) 80 (pine.text.window:win-height w) 24)
         (setf (pine.ui.node:window-rows node)
               (nth-value 0 (pine.ui.render:render-window-rows w)))))
     node))
@@ -132,10 +132,10 @@ editor vocabulary."
     (pine.ui.node:window-node
      (case (pine.ui.node:window-kind n)
        (:window (let ((w (pine.ui.node:window-of n)))
-                  (and w (list* :window (pine.text.buffer:window-name w)
+                  (and w (list* :window (pine.text.window:window-name w)
                                 (%node-props n)))))
        (:modeline (let ((w (pine.ui.node:window-of n)))
-                    (if w (list :modeline (pine.text.buffer:window-name w))
+                    (if w (list :modeline (pine.text.window:window-name w))
                         (list :modeline))))
        (:echo (list :echo))))
     (pine.ui.node:separator (list :rule))
@@ -195,7 +195,7 @@ or the tree has foreign nodes."
           (let ((fw (pine.editor.frame:focused-window client))
                 (cur (pine.editor.frame:current-buffer client)))
             (list :tree form
-                  :focus (and fw (pine.text.buffer:window-name fw))
+                  :focus (and fw (pine.text.window:window-name fw))
                   :current (and cur (%buffer-name cur cur)))))))))
 
 (pine.state.world:register :arrangement :save #'%arrangement-data)
@@ -208,7 +208,7 @@ or the tree has foreign nodes."
         (setf (pine.editor.frame:arrangement client) tree)
         (let* ((ws (pine.editor.frame:windows client))
                (w (or (find (getf saved :focus) ws
-                            :key #'pine.text.buffer:window-name :test #'equal)
+                            :key #'pine.text.window:window-name :test #'equal)
                       (first (last ws)))))
           (when w
             (pine.editor.frame:focus-window w)
@@ -217,7 +217,7 @@ or the tree has foreign nodes."
                         (and srv (pine.core.server:buffer-table srv)
                              (gethash (getf saved :current)
                                       (pine.core.server:buffer-table srv))))
-                      (pine.text.buffer:buffer-ref w)))))
+                      (pine.text.window:buffer-ref w)))))
         tree)
     (error (c)
       (format *error-output* "world arrangement restore failed: ~a~%" c)
@@ -245,7 +245,7 @@ engine default. Focus lands on the saved focus or the first window leaf."
               (when w
                 (pine.editor.frame:focus-window w)
                 (setf (pine.editor.frame:current-buffer client)
-                      (pine.text.buffer:buffer-ref w))))
+                      (pine.text.window:buffer-ref w))))
             tree)))))
 
 (defun reseed-editor-sessions ()
@@ -331,15 +331,15 @@ attach (a client must be in scope); the arrangement applies on every seed.")
         (pine.state.world:restore-world))
       (%seed-editor-tree client)
       (let ((f (pine.editor.frame:frame client)))
-        (setf (pine.text.buffer:frame-cols f) 80 (pine.text.buffer:frame-rows f) 29)
+        (setf (pine.text.window:frame-cols f) 80 (pine.text.window:frame-rows f) 29)
         (pine.ui.render:relayout))
       (pine.editor.minibuffer:ensure-minibuffer client)
       (let ((s (make-sess :client client :aclient aclient :sink sink)))
         (when aclient
           (setf (pine.core.attach:attached-client-session aclient) s)
-          (when pine.text.buffer:*user-rules*
+          (when pine.ui.rules:*user-rules*
             (pine.core.attach:push-to-app aclient :rules
-                                     :rules pine.text.buffer:*user-rules*)))
+                                     :rules pine.ui.rules:*user-rules*)))
         (setf (sess-thread s)
               (bordeaux-threads:make-thread (lambda () (session-loop s))
                                             :name "pine-editor-input"))

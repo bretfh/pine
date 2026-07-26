@@ -14,7 +14,7 @@ command like beginning-of-line must see its input, not the window behind it."
     (if (pine.editor.frame:prompt-active c)
         (pine.editor.frame:minibuffer-snap c)
         (let ((w (pine.editor.frame:focused-window c)))
-          (when w (pine.text.buffer:snap w))))))
+          (when w (pine.text.window:snap w))))))
 
 (defun cur-buffer () (pine.editor.frame:current-buffer (pine.editor.frame:current-client)))
 

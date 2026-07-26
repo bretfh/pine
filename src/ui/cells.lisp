@@ -38,11 +38,11 @@ face name, if any, then resolves as usual at paint)."
          (bold (pine.ui.style:st-bold st))
          (name (and (keywordp (face n)) (face n))))
     (when (or css-fg css-bg bold)
-      (list (if css-fg (%scale-rgb css-fg) (and name (pine.text.buffer:face-fg name)))
-            (if css-bg (%scale-rgb css-bg) (and name (pine.text.buffer:face-bg name)))
+      (list (if css-fg (%scale-rgb css-fg) (and name (pine.ui.face:face-fg name)))
+            (if css-bg (%scale-rgb css-bg) (and name (pine.ui.face:face-bg name)))
             (logior (if bold 1 0)
                     (if name
-                        (pine.text.buffer:face-attr-bits (pine.text.buffer:find-face name))
+                        (pine.ui.face:face-attr-bits (pine.ui.face:find-face name))
                         0))))))
 
 (defun resolve-styles! (root &optional chain)

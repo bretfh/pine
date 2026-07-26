@@ -4,7 +4,7 @@
 
 (in-package #:pine.ui.style)
 
-;;;; The style resolver: pine.text.buffer:theme-rules is CSS-as-data (selector +
+;;;; The style resolver: pine.ui.rules:theme-rules is CSS-as-data (selector +
 ;;;; prop-plist of CSS strings). Here we match a node -- identified by its class
 ;;;; chain root..node and its hover state -- against those rules the way a
 ;;;; browser cascades them (source order, later wins), then interpret the
@@ -46,13 +46,13 @@
   ;; refresh on a theme swap OR when user rules changed (add-rules bumps the
   ;; generation), so defrules from init.lisp takes effect on reload
   (unless (and *compiled*
-               (eq *compiled-theme* pine.text.buffer:*active-theme*)
-               (eql *compiled-generation* pine.text.buffer:*rules-generation*))
+               (eq *compiled-theme* pine.ui.face:*active-theme*)
+               (eql *compiled-generation* pine.ui.rules:*rules-generation*))
     (setf *compiled*
-          (loop for (sel props) in (pine.text.buffer:theme-rules)
+          (loop for (sel props) in (pine.ui.rules:theme-rules)
                 collect (cons (parse-rule-selectors sel) props))
-          *compiled-theme* pine.text.buffer:*active-theme*
-          *compiled-generation* pine.text.buffer:*rules-generation*))
+          *compiled-theme* pine.ui.face:*active-theme*
+          *compiled-generation* pine.ui.rules:*rules-generation*))
   *compiled*)
 
 (defun reset-rules () (setf *compiled* nil))
@@ -99,7 +99,7 @@
   (cond
     ((or (null s) (string= s "transparent") (string= s "none")) nil)
     ((and (plusp (length s)) (char= (char s 0) #\#))
-     (multiple-value-bind (r g b) (pine.text.buffer:hex-rgb s)
+     (multiple-value-bind (r g b) (pine.ui.face:hex-rgb s)
        (when r (values (/ r 255.0) (/ g 255.0) (/ b 255.0) 1.0))))
     ((eql 0 (search "rgba(" s)) (parse-rgb-func s 4))
     ((eql 0 (search "rgb(" s))  (parse-rgb-func s 3))

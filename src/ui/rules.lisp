@@ -1,4 +1,8 @@
-(in-package :pine.text.buffer)
+(defpackage #:pine.ui.rules
+  (:use #:cl #:pine.ui.face)
+  (:export #:*rules-generation* #:*user-rules* #:add-rules #:css-color #:css-glass #:css-mono #:css-rad #:install-rules #:selector-string #:theme-rules))
+
+(in-package #:pine.ui.rules)
 
 ;;;; The stylesheet, authored in Lisp as data: a list of (selector props-plist)
 ;;;; where props values are CSS strings. pine.ui.style compiles it and paints both

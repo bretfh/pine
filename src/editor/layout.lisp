@@ -77,7 +77,7 @@ a function, or such a node anywhere below."
   "Open buffer NAME as a layout buffer showing BUILDER (state -> node tree),
 switch to it, and enable layout-mode on it. Returns the buffer."
   (let* ((client (pine.editor.frame:current-client))
-         (cols (pine.text.buffer:frame-cols (pine.editor.frame:frame client)))
+         (cols (pine.text.window:frame-cols (pine.editor.frame:frame client)))
          (buf (pine.editor.frame:make-buffer name)))
     (pine.editor.frame:set-buffer-mode buf mode)
     (pine.editor.ask:tell buf :set-layout :builder builder :width cols

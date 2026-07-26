@@ -106,10 +106,10 @@
 
 (defcmd "scroll-down" ()
   (let ((w (pine.editor.frame:focused-window (pine.editor.frame:current-client))))
-    (when w (pine.editor.window:scroll-window (- (pine.text.buffer:win-height w) 2)))))
+    (when w (pine.editor.window:scroll-window (- (pine.text.window:win-height w) 2)))))
 (defcmd "scroll-up" ()
   (let ((w (pine.editor.frame:focused-window (pine.editor.frame:current-client))))
-    (when w (pine.editor.window:scroll-window (- 2 (pine.text.buffer:win-height w))))))
+    (when w (pine.editor.window:scroll-window (- 2 (pine.text.window:win-height w))))))
 
 (defcmd "forward-sexp" ()      (pine.editor.motion:%sexp-move :forward-sexp))
 (defcmd "backward-sexp" ()     (pine.editor.motion:%sexp-move :backward-sexp))
@@ -246,8 +246,8 @@
   (handler-case
       (let* ((client (pine.editor.frame:current-client))
              (f (pine.editor.frame:frame client))
-             (cols (pine.text.buffer:frame-cols f))
-             (rows (max 1 (- (pine.text.buffer:frame-rows f) 2)))
+             (cols (pine.text.window:frame-cols f))
+             (rows (max 1 (- (pine.text.window:frame-rows f) 2)))
              (buf (pine.editor.frame:make-buffer "*terminal*")))
         (pine.term:open-terminal client buf :rows rows :cols cols)
         (pine.editor.frame:set-buffer-mode buf :terminal-mode)

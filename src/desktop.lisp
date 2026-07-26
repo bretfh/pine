@@ -69,8 +69,8 @@ old ones), and push it to the app."
 (defun make-desktop-session (aclient)
   (let ((s (make-dsession)))
     (setf (pine.core.attach:attached-client-session aclient) s)
-    (when pine.text.buffer:*user-rules*
-      (pine.core.attach:push-to-app aclient :rules :rules pine.text.buffer:*user-rules*))
+    (when pine.ui.rules:*user-rules*
+      (pine.core.attach:push-to-app aclient :rules :rules pine.ui.rules:*user-rules*))
     (dolist (name '("bar" "echo"))
       (let ((v (surface-view aclient name)))
         (setf (gethash name (dsession-views s)) v)

@@ -32,10 +32,10 @@
   "Encode FRAME's cells as wire rows (text . runs), each run
 (col fr fg fb br bg bb attr) extending to the next run's col. Cells carry
 their own (row col); scatter by those."
-  (let ((pine.ui.node:cells (pine.text.buffer:frame-cells frame))
-        (cols (pine.text.buffer:frame-cols frame))
-        (pine.ui.build:rows (pine.text.buffer:frame-rows frame))
-        (count (pine.text.buffer:frame-cell-count frame)))
+  (let ((pine.ui.node:cells (pine.text.window:frame-cells frame))
+        (cols (pine.text.window:frame-cols frame))
+        (pine.ui.build:rows (pine.text.window:frame-rows frame))
+        (count (pine.text.window:frame-cell-count frame)))
     (when (and pine.ui.node:cells (plusp pine.ui.build:rows))
       (let ((chars  (make-array pine.ui.build:rows))
             (styles (make-array pine.ui.build:rows)))
@@ -55,7 +55,7 @@ their own (row col); scatter by those."
           (let ((text (aref chars r)) (row-styles (aref styles r)) (runs nil) (prev nil))
             (dotimes (c cols)
               (let ((style (or (aref row-styles c)
-                               (append (pine.text.buffer:face-fg :default) '(-1 -1 -1 0)))))
+                               (append (pine.ui.face:face-fg :default) '(-1 -1 -1 0)))))
                 (unless (equal style prev)
                   (push (list* c style) runs)
                   (setf prev style))))
@@ -89,8 +89,8 @@ attached frontend -- the editor session's sink refreshes the live tree
                         (destructuring-bind (&key cols pine.ui.build:rows width height cell-w cell-h)
                             (rest msg)
                           (let ((f (pine.editor.frame:frame client)))
-                            (setf (pine.text.buffer:frame-cols f) cols
-                                  (pine.text.buffer:frame-rows f) pine.ui.build:rows
+                            (setf (pine.text.window:frame-cols f) cols
+                                  (pine.text.window:frame-rows f) pine.ui.build:rows
                                   (pine.editor.frame:px-width client) width
                                   (pine.editor.frame:px-height client) height
                                   (pine.editor.frame:cell-w client) cell-w
@@ -100,13 +100,13 @@ attached frontend -- the editor session's sink refreshes the live tree
                           ;; a layout buffer laid out for an old width
                           ;; reprojects at its window's new one
                           (dolist (w (pine.editor.frame:windows client))
-                            (let ((s (pine.text.buffer:snap w)))
+                            (let ((s (pine.text.window:snap w)))
                               (when (and s (pine.text.buffer:buffer-local s :layout-builder)
-                                         (/= (pine.text.buffer:win-width w)
+                                         (/= (pine.text.window:win-width w)
                                              (pine.text.buffer:buffer-local s :layout-width 0)))
-                                (sento.actor:tell (pine.text.buffer:buffer-ref w)
+                                (sento.actor:tell (pine.text.window:buffer-ref w)
                                                   (list :reproject
-                                                        :width (pine.text.buffer:win-width w))))))
+                                                        :width (pine.text.window:win-width w))))))
                           (paint-frame client)))
                        (:switch-buffer
                         (destructuring-bind (&key buffer name) (rest msg)
@@ -133,18 +133,18 @@ attached frontend -- the editor session's sink refreshes the live tree
   (when (typep snap 'pine.text.buffer:snapshot)
     (let ((snap-name (pine.text.buffer:name snap)))
       (dolist (w (pine.editor.frame:windows (pine.editor.frame:current-client)))
-        (when (string= (pine.text.buffer:window-name w) snap-name)
-          (setf (pine.text.buffer:snap w) snap))))))
+        (when (string= (pine.text.window:window-name w) snap-name)
+          (setf (pine.text.window:snap w) snap))))))
 
 (defun switch-window-buffer (buf name)
   (let ((w (pine.editor.frame:focused-window (pine.editor.frame:current-client))))
     (when w
-      (setf (pine.text.buffer:buffer-ref w) buf
-            (pine.text.buffer:window-name w) name
-            (pine.text.buffer:scroll-top w) 0
-            (pine.text.buffer:col w) 0
-            (pine.text.buffer:snap w) nil
-            (pine.text.buffer:win-display w) nil)))
+      (setf (pine.text.window:buffer-ref w) buf
+            (pine.text.window:window-name w) name
+            (pine.text.window:scroll-top w) 0
+            (pine.text.window:col w) 0
+            (pine.text.window:snap w) nil
+            (pine.text.window:win-display w) nil)))
   (rs-update :dirty t))
 
 (defun %window-leaves (tree)
@@ -194,8 +194,8 @@ leaf's rect sizes its backing window. Returns the leaves."
         (f (pine.editor.frame:frame client)))
     (when tree
       (multiple-value-bind (cw ch pw ph) (%px-metrics client)
-        (let ((aw (if cw pw (pine.text.buffer:frame-cols f)))
-              (ah (if cw ph (pine.text.buffer:frame-rows f)))
+        (let ((aw (if cw pw (pine.text.window:frame-cols f)))
+              (ah (if cw ph (pine.text.window:frame-rows f)))
               (leaves (%window-leaves tree)))
           (dolist (n leaves)
             (setf (pine.ui.node:window-rows n) nil
@@ -207,9 +207,9 @@ leaf's rect sizes its backing window. Returns the leaves."
           (dolist (n leaves)
             (let ((w (pine.ui.node:window-of n)))
               (when (and w (eq (pine.ui.node:window-kind n) :window))
-                (setf (pine.text.buffer:win-width w)
+                (setf (pine.text.window:win-width w)
                       (if cw (max 1 (floor (%leaf-width n) cw)) (%leaf-width n))
-                      (pine.text.buffer:win-height w)
+                      (pine.text.window:win-height w)
                       (if ch (max 1 (floor (%leaf-height n) ch)) (%leaf-height n))))))
           leaves)))))
 
@@ -256,11 +256,11 @@ a crash never loses the split shape."
 ;;;; Cell emission
 
 (defun face-rgb (face-name)
-  (pine.text.buffer:face-fg face-name))
+  (pine.ui.face:face-fg face-name))
 
 (defun face-attrs (face-name)
   "The packed bold/italic/underline bits for FACE-NAME (0 when unset)."
-  (pine.text.buffer:face-attr-bits (when face-name (pine.text.buffer:find-face face-name))))
+  (pine.ui.face:face-attr-bits (when face-name (pine.ui.face:find-face face-name))))
 
 (defun build-highlight-table (highlights scroll-top visible-rows)
   (let ((table (make-hash-table)))
@@ -307,7 +307,7 @@ a crash never loses the split shape."
 (defun emit-string (f off pine.ui.build:row str fg &optional bg (attr 0) (col0 0))
   "Write STR at ROW starting COL0 into F's cells with FG (list r g b),
 optional BG, and packed text ATTR bits. Returns the new cell offset."
-  (let ((pine.ui.node:cells (pine.text.buffer:frame-cells f)))
+  (let ((pine.ui.node:cells (pine.text.window:frame-cells f)))
     (loop for i from 0 below (length str)
           for ch = (char-code (char str i))
           do (setf (svref pine.ui.node:cells (+ off 0)) pine.ui.build:row
@@ -332,7 +332,7 @@ optional BG, and packed text ATTR bits. Returns the new cell offset."
   "Blit one rendered (TEXT . RUNS) row -- the pine.ui.cells:render format, which
 is also the frame wire format -- into F's cells at ROW, clipped to COLS.
 Returns the new cell offset."
-  (let ((pine.ui.node:cells (pine.text.buffer:frame-cells f)))
+  (let ((pine.ui.node:cells (pine.text.window:frame-cells f)))
     (loop for (run . more) on runs do
       (destructuring-bind (col fr fg fb br bg bb attr) run
         (let ((end (min (if more (car (first more)) (length text)) cols)))
@@ -352,31 +352,31 @@ Returns the new cell offset."
 
 (defun %scratch-frame (cols pine.ui.build:rows)
   "A fresh frame sized COLS x ROWS for one render pass."
-  (let ((f (make-instance 'pine.text.buffer:frame)))
-    (setf (pine.text.buffer:frame-cols f) cols
-          (pine.text.buffer:frame-rows f) pine.ui.build:rows)
-    (pine.text.buffer:ensure-frame-cells f)
+  (let ((f (make-instance 'pine.text.window:frame)))
+    (setf (pine.text.window:frame-cols f) cols
+          (pine.text.window:frame-rows f) pine.ui.build:rows)
+    (pine.text.window:ensure-frame-cells f)
     f))
 
 (defun %frame-rows (f off)
-  (setf (pine.text.buffer:frame-cell-count f) off)
+  (setf (pine.text.window:frame-cell-count f) off)
   (frame->rows f))
 
 (defun modeline-rows (w cols)
   "Window W's mode line as one wire row at COLS: buffer name, mode indicator,
 point position."
   (let* ((f (%scratch-frame cols 1))
-         (s (pine.text.buffer:snap w))
+         (s (pine.text.window:snap w))
          (line (if (and s (typep s 'pine.text.buffer:snapshot))
                    (format nil " ~a   ~a   L~d C~d"
-                           (pine.text.buffer:window-name w)
+                           (pine.text.window:window-name w)
                            (pine.editor.mode:mode-indicator (pine.editor.frame:buffer-mode s))
                            (1+ (pine.text.buffer:point-line s))
                            (pine.text.buffer:point-col s))
-                   (format nil " ~a" (pine.text.buffer:window-name w)))))
+                   (format nil " ~a" (pine.text.window:window-name w)))))
     (%frame-rows f (emit-string f 0 0 (%pad line cols)
-                                (pine.text.buffer:face-fg :modeline)
-                                (pine.text.buffer:face-bg :modeline)))))
+                                (pine.ui.face:face-fg :modeline)
+                                (pine.ui.face:face-bg :modeline)))))
 
 (defun echo-rows (client cols)
   "The echo block at COLS: the completion popup rows (while a prompt is active)
@@ -394,7 +394,7 @@ minibuffer caret within the block, or -1 -1 when no prompt is active."
                    (pine.editor.echo:current-message)))
          (f (%scratch-frame cols 1))
          (line (%frame-rows f (emit-string f 0 0 (%pad text cols)
-                                           (pine.text.buffer:face-fg
+                                           (pine.ui.face:face-fg
                                             (if prompt :prompt :echo))))))
     (values (append prows line)
             (if prompt 0 -1)
@@ -417,10 +417,10 @@ returns a vector, SGR truecolor a 3-list."
   "Window W rendered from its terminal's emulator grid at W's size.
 Returns (values rows crow ccol)."
   (let* ((term (pine.term:terminal-term tobj))
-         (f (%scratch-frame (pine.text.buffer:win-width w) (pine.text.buffer:win-height w)))
-         (pine.ui.node:cells (pine.text.buffer:frame-cells f))
-         (pine.ui.build:rows (min (pine.vt:term-height term) (pine.text.buffer:win-height w)))
-         (cols (min (pine.vt:term-width term) (pine.text.buffer:win-width w)))
+         (f (%scratch-frame (pine.text.window:win-width w) (pine.text.window:win-height w)))
+         (pine.ui.node:cells (pine.text.window:frame-cells f))
+         (pine.ui.build:rows (min (pine.vt:term-height term) (pine.text.window:win-height w)))
+         (cols (min (pine.vt:term-width term) (pine.text.window:win-width w)))
          (off 0))
     (dotimes (y pine.ui.build:rows)
       (multiple-value-bind (chars faces) (pine.vt:term-render-line term y)
@@ -428,7 +428,7 @@ Returns (values rows crow ccol)."
           (dotimes (x cols)
             (let ((change (assoc x faces)))
               (when change (setf cur (second change))))
-            (let ((fg (%term-rgb cur :fg (pine.text.buffer:face-fg :default)))
+            (let ((fg (%term-rgb cur :fg (pine.ui.face:face-fg :default)))
                   (bg (%term-rgb cur :bg nil)))
               (setf (svref pine.ui.node:cells (+ off 0)) y
                     (svref pine.ui.node:cells (+ off 1)) x
@@ -464,7 +464,7 @@ mark (buffer meta) and point, or nil when no mark is set."
           ((= line el) (< col ec))
           (t t))))
 
-(defun selection-bg () (pine.text.buffer:face-bg :selection))
+(defun selection-bg () (pine.ui.face:face-bg :selection))
 
 (defun %overlay-cell-style (class)
   "(values fg-rgb attr) for an overlay CLASS through the stylesheet, falling
@@ -473,7 +473,7 @@ back to the comment face."
          (fg (pine.ui.style:st-fg st)))
     (values (if fg
                 (mapcar (lambda (c) (round (* 255 c))) fg)
-                (pine.text.buffer:face-fg :comment))
+                (pine.ui.face:face-fg :comment))
             (if (pine.ui.style:st-bold st) 1 0))))
 
 (defun render-window-rows (w)
@@ -481,24 +481,24 @@ back to the comment face."
 highlights and region (text), the emulator grid (terminal buffer), or the
 buffer's layout rows (layout buffer). Overlays draw after their line's text.
 Returns (values rows crow ccol), the point position within the rows or -1 -1."
-  (when (pine.text.buffer:snap w)
-    (pine.text.buffer:ensure-point-visible w)
-    (pine.text.buffer:ensure-col-visible w)
-    (setf (pine.text.buffer:win-display w) (pine.text.buffer:window-display-lines w)))
-  (let ((tobj (pine.term:terminal-for-buffer (pine.text.buffer:buffer-ref w))))
+  (when (pine.text.window:snap w)
+    (pine.text.window:ensure-point-visible w)
+    (pine.text.window:ensure-col-visible w)
+    (setf (pine.text.window:win-display w) (pine.text.window:window-display-lines w)))
+  (let ((tobj (pine.term:terminal-for-buffer (pine.text.window:buffer-ref w))))
     (when tobj (return-from render-window-rows (render-terminal-rows w tobj))))
   ;; SNAP is read once: a buffer switch can null it from the renderer thread
   ;; mid-paint, so treat a missing snapshot as an empty buffer rather than
   ;; dereferencing nil.
-  (let* ((f (%scratch-frame (pine.text.buffer:win-width w) (pine.text.buffer:win-height w)))
-         (s (pine.text.buffer:snap w))
-         (dl (and s (pine.text.buffer:win-display w)))
-         (wid (pine.text.buffer:win-width w))
-         (pine.ui.node:cells (pine.text.buffer:frame-cells f))
-         (left (pine.text.buffer:col w))
+  (let* ((f (%scratch-frame (pine.text.window:win-width w) (pine.text.window:win-height w)))
+         (s (pine.text.window:snap w))
+         (dl (and s (pine.text.window:win-display w)))
+         (wid (pine.text.window:win-width w))
+         (pine.ui.node:cells (pine.text.window:frame-cells f))
+         (left (pine.text.window:col w))
          (hl (and s (pine.text.buffer:highlights s)))
          (hl-table (when hl
-                     (build-highlight-table hl (pine.text.buffer:scroll-top w) (length dl))))
+                     (build-highlight-table hl (pine.text.window:scroll-top w) (length dl))))
          (region (when s (multiple-value-bind (sl sc el ec) (%snapshot-region s)
                            (when sl (list sl sc el ec)))))
          (off 0))
@@ -506,16 +506,16 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
       ;; a layout buffer: blit its rendered rows (the render carries the
       ;; styling; no face-name table)
       ((and s (pine.text.buffer:buffer-local s :layout-rows))
-       (loop for row-cells in (nthcdr (pine.text.buffer:scroll-top w)
+       (loop for row-cells in (nthcdr (pine.text.window:scroll-top w)
                                       (pine.text.buffer:buffer-local s :layout-rows))
-             for pine.ui.build:row from 0 below (pine.text.buffer:win-height w)
+             for pine.ui.build:row from 0 below (pine.text.window:win-height w)
              do (setf off (emit-row f off pine.ui.build:row (car row-cells) (cdr row-cells) wid))))
       (s
        (loop with overlays = (pine.text.buffer:buffer-local s :overlays)
              for d in dl
              for pine.ui.build:row from 0
-             for text = (pine.text.buffer:display-text d)
-             for buf-line-idx = (+ pine.ui.build:row (pine.text.buffer:scroll-top w))
+             for text = (pine.ui.face:display-text d)
+             for buf-line-idx = (+ pine.ui.build:row (pine.text.window:scroll-top w))
              for overlay = (and overlays (fset:@ overlays buf-line-idx))
              do (when overlay
                   (destructuring-bind (otext oclass) overlay
@@ -555,10 +555,10 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
                            (incf off 10))))))
     (values (%frame-rows f off)
             (if s
-                (max 0 (min (- (pine.text.buffer:point-line s) (pine.text.buffer:scroll-top w))
-                            (1- (pine.text.buffer:win-height w))))
+                (max 0 (min (- (pine.text.buffer:point-line s) (pine.text.window:scroll-top w))
+                            (1- (pine.text.window:win-height w))))
                 -1)
-            (if s (- (pine.text.buffer:point-col s) (pine.text.buffer:col w)) -1))))
+            (if s (- (pine.text.buffer:point-col s) (pine.text.window:col w)) -1))))
 
 
 ;;;; Subscription

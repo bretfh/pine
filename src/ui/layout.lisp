@@ -137,7 +137,7 @@ the node's border-box (and everything it lays out inside) sits within its margin
 container's arrange (:align :stretch), never from the available space --
 reporting AW/AH here would eat the whole axis as natural size."
   (declare (ignore aw ah))
-  (let ((px (max 1 (pine.text.buffer:metric :border 2))))
+  (let ((px (max 1 (pine.ui.face:metric :border 2))))
     (if (sep-vertical n)
         (values (if *text-size* px 1) 1)
         (values 1 (if *text-size* px 1)))))

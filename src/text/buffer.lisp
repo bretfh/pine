@@ -1,41 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export
-   ;; buffer-state
-   #:buffer-state #:lines #:marks #:meta #:tick
-   ;; snapshot
-   #:snapshot #:name #:line-count #:point-line #:point-col #:highlights
-   ;; state ops
-   #:make-empty-state #:state->snapshot #:state->snapshot-with-hl #:state->string
-   #:insert-char #:insert-string #:insert-newline
-   #:delete-char #:delete-region
-   #:move-mark #:set-meta #:region-bounds
-   #:buffer-local
-   #:refresh-highlights #:point-after-move
-   #:line-indent-width #:previous-line-indent #:reindent-line
-   #:load-content #:notify-subscribers #:split-lines
-   #:line-count-of #:line-at #:region-string #:buffer-table
-   ;; faces
-   #:face #:fg #:bg #:bold #:italic #:underline
-   #:defface #:find-face #:face-attr-bits
-   #:deftheme #:load-theme #:find-theme #:theme-color #:color #:*active-theme*
-   #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric #:theme-rules
-   #:add-rules #:install-rules #:*user-rules* #:*rules-generation*
-   #:theme #:theme-name #:theme-palette #:theme-metrics #:theme-faces
-   #:face-run #:run-start #:run-end #:run-face
-   #:display-line #:display-text #:display-runs
-   #:make-display-line
-   ;; windows
-   #:window #:buffer-ref #:window-name #:row #:col #:win-width #:win-height
-   #:scroll-top #:focusedp #:snap #:win-display
-   #:frame #:windows #:frame-cols #:frame-rows #:bg-face
-   #:frame-cells #:frame-cell-count #:frame-cursor-row #:frame-cursor-col
-   #:frame-scroll-pixel #:frame-dirtyp #:ensure-frame-cells
-   #:window-display-lines #:ensure-point-visible #:ensure-col-visible
-   ;; buffer actor
-   #:make-buffer-actor #:notify-subscribers #:load-content
-   ;; registry
-   #:start-buffer-registry))
+  (:export #:%insert-multiline #:%state-language #:%ts-runtime #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:set-meta #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 

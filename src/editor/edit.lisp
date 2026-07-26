@@ -199,7 +199,7 @@ carry over like :replace-content; point is clamped into the new content."
                ;; then indent it to the language's target column
                (multiple-value-bind (hl1 ps1) (pine.text.buffer:refresh-highlights pstate s1)
                  (declare (ignore hl1))
-                 (let* ((target (or (and ps1 (pine.ts:parse-indent ps1 (1+ l))) 0))
+                 (let* ((target (or (and ps1 (pine.ts.highlight:parse-indent ps1 (1+ l))) 0))
                         (s2 (if (plusp target)
                                 (pine.text.buffer:insert-string
                                  s1 (1+ l) 0 (make-string target :initial-element #\Space))
@@ -234,7 +234,7 @@ carry over like :replace-content; point is clamped into the new content."
                     ;; back". Only a treeless (plain-text) buffer uses the
                     ;; previous-line fallback.
                     (target (if ps
-                                (pine.ts:parse-indent ps l)
+                                (pine.ts.highlight:parse-indent ps l)
                                 (pine.text.buffer:previous-line-indent st l))))
                (when (and target (/= target cur))
                  (setf st (nth-value 0 (pine.text.buffer:reindent-line st l cur target pc))

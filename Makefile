@@ -70,11 +70,11 @@ test:
 
 # print each highlighted token of a source file and its face: make hl FILE=x.lisp
 hl:
-	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(pine.ts:hl-dump-file \"$(FILE)\")"'
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(pine.ts.highlight:hl-dump-file \"$(FILE)\")"'
 
 # render the editor frame for a sample buffer to a PNG, headless: make shot
 shot:
-	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(pine.cairo:frame-shot)" --eval "(sb-ext:exit)"'
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(pine.cairo.shot:frame-shot)" --eval "(sb-ext:exit)"'
 
 # drive a real session through C-x 2/3/o/1 and PNG every step via the wire +
 # paint-arranged (the frontend's exact path), with tree dumps: make split-shot
@@ -95,4 +95,4 @@ wm-nested:
 # render every desktop panel through the cairo backend to PNGs in /tmp,
 # headless (no window, no daemon): make cairo-shot
 cairo-shot:
-	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine.cairo:shot))" --eval "(terpri)" --eval "(sb-ext:exit)"'
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine.cairo.shot:shot))" --eval "(terpri)" --eval "(sb-ext:exit)"'

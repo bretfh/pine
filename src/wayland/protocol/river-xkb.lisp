@@ -1,10 +1,10 @@
-;;;; zwlr_layer_shell_v1 and zwlr_layer_surface_v1: the anchored bar and
-;;;; panel surfaces, bound directly with no C shim.
+;;;; river_xkb_bindings_v1: compositor-side keyboard chords delivered to
+;;;; the window manager.
 
-(in-package #:pine.protocol)
+(in-package #:pine.wayland.protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include
-  (merge-pathnames "share/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml"
+  (merge-pathnames "share/river-protocols/stable/river-xkb-bindings-v1.xml"
                    (uiop:ensure-directory-pathname
                     (or (uiop:getenv "GUIX_ENVIRONMENT")
                         (error "GUIX_ENVIRONMENT unset: build inside guix shell -m manifest.scm"))))

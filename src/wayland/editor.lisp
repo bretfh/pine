@@ -20,7 +20,7 @@ installs it. Nil means keyboard events are ignored (render-only).")
   "The editor cell font size, from the one theme metric the daemon's window nodes
 also use -- so the frontend measures its :resize cell grid at the same size the
 buffer rows were laid out for."
-  (float (pine.text.buffer:metric :font-px 15) 1d0))
+  (float (pine.ui.face:metric :font-px 15) 1d0))
 (defparameter *x0* 6d0)
 
 (defclass editor ()
@@ -95,7 +95,7 @@ as it takes."
   "Measure the monospace cell once, the same way the layout engine's window node
 does, so a frame laid out at N cols x rows lands exactly in the cells."
   (unless (ed-metricsp ed)
-    (c:select-font-face pine.display:*font-family* :normal :normal)
+    (c:select-font-face pine.cairo.grid:*font-family* :normal :normal)
     (c:set-font-size (font-px))
     (let ((fe (c:get-font-extents)))
       (multiple-value-bind (xb yb w h ax) (c:text-extents "M")
@@ -217,7 +217,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                             :cell-h (round (ed-cell-h ed))))))
     (:rules
      (destructuring-bind (&key rules) (rest msg)
-       (pine.text.buffer:install-rules rules)
+       (pine.ui.rules:install-rules rules)
        (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
     ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
     ;; -- the buffer's rows ride inside the window node -- and repaint.

@@ -1,5 +1,8 @@
-(in-package :pine.text.buffer)
+(defpackage #:pine.ui.face
+  (:use #:cl)
+  (:export #:*active-theme* #:*faces* #:*themes* #:bg #:bold #:build-theme #:color #:defface #:deftheme #:display-line #:display-runs #:display-text #:face #:face-attr-bits #:face-bg #:face-fg #:face-run #:faces-table #:fg #:find-face #:find-theme #:hex-rgb #:italic #:load-theme #:make-display-line #:metric #:register-theme #:resolve-color #:run-end #:run-face #:run-start #:theme #:theme-color #:theme-faces #:theme-key #:theme-metric #:theme-metrics #:theme-name #:theme-palette #:underline))
 
+(in-package #:pine.ui.face)
 
 ;;;; ================================================================
 ;;;; Faces

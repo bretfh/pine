@@ -88,7 +88,7 @@ dropping window state silently is how geometry goes missing."
 The compositor draws borders outside the window's content, so the arrangement
 has to leave room for them: without it, neighbouring windows sit edge to edge
 and each one's border is drawn over the other's content."
-  (let ((border (pine.text.buffer:metric :border 2)))
+  (let ((border (pine.ui.face:metric :border 2)))
     (list border border border border)))
 
 (defun %leaf (window)
@@ -166,9 +166,9 @@ focused window and for the rest.
 
 The theme lives here, with the configuration that loads it, so the frontend is
 told colours rather than resolving faces in an image that has no theme."
-  (list :width (pine.text.buffer:metric :border 2)
-        :active (pine.text.buffer:face-fg :border-active)
-        :inactive (pine.text.buffer:face-fg :border-inactive)))
+  (list :width (pine.ui.face:metric :border 2)
+        :active (pine.ui.face:face-fg :border-active)
+        :inactive (pine.ui.face:face-fg :border-inactive)))
 
 (defun push-arrangement ()
   "Send the arranged rects, the focused window, and the border to the frontend."

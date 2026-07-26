@@ -27,7 +27,7 @@
    ;; keys and modes are the bottom of the editing stack: the buffer actor
    ;; dispatches a message through its mode, so modes load before buffers.
    (:module "input"
-    :serial t
+    :serial t :pathname "editor/"
     :components ((:file "key") (:file "keymap")))
    ;; the echo line: no dependencies at all, and the command loop reports
    ;; through it, so it sits under everything that has something to say.
@@ -35,59 +35,52 @@
     :serial t :pathname "editor/"
     :components ((:file "echo")))
    (:module "mode"
-    :serial t
+    :serial t :pathname "editor/"
     :components ((:file "mode")))
    (:module "ts"
     :serial t
-    :components ((:file "ts") (:file "highlight")))
-   (:module "buffer"
+    :components ((:file "runtime") (:file "highlight")))
+   (:module "face"
+    :serial t :pathname "ui/"
+    :components ((:file "face") (:file "rules")))
+   (:module "text"
     :serial t
-    :components ((:file "buffer") (:file "window") (:file "face") (:file "rules")))
+    :components ((:file "buffer") (:file "window")))
    (:module "state"
     :serial t
     :components ((:file "store") (:file "ref") (:file "var") (:file "world")))
-   (:module "client"
-    :serial t
-    :components ((:file "client") (:file "modes") (:file "registry")))
+   (:module "frame"
+    :serial t :pathname "editor/"
+    :components ((:file "frame")))
    (:module "input-dispatch"
-    :serial t :pathname "input/"
+    :serial t :pathname "editor/"
     :components ((:file "command")))
    (:module "ui"
     :serial t
     :components ((:file "style") (:file "node") (:file "build") (:file "raster")
                 (:file "layout") (:file "cells") (:file "wire")))
-   (:module "source"
-    :serial t
-    :components ((:file "sources")))
+   (:file "source")
    ;; the base/text verb methods, once everything they reach for exists
    (:module "edit"
-    :serial t :pathname "mode/"
+    :serial t :pathname "editor/"
     :components ((:file "edit")))
-   (:module "term"
-    :serial t
-    :components ((:file "term")))
+   (:file "term")
    (:module "ui-render"
     :serial t :pathname "ui/"
     :components ((:file "render")))
    (:module "editor"
     :serial t
     :components ((:file "ask") (:file "motion") (:file "kill-ring")
-                (:file "layout-buffer") (:file "completion")
+                (:file "layout") (:file "completion")
                 (:file "minibuffer") (:file "isearch") (:file "file")
                 (:file "target") (:file "repl") (:file "overwrite")
                 (:file "window") (:file "help") (:file "debugger")
                 (:file "evaluate") (:file "editor") (:file "session")))
-   (:module "desktop"
-    :serial t
-    :components ((:file "desktop")))
-   (:module "wm"
-    :serial t
-    :components ((:file "wm")))
-   (:module "frontend"
-    :serial t
-    :components ((:file "frontend")))
+   (:file "desktop")
+   (:file "wm")
+   (:file "frontend")
    ;; main declares :pine, and the user vocabulary imports from it
-   (:file "main")
+   (:file "pine")
    (:file "user")))
 
 (asdf:defsystem #:pine/test
@@ -124,7 +117,7 @@ the layout tree to a cairo context, styled by the shared pine.style resolver
   :depends-on (#:pine #:cl-cairo2)
   :serial t
   :pathname "src/cairo/"
-  :components ((:file "display") (:file "paint") (:file "shot")))
+  :components ((:file "grid") (:file "paint") (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
   :description "The wayland backing: the protocol bindings pine generates from
@@ -134,10 +127,9 @@ wayland surfaces through the :pine/cairo backend."
   :serial t
   :pathname "src/"
   :components
-  ((:file "wayland/package")
-   (:module "protocol"
-    :serial t
-    :components ((:file "wlr-layer-shell") (:file "river-wm")
+  ((:module "protocol"
+    :serial t :pathname "wayland/protocol/"
+    :components ((:file "package") (:file "wlr-layer-shell") (:file "river-wm")
                  (:file "river-xkb") (:file "river-layer-shell")))
    (:module "wayland"
     :serial t

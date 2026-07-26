@@ -74,7 +74,7 @@ for render-chrome to blit above the echo row."
          (idx (max 0 (pine.editor.frame:index c)))
          (off (pine.ui.wire:scroll-to-selection idx 0 max-visible))
          (visible (subseq filtered (min off n) (min (+ off max-visible) n)))
-         (cols (pine.text.buffer:frame-cols
+         (cols (pine.text.window:frame-cols
                 (pine.editor.frame:frame (pine.editor.frame:current-client)))))
     (multiple-value-bind (rows tree)
         (pine.ui.cells:render (pine.editor.completion:completion-popup visible) (max 10 cols)
@@ -286,7 +286,7 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
          (back (pine.editor.frame:saved-buffer client)))
     (when (or (null back) (eq back mb))
       (let ((w (pine.editor.frame:focused-window client)))
-        (setf back (and w (pine.text.buffer:buffer-ref w)))))
+        (setf back (and w (pine.text.window:buffer-ref w)))))
     (setf (pine.editor.frame:current-buffer client) back
           (pine.editor.frame:saved-buffer client) nil
           (pine.editor.frame:prompt-active client) nil
