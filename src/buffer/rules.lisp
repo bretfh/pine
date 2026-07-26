@@ -1,7 +1,7 @@
-(in-package :pine.buffer)
+(in-package :pine.text.buffer)
 
 ;;;; The stylesheet, authored in Lisp as data: a list of (selector props-plist)
-;;;; where props values are CSS strings. pine.style compiles it and paints both
+;;;; where props values are CSS strings. pine.ui.style compiles it and paints both
 ;;;; the cairo panels and the cell render (layout buffers). Colours and
 ;;;; metrics come from the active theme, so restyling is a theme swap. Users
 ;;;; append their own rules with ADD-RULES (defrules from init.lisp); user rules
@@ -11,7 +11,7 @@
   "User (selector props-plist) rules, appended after the built-ins. Keyed by
 selector string for replace-on-reload.")
 (defvar *rules-generation* 0
-  "Bumped whenever *user-rules* changes, so pine.style's compiled-rules cache
+  "Bumped whenever *user-rules* changes, so pine.ui.style's compiled-rules cache
 knows to refresh even when the theme is unchanged.")
 
 (defun selector-string (sel)

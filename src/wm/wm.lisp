@@ -1,3 +1,12 @@
+(defpackage #:pine.wm
+  (:use #:cl)
+  (:export #:wm-keymap #:binding-table #:push-bindings #:run-binding
+           #:attached-p #:leaves #:focused-leaf
+           #:spawn #:close-window #:focus-step #:split #:exit-session)
+  (:documentation "Window management policy: the keymap whose chords are
+registered with the compositor, the commands they run, and the actions sent
+to the wm frontend. design/wm.org is the contract."))
+
 (in-package #:pine.wm)
 
 ;;;; Window management policy, daemon side. The compositor holds the windows
@@ -57,14 +66,14 @@ dropping window state silently is how geometry goes missing."
         (acc nil))
     (when tree
       (labels ((walk (n)
-                 (when (and (typep n 'pine.layout:window-node)
-                            (eq (pine.layout:window-kind n) :os-window))
+                 (when (and (typep n 'pine.ui.node:window-node)
+                            (eq (pine.ui.node:window-kind n) :os-window))
                    (push n acc))
-                 (dolist (c (pine.layout:nodes-of n)) (walk c))))
+                 (dolist (c (pine.ui.node:nodes-of n)) (walk c))))
         (walk tree)))
     (nreverse acc)))
 
-(defun leaf-window (leaf) (pine.layout:window-of leaf))
+(defun leaf-window (leaf) (pine.ui.node:window-of leaf))
 (defun leaf-id (leaf) (os-window-id (leaf-window leaf)))
 
 (defun find-leaf (id &optional (session *session*))
@@ -79,16 +88,16 @@ dropping window state silently is how geometry goes missing."
 The compositor draws borders outside the window's content, so the arrangement
 has to leave room for them: without it, neighbouring windows sit edge to edge
 and each one's border is drawn over the other's content."
-  (let ((border (pine.buffer:metric :border 2)))
+  (let ((border (pine.text.buffer:metric :border 2)))
     (list border border border border)))
 
 (defun %leaf (window)
   "A fresh os-window leaf for WINDOW, holding room for its chrome."
-  (pine.layout:window nil :of window :kind :os-window :expand 1
+  (pine.ui.node:window nil :of window :kind :os-window :expand 1
                           :margin (%frame)))
 
 (defun %divider (orient)
-  (pine.layout:rule :vertical (eq orient :row) :face :border-inactive))
+  (pine.ui.node:rule :vertical (eq orient :row) :face :border-inactive))
 
 (defun add-window (id title app-id)
   "Put a newly mapped window into the tree, beside the focused one."
@@ -101,7 +110,7 @@ and each one's border is drawn over the other's content."
        (setf (session-tree session) leaf))
       (t
        (let* ((orient (session-split session))
-              (root (pine.layout:split-node
+              (root (pine.ui.node:split-node
                      (session-tree session) focus leaf orient
                      :divider (%divider orient))))
          (cond (root (setf (session-tree session) root))
@@ -115,7 +124,7 @@ and each one's border is drawn over the other's content."
   (let* ((session *session*)
          (leaf (find-leaf id session)))
     (when leaf
-      (let ((root (pine.layout:remove-node (session-tree session) leaf)))
+      (let ((root (pine.ui.node:remove-node (session-tree session) leaf)))
         (setf (session-tree session)
               (cond (root root)
                     ((eq (session-tree session) leaf) nil)
@@ -135,20 +144,20 @@ of the output first."
          (output (and session (session-output session))))
     (when (and tree output)
       (destructuring-bind (x y width height) output
-        (let ((pine.layout:*text-size*
+        (let ((pine.ui.node:*text-size*
                 (lambda (text font-px)
                   (declare (ignore font-px))
                   (values (length text) 1))))
-          (pine.layout:measure tree width height)
-          (pine.layout:arrange tree x y width height))
+          (pine.ui.node:measure tree width height)
+          (pine.ui.node:arrange tree x y width height))
         (mapcar (lambda (leaf)
                   (list (leaf-id leaf)
-                        (pine.layout:start-col leaf)
-                        (pine.layout:start-line leaf)
-                        (- (pine.layout:end-col leaf)
-                           (pine.layout:start-col leaf))
-                        (1+ (- (pine.layout:end-line leaf)
-                               (pine.layout:start-line leaf)))))
+                        (pine.ui.node:start-col leaf)
+                        (pine.ui.node:start-line leaf)
+                        (- (pine.ui.node:end-col leaf)
+                           (pine.ui.node:start-col leaf))
+                        (1+ (- (pine.ui.node:end-line leaf)
+                               (pine.ui.node:start-line leaf)))))
                 (leaves session))))))
 
 (defun %border ()
@@ -157,9 +166,9 @@ focused window and for the rest.
 
 The theme lives here, with the configuration that loads it, so the frontend is
 told colours rather than resolving faces in an image that has no theme."
-  (list :width (pine.buffer:metric :border 2)
-        :active (pine.buffer:face-fg :border-active)
-        :inactive (pine.buffer:face-fg :border-inactive)))
+  (list :width (pine.text.buffer:metric :border 2)
+        :active (pine.text.buffer:face-fg :border-active)
+        :inactive (pine.text.buffer:face-fg :border-inactive)))
 
 (defun push-arrangement ()
   "Send the arranged rects, the focused window, and the border to the frontend."
@@ -267,7 +276,7 @@ chords were registered with the compositor from this keymap alone."
       ((null command)
        (format *error-output* "pine wm: no command bound to ~a~%" chord))
       (t
-       (let ((pine.client:*client* (session-client *session*)))
+       (let ((pine.editor.frame:*client* (session-client *session*)))
          (pine.editor.command:call-command command))))))
 
 ;;;; The session: one attached frontend, told the bindings on arrival, and
@@ -282,7 +291,7 @@ tree, and the chords that move them."))
 (defmethod pine.core.attach:attached ((app wm-app) client)
   (setf *session* (%make-session
                    :app client
-                   :client (pine.client:start-client pine.core.server:*server*)))
+                   :client (pine.editor.frame:start-client pine.core.server:*server*)))
   (push-bindings))
 
 (defmethod pine.core.attach:detached ((app wm-app) client)

@@ -1,4 +1,11 @@
-(in-package :pine.target)
+(defpackage #:pine.editor.target
+  (:use #:cl)
+  (:export #:*eval-target* #:*eval-target-saved* #:eval-in-target)
+  (:documentation "Which image an evaluation runs in. C-x C-e, eval-defun and
+the repl share one path through here, so redirecting the target redirects all
+of them."))
+
+(in-package #:pine.editor.target)
 
 ;;;; Where an evaluation runs. One path serves C-x C-e, eval-defun and the
 ;;;; repl, so redirecting the target redirects all of them, and nothing above
@@ -25,5 +32,5 @@ thread for :local; for a remote agent the result comes home as an :agent-result
                                  :package package :bindings bindings :on-done on-done)
           (pine.core.eval:evaluate-string str :package package
                                      :bindings bindings :on-done on-done))
-      (pine.core.actor:agent-eval (pine.client:server-of (pine.client:current-client))
+      (pine.core.actor:agent-eval (pine.editor.frame:server-of (pine.editor.frame:current-client))
                              *eval-target* str :package package :on-done on-done)))

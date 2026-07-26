@@ -1,3 +1,8 @@
+(defpackage #:pine.desktop
+  (:use #:cl)
+  (:export #:defsurface #:set-surface-role #:push-surface #:show-panel #:hide-panel
+           #:refresh-all #:*surface-client*))
+
 (in-package #:pine.desktop)
 
 (defvar *surface-client* nil
@@ -41,7 +46,7 @@ old ones), and push it to the app."
       (dolist (id (gethash name (dsession-surface-ids s)))
         (remhash id (dsession-actions s)))
       (setf (gethash name (dsession-surface-ids s)) nil)
-      (let ((data (pine.layout:node->wire
+      (let ((data (pine.ui.node:node->wire
                    (let ((*surface-client* aclient)) (funcall builder aclient))
                    :on-action (lambda (cb)
                                 (let ((id (incf (dsession-counter s))))
@@ -64,8 +69,8 @@ old ones), and push it to the app."
 (defun make-desktop-session (aclient)
   (let ((s (make-dsession)))
     (setf (pine.core.attach:attached-client-session aclient) s)
-    (when pine.buffer:*user-rules*
-      (pine.core.attach:push-to-app aclient :rules :rules pine.buffer:*user-rules*))
+    (when pine.text.buffer:*user-rules*
+      (pine.core.attach:push-to-app aclient :rules :rules pine.text.buffer:*user-rules*))
     (dolist (name '("bar" "echo"))
       (let ((v (surface-view aclient name)))
         (setf (gethash name (dsession-views s)) v)

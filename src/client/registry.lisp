@@ -1,4 +1,4 @@
-(in-package :pine.client)
+(in-package :pine.editor.frame)
 
 ;;;; The buffer registry as this client sees it: names resolve against the
 ;;;; server this client runs on, and creating or killing one updates which
@@ -7,10 +7,10 @@
 (defun make-buffer (name &key (content ""))
   (let* ((c (current-client))
          (srv (server-of c))
-         (table (pine.buffer:buffer-table srv))
+         (table (pine.text.buffer:buffer-table srv))
          (existing (gethash name table)))
     (when existing (return-from make-buffer existing))
-    (let ((actor (pine.buffer:make-buffer-actor (pine.core.server:actor-system srv) name :content content)))
+    (let ((actor (pine.text.buffer:make-buffer-actor (pine.core.server:actor-system srv) name :content content)))
       (setf (gethash name table) actor)
       (sento.actor:tell (pine.core.server:buffer-registry srv)
                         (list :register :name name :actor actor))
@@ -21,7 +21,7 @@
 (defun kill-buffer (name)
   (let* ((c (current-client))
          (srv (server-of c))
-         (table (pine.buffer:buffer-table srv))
+         (table (pine.text.buffer:buffer-table srv))
          (actor (gethash name table)))
     (when actor
       (when (eq actor (current-buffer c))
@@ -34,7 +34,7 @@
 (defun switch-buffer (name)
   (let* ((c (current-client))
          (srv (server-of c))
-         (actor (gethash name (pine.buffer:buffer-table srv))))
+         (actor (gethash name (pine.text.buffer:buffer-table srv))))
     (when actor
       (setf (current-buffer c) actor)
       actor)))
@@ -42,11 +42,11 @@
 
 (defun list-buffers ()
   (let ((srv (server-of (current-client))))
-    (loop for k being the hash-keys of (pine.buffer:buffer-table srv) collect k)))
+    (loop for k being the hash-keys of (pine.text.buffer:buffer-table srv) collect k)))
 
 (defun buffer-count ()
   (let ((srv (server-of (current-client))))
-    (hash-table-count (pine.buffer:buffer-table srv))))
+    (hash-table-count (pine.text.buffer:buffer-table srv))))
 
 (defun current-buffer-text ()
   (let* ((c (current-client))
@@ -73,12 +73,12 @@ Unknown keywords error; nothing silently falls through."
     ((null x) nil)
     ((stringp x)
      (let ((srv (server-of (current-client))))
-       (gethash x (pine.buffer:buffer-table srv))))
+       (gethash x (pine.text.buffer:buffer-table srv))))
     ((eq x :current)
      (current-buffer (current-client)))
     ((eq x :focused)
      (let ((w (focused-window (current-client))))
-       (when w (pine.buffer:buffer-ref w))))
+       (when w (pine.text.buffer:buffer-ref w))))
     ((keywordp x)
      (error "unknown buffer target ~s; use :current, :focused, or a string name"
             x))

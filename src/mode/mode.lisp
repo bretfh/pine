@@ -1,4 +1,18 @@
-(in-package #:pine.mode)
+(defpackage #:pine.editor.mode
+  (:use :cl)
+  (:export
+   #:mode #:major-mode #:minor-mode
+   #:base-mode #:text-mode #:lisp-mode #:repl-mode #:terminal-mode
+   #:debugger-mode #:minibuffer-mode #:layout-mode #:overwrite-mode
+   #:mode-name #:mode-keymap #:mode-indicator #:parent-mode #:ts-language
+   #:precedence #:transparent
+   #:register-mode #:find-mode #:all-mode-names #:global-keymap
+   #:mode-for-file #:auto-mode #:*auto-modes*
+   #:modes-dispatch-class
+   #:defmode #:defminor
+   #:dispatch-message))
+
+(in-package #:pine.editor.mode)
 
 ;;;; Mode classes. Modes are CLOS classes; the active modes of a buffer are
 ;;;; composed into one dispatch class (MOP) so command execution and behavior
@@ -109,7 +123,7 @@ Replaces any prior mapping, so reloading init.lisp is safe."
 
 ;;;; A set of active modes composed into one class, so command execution and
 ;;;; buffer behaviour layer minor -> major through method combination. Which
-;;;; modes are active is a client's business (pine.client); building the class
+;;;; modes are active is a client's business (pine.editor.frame); building the class
 ;;;; from them is this layer's.
 
 (defvar *dispatch-classes* (make-hash-table :test 'equal))

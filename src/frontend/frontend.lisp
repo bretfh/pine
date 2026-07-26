@@ -1,3 +1,13 @@
+(defpackage #:pine.frontend
+  (:use #:cl)
+  (:export #:pump #:make-pump #:close-pump #:pump-wake-in
+           #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
+           #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run
+           #:attach)
+  (:documentation "The client interface: what every frontend is, with no
+platform in it. Bootstraps the actor system and the daemon attachment, and
+owns the queue the daemon's threads hand work across."))
+
 (in-package #:pine.frontend)
 
 ;;;; What every frontend is, whatever it draws on. Two things: the way it

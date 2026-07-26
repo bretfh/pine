@@ -2,7 +2,7 @@
 
 ;;;; The daemon-attached desktop client. It attaches to the running daemon as
 ;;;; :kind :desktop, receives (:widgets :surface NAME :tree DATA) pushes,
-;;;; rebuilds each surface's node tree with pine.layout:wire->node (click
+;;;; rebuilds each surface's node tree with pine.ui.node:wire->node (click
 ;;;; handlers become ids sent back), and paints it onto a wlr-layer-shell
 ;;;; surface with cairo. Panels toggle via (:panel :name :show). Interaction
 ;;;; sends (:widget-action)/(:hint) to the daemon, which runs the closures --
@@ -143,7 +143,7 @@ work for the loop thread."
        (pine.frontend:enqueue (client-pump client) (lambda () (on-panel client name show)))))
     (:rules
      (destructuring-bind (&key rules) (rest msg)
-       (pine.buffer:install-rules rules)
+       (pine.text.buffer:install-rules rules)
        (pine.frontend:enqueue (client-pump client)
                 (lambda ()
                   (maphash (lambda (name ls) (declare (ignore name))

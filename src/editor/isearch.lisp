@@ -48,12 +48,12 @@ at or after FROM; backward the last match ending at or before FROM."
                  when pos return (values i pos))))))))
 
 (defun %isearch-goto (line col)
-  (let ((buf (pine.client:current-buffer (pine.client:current-client))))
+  (let ((buf (pine.editor.frame:current-buffer (pine.editor.frame:current-client))))
     (when buf
       (sento.actor:tell buf (list :move-point :line line :col col)))))
 
 (defun %isearch-echo (st &optional failing)
-  (pine.echo:message
+  (pine.editor.echo:message
    (format nil "~:[~;Failing ~]~:[~;Wrapped ~]I-search~:[~; backward~]: ~a"
            failing (isearch-wrapped st)
            (eq (isearch-direction st) :backward)
@@ -110,10 +110,10 @@ at or after FROM; backward the last match ending at or before FROM."
   (when (and accept *isearch* (plusp (length (isearch-string *isearch*))))
     (setf *isearch-last* (isearch-string *isearch*)))
   (setf *isearch* nil)
-  (pine.echo:message ""))
+  (pine.editor.echo:message ""))
 
 (defun %isearch-reader (key)
-  (let ((client (pine.client:current-client))
+  (let ((client (pine.editor.frame:current-client))
         (st *isearch*)
         (sym nil))
     (when st
@@ -124,7 +124,7 @@ at or after FROM; backward the last match ending at or before FROM."
              (string= sym "Escape"))
          (%isearch-goto (isearch-origin-line st) (isearch-origin-col st))
          (%isearch-exit)
-         (pine.echo:message "quit"))
+         (pine.editor.echo:message "quit"))
         ;; accept: point stays at the match
         ((string= sym "Return")
          (%isearch-exit :accept t))
@@ -159,15 +159,15 @@ at or after FROM; backward the last match ending at or before FROM."
          (pine.editor.command:dispatch client key))))))
 
 (defun isearch-start (direction)
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client)))
+  (let* ((client (pine.editor.frame:current-client))
+         (buf (pine.editor.frame:current-buffer client)))
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
-             (snap (pine.buffer:state->snapshot state)))
+             (snap (pine.text.buffer:state->snapshot state)))
         (setf *isearch*
               (make-isearch :direction direction
-                            :origin-line (pine.buffer:point-line snap)
-                            :origin-col (pine.buffer:point-col snap)
-                            :lines (pine.buffer:lines state)))
+                            :origin-line (pine.text.buffer:point-line snap)
+                            :origin-col (pine.text.buffer:point-col snap)
+                            :lines (pine.text.buffer:lines state)))
         (%isearch-echo *isearch*)
         (pine.editor.command:read-next-key client #'%isearch-reader)))))

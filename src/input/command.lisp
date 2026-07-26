@@ -71,15 +71,15 @@ LAMBDA-LIST arguments before the body runs."
         ((eq arg '-) -1)
         (t default)))
 
-(defun this-command-key (client) (pine.client:this-command-key client))
+(defun this-command-key (client) (pine.editor.frame:this-command-key client))
 
 (defun %region-bounds (client)
   "Region as (start-line start-col end-line end-col) from mark and point,
 normalized so start precedes end. nil if no mark."
-  (let ((buf (pine.client:current-buffer client)))
+  (let ((buf (pine.editor.frame:current-buffer client)))
     (when buf
       (multiple-value-bind (sl sc el ec)
-          (pine.buffer:region-bounds
+          (pine.text.buffer:region-bounds
            (sento.actor:ask-s buf '(:get-state) :time-out 5))
         (and sl (list sl sc el ec))))))
 
@@ -98,7 +98,7 @@ layer :before/:after/:around methods. ARGUMENT is the raw prefix argument.")
   (:method (modes command argument)
     (declare (ignore modes))
     (apply (command-fn command)
-           (gather-arguments command (pine.client:current-client) argument))))
+           (gather-arguments command (pine.editor.frame:current-client) argument))))
 
 (defun command-error (condition)
   "Surface an error from the interactive command/edit loop. With :debug-on-error
@@ -110,7 +110,7 @@ handler-bind so the backtrace is captured while the stack is still live."
            pine.core.eval:*on-debug*)
       (ignore-errors
        (funcall pine.core.eval:*on-debug* (pine.core.eval:make-error-evaluation condition)))
-      (pine.echo:message (format nil "error: ~a" condition))))
+      (pine.editor.echo:message (format nil "error: ~a" condition))))
 
 (defmacro %guarding-errors (&body body)
   "Run BODY; on an unhandled error surface it via %command-error and return NIL.
@@ -123,14 +123,14 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
 
 (defun call-command (name-or-command)
   (let ((cmd (find-command name-or-command))
-        (client (pine.client:current-client)))
+        (client (pine.editor.frame:current-client)))
     (when cmd
-      (let ((arg (pine.client:prefix-arg client)))
+      (let ((arg (pine.editor.frame:prefix-arg client)))
         (%guarding-errors
-          (execute (pine.client:active-modes-instance client) cmd arg))
-        (setf (pine.client:last-command client) (command-name cmd))
+          (execute (pine.editor.frame:active-modes-instance client) cmd arg))
+        (setf (pine.editor.frame:last-command client) (command-name cmd))
         (unless (command-prefix-p cmd)
-          (setf (pine.client:prefix-arg client) nil))))))
+          (setf (pine.editor.frame:prefix-arg client) nil))))))
 
 (defun self-insert-key-p (key)
   "True when KEY should insert its own character (printable, no C-/M-/super)."
@@ -141,22 +141,22 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
 
 (defun self-insert (client key)
   (when (and key (self-insert-key-p key))
-    (let ((buf (pine.client:current-buffer client)))
+    (let ((buf (pine.editor.frame:current-buffer client)))
       (when buf
-        (let ((n (prefix-numeric-value (pine.client:prefix-arg client))))
+        (let ((n (prefix-numeric-value (pine.editor.frame:prefix-arg client))))
           (dotimes (i (max 1 n))
             (sento.actor:tell buf (list :insert :text (pine.editor.key:key-sym key)))))))))
 
 (register-command
  (make-instance 'command :name "self-insert-command"
                 :fn (lambda ()
-                      (let ((client (pine.client:current-client)))
-                        (self-insert client (pine.client:this-command-key client))))))
+                      (let ((client (pine.editor.frame:current-client)))
+                        (self-insert client (pine.editor.frame:this-command-key client))))))
 
 (defun %active-tables (client)
   "Every active keymap's tables in priority order: minor modes first, then
 the major mode with its parent chain, then the global map."
-  (loop for km in (pine.client:active-keymaps client)
+  (loop for km in (pine.editor.frame:active-keymaps client)
         append (pine.editor.keymap:keymap-tables km)))
 
 (defun %step (tables key)
@@ -180,7 +180,7 @@ of prefix continuation tables, or nil."
 (defun read-next-key (client fn)
   "Capture the next dispatched key and hand it to FN instead of running its
 binding. One-shot. The basis for describe-key, quoted-insert, etc."
-  (setf (pine.client:pending-key-reader client) fn))
+  (setf (pine.editor.frame:pending-key-reader client) fn))
 
 (defun %seq-string (pending key)
   "The chord typed so far as a string: PENDING's prefix (if any) plus KEY."
@@ -192,38 +192,38 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
 typed so far and the live continuation tables from every active keymap.
 A key that dead-ends a chord echoes \"SEQ is undefined\" -- unless it is
 bound to keyboard-quit at top level, which always escapes a chord."
-  (setf (pine.client:this-command-key client) key)
-  (let ((reader (pine.client:pending-key-reader client)))
+  (setf (pine.editor.frame:this-command-key client) key)
+  (let ((reader (pine.editor.frame:pending-key-reader client)))
     (when reader
-      (setf (pine.client:pending-key-reader client) nil)
+      (setf (pine.editor.frame:pending-key-reader client) nil)
       (return-from dispatch (funcall reader key))))
   ;; in a terminal, keys go to the pty -- unless a prefix (C-x ...) is pending.
-  (when (and *terminal-handler* (null (pine.client:pending-keys client))
+  (when (and *terminal-handler* (null (pine.editor.frame:pending-keys client))
              (funcall *terminal-handler* client key))
     (return-from dispatch))
   (%guarding-errors
     (handler-bind ((error (lambda (c) (declare (ignore c))
-                            (setf (pine.client:pending-keys client) nil))))
-      (let* ((pending (pine.client:pending-keys client))
+                            (setf (pine.editor.frame:pending-keys client) nil))))
+      (let* ((pending (pine.editor.frame:pending-keys client))
              (tables (if pending (cdr pending) (%active-tables client))))
         (multiple-value-bind (cmd conts) (%step tables key)
           (cond
             (cmd
-             (setf (pine.client:pending-keys client) nil)
+             (setf (pine.editor.frame:pending-keys client) nil)
              (call-command cmd))
             (conts
-             (setf (pine.client:pending-keys client)
+             (setf (pine.editor.frame:pending-keys client)
                    (cons (%seq-string pending key) conts)))
             (pending
-             (setf (pine.client:pending-keys client) nil
-                   (pine.client:prefix-arg client) nil)
+             (setf (pine.editor.frame:pending-keys client) nil
+                   (pine.editor.frame:prefix-arg client) nil)
              (let ((top (%step (%active-tables client) key)))
                (if (equal top "keyboard-quit")
                    (call-command top)
-                   (pine.echo:message
+                   (pine.editor.echo:message
                     (format nil "~a is undefined" (%seq-string pending key))))))
             (t
              (if (self-insert-key-p key)
                  (call-command "self-insert-command")
                  ;; an unbound non-self-inserting key still terminates a prefix arg
-                 (setf (pine.client:prefix-arg client) nil)))))))))
+                 (setf (pine.editor.frame:prefix-arg client) nil)))))))))

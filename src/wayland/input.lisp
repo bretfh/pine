@@ -2,7 +2,7 @@
 
 ;;;; Pointer input for layer surfaces: bind wl_seat -> wl_pointer, track the
 ;;;; focused surface and cursor position, and drive the layout engine's own
-;;;; hit-testing (pine.layout:node-at / click-thunk) against the retained,
+;;;; hit-testing (pine.ui.node:node-at / click-thunk) against the retained,
 ;;;; arranged tree -- so hover highlights and clicks land on exactly what is
 ;;;; painted. wayflan delivers pointer x/y already in surface pixels.
 

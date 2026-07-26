@@ -1,4 +1,70 @@
-(in-package :pine.client)
+(defpackage #:pine.editor.frame
+  (:use :cl)
+  (:export
+   #:client
+   #:completion
+   #:actor
+   #:renderer
+   #:paint-sink
+   #:ts-actor
+   #:render-state
+   #:frame
+   #:px-width
+   #:px-height
+   #:cell-w
+   #:cell-h
+   #:windows
+   #:arrangement
+   #:focused-window
+   #:pending-keys
+   #:prefix-arg
+   #:this-command-key
+   #:pending-key-reader
+   #:mode-stack
+   #:completion-state
+   #:current-buffer
+   #:buffer-modes
+   #:buffer-minor-modes
+   #:kill-ring
+   #:kill-ring-max
+   #:last-command
+   #:server-of
+   #:terminals
+   #:terminal-map
+   #:terminal-wake
+   #:repl-buffer
+   #:prompt-callback
+   #:prompt-active
+   #:prompt-history
+   #:prompt-history-pos
+   #:prompt-history-items
+   #:minibuffer-buffer #:saved-buffer #:minibuffer-snap #:minibuffer-controller
+   #:active-p
+   #:candidates
+   #:filtered
+   #:index
+   #:input
+   #:callback
+   #:prompt
+   #:dynamic-fn
+   #:popup-rows
+   #:popup-tree
+   #:*client*
+   #:current-client
+   #:buffer-in-scope
+   #:make-window #:remove-window #:focus-window
+   #:buffer-mode #:current-buffer-mode #:set-buffer-mode
+   #:buffer-active-modes #:active-minor-modes #:active-keymaps
+   #:active-modes-instance
+   #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
+   #:toggle-minor-mode #:active-minor-mode-indicators
+   #:buffer #:make-buffer #:kill-buffer #:switch-buffer
+   #:list-buffers #:buffer-count
+   #:current-buffer-text #:current-buffer-snapshot
+   #:start-client
+   #:stop-client))
+
+(in-package #:pine.editor.frame)
 
 (defclass completion ()
   ((active-p   :initarg :active-p   :accessor active-p   :initform nil)
@@ -12,7 +78,7 @@
    ;; (filesystem path completion), instead of filtering a fixed list.
    (dynamic-fn :initarg :dynamic-fn :accessor dynamic-fn :initform nil)
    ;; the candidate list rendered to styled rows + its arranged tree
-   ;; (pine.layout:render output); render-chrome blits the rows above the
+   ;; (pine.ui.node:render output); render-chrome blits the rows above the
    ;; echo row while the prompt is active.
    (popup-rows :initarg :popup-rows :accessor popup-rows :initform nil)
    (popup-tree :initarg :popup-tree :accessor popup-tree :initform nil)))
@@ -35,7 +101,7 @@
    (cell-w          :initarg :cell-w          :accessor cell-w          :initform nil)
    (cell-h          :initarg :cell-h          :accessor cell-h          :initform nil)
    (windows         :initarg :windows         :accessor windows         :initform nil)
-   ;; the window arrangement: a pine.buffer:window leaf, or (:column ...) /
+   ;; the window arrangement: a pine.text.buffer:window leaf, or (:column ...) /
    ;; (:row ...) over such trees -- the split shape C-x 2/3/0/1 rewrite.
    ;; nil means the single window in WINDOWS.
    (arrangement     :initarg :arrangement     :accessor arrangement     :initform nil)
@@ -90,7 +156,7 @@ want the current buffer if there is one and no error if there is not."
 (defun start-client (server)
   (let* ((c (make-instance 'client
                 :server-of server
-                :frame (make-instance 'pine.buffer::frame)
+                :frame (make-instance 'pine.text.buffer::frame)
                 :terminal-map (make-hash-table :test 'eq)
                 :kill-ring (pine.state.store:store :kill-ring))))
     (push c (pine.core.server:clients server))
@@ -104,7 +170,7 @@ want the current buffer if there is one and no error if there is not."
   "A window on BUFFER-ACTOR, registered on the client in scope when there is
 one. Without a client the window is detached: a read-only view for a panel or
 a layout buffer."
-  (let ((w (make-instance 'pine.buffer:window
+  (let ((w (make-instance 'pine.text.buffer:window
              :buffer buffer-actor :name name
              :row row :col col :width width :height height
              :focused focused))
@@ -125,8 +191,8 @@ a layout buffer."
   (let ((c *client*))
     (when c
       (let ((prev (focused-window c)))
-        (when prev (setf (pine.buffer:focusedp prev) nil)))
-      (setf (pine.buffer:focusedp w) t
+        (when prev (setf (pine.text.buffer:focusedp prev) nil)))
+      (setf (pine.text.buffer:focusedp w) t
             (focused-window c) w))))
 
 (defun stop-client (c)

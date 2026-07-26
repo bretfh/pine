@@ -60,7 +60,7 @@
 (defun lines-state (nlines &optional (cols 40))
   (let ((seq (fset:empty-seq)))
     (dotimes (i nlines) (setf seq (fset:with-last seq (a-line cols i))))
-    (make-instance 'pine.buffer:buffer-state
+    (make-instance 'pine.text.buffer:buffer-state
                    :lines seq
                    :meta (fset:with (fset:empty-map) :name "bench"))))
 
@@ -70,10 +70,10 @@
       (format o "(defun f~d (x y)~%  (let ((z (+ x y)))~%    (* z ~d)))~%~%" i i))))
 
 (defun sample-tree ()
-  (apply #'pine.layout:row
-         (append (loop repeat 8 collect (pine.layout:label "item"))
-                 (list (pine.layout:meter :value 42 :min 0 :max 100)
-                       (pine.layout:meter :value 70 :min 0 :max 100)))))
+  (apply #'pine.ui.node:row
+         (append (loop repeat 8 collect (pine.ui.node:label "item"))
+                 (list (pine.ui.node:meter :value 42 :min 0 :max 100)
+                       (pine.ui.node:meter :value 70 :min 0 :max 100)))))
 
 (defparameter *plain-chunk*
   (with-output-to-string (o)
@@ -92,15 +92,15 @@
       (let* ((st (lines-state n))
              (mid (floor n 2)))
         (push (defbench (format nil "insert-char @mid, ~d lines" n)
-                (pine.buffer:insert-char st mid 0 #\x)) rows)
+                (pine.text.buffer:insert-char st mid 0 #\x)) rows)
         (push (defbench (format nil "insert-newline @mid, ~d lines" n)
-                (pine.buffer:insert-newline st mid 5)) rows)
+                (pine.text.buffer:insert-newline st mid 5)) rows)
         (push (defbench (format nil "delete-region 3ch @mid, ~d lines" n)
-                (pine.buffer:delete-region st mid 0 mid 3)) rows)
+                (pine.text.buffer:delete-region st mid 0 mid 3)) rows)
         (push (defbench (format nil "state->snapshot, ~d lines" n)
-                (pine.buffer:state->snapshot st)) rows)
+                (pine.text.buffer:state->snapshot st)) rows)
         (push (defbench (format nil "state->string, ~d lines" n)
-                (pine.buffer:state->string st)) rows)))
+                (pine.text.buffer:state->string st)) rows)))
     (print-table "buffer edits (fset immutable state)" (nreverse rows))))
 
 (defun bench-load-content ()
@@ -109,7 +109,7 @@
       (let ((text (with-output-to-string (o)
                     (dotimes (i n) (write-line (a-line 40 i) o)))))
         (push (defbench (format nil "load-content, ~d lines" n)
-                (pine.buffer:load-content text)) rows)))
+                (pine.text.buffer:load-content text)) rows)))
     (print-table "load-content (file open path)" (nreverse rows))))
 
 (defun bench-vt ()
@@ -129,13 +129,13 @@
 (defun bench-widget ()
   (let ((pine.core.server:*server* (make-instance 'pine.core.server:server)))
     (let* ((tree (sample-tree))
-           (wire (pine.layout:node->wire tree)) rows)
+           (wire (pine.ui.node:node->wire tree)) rows)
       (push (%safe (lambda () (defbench "node->wire (serialize bar)"
-                                (pine.layout:node->wire tree)))) rows)
+                                (pine.ui.node:node->wire tree)))) rows)
       (push (%safe (lambda () (defbench "wire->node (deserialize bar)"
-                                (pine.layout:wire->node wire)))) rows)
+                                (pine.ui.node:wire->node wire)))) rows)
       (push (%safe (lambda () (defbench "render (bar -> cell rows, w=80)"
-                                (pine.layout:render tree 80)))) rows)
+                                (pine.ui.node:render tree 80)))) rows)
       (print-table "widget view build (per push / per frame)" (nreverse rows)))))
 
 ;;;; The push path: what a frame costs to put on the wire. The other groups
@@ -152,11 +152,11 @@
 (defun %editor-wire (cols rows runs)
   "The wire form of an editor tree of ROWS lines at COLS columns, each line
 carrying RUNS face runs."
-  (pine.layout:node->wire
-   (pine.layout:column
-    (pine.layout:window (loop :repeat rows :collect (%row cols runs)) :kind :window)
-    (pine.layout:window (list (%row cols 1)) :kind :echo)
-    (pine.layout:window (list (%row cols 2)) :kind :modeline))))
+  (pine.ui.node:node->wire
+   (pine.ui.node:column
+    (pine.ui.node:window (loop :repeat rows :collect (%row cols runs)) :kind :window)
+    (pine.ui.node:window (list (%row cols 1)) :kind :echo)
+    (pine.ui.node:window (list (%row cols 2)) :kind :modeline))))
 
 (defun %frame-bytes (wire)
   "(values PAYLOAD FRAME) bytes: the serialized message, and the envelope the
@@ -184,7 +184,7 @@ transport actually writes, which re-encodes those bytes as decimal text."
 
 (defun bench-push ()
   (let ((pine.core.server:*server* (make-instance 'pine.core.server:server)))
-    (let ((shapes (list (list "bar (the tree benched above)" (pine.layout:node->wire (sample-tree)))
+    (let ((shapes (list (list "bar (the tree benched above)" (pine.ui.node:node->wire (sample-tree)))
                         (list "editor 88x25, plain" (%editor-wire 88 25 1))
                         (list "editor 88x25, highlighted" (%editor-wire 88 25 15))
                         (list "editor 284x78, plain" (%editor-wire 284 78 1))
@@ -197,14 +197,14 @@ transport actually writes, which re-encodes those bytes as decimal text."
       ;; the same frame, as a patch: one line of it changed
       (let* ((before (%editor-wire 88 25 15))
              (after (let ((f (%editor-wire 88 25 15)))
-                      (setf (getf (second (first (pine.layout:wire-windows f))) :rows)
+                      (setf (getf (second (first (pine.ui.node:wire-windows f))) :rows)
                             (let ((rows (copy-list
-                                         (getf (second (first (pine.layout:wire-windows f)))
+                                         (getf (second (first (pine.ui.node:wire-windows f)))
                                                :rows))))
                               (setf (nth 12 rows) (%row 88 15 #\b))
                               rows))
                       f))
-             (patch (pine.layout:rows-patch before after))
+             (patch (pine.ui.node:rows-patch before after))
              (whole nil))
         (declare (ignorable whole))
         (multiple-value-bind (payload frame) (%frame-bytes (list :rows-patch patch))
@@ -235,7 +235,7 @@ transport actually writes, which re-encodes those bytes as decimal text."
                          (defbench "envelope decode (parse the bytes back)"
                            (read-from-string frame))))) rows)
         (push (%safe (lambda () (defbench "wire->node (editor 88x25 highlighted)"
-                                  (pine.layout:wire->node wire)))) rows))
+                                  (pine.ui.node:wire->node wire)))) rows))
       (print-table "the push path, per frame" (nreverse rows)))))
 
 (defun bench-ts ()
@@ -287,17 +287,17 @@ surface, headless -- the same path the wayland clients run per frame."
         (unless pine.core.server:*server*
           (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
         (let ((tree (sample-tree)) rows)
-          (pine.layout:with-cairo-layout
+          (pine.ui.node:with-cairo-layout
             (let ((surface (cairo:create-image-surface :argb32 560 120)))
               (cairo:with-context ((cairo:create-context surface))
                 (push (defbench "paint-tree (bar, 560x120, reused surface)"
-                        (pine.layout:paint-tree tree 560 120))
+                        (pine.ui.node:paint-tree tree 560 120))
                       rows))
               (cairo:destroy surface))
             (push (defbench "fresh surface + paint + destroy (560x480)"
                     (let ((surface (cairo:create-image-surface :argb32 560 480)))
                       (cairo:with-context ((cairo:create-context surface))
-                        (pine.layout:paint-tree tree 560 480))
+                        (pine.ui.node:paint-tree tree 560 480))
                       (cairo:destroy surface)))
                   rows))
           (print-table "cairo paint (per frame in the app)" (nreverse rows))))

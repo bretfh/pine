@@ -21,7 +21,7 @@
   "The editor's cell font size -- the one theme metric both the daemon's window
 nodes and the editor frontend derive their cell grid from, so a buffer laid out
 at N cols x rows lands exactly in the frontend's cells."
-  (pine.buffer:metric :font-px 15))
+  (pine.text.buffer:metric :font-px 15))
 
 (defun %in-actor-p ()
   "True on a thread inside an actor's receive, where a blocking ask is
@@ -33,8 +33,8 @@ forbidden (the liveness contract)."
 through the client when one is in scope (creating the buffer if missing), else
 through the server's buffer table."
   (etypecase x
-    (string (if pine.client:*client*
-                (pine.client:make-buffer x)
+    (string (if pine.editor.frame:*client*
+                (pine.editor.frame:make-buffer x)
                 (let ((srv pine.core.server:*server*))
                   (and srv (pine.core.server:buffer-table srv)
                        (gethash x (pine.core.server:buffer-table srv))))))
@@ -52,16 +52,16 @@ itself, or a reverse lookup in the server's buffer table."
         name)))
 
 (defun %backing-window (buf name)
-  "A pine.buffer:window viewing BUF. Registered on the client's window list
+  "A pine.text.buffer:window viewing BUF. Registered on the client's window list
 when one is in scope (an editor view the commands can focus and split), else
 detached (a read-only view in a panel or a layout buffer). The snapshot comes
 through the renderer subscription for client windows; a detached window
 fetches one only off-actor, so seeding never blocks a receive."
-  (let ((w (if pine.client:*client*
-               (pine.client:make-window buf name)
-               (make-instance 'pine.buffer:window :buffer buf :name name))))
-    (unless (or pine.client:*client* (%in-actor-p))
-      (setf (pine.buffer:snap w) (ignore-errors (pine.ask:ask buf :snapshot))))
+  (let ((w (if pine.editor.frame:*client*
+               (pine.editor.frame:make-window buf name)
+               (make-instance 'pine.text.buffer:window :buffer buf :name name))))
+    (unless (or pine.editor.frame:*client* (%in-actor-p))
+      (setf (pine.text.buffer:snap w) (ignore-errors (pine.editor.ask:ask buf :snapshot))))
     w))
 
 (defun editor-window-node (x &rest props)
@@ -72,15 +72,15 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
   (let* ((buf (%resolve-buffer x))
          (name (%buffer-name x buf))
          (w (and buf (%backing-window buf name)))
-         (node (apply #'pine.layout:window nil :of w :kind :window
+         (node (apply #'pine.ui.node:window nil :of w :kind :window
                       (append props (list :font-px (editor-font-px))))))
-    (when (and buf pine.client:*client*)
-      (pine.render:subscribe-to-buffer buf))
-    (unless pine.client:*client*
+    (when (and buf pine.editor.frame:*client*)
+      (pine.ui.render:subscribe-to-buffer buf))
+    (unless pine.editor.frame:*client*
       (when w
-        (setf (pine.buffer:win-width w) 80 (pine.buffer:win-height w) 24)
-        (setf (pine.layout:window-rows node)
-              (nth-value 0 (pine.render:render-window-rows w)))))
+        (setf (pine.text.buffer:win-width w) 80 (pine.text.buffer:win-height w) 24)
+        (setf (pine.ui.node:window-rows node)
+              (nth-value 0 (pine.ui.render:render-window-rows w)))))
     node))
 
 (defun editor-terminal-node (x &rest props)
@@ -92,20 +92,20 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
   (let ((w (when x
              (let ((buf (%resolve-buffer x)))
                (and buf (%backing-window buf (%buffer-name x buf)))))))
-    (apply #'pine.layout:window nil :of w :kind :modeline
+    (apply #'pine.ui.node:window nil :of w :kind :modeline
            (append props (list :font-px (editor-font-px))))))
 
 (defun editor-echo-node (&rest props)
   "The echo/minibuffer line as a leaf: the message or the active prompt with
 its input, the completion popup floating above it as an overlay (one in-flow
 row, so the input line never moves), and the minibuffer caret."
-  (apply #'pine.layout:window nil :kind :echo :base 1
+  (apply #'pine.ui.node:window nil :kind :echo :base 1
          (append props (list :font-px (editor-font-px)))))
 
 (defun %default-editor-tree ()
   "The engine's editor surface, used when init.lisp declares none: one window
 on scratch, the echo line, the mode line."
-  (pine.layout:column :align :stretch
+  (pine.ui.node:column :align :stretch
     (editor-window-node "scratch" :expand 1)
     (editor-echo-node)
     (editor-modeline-node)))
@@ -120,33 +120,33 @@ on scratch, the echo line, the mode line."
 (defun %node-props (n)
   "The declared props worth persisting on N: :expand and :class, when set.
 Font size is derived and opacity is a style rule -- neither is identity."
-  (append (let ((e (pine.layout:expand-of n)))
+  (append (let ((e (pine.ui.node:expand-of n)))
             (when (and (numberp e) (not (zerop e))) (list :expand e)))
-          (let ((c (pine.layout:css-class n)))
+          (let ((c (pine.ui.node:css-class n)))
             (when c (list :class c)))))
 
 (defun %tree->form (n)
   "N in the builder language, or nil when N (or a descendant) is outside the
 editor vocabulary."
   (typecase n
-    (pine.layout:window-node
-     (case (pine.layout:window-kind n)
-       (:window (let ((w (pine.layout:window-of n)))
-                  (and w (list* :window (pine.buffer:window-name w)
+    (pine.ui.node:window-node
+     (case (pine.ui.node:window-kind n)
+       (:window (let ((w (pine.ui.node:window-of n)))
+                  (and w (list* :window (pine.text.buffer:window-name w)
                                 (%node-props n)))))
-       (:modeline (let ((w (pine.layout:window-of n)))
-                    (if w (list :modeline (pine.buffer:window-name w))
+       (:modeline (let ((w (pine.ui.node:window-of n)))
+                    (if w (list :modeline (pine.text.buffer:window-name w))
                         (list :modeline))))
        (:echo (list :echo))))
-    (pine.layout:separator (list :rule))
-    ((or pine.layout:vstack pine.layout:hstack)
-     (let ((kids (mapcar #'%tree->form (pine.layout:nodes n))))
+    (pine.ui.node:separator (list :rule))
+    ((or pine.ui.node:vstack pine.ui.node:hstack)
+     (let ((kids (mapcar #'%tree->form (pine.ui.node:nodes n))))
        (unless (member nil kids)
-         (list* (if (typep n 'pine.layout:vstack) :column :row)
+         (list* (if (typep n 'pine.ui.node:vstack) :column :row)
                 (append
-                 (let ((s (pine.layout:spacing n)))
+                 (let ((s (pine.ui.node:spacing n)))
                    (unless (zerop s) (list :spacing s)))
-                 (let ((a (pine.layout:align n)))
+                 (let ((a (pine.ui.node:align n)))
                    (unless (eq a :start) (list :align a)))
                  (%node-props n)
                  kids)))))))
@@ -177,25 +177,25 @@ points at nothing (killed buffers, dead terminals)."
                      (editor-modeline-node (%live-name (first rest)))
                      (editor-modeline-node)))
       (:echo (editor-echo-node))
-      (:rule (pine.layout:rule))
+      (:rule (pine.ui.node:rule))
       ((:column :row)
        (multiple-value-bind (props kids) (%split-props rest)
-         (apply (if (eq tag :column) #'pine.layout:column #'pine.layout:row)
+         (apply (if (eq tag :column) #'pine.ui.node:column #'pine.ui.node:row)
                 (append props (mapcar #'%form->tree kids))))))))
 
 (defun %arrangement-data ()
   "The :arrangement world entry for the client in scope: the tree in builder
 form plus the focused and current buffer names. nil when no client is bound
 or the tree has foreign nodes."
-  (let ((client pine.client:*client*))
+  (let ((client pine.editor.frame:*client*))
     (when client
-      (let* ((tree (pine.client:arrangement client))
+      (let* ((tree (pine.editor.frame:arrangement client))
              (form (and tree (%tree->form tree))))
         (when form
-          (let ((fw (pine.client:focused-window client))
-                (cur (pine.client:current-buffer client)))
+          (let ((fw (pine.editor.frame:focused-window client))
+                (cur (pine.editor.frame:current-buffer client)))
             (list :tree form
-                  :focus (and fw (pine.buffer:window-name fw))
+                  :focus (and fw (pine.text.buffer:window-name fw))
                   :current (and cur (%buffer-name cur cur)))))))))
 
 (pine.state.world:register :arrangement :save #'%arrangement-data)
@@ -205,19 +205,19 @@ or the tree has foreign nodes."
 (the seed then falls back to the builder)."
   (handler-case
       (let ((tree (%form->tree (getf saved :tree))))
-        (setf (pine.client:arrangement client) tree)
-        (let* ((ws (pine.client:windows client))
+        (setf (pine.editor.frame:arrangement client) tree)
+        (let* ((ws (pine.editor.frame:windows client))
                (w (or (find (getf saved :focus) ws
-                            :key #'pine.buffer:window-name :test #'equal)
+                            :key #'pine.text.buffer:window-name :test #'equal)
                       (first (last ws)))))
           (when w
-            (pine.client:focus-window w)
-            (setf (pine.client:current-buffer client)
+            (pine.editor.frame:focus-window w)
+            (setf (pine.editor.frame:current-buffer client)
                   (or (let ((srv pine.core.server:*server*))
                         (and srv (pine.core.server:buffer-table srv)
                              (gethash (getf saved :current)
                                       (pine.core.server:buffer-table srv))))
-                      (pine.buffer:buffer-ref w)))))
+                      (pine.text.buffer:buffer-ref w)))))
         tree)
     (error (c)
       (format *error-output* "world arrangement restore failed: ~a~%" c)
@@ -227,25 +227,25 @@ or the tree has foreign nodes."
   "Seed CLIENT's live editor tree: the saved world arrangement when WORLD and
 one exists, else the registered `editor' surface builder (init.lisp), else the
 engine default. Focus lands on the saved focus or the first window leaf."
-  (let ((pine.client:*client* client)
+  (let ((pine.editor.frame:*client* client)
         (builder (gethash "editor"
                           (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
         (saved (and world
                     (ignore-errors (pine.state.var:var :world-save nil))
                     (pine.state.store:store '(:world :arrangement)))))
-    (setf (pine.client:windows client) nil
-          (pine.client:focused-window client) nil)
+    (setf (pine.editor.frame:windows client) nil
+          (pine.editor.frame:focused-window client) nil)
     (or (and saved (getf saved :tree) (%restore-arrangement client saved))
         (progn
-          (setf (pine.client:windows client) nil
-                (pine.client:focused-window client) nil)
+          (setf (pine.editor.frame:windows client) nil
+                (pine.editor.frame:focused-window client) nil)
           (let ((tree (if builder (funcall builder nil) (%default-editor-tree))))
-            (setf (pine.client:arrangement client) tree)
-            (let ((w (first (last (pine.client:windows client)))))
+            (setf (pine.editor.frame:arrangement client) tree)
+            (let ((w (first (last (pine.editor.frame:windows client)))))
               (when w
-                (pine.client:focus-window w)
-                (setf (pine.client:current-buffer client)
-                      (pine.buffer:buffer-ref w))))
+                (pine.editor.frame:focus-window w)
+                (setf (pine.editor.frame:current-buffer client)
+                      (pine.text.buffer:buffer-ref w))))
             tree)))))
 
 (defun reseed-editor-sessions ()
@@ -258,9 +258,9 @@ engine default. Focus lands on the saved focus or the first window leaf."
           ;; :reload is the declared reset: the builder wins, and the relayout
           ;; below saves the reasserted tree as the new world.
           (%seed-editor-tree (sess-client s) :world nil)
-          (let ((pine.client:*client* (sess-client s)))
-            (pine.render:relayout))
-          (sento.actor:tell (pine.client:renderer (sess-client s))
+          (let ((pine.editor.frame:*client* (sess-client s)))
+            (pine.ui.render:relayout))
+          (sento.actor:tell (pine.editor.frame:renderer (sess-client s))
                             '(:force-render)))))))
 
 (defun push-editor-surface (aclient s)
@@ -270,10 +270,10 @@ Sends the lines that changed when the frame differs from the last one only in
 its rows and cursor, and the whole tree otherwise. Nearly all of a frame is
 those rows, and a keystroke moves one of them."
   (let* ((client (sess-client s))
-         (tree (pine.render:refresh-editor-tree client)))
+         (tree (pine.ui.render:refresh-editor-tree client)))
     (when tree
-      (let* ((wire (pine.layout:node->wire tree))
-             (patch (pine.layout:rows-patch (sess-sent-wire s) wire)))
+      (let* ((wire (pine.ui.node:node->wire tree))
+             (patch (pine.ui.node:rows-patch (sess-sent-wire s) wire)))
         (incf (sess-generation s))
         (cond
           (patch
@@ -310,7 +310,7 @@ shutdown sweep can save it."
 (pine.state.world:register :scratch
   :save #'%scratch-text
   :restore (lambda (text)
-             (let ((buf (pine.client:make-buffer "scratch")))
+             (let ((buf (pine.editor.frame:make-buffer "scratch")))
                (sento.actor:tell buf (list :replace-content :content text)))))
 
 (defvar *world-restored* nil
@@ -318,28 +318,28 @@ shutdown sweep can save it."
 attach (a client must be in scope); the arrangement applies on every seed.")
 
 (defun make-editor-session (aclient &key sink (server pine.core.server:*server*))
-  (let ((client (pine.client:start-client server)))
-    (pine.render:start-renderer client)
-    (setf (pine.client:paint-sink client) sink)
-    (let ((pine.client:*client* client))
-      (let ((buf (pine.client:make-buffer "scratch")))
-        (setf (pine.client:current-buffer client) buf)
-        (pine.client:set-buffer-mode buf :lisp-mode)
-        (ignore-errors (pine.ask:tell buf :set-local :key :package :value :pine-user)))
+  (let ((client (pine.editor.frame:start-client server)))
+    (pine.ui.render:start-renderer client)
+    (setf (pine.editor.frame:paint-sink client) sink)
+    (let ((pine.editor.frame:*client* client))
+      (let ((buf (pine.editor.frame:make-buffer "scratch")))
+        (setf (pine.editor.frame:current-buffer client) buf)
+        (pine.editor.frame:set-buffer-mode buf :lisp-mode)
+        (ignore-errors (pine.editor.ask:tell buf :set-local :key :package :value :pine-user)))
       (unless *world-restored*
         (setf *world-restored* t)
         (pine.state.world:restore-world))
       (%seed-editor-tree client)
-      (let ((f (pine.client:frame client)))
-        (setf (pine.buffer:frame-cols f) 80 (pine.buffer:frame-rows f) 29)
-        (pine.render:relayout))
+      (let ((f (pine.editor.frame:frame client)))
+        (setf (pine.text.buffer:frame-cols f) 80 (pine.text.buffer:frame-rows f) 29)
+        (pine.ui.render:relayout))
       (ensure-minibuffer client)
       (let ((s (make-sess :client client :aclient aclient :sink sink)))
         (when aclient
           (setf (pine.core.attach:attached-client-session aclient) s)
-          (when pine.buffer:*user-rules*
+          (when pine.text.buffer:*user-rules*
             (pine.core.attach:push-to-app aclient :rules
-                                     :rules pine.buffer:*user-rules*)))
+                                     :rules pine.text.buffer:*user-rules*)))
         (setf (sess-thread s)
               (bordeaux-threads:make-thread (lambda () (session-loop s))
                                             :name "pine-editor-input"))
@@ -352,7 +352,7 @@ attach (a client must be in scope); the arrangement applies on every seed.")
 Woken by the pty readers, then paced: one repaint per 30th of a second however
 much output arrived, and nothing at all while no terminal is producing any."
   (let* ((client (sess-client s))
-         (wake (pine.client:terminal-wake client)))
+         (wake (pine.editor.frame:terminal-wake client)))
     (setf (sess-pump s)
           (bordeaux-threads:make-thread
            (lambda ()
@@ -361,7 +361,7 @@ much output arrived, and nothing at all while no terminal is producing any."
                        (loop :while (sb-thread:try-semaphore wake))
                        (unless (sess-stop s)
                          (sleep 1/30)
-                         (sento.actor:tell (pine.client:renderer client)
+                         (sento.actor:tell (pine.editor.frame:renderer client)
                                            '(:term-tick)))))
            :name "pine-term-pump"))))
 
@@ -370,7 +370,7 @@ much output arrived, and nothing at all while no terminal is producing any."
   (setf (sess-stop s) t)
   (bordeaux-threads:with-lock-held ((sess-lock s))
     (bordeaux-threads:condition-notify (sess-cvar s)))
-  (sb-thread:signal-semaphore (pine.client:terminal-wake (sess-client s))))
+  (sb-thread:signal-semaphore (pine.editor.frame:terminal-wake (sess-client s))))
 
 (defun session-input (aclient msg)
   (let ((s (pine.core.attach:attached-client-session aclient)))
@@ -390,17 +390,17 @@ much output arrived, and nothing at all while no terminal is producing any."
            (when str
              (pine.editor.command:dispatch
               client (pine.editor.key:make-key str :ctrl ctrl :meta meta :shift shift :super super))
-             (sento.actor:tell (pine.client:renderer client) '(:force-render))))))
+             (sento.actor:tell (pine.editor.frame:renderer client) '(:force-render))))))
       (:resize
-       (sento.actor:tell (pine.client:renderer client) msg))
+       (sento.actor:tell (pine.editor.frame:renderer client) msg))
       (:refresh
        ;; the frontend is holding a frame this session cannot patch onto;
        ;; forget what was sent so the next push carries the whole tree
        (setf (sess-sent-wire s) nil)
-       (sento.actor:tell (pine.client:renderer client) '(:force-render))))))
+       (sento.actor:tell (pine.editor.frame:renderer client) '(:force-render))))))
 
 (defun session-loop (s)
-  (let ((pine.client:*client* (sess-client s)))
+  (let ((pine.editor.frame:*client* (sess-client s)))
     (loop until (sess-stop s) do
       (let (msgs)
         (bordeaux-threads:with-lock-held ((sess-lock s))

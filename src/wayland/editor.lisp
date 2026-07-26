@@ -3,7 +3,7 @@
 ;;;; The editor frontend: an xdg-shell toplevel that attaches to the daemon as
 ;;;; :kind :editor and renders the `editor' surface -- one (:widgets ...) widget
 ;;;; tree (a window on the current buffer, a mode line, an echo line) -- through
-;;;; the shared pine.layout / cairo pass into an shm buffer, exactly like the
+;;;; the shared pine.ui.node / cairo pass into an shm buffer, exactly like the
 ;;;; desktop client. It measures its monospace cell from the theme font and tells
 ;;;; the daemon (:resize :cols :rows) when the window size changes. Keyboard is
 ;;;; routed to *keyboard-handler* (set by the xkb keys file, which needs cl-xkb);
@@ -20,7 +20,7 @@ installs it. Nil means keyboard events are ignored (render-only).")
   "The editor cell font size, from the one theme metric the daemon's window nodes
 also use -- so the frontend measures its :resize cell grid at the same size the
 buffer rows were laid out for."
-  (float (pine.buffer:metric :font-px 15) 1d0))
+  (float (pine.text.buffer:metric :font-px 15) 1d0))
 (defparameter *x0* 6d0)
 
 (defclass editor ()
@@ -217,7 +217,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                             :cell-h (round (ed-cell-h ed))))))
     (:rules
      (destructuring-bind (&key rules) (rest msg)
-       (pine.buffer:install-rules rules)
+       (pine.text.buffer:install-rules rules)
        (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
     ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
     ;; -- the buffer's rows ride inside the window node -- and repaint.

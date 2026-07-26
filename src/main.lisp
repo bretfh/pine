@@ -1,4 +1,15 @@
-(in-package :pine)
+(defpackage #:pine
+  (:use :cl)
+  (:export
+   #:main
+   #:start-daemon
+   #:run-daemon
+   #:stop
+   ;; which frontends the daemon spawns and keeps alive; a config sets it
+   #:*frontends*
+   #:+frontend-unavailable+))
+
+(in-package #:pine)
 
 (defun main (&key (workers 4) (remoting-port 0))
   "Start the whole daemon in this image, for REPL use: (pine:main)."
@@ -14,14 +25,14 @@
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.core.actor:start-agent-debug srv)
-    (pine.buffer:start-buffer-registry srv)
+    (pine.text.buffer:start-buffer-registry srv)
     (pine.core.attach:start-attach-listener srv)
     (start-control srv)
     (pine.state.store:open-store)
     (pine.core.hooks:add-shutdown-hook :store
       (lambda ()
         (pine.state.world:save-world)
-        (pine.file:record-places)
+        (pine.editor.file:record-places)
         (pine.state.store:close-store)))
     (load-init)
     (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads

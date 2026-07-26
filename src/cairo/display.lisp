@@ -16,7 +16,7 @@
       (values (/ (max xadv 1d0) 10d0) (cairo:font-height fe) (cairo:font-ascent fe)))))
 
 (defun render-frame-to-png (rows path &key (font-px 15d0) (x0 6d0))
-  "Paint wire ROWS (pine.render:frame->rows output) to a PNG at PATH. Headless
+  "Paint wire ROWS (pine.ui.render:frame->rows output) to a PNG at PATH. Headless
 eyes for the editor frame: no window, an offscreen cairo image surface."
   (multiple-value-bind (cell-w cell-h ascent)
       (cairo:with-png-file ("/tmp/pine-metrics.png" :argb32 8 8) (%cell-metrics font-px))
@@ -25,7 +25,7 @@ eyes for the editor frame: no window, an offscreen cairo image surface."
            (w (max 1 (ceiling (+ (* cols cell-w) (* 2 x0)))))
            (h (max 1 (ceiling (* (length rows) cell-h)))))
       (cairo:with-png-file (path :argb32 w h)
-        (destructuring-bind (r g b) (pine.buffer:face-bg :window)
+        (destructuring-bind (r g b) (pine.text.buffer:face-bg :window)
           (cairo:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0)))
         (cairo:paint)
         (cairo:select-font-face *font-family* :normal :normal)

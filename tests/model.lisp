@@ -43,7 +43,7 @@
 (test buffer-model
   "2000 random edits: buffer state->string agrees with the reference model."
   (setf *seed* 42)
-  (let ((state (pine.buffer:load-content (format nil "alpha~%beta~%gamma")))
+  (let ((state (pine.text.buffer:load-content (format nil "alpha~%beta~%gamma")))
         (model (list "alpha" "beta" "gamma"))
         (divergence nil))
     (dotimes (i 2000)
@@ -53,22 +53,22 @@
              (c (rnd (1+ (length line))))
              (op (rnd 5)))
         (case op
-          (0 (setf state (pine.buffer:insert-string state l c "xy")
+          (0 (setf state (pine.text.buffer:insert-string state l c "xy")
                    model (model-insert-string model l c "xy")))
-          (1 (setf state (pine.buffer:insert-char state l c #\z)
+          (1 (setf state (pine.text.buffer:insert-char state l c #\z)
                    model (model-insert-string model l c "z")))
-          (2 (setf state (pine.buffer:insert-newline state l c)
+          (2 (setf state (pine.text.buffer:insert-newline state l c)
                    model (model-insert-newline model l c)))
-          (3 (setf state (pine.buffer:delete-char state l c)
+          (3 (setf state (pine.text.buffer:delete-char state l c)
                    model (model-delete-char model l c)))
           (4 (let* ((el (min (1- nlines) (+ l (rnd 3))))
                     (eline (nth el model))
                     (ec (if (= el l) (min (1+ c) (length eline)) (rnd (1+ (length eline)))))
                     (sc (if (= el l) (min c ec) c)))
-               (setf state (pine.buffer:delete-region state l sc el ec)
+               (setf state (pine.text.buffer:delete-region state l sc el ec)
                      model (model-delete-region model l sc el ec)))))
         (unless divergence
-          (let ((got (pine.buffer:state->string state))
+          (let ((got (pine.text.buffer:state->string state))
                 (want (model-string model)))
             (unless (string= got want)
               (setf divergence (list i op l c got want)))))))
@@ -77,29 +77,29 @@
 (test load-content-round-trips
   (dolist (text (list "" "one" (format nil "a~%b") (format nil "a~%b~%")
                       (format nil "~%~%") (format nil "trail sp ~%  lead")))
-    (is (string= text (pine.buffer:state->string (pine.buffer:load-content text))))))
+    (is (string= text (pine.text.buffer:state->string (pine.text.buffer:load-content text))))))
 
 (test multiline-insert-splits
   "A multi-line insert splits on its newlines; point lands after the text."
-  (let* ((state (pine.buffer:move-mark (pine.buffer:load-content "ab") :point 0 1))
-         (new (pine.buffer:insert-string state 0 1 (format nil "x~%y~%z"))))
-    (is (string= (format nil "ax~%y~%zb") (pine.buffer:state->string new)))
-    (let ((snap (pine.buffer:state->snapshot new)))
-      (is (= 2 (pine.buffer:point-line snap)))
-      (is (= 1 (pine.buffer:point-col snap))))))
+  (let* ((state (pine.text.buffer:move-mark (pine.text.buffer:load-content "ab") :point 0 1))
+         (new (pine.text.buffer:insert-string state 0 1 (format nil "x~%y~%z"))))
+    (is (string= (format nil "ax~%y~%zb") (pine.text.buffer:state->string new)))
+    (let ((snap (pine.text.buffer:state->snapshot new)))
+      (is (= 2 (pine.text.buffer:point-line snap)))
+      (is (= 1 (pine.text.buffer:point-col snap))))))
 
 (test word-motion
   "Word motion lands exactly; hyphen splits words."
-  (let* ((st (pine.buffer:move-mark
-              (pine.buffer:load-content (format nil "foo bar-baz  qux~%next line"))
+  (let* ((st (pine.text.buffer:move-mark
+              (pine.text.buffer:load-content (format nil "foo bar-baz  qux~%next line"))
               :point 0 0))
-         (snap (pine.buffer:state->snapshot st)))
+         (snap (pine.text.buffer:state->snapshot st)))
     (loop for (n wl wc) in '((1 0 3) (2 0 7) (3 0 11) (4 0 16))
-          do (multiple-value-bind (l c) (pine.buffer:point-after-move snap :word n)
+          do (multiple-value-bind (l c) (pine.text.buffer:point-after-move snap :word n)
                (is (and (= l wl) (= c wc))
                    "word fwd ~d: got (~d ~d) want (~d ~d)" n l c wl wc)))
-    (let ((end (pine.buffer:state->snapshot (pine.buffer:move-mark st :point 1 9))))
-      (multiple-value-bind (l c) (pine.buffer:point-after-move end :word -2)
+    (let ((end (pine.text.buffer:state->snapshot (pine.text.buffer:move-mark st :point 1 9))))
+      (multiple-value-bind (l c) (pine.text.buffer:point-after-move end :word -2)
         (is (and (= l 1) (= c 0)) "word back -2: got (~d ~d)" l c)))))
 
 ;;;; VT golden outputs.
@@ -281,10 +281,10 @@ generated source and on a real file."
           (pine.ts:free-parse-state ps)))))
 
 (test reindent-line
-  (let ((st (pine.buffer:load-content (format nil "(foo~%  bar)"))))
-    (multiple-value-bind (new col) (pine.buffer:reindent-line st 1 2 5 4)
+  (let ((st (pine.text.buffer:load-content (format nil "(foo~%  bar)"))))
+    (multiple-value-bind (new col) (pine.text.buffer:reindent-line st 1 2 5 4)
       (is (= 7 col))
-      (is (string= (format nil "(foo~%     bar)") (pine.buffer:state->string new))))))
+      (is (string= (format nil "(foo~%     bar)") (pine.text.buffer:state->string new))))))
 
 ;;;; Refs: one accessor, read and setf; reactive views track their reads.
 
@@ -310,26 +310,26 @@ deduped and renders nothing."
 
 (test style-opacity
   "An :opacity rule resolves to a float the pixel painter reads."
-  (pine.buffer:install-rules '((".op-probe" (:opacity "0.42"))))
-  (is (= 0.42 (pine.style:st-opacity (pine.style:resolve '(("op-probe")))))))
+  (pine.text.buffer:install-rules '((".op-probe" (:opacity "0.42"))))
+  (is (= 0.42 (pine.ui.style:st-opacity (pine.ui.style:resolve '(("op-probe")))))))
 
 (test style-lisp-values
   "Rules take lisp values: numbers for opacity and px props; keyword
 selectors name one class."
-  (pine.buffer:install-rules
+  (pine.text.buffer:install-rules
    '((:num-probe (:opacity 0.42 :min-width 28 :border-radius 6 :padding 4))))
-  (let ((st (pine.style:resolve '(("num-probe")))))
-    (is (= 0.42 (pine.style:st-opacity st)))
-    (is (= 28 (pine.style:st-min-w st)))
-    (is (= 6 (pine.style:st-radius st)))
-    (is (= 4 (pine.style:st-pad-x st)))))
+  (let ((st (pine.ui.style:resolve '(("num-probe")))))
+    (is (= 0.42 (pine.ui.style:st-opacity st)))
+    (is (= 28 (pine.ui.style:st-min-w st)))
+    (is (= 6 (pine.ui.style:st-radius st)))
+    (is (= 4 (pine.ui.style:st-pad-x st)))))
 
 (test class-names
   "Node classes normalize from keywords, lists, and strings alike."
-  (is (equal '("a") (pine.layout:class-names :a)))
-  (is (equal '("nm-row" "sel") (pine.layout:class-names '(:nm-row :sel))))
-  (is (equal '("nm-row" "sel") (pine.layout:class-names "nm-row sel")))
-  (is (null (pine.layout:class-names nil))))
+  (is (equal '("a") (pine.ui.node:class-names :a)))
+  (is (equal '("nm-row" "sel") (pine.ui.node:class-names '(:nm-row :sel))))
+  (is (equal '("nm-row" "sel") (pine.ui.node:class-names "nm-row sel")))
+  (is (null (pine.ui.node:class-names nil))))
 
 (defun %fresh-store (path)
   "Open the store on PATH after deleting any prior db (never a real one)."

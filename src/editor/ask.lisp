@@ -1,4 +1,11 @@
-(in-package :pine.ask)
+(defpackage #:pine.editor.ask
+  (:use #:cl)
+  (:export #:ask #:tell)
+  (:documentation "Ask and tell: the scripting surface over the live system.
+ASK queries the server, the client or a buffer; TELL messages a buffer. Above
+modes and commands, so it can read the registries that hold them."))
+
+(in-package #:pine.editor.ask)
 
 ;;;; Ask and tell: the scripting surface over the live system. ASK queries
 ;;;; the server, the client or a buffer; TELL messages a buffer. It sits
@@ -8,7 +15,7 @@
 (defun tell (target tag &rest plist)
   "Send (tag . plist) to TARGET (coerced via BUFFER). Returns TARGET.
 Silently no-ops on nil target."
-  (let ((buf (pine.client:buffer target)))
+  (let ((buf (pine.editor.frame:buffer target)))
     (when buf
       (sento.actor:tell buf (list* tag plist)))
     buf))
@@ -25,29 +32,29 @@ Silently no-ops on nil target."
     :describe))
 
 (defun %ask-server (spec)
-  (let ((srv (pine.client:server-of (pine.client:current-client)))
+  (let ((srv (pine.editor.frame:server-of (pine.editor.frame:current-client)))
         (query (first spec)))
     (case query
-      (:buffers     (loop for k being the hash-keys of (pine.buffer:buffer-table srv)
+      (:buffers     (loop for k being the hash-keys of (pine.text.buffer:buffer-table srv)
                           collect k))
       (:clients     (pine.core.server:clients srv))
-      (:modes       (pine.mode:all-mode-names))
+      (:modes       (pine.editor.mode:all-mode-names))
       (:commands    (pine.editor.command:all-command-names))
-      (:faces       (pine.buffer::faces-table))
+      (:faces       (pine.text.buffer::faces-table))
       (:actor-system (pine.core.server:actor-system srv))
       (:describe    +server-verbs+)
       (t (error "unknown :server query ~s; known: ~s" query +server-verbs+)))))
 
 (defun %ask-client (spec)
-  (let ((c (pine.client:current-client))
+  (let ((c (pine.editor.frame:current-client))
         (query (first spec)))
     (case query
-      (:current-buffer (pine.client:current-buffer c))
-      (:focused-window (pine.client:focused-window c))
-      (:windows        (pine.client:windows c))
-      (:kill-ring      (pine.client:kill-ring c))
-      (:last-command   (pine.client:last-command c))
-      (:pending-keys   (car (pine.client:pending-keys c)))
+      (:current-buffer (pine.editor.frame:current-buffer c))
+      (:focused-window (pine.editor.frame:focused-window c))
+      (:windows        (pine.editor.frame:windows c))
+      (:kill-ring      (pine.editor.frame:kill-ring c))
+      (:last-command   (pine.editor.frame:last-command c))
+      (:pending-keys   (car (pine.editor.frame:pending-keys c)))
       (:describe       +client-verbs+)
       (t (error "unknown :client query ~s; known: ~s" query +client-verbs+)))))
 
@@ -60,26 +67,26 @@ Silently no-ops on nil target."
         (:state    (sento.actor:ask-s buf '(:get-state) :time-out timeout))
         (:snapshot (sento.actor:ask-s buf '(:get-snapshot) :time-out timeout))
         (:text     (sento.actor:ask-s buf '(:get-text) :time-out timeout))
-        (:meta     (pine.buffer:meta (sento.actor:ask-s buf '(:get-state)
+        (:meta     (pine.text.buffer:meta (sento.actor:ask-s buf '(:get-state)
                                             :time-out timeout)))
-        (:name     (pine.buffer:name (sento.actor:ask-s buf '(:get-snapshot)
+        (:name     (pine.text.buffer:name (sento.actor:ask-s buf '(:get-snapshot)
                                             :time-out timeout)))
-        (:mode     (pine.buffer:buffer-local
+        (:mode     (pine.text.buffer:buffer-local
                     (sento.actor:ask-s buf '(:get-state) :time-out timeout)
                     :mode))
-        (:pathname (pine.buffer:buffer-local
+        (:pathname (pine.text.buffer:buffer-local
                     (sento.actor:ask-s buf '(:get-state) :time-out timeout)
                     :pathname))
         (:point    (let ((s (sento.actor:ask-s buf '(:get-snapshot)
                                                :time-out timeout)))
-                     (values (pine.buffer:point-line s) (pine.buffer:point-col s))))
+                     (values (pine.text.buffer:point-line s) (pine.text.buffer:point-col s))))
         (:line     (let* ((n (first args))
                           (s (sento.actor:ask-s buf '(:get-snapshot)
                                                 :time-out timeout)))
-                     (fset:@ (pine.buffer:lines s) n)))
+                     (fset:@ (pine.text.buffer:lines s) n)))
         (:local    (let ((key (first args))
                          (default (getf (rest args) :default)))
-                     (pine.buffer:buffer-local
+                     (pine.text.buffer:buffer-local
                       (sento.actor:ask-s buf '(:get-state) :time-out timeout)
                       key default)))
         (:describe +buffer-verbs+)
@@ -92,4 +99,4 @@ the verb list."
   (case target
     (:server (%ask-server spec))
     (:client (%ask-client spec))
-    (t (%ask-buffer (pine.client:buffer target) spec))))
+    (t (%ask-buffer (pine.editor.frame:buffer target) spec))))

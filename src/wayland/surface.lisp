@@ -3,7 +3,7 @@
 ;;;; A wayland layer surface painted by the cairo backend. We bind
 ;;;; zwlr_layer_shell_v1 directly, ask the compositor to anchor us (bar on the
 ;;;; left, echo at the bottom, panels as overlays), and
-;;;; paint the pine.layout tree into an shm buffer with cairo -- the same tree
+;;;; paint the pine.ui.node tree into an shm buffer with cairo -- the same tree
 ;;;; the daemon builds and the same paint pass the headless PNGs use. Input
 ;;;; (pointer hit-testing) lives in input.lisp.
 

@@ -1,22 +1,22 @@
-(in-package :pine.client)
+(in-package :pine.editor.frame)
 
 ;;;; Which modes are active. A mode is a class and a singleton, both of which
-;;;; pine.mode owns; which ones a buffer has on right now is this client's
+;;;; pine.editor.mode owns; which ones a buffer has on right now is this client's
 ;;;; state, so it lives here, above the text layer the buffer actor dispatches
 ;;;; through.
 
 (defun buffer-mode (buffer-or-snap)
-  (let ((name (pine.buffer:buffer-local buffer-or-snap :mode :base-mode)))
-    (or (pine.mode:find-mode name) (pine.mode:find-mode :base-mode))))
+  (let ((name (pine.text.buffer:buffer-local buffer-or-snap :mode :base-mode)))
+    (or (pine.editor.mode:find-mode name) (pine.editor.mode:find-mode :base-mode))))
 
 (defun current-buffer-mode ()
   (let* ((c (current-client))
          (buf (current-buffer c))
          (name (and buf (gethash buf (buffer-modes c)))))
-    (or (and name (pine.mode:find-mode name)) (pine.mode:find-mode :base-mode))))
+    (or (and name (pine.editor.mode:find-mode name)) (pine.editor.mode:find-mode :base-mode))))
 
 (defun set-buffer-mode (buffer-actor mode-name)
-  (unless (pine.mode:find-mode mode-name) (error "No mode named ~s" mode-name))
+  (unless (pine.editor.mode:find-mode mode-name) (error "No mode named ~s" mode-name))
   ;; the buffer's own :mode meta drives highlighting, so set it first and
   ;; unconditionally; recording it on the client (for the modeline) is
   ;; best-effort and must not stop the buffer from learning its mode.
@@ -24,7 +24,7 @@
   (let ((c *client*))
     (when c
       (setf (gethash buffer-actor (buffer-modes c)) mode-name)))
-  (pine.mode:find-mode mode-name))
+  (pine.editor.mode:find-mode mode-name))
 
 ;;;; Minor modes. Per-buffer, precedence-numbered (higher = more specific).
 ;;;; The enabled set feeds both the active-keymap list and the synthesized
@@ -41,15 +41,15 @@
   "Active minor-mode singletons for the current buffer, most specific first."
   (stable-sort
    (loop :for name :in (%minor-names client)
-         :for m = (pine.mode:find-mode name)
-         :when (typep m 'pine.mode:minor-mode) :collect m)
-   #'> :key #'pine.mode:precedence))
+         :for m = (pine.editor.mode:find-mode name)
+         :when (typep m 'pine.editor.mode:minor-mode) :collect m)
+   #'> :key #'pine.editor.mode:precedence))
 
 (defun minor-mode-enabled-p (client name)
   (and (member name (%minor-names client)) t))
 
 (defun enable-minor-mode (client name)
-  (unless (typep (pine.mode:find-mode name) 'pine.mode:minor-mode)
+  (unless (typep (pine.editor.mode:find-mode name) 'pine.editor.mode:minor-mode)
     (error "~s is not a minor mode" name))
   (pushnew name (%minor-names client))
   t)
@@ -65,7 +65,7 @@
 
 (defun active-minor-mode-indicators (client)
   (loop :for m :in (active-minor-modes client)
-        :collect (pine.mode:mode-indicator m)))
+        :collect (pine.editor.mode:mode-indicator m)))
 
 ;;;; Active modes -> keymaps + a synthesized dispatch class
 
@@ -80,8 +80,8 @@ run before the major mode's under CLOS method combination."
 Dispatch flattens each one's own parent chain into the table list."
   (append (mapcar #'pine.editor.keymap:keymap (active-minor-modes client))
           (list (pine.editor.keymap:keymap (current-buffer-mode))
-                (pine.mode:global-keymap))))
+                (pine.editor.mode:global-keymap))))
 
 (defun active-modes-instance (client)
-  (make-instance (pine.mode:modes-dispatch-class
+  (make-instance (pine.editor.mode:modes-dispatch-class
                   (mapcar #'class-of (buffer-active-modes client)))))

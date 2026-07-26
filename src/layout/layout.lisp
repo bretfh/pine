@@ -1,4 +1,47 @@
-(in-package :pine.layout)
+(defpackage #:pine.ui.node
+  (:use :cl)
+  (:export
+   ;; nodes
+   #:node #:key-of #:parent #:face #:hint #:expand-of #:css-class
+   #:radius #:fill-of #:grad #:font-px #:hovered #:nodes-of
+   #:*text-size* #:*default-font-px*
+   #:start-line #:start-col #:end-line #:end-col
+   #:text-node #:content
+   #:separator #:sep-char
+   #:spacer #:center
+   #:scroll #:scroll-offset #:vheight
+   #:vstack #:nodes #:spacing #:align
+   #:hstack
+   #:box #:width-of #:pad-char
+   #:selectable #:data #:selectedp #:prefix-selected #:prefix-unselected
+   #:action #:callback
+   #:list-node #:items #:item-fn #:max-visible
+   #:grid #:cells #:col-widths
+   #:slider #:value #:min-of #:max-of #:track #:on-change #:filled-face #:empty-face
+   #:slider-fraction
+   #:ring #:thickness #:diameter #:arc-face #:track-face #:ring-fraction
+   #:calendar #:cal-year #:cal-month #:cal-day #:picture #:pic-path
+   #:window #:window-node #:window-rows #:window-crow #:window-ccol
+   #:window-opacity #:window-of #:window-kind #:blit-row
+   ;; constructor DSL
+   #:label #:icon #:column #:row #:button #:boxed #:centered #:viewport
+   #:gap #:rule #:meter #:rows #:choice #:cal #:pic #:centerbox
+   ;; layout protocol
+   #:measure #:arrange #:paint #:*hover-face*
+   ;; layout -> cell rows (layout buffers + the chrome popup)
+   #:render #:resolve-styles! #:raster->rows #:class-names
+   #:defwidget
+   #:node->wire #:wire->node
+           #:rows-patch #:apply-rows-patch #:wire-shape #:wire-windows #:arranged-p
+   ;; live-tree surgery, shared by every arranged tree
+   #:node-parent #:replace-child #:remove-with-divider
+   #:split-node #:remove-node
+   ;; hit-testing + selection
+   #:node-at #:action-at #:click-thunk #:slider-value-at #:hint-at
+   #:collect-selectables
+   #:scroll-to-selection))
+
+(in-package #:pine.ui.node)
 
 ;;;; The widget engine. A widget tree is laid out in three passes over a cell
 ;;;; raster: MEASURE reports each node's natural size bottom-up, ARRANGE assigns
@@ -137,9 +180,9 @@
 ;; terminal composes into a widget tree without the layout engine ever touching
 ;; the text cell by cell. The class is WINDOW-NODE (node convention); the
 ;; constructor and the wire tag stay `window' -- the user language reads
-;; (window "scratch") and pine.buffer's window (the scroll/focus view) keeps
+;; (window "scratch") and pine.text.buffer's window (the scroll/focus view) keeps
 ;; its own name in its own package. OF backs a live view with that
-;; pine.buffer:window; KIND (:window :modeline :echo) marks what the editor's
+;; pine.text.buffer:window; KIND (:window :modeline :echo) marks what the editor's
 ;; render walk refreshes; neither crosses the wire.
 (defclass window-node (node)
   ((rows :initarg :rows :accessor window-rows :initform nil)
@@ -316,14 +359,14 @@ through the active theme, or a precomputed (FG BG ATTR) tuple -- FG/BG (r g b)
 lists or nil -- installed by RESOLVE-STYLES! for the cell render."
   (if (consp designator)
       (destructuring-bind (fg bg attr) designator
-        (let ((f (or fg (pine.buffer:face-fg :default))))
+        (let ((f (or fg (pine.text.buffer:face-fg :default))))
           (values (first f) (second f) (third f)
                   (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
                   (or attr 0))))
-      (let ((fg (pine.buffer:face-fg designator))
-            (bg (pine.buffer:face-bg designator))
-            (attr (let ((f (ignore-errors (pine.buffer:find-face designator))))
-                    (if f (pine.buffer:face-attr-bits f) 0))))
+      (let ((fg (pine.text.buffer:face-fg designator))
+            (bg (pine.text.buffer:face-bg designator))
+            (attr (let ((f (ignore-errors (pine.text.buffer:find-face designator))))
+                    (if f (pine.text.buffer:face-attr-bits f) 0))))
         (values (first fg) (second fg) (third fg)
                 (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
                 attr))))
@@ -531,7 +574,7 @@ the node's border-box (and everything it lays out inside) sits within its margin
 container's arrange (:align :stretch), never from the available space --
 reporting AW/AH here would eat the whole axis as natural size."
   (declare (ignore aw ah))
-  (let ((px (max 1 (pine.buffer:metric :border 2))))
+  (let ((px (max 1 (pine.text.buffer:metric :border 2))))
     (if (sep-vertical n)
         (values (if *text-size* px 1) 1)
         (values 1 (if *text-size* px 1)))))
@@ -780,7 +823,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
 
 ;;;; The cell render: the same node tree the desktop paints in pixels,
 ;;;; rendered to styled cells for a buffer or the chrome. Styling is the ONE
-;;;; resolution: a node's CSS classes through pine.style (the desktop's
+;;;; resolution: a node's CSS classes through pine.ui.style (the desktop's
 ;;;; theme-rules), else its face name through the theme faces -- both terminate
 ;;;; in the same (fg bg attr) run values. The arranged tree rides along so any
 ;;;; rendered (line col) maps back to its node with no side table.
@@ -799,24 +842,24 @@ spaces."
   (class-names (css-class n)))
 
 (defun %scale-rgb (c)
-  "pine.style colours are 0..1; cells carry 0..255."
+  "pine.ui.style colours are 0..1; cells carry 0..255."
   (list (round (* 255 (first c))) (round (* 255 (second c))) (round (* 255 (third c)))))
 
 (defun %node-cell-style (n full)
   "The (FG BG ATTR) cell tuple for N from CSS matched on the class chain FULL,
 falling back per-part to N's face name; nil when CSS contributes nothing (the
 face name, if any, then resolves as usual at paint)."
-  (let* ((st (pine.style:resolve full))
-         (css-fg (pine.style:st-fg st))
-         (css-bg (pine.style:st-bg st))
-         (bold (pine.style:st-bold st))
+  (let* ((st (pine.ui.style:resolve full))
+         (css-fg (pine.ui.style:st-fg st))
+         (css-bg (pine.ui.style:st-bg st))
+         (bold (pine.ui.style:st-bold st))
          (name (and (keywordp (face n)) (face n))))
     (when (or css-fg css-bg bold)
-      (list (if css-fg (%scale-rgb css-fg) (and name (pine.buffer:face-fg name)))
-            (if css-bg (%scale-rgb css-bg) (and name (pine.buffer:face-bg name)))
+      (list (if css-fg (%scale-rgb css-fg) (and name (pine.text.buffer:face-fg name)))
+            (if css-bg (%scale-rgb css-bg) (and name (pine.text.buffer:face-bg name)))
             (logior (if bold 1 0)
                     (if name
-                        (pine.buffer:face-attr-bits (pine.buffer:find-face name))
+                        (pine.text.buffer:face-attr-bits (pine.text.buffer:find-face name))
                         0))))))
 
 (defun resolve-styles! (root &optional chain)

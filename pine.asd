@@ -19,7 +19,7 @@
   :serial t
   :pathname "src/"
   :components
-  ((:file "package")
+  (
    (:module "core"
     :serial t
     :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
@@ -29,9 +29,17 @@
    (:module "input"
     :serial t
     :components ((:file "key") (:file "keymap")))
+   ;; the echo line: no dependencies at all, and the command loop reports
+   ;; through it, so it sits under everything that has something to say.
+   (:module "echo"
+    :serial t :pathname "editor/"
+    :components ((:file "echo")))
    (:module "mode"
     :serial t
     :components ((:file "mode")))
+   (:module "ts"
+    :serial t
+    :components ((:file "ts") (:file "highlight")))
    (:module "buffer"
     :serial t
     :components ((:file "buffer") (:file "window") (:file "face") (:file "rules")))
@@ -50,9 +58,6 @@
    (:module "source"
     :serial t
     :components ((:file "sources")))
-   (:module "ts"
-    :serial t
-    :components ((:file "ts") (:file "highlight")))
    ;; the base/text verb methods, once everything they reach for exists
    (:module "edit"
     :serial t :pathname "mode/"
@@ -65,7 +70,7 @@
     :components ((:file "render")))
    (:module "editor"
     :serial t
-    :components ((:file "ask") (:file "echo") (:file "kill-ring") (:file "completion")
+    :components ((:file "ask") (:file "kill-ring") (:file "completion")
                 (:file "minibuffer") (:file "isearch") (:file "file")
                 (:file "target") (:file "repl") (:file "overwrite")
                 (:file "editor") (:file "session")))
@@ -78,8 +83,9 @@
    (:module "frontend"
     :serial t
     :components ((:file "frontend")))
-   (:file "user")
-   (:file "main")))
+   ;; main declares :pine, and the user vocabulary imports from it
+   (:file "main")
+   (:file "user")))
 
 (asdf:defsystem #:pine/test
   :description "The pine test suite."

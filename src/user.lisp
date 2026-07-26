@@ -1,18 +1,18 @@
 (defpackage :pine.user
   (:nicknames :pine-user)
   (:use :cl)
-  (:import-from :pine.layout
+  (:import-from :pine.ui.node
                 #:column #:row #:centerbox #:label #:icon #:button #:ring
                 #:gap #:rule #:rows #:choice)
   (:import-from :pine.editor
                 #:candidate #:register-source #:register-actions
                 #:candidate-actions #:completion-widget)
-  (:import-from :pine.buffer
+  (:import-from :pine.text.buffer
                 #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
                 )
-  (:import-from :pine.client
+  (:import-from :pine.editor.frame
                 #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers)
-  (:import-from :pine.ask #:ask #:tell)
+  (:import-from :pine.editor.ask #:ask #:tell)
   (:import-from :pine.state.ref #:defref #:ref)
   (:import-from :pine.state.store #:store #:store-push #:store-items #:store-clear)
   (:import-from :pine.state.world #:register)
@@ -20,16 +20,16 @@
                 #:split #:lines #:starts-with #:first-number #:read-int-file
                 #:json)
   (:import-from :pine.editor.command #:call-command #:execute)
-  (:import-from :pine.mode #:find-mode #:dispatch-message #:auto-mode
+  (:import-from :pine.editor.mode #:find-mode #:dispatch-message #:auto-mode
                 #:defmode #:defminor)
-  (:import-from :pine.client #:current-buffer-mode #:set-buffer-mode)
+  (:import-from :pine.editor.frame #:current-buffer-mode #:set-buffer-mode)
   (:import-from :pine.state.var #:defonce)
-  (:import-from :pine.client #:current-client #:current-buffer)
+  (:import-from :pine.editor.frame #:current-client #:current-buffer)
   (:import-from :pine.editor #:eval-last-sexp #:eval-buffer
                 #:completing-read #:read-file-name #:prompt
                 #:show-layout #:layout-node-at-point #:layout-select
                 #:layout-activate)
-  (:import-from :pine.echo #:message)
+  (:import-from :pine.editor.echo #:message)
   (:import-from :pine #:*frontends*)
   (:export
    ;; the frontends the daemon owns
@@ -89,18 +89,18 @@
 ;;;; Widget renames. The layout constructors carry terser class names; the
 ;;;; language uses the plain ones.
 
-(defun center (&rest args) (apply #'pine.layout:centered args))
-(defun box    (&rest args) (apply #'pine.layout:boxed args))
-(defun scroll (&rest args) (apply #'pine.layout:viewport args))
-(defun slider (&rest args) (apply #'pine.layout:meter args))
-(defun calendar (&rest args) (apply #'pine.layout:cal args))
-(defun image  (path &rest args) (apply #'pine.layout:pic path args))
+(defun center (&rest args) (apply #'pine.ui.node:centered args))
+(defun box    (&rest args) (apply #'pine.ui.node:boxed args))
+(defun scroll (&rest args) (apply #'pine.ui.node:viewport args))
+(defun slider (&rest args) (apply #'pine.ui.node:meter args))
+(defun calendar (&rest args) (apply #'pine.ui.node:cal args))
+(defun image  (path &rest args) (apply #'pine.ui.node:pic path args))
 
 ;;;; Views. A WINDOW is a live view of exactly the buffer you name; in the
 ;;;; editor surface the declared tree is the LIVE arrangement the split
 ;;;; commands mutate. MODELINE and ECHO are widgets you place where you want.
 
-(defun buffer (name) (pine.client:make-buffer name))          ; get or create by name
+(defun buffer (name) (pine.editor.frame:make-buffer name))          ; get or create by name
 (defun window (x &rest props)
   "A live view of X's buffer (an actor or a name string): visible lines,
 highlights, region, terminal grid, or layout rows, rendered at the rect the
@@ -150,10 +150,10 @@ chord) or a list of keys (a sequence), exactly what DEFINE-KEY takes."
 manager's (whose chords the compositor delivers instead of the focused
 window), or a mode keyword for that mode's map."
   (case designator
-    (:global (pine.mode:global-keymap))
+    (:global (pine.editor.mode:global-keymap))
     (:wm (pine.wm:wm-keymap))
     (t (let ((m (find-mode designator)))
-         (if m (pine.mode:mode-keymap m) (error "no mode ~s" designator))))))
+         (if m (pine.editor.mode:mode-keymap m) (error "no mode ~s" designator))))))
 
 (defun define-key (where keys command)
   "Bind KEYS (from KBD) to COMMAND (a command designator) in WHERE -- a keymap,
@@ -164,10 +164,10 @@ window), or a mode keyword for that mode's map."
 
 (defun global-set-key (keys command)
   "Bind KEYS to COMMAND in the global keymap."
-  (pine.editor.keymap:define-key (pine.mode:global-keymap) keys
+  (pine.editor.keymap:define-key (pine.editor.mode:global-keymap) keys
                           (pine.editor.command:command-key command)))
 
-;;;; Modes. DEFMODE / DEFMINOR come from pine.mode, which is where pine's own
+;;;; Modes. DEFMODE / DEFMINOR come from pine.editor.mode, which is where pine's own
 ;;;; modes are defined with them: one form makes the class, gives it a keymap
 ;;;; parented to its parent mode's, and registers the singleton. Behaviour is
 ;;;; plain CLOS on the class -- (defmethod dispatch-message ((m NAME) ..)) for
@@ -175,15 +175,15 @@ window), or a mode keyword for that mode's map."
 
 ;;;; Minor-mode toggles, client-implicit.
 
-(defun enable-minor-mode  (name) (pine.client:enable-minor-mode  (current-client) name))
-(defun disable-minor-mode (name) (pine.client:disable-minor-mode (current-client) name))
-(defun toggle-minor-mode  (name) (pine.client:toggle-minor-mode  (current-client) name))
+(defun enable-minor-mode  (name) (pine.editor.frame:enable-minor-mode  (current-client) name))
+(defun disable-minor-mode (name) (pine.editor.frame:disable-minor-mode (current-client) name))
+(defun toggle-minor-mode  (name) (pine.editor.frame:toggle-minor-mode  (current-client) name))
 
 ;;;; Editor variables. The buffer is implicit here and explicit below: which
 ;;;; buffer is current is a client's business, and pine.state.var sits under every
 ;;;; client, so it never guesses.
 
-(defun var (name &optional (buffer (pine.client:buffer-in-scope)))
+(defun var (name &optional (buffer (pine.editor.frame:buffer-in-scope)))
   "Editor variable NAME: buffer-local in BUFFER (the current buffer by
 default), else global, else the declared default."
   (pine.state.var:var name buffer))
@@ -200,7 +200,7 @@ default), else global, else the declared default."
 (one class), a list of keywords (compound), or a selector string; values are
 lisp values (numbers for px/opacity) or CSS strings. Redefining a selector
 replaces it. Reload-safe; the rules reach every attached frontend."
-  `(pine.buffer:add-rules
+  `(pine.text.buffer:add-rules
     (list ,@(mapcar (lambda (rule)
                       (destructuring-bind (sel &rest props) rule
                         `(list ,(if (and (consp sel) (every #'keywordp sel))

@@ -1,3 +1,11 @@
+(defpackage #:pine.source
+  (:use #:cl)
+  (:export #:start-sources #:stop-sources #:source-status
+           #:defsource #:defpoll #:start-stream #:start-poll #:ref-of
+           ;; helpers a declared source needs
+           #:sh #:split #:lines #:starts-with #:first-number
+           #:read-int-file #:json))
+
 (in-package #:pine.source)
 
 ;;;; Data sources feed reactive refs; widgets read those refs and re-render on

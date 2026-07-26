@@ -146,23 +146,23 @@ order the UI can page through."
 ;;;; The candidate list as a node tree. Two builders over the one candidate
 ;;;; struct: COMPLETION-POPUP renders to cells (blitted into the chrome above
 ;;;; the echo row), COMPLETION-WIDGET is the desktop's pixel rendering of the
-;;;; same data. Selection is flagged at render (pine.layout:render :selection),
+;;;; same data. Selection is flagged at render (pine.ui.node:render :selection),
 ;;;; styled by the .cand-row.sel rules.
 
 (defun completion-popup (visible)
   "The VISIBLE candidates as selectable rows: string left, annotation right."
-  (apply #'pine.layout:column :align :stretch
+  (apply #'pine.ui.node:column :align :stretch
          (if visible
              (mapcar (lambda (cand)
-                       (pine.layout:choice
+                       (pine.ui.node:choice
                         :class "cand-row" :prefix-selected "" :prefix-unselected ""
-                        (pine.layout:row :spacing 1
-                          (pine.layout:label (candidate-string cand) :class "cand")
-                          (pine.layout:gap)
+                        (pine.ui.node:row :spacing 1
+                          (pine.ui.node:label (candidate-string cand) :class "cand")
+                          (pine.ui.node:gap)
                           (let ((a (candidate-annotation cand)))
-                            (when a (pine.layout:label a :class "cand-annot"))))))
+                            (when a (pine.ui.node:label a :class "cand-annot"))))))
                      visible)
-             (list (pine.layout:label "(no matches)" :class "cand")))))
+             (list (pine.ui.node:label "(no matches)" :class "cand")))))
 
 (defun %category-glyph (category)
   (case category
@@ -176,24 +176,24 @@ candidate's actions in the footer."
   (let* ((sel (and candidates
                    (nth (max 0 (min selected (1- (length candidates)))) candidates)))
          (acts (candidate-actions sel)))
-    (pine.layout:column :class "netmenu" :align :stretch
-      (pine.layout:row :class "nm-card nm-head" :align :center :spacing 10
-        (pine.layout:icon #x0F0349 :class "nm-head-ico")
-        (pine.layout:label query :class "nm-title")
-        (pine.layout:label "█" :class "nm-title")
-        (pine.layout:label title :class "nm-subhead"))
-      (apply #'pine.layout:column :class "nm-card nm-list-card" :align :stretch :spacing 3
+    (pine.ui.node:column :class "netmenu" :align :stretch
+      (pine.ui.node:row :class "nm-card nm-head" :align :center :spacing 10
+        (pine.ui.node:icon #x0F0349 :class "nm-head-ico")
+        (pine.ui.node:label query :class "nm-title")
+        (pine.ui.node:label "█" :class "nm-title")
+        (pine.ui.node:label title :class "nm-subhead"))
+      (apply #'pine.ui.node:column :class "nm-card nm-list-card" :align :stretch :spacing 3
         (loop for c in candidates for i from 0 collect
-          (pine.layout:row :class (if (= i selected) "nm-row sel" "nm-row")
+          (pine.ui.node:row :class (if (= i selected) "nm-row sel" "nm-row")
                            :align :center :spacing 12
-            (pine.layout:icon (%category-glyph (candidate-category c)) :class "nm-sig")
-            (pine.layout:label (candidate-string c) :expand 1
+            (pine.ui.node:icon (%category-glyph (candidate-category c)) :class "nm-sig")
+            (pine.ui.node:label (candidate-string c) :expand 1
                                :class (if (= i selected) "nm-name active" "nm-name"))
-            (pine.layout:label (or (candidate-annotation c) "") :class "nm-lock"))))
-      (apply #'pine.layout:row :class "nm-actions" :align :center :spacing 16
-        (pine.layout:label "RET run" :class "nm-name active")
+            (pine.ui.node:label (or (candidate-annotation c) "") :class "nm-lock"))))
+      (apply #'pine.ui.node:row :class "nm-actions" :align :center :spacing 16
+        (pine.ui.node:label "RET run" :class "nm-name active")
         (append
          (loop for (label . nil) in acts collect
-           (pine.layout:label label :class "nm-subhead"))
-         (list (pine.layout:gap :expand 1)
-               (pine.layout:label "actions" :class "nm-sig hi")))))))
+           (pine.ui.node:label label :class "nm-subhead"))
+         (list (pine.ui.node:gap :expand 1)
+               (pine.ui.node:label "actions" :class "nm-sig hi")))))))

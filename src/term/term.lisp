@@ -1,4 +1,16 @@
-(in-package :pine.term)
+(defpackage #:pine.term
+  (:use :cl)
+  (:export
+   #:terminal #:terminal-term #:terminal-fd #:terminal-pid #:terminal-buffer
+   #:open-terminal
+   #:terminal-for-buffer
+   #:term-write
+   #:gterm-text
+   #:drain-terminals
+   #:resize-active-terminal
+   #:terminal-dispatch))
+
+(in-package #:pine.term)
 
 ;;;; Terminal buffers: a pine.vt emulator driven by a pty. The reader thread
 ;;;; only appends bytes to PENDING under a lock; the renderer's term tick drains
@@ -30,11 +42,11 @@ does not block the UI thread (the emulator parses ~one frame's worth here).")
 so memory and latency stay bounded rather than falling minutes behind.")
 
 (defun terminal-map (client)
-  (or (pine.client:terminal-map client)
-      (setf (pine.client:terminal-map client) (make-hash-table :test 'eq))))
+  (or (pine.editor.frame:terminal-map client)
+      (setf (pine.editor.frame:terminal-map client) (make-hash-table :test 'eq))))
 
 (defun terminal-for-buffer (buffer)
-  (let ((c pine.client:*client*))
+  (let ((c pine.editor.frame:*client*))
     (and c buffer (gethash buffer (terminal-map c)))))
 
 (defun gterm-text (terminal)
@@ -55,7 +67,7 @@ so memory and latency stay bounded rather than falling minutes behind.")
                      (bordeaux-threads:with-lock-held ((terminal-lock tobj))
                        (push s (terminal-pending tobj)))
                      (sb-thread:signal-semaphore
-                      (pine.client:terminal-wake client))))))))
+                      (pine.editor.frame:terminal-wake client))))))))
     (setf (terminal-reader tobj)
           (bordeaux-threads:make-thread #'reader :name "pine-pty-reader"))))
 
@@ -117,8 +129,8 @@ render (main) thread."
       tobj)))
 
 (defun resize-active-terminal (cols rows)
-  (let* ((c (pine.client:current-client))
-         (buf (pine.client:current-buffer c))
+  (let* ((c (pine.editor.frame:current-client))
+         (buf (pine.editor.frame:current-buffer c))
          (tobj (and buf (terminal-for-buffer buf))))
     (when tobj
       (pine.vt:term-resize (terminal-term tobj) cols rows)
@@ -155,8 +167,8 @@ render (main) thread."
 (defun terminal-dispatch (client key)
   "Dispatch hook: in a terminal buffer send KEY to the pty, except C-x which
 stays an editor prefix so the user can switch away."
-  (let ((tobj (and (pine.client:current-buffer client)
-                   (terminal-for-buffer (pine.client:current-buffer client)))))
+  (let ((tobj (and (pine.editor.frame:current-buffer client)
+                   (terminal-for-buffer (pine.editor.frame:current-buffer client)))))
     (when tobj
       (if (and (pine.editor.key:key-ctrl key) (string= (pine.editor.key:key-sym key) "x"))
           nil
@@ -173,7 +185,7 @@ stays an editor prefix so the user can switch away."
 ;;;; goes there and the editing verbs are refused rather than applied to a
 ;;;; buffer the pty is about to overwrite.
 
-(defmethod pine.mode:dispatch-message ((mode pine.mode:terminal-mode) self tag plist)
+(defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:terminal-mode) self tag plist)
   (case tag
     (:insert (term-write self (getf plist :text)))
     (:newline (term-write self (string #\Newline)))

@@ -1,21 +1,29 @@
-(in-package :pine.repl)
+(defpackage #:pine.editor.repl
+  (:use :cl)
+  (:export
+   #:start-repl
+   #:repl-eval
+   #:repl-submit
+   #:repl-buffer))
+
+(in-package #:pine.editor.repl)
 
 (defvar *history* (fset:empty-seq))
 (defvar *history-index* -1)
 
 (defun repl-buffer ()
-  (pine.client:repl-buffer (pine.client:current-client)))
+  (pine.editor.frame:repl-buffer (pine.editor.frame:current-client)))
 
 (defun start-repl ()
   (when (zerop (fset:size *history*))
     (setf *history* (fset:convert 'fset:seq
                                   (reverse (pine.state.store:store-items :repl-history)))))
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:make-buffer "*repl*" :content "pine> ")))
-    (setf (pine.client:repl-buffer client) buf)
-    (pine.client:set-buffer-mode buf :repl-mode)
+  (let* ((client (pine.editor.frame:current-client))
+         (buf (pine.editor.frame:make-buffer "*repl*" :content "pine> ")))
+    (setf (pine.editor.frame:repl-buffer client) buf)
+    (pine.editor.frame:set-buffer-mode buf :repl-mode)
     (let* ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))
-           (line (pine.buffer:line-count snap))
+           (line (pine.text.buffer:line-count snap))
            (col (length "pine> ")))
       (sento.actor:tell buf (list :move-point :line (1- line) :col col)))
     buf))
@@ -33,10 +41,10 @@
   ;; the one eval path, honouring *eval-target*: :local runs in the daemon image,
   ;; a set target runs in that agent's image. Off-thread, so a slow/looping/
   ;; erroring form can't hang the repl and errors reach the debugger surface.
-  (pine.target:eval-in-target
+  (pine.editor.target:eval-in-target
    input
    (find-package :cl-user)
-   :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
+   :bindings (list (cons 'pine.editor.frame:*client* (pine.editor.frame:current-client)))
    :on-done
    (lambda (ev)
      (append-output
@@ -69,8 +77,8 @@
   (let ((buf (repl-buffer)))
     (when buf
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
-             (last-line (1- (pine.buffer:line-count-of state)))
-             (line-text (fset:@ (pine.buffer:lines state) last-line))
+             (last-line (1- (pine.text.buffer:line-count-of state)))
+             (line-text (fset:@ (pine.text.buffer:lines state) last-line))
              (input (if (> (length line-text) 6) (subseq line-text 6) "")))
         (when (plusp (length input))
           (repl-eval input))))))
@@ -78,7 +86,7 @@
 ;;;; repl-mode: Return submits the form at the prompt instead of inserting a
 ;;;; newline. Everything else falls through to text-mode.
 
-(defmethod pine.mode:dispatch-message ((mode pine.mode:repl-mode) self tag plist)
+(defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:repl-mode) self tag plist)
   (declare (ignore self plist))
   (case tag
     (:newline (repl-submit))

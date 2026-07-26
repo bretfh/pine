@@ -1,4 +1,4 @@
-(in-package :pine.buffer)
+(in-package :pine.text.buffer)
 
 
 ;;;; ================================================================

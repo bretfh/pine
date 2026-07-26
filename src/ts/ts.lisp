@@ -1,4 +1,22 @@
-(in-package :pine.ts)
+(defpackage #:pine.ts
+  (:use :cl)
+  (:export
+   #:ts-runtime
+   #:make-ts-runtime
+   #:ts-loaded-p
+   #:ensure-ts
+   #:ensure-language
+   #:compute-highlights
+   #:forward-sexp-pos
+   #:backward-sexp-pos
+   #:defun-bounds-pos
+   ;; per-buffer incremental parse state
+   #:parse-state #:make-parse-state #:free-parse-state
+   #:reparse! #:parse-full! #:parse-highlights #:parse-motion #:parse-indent
+   ;; highlight harness
+   #:walk-highlights #:hl-dump #:hl-dump-file))
+
+(in-package #:pine.ts)
 
 ;;;; CFFI bindings to libtree-sitter. tree-sitter passes TSNode by value;
 ;;;; cffi-libffi handles the by-value struct, so no C wrapper is needed. The

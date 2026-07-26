@@ -146,24 +146,24 @@ asked, so the loop can be watched without a display."))
         (list (list 0 200 200 200 30 30 40 0))))
 
 (defun %editor-form (lines &key (cols 40) (crow 0) (ccol 0))
-  (pine.layout:node->wire
-   (pine.layout:column
-    (pine.layout:window (mapcar (lambda (l) (%bench-row cols l)) lines)
+  (pine.ui.node:node->wire
+   (pine.ui.node:column
+    (pine.ui.node:window (mapcar (lambda (l) (%bench-row cols l)) lines)
                         :kind :window :crow crow :ccol ccol)
-    (pine.layout:window (list (%bench-row cols "")) :kind :echo))))
+    (pine.ui.node:window (list (%bench-row cols "")) :kind :echo))))
 
 (test a-patch-applied-equals-the-tree-the-daemon-built
   (let* ((old (%editor-form '("alpha" "beta" "gamma")))
          (new (%editor-form '("alpha" "BETA!" "gamma")))
-         (patch (pine.layout:rows-patch old new)))
+         (patch (pine.ui.node:rows-patch old new)))
     (is-true patch "one changed line is patchable")
-    (is (equal new (pine.layout:apply-rows-patch old patch))
+    (is (equal new (pine.ui.node:apply-rows-patch old patch))
         "the patched form is the form, exactly")))
 
 (test a-patch-carries-only-the-lines-that-moved
   (let* ((old (%editor-form '("a" "b" "c" "d" "e")))
          (new (%editor-form '("a" "b" "CHANGED" "d" "e")))
-         (patch (pine.layout:rows-patch old new))
+         (patch (pine.ui.node:rows-patch old new))
          (lines (fourth (first patch))))
     (is (= 1 (length lines)) "one line differs, one line ships")
     (is (= 2 (car (first lines))) "and it is the third")))
@@ -171,34 +171,34 @@ asked, so the loop can be watched without a display."))
 (test the-cursor-moving-is-patchable-without-any-line
   (let* ((old (%editor-form '("a" "b") :crow 0 :ccol 0))
          (new (%editor-form '("a" "b") :crow 1 :ccol 3))
-         (patch (pine.layout:rows-patch old new)))
+         (patch (pine.ui.node:rows-patch old new)))
     (is-true patch)
     (is (null (fourth (first patch))) "no line changed")
-    (is (equal new (pine.layout:apply-rows-patch old patch)))))
+    (is (equal new (pine.ui.node:apply-rows-patch old patch)))))
 
 (test a-changed-tree-refuses-to-patch
   (let ((old (%editor-form '("a" "b")))
-        (new (pine.layout:node->wire
-              (pine.layout:column
-               (pine.layout:window (list (%bench-row 40 "a")) :kind :window)
-               (pine.layout:window (list (%bench-row 40 "b")) :kind :window)
-               (pine.layout:window (list (%bench-row 40 "")) :kind :echo)))))
-    (is (null (pine.layout:rows-patch old new))
+        (new (pine.ui.node:node->wire
+              (pine.ui.node:column
+               (pine.ui.node:window (list (%bench-row 40 "a")) :kind :window)
+               (pine.ui.node:window (list (%bench-row 40 "b")) :kind :window)
+               (pine.ui.node:window (list (%bench-row 40 "")) :kind :echo)))))
+    (is (null (pine.ui.node:rows-patch old new))
         "a split changes the shape, so the tree goes whole")))
 
 (test a-changed-line-count-refuses-to-patch
   (let ((old (%editor-form '("a" "b")))
         (new (%editor-form '("a" "b" "c"))))
-    (is (null (pine.layout:rows-patch old new))
+    (is (null (pine.ui.node:rows-patch old new))
         "a resized window goes whole")))
 
 (test no-previous-form-refuses-to-patch
-  (is (null (pine.layout:rows-patch nil (%editor-form '("a"))))))
+  (is (null (pine.ui.node:rows-patch nil (%editor-form '("a"))))))
 
 (test scrolling-every-line-is-still-correct-when-patched
   (let* ((old (%editor-form '("1" "2" "3" "4")))
          (new (%editor-form '("5" "6" "7" "8")))
-         (patch (pine.layout:rows-patch old new)))
+         (patch (pine.ui.node:rows-patch old new)))
     (is (= 4 (length (fourth (first patch)))) "every line differs")
-    (is (equal new (pine.layout:apply-rows-patch old patch))
+    (is (equal new (pine.ui.node:apply-rows-patch old patch))
         "and applying it is still exact")))

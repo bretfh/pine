@@ -1,4 +1,43 @@
-(in-package :pine.buffer)
+(defpackage #:pine.text.buffer
+  (:use :cl)
+  (:export
+   ;; buffer-state
+   #:buffer-state #:lines #:marks #:meta #:tick
+   ;; snapshot
+   #:snapshot #:name #:line-count #:point-line #:point-col #:highlights
+   ;; state ops
+   #:make-empty-state #:state->snapshot #:state->snapshot-with-hl #:state->string
+   #:insert-char #:insert-string #:insert-newline
+   #:delete-char #:delete-region
+   #:move-mark #:set-meta #:region-bounds
+   #:buffer-local
+   #:refresh-highlights #:point-after-move
+   #:line-indent-width #:previous-line-indent #:reindent-line
+   #:load-content #:notify-subscribers #:split-lines
+   #:line-count-of #:line-at #:region-string #:buffer-table
+   ;; faces
+   #:face #:fg #:bg #:bold #:italic #:underline
+   #:defface #:find-face #:face-attr-bits
+   #:deftheme #:load-theme #:find-theme #:theme-color #:color #:*active-theme*
+   #:hex-rgb #:face-fg #:face-bg #:metric #:theme-metric #:theme-rules
+   #:add-rules #:install-rules #:*user-rules* #:*rules-generation*
+   #:theme #:theme-name #:theme-palette #:theme-metrics #:theme-faces
+   #:face-run #:run-start #:run-end #:run-face
+   #:display-line #:display-text #:display-runs
+   #:make-display-line
+   ;; windows
+   #:window #:buffer-ref #:window-name #:row #:col #:win-width #:win-height
+   #:scroll-top #:focusedp #:snap #:win-display
+   #:frame #:windows #:frame-cols #:frame-rows #:bg-face
+   #:frame-cells #:frame-cell-count #:frame-cursor-row #:frame-cursor-col
+   #:frame-scroll-pixel #:frame-dirtyp #:ensure-frame-cells
+   #:window-display-lines #:ensure-point-visible #:ensure-col-visible
+   ;; buffer actor
+   #:make-buffer-actor #:notify-subscribers #:load-content
+   ;; registry
+   #:start-buffer-registry))
+
+(in-package #:pine.text.buffer)
 
 ;;;; buffers
 (defclass buffer-state ()
@@ -230,8 +269,8 @@ end-col), normalized so start precedes end. Nil when there is no mark."
 (defun %state-language (state)
   "The tree-sitter language keyword for STATE's mode, or nil."
   (let* ((mode-name (buffer-local state :mode :base-mode))
-         (mode (pine.mode:find-mode mode-name)))
-    (and mode (typep mode 'pine.mode:major-mode) (pine.mode:ts-language mode))))
+         (mode (pine.editor.mode:find-mode mode-name)))
+    (and mode (typep mode 'pine.editor.mode:major-mode) (pine.editor.mode:ts-language mode))))
 
 (defun %ts-runtime ()
   (when pine.core.server:*server* (pine.core.server:ts-runtime pine.core.server:*server*)))
@@ -325,8 +364,8 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
                                   (lambda (msg)
                                     (let* ((state (first sento.actor:*state*))
                                            (mode-name (buffer-local state :mode :base-mode))
-                                           (mode (or (pine.mode:find-mode mode-name)
-                                                     (pine.mode:find-mode :base-mode))))
+                                           (mode (or (pine.editor.mode:find-mode mode-name)
+                                                     (pine.editor.mode:find-mode :base-mode))))
                                       ;; The buffer runs off the session thread, so
                                       ;; an edit error opens the *debugger* restart
                                       ;; menu and parks THIS thread until resolved.
@@ -344,7 +383,7 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
                                         (loop
                                           (with-simple-restart (retry "Retry this edit")
                                             (return
-                                              (pine.mode:dispatch-message
+                                              (pine.editor.mode:dispatch-message
                                                mode sento.actor:*self*
                                                (first msg) (rest msg)))))))))))
 

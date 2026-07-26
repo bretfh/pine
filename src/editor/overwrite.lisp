@@ -5,17 +5,17 @@
 ;;;; inserted char overwrites it, then falls through to the normal insert.
 
 (defun %overwrite-forward ()
-  (let ((buf (pine.client:current-buffer (pine.client:current-client))))
+  (let ((buf (pine.editor.frame:current-buffer (pine.editor.frame:current-client))))
     (when buf
-      (multiple-value-bind (l c) (pine.ask:ask buf :point)
-        (let ((line (pine.ask:ask buf :line l)))
+      (multiple-value-bind (l c) (pine.editor.ask:ask buf :point)
+        (let ((line (pine.editor.ask:ask buf :line l)))
           (when (and line (< c (length line)))
-            (pine.ask:tell buf :delete-region
+            (pine.editor.ask:tell buf :delete-region
                               :start-line l :start-col c
                               :end-line l :end-col (1+ c))))))))
 
 (defmethod pine.editor.command:execute :before
-    ((modes pine.mode:overwrite-mode) command argument)
+    ((modes pine.editor.mode:overwrite-mode) command argument)
   (declare (ignore argument))
   (when (string= (pine.editor.command:command-name command) "self-insert-command")
     (%overwrite-forward)))

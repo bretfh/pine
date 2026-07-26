@@ -1,4 +1,10 @@
-(in-package #:pine.echo)
+(defpackage #:pine.editor.echo
+  (:use :cl)
+  (:export #:message #:current-message
+           #:show-prompt #:hide-prompt
+           #:prompt-active-p #:prompt-text))
+
+(in-package #:pine.editor.echo)
 
 (defvar *message* "")
 (defvar *prompt* nil)
