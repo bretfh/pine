@@ -27,7 +27,7 @@ commands run in the same context every command does, and the live tree with
 its focused leaf."
   app client tree focus (output nil) (split :row))
 
-(defvar *keymap* (pine.keymap:make-keymap :name :wm)
+(defvar *keymap* (pine.editor.keymap:make-keymap :name :wm)
   "The window manager's keymap. Chords here are registered with the
 compositor, which delivers them to the window manager rather than to the
 focused window. It has no parent: a window manager has no buffer and no mode
@@ -44,7 +44,7 @@ to fall back through.")
   "Send MESSAGE to the wm frontend. A message with nowhere to go is reported:
 dropping window state silently is how geometry goes missing."
   (cond
-    (*session* (apply #'pine.attach:push-to-app (session-app *session*) message))
+    (*session* (apply #'pine.core.attach:push-to-app (session-app *session*) message))
     (t (format *error-output* "pine wm: no frontend attached, dropped ~s~%"
                (first message))
        (finish-output *error-output*))))
@@ -204,41 +204,41 @@ way. A window manager cannot show the same window twice, so a split states
 where the next one lands rather than dividing the current one immediately."
   (setf (session-split *session*) orient))
 
-(pine.var:defonce :wm-terminal :default "foot"
+(pine.state.var:defonce :wm-terminal :default "foot"
   :documentation "The program wm-terminal launches.")
 
-(pine.command:define-command wm-terminal ()
+(pine.editor.command:define-command wm-terminal ()
   "Launch the terminal named by the :wm-terminal variable."
-  (spawn (pine.var:var :wm-terminal)))
+  (spawn (pine.state.var:var :wm-terminal)))
 
-(pine.command:define-command wm-close-window ()
+(pine.editor.command:define-command wm-close-window ()
   "Ask the focused window to close."
   (close-window))
 
-(pine.command:define-command wm-focus-next ()
+(pine.editor.command:define-command wm-focus-next ()
   "Focus the next window."
   (focus-step 1))
 
-(pine.command:define-command wm-focus-prev ()
+(pine.editor.command:define-command wm-focus-prev ()
   "Focus the previous window."
   (focus-step -1))
 
-(pine.command:define-command wm-split-below ()
+(pine.editor.command:define-command wm-split-below ()
   "The next window opens below the focused one."
   (split :column))
 
-(pine.command:define-command wm-split-beside ()
+(pine.editor.command:define-command wm-split-beside ()
   "The next window opens beside the focused one."
   (split :row))
 
-(pine.command:define-command wm-exit ()
+(pine.editor.command:define-command wm-exit ()
   "End the Wayland session."
   (exit-session))
 
 ;;;; The default chords. init.lisp rebinds them the same way it rebinds editor
 ;;;; keys: (define-key (keymap :wm) (kbd "s-Return") 'wm-terminal).
 
-(pine.keymap:define-keys *keymap*
+(pine.editor.keymap:define-keys *keymap*
   "s-Return"  "wm-terminal"
   "s-q"       "wm-close-window"
   "s-j"       "wm-focus-next"
@@ -252,7 +252,7 @@ where the next one lands rather than dividing the current one immediately."
 ;;;; turns each chord into a keysym plus modifiers and registers it.
 
 (defun binding-table ()
-  (pine.keymap:keymap-bindings (wm-keymap)))
+  (pine.editor.keymap:keymap-bindings (wm-keymap)))
 
 (defun push-bindings ()
   "Send the current binding table to the frontend, which re-registers."
@@ -268,30 +268,30 @@ chords were registered with the compositor from this keymap alone."
        (format *error-output* "pine wm: no command bound to ~a~%" chord))
       (t
        (let ((pine.client:*client* (session-client *session*)))
-         (pine.command:call-command command))))))
+         (pine.editor.command:call-command command))))))
 
 ;;;; The session: one attached frontend, told the bindings on arrival, and
 ;;;; kept current with what the compositor reports.
 
-(defclass wm-app (pine.attach:app)
+(defclass wm-app (pine.core.attach:app)
   ()
   (:default-initargs :kind :wm)
   (:documentation "Window management: the compositor's windows as a layout
 tree, and the chords that move them."))
 
-(defmethod pine.attach:attached ((app wm-app) client)
+(defmethod pine.core.attach:attached ((app wm-app) client)
   (setf *session* (%make-session
                    :app client
-                   :client (pine.client:start-client pine.server:*server*)))
+                   :client (pine.client:start-client pine.core.server:*server*)))
   (push-bindings))
 
-(defmethod pine.attach:detached ((app wm-app) client)
+(defmethod pine.core.attach:detached ((app wm-app) client)
   "Forget the session. Its windows belong to the compositor and outlive the
 frontend; the next one to attach reports them again."
   (declare (ignore client))
   (setf *session* nil))
 
-(defmethod pine.attach:received ((app wm-app) client message)
+(defmethod pine.core.attach:received ((app wm-app) client message)
   (declare (ignore client))
   (case (first message)
     (:binding
@@ -316,5 +316,5 @@ frontend; the next one to attach reports them again."
            (push-arrangement)))))
     (t nil)))
 
-(pine.attach:register-app (make-instance 'wm-app))
+(pine.core.attach:register-app (make-instance 'wm-app))
 

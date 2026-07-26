@@ -1,11 +1,25 @@
-(in-package :pine.actor)
+(defpackage #:pine.core.actor
+  (:use :cl :ac :act :asys :rem)
+  (:export
+   #:agent-info
+   #:agent-info-name #:agent-info-type #:agent-info-actor
+   #:agent-info-meta #:agent-info-port
+   #:start-agent-registry
+   #:register-agent #:unregister-agent #:find-agent #:list-agents
+   #:agent-eval #:agent-compile #:agent-run #:*local-agent*
+   #:start-local-agent #:start-agent-debug #:*agent-debug-hook*
+   #:start-agent-supervisor #:supervise-agent #:unsupervise-agent
+   #:agent-alive-p #:request
+   #:spawn-agent #:kill-agent))
+
+(in-package #:pine.core.actor)
 
 (defstruct agent-info
   name type actor meta port)
 
 (defun start-agent-registry (server)
-  (let ((sys (pine.server:actor-system server)))
-    (setf (pine.server:agent-registry server)
+  (let ((sys (pine.core.server:actor-system server)))
+    (setf (pine.core.server:agent-registry server)
           (ac:actor-of sys
             :name "agent-registry"
             :state (make-hash-table :test 'equal)
@@ -18,7 +32,7 @@
                    (reply info)))
                 (:register-remote
                  (destructuring-bind (&key name host port) (rest msg)
-                   (let* ((uri (pine.server:daemon-uri "agent" :host host :port port))
+                   (let* ((uri (pine.core.server:daemon-uri "agent" :host host :port port))
                           (ref (rem:make-remote-ref sys uri))
                           (info (make-agent-info :name name :type :process
                                                  :actor ref :port port)))
@@ -39,19 +53,19 @@
                 (t (reply (list :error :unknown msg)))))))))
 
 (defun register-agent (server name type actor &key meta port)
-  (act:ask-s (pine.server:agent-registry server)
+  (act:ask-s (pine.core.server:agent-registry server)
              (list :register :info (make-agent-info :name name :type type
                                                     :actor actor :meta meta :port port))
              :time-out 5))
 
 (defun unregister-agent (server name)
-  (act:ask-s (pine.server:agent-registry server) (list :unregister :name name) :time-out 5))
+  (act:ask-s (pine.core.server:agent-registry server) (list :unregister :name name) :time-out 5))
 
 (defun find-agent (server name)
-  (act:ask-s (pine.server:agent-registry server) (list :lookup :name name) :time-out 5))
+  (act:ask-s (pine.core.server:agent-registry server) (list :lookup :name name) :time-out 5))
 
 (defun list-agents (server)
-  (act:ask-s (pine.server:agent-registry server) '(:list) :time-out 5))
+  (act:ask-s (pine.core.server:agent-registry server) '(:list) :time-out 5))
 
 (defun resolve-agent (server agent-or-name)
   "The actor ref for AGENT-OR-NAME (an agent-info, a registered name, or a ref)."
@@ -63,7 +77,7 @@
     (t agent-or-name)))
 
 (defun agent-eval (server agent-or-name form-string &key on-done package bindings)
-  "Evaluate FORM-STRING in AGENT-OR-NAME through pine.eval, off the agent's
+  "Evaluate FORM-STRING in AGENT-OR-NAME through pine.core.eval, off the agent's
 mailbox thread. Returns immediately; the result reaches ON-DONE and any error
 reaches the shared debugger surface."
   (act:tell (resolve-agent server agent-or-name)
@@ -76,7 +90,7 @@ reaches the shared debugger surface."
                   :bindings bindings :on-done on-done)))
 
 (defun agent-run (server agent-or-name thunk &key on-done package)
-  "Run THUNK (a live in-image closure) in AGENT-OR-NAME through pine.eval, off the
+  "Run THUNK (a live in-image closure) in AGENT-OR-NAME through pine.core.eval, off the
 agent's mailbox thread. The desktop's widget-click path -- one addressable eval
 path, :local by default."
   (act:tell (resolve-agent server agent-or-name)
@@ -88,13 +102,13 @@ path, :local by default."
 it (agent-eval :local) by ref without a blocking registry lookup on a hot path.")
 
 (defun start-local-agent (server)
-  (let* ((sys (pine.server:actor-system server))
+  (let* ((sys (pine.core.server:actor-system server))
          (local (ac:actor-of sys
                   :name "local-agent"
                   :receive
                   (lambda (msg)
                     (case (first msg)
-                      ;; Evaluation runs through pine.eval on its own thread, so
+                      ;; Evaluation runs through pine.core.eval on its own thread, so
                       ;; a looping or erroring form can neither block this actor's
                       ;; mailbox (and the shared dispatcher behind it) nor drop to
                       ;; a console debugger. Fire-and-forget: the result reaches
@@ -105,7 +119,7 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
                            (rest msg)
                          (let ((source (or form text)))
                            (when source
-                             (pine.eval:evaluate-string
+                             (pine.core.eval:evaluate-string
                               source
                               :package (or (and package (find-package package))
                                            (find-package :cl-user))
@@ -115,11 +129,11 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
                       ;; A thunk job (a live closure, in-image): the desktop's
                       ;; click path routes here, so a widget click is agent-eval
                       ;; :local like every other eval -- off this mailbox thread,
-                      ;; through the one pine.eval engine.
+                      ;; through the one pine.core.eval engine.
                       (:run
                        (destructuring-bind (&key thunk package on-done) (rest msg)
                          (when thunk
-                           (pine.eval:evaluate-thunk
+                           (pine.core.eval:evaluate-thunk
                             thunk
                             :package (or (and package (find-package package))
                                          (find-package :cl-user))
@@ -145,7 +159,7 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
 
 (defun %agent-command (name master-port self-port)
   "The argv for a spawned SBCL process agent: load :pine, connect back to this
-daemon over the same pine.eval engine (shipping errors' restarts home by name),
+daemon over the same pine.core.eval engine (shipping errors' restarts home by name),
 and idle. Passed as --eval forms, so nothing is written to disk. Isolated: it can
 loop, block, or crash in its own image without touching the daemon."
   (list "sbcl" "--non-interactive" "--no-userinit"
@@ -153,8 +167,8 @@ loop, block, or crash in its own image without touching the daemon."
         "--eval" (format nil "(push #P~s asdf:*central-registry*)"
                          (namestring (asdf:system-source-directory :pine)))
         "--eval" "(asdf:load-system :pine)"
-        "--eval" (format nil "(pine.agent:connect :name ~s :master-host ~s :master-port ~d :self-port ~d)"
-                         name pine.server:*host* master-port self-port)
+        "--eval" (format nil "(pine.core.agent:connect :name ~s :master-host ~s :master-port ~d :self-port ~d)"
+                         name pine.core.server:*host* master-port self-port)
         "--eval" "(loop (sleep 3600))"))
 
 (defvar *agent-debug-hook* nil
@@ -164,11 +178,11 @@ The editor (the helm) installs this to show the restart menu and drive resume.")
 (defun start-agent-debug (server)
   "The master's receiver for cross-image errors: a process agent's error ships
 its restart list here, by name, and the helm drives the choice back."
-  (sento.actor-context:actor-of (pine.server:actor-system server)
+  (sento.actor-context:actor-of (pine.core.server:actor-system server)
     :name "agent-debug"
     :receive (lambda (msg)
                (when *agent-debug-hook*
-                 (pine.eval:attempt (lambda () (funcall *agent-debug-hook* msg))
+                 (pine.core.eval:attempt (lambda () (funcall *agent-debug-hook* msg))
                                     "agent debug relay"))
                nil)))
 
@@ -176,7 +190,7 @@ its restart list here, by name, and the helm drives the choice back."
   "Spawn a real SBCL process agent: it enables remoting, evals in its own image,
 and registers back to this daemon. It can loop, block, or crash in isolation
 without touching the daemon or any app. Returns the agent-info once it connects."
-  (let ((master-port (pine.server:remoting-port server)))
+  (let ((master-port (pine.core.server:remoting-port server)))
     (unless master-port (error "Cannot spawn agent: remoting not enabled."))
     (let ((self-port (incf *agent-port*)))
       (uiop:launch-program (%agent-command name master-port self-port)
@@ -223,7 +237,7 @@ own thread."
 Apps ask the registry for a tool rather than reinventing it."
   (ecase capability
     (:agent  (let ((info (find-agent server name))) (and info (agent-info-actor info))))
-    (:buffer (gethash name (pine.server:buffer-table server)))))
+    (:buffer (gethash name (pine.core.server:buffer-table server)))))
 
 (defun kill-agent (server name)
   (let ((info (find-agent server name)))

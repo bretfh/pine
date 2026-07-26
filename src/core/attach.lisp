@@ -1,4 +1,14 @@
-(in-package #:pine.attach)
+(defpackage #:pine.core.attach
+  (:use #:cl)
+  (:export #:start-attach-listener #:attach-listener
+           #:attach-to-daemon
+           #:app #:app-kind #:register-app #:find-app
+           #:attached #:received #:detached #:run-frontend
+           #:attached-client #:attached-client-id #:attached-client-kind
+           #:attached-client-display #:attached-client-input #:attached-client-session
+           #:*clients* #:push-to-app #:client-alive-p #:reap-clients))
+
+(in-package #:pine.core.attach)
 
 ;;;; The attach seam. An app process (editor, desktop) connects to the headless
 ;;;; daemon over sento remoting and becomes a session. The protocol is all
@@ -17,7 +27,7 @@
 ;;;; vectors. fset/CLOS values are rendered to plain data at the edge.
 
 (defun daemon-base-uri (server)
-  (pine.server:daemon-uri "" :port (pine.server:remoting-port server)))
+  (pine.core.server:daemon-uri "" :port (pine.core.server:remoting-port server)))
 
 (defstruct attached-client id kind display uri input session)
 
@@ -130,7 +140,7 @@ app's process, so a refused connection is the app being gone."
 
 (defun start-attach-listener (server)
   "Daemon-side: the actor apps connect to in order to attach. Returns it."
-  (let ((sys (pine.server:actor-system server)))
+  (let ((sys (pine.core.server:actor-system server)))
     (sento.actor-context:actor-of sys
       :name "attach"
       :receive

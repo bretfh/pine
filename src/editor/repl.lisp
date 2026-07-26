@@ -9,7 +9,7 @@
 (defun start-repl ()
   (when (zerop (fset:size *history*))
     (setf *history* (fset:convert 'fset:seq
-                                  (reverse (pine.store:store-items :repl-history)))))
+                                  (reverse (pine.state.store:store-items :repl-history)))))
   (let* ((client (pine.client:current-client))
          (buf (pine.client:make-buffer "*repl*" :content "pine> ")))
     (setf (pine.client:repl-buffer client) buf)
@@ -23,7 +23,7 @@
 (defun repl-eval (input)
   (setf *history* (fset:with-last *history* input))
   (setf *history-index* -1)
-  (pine.store:store-push :repl-history input :unique nil :max 500)
+  (pine.state.store:store-push :repl-history input :unique nil :max 500)
   (cond
     ((and (plusp (length input)) (char= (char input 0) #\!))
      (run-shell-command (subseq input 1)))
@@ -40,13 +40,13 @@
    :on-done
    (lambda (ev)
      (append-output
-      (case (pine.eval:evaluation-status ev)
-        (:ok (let ((out (pine.eval:evaluation-output ev)))
+      (case (pine.core.eval:evaluation-status ev)
+        (:ok (let ((out (pine.core.eval:evaluation-output ev)))
                (format nil "~@[~a~%~]~{~s~^~%~}"
                        (and (plusp (length out)) out)
-                       (pine.eval:evaluation-values ev))))
+                       (pine.core.eval:evaluation-values ev))))
         (:aborted "; aborted")
-        (t (format nil "; error: ~a" (pine.eval:evaluation-condition ev))))))))
+        (t (format nil "; error: ~a" (pine.core.eval:evaluation-condition ev))))))))
 
 (defun run-shell-command (cmd)
   (handler-case

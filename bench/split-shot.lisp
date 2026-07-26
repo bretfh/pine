@@ -9,13 +9,13 @@
 (defvar *cols* 84)
 (defvar *rows* 30)
 
-(let ((srv (pine.server:start-server)))
-  (setf pine.server:*server* srv
-        (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-  (ignore-errors (pine.ts:ensure-ts (pine.server:ts-runtime srv)))
-  (pine.event:make-event-bus srv)
-  (pine.actor:start-agent-registry srv)
-  (pine.actor:start-local-agent srv)
+(let ((srv (pine.core.server:start-server)))
+  (setf pine.core.server:*server* srv
+        (pine.core.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+  (ignore-errors (pine.ts:ensure-ts (pine.core.server:ts-runtime srv)))
+  (pine.core.event:make-event-bus srv)
+  (pine.core.actor:start-agent-registry srv)
+  (pine.core.actor:start-local-agent srv)
   (pine.buffer:start-buffer-registry srv)
   (let* ((sess (pine.editor:make-editor-session
                 nil :sink (lambda (&rest _) (declare (ignore _)) nil)))

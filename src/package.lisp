@@ -1,56 +1,4 @@
-(defpackage :pine.server
-  (:use :cl)
-  (:export
-   #:server
-   #:*server*
-   #:*app-actor-config*
-   #:actor-system
-   #:event-bus
-   #:agent-registry
-   #:buffer-registry
-   #:buffer-table
-   #:commands
-   #:global-keymap
-   #:ts-runtime
-   #:modes
-   #:clients
-   #:remoting-port
-   #:start-server
-   #:stop-server
-   #:*host*
-   #:*port*
-   #:daemon-uri
-   #:local-uri))
 
-(defpackage :pine.actor
-  (:use :cl :ac :act :asys :rem)
-  (:export
-   #:agent-info
-   #:agent-info-name #:agent-info-type #:agent-info-actor
-   #:agent-info-meta #:agent-info-port
-   #:start-agent-registry
-   #:register-agent #:unregister-agent #:find-agent #:list-agents
-   #:agent-eval #:agent-compile #:agent-run #:*local-agent*
-   #:start-local-agent #:start-agent-debug #:*agent-debug-hook*
-   #:start-agent-supervisor #:supervise-agent #:unsupervise-agent
-   #:agent-alive-p #:request
-   #:spawn-agent #:kill-agent))
-
-(defpackage :pine.event
-  (:use :cl)
-  (:export
-   #:make-event-bus
-   #:publish
-   #:subscribe
-   #:unsubscribe))
-
-(defpackage :pine.hooks
-  (:use :cl)
-  (:export
-   #:add-init-hook
-   #:add-shutdown-hook
-   #:run-init-hooks
-   #:run-shutdown-hooks))
 
 (defpackage :pine.buffer
   (:use :cl)
@@ -165,29 +113,6 @@ of them."))
    #:resize-active-terminal
    #:terminal-dispatch))
 
-(defpackage #:pine.key
-  (:use #:cl)
-  (:export #:key #:key-p #:make-key
-           #:key-sym #:key-ctrl #:key-meta #:key-shift #:key-super
-           #:key= #:parse-key #:parse-chord #:key->string))
-
-(defpackage #:pine.keymap
-  (:use #:cl)
-  (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
-           #:define-key #:define-keys #:keymap-lookup #:prefix-p
-           #:keymap-tables #:keymap-bindings))
-
-(defpackage #:pine.command
-  (:use #:cl)
-  (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
-           #:command-key
-           #:define-command #:register-command #:find-command #:all-command-names
-           #:execute #:call-command #:dispatch #:command-error
-           #:self-insert #:self-insert-key-p
-           #:prefix-numeric-value #:this-command-key
-           #:key-binding #:read-next-key
-           #:*terminal-handler*))
-
 (defpackage #:pine.edit
   (:use #:cl)
   (:documentation "The dispatch-message methods for base-mode and text-mode:
@@ -208,16 +133,6 @@ methods only; it exports nothing."))
    #:defmode #:defminor
    #:dispatch-message))
 
-(defpackage #:pine.store
-  (:use #:cl)
-  (:export #:store #:store-push #:store-items #:store-clear #:store-forget
-           #:open-store #:close-store)
-  (:documentation "The persistence facility: one SQLite store the daemon
-owns. (store K) reads a durable value, (setf (store K) V) writes;
-store-push/store-items keep bounded lists (histories, recents). Modes
-declare what persists -- via defonce/defref :persist or their own store
-keys -- and never touch files."))
-
 (defpackage #:pine.wm
   (:use #:cl)
   (:export #:wm-keymap #:binding-table #:push-bindings #:run-binding
@@ -226,22 +141,6 @@ keys -- and never touch files."))
   (:documentation "Window management policy: the keymap whose chords are
 registered with the compositor, the commands they run, and the actions sent
 to the wm frontend. design/wm.org is the contract."))
-
-(defpackage #:pine.world
-  (:use #:cl)
-  (:export #:register #:save-world #:restore-world)
-  (:documentation "What comes back after a restart. Subsystems register
-:save/:restore function pairs; the data rides (:world NAME) store keys.
-Gated by the :world-save editor variable."))
-
-(defpackage :pine.var
-  (:use :cl)
-  (:export
-   ;; the API: declare once, one setf-able accessor
-   #:defonce #:var
-   ;; introspection (describe-variables)
-   #:find-variable #:all-variable-names #:variable-scope
-   #:evar-default #:evar-documentation))
 
 (defpackage :pine.layout
   (:use :cl)
@@ -285,33 +184,6 @@ Gated by the :world-save editor variable."))
    #:node-at #:action-at #:click-thunk #:slider-value-at #:hint-at
    #:collect-selectables
    #:scroll-to-selection))
-
-(defpackage #:pine.attach
-  (:use #:cl)
-  (:export #:start-attach-listener #:attach-listener
-           #:attach-to-daemon
-           #:app #:app-kind #:register-app #:find-app
-           #:attached #:received #:detached #:run-frontend
-           #:attached-client #:attached-client-id #:attached-client-kind
-           #:attached-client-display #:attached-client-input #:attached-client-session
-           #:*clients* #:push-to-app #:client-alive-p #:reap-clients))
-
-(defpackage #:pine.agent
-  (:use #:cl)
-  (:export #:connect #:serve #:*agent-system* #:*name*))
-
-(defpackage #:pine.jobs
-  (:use #:cl)
-  (:export #:list-jobs #:*agent-jobs*))
-
-(defpackage #:pine.ref
-  (:use #:cl)
-  (:export #:ref #:make-ref #:defref #:find-ref #:ref-name
-           #:ref-value #:deref #:set-ref #:update-ref
-           #:ref-subscribe #:ref-unsubscribe
-           #:reactive-view #:make-view #:render-view #:dispose-view)
-  (:documentation "Reactive named values: (ref NAME) reads (tracked),
-(setf (ref NAME) V) writes (deduped, notifying)."))
 
 (defpackage #:pine.source
   (:use #:cl)
@@ -466,88 +338,6 @@ modes and commands, so it can read the registries that hold them."))
    ;; which frontends the daemon spawns and keeps alive; a config sets it
    #:*frontends*
    #:+frontend-unavailable+))
-
-(defpackage :pine.user
-  (:nicknames :pine-user)
-  (:use :cl)
-  (:import-from :pine.layout
-                #:column #:row #:centerbox #:label #:icon #:button #:ring
-                #:gap #:rule #:rows #:choice)
-  (:import-from :pine.editor
-                #:candidate #:register-source #:register-actions
-                #:candidate-actions #:completion-widget)
-  (:import-from :pine.buffer
-                #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
-                )
-  (:import-from :pine.client
-                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers)
-  (:import-from :pine.ask #:ask #:tell)
-  (:import-from :pine.ref #:defref #:ref)
-  (:import-from :pine.store #:store #:store-push #:store-items #:store-clear)
-  (:import-from :pine.world #:register)
-  (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
-                #:split #:lines #:starts-with #:first-number #:read-int-file
-                #:json)
-  (:import-from :pine.command #:call-command #:execute)
-  (:import-from :pine.mode #:find-mode #:dispatch-message #:auto-mode
-                #:defmode #:defminor)
-  (:import-from :pine.client #:current-buffer-mode #:set-buffer-mode)
-  (:import-from :pine.var #:defonce)
-  (:import-from :pine.client #:current-client #:current-buffer)
-  (:import-from :pine.editor #:eval-last-sexp #:eval-buffer
-                #:completing-read #:read-file-name #:prompt
-                #:show-layout #:layout-node-at-point #:layout-select
-                #:layout-activate)
-  (:import-from :pine.echo #:message)
-  (:import-from :pine #:*frontends*)
-  (:export
-   ;; the frontends the daemon owns
-   #:*frontends*
-   ;; surfaces
-   #:defsurface #:show #:hide #:toggle
-   ;; widgets: containers
-   #:column #:row #:centerbox #:center #:box #:scroll
-   ;; widgets: content
-   #:label #:icon #:image #:rule #:gap
-   ;; widgets: controls
-   #:button #:slider #:ring #:choice #:rows
-   ;; widgets: views -- a window is a live view of the buffer you name
-   #:calendar #:window #:buffer #:terminal #:modeline #:echo #:minibuffer
-   ;; completion facility
-   #:candidate #:register-source #:register-actions #:candidate-actions
-   #:completion-widget
-   ;; style
-   #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
-   ;; data
-   #:defref #:ref #:defpoll #:defsource #:sh #:launch
-   ;; writing a source: the stream/poll primitives and their helpers
-   #:start-stream #:start-poll
-   #:split #:lines #:starts-with #:first-number #:read-int-file #:json
-   ;; persistence
-   #:store #:store-push #:store-items #:store-clear #:register
-   ;; style rules
-   #:defrules
-   ;; behavior
-   #:defcommand #:call-command
-   ;; keys
-   #:kbd #:keymap #:define-key #:global-set-key
-   ;; modes -- defmode/defminor make real classes; execute/dispatch-message are
-   ;; the CLOS behaviour hooks users specialise
-   #:defmode #:defminor #:execute #:dispatch-message #:auto-mode
-   #:enable-minor-mode #:disable-minor-mode #:toggle-minor-mode
-   ;; editor variables
-   #:defonce #:var
-   ;; prompts + echo
-   #:completing-read #:read-file-name #:prompt #:message
-   ;; layout buffers (authorable tool buffers)
-   #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
-   ;; processes
-   #:defagent #:spawn #:supervise #:kill
-   ;; buffers / editor
-   #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
-   #:ask #:tell #:current-client #:current-buffer
-   #:find-mode #:current-buffer-mode #:set-buffer-mode
-   #:eval-last-sexp #:eval-buffer))
 
 ;;;; The client side: what a frontend is. Its backings declare their own
 ;;;; packages, since those rest on libraries this system does not load.

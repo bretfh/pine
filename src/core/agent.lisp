@@ -1,7 +1,11 @@
-(in-package #:pine.agent)
+(defpackage #:pine.core.agent
+  (:use #:cl)
+  (:export #:connect #:serve #:*agent-system* #:*name*))
+
+(in-package #:pine.core.agent)
 
 ;;;; A process agent's own code. A spawned SBCL image loads :pine and calls
-;;;; connect: it enables remoting, runs evals through pine.eval (the same engine
+;;;; connect: it enables remoting, runs evals through pine.core.eval (the same engine
 ;;;; the daemon uses), and -- crucially -- routes any error's restarts HOME to
 ;;;; the master by name. The eval blocks in its own thread holding the live
 ;;;; restarts; the master (the editor, the helm) picks a name and sends :resume;
@@ -23,15 +27,15 @@ frontend serving itself up for eval and debugging."
   (setf *name* name)
   (setf *master-debug*
         (sento.remoting:make-remote-ref
-         sys (pine.server:daemon-uri "agent-debug" :host master-host :port master-port)))
+         sys (pine.core.server:daemon-uri "agent-debug" :host master-host :port master-port)))
   ;; an error in this image ships its restart list home, by name
-  (setf pine.eval:*on-debug*
+  (setf pine.core.eval:*on-debug*
         (lambda (ev)
           (ignore-errors
            (sento.actor:tell *master-debug*
              (list :agent-debug :agent name :eval-id (gethash ev *ev-ids*)
-                   :condition (princ-to-string (pine.eval:evaluation-condition ev))
-                   :restarts (mapcar #'first (pine.eval:evaluation-restarts ev)))))))
+                   :condition (princ-to-string (pine.core.eval:evaluation-condition ev))
+                   :restarts (mapcar #'first (pine.core.eval:evaluation-restarts ev)))))))
   (sento.actor-context:actor-of sys :name "agent"
     :receive
     (lambda (msg)
@@ -41,22 +45,22 @@ frontend serving itself up for eval and debugging."
          (destructuring-bind (&key form package &allow-other-keys) (rest msg)
            (let* ((id (incf *counter*))
                   (pkg (or (and package (find-package package)) (find-package :cl-user)))
-                  (ev (pine.eval:evaluate-string
+                  (ev (pine.core.eval:evaluate-string
                        form :package pkg
                        :on-done
                        (lambda (ev)
                          (ignore-errors
                           (sento.actor:tell *master-debug*
                             (list :agent-result :agent name :eval-id id
-                                  :status (pine.eval:evaluation-status ev)
+                                  :status (pine.core.eval:evaluation-status ev)
                                   :values (mapcar #'prin1-to-string
-                                                  (pine.eval:evaluation-values ev)))))))))
+                                                  (pine.core.eval:evaluation-values ev)))))))))
              (setf (gethash id *evals*) ev (gethash ev *ev-ids*) id)
              (sento.actor:reply (list :started id)))))
         (:resume
          (destructuring-bind (&key eval-id restart) (rest msg)
            (let ((ev (gethash eval-id *evals*)))
-             (when ev (pine.eval:pick-restart ev restart)))
+             (when ev (pine.core.eval:pick-restart ev restart)))
            (sento.actor:reply :resumed)))
         (:shutdown
          ;; kill-agent means the process ends, not just a reply: answer, then
@@ -69,14 +73,14 @@ frontend serving itself up for eval and debugging."
         (t (sento.actor:reply :unknown)))))
   (sento.actor:tell
    (sento.remoting:make-remote-ref
-    sys (pine.server:daemon-uri "agent-registry" :host master-host :port master-port))
-   (list :register-remote :name name :host pine.server:*host* :port self-port))
+    sys (pine.core.server:daemon-uri "agent-registry" :host master-host :port master-port))
+   (list :register-remote :name name :host pine.core.server:*host* :port self-port))
   sys)
 
 (defun connect (&key name master-host master-port self-port)
   (let ((sys (sento.actor-system:make-actor-system
-               pine.server:*app-actor-config*)))
+               pine.core.server:*app-actor-config*)))
     (setf *agent-system* sys)
-    (sento.remoting:enable-remoting sys :host pine.server:*host* :port self-port)
+    (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port self-port)
     (serve sys :name name :master-host master-host :master-port master-port
                :self-port self-port)))

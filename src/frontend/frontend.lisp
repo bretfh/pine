@@ -115,14 +115,14 @@ when it has none."
    (lambda ()
      (loop :repeat *attach-attempts*
            :until (funcall ready)
-           :do (pine.attach:attach-to-daemon sys daemon self :kind kind)
+           :do (pine.core.attach:attach-to-daemon sys daemon self :kind kind)
                (sleep *attach-interval*))
      (unless (funcall ready)
        (format *error-output* "pine ~(~a~): no daemon answered at ~a~%" kind daemon)
        (finish-output *error-output*)))
    :name "pine-attach"))
 
-(defun attach (kind handler &key (host pine.server:*host*) (port pine.server:*port*)
+(defun attach (kind handler &key (host pine.core.server:*host*) (port pine.core.server:*port*)
                                  ready)
   "Bring this image up as a frontend of KIND and join the daemon at HOST:PORT.
 
@@ -133,19 +133,19 @@ this image as an agent named for its kind, so the daemon can evaluate in it.
 READY, when given, says whether the daemon has answered. A frontend the
 compositor starts before the session is up passes it, and the attach is
 repeated until it does."
-  (unless pine.server:*server*
-    (setf pine.server:*server* (make-instance 'pine.server:server)))
+  (unless pine.core.server:*server*
+    (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
   (let* ((name (string-downcase (symbol-name kind)))
-         (sys (sento.actor-system:make-actor-system pine.server:*app-actor-config*)))
-    (sento.remoting:enable-remoting sys :host pine.server:*host* :port 0)
+         (sys (sento.actor-system:make-actor-system pine.core.server:*app-actor-config*)))
+    (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
     (sento.actor-context:actor-of sys :name "display"
       :receive (lambda (msg) (funcall handler msg) nil))
     (let* ((self-port (sento.remoting:remoting-port sys))
-           (daemon (pine.server:daemon-uri "attach" :host host :port port))
-           (self (pine.server:local-uri "display" self-port)))
+           (daemon (pine.core.server:daemon-uri "attach" :host host :port port))
+           (self (pine.core.server:local-uri "display" self-port)))
       (if ready
           (%keep-attaching sys daemon self kind ready)
-          (pine.attach:attach-to-daemon sys daemon self :kind kind))
-      (pine.agent:serve sys :name name :master-host host :master-port port
+          (pine.core.attach:attach-to-daemon sys daemon self :kind kind))
+      (pine.core.agent:serve sys :name name :master-host host :master-port port
                             :self-port self-port))
     sys))

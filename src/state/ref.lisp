@@ -1,4 +1,13 @@
-(in-package #:pine.ref)
+(defpackage #:pine.state.ref
+  (:use #:cl)
+  (:export #:ref #:make-ref #:defref #:find-ref #:ref-name
+           #:ref-value #:deref #:set-ref #:update-ref
+           #:ref-subscribe #:ref-unsubscribe
+           #:reactive-view #:make-view #:render-view #:dispose-view)
+  (:documentation "Reactive named values: (ref NAME) reads (tracked),
+(setf (ref NAME) V) writes (deduped, notifying)."))
+
+(in-package #:pine.state.ref)
 
 ;;;; Reactive refs: the substrate's answer to eww vars + the broker's state.
 ;;;; A ref holds a value, DEDUPS on write (per its test) so identical values
@@ -21,7 +30,7 @@
 (defun make-ref (&key value (test #'equal) name persist)
   (let ((r (%make-ref :value value :test test :name name :persist persist)))
     (when (and persist name)
-      (let ((stored (pine.store:store (list :ref name) '%absent)))
+      (let ((stored (pine.state.store:store (list :ref name) '%absent)))
         (unless (eq stored '%absent)
           (setf (ref-value r) stored))))
     (when name (setf (gethash name *refs*) r))
@@ -68,10 +77,10 @@ safe; subscribers run outside the lock. Returns non-nil if it changed."
               subs (copy-list (ref-subscribers ref)))))
     (when changed
       (when (and (ref-persist ref) (ref-name ref))
-        (setf (pine.store:store (list :ref (ref-name ref))) new))
+        (setf (pine.state.store:store (list :ref (ref-name ref))) new))
       ;; one subscriber's failure is its own: the rest still see the change
       (dolist (s subs)
-        (pine.eval:attempt (cdr s)
+        (pine.core.eval:attempt (cdr s)
                            (format nil "ref ~a subscriber" (ref-name ref)))))
     changed))
 

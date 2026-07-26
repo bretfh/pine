@@ -1,4 +1,14 @@
-(in-package #:pine.store)
+(defpackage #:pine.state.store
+  (:use #:cl)
+  (:export #:store #:store-push #:store-items #:store-clear #:store-forget
+           #:open-store #:close-store)
+  (:documentation "The persistence facility: one SQLite store the daemon
+owns. (store K) reads a durable value, (setf (store K) V) writes;
+store-push/store-items keep bounded lists (histories, recents). Modes
+declare what persists -- via defonce/defref :persist or their own store
+keys -- and never touch files."))
+
+(in-package #:pine.state.store)
 
 ;;;; One SQLite file, two tables: kv holds durable values, log holds bounded
 ;;;; ordered lists (newest = highest rowid). Keys and values are readable
@@ -25,7 +35,7 @@ check instead: a value whose printed form does not read errors at the write."
              (let ((*print-readably* nil))
                (prin1-to-string value)))))
     (handler-case (%read s)
-      (error () (error "pine.store: unstorable value ~s" value)))
+      (error () (error "pine.state.store: unstorable value ~s" value)))
     s))
 
 (defun open-store (&optional path)

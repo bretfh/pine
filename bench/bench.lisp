@@ -127,7 +127,7 @@
     (error (e) (format t "~&  (bench skipped: ~a)~%" e) nil)))
 
 (defun bench-widget ()
-  (let ((pine.server:*server* (make-instance 'pine.server:server)))
+  (let ((pine.core.server:*server* (make-instance 'pine.core.server:server)))
     (let* ((tree (sample-tree))
            (wire (pine.layout:node->wire tree)) rows)
       (push (%safe (lambda () (defbench "node->wire (serialize bar)"
@@ -183,7 +183,7 @@ transport actually writes, which re-encodes those bytes as decimal text."
   (finish-output))
 
 (defun bench-push ()
-  (let ((pine.server:*server* (make-instance 'pine.server:server)))
+  (let ((pine.core.server:*server* (make-instance 'pine.core.server:server)))
     (let ((shapes (list (list "bar (the tree benched above)" (pine.layout:node->wire (sample-tree)))
                         (list "editor 88x25, plain" (%editor-wire 88 25 1))
                         (list "editor 88x25, highlighted" (%editor-wire 88 25 15))
@@ -268,7 +268,7 @@ transport actually writes, which re-encodes those bytes as decimal text."
 (defun bench-eval ()
   (let ((sem (sb-thread:make-semaphore)) rows)
     (push (defbench "evaluate-thunk round-trip (thread spawn)"
-            (pine.eval:evaluate-thunk
+            (pine.core.eval:evaluate-thunk
              (lambda () 42)
              :on-done (lambda (ev) (declare (ignore ev)) (sb-thread:signal-semaphore sem)))
             (sb-thread:wait-on-semaphore sem)) rows)
@@ -284,8 +284,8 @@ transport actually writes, which re-encodes those bytes as decimal text."
 surface, headless -- the same path the wayland clients run per frame."
   (handler-case
       (progn
-        (unless pine.server:*server*
-          (setf pine.server:*server* (make-instance 'pine.server:server)))
+        (unless pine.core.server:*server*
+          (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
         (let ((tree (sample-tree)) rows)
           (pine.layout:with-cairo-layout
             (let ((surface (cairo:create-image-surface :argb32 560 120)))
@@ -308,31 +308,31 @@ surface, headless -- the same path the wayland clients run per frame."
 measure the eval round-trip (serialize, send, eval in the other image, result
 home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
   (handler-case
-      (let ((srv (pine.server:start-server :remoting-port 18191)))
-        (setf pine.server:*server* srv)
-        (pine.actor:start-agent-registry srv)
-        (pine.actor:start-agent-debug srv)
-        (setf pine.actor::*agent-port* 18191)
+      (let ((srv (pine.core.server:start-server :remoting-port 18191)))
+        (setf pine.core.server:*server* srv)
+        (pine.core.actor:start-agent-registry srv)
+        (pine.core.actor:start-agent-debug srv)
+        (setf pine.core.actor::*agent-port* 18191)
         (let ((sem (sb-thread:make-semaphore))
               (t0 (get-internal-real-time)))
-          (setf pine.actor:*agent-debug-hook*
+          (setf pine.core.actor:*agent-debug-hook*
                 (lambda (msg)
                   (when (eq (first msg) :agent-result)
                     (sb-thread:signal-semaphore sem))))
-          (let ((info (pine.actor:spawn-agent srv "bench-agent")))
+          (let ((info (pine.core.actor:spawn-agent srv "bench-agent")))
             (format t "~&agent spawn-to-connect: ~,1fs (fresh SBCL image loading :pine)~%"
                     (/ (float (- (get-internal-real-time) t0) 1d0)
                        internal-time-units-per-second))
             (unwind-protect
                  (let (rows)
                    (push (defbench "process-agent eval round-trip (remoting)"
-                           (progn (pine.actor:agent-eval srv info "42")
+                           (progn (pine.core.actor:agent-eval srv info "42")
                                   (sb-thread:wait-on-semaphore sem :timeout 30)))
                          rows)
                    (print-table "process agent (the crash boundary)" (nreverse rows)))
-              (pine.actor:unsupervise-agent "bench-agent")
-              (ignore-errors (sento.actor:tell (pine.actor:agent-info-actor info) '(:crash)))
-              (ignore-errors (pine.actor:unregister-agent srv "bench-agent"))))))
+              (pine.core.actor:unsupervise-agent "bench-agent")
+              (ignore-errors (sento.actor:tell (pine.core.actor:agent-info-actor info) '(:crash)))
+              (ignore-errors (pine.core.actor:unregister-agent srv "bench-agent"))))))
     (error (e) (format t "~&(agent group skipped: ~a)~%" e))))
 
 (defun machine-header ()

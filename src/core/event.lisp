@@ -1,8 +1,16 @@
-(in-package :pine.event)
+(defpackage #:pine.core.event
+  (:use :cl)
+  (:export
+   #:make-event-bus
+   #:publish
+   #:subscribe
+   #:unsubscribe))
+
+(in-package #:pine.core.event)
 
 (defun make-event-bus (server)
-  (let ((sys (pine.server:actor-system server)))
-    (setf (pine.server:event-bus server)
+  (let ((sys (pine.core.server:actor-system server)))
+    (setf (pine.core.server:event-bus server)
           (sento.actor-context:actor-of sys
             :name "event-bus"
             :state (make-hash-table :test 'eq)

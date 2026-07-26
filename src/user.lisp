@@ -1,12 +1,91 @@
-(in-package :cl-user)
+(defpackage :pine.user
+  (:nicknames :pine-user)
+  (:use :cl)
+  (:import-from :pine.layout
+                #:column #:row #:centerbox #:label #:icon #:button #:ring
+                #:gap #:rule #:rows #:choice)
+  (:import-from :pine.editor
+                #:candidate #:register-source #:register-actions
+                #:candidate-actions #:completion-widget)
+  (:import-from :pine.buffer
+                #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
+                )
+  (:import-from :pine.client
+                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers)
+  (:import-from :pine.ask #:ask #:tell)
+  (:import-from :pine.state.ref #:defref #:ref)
+  (:import-from :pine.state.store #:store #:store-push #:store-items #:store-clear)
+  (:import-from :pine.state.world #:register)
+  (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
+                #:split #:lines #:starts-with #:first-number #:read-int-file
+                #:json)
+  (:import-from :pine.editor.command #:call-command #:execute)
+  (:import-from :pine.mode #:find-mode #:dispatch-message #:auto-mode
+                #:defmode #:defminor)
+  (:import-from :pine.client #:current-buffer-mode #:set-buffer-mode)
+  (:import-from :pine.state.var #:defonce)
+  (:import-from :pine.client #:current-client #:current-buffer)
+  (:import-from :pine.editor #:eval-last-sexp #:eval-buffer
+                #:completing-read #:read-file-name #:prompt
+                #:show-layout #:layout-node-at-point #:layout-select
+                #:layout-activate)
+  (:import-from :pine.echo #:message)
+  (:import-from :pine #:*frontends*)
+  (:export
+   ;; the frontends the daemon owns
+   #:*frontends*
+   ;; surfaces
+   #:defsurface #:show #:hide #:toggle
+   ;; widgets: containers
+   #:column #:row #:centerbox #:center #:box #:scroll
+   ;; widgets: content
+   #:label #:icon #:image #:rule #:gap
+   ;; widgets: controls
+   #:button #:slider #:ring #:choice #:rows
+   ;; widgets: views -- a window is a live view of the buffer you name
+   #:calendar #:window #:buffer #:terminal #:modeline #:echo #:minibuffer
+   ;; completion facility
+   #:candidate #:register-source #:register-actions #:candidate-actions
+   #:completion-widget
+   ;; style
+   #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
+   ;; data
+   #:defref #:ref #:defpoll #:defsource #:sh #:launch
+   ;; writing a source: the stream/poll primitives and their helpers
+   #:start-stream #:start-poll
+   #:split #:lines #:starts-with #:first-number #:read-int-file #:json
+   ;; persistence
+   #:store #:store-push #:store-items #:store-clear #:register
+   ;; style rules
+   #:defrules
+   ;; behavior
+   #:defcommand #:call-command
+   ;; keys
+   #:kbd #:keymap #:define-key #:global-set-key
+   ;; modes -- defmode/defminor make real classes; execute/dispatch-message are
+   ;; the CLOS behaviour hooks users specialise
+   #:defmode #:defminor #:execute #:dispatch-message #:auto-mode
+   #:enable-minor-mode #:disable-minor-mode #:toggle-minor-mode
+   ;; editor variables
+   #:defonce #:var
+   ;; prompts + echo
+   #:completing-read #:read-file-name #:prompt #:message
+   ;; layout buffers (authorable tool buffers)
+   #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
+   ;; processes
+   #:defagent #:spawn #:supervise #:kill
+   ;; buffers / editor
+   #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
+   #:ask #:tell #:current-client #:current-buffer
+   #:find-mode #:current-buffer-mode #:set-buffer-mode
+   #:eval-last-sexp #:eval-buffer))
+
+(in-package #:pine.user)
 
 ;;;; The pine.user language: the vocabulary a user writes in init.lisp. It gathers
 ;;;; the primitives from every subsystem under one set of clean, symbol-named
 ;;;; forms, so a config reads as one language and never qualifies a package. The
 ;;;; catalog is doc/pine-user.org.
-
-(in-package :pine.user)
-
 ;;;; Widget renames. The layout constructors carry terser class names; the
 ;;;; language uses the plain ones.
 
@@ -53,7 +132,7 @@ tree arranges it into. Props are node style: :opacity :font-px :class :expand."
 ;;;; Behavior.
 
 (defmacro defcommand (name args &body body)
-  `(pine.command:define-command ,name ,args ,@body))
+  `(pine.editor.command:define-command ,name ,args ,@body))
 
 ;;;; Keys (Emacs voice). KBD parses a chord sequence; KEYMAP names one; a
 ;;;; command is bound by its string name. A defcommand becomes reachable by key.
@@ -61,7 +140,7 @@ tree arranges it into. Props are node style: :opacity :font-px :class :expand."
 (defun kbd (spec)
   "Parse a key sequence -- \"C-x C-f\", \"M-.\", \"Return\" -- into a key (one
 chord) or a list of keys (a sequence), exactly what DEFINE-KEY takes."
-  (let ((keys (mapcar #'pine.key:parse-key
+  (let ((keys (mapcar #'pine.editor.key:parse-key
                       (remove "" (uiop:split-string spec :separator '(#\space))
                               :test #'string=))))
     (if (= 1 (length keys)) (first keys) keys)))
@@ -79,14 +158,14 @@ window), or a mode keyword for that mode's map."
 (defun define-key (where keys command)
   "Bind KEYS (from KBD) to COMMAND (a command designator) in WHERE -- a keymap,
 :global, :wm, or a mode keyword."
-  (pine.keymap:define-key
-   (if (pine.keymap:keymap-p where) where (keymap where))
-   keys (pine.command:command-key command)))
+  (pine.editor.keymap:define-key
+   (if (pine.editor.keymap:keymap-p where) where (keymap where))
+   keys (pine.editor.command:command-key command)))
 
 (defun global-set-key (keys command)
   "Bind KEYS to COMMAND in the global keymap."
-  (pine.keymap:define-key (pine.mode:global-keymap) keys
-                          (pine.command:command-key command)))
+  (pine.editor.keymap:define-key (pine.mode:global-keymap) keys
+                          (pine.editor.command:command-key command)))
 
 ;;;; Modes. DEFMODE / DEFMINOR come from pine.mode, which is where pine's own
 ;;;; modes are defined with them: one form makes the class, gives it a keymap
@@ -101,16 +180,16 @@ window), or a mode keyword for that mode's map."
 (defun toggle-minor-mode  (name) (pine.client:toggle-minor-mode  (current-client) name))
 
 ;;;; Editor variables. The buffer is implicit here and explicit below: which
-;;;; buffer is current is a client's business, and pine.var sits under every
+;;;; buffer is current is a client's business, and pine.state.var sits under every
 ;;;; client, so it never guesses.
 
 (defun var (name &optional (buffer (pine.client:buffer-in-scope)))
   "Editor variable NAME: buffer-local in BUFFER (the current buffer by
 default), else global, else the declared default."
-  (pine.var:var name buffer))
+  (pine.state.var:var name buffer))
 
 (defun (setf var) (value name &optional buffer)
-  (setf (pine.var:var name buffer) value))
+  (setf (pine.state.var:var name buffer) value))
 
 ;;;; Style rules. Add to the one stylesheet the cairo painter and the cell
 ;;;; render both read; user rules win the cascade. VALUES are evaluated, so
@@ -132,16 +211,16 @@ replaces it. Reload-safe; the rules reach every attached frontend."
 
 ;;;; Processes. SPAWN / SUPERVISE / KILL take the running server implicitly.
 
-(defun spawn (name)     (pine.actor:spawn-agent     pine.server:*server* (string name)))
-(defun supervise (name) (pine.actor:supervise-agent (string name)))
-(defun kill (name)      (pine.actor:kill-agent       pine.server:*server* (string name)))
+(defun spawn (name)     (pine.core.actor:spawn-agent     pine.core.server:*server* (string name)))
+(defun supervise (name) (pine.core.actor:supervise-agent (string name)))
+(defun kill (name)      (pine.core.actor:kill-agent       pine.core.server:*server* (string name)))
 
 (defmacro defagent (name &body body)
   "Spawn a supervised process agent named NAME and run BODY in its own image."
   (let ((n (string name)))
     `(progn
        (spawn ,n)
-       (pine.actor:agent-eval pine.server:*server* ,n
+       (pine.core.actor:agent-eval pine.core.server:*server* ,n
                               ,(format nil "~s" `(progn ,@body)))
        (supervise ,n)
        ,n)))

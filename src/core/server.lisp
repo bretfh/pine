@@ -1,4 +1,25 @@
-(in-package :pine.server)
+(defpackage #:pine.core.server
+  (:use :cl)
+  (:export
+   #:server
+   #:*server*
+   #:*app-actor-config*
+   #:actor-system
+   #:event-bus
+   #:agent-registry
+   #:buffer-registry
+   #:buffer-table
+   #:ts-runtime
+   #:clients
+   #:remoting-port
+   #:start-server
+   #:stop-server
+   #:*host*
+   #:*port*
+   #:daemon-uri
+   #:local-uri))
+
+(in-package #:pine.core.server)
 
 (defvar *server* nil
   "The daemon's server, for server-scoped state (faces) reached without a client.
@@ -41,10 +62,7 @@ frontend would attach to whichever daemon holds the default port.")
    (agent-registry  :initarg :agent-registry  :accessor agent-registry  :initform nil)
    (buffer-registry :initarg :buffer-registry :accessor buffer-registry :initform nil)
    (buffer-table    :initarg :buffer-table    :accessor buffer-table    :initform nil)
-   (commands        :initarg :commands        :accessor commands        :initform nil)
-   (global-keymap   :initarg :global-keymap   :accessor global-keymap   :initform nil)
    (ts-runtime      :initarg :ts-runtime      :accessor ts-runtime      :initform nil)
-   (modes           :initarg :modes           :accessor modes           :initform nil)
    (clients         :initarg :clients         :accessor clients         :initform nil)
    (remoting-port   :initarg :remoting-port   :accessor remoting-port   :initform nil)))
 
@@ -56,10 +74,7 @@ frontend would attach to whichever daemon holds the default port.")
                  :scheduler (:enabled :false))))
          (srv (make-instance 'server
                 :actor-system sys
-                :commands (make-hash-table :test 'equal)
-                :global-keymap (make-hash-table :test 'equal)
-                :buffer-table (make-hash-table :test 'equal)
-                :modes (make-hash-table :test 'eq))))
+                :buffer-table (make-hash-table :test 'equal))))
     (when remoting-port
       (sento.remoting:enable-remoting sys :host "127.0.0.1" :port remoting-port)
       (setf (remoting-port srv) (sento.remoting:remoting-port sys)))

@@ -155,7 +155,7 @@ work for the loop thread."
 
 
 
-(defun run-desktop (&key (host pine.server:*host*) (port pine.server:*port*))
+(defun run-desktop (&key (host pine.core.server:*host*) (port pine.core.server:*port*))
   "Attach to the daemon at HOST:PORT and run the bar, echo, and toggled panels as
 wayland layer surfaces. Opens surfaces on the current display -- run it yourself;
 the daemon (make daemon) must already be up."
@@ -171,6 +171,6 @@ the daemon (make daemon) must already be up."
                             :done (lambda () (client-done client)))
       (pine.frontend:close-pump (client-pump client)))))
 
-(defmethod pine.attach:run-frontend ((app pine.desktop::desktop-app))
+(defmethod pine.core.attach:run-frontend ((app pine.desktop::desktop-app))
   (declare (ignore app))
   (run-desktop))

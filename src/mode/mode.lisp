@@ -17,13 +17,13 @@
   ((precedence  :initarg :precedence  :reader precedence  :initform 0)
    (transparent :initarg :transparent :reader transparent :initform nil)))
 
-(defmethod pine.keymap:keymap ((m mode)) (mode-keymap m))
+(defmethod pine.editor.keymap:keymap ((m mode)) (mode-keymap m))
 
 ;;;; The global map is the one keymap no mode owns: it applies whatever mode a
 ;;;; buffer is in, and it is what global-set-key writes into. Every other map
 ;;;; is a mode's, reached through KEYMAP.
 
-(defvar *global-keymap* (pine.keymap:make-keymap :name :global))
+(defvar *global-keymap* (pine.editor.keymap:make-keymap :name :global))
 
 ;;;; Registry: mode singletons, keyed by keyword name.
 
@@ -38,7 +38,7 @@
 
 (defun global-keymap () *global-keymap*)
 
-(defmethod pine.keymap:keymap ((name symbol))
+(defmethod pine.editor.keymap:keymap ((name symbol))
   "Resolve a keymap designator: :global for the map no mode owns, or a mode
 keyword for that mode's."
   (if (eq name :global)
@@ -67,9 +67,9 @@ together."
         (make-instance ',name :name ,key :parent-mode parent-mode
                        :indicator ,indicator :ts-language ,ts-language
                        :keymap (or ,keymap
-                                   (pine.keymap:make-keymap
+                                   (pine.editor.keymap:make-keymap
                                     :name ,key
-                                    :parent (pine.keymap:keymap parent-mode)))))
+                                    :parent (pine.editor.keymap:keymap parent-mode)))))
        ,@body
        ,key)))
 
@@ -85,7 +85,7 @@ from none. Higher PRECEDENCE is consulted first."
        (register-mode
         (make-instance ',name :name ,key :precedence ,precedence
                        :transparent ,transparent :indicator ,indicator
-                       :keymap (or ,keymap (pine.keymap:make-keymap :name ,key))))
+                       :keymap (or ,keymap (pine.editor.keymap:make-keymap :name ,key))))
        ,@body
        ,key)))
 
@@ -136,7 +136,7 @@ subclass over its parent."))
 (defclass base-mode (major-mode) ())
 
 (register-mode (make-instance 'base-mode :name :base-mode :indicator "BASE"
-                              :keymap (pine.keymap:make-keymap :name :base-mode)))
+                              :keymap (pine.editor.keymap:make-keymap :name :base-mode)))
 
 (defmode text-mode (:parent :base-mode :indicator "TEXT"))
 (defmode lisp-mode (:parent :text-mode :indicator "LISP" :ts-language :commonlisp))

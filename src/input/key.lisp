@@ -1,4 +1,10 @@
-(in-package #:pine.key)
+(defpackage #:pine.editor.key
+  (:use #:cl)
+  (:export #:key #:key-p #:make-key
+           #:key-sym #:key-ctrl #:key-meta #:key-shift #:key-super
+           #:key= #:parse-key #:parse-chord #:key->string))
+
+(in-package #:pine.editor.key)
 
 (defstruct (key (:constructor %make-key) (:copier nil))
   (sym   "" :type string  :read-only t)

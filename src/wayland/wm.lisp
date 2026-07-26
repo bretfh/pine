@@ -102,12 +102,12 @@ for sequences that have nothing left to do."
 nil when xkbcommon does not know the key name. MODIFIERS is the keyword list
 river_seat_v1.modifiers is written in: pine's meta is the protocol's mod1 and
 pine's super is its mod4."
-  (let* ((key (pine.key:parse-key chord))
-         (keysym (xkb:xkb-keysym-from-name (pine.key:key-sym key) '(:no-flags)))
-         (modifiers (append (when (pine.key:key-shift key) '(:shift))
-                            (when (pine.key:key-ctrl key)  '(:ctrl))
-                            (when (pine.key:key-meta key)  '(:mod1))
-                            (when (pine.key:key-super key) '(:mod4)))))
+  (let* ((key (pine.editor.key:parse-key chord))
+         (keysym (xkb:xkb-keysym-from-name (pine.editor.key:key-sym key) '(:no-flags)))
+         (modifiers (append (when (pine.editor.key:key-shift key) '(:shift))
+                            (when (pine.editor.key:key-ctrl key)  '(:ctrl))
+                            (when (pine.editor.key:key-meta key)  '(:mod1))
+                            (when (pine.editor.key:key-super key) '(:mod4)))))
     (when (and keysym (plusp keysym))
       (values keysym modifiers))))
 
@@ -474,7 +474,7 @@ it. Always finishes."
     (wl-display-roundtrip (wm-display wm))
     (wl-display-roundtrip (wm-display wm))))
 
-(defun run-wm (&key (host pine.server:*host*) (port pine.server:*port*))
+(defun run-wm (&key (host pine.core.server:*host*) (port pine.core.server:*port*))
   "Drive the compositor's window management: bind the global, attach to the
 daemon for policy, and run the sequence loop until the server finishes with
 us. Errors out plainly when the compositor is not river or another window
@@ -500,6 +500,6 @@ offers no window management, or another manager holds it~%")
       (pine.frontend:close-pump (wm-pump wm))
       (pine.frontend:shutdown backing))))
 
-(defmethod pine.attach:run-frontend ((app pine.wm::wm-app))
+(defmethod pine.core.attach:run-frontend ((app pine.wm::wm-app))
   (declare (ignore app))
   (run-wm))

@@ -35,9 +35,9 @@ through the server's buffer table."
   (etypecase x
     (string (if pine.client:*client*
                 (pine.client:make-buffer x)
-                (let ((srv pine.server:*server*))
-                  (and srv (pine.server:buffer-table srv)
-                       (gethash x (pine.server:buffer-table srv))))))
+                (let ((srv pine.core.server:*server*))
+                  (and srv (pine.core.server:buffer-table srv)
+                       (gethash x (pine.core.server:buffer-table srv))))))
     (t x)))
 
 (defun %buffer-name (x buf)
@@ -45,10 +45,10 @@ through the server's buffer table."
 itself, or a reverse lookup in the server's buffer table."
   (if (stringp x)
       x
-      (let ((srv pine.server:*server*) (name ""))
-        (when (and srv (pine.server:buffer-table srv))
+      (let ((srv pine.core.server:*server*) (name ""))
+        (when (and srv (pine.core.server:buffer-table srv))
           (maphash (lambda (k v) (when (eq v buf) (setf name k)))
-                   (pine.server:buffer-table srv)))
+                   (pine.core.server:buffer-table srv)))
         name)))
 
 (defun %backing-window (buf name)
@@ -154,9 +154,9 @@ editor vocabulary."
 (defun %live-name (name)
   "NAME when that buffer still exists, else scratch -- a restored window never
 points at nothing (killed buffers, dead terminals)."
-  (let ((srv pine.server:*server*))
-    (if (and (stringp name) srv (pine.server:buffer-table srv)
-             (gethash name (pine.server:buffer-table srv)))
+  (let ((srv pine.core.server:*server*))
+    (if (and (stringp name) srv (pine.core.server:buffer-table srv)
+             (gethash name (pine.core.server:buffer-table srv)))
         name
         "scratch")))
 
@@ -198,7 +198,7 @@ or the tree has foreign nodes."
                   :focus (and fw (pine.buffer:window-name fw))
                   :current (and cur (%buffer-name cur cur)))))))))
 
-(pine.world:register :arrangement :save #'%arrangement-data)
+(pine.state.world:register :arrangement :save #'%arrangement-data)
 
 (defun %restore-arrangement (client saved)
   "Build SAVED's tree for CLIENT and land its focus. nil when building fails
@@ -213,10 +213,10 @@ or the tree has foreign nodes."
           (when w
             (pine.client:focus-window w)
             (setf (pine.client:current-buffer client)
-                  (or (let ((srv pine.server:*server*))
-                        (and srv (pine.server:buffer-table srv)
+                  (or (let ((srv pine.core.server:*server*))
+                        (and srv (pine.core.server:buffer-table srv)
                              (gethash (getf saved :current)
-                                      (pine.server:buffer-table srv))))
+                                      (pine.core.server:buffer-table srv))))
                       (pine.buffer:buffer-ref w)))))
         tree)
     (error (c)
@@ -231,8 +231,8 @@ engine default. Focus lands on the saved focus or the first window leaf."
         (builder (gethash "editor"
                           (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
         (saved (and world
-                    (ignore-errors (pine.var:var :world-save nil))
-                    (pine.store:store '(:world :arrangement)))))
+                    (ignore-errors (pine.state.var:var :world-save nil))
+                    (pine.state.store:store '(:world :arrangement)))))
     (setf (pine.client:windows client) nil
           (pine.client:focused-window client) nil)
     (or (and saved (getf saved :tree) (%restore-arrangement client saved))
@@ -251,9 +251,9 @@ engine default. Focus lands on the saved focus or the first window leaf."
 (defun reseed-editor-sessions ()
   "Re-seed every attached editor session's live tree from the (re)loaded
 `editor' builder and repaint."
-  (dolist (c pine.attach:*clients*)
-    (when (eq (pine.attach:attached-client-kind c) :editor)
-      (let ((s (pine.attach:attached-client-session c)))
+  (dolist (c pine.core.attach:*clients*)
+    (when (eq (pine.core.attach:attached-client-kind c) :editor)
+      (let ((s (pine.core.attach:attached-client-session c)))
         (when (sess-p s)
           ;; :reload is the declared reset: the builder wins, and the relayout
           ;; below saves the reasserted tree as the new world.
@@ -277,18 +277,18 @@ those rows, and a keystroke moves one of them."
         (incf (sess-generation s))
         (cond
           (patch
-           (pine.attach:push-to-app aclient :rows-patch :surface "editor"
+           (pine.core.attach:push-to-app aclient :rows-patch :surface "editor"
                                     :patch patch
                                     :generation (sess-generation s)))
           (t
-           (pine.attach:push-to-app aclient :widgets :surface "editor"
+           (pine.core.attach:push-to-app aclient :widgets :surface "editor"
                                     :tree wire :as :toplevel
                                     :generation (sess-generation s))))
         (setf (sess-sent-wire s) wire)))))
 
 (defun editor-frame (aclient)
   "Renderer trigger for an editor session: refresh the live tree and push it."
-  (let ((s (pine.attach:attached-client-session aclient)))
+  (let ((s (pine.core.attach:attached-client-session aclient)))
     (when (sess-p s)
       (push-editor-surface aclient s))))
 
@@ -300,14 +300,14 @@ those rows, and a keystroke moves one of them."
 (defun %scratch-text ()
   "Scratch's text straight off the server table -- no client needed, so the
 shutdown sweep can save it."
-  (let* ((srv pine.server:*server*)
-         (buf (and srv (pine.server:buffer-table srv)
-                   (gethash "scratch" (pine.server:buffer-table srv))))
+  (let* ((srv pine.core.server:*server*)
+         (buf (and srv (pine.core.server:buffer-table srv)
+                   (gethash "scratch" (pine.core.server:buffer-table srv))))
          (text (and buf (ignore-errors
                          (sento.actor:ask-s buf '(:get-text) :time-out 2)))))
     (and (stringp text) (plusp (length text)) text)))
 
-(pine.world:register :scratch
+(pine.state.world:register :scratch
   :save #'%scratch-text
   :restore (lambda (text)
              (let ((buf (pine.client:make-buffer "scratch")))
@@ -317,7 +317,7 @@ shutdown sweep can save it."
   "The buffer/scratch restore runs once per daemon life, at the first editor
 attach (a client must be in scope); the arrangement applies on every seed.")
 
-(defun make-editor-session (aclient &key sink (server pine.server:*server*))
+(defun make-editor-session (aclient &key sink (server pine.core.server:*server*))
   (let ((client (pine.client:start-client server)))
     (pine.render:start-renderer client)
     (setf (pine.client:paint-sink client) sink)
@@ -328,7 +328,7 @@ attach (a client must be in scope); the arrangement applies on every seed.")
         (ignore-errors (pine.ask:tell buf :set-local :key :package :value :pine-user)))
       (unless *world-restored*
         (setf *world-restored* t)
-        (pine.world:restore-world))
+        (pine.state.world:restore-world))
       (%seed-editor-tree client)
       (let ((f (pine.client:frame client)))
         (setf (pine.buffer:frame-cols f) 80 (pine.buffer:frame-rows f) 29)
@@ -336,9 +336,9 @@ attach (a client must be in scope); the arrangement applies on every seed.")
       (ensure-minibuffer client)
       (let ((s (make-sess :client client :aclient aclient :sink sink)))
         (when aclient
-          (setf (pine.attach:attached-client-session aclient) s)
+          (setf (pine.core.attach:attached-client-session aclient) s)
           (when pine.buffer:*user-rules*
-            (pine.attach:push-to-app aclient :rules
+            (pine.core.attach:push-to-app aclient :rules
                                      :rules pine.buffer:*user-rules*)))
         (setf (sess-thread s)
               (bordeaux-threads:make-thread (lambda () (session-loop s))
@@ -373,7 +373,7 @@ much output arrived, and nothing at all while no terminal is producing any."
   (sb-thread:signal-semaphore (pine.client:terminal-wake (sess-client s))))
 
 (defun session-input (aclient msg)
-  (let ((s (pine.attach:attached-client-session aclient)))
+  (let ((s (pine.core.attach:attached-client-session aclient)))
     (when (sess-p s) (sess-signal s msg))))
 
 (defun session-feed (s msg)
@@ -388,8 +388,8 @@ much output arrived, and nothing at all while no terminal is producing any."
            (rest msg)
          (let ((str (or key-str text)))
            (when str
-             (pine.command:dispatch
-              client (pine.key:make-key str :ctrl ctrl :meta meta :shift shift :super super))
+             (pine.editor.command:dispatch
+              client (pine.editor.key:make-key str :ctrl ctrl :meta meta :shift shift :super super))
              (sento.actor:tell (pine.client:renderer client) '(:force-render))))))
       (:resize
        (sento.actor:tell (pine.client:renderer client) msg))
@@ -412,38 +412,38 @@ much output arrived, and nothing at all while no terminal is producing any."
         ;; :resize handler, say) goes to the same surface rather than vanishing.
         (dolist (m msgs)
           (handler-case (apply-input s m)
-            (error (c) (pine.command:command-error c))))))))
+            (error (c) (pine.editor.command:command-error c))))))))
 
-(defclass editor-app (pine.attach:app)
+(defclass editor-app (pine.core.attach:app)
   ()
   (:default-initargs :kind :editor)
   (:documentation "The editor window: buffers, windows, the mode line."))
 
-(defmethod pine.attach:attached ((app editor-app) client)
+(defmethod pine.core.attach:attached ((app editor-app) client)
   (make-editor-session
    client :sink (lambda (&rest _) (declare (ignore _)) (editor-frame client))))
 
-(defmethod pine.attach:received ((app editor-app) client message)
+(defmethod pine.core.attach:received ((app editor-app) client message)
   (session-input client message))
 
-(defmethod pine.attach:detached ((app editor-app) client)
-  (let ((s (pine.attach:attached-client-session client)))
+(defmethod pine.core.attach:detached ((app editor-app) client)
+  (let ((s (pine.core.attach:attached-client-session client)))
     (when (sess-p s) (stop-session s))))
 
-(pine.attach:register-app (make-instance 'editor-app))
+(pine.core.attach:register-app (make-instance 'editor-app))
 
 ;;;; The hooks this image answers: a key in a terminal buffer goes to the pty,
 ;;;; an evaluation that faults opens the restart menu, and a process agent's
 ;;;; error comes home to it. Each chains whatever is already there, so the
 ;;;; jobs registry and this surface both fire.
 
-(setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch
-      pine.eval:*on-debug*            #'%eval-error)
+(setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch
+      pine.core.eval:*on-debug*            #'%eval-error)
 
-(let ((prev pine.actor:*agent-debug-hook*))
-  (setf pine.actor:*agent-debug-hook*
+(let ((prev pine.core.actor:*agent-debug-hook*))
+  (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)
           (when prev
-            (pine.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-          (pine.eval:attempt (lambda () (%agent-debug-surface msg))
+            (pine.core.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+          (pine.core.eval:attempt (lambda () (%agent-debug-surface msg))
                              "agent debug surface"))))

@@ -878,7 +878,7 @@ item functions, which build only at measure."
 
 
 ;;;; Widgets -- a widget is a function of its arguments returning a node tree.
-;;;; Reading reactive cells (pine.ref:deref) in the body makes it re-render
+;;;; Reading reactive cells (pine.state.ref:deref) in the body makes it re-render
 ;;;; when those cells change, when rendered inside a reactive view. Widgets
 ;;;; compose by calling one another.
 

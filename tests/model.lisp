@@ -289,24 +289,24 @@ generated source and on a real file."
 ;;;; Refs: one accessor, read and setf; reactive views track their reads.
 
 (test refs-setf
-  (is (eql 41 (setf (pine.ref:ref :probe-ref) 41)))
-  (is (eql 41 (pine.ref:ref :probe-ref)))
-  (is (eq :dflt (pine.ref:ref :probe-missing :dflt))))
+  (is (eql 41 (setf (pine.state.ref:ref :probe-ref) 41)))
+  (is (eql 41 (pine.state.ref:ref :probe-ref)))
+  (is (eq :dflt (pine.state.ref:ref :probe-missing :dflt))))
 
 (test refs-reactive-view
   "A view re-renders when a setf'd ref it read changes; an equal write is
 deduped and renders nothing."
   (let ((hits 0) (view nil))
-    (setf (pine.ref:ref :probe-view) 1)
-    (setf view (pine.ref:make-view
-                (lambda () (pine.ref:ref :probe-view))
-                (lambda () (incf hits) (pine.ref:render-view view))))
-    (is (eql 1 (pine.ref:render-view view)))
-    (setf (pine.ref:ref :probe-view) 2)
+    (setf (pine.state.ref:ref :probe-view) 1)
+    (setf view (pine.state.ref:make-view
+                (lambda () (pine.state.ref:ref :probe-view))
+                (lambda () (incf hits) (pine.state.ref:render-view view))))
+    (is (eql 1 (pine.state.ref:render-view view)))
+    (setf (pine.state.ref:ref :probe-view) 2)
     (is (= 1 hits))
-    (setf (pine.ref:ref :probe-view) 2)
+    (setf (pine.state.ref:ref :probe-view) 2)
     (is (= 1 hits))
-    (pine.ref:dispose-view view)))
+    (pine.state.ref:dispose-view view)))
 
 (test style-opacity
   "An :opacity rule resolves to a float the pixel painter reads."
@@ -336,7 +336,7 @@ selectors name one class."
   (dolist (f (list path (concatenate 'string path "-wal")
                    (concatenate 'string path "-shm")))
     (uiop:delete-file-if-exists f))
-  (pine.store:open-store path))
+  (pine.state.store:open-store path))
 
 (test store-facility
   "The persistence facility: lisp values roundtrip through kv, bounded lists
@@ -344,72 +344,72 @@ keep order/uniqueness/caps, a fresh connection sees the data, and a closed
 store degrades to defaults and no-ops."
   (let ((path "/tmp/pine-test-store.db"))
     (%fresh-store path)
-    (setf (pine.store:store :probe-n) 42
-          (pine.store:store :probe-f) 0.5
-          (pine.store:store :probe-s) "hi"
-          (pine.store:store (list :place "/x")) (list 3 7))
-    (is (= 42 (pine.store:store :probe-n)))
-    (is (= 0.5 (pine.store:store :probe-f)))
-    (is (equal "hi" (pine.store:store :probe-s)))
-    (is (equal '(3 7) (pine.store:store (list :place "/x"))))
-    (is (eq :none (pine.store:store :probe-missing :none)))
-    (pine.store:store-forget :probe-n)
-    (is (null (pine.store:store :probe-n)))
-    (pine.store:store-push :probe-log "a")
-    (pine.store:store-push :probe-log "b")
-    (pine.store:store-push :probe-log "c")
-    (is (equal '("c" "b" "a") (pine.store:store-items :probe-log)))
-    (pine.store:store-push :probe-log "a")
-    (is (equal '("a" "c" "b") (pine.store:store-items :probe-log)))
-    (is (equal '("a" "c") (pine.store:store-items :probe-log :limit 2)))
-    (dotimes (i 5) (pine.store:store-push :probe-trim (format nil "t~d" i) :max 3))
-    (is (equal '("t4" "t3" "t2") (pine.store:store-items :probe-trim)))
-    (pine.store:store-clear :probe-log)
-    (is (null (pine.store:store-items :probe-log)))
-    (pine.store:open-store path)
-    (is (equal "hi" (pine.store:store :probe-s)))
-    (pine.store:close-store)
-    (is (eq :closed (pine.store:store :probe-s :closed)))
-    (finishes (setf (pine.store:store :probe-s) "zz"))
-    (is (null (pine.store:store-items :probe-log)))
-    (pine.store:open-store ":memory:")
-    (setf (pine.store:store :probe-m) 1)
-    (is (= 1 (pine.store:store :probe-m)))
-    (pine.store:close-store)))
+    (setf (pine.state.store:store :probe-n) 42
+          (pine.state.store:store :probe-f) 0.5
+          (pine.state.store:store :probe-s) "hi"
+          (pine.state.store:store (list :place "/x")) (list 3 7))
+    (is (= 42 (pine.state.store:store :probe-n)))
+    (is (= 0.5 (pine.state.store:store :probe-f)))
+    (is (equal "hi" (pine.state.store:store :probe-s)))
+    (is (equal '(3 7) (pine.state.store:store (list :place "/x"))))
+    (is (eq :none (pine.state.store:store :probe-missing :none)))
+    (pine.state.store:store-forget :probe-n)
+    (is (null (pine.state.store:store :probe-n)))
+    (pine.state.store:store-push :probe-log "a")
+    (pine.state.store:store-push :probe-log "b")
+    (pine.state.store:store-push :probe-log "c")
+    (is (equal '("c" "b" "a") (pine.state.store:store-items :probe-log)))
+    (pine.state.store:store-push :probe-log "a")
+    (is (equal '("a" "c" "b") (pine.state.store:store-items :probe-log)))
+    (is (equal '("a" "c") (pine.state.store:store-items :probe-log :limit 2)))
+    (dotimes (i 5) (pine.state.store:store-push :probe-trim (format nil "t~d" i) :max 3))
+    (is (equal '("t4" "t3" "t2") (pine.state.store:store-items :probe-trim)))
+    (pine.state.store:store-clear :probe-log)
+    (is (null (pine.state.store:store-items :probe-log)))
+    (pine.state.store:open-store path)
+    (is (equal "hi" (pine.state.store:store :probe-s)))
+    (pine.state.store:close-store)
+    (is (eq :closed (pine.state.store:store :probe-s :closed)))
+    (finishes (setf (pine.state.store:store :probe-s) "zz"))
+    (is (null (pine.state.store:store-items :probe-log)))
+    (pine.state.store:open-store ":memory:")
+    (setf (pine.state.store:store :probe-m) 1)
+    (is (= 1 (pine.state.store:store :probe-m)))
+    (pine.state.store:close-store)))
 
 (test world-protocol
   "The world protocol: contributors save/restore through the store, a
 throwing restore skips without breaking the rest, a nil save keeps the
 previous entry, and :world-save gates both directions."
-  (pine.store:open-store ":memory:")
-  (setf (pine.var:var :world-save) t)
+  (pine.state.store:open-store ":memory:")
+  (setf (pine.state.var:var :world-save) t)
   (let ((a nil) (b nil))
-    (pine.world:register :probe-a
+    (pine.state.world:register :probe-a
       :save (lambda () :init) :restore (lambda (d) (setf a d)))
-    (pine.world:register :probe-bad
+    (pine.state.world:register :probe-bad
       :save (lambda () :x)
       :restore (lambda (d) (declare (ignore d)) (error "boom")))
-    (pine.world:register :probe-b
+    (pine.state.world:register :probe-b
       :save (lambda () '(1 2)) :restore (lambda (d) (setf b d)))
-    (pine.world:save-world)
-    (is (eq :init (pine.store:store '(:world :probe-a))))
-    (pine.world:restore-world)
+    (pine.state.world:save-world)
+    (is (eq :init (pine.state.store:store '(:world :probe-a))))
+    (pine.state.world:restore-world)
     (is (eq :init a))
     (is (equal '(1 2) b))
-    (pine.world:register :probe-a
+    (pine.state.world:register :probe-a
       :save (lambda () nil) :restore (lambda (d) (setf a d)))
-    (pine.world:save-world :probe-a)
-    (is (eq :init (pine.store:store '(:world :probe-a))))
-    (setf (pine.var:var :world-save) nil)
-    (setf (pine.store:store '(:world :probe-b)) :stale)
-    (pine.world:save-world :probe-b)
-    (is (eq :stale (pine.store:store '(:world :probe-b))))
+    (pine.state.world:save-world :probe-a)
+    (is (eq :init (pine.state.store:store '(:world :probe-a))))
+    (setf (pine.state.var:var :world-save) nil)
+    (setf (pine.state.store:store '(:world :probe-b)) :stale)
+    (pine.state.world:save-world :probe-b)
+    (is (eq :stale (pine.state.store:store '(:world :probe-b))))
     (setf b :untouched)
-    (pine.world:restore-world :probe-b)
+    (pine.state.world:restore-world :probe-b)
     (is (eq :untouched b))
-    (setf (pine.var:var :world-save) t)
-    (setf pine.world::*contributors*
+    (setf (pine.state.var:var :world-save) t)
+    (setf pine.state.world::*contributors*
           (remove-if (lambda (e)
                        (member (first e) '(:probe-a :probe-bad :probe-b)))
-                     pine.world::*contributors*)))
-  (pine.store:close-store))
+                     pine.state.world::*contributors*)))
+  (pine.state.store:close-store))

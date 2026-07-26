@@ -1,4 +1,15 @@
-(in-package #:pine.command)
+(defpackage #:pine.editor.command
+  (:use #:cl)
+  (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
+           #:command-key
+           #:define-command #:register-command #:find-command #:all-command-names
+           #:execute #:call-command #:dispatch #:command-error
+           #:self-insert #:self-insert-key-p
+           #:prefix-numeric-value #:this-command-key
+           #:key-binding #:read-next-key
+           #:*terminal-handler*))
+
+(in-package #:pine.editor.command)
 
 (defvar *terminal-handler* nil)
 
@@ -95,10 +106,10 @@ non-nil, route it through the same debugger surface evaluations use (*on-debug*
 -> the *debugger* restart menu); otherwise show it in the echo area. Either way
 the command loop lives on -- this never blocks the session thread. Call from a
 handler-bind so the backtrace is captured while the stack is still live."
-  (if (and (ignore-errors (pine.var:var :debug-on-error))
-           pine.eval:*on-debug*)
+  (if (and (ignore-errors (pine.state.var:var :debug-on-error))
+           pine.core.eval:*on-debug*)
       (ignore-errors
-       (funcall pine.eval:*on-debug* (pine.eval:make-error-evaluation condition)))
+       (funcall pine.core.eval:*on-debug* (pine.core.eval:make-error-evaluation condition)))
       (pine.echo:message (format nil "error: ~a" condition))))
 
 (defmacro %guarding-errors (&body body)
@@ -123,10 +134,10 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
 
 (defun self-insert-key-p (key)
   "True when KEY should insert its own character (printable, no C-/M-/super)."
-  (and (= 1 (length (pine.key:key-sym key)))
-       (not (pine.key:key-ctrl key))
-       (not (pine.key:key-meta key))
-       (not (pine.key:key-super key))))
+  (and (= 1 (length (pine.editor.key:key-sym key)))
+       (not (pine.editor.key:key-ctrl key))
+       (not (pine.editor.key:key-meta key))
+       (not (pine.editor.key:key-super key))))
 
 (defun self-insert (client key)
   (when (and key (self-insert-key-p key))
@@ -134,7 +145,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
       (when buf
         (let ((n (prefix-numeric-value (pine.client:prefix-arg client))))
           (dotimes (i (max 1 n))
-            (sento.actor:tell buf (list :insert :text (pine.key:key-sym key)))))))))
+            (sento.actor:tell buf (list :insert :text (pine.editor.key:key-sym key)))))))))
 
 (register-command
  (make-instance 'command :name "self-insert-command"
@@ -146,7 +157,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
   "Every active keymap's tables in priority order: minor modes first, then
 the major mode with its parent chain, then the global map."
   (loop for km in (pine.client:active-keymaps client)
-        append (pine.keymap:keymap-tables km)))
+        append (pine.editor.keymap:keymap-tables km)))
 
 (defun %step (tables key)
   "One dispatch step: KEY against TABLES in priority order. The first entry
@@ -173,11 +184,11 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
 
 (defun %seq-string (pending key)
   "The chord typed so far as a string: PENDING's prefix (if any) plus KEY."
-  (let ((s (pine.key:key->string key)))
+  (let ((s (pine.editor.key:key->string key)))
     (if pending (concatenate 'string (car pending) " " s) s)))
 
 (defun dispatch (client key)
-  "Feed one pine.key:key. Pending state is (SEQ-STRING . TABLES): the chord
+  "Feed one pine.editor.key:key. Pending state is (SEQ-STRING . TABLES): the chord
 typed so far and the live continuation tables from every active keymap.
 A key that dead-ends a chord echoes \"SEQ is undefined\" -- unless it is
 bound to keyboard-quit at top level, which always escapes a chord."

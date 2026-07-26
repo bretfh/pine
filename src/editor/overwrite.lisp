@@ -14,8 +14,8 @@
                               :start-line l :start-col c
                               :end-line l :end-col (1+ c))))))))
 
-(defmethod pine.command:execute :before
+(defmethod pine.editor.command:execute :before
     ((modes pine.mode:overwrite-mode) command argument)
   (declare (ignore argument))
-  (when (string= (pine.command:command-name command) "self-insert-command")
+  (when (string= (pine.editor.command:command-name command) "self-insert-command")
     (%overwrite-forward)))

@@ -1,7 +1,11 @@
-(in-package #:pine.jobs)
+(defpackage #:pine.core.jobs
+  (:use #:cl)
+  (:export #:list-jobs #:*agent-jobs*))
+
+(in-package #:pine.core.jobs)
 
 ;;;; The jobs surface's data: every live evaluation across the daemon and every
-;;;; agent, in one place. Local evals come from pine.eval's registry; agent evals
+;;;; agent, in one place. Local evals come from pine.core.eval's registry; agent evals
 ;;;; are reported here by their :agent-debug / :agent-result messages (the same
 ;;;; ones that drive the cross-image debugger). The editor renders this list as a
 ;;;; buffer where an errored job opens its restarts and a running one can be
@@ -27,20 +31,20 @@
 ;;;; Route process-agent job reports into the registry, chaining whatever hook
 ;;;; is already there so every handler fires.
 
-(let ((prev pine.actor:*agent-debug-hook*))
-  (setf pine.actor:*agent-debug-hook*
+(let ((prev pine.core.actor:*agent-debug-hook*))
+  (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)
           (when prev
-            (pine.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-          (pine.eval:attempt (lambda () (record msg)) "jobs record"))))
+            (pine.core.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+          (pine.core.eval:attempt (lambda () (record msg)) "jobs record"))))
 
 (defun list-jobs ()
   "Every live job: the daemon's local evaluations plus every agent's reported
 evals, as a flat list of plists (:agent :id :status ...)."
   (append
    (mapcar (lambda (ev)
-             (list :agent "local" :id (pine.eval:evaluation-id ev)
-                   :status (pine.eval:evaluation-status ev)
-                   :form (princ-to-string (pine.eval:evaluation-form ev))))
-           (pine.eval:list-evaluations))
+             (list :agent "local" :id (pine.core.eval:evaluation-id ev)
+                   :status (pine.core.eval:evaluation-status ev)
+                   :form (princ-to-string (pine.core.eval:evaluation-form ev))))
+           (pine.core.eval:list-evaluations))
    (loop for v being the hash-values of *agent-jobs* collect v)))

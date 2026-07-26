@@ -16,14 +16,14 @@ into the image that broke.")
 (defun eval-in-target (str package &key on-done bindings)
   "Evaluate STR in the current *eval-target* image over the one eval path: :local
 runs through the local-agent (in-image), a named target through that agent, both
-off the caller thread on the shared pine.eval engine. ON-DONE runs on the eval
+off the caller thread on the shared pine.core.eval engine. ON-DONE runs on the eval
 thread for :local; for a remote agent the result comes home as an :agent-result
 (the *jobs* surface) and BINDINGS do not cross the wire."
   (if (or (null *eval-target*) (eq *eval-target* :local))
-      (if pine.actor:*local-agent*
-          (pine.actor:agent-eval nil pine.actor:*local-agent* str
+      (if pine.core.actor:*local-agent*
+          (pine.core.actor:agent-eval nil pine.core.actor:*local-agent* str
                                  :package package :bindings bindings :on-done on-done)
-          (pine.eval:evaluate-string str :package package
+          (pine.core.eval:evaluate-string str :package package
                                      :bindings bindings :on-done on-done))
-      (pine.actor:agent-eval (pine.client:server-of (pine.client:current-client))
+      (pine.core.actor:agent-eval (pine.client:server-of (pine.client:current-client))
                              *eval-target* str :package package :on-done on-done)))

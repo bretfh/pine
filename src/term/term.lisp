@@ -125,12 +125,12 @@ render (main) thread."
       (pine.vt:pty-set-size (terminal-fd tobj) rows cols))))
 
 
-;;;; Input: pine.key -> pty bytes
+;;;; Input: pine.editor.key -> pty bytes
 
 (defun %key-mods (key)
-  (append (when (pine.key:key-ctrl key) '(:ctrl))
-          (when (pine.key:key-meta key) '(:meta))
-          (when (pine.key:key-shift key) '(:shift))))
+  (append (when (pine.editor.key:key-ctrl key) '(:ctrl))
+          (when (pine.editor.key:key-meta key) '(:meta))
+          (when (pine.editor.key:key-shift key) '(:shift))))
 
 (defparameter *named-keys*
   '(("Up" . :up) ("Down" . :down) ("Left" . :left) ("Right" . :right)
@@ -139,16 +139,16 @@ render (main) thread."
     ("Return" . :enter) ("Tab" . :tab) ("Escape" . :escape) ("BackSpace" . :backspace)))
 
 (defun key->pty-bytes (term key)
-  (let* ((sym (pine.key:key-sym key))
+  (let* ((sym (pine.editor.key:key-sym key))
          (named (cdr (assoc sym *named-keys* :test #'string=))))
     (cond
       (named (pine.vt:key-event-to-escape-sequence term (cons named (%key-mods key))))
       ((= 1 (length sym))
        (let ((ch (char sym 0)))
          (cond
-           ((pine.key:key-ctrl key)
+           ((pine.editor.key:key-ctrl key)
             (string (code-char (logand #x1f (char-code (char-upcase ch))))))
-           ((pine.key:key-meta key) (format nil "~C~C" #\Escape ch))
+           ((pine.editor.key:key-meta key) (format nil "~C~C" #\Escape ch))
            (t sym))))
       (t nil))))
 
@@ -158,7 +158,7 @@ stays an editor prefix so the user can switch away."
   (let ((tobj (and (pine.client:current-buffer client)
                    (terminal-for-buffer (pine.client:current-buffer client)))))
     (when tobj
-      (if (and (pine.key:key-ctrl key) (string= (pine.key:key-sym key) "x"))
+      (if (and (pine.editor.key:key-ctrl key) (string= (pine.editor.key:key-sym key) "x"))
           nil
           (progn
             (let ((bytes (key->pty-bytes (terminal-term tobj) key)))

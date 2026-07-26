@@ -92,8 +92,8 @@ want the current buffer if there is one and no error if there is not."
                 :server-of server
                 :frame (make-instance 'pine.buffer::frame)
                 :terminal-map (make-hash-table :test 'eq)
-                :kill-ring (pine.store:store :kill-ring))))
-    (push c (pine.server:clients server))
+                :kill-ring (pine.state.store:store :kill-ring))))
+    (push c (pine.core.server:clients server))
     c))
 
 ;;;; Windows belong to the client that shows them: the window itself is a view
@@ -132,7 +132,7 @@ a layout buffer."
 (defun stop-client (c)
   (let ((srv (server-of c)))
     (when srv
-      (setf (pine.server:clients srv) (remove c (pine.server:clients srv)))))
+      (setf (pine.core.server:clients srv) (remove c (pine.core.server:clients srv)))))
   (when (eq *client* c)
     (setf *client* nil))
   c)

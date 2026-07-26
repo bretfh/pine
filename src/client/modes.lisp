@@ -78,8 +78,8 @@ run before the major mode's under CLOS method combination."
 (defun active-keymaps (client)
   "Minor-mode maps most specific first, then the major mode's, then global.
 Dispatch flattens each one's own parent chain into the table list."
-  (append (mapcar #'pine.keymap:keymap (active-minor-modes client))
-          (list (pine.keymap:keymap (current-buffer-mode))
+  (append (mapcar #'pine.editor.keymap:keymap (active-minor-modes client))
+          (list (pine.editor.keymap:keymap (current-buffer-mode))
                 (pine.mode:global-keymap))))
 
 (defun active-modes-instance (client)

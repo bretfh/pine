@@ -36,8 +36,8 @@ restore can reopen buffers in bulk."
          (content (if exists (or (read-file expanded) "") "")))
     (when (string= name "") (setf name namestring))
     (let ((buf (pine.client:make-buffer name :content content))
-          (place (and exists (pine.store:store (list :place namestring)))))
-      (pine.store:store-push :recent-files namestring :unique t :max 100)
+          (place (and exists (pine.state.store:store (list :place namestring)))))
+      (pine.state.store:store-push :recent-files namestring :unique t :max 100)
       (sento.actor:tell buf (list :set-local :key :pathname :value namestring))
       (if place
           (multiple-value-bind (l c)
@@ -54,7 +54,7 @@ restore can reopen buffers in bulk."
     (sento.actor:tell (pine.client:renderer (pine.client:current-client))
                       (list :switch-buffer :buffer buf :name name))
     (pine.render:subscribe-to-buffer buf)
-    (pine.world:save-world :buffers)
+    (pine.state.world:save-world :buffers)
     (pine.echo:message
             (if exists (format nil "~a" namestring)
                 (format nil "(new file) ~a" namestring)))
@@ -70,7 +70,7 @@ restore can reopen buffers in bulk."
             (progn
               (write-file path text)
               (record-place buf path)
-              (pine.store:store-push :recent-files path :unique t :max 100)
+              (pine.state.store:store-push :recent-files path :unique t :max 100)
               (pine.echo:message (format nil "wrote ~a" path)))
             (pine.echo:message "no file path for this buffer"))))))
 
@@ -79,13 +79,13 @@ restore can reopen buffers in bulk."
   (ignore-errors
    (multiple-value-bind (line col) (pine.ask:ask buf :point)
      (when line
-       (setf (pine.store:store (list :place path)) (list line col))))))
+       (setf (pine.state.store:store (list :place path)) (list line col))))))
 
 (defun record-places ()
   "Store the point of every file-backed buffer. The shutdown sweep."
-  (let ((srv pine.server:*server*))
+  (let ((srv pine.core.server:*server*))
     (when srv
-      (loop for buf being the hash-values of (or (pine.server:buffer-table srv)
+      (loop for buf being the hash-values of (or (pine.core.server:buffer-table srv)
                                                  (make-hash-table))
             do (ignore-errors
                 (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
@@ -98,9 +98,9 @@ restore can reopen buffers in bulk."
 
 (defun %file-buffers ()
   "((PATH MODE-KW) ...) for every live buffer backed by a file."
-  (let ((srv pine.server:*server*) (acc nil))
-    (when (and srv (pine.server:buffer-table srv))
-      (loop for buf being the hash-values of (pine.server:buffer-table srv)
+  (let ((srv pine.core.server:*server*) (acc nil))
+    (when (and srv (pine.core.server:buffer-table srv))
+      (loop for buf being the hash-values of (pine.core.server:buffer-table srv)
             do (ignore-errors
                 (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 2))
                        (path (pine.buffer:buffer-local state :pathname)))
@@ -109,7 +109,7 @@ restore can reopen buffers in bulk."
                           acc))))))
     acc))
 
-(pine.world:register :buffers
+(pine.state.world:register :buffers
   :save #'%file-buffers
   :restore (lambda (entries)
              (loop for (path mode) in entries

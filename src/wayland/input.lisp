@@ -127,7 +127,7 @@ callback (that waits for release, so a scrub does not spam the action)."
   (a:when-let ((slider (wl-conn-drag conn)))
     (setf (wl-conn-drag conn) nil)
     (a:when-let ((fn (l:on-change slider)))
-      (pine.eval:attempt (lambda () (funcall fn (l:value slider)))
+      (pine.core.eval:attempt (lambda () (funcall fn (l:value slider)))
                          "slider drag"))))
 
 (defun pointer-click (conn)
@@ -138,6 +138,6 @@ action may have changed the refs the tree reads)."
       (let ((thunk (l:click-thunk (ls-tree ls)
                                   (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn)))))
         (when thunk
-          (pine.eval:attempt thunk "widget action")
+          (pine.core.eval:attempt thunk "widget action")
           (build-tree ls)
           (paint-surface ls))))))

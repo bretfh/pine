@@ -267,7 +267,7 @@ for a whole one instead of applying."
    :pending (lambda () (and (ed-dirty ed) (ed-configured ed)))
    :deadline (lambda () (repeat-deadline ed))))
 
-(defun run-editor (&key (host pine.server:*host*) (port pine.server:*port*))
+(defun run-editor (&key (host pine.core.server:*host*) (port pine.core.server:*port*))
   "Attach an editor window to the daemon at HOST:PORT and paint the frames
 it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up."
   (let* ((backing (connect-display))
@@ -282,6 +282,6 @@ it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up.
       (pine.frontend:close-pump (ed-pump ed))
       (pine.frontend:shutdown backing))))
 
-(defmethod pine.attach:run-frontend ((app pine.editor::editor-app))
+(defmethod pine.core.attach:run-frontend ((app pine.editor::editor-app))
   (declare (ignore app))
   (run-editor))

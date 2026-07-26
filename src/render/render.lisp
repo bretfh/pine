@@ -56,7 +56,7 @@ attached frontend -- the editor session's sink refreshes the live tree
     (when sink (funcall sink))))
 
 (defun start-renderer (client)
-  (let* ((sys (pine.server:actor-system (pine.client:server-of client)))
+  (let* ((sys (pine.core.server:actor-system (pine.client:server-of client)))
          (renderer
            (sento.actor-context:actor-of sys
              :name (format nil "renderer-~a" (gensym "R"))
@@ -107,7 +107,7 @@ attached frontend -- the editor session's sink refreshes the live tree
                    ;; same command-error path: echo, or the *debugger* under
                    ;; debug-on-error. never a silent stderr drop.
                    (error (e)
-                     (ignore-errors (pine.command:command-error e)))))))))
+                     (ignore-errors (pine.editor.command:command-error e)))))))))
     (setf (pine.client:renderer client) renderer)
     renderer))
 
@@ -235,7 +235,7 @@ the tree, or nil when the client has none."
 save the arrangement to the world -- every structural mutation ends here, so
 a crash never loses the split shape."
   (prog1 (arrange-editor-tree (pine.client:current-client))
-    (pine.world:save-world :arrangement)))
+    (pine.state.world:save-world :arrangement)))
 
 
 ;;;; Cell emission

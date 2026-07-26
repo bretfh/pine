@@ -8,13 +8,13 @@
 ;;;; the editor frame itself (no window, no daemon).
 
 (defun %shot-substrate ()
-  (let ((srv (pine.server:start-server)))
-    (setf pine.server:*server* srv
-          (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-    (ignore-errors (pine.ts:ensure-ts (pine.server:ts-runtime srv)))
-    (pine.event:make-event-bus srv)
-    (pine.actor:start-agent-registry srv)
-    (pine.actor:start-local-agent srv)
+  (let ((srv (pine.core.server:start-server)))
+    (setf pine.core.server:*server* srv
+          (pine.core.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (ignore-errors (pine.ts:ensure-ts (pine.core.server:ts-runtime srv)))
+    (pine.core.event:make-event-bus srv)
+    (pine.core.actor:start-agent-registry srv)
+    (pine.core.actor:start-local-agent srv)
     (pine.buffer:start-buffer-registry srv)
     srv))
 
@@ -27,7 +27,7 @@
     (pine.util:combine sum y :key)))"))
   "Render the editor's live tree for TEXT to a PNG at PATH, headless: a real
 session, its tree refreshed and cell-rendered through pine.layout:render."
-  (unless pine.server:*server* (%shot-substrate))
+  (unless pine.core.server:*server* (%shot-substrate))
   (let* ((sess (pine.editor:make-editor-session
                 nil :sink (lambda (&rest args) (declare (ignore args)) nil)))
          (client (pine.editor::sess-client sess)))
@@ -52,14 +52,14 @@ session, its tree refreshed and cell-rendered through pine.layout:render."
 ;;;; client will show -- no window, no daemon, no display.
 
 (defun ensure-env ()
-  (unless pine.server:*server*
-    (setf pine.server:*server* (make-instance 'pine.server:server)))
+  (unless pine.core.server:*server*
+    (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
   (let ((init (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home))))
     (when (probe-file init)
       (let ((*package* (find-package :pine.user))) (load init)))))
 
 (defun seed-refs ()
-  (flet ((c (name val) (pine.ref:set-ref (pine.ref:make-ref :name name) val)))
+  (flet ((c (name val) (pine.state.ref:set-ref (pine.state.ref:make-ref :name name) val)))
     (c :sys '(:cpu 42 :ram 68 :disk 55 :temp 47))
     (c :vol 65) (c :muted nil) (c :bri 40)
     (c :user "bfh") (c :host "pine") (c :uptime "up 3:21")

@@ -15,7 +15,7 @@
 ;;;; plus the few string and file helpers such a declaration needs.
 
 (defun ref-of (name)
-  (or (pine.ref:find-ref name) (pine.ref:make-ref :name name)))
+  (or (pine.state.ref:find-ref name) (pine.state.ref:make-ref :name name)))
 
 ;;; shell helpers
 
@@ -154,7 +154,7 @@ and returns a source (usually via start-stream / start-poll)."
   `(defsource ,name (system)
      (let ((c (ref-of ',name)))
        (start-poll system ,interval
-                   (lambda () (pine.ref:set-ref c (progn ,@body)))))))
+                   (lambda () (pine.state.ref:set-ref c (progn ,@body)))))))
 
 (defmacro deflisten (name command (line) &body body)
   "Reactive ref NAME fed from COMMAND's stdout: each LINE sets it to (progn
@@ -166,23 +166,23 @@ BODY) when that is non-nil."
            (constantly nil)
            (lambda (,line)
              (let ((,val (progn ,@body)))
-               (when ,val (pine.ref:set-ref c ,val)) nil)))))))
+               (when ,val (pine.state.ref:set-ref c ,val)) nil)))))))
 
 (defun start-sources (server)
   "Start every declared source once and register it as an adapter in the service
-registry (pine.actor), named source:<name>, so it is addressable and listable
+registry (pine.core.actor), named source:<name>, so it is addressable and listable
 alongside the other agents. A source is the desktop's data adapter."
   (unless *running*
-    (let ((system (pine.server:actor-system server)))
+    (let ((system (pine.core.server:actor-system server)))
       (setf *running*
             (loop for name being the hash-keys of *source-defs* using (hash-value starter)
-                  for s = (pine.eval:attempt (lambda () (funcall starter system))
+                  for s = (pine.core.eval:attempt (lambda () (funcall starter system))
                                        (format nil "source ~a" name))
                   when s
                     do (setf (source-name s) name)
-                       (pine.eval:attempt
+                       (pine.core.eval:attempt
                         (lambda ()
-                          (pine.actor:register-agent
+                          (pine.core.actor:register-agent
                            server (format nil "source:~(~a~)" name)
                            :source (source-actor s) :meta (list :ref name)))
                         (format nil "registering source ~a" name))

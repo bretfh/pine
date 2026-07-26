@@ -35,12 +35,12 @@
    (:module "buffer"
     :serial t
     :components ((:file "buffer") (:file "window") (:file "face") (:file "rules")))
-   (:module "client"
-    :serial t
-    :components ((:file "client") (:file "modes") (:file "registry")))
    (:module "state"
     :serial t
     :components ((:file "store") (:file "ref") (:file "var") (:file "world")))
+   (:module "client"
+    :serial t
+    :components ((:file "client") (:file "modes") (:file "registry")))
    (:module "input-dispatch"
     :serial t :pathname "input/"
     :components ((:file "command")))

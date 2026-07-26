@@ -1,4 +1,11 @@
-(in-package #:pine.world)
+(defpackage #:pine.state.world
+  (:use #:cl)
+  (:export #:register #:save-world #:restore-world)
+  (:documentation "What comes back after a restart. Subsystems register
+:save/:restore function pairs; the data rides (:world NAME) store keys.
+Gated by the :world-save editor variable."))
+
+(in-package #:pine.state.world)
 
 ;;;; The world: what comes back after a restart. Subsystems register a pair
 ;;;; of functions. :save computes readable data from live state when asked and
@@ -6,7 +13,7 @@
 ;;;; This file knows no contributor; each lives with its own subsystem.
 ;;;; The :world-save editor variable gates the whole thing.
 
-(pine.var:defonce :world-save :default t
+(pine.state.var:defonce :world-save :default t
   :documentation "When non-nil, the world (buffers, arrangement, scratch)
 saves to the store and restores on the next start.")
 
@@ -23,7 +30,7 @@ restore order."
   name)
 
 (defun %enabled-p ()
-  (ignore-errors (pine.var:var :world-save nil)))
+  (ignore-errors (pine.state.var:var :world-save nil)))
 
 (defun save-world (&optional name)
   "Run NAME's (or every) contributor's :save and store the result under
@@ -36,7 +43,7 @@ restore order."
                      ;; nil means nothing to save from this context, so the
                      ;; stored entry stands rather than being erased
                      (when data
-                       (setf (pine.store:store (list :world n)) data)))
+                       (setf (pine.state.store:store (list :world n)) data)))
                  (error (c)
                    (format *error-output* "world save ~a failed: ~a~%" n c))))))
 
@@ -46,7 +53,7 @@ failing contributor logs and skips, so the daemon always comes up."
   (when (%enabled-p)
     (loop :for (n nil . restore) :in *contributors*
           :when (and restore (or (null name) (eq n name)))
-            :do (let ((data (pine.store:store (list :world n))))
+            :do (let ((data (pine.state.store:store (list :world n))))
                  (when data
                    (handler-case (funcall restore data)
                      (error (c)

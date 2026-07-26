@@ -1,4 +1,12 @@
-(in-package :pine.hooks)
+(defpackage #:pine.core.hooks
+  (:use :cl)
+  (:export
+   #:add-init-hook
+   #:add-shutdown-hook
+   #:run-init-hooks
+   #:run-shutdown-hooks))
+
+(in-package #:pine.core.hooks)
 
 (defvar *init-hooks* nil)
 (defvar *shutdown-hooks* nil)

@@ -100,11 +100,11 @@ at or after FROM; backward the last match ending at or before FROM."
                    (%isearch-echo st t)))))))
 
 (defun %isearch-printable-p (key)
-  (and (= 1 (length (pine.key:key-sym key)))
-       (not (pine.key:key-ctrl key))
-       (not (pine.key:key-meta key))
-       (not (pine.key:key-super key))
-       (graphic-char-p (char (pine.key:key-sym key) 0))))
+  (and (= 1 (length (pine.editor.key:key-sym key)))
+       (not (pine.editor.key:key-ctrl key))
+       (not (pine.editor.key:key-meta key))
+       (not (pine.editor.key:key-super key))
+       (graphic-char-p (char (pine.editor.key:key-sym key) 0))))
 
 (defun %isearch-exit (&key accept)
   (when (and accept *isearch* (plusp (length (isearch-string *isearch*))))
@@ -117,10 +117,10 @@ at or after FROM; backward the last match ending at or before FROM."
         (st *isearch*)
         (sym nil))
     (when st
-      (setf sym (pine.key:key-sym key))
+      (setf sym (pine.editor.key:key-sym key))
       (cond
         ;; abort: back to where the search began
-        ((or (and (pine.key:key-ctrl key) (string= sym "g"))
+        ((or (and (pine.editor.key:key-ctrl key) (string= sym "g"))
              (string= sym "Escape"))
          (%isearch-goto (isearch-origin-line st) (isearch-origin-col st))
          (%isearch-exit)
@@ -129,13 +129,13 @@ at or after FROM; backward the last match ending at or before FROM."
         ((string= sym "Return")
          (%isearch-exit :accept t))
         ;; C-s / C-r inside the search: next match / flip direction
-        ((and (pine.key:key-ctrl key) (member sym '("s" "r") :test #'string=))
+        ((and (pine.editor.key:key-ctrl key) (member sym '("s" "r") :test #'string=))
          (setf (isearch-direction st) (if (string= sym "s") :forward :backward))
          (when (and (zerop (length (isearch-string st)))
                     (plusp (length *isearch-last*)))
            (setf (isearch-string st) *isearch-last*))
          (%isearch-repeat st)
-         (pine.command:read-next-key client #'%isearch-reader))
+         (pine.editor.command:read-next-key client #'%isearch-reader))
         ;; shrink
         ((string= sym "BackSpace")
          (when (plusp (length (isearch-string st)))
@@ -146,17 +146,17 @@ at or after FROM; backward the last match ending at or before FROM."
              (%isearch-research st)
              (progn (%isearch-goto (isearch-origin-line st) (isearch-origin-col st))
                     (%isearch-echo st)))
-         (pine.command:read-next-key client #'%isearch-reader))
+         (pine.editor.command:read-next-key client #'%isearch-reader))
         ;; extend
         ((%isearch-printable-p key)
          (setf (isearch-string st)
                (concatenate 'string (isearch-string st) sym))
          (%isearch-research st)
-         (pine.command:read-next-key client #'%isearch-reader))
+         (pine.editor.command:read-next-key client #'%isearch-reader))
         ;; any other key: accept the search, then let the key do its normal job
         (t
          (%isearch-exit :accept t)
-         (pine.command:dispatch client key))))))
+         (pine.editor.command:dispatch client key))))))
 
 (defun isearch-start (direction)
   (let* ((client (pine.client:current-client))
@@ -170,4 +170,4 @@ at or after FROM; backward the last match ending at or before FROM."
                             :origin-col (pine.buffer:point-col snap)
                             :lines (pine.buffer:lines state)))
         (%isearch-echo *isearch*)
-        (pine.command:read-next-key client #'%isearch-reader)))))
+        (pine.editor.command:read-next-key client #'%isearch-reader)))))

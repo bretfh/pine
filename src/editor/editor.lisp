@@ -7,12 +7,12 @@
   (let* ((client (pine.client:current-client))
          (server (pine.client:server-of client)))
     (pine.buffer:start-buffer-registry server)
-    (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime server))
+    (handler-case (pine.ts:ensure-ts (pine.core.server:ts-runtime server))
       (error () nil))
     (pine.render:start-renderer client)
     (ensure-minibuffer client)
-    (setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch)
-    (setf pine.eval:*on-debug* #'%eval-error)
+    (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
+    (setf pine.core.eval:*on-debug* #'%eval-error)
     (let ((buf (pine.client:make-buffer "scratch")))
       (pine.client:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -43,7 +43,7 @@ command like beginning-of-line must see its input, not the window behind it."
     (and (typep mode 'pine.mode:major-mode) (pine.mode:ts-language mode))))
 
 (defun %ts-runtime ()
-  (pine.server:ts-runtime (pine.client:server-of (pine.client:current-client))))
+  (pine.core.server:ts-runtime (pine.client:server-of (pine.client:current-client))))
 
 (defun %sexp-move (kind)
   "Move point structurally via the buffer's persistent tree (no reparse). The
@@ -149,7 +149,7 @@ from the buffer, or nil."
              (incf i))
     (min (+ i col) n)))
 
-;;;; Evaluation runs through pine.eval on its own thread, never on the UI
+;;;; Evaluation runs through pine.core.eval on its own thread, never on the UI
 ;;;; thread, so a slow/looping/erroring form can't hang or crash the editor.
 
 ;;;; Debugger sessions. A fault -- a local evaluation, or an error shipped home
@@ -164,7 +164,7 @@ from the buffer, or nil."
 (defstruct dbg-session
   id                 ; small integer, for the switcher header
   kind               ; :local or :agent
-  ev                 ; the pine.eval:evaluation (kind :local), resumed by pick-restart
+  ev                 ; the pine.core.eval:evaluation (kind :local), resumed by pick-restart
   agent eval-id      ; agent name + eval-id (kind :agent), resumed by :resume
   header             ; one-line title
   condition          ; condition text
@@ -184,8 +184,8 @@ from the buffer, or nil."
 (defun %eval-done (ev &optional at)
   "Surface a finished eval: the result echoes, and lands inline as an overlay
 on the form's line when AT is (BUFFER . LINE)."
-  (case (pine.eval:evaluation-status ev)
-    (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.eval:evaluation-values ev))))
+  (case (pine.core.eval:evaluation-status ev)
+    (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.core.eval:evaluation-values ev))))
            (when at
              (ignore-errors
               (sento.actor:tell (car at)
@@ -288,12 +288,12 @@ live session, or dismiss the buffer and clear the return-to when none remain."
   (%push-session
    (make-dbg-session
     :id (incf *debugger-session-counter*) :kind :local :ev ev
-    :header (format nil "Evaluation error: ~a" (pine.eval:evaluation-condition-type ev))
-    :condition (pine.eval:evaluation-condition ev)
-    :restarts (pine.eval:evaluation-restarts ev)
-    :backtrace (pine.eval:evaluation-backtrace ev)))
+    :header (format nil "Evaluation error: ~a" (pine.core.eval:evaluation-condition-type ev))
+    :condition (pine.core.eval:evaluation-condition ev)
+    :restarts (pine.core.eval:evaluation-restarts ev)
+    :backtrace (pine.core.eval:evaluation-backtrace ev)))
   (%eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
-                        (pine.eval:evaluation-condition-type ev))))
+                        (pine.core.eval:evaluation-condition-type ev))))
 
 (defun %agent-debug-surface (msg)
   "A process agent's error, surfaced in the editor: show its restarts and drive
@@ -316,14 +316,14 @@ local eval, or :resume to the agent that shipped its restarts home."
   (ecase (dbg-session-kind session)
     (:local
      (when (and (dbg-session-ev session)
-                (eq (pine.eval:evaluation-status (dbg-session-ev session)) :error))
-       (pine.eval:pick-restart (dbg-session-ev session) name)))
+                (eq (pine.core.eval:evaluation-status (dbg-session-ev session)) :error))
+       (pine.core.eval:pick-restart (dbg-session-ev session) name)))
     (:agent
-     (let ((info (pine.actor:find-agent
+     (let ((info (pine.core.actor:find-agent
                   (pine.client:server-of (pine.client:current-client))
                   (dbg-session-agent session))))
        (when info
-         (sento.actor:tell (pine.actor:agent-info-actor info)
+         (sento.actor:tell (pine.core.actor:agent-info-actor info)
                            (list :resume :eval-id (dbg-session-eval-id session)
                                  :restart name)))))))
 
@@ -364,7 +364,7 @@ status."
                              (eql (dbg-session-eval-id s) (getf j :id))))
                 (:local (and (equal (getf j :agent) "local")
                              (dbg-session-ev s)
-                             (eql (pine.eval:evaluation-id (dbg-session-ev s))
+                             (eql (pine.core.eval:evaluation-id (dbg-session-ev s))
                                   (getf j :id))))))
             *debugger-sessions*)))
     (if s
@@ -382,7 +382,7 @@ one selectable row each; Return attends an errored one's debugger session."
                   (pine.layout:label (format nil "~4@a  ~10a ~9a ~a"
                                              "id" "agent" "status" "form / condition")
                                      :class "dbg-note")
-                  (loop for j in (pine.jobs:list-jobs) collect
+                  (loop for j in (pine.core.jobs:list-jobs) collect
                     (let ((j j))
                       (pine.layout:choice
                        :class "job-row" :prefix-selected "" :prefix-unselected ""
@@ -501,7 +501,7 @@ no symbol to complete."
              (prefix (subseq text start off))
              (pkg (%buffer-package state)))
         (if (zerop (length prefix))
-            (pine.command:call-command "insert-tab")
+            (pine.editor.command:call-command "insert-tab")
             (let ((cands (%symbol-candidates prefix pkg)))
               (cond
                 ((null cands) (pine.echo:message "no completions"))
@@ -574,16 +574,16 @@ no symbol to complete."
                             (eval form) (incf count) (setf pos new-pos))))))
              (done (lambda (ev)
                      (%eval-notify
-                      (case (pine.eval:evaluation-status ev)
+                      (case (pine.core.eval:evaluation-status ev)
                         (:ok (format nil "eval-buffer: ~a forms"
-                                     (first (pine.eval:evaluation-values ev))))
+                                     (first (pine.core.eval:evaluation-values ev))))
                         (:aborted "eval-buffer aborted")
                         (t "eval-buffer: error"))))))
         ;; one eval path: route the whole-buffer eval through the local agent.
-        (if pine.actor:*local-agent*
-            (pine.actor:agent-run nil pine.actor:*local-agent* thunk
+        (if pine.core.actor:*local-agent*
+            (pine.core.actor:agent-run nil pine.core.actor:*local-agent* thunk
                                   :package package :on-done done)
-            (pine.eval:evaluate-thunk thunk :package package :on-done done))))))
+            (pine.core.eval:evaluate-thunk thunk :package package :on-done done))))))
 
 (defun scroll-window (delta)
   (let* ((client (pine.client:current-client))
@@ -614,18 +614,18 @@ no symbol to complete."
 ;;;; (%text-layout via show-layout); describe-key echoes.
 
 (defun %describe-key-text (key)
-  (let ((entry (pine.command:key-binding (pine.client:current-client) key))
-        (s (pine.key:key->string key)))
+  (let ((entry (pine.editor.command:key-binding (pine.client:current-client) key))
+        (s (pine.editor.key:key->string key)))
     (cond ((consp entry) (format nil "~a is a prefix key" s))
           ((stringp entry) (format nil "~a runs the command ~a" s entry))
-          ((pine.command:self-insert-key-p key)
+          ((pine.editor.command:self-insert-key-p key)
            (format nil "~a runs self-insert-command" s))
           (t (format nil "~a is undefined" s)))))
 
 (defun %bindings-text ()
   (let* ((client (pine.client:current-client))
          (rows (loop for km in (pine.client:active-keymaps client)
-                     append (pine.keymap:keymap-bindings km t))))
+                     append (pine.editor.keymap:keymap-bindings km t))))
     (with-output-to-string (out)
       (format out "Active bindings~%~%")
       (loop for (keys . cmd) in (sort (remove-duplicates rows :test #'equal
@@ -633,13 +633,13 @@ no symbol to complete."
                                       #'string< :key #'car)
             do (format out "~16a  ~a~%" keys cmd)))))
 
-(pine.var:defonce :tab-width :default 8
+(pine.state.var:defonce :tab-width :default 8
   :documentation "Tab stop width for the plain-text indent fallback.")
 
-(pine.var:defonce :format-on-save :default nil
+(pine.state.var:defonce :format-on-save :default nil
   :documentation "When non-nil, save-file reindents the whole buffer first.")
 
-(pine.var:defonce :debug-on-error :default nil
+(pine.state.var:defonce :debug-on-error :default nil
   :documentation "When non-nil, an error in a command opens the *debugger*
 restart menu instead of only echoing the message. Same knob as Emacs's
 debug-on-error; edit-actor and eval errors always reach the debugger.")
@@ -647,13 +647,13 @@ debug-on-error; edit-actor and eval errors always reach the debugger.")
 (defun %variables-text ()
   (with-output-to-string (out)
     (format out "Editor variables~%~%")
-    (dolist (name (pine.var:all-variable-names))
-      (let ((v (pine.var:find-variable name))
+    (dolist (name (pine.state.var:all-variable-names))
+      (let ((v (pine.state.var:find-variable name))
             (buf (pine.client:buffer-in-scope)))
         (format out "~a = ~s [~(~a~)]~%    default ~s~a~%"
-                name (pine.var:var name buf) (pine.var:variable-scope name buf)
-                (pine.var:evar-default v)
-                (let ((d (pine.var:evar-documentation v)))
+                name (pine.state.var:var name buf) (pine.state.var:variable-scope name buf)
+                (pine.state.var:evar-default v)
+                (let ((d (pine.state.var:evar-documentation v)))
                   (if (plusp (length d)) (format nil "~%    ~a" d) "")))))))
 
 (defun %mode-text ()
@@ -774,7 +774,7 @@ lands in it."
         (w (pine.layout:window-of leaf)))
     (pine.client:focus-window w)
     (setf (pine.client:current-buffer client) (pine.buffer:buffer-ref w))
-    (pine.world:save-world :arrangement)))
+    (pine.state.world:save-world :arrangement)))
 
 (defun %split-window (orient)
   "Split the focused window along ORIENT (:column below, :row beside): a new
@@ -864,7 +864,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 ;;;; Commands
 
 (defmacro defcmd (name (&rest args) &body body)
-  `(pine.command:define-command ,name ,args ,@body))
+  `(pine.editor.command:define-command ,name ,args ,@body))
 
 ;;;; Commands. Top-level: define-command registers as it is read, so loading
 ;;;; this file is what makes them reachable.
@@ -875,7 +875,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   ;; (kills a runaway loop) and resolves the session.
   (let ((s *attended-session*))
     (when (and s (eq (dbg-session-kind s) :local) (dbg-session-ev s))
-      (pine.eval:abort-evaluation (dbg-session-ev s))
+      (pine.core.eval:abort-evaluation (dbg-session-ev s))
       (%resolve-session s)))
   (let ((buf (cur-buffer)))
     (when buf
@@ -911,12 +911,12 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 (defcmd "universal-argument" () (:prefix)
   (let ((c (pine.client:current-client)))
     (setf (pine.client:prefix-arg c)
-          (list (* 4 (pine.command:prefix-numeric-value
+          (list (* 4 (pine.editor.command:prefix-numeric-value
                       (pine.client:prefix-arg c)))))))
 (defcmd "digit-argument" () (:prefix)
   (let* ((c (pine.client:current-client))
          (key (pine.client:this-command-key c))
-         (d (and key (digit-char-p (char (pine.key:key-sym key) 0))))
+         (d (and key (digit-char-p (char (pine.editor.key:key-sym key) 0))))
          (cur (pine.client:prefix-arg c)))
     (when d
       (setf (pine.client:prefix-arg c)
@@ -979,7 +979,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
         (error (c) (pine.echo:message (format nil "error: ~a" c)))))
     :history :files))
 (defcmd "find-recent" ()
-  (let ((items (pine.store:store-items :recent-files)))
+  (let ((items (pine.state.store:store-items :recent-files)))
     (if items
         (completing-read "Recent: " items
           (lambda (path)
@@ -992,7 +992,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
         ;; opt-in apheleia-style reformat before write; the reindent is a tell
         ;; and save's :get-state queues behind it in the actor mailbox, so the
         ;; write sees the formatted text
-        (when (and buf (pine.var:var :format-on-save buf))
+        (when (and buf (pine.state.var:var :format-on-save buf))
           (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
             (pine.ask:tell buf :indent-lines
                               :from 0 :to (1- (pine.buffer:line-count snap)))))
@@ -1015,8 +1015,8 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 (defcmd "list-buffers" ()
   (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.client:list-buffers))))
 (defcmd "execute-command" ()
-  (completing-read "M-x " (pine.command:all-command-names)
-    (lambda (name) (pine.command:call-command name))
+  (completing-read "M-x " (pine.editor.command:all-command-names)
+    (lambda (name) (pine.editor.command:call-command name))
     :history :commands))
 (defcmd "eval-expression" ()
   (prompt "Eval: "
@@ -1053,8 +1053,8 @@ switch to it, and enable layout-mode on it. Returns the buffer."
       (%attend-session *attended-session*)
       (pine.echo:message "no debugger session")))
 (defcmd "toggle-debug-on-error" ()
-  (let ((new (not (pine.var:var :debug-on-error))))
-    (setf (pine.var:var :debug-on-error) new)
+  (let ((new (not (pine.state.var:var :debug-on-error))))
+    (setf (pine.state.var:var :debug-on-error) new)
     (pine.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
 (defcmd "jobs" ()
   (show-layout "*jobs*" (%jobs-builder)))
@@ -1069,8 +1069,8 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   (completing-read
    "Eval in: "
    (cons "local"
-         (mapcar #'pine.actor:agent-info-name
-                 (pine.actor:list-agents
+         (mapcar #'pine.core.actor:agent-info-name
+                 (pine.core.actor:list-agents
                   (pine.client:server-of (pine.client:current-client)))))
    (lambda (name)
      (setf pine.target:*eval-target* (if (string= name "local") :local name))
@@ -1106,7 +1106,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
     (pine.echo:message (if on "Overwrite mode enabled" "Overwrite mode disabled"))))
 (defcmd "describe-key" ()
   (pine.echo:message "Describe key: ")
-  (pine.command:read-next-key
+  (pine.editor.command:read-next-key
    (pine.client:current-client)
    (lambda (key) (pine.echo:message (%describe-key-text key)))))
 (defcmd "describe-bindings" ()
@@ -1118,7 +1118,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 (defcmd "insert-tab" ()
   (let* ((c (pine.client:current-client))
          (buf (pine.client:current-buffer c))
-         (n (max 0 (pine.var:var :tab-width buf))))
+         (n (max 0 (pine.state.var:var :tab-width buf))))
     (when buf
       (pine.ask:tell buf :insert :text (make-string n :initial-element #\Space)))))
 (defcmd "indent-for-tab-command" ()
@@ -1161,7 +1161,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 ;;;; commands they name. Nothing installs them; loading this file is what
 ;;;; binds them, and a config's define-key afterwards is never overwritten.
 
-(pine.keymap:define-keys :global
+(pine.editor.keymap:define-keys :global
   "C-g"      "keyboard-quit"
   "Escape"   "keyboard-quit"
   "C-x C-f"  "find-file"
@@ -1190,12 +1190,12 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   "C-h m"    "describe-mode"
   "C-h v"    "describe-variables")
 
-(let ((map (pine.keymap:keymap :global)))
+(let ((map (pine.editor.keymap:keymap :global)))
   (dotimes (d 10)
-    (pine.keymap:define-key map (pine.key:parse-chord (format nil "M-~d" d))
+    (pine.editor.keymap:define-key map (pine.editor.key:parse-chord (format nil "M-~d" d))
                             "digit-argument")))
 
-(pine.keymap:define-keys :text-mode
+(pine.editor.keymap:define-keys :text-mode
   "BackSpace"   "backspace"
   "Return"      "newline"
   "Tab"         "indent-for-tab-command"
@@ -1242,7 +1242,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   "C-M-\\"      "indent-region")
 
 ;;;; lisp-mode: the SLIME chord set.
-(pine.keymap:define-keys :lisp-mode
+(pine.editor.keymap:define-keys :lisp-mode
   "C-c C-c"  "eval-defun"
   "C-c C-k"  "eval-buffer"
   "C-c C-l"  "load-file"
@@ -1252,13 +1252,13 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 
 ;;;; debugger-mode: the restart rows answer to layout-mode's Return/C-n/C-p;
 ;;;; these are the extras.
-(pine.keymap:define-keys :debugger-mode
+(pine.editor.keymap:define-keys :debugger-mode
   "a"    "debugger-abort"
   "q"    "debugger-quit"
   "Tab"  "debugger-next-session")
 
 ;;;; layout-mode: selection nav and activation on a layout buffer.
-(pine.keymap:define-keys :layout-mode
+(pine.editor.keymap:define-keys :layout-mode
   "Down"    "layout-next"
   "C-n"     "layout-next"
   "Up"      "layout-prev"
@@ -1267,7 +1267,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
 
 ;;;; minibuffer-mode: accept, abort, complete, candidate motion. Every other
 ;;;; key falls through to text-mode, so the prompt has full editing.
-(pine.keymap:define-keys :minibuffer-mode
+(pine.editor.keymap:define-keys :minibuffer-mode
   "Return"  "minibuffer-accept"
   "Escape"  "minibuffer-abort"
   "C-g"     "minibuffer-abort"

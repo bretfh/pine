@@ -1,4 +1,4 @@
-(defpackage #:pine.eval
+(defpackage #:pine.core.eval
   (:use #:cl)
   (:export #:evaluation #:evaluation-id #:evaluation-form #:evaluation-status
            #:evaluation-values #:evaluation-output #:evaluation-condition
@@ -9,7 +9,7 @@
            #:with-debugger #:call-with-debugger #:make-error-evaluation
            #:attempt #:report-failure))
 
-(in-package #:pine.eval)
+(in-package #:pine.core.eval)
 
 (defvar *on-debug* nil
   "Default surface for an evaluation that enters the debugger: a function of the

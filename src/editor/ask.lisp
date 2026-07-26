@@ -30,11 +30,11 @@ Silently no-ops on nil target."
     (case query
       (:buffers     (loop for k being the hash-keys of (pine.buffer:buffer-table srv)
                           collect k))
-      (:clients     (pine.server:clients srv))
+      (:clients     (pine.core.server:clients srv))
       (:modes       (pine.mode:all-mode-names))
-      (:commands    (pine.command:all-command-names))
+      (:commands    (pine.editor.command:all-command-names))
       (:faces       (pine.buffer::faces-table))
-      (:actor-system (pine.server:actor-system srv))
+      (:actor-system (pine.core.server:actor-system srv))
       (:describe    +server-verbs+)
       (t (error "unknown :server query ~s; known: ~s" query +server-verbs+)))))
 

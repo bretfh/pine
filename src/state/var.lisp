@@ -1,4 +1,13 @@
-(in-package #:pine.var)
+(defpackage #:pine.state.var
+  (:use :cl)
+  (:export
+   ;; the API: declare once, one setf-able accessor
+   #:defonce #:var
+   ;; introspection (describe-variables)
+   #:find-variable #:all-variable-names #:variable-scope
+   #:evar-default #:evar-documentation))
+
+(in-package #:pine.state.var)
 
 ;;;; Editor variables. Three scopes resolved in order: buffer-local, then
 ;;;; global, then the declared default. Buffer-local values live in the
@@ -26,7 +35,7 @@
           (evar-documentation v) (or documentation "")
           (evar-persist v) persist)
     (when (and persist (not (evar-global-set v)))
-      (let ((stored (pine.store:store (list :var name) '%absent)))
+      (let ((stored (pine.state.store:store (list :var name) '%absent)))
         (unless (eq stored '%absent)
           (setf (evar-global v) stored (evar-global-set v) t))))
     v))
@@ -78,7 +87,7 @@ fills it in."
       (let ((v (find-variable name)))
         (setf (evar-global v) value (evar-global-set v) t)
         (when (evar-persist v)
-          (setf (pine.store:store (list :var name)) value))))
+          (setf (pine.state.store:store (list :var name)) value))))
   value)
 
 (defun variable-scope (name &optional buffer)

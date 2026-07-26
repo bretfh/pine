@@ -5,27 +5,27 @@
   (start-daemon :workers workers :remoting-port remoting-port))
 
 (defun start-daemon (&key (workers 4) (remoting-port 0))
-  (let ((srv (pine.server:start-server :workers workers :remoting-port remoting-port)))
-    (setf pine.server:*server* srv)
-    (setf (pine.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-    (handler-case (pine.ts:ensure-ts (pine.server:ts-runtime srv))
+  (let ((srv (pine.core.server:start-server :workers workers :remoting-port remoting-port)))
+    (setf pine.core.server:*server* srv)
+    (setf (pine.core.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+    (handler-case (pine.ts:ensure-ts (pine.core.server:ts-runtime srv))
       (error () nil))
-    (pine.event:make-event-bus srv)
-    (pine.actor:start-agent-registry srv)
-    (pine.actor:start-local-agent srv)
-    (pine.actor:start-agent-debug srv)
+    (pine.core.event:make-event-bus srv)
+    (pine.core.actor:start-agent-registry srv)
+    (pine.core.actor:start-local-agent srv)
+    (pine.core.actor:start-agent-debug srv)
     (pine.buffer:start-buffer-registry srv)
-    (pine.attach:start-attach-listener srv)
+    (pine.core.attach:start-attach-listener srv)
     (start-control srv)
-    (pine.store:open-store)
-    (pine.hooks:add-shutdown-hook :store
+    (pine.state.store:open-store)
+    (pine.core.hooks:add-shutdown-hook :store
       (lambda ()
-        (pine.world:save-world)
+        (pine.state.world:save-world)
         (pine.file:record-places)
-        (pine.store:close-store)))
+        (pine.state.store:close-store)))
     (load-init)
     (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads
-    (format t "pine daemon ready [remoting ~a]~%" (pine.server:remoting-port srv))
+    (format t "pine daemon ready [remoting ~a]~%" (pine.core.server:remoting-port srv))
     srv))
 
 (defun %setenv (name value)
@@ -59,12 +59,12 @@ and outliving every restart."
      (declare (ignore args))
      (handler-case (stop-frontends)
        (error (c) (format *error-output* "pine: ~a~%" c)))
-     (pine.hooks:run-shutdown-hooks)
+     (pine.core.hooks:run-shutdown-hooks)
      (sb-ext:exit :code 0 :abort t))))
 
 (defun daemon-listening-p (port)
   (ignore-errors
-    (let ((s (usocket:socket-connect pine.server:*host* port :timeout 1)))
+    (let ((s (usocket:socket-connect pine.core.server:*host* port :timeout 1)))
       (usocket:socket-close s) t)))
 
 (defun run-app (verb)
@@ -72,18 +72,18 @@ and outliving every restart."
 
 The daemon registers one app per kind at startup; the backing defines how each
 one runs. Without a backing the app says so rather than the CLI guessing."
-  (let ((app (pine.attach:find-app (intern (string-upcase verb) :keyword))))
+  (let ((app (pine.core.attach:find-app (intern (string-upcase verb) :keyword))))
     (if app
-        (pine.attach:run-frontend app)
+        (pine.core.attach:run-frontend app)
         (format t "pine: no ~a app~%" verb))))
 
-(defun run-all (&key (port pine.server:*port*))
+(defun run-all (&key (port pine.core.server:*port*))
   "`pine start': the shim. Kick the daemon in its own process if it is not already
 up, then return. The daemon reads init.lisp and spawns + supervises the frontends
 (editor + desktop) as their own processes -- this shim renders nothing itself, so
 the daemon, the editor, and the desktop are three separate images."
   (if (daemon-listening-p port)
-      (format t "pine: daemon already up on ~a:~d~%" pine.server:*host* port)
+      (format t "pine: daemon already up on ~a:~d~%" pine.core.server:*host* port)
       (progn
         (let ((self (first sb-ext:*posix-argv*)))
           (uiop:launch-program (list self "daemon")
@@ -96,16 +96,16 @@ the daemon, the editor, and the desktop are three separate images."
               finally (format t "pine: daemon did not come up (log /tmp/pine-daemon.log)~%")
                       (return-from run-all))
         (format t "pine: daemon up on ~a:~d -- editor + desktop spawning.~%"
-                pine.server:*host* port)))
+                pine.core.server:*host* port)))
   (finish-output))
 
-(defun run-daemon (&key (port pine.server:*port*))
-  (setf pine.server:*port* port)
+(defun run-daemon (&key (port pine.core.server:*port*))
+  (setf pine.core.server:*port* port)
   (start-daemon :remoting-port port)
   (handle-termination)
   (start-frontends)
   (format t "pine daemon up on ~a:~d, frontends supervised~%"
-          pine.server:*host* port)
+          pine.core.server:*host* port)
   (finish-output)
   (loop (sleep 3600)))
 
@@ -145,7 +145,7 @@ An error is reported and the daemon keeps whatever loaded before it."
 ;;;; The control endpoint. The CLI connects, asks one message, prints, exits.
 
 (defun start-control (server)
-  (sento.actor-context:actor-of (pine.server:actor-system server) :name "control"
+  (sento.actor-context:actor-of (pine.core.server:actor-system server) :name "control"
     :dispatcher :pinned
     :receive
     (lambda (msg)
@@ -154,8 +154,8 @@ An error is reported and the daemon keeps whatever loaded before it."
             (case (first msg)
               (:status
                (r (format nil "pine up  port ~a  agents ~d"
-                          (pine.server:remoting-port server)
-                          (length (pine.actor:list-agents server)))))
+                          (pine.core.server:remoting-port server)
+                          (length (pine.core.actor:list-agents server)))))
               (:eval
                (let ((*package* (find-package :pine.user)))
                  (r (princ-to-string (eval (read-from-string (second msg)))))))
@@ -176,13 +176,13 @@ An error is reported and the daemon keeps whatever loaded before it."
                        (ignore-errors (pine.desktop:refresh-all))
                        (ignore-errors (pine.editor:reseed-editor-sessions))
                        (r "reloaded"))
-              (:agents (r (mapcar #'pine.actor:agent-info-name (pine.actor:list-agents server))))
-              (:spawn (pine.actor:spawn-agent server (second msg)) (r "spawned"))
-              (:kill  (pine.actor:kill-agent server (second msg)) (r "killed"))
+              (:agents (r (mapcar #'pine.core.actor:agent-info-name (pine.core.actor:list-agents server))))
+              (:spawn (pine.core.actor:spawn-agent server (second msg)) (r "spawned"))
+              (:kill  (pine.core.actor:kill-agent server (second msg)) (r "killed"))
               (:surface
                (destructuring-bind (&key op name) (rest msg)
-                 (dolist (c pine.attach:*clients*)
-                   (when (eq (pine.attach:attached-client-kind c) :desktop)
+                 (dolist (c pine.core.attach:*clients*)
+                   (when (eq (pine.core.attach:attached-client-kind c) :desktop)
                      (ecase op
                        (:show   (pine.desktop:show-panel c name))
                        (:hide   (pine.desktop:hide-panel c name))
@@ -199,15 +199,15 @@ An error is reported and the daemon keeps whatever loaded before it."
              session [DISPLAY] | status | eval FORM | reload | agents |
              spawn NAME | kill NAME | show|hide|toggle NAME}")
 
-(defun cli-request (msg &key (host pine.server:*host*) (port pine.server:*port*))
+(defun cli-request (msg &key (host pine.core.server:*host*) (port pine.core.server:*port*))
   "Connect, ask the daemon's control actor, print, return. The process
 exits after, so the ephemeral actor system needs no teardown."
   (let ((sys (sento.actor-system:make-actor-system
               '(:dispatchers (:shared (:workers 1 :strategy :random))))))
-    (sento.remoting:enable-remoting sys :host pine.server:*host* :port 0)
+    (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
     (handler-case
         (let ((ref (sento.remoting:make-remote-ref
-                    sys (pine.server:daemon-uri "control" :host host :port port))))
+                    sys (pine.core.server:daemon-uri "control" :host host :port port))))
           (format t "~a~%" (sento.actor:ask-s ref msg :time-out 5)))
       (error () (format t "pine: no daemon at ~a:~d~%" host port)))))
 
@@ -248,7 +248,7 @@ environment that made this image loadable, so it can load what this one did."
 (defun frontend-environment ()
   "This daemon's environment, with PINE_PORT naming the port it listens on."
   (let ((prefix "PINE_PORT="))
-    (cons (format nil "~a~d" prefix pine.server:*port*)
+    (cons (format nil "~a~d" prefix pine.core.server:*port*)
           (remove-if (lambda (entry)
                        (and (>= (length entry) (length prefix))
                             (string= prefix entry :end2 (length prefix))))
@@ -283,7 +283,7 @@ display changes.")
 (defun frontend-attached-p (verb)
   "Return the attached client of VERB's kind, whichever process started it."
   (let ((kind (intern (string-upcase verb) :keyword)))
-    (find kind pine.attach:*clients* :key #'pine.attach:attached-client-kind)))
+    (find kind pine.core.attach:*clients* :key #'pine.core.attach:attached-client-kind)))
 
 (defun note-frontend-exit (verb display)
   "Record VERB as unavailable on DISPLAY when its process said so."
@@ -318,9 +318,9 @@ back."
    (lambda ()
      (let ((previous nil))
        (loop :while *frontend-supervise*
-             :do (dolist (client (pine.attach:reap-clients))
+             :do (dolist (client (pine.core.attach:reap-clients))
                    (format t "pine: ~(~a~) is gone, starting it again~%"
-                           (pine.attach:attached-client-kind client))
+                           (pine.core.attach:attached-client-kind client))
                    (finish-output))
                  (let ((display (session-display)))
                    (cond
@@ -362,22 +362,22 @@ even on an old or wedged daemon that has no clean :stop."
     (declare (ignore o e))
     (not (eql code 0))))                     ; fuser: 0 = held, nonzero = free
 
-(defun cli-stop (&key (port pine.server:*port*))
+(defun cli-stop (&key (port pine.core.server:*port*))
   "Stop the daemon: ask it to shut down (taking its frontends with it), then make
 sure the port is free even if it was an old or wedged daemon."
   (ignore-errors
     (let ((sys (sento.actor-system:make-actor-system
                 '(:dispatchers (:shared (:workers 1 :strategy :random))))))
-      (sento.remoting:enable-remoting sys :host pine.server:*host* :port 0)
+      (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
       (ignore-errors
         (sento.actor:ask-s
-         (sento.remoting:make-remote-ref sys (pine.server:daemon-uri "control" :port port))
+         (sento.remoting:make-remote-ref sys (pine.core.server:daemon-uri "control" :port port))
          '(:stop) :time-out 3))))
   (sleep 0.4)
   (unless (port-free-p port) (kill-port port))
   (format t "pine: stopped~%"))
 
-(defun cli-restart (&key (port pine.server:*port*))
+(defun cli-restart (&key (port pine.core.server:*port*))
   "Stop the daemon, wait for the port to free, then start it fresh."
   (cli-stop :port port)
   (loop repeat 40 until (port-free-p port) do (sleep 0.25))
@@ -410,5 +410,5 @@ sure the port is free even if it was an old or wedged daemon."
       (t (format t "pine: unknown verb ~a~%~a~%" verb *cli-usage*)))))
 
 (defun stop ()
-  (pine.hooks:run-shutdown-hooks))
+  (pine.core.hooks:run-shutdown-hooks))
 

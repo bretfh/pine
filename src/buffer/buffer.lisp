@@ -234,7 +234,7 @@ end-col), normalized so start precedes end. Nil when there is no mark."
     (and mode (typep mode 'pine.mode:major-mode) (pine.mode:ts-language mode))))
 
 (defun %ts-runtime ()
-  (when pine.server:*server* (pine.server:ts-runtime pine.server:*server*)))
+  (when pine.core.server:*server* (pine.core.server:ts-runtime pine.core.server:*server*)))
 
 (defun refresh-highlights (pstate new-state)
   "Reparse PSTATE to NEW-STATE's text (creating the parse-state if the buffer has
@@ -334,7 +334,7 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
                                       ;; step, so an error before the commit leaves
                                       ;; the prior buffer intact; `abort' drops the
                                       ;; edit and the actor keeps receiving.
-                                      (pine.eval:with-debugger
+                                      (pine.core.eval:with-debugger
                                           (:label (format nil "buffer ~a <- ~a" name (first msg)))
                                         ;; RETRY re-runs the edit after a live fix
                                         ;; (fix the failing defun in this image,
@@ -358,12 +358,12 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
 ;;;; Buffer Registry
 
 (defun buffer-table (srv)
-  (or (pine.server:buffer-table srv)
-      (setf (pine.server:buffer-table srv) (make-hash-table :test 'equal))))
+  (or (pine.core.server:buffer-table srv)
+      (setf (pine.core.server:buffer-table srv) (make-hash-table :test 'equal))))
 
 (defun start-buffer-registry (server)
-  (let ((sys (pine.server:actor-system server)))
-    (setf (pine.server:buffer-registry server)
+  (let ((sys (pine.core.server:actor-system server)))
+    (setf (pine.core.server:buffer-registry server)
           (sento.actor-context:actor-of sys
                                         :name "buffer-registry"
                                         :state (fset:empty-map)

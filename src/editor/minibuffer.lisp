@@ -202,7 +202,7 @@ The actor name is unique per session -- a re-attached editor makes a fresh one
 beside the old session's."
   (or (pine.client:minibuffer-buffer client)
       (let* ((srv (pine.client:server-of client))
-             (sys (pine.server:actor-system srv))
+             (sys (pine.core.server:actor-system srv))
              (buf (pine.buffer:make-buffer-actor
                    sys (format nil "*minibuffer*-~a" (gensym "MB"))))
              (ctrl (sento.actor-context:actor-of sys
@@ -306,7 +306,7 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
 (defun %push-prompt-history (client input)
   (let ((h (pine.client:prompt-history client)))
     (when (and h (stringp input) (plusp (length input)))
-      (pine.store:store-push h input :max 200))))
+      (pine.state.store:store-push h input :max 200))))
 
 (defun minibuffer-history-prev ()
   "M-p: replace the input with the previous (older) history entry."
@@ -315,7 +315,7 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
     (when h
       (unless (pine.client:prompt-history-items client)
         (setf (pine.client:prompt-history-items client)
-              (pine.store:store-items h :limit 200)))
+              (pine.state.store:store-items h :limit 200)))
       (let* ((items (pine.client:prompt-history-items client))
              (pos (pine.client:prompt-history-pos client))
              (next (if pos (1+ pos) 0)))

@@ -1,4 +1,10 @@
-(in-package #:pine.keymap)
+(defpackage #:pine.editor.keymap
+  (:use #:cl)
+  (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
+           #:define-key #:define-keys #:keymap-lookup #:prefix-p
+           #:keymap-tables #:keymap-bindings))
+
+(in-package #:pine.editor.keymap)
 
 (defstruct (keymap (:constructor %make-keymap) (:copier nil))
   (name nil)
@@ -11,7 +17,7 @@
 (defun prefix-p (entry) (hash-table-p entry))
 
 (defun define-key (keymap keys command)
-  "KEYS is a pine.key:key or a list of them (a chord). COMMAND is a command
+  "KEYS is a pine.editor.key:key or a list of them (a chord). COMMAND is a command
 name string. A keymap stores names and never resolves them, so it knows
 nothing about the command registry and a binding may name a command that does
 not exist yet."
@@ -41,7 +47,7 @@ top-level bindings, written where the commands they name are defined."
   (let ((map (gensym "MAP")))
     `(let ((,map (keymap ,designator)))
        ,@(loop :for (chord command) :on pairs :by #'cddr
-               :collect `(define-key ,map (pine.key:parse-chord ,chord) ,command))
+               :collect `(define-key ,map (pine.editor.key:parse-chord ,chord) ,command))
        ,map)))
 
 (defun keymap-lookup (keymap key)
@@ -65,8 +71,8 @@ INCLUDE-PARENT, unshadowed parent bindings are appended."
                (maphash
                 (lambda (k v)
                   (let ((seq (if prefix
-                                 (concatenate 'string prefix " " (pine.key:key->string k))
-                                 (pine.key:key->string k))))
+                                 (concatenate 'string prefix " " (pine.editor.key:key->string k))
+                                 (pine.editor.key:key->string k))))
                     (if (hash-table-p v)
                         (walk v seq)
                         (push (cons seq v) acc))))

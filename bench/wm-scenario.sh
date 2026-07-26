@@ -70,7 +70,7 @@ log "announcing display $WAYLAND_DISPLAY"
 sbcl --no-userinit --non-interactive \
      --eval '(require :asdf)' \
      --eval '(asdf:load-system :pine)' \
-     --eval "(setf pine.server:*port* $port)" \
+     --eval "(setf pine.core.server:*port* $port)" \
      --eval "(pine::cli (list \"session\"))" \
      >>"$out/session.log" 2>&1
 
