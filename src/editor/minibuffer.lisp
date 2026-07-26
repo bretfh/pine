@@ -79,8 +79,8 @@ for render-chrome to blit above the echo row."
             (pine.client:popup-tree c) tree))))
 
 (defun completing-read-active-p ()
-  (let ((cli pine.client:*client*))
-    (and cli (pine.client:active-p (pine.client:completion-state cli)))))
+  (let ((c pine.client:*client*))
+    (and c (pine.client:active-p (pine.client:completion-state c)))))
 
 (defun file-completion-active-p ()
   (and (completing-read-active-p)
@@ -138,7 +138,7 @@ cannot be read."
   (let* ((buf (cur-buffer))
          (path (and buf (ignore-errors
                           (pine.buffer:buffer-local
-                           (pine.buffer:ask buf :state) :pathname nil)))))
+                           (pine.ask:ask buf :state) :pathname nil)))))
     (if path (directory-namestring path) (namestring (uiop:getcwd)))))
 
 (defun read-file-name (prompt-text cb &key history)
@@ -267,8 +267,8 @@ vanishes (the frozen-buffer wedge)."
       (setf (pine.client:saved-buffer client) (pine.client:current-buffer client)))
     (setf (pine.client:current-buffer client) mb
           (pine.client:prompt-active client) t)
-    (pine.mode:set-buffer-mode mb :text-mode)
-    (ignore-errors (pine.mode:enable-minor-mode client :minibuffer-mode))
+    (pine.client:set-buffer-mode mb :text-mode)
+    (ignore-errors (pine.client:enable-minor-mode client :minibuffer-mode))
     (pine.echo:show-prompt prompt-text)
     (sento.actor:tell mb (list :replace-content :content initial))
     (sento.actor:tell mb (list :move-point :line 0 :col (length initial)))
@@ -277,7 +277,7 @@ vanishes (the frozen-buffer wedge)."
 (defun deactivate-minibuffer (client)
   "Leave the minibuffer: restore the previous buffer and clear the prompt. Never
 restore to the minibuffer itself -- fall back to the focused window's buffer."
-  (ignore-errors (pine.mode:disable-minor-mode client :minibuffer-mode))
+  (ignore-errors (pine.client:disable-minor-mode client :minibuffer-mode))
   (let* ((mb (pine.client:minibuffer-buffer client))
          (back (pine.client:saved-buffer client)))
     (when (or (null back) (eq back mb))

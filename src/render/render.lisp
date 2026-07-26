@@ -355,7 +355,7 @@ point position."
          (line (if (and s (typep s 'pine.buffer:snapshot))
                    (format nil " ~a   ~a   L~d C~d"
                            (pine.buffer:window-name w)
-                           (pine.mode:mode-indicator (pine.mode:buffer-mode s))
+                           (pine.mode:mode-indicator (pine.client:buffer-mode s))
                            (1+ (pine.buffer:point-line s))
                            (pine.buffer:point-col s))
                    (format nil " ~a" (pine.buffer:window-name w)))))

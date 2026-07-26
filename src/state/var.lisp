@@ -47,7 +47,7 @@ every global setf writes through."
 
 (defun %buffer-vars (buffer)
   (and buffer
-       (let ((state (pine.buffer:ask buffer :state)))
+       (let ((state (sento.actor:ask-s buffer '(:get-state) :time-out 5)))
          (and state (fset:@ (pine.buffer:meta state) :vars)))))
 
 (defun %buffer-var (buffer name)
@@ -57,13 +57,14 @@ every global setf writes through."
         (values (fset:@ vars name) t)
         (values nil nil))))
 
-(defun current-buffer* ()
-  (let ((cli pine.client:*client*)) (and cli (pine.client:current-buffer cli))))
+(defun var (name &optional buffer)
+  "Editor variable NAME: buffer-local in BUFFER when one is given, else global,
+else the declared default. setf-able: (setf (var NAME) V) sets the global,
+(setf (var NAME BUFFER) V) sets it buffer-locally.
 
-(defun var (name &optional (buffer (current-buffer*)))
-  "Editor variable NAME: buffer-local in BUFFER (default the current buffer),
-else global, else the declared default. setf-able: (setf (var NAME) V) sets the
-global, (setf (var NAME BUFFER) V) sets it buffer-locally."
+The buffer is always explicit here. Which buffer is current is a client's
+business, and this layer is below any client; pine.user:var is the form that
+fills it in."
   (let ((v (find-variable name)))
     (when buffer
       (multiple-value-bind (local present) (%buffer-var buffer name)
@@ -73,14 +74,14 @@ global, (setf (var NAME BUFFER) V) sets it buffer-locally."
 (defun (setf var) (value name &optional buffer)
   (find-variable name)
   (if buffer
-      (pine.buffer:tell buffer :set-var :key name :value value)
+      (sento.actor:tell buffer (list :set-var :key name :value value))
       (let ((v (find-variable name)))
         (setf (evar-global v) value (evar-global-set v) t)
         (when (evar-persist v)
           (setf (pine.store:store (list :var name)) value))))
   value)
 
-(defun variable-scope (name &optional (buffer (current-buffer*)))
+(defun variable-scope (name &optional buffer)
   "Which scope NAME currently resolves through: :buffer, :global, or :default.
 Introspection for describe-variables."
   (find-variable name)

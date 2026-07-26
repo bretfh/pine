@@ -40,35 +40,6 @@
     (setf (frame-cell-count f) 0)))
 
 
-;;;; Window management
-
-(defun make-window (buffer-actor name &key (row 0) (col 0) (width 80) (height 24) focused)
-  (let ((w (make-instance 'window
-             :buffer buffer-actor :name name
-             :row row :col col :width width :height height
-             :focused focused))
-        (cli pine.client:*client*))
-    (when cli
-      (push w (pine.client:windows cli))
-      (when focused (setf (pine.client:focused-window cli) w)))
-    w))
-
-(defun remove-window (w)
-  (let ((cli pine.client:*client*))
-    (when cli
-      (setf (pine.client:windows cli) (remove w (pine.client:windows cli)))
-      (when (eq w (pine.client:focused-window cli))
-        (setf (pine.client:focused-window cli) (first (pine.client:windows cli)))))))
-
-(defun focus-window (w)
-  (let ((cli pine.client:*client*))
-    (when cli
-      (let ((prev (pine.client:focused-window cli)))
-        (when prev (setf (focusedp prev) nil)))
-      (setf (focusedp w) t
-            (pine.client:focused-window cli) w))))
-
-
 ;;;; Window display computation
 
 (defun window-display-lines (w)

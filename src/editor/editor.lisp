@@ -17,12 +17,12 @@
     (ensure-minibuffer client)
     (setf pine.command:*terminal-handler* #'pine.term:terminal-dispatch)
     (setf pine.eval:*on-debug* #'%eval-error)
-    (let ((buf (pine.buffer:make-buffer "scratch")))
-      (pine.buffer:make-window buf "scratch"
+    (let ((buf (pine.client:make-buffer "scratch")))
+      (pine.client:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
       (pine.render:subscribe-to-buffer buf)
-      (pine.mode:set-buffer-mode buf :text-mode)
-      (pine.buffer:tell buf :set-local :key :package :value :pine-user))
+      (pine.client:set-buffer-mode buf :text-mode)
+      (pine.ask:tell buf :set-local :key :package :value :pine-user))
     (pine.render:relayout)))
 
 ;;;; Motion / eval helpers (command implementations)
@@ -40,10 +40,10 @@ command like beginning-of-line must see its input, not the window behind it."
 (defun cur-buffer () (pine.client:current-buffer (pine.client:current-client)))
 
 (defun %fresh-snap ()
-  (let ((buf (cur-buffer))) (when buf (pine.buffer:ask buf :snapshot))))
+  (let ((buf (cur-buffer))) (when buf (pine.ask:ask buf :snapshot))))
 
 (defun %buffer-ts-lang ()
-  (let ((mode (pine.mode:current-buffer-mode)))
+  (let ((mode (pine.client:current-buffer-mode)))
     (and (typep mode 'pine.mode:major-mode) (pine.mode:ts-language mode))))
 
 (defun %ts-runtime ()
@@ -179,14 +179,6 @@ from the buffer, or nil."
 (defvar *attended-session* nil "The session the *debugger* buffer currently shows.")
 (defvar *debugger-session-counter* 0)
 
-(defvar *eval-target* :local
-  "Where C-x C-e / eval-defun run: :local (this image), or a registered agent
-name (a :process agent's own image). The one eval path, target swappable.")
-(defvar *eval-target-saved* :local
-  "The eval target from before the debugger opened, restored when it closes:
-while attending a fault the target follows the faulted image, so a fix compiles
-into the image that broke.")
-
 (defun %eval-notify (text)
   "Show TEXT in the echo area and repaint, safely from the eval thread."
   (pine.echo:message text)
@@ -216,9 +208,9 @@ on the form's line when AT is (BUFFER . LINE)."
 
 (defun %switch-to-buffer (name)
   (let ((client (pine.client:current-client))
-        (buf (pine.buffer:buffer name)))
+        (buf (pine.client:buffer name)))
     (when buf
-      (pine.buffer:switch-buffer name)
+      (pine.client:switch-buffer name)
       (let ((r (ignore-errors (pine.client:renderer client))))
         (when r
           (sento.actor:tell r (list :switch-buffer :buffer buf :name name)))))))
@@ -261,7 +253,7 @@ invokes that restart -- and the backtrace."
 to it. The eval target follows the attended fault, so C-x C-e / recompile land
 in the image that broke -- fix the defun there, then pick retry."
   (setf *attended-session* session
-        *eval-target* (ecase (dbg-session-kind session)
+        pine.target:*eval-target* (ecase (dbg-session-kind session)
                         (:agent (dbg-session-agent session))
                         (:local :local)))
   (show-layout "*debugger*"
@@ -273,8 +265,8 @@ in the image that broke -- fix the defun there, then pick retry."
 time the debugger opens, so resolving the last session lands you back where you
 were before any fault."
   (unless *debugger-sessions*
-    (setf *debugger-return-to* (ignore-errors (pine.buffer:ask :current :name))
-          *eval-target-saved* *eval-target*))
+    (setf *debugger-return-to* (ignore-errors (pine.ask:ask :current :name))
+          pine.target:*eval-target-saved* pine.target:*eval-target*))
   (push session *debugger-sessions*)
   (%attend-session session))
 
@@ -283,7 +275,7 @@ were before any fault."
 resolve anything -- any sessions still in the registry stay parked."
   (when *debugger-return-to*
     (%switch-to-buffer *debugger-return-to*))
-  (ignore-errors (pine.buffer:kill-buffer "*debugger*")))
+  (ignore-errors (pine.client:kill-buffer "*debugger*")))
 
 (defun %resolve-session (session)
   "Drop SESSION from the registry (its thread was just resumed); attend the next
@@ -292,7 +284,7 @@ live session, or dismiss the buffer and clear the return-to when none remain."
   (let ((next (first *debugger-sessions*)))
     (cond (next (%attend-session next))
           (t (setf *attended-session* nil
-                   *eval-target* *eval-target-saved*)   ; back to the pre-fault target
+                   pine.target:*eval-target* pine.target:*eval-target-saved*)   ; back to the pre-fault target
              (%dismiss-debugger)
              (setf *debugger-return-to* nil)))))
 
@@ -405,27 +397,11 @@ one selectable row each; Return attends an errored one's debugger session."
                                 (or (getf j :form) (getf j :condition) ""))
                         :class "help-entry"))))))))
 
-(defun eval-in-target (str package &key on-done bindings)
-  "Evaluate STR in the current *eval-target* image over the one eval path: :local
-runs through the local-agent (in-image), a named target through that agent, both
-off the caller thread on the shared pine.eval engine. ON-DONE runs on the eval
-thread for :local; for a remote agent the result comes home as an :agent-result
-(the *jobs* surface) and BINDINGS do not cross the wire. The repl and the editor
-eval commands share this, so `set-eval-target' redirects both."
-  (if (or (null *eval-target*) (eq *eval-target* :local))
-      (if pine.actor:*local-agent*
-          (pine.actor:agent-eval nil pine.actor:*local-agent* str
-                                 :package package :bindings bindings :on-done on-done)
-          (pine.eval:evaluate-string str :package package
-                                     :bindings bindings :on-done on-done))
-      (pine.actor:agent-eval (pine.client:server-of (pine.client:current-client))
-                             *eval-target* str :package package :on-done on-done)))
-
 (defun %eval-form-string (str package &key at)
   ;; errors reach *on-debug* (local) or come home from a process agent via
   ;; agent-debug; the client binding rides along for :local. AT = (BUFFER .
   ;; LINE) puts the result inline on the form's line.
-  (eval-in-target str package
+  (pine.target:eval-in-target str package
                   :on-done (lambda (ev) (%eval-done ev at))
                   :bindings (list (cons 'pine.client:*client*
                                         (pine.client:current-client)))))
@@ -539,7 +515,7 @@ no symbol to complete."
 
 (defun %replace-prefix (buf prefix choice)
   (dotimes (i (length prefix)) (sento.actor:tell buf '(:backspace)))
-  (pine.buffer:tell buf :insert :text choice))
+  (pine.ask:tell buf :insert :text choice))
 
 (defun symbol-arglist ()
   "Echo the lambda list of the function named at point (M-x arglist)."
@@ -591,9 +567,9 @@ no symbol to complete."
       (let* ((state (sento.actor:ask-s buf '(:get-state) :time-out 5))
              (text (pine.buffer:state->string state))
              (package (%buffer-package state))
-             (cli (pine.client:current-client))
+             (c (pine.client:current-client))
              (thunk (lambda ()
-                      (let ((pine.client:*client* cli) (*package* package)
+                      (let ((pine.client:*client* c) (*package* package)
                             (pos 0) (count 0))
                         (loop
                           (multiple-value-bind (form new-pos)
@@ -652,7 +628,7 @@ no symbol to complete."
 
 (defun %bindings-text ()
   (let* ((client (pine.client:current-client))
-         (rows (loop for km in (pine.mode:active-keymaps client)
+         (rows (loop for km in (pine.client:active-keymaps client)
                      append (pine.keymap:keymap-bindings km t))))
     (with-output-to-string (out)
       (format out "Active bindings~%~%")
@@ -675,17 +651,18 @@ debug-on-error; edit-actor and eval errors always reach the debugger."))
   (with-output-to-string (out)
     (format out "Editor variables~%~%")
     (dolist (name (pine.var:all-variable-names))
-      (let ((v (pine.var:find-variable name)))
+      (let ((v (pine.var:find-variable name))
+            (buf (pine.client:buffer-in-scope)))
         (format out "~a = ~s [~(~a~)]~%    default ~s~a~%"
-                name (pine.var:var name) (pine.var:variable-scope name)
+                name (pine.var:var name buf) (pine.var:variable-scope name buf)
                 (pine.var:evar-default v)
                 (let ((d (pine.var:evar-documentation v)))
                   (if (plusp (length d)) (format nil "~%    ~a" d) "")))))))
 
 (defun %mode-text ()
   (let* ((client (pine.client:current-client))
-         (major (pine.mode:current-buffer-mode))
-         (minors (pine.mode:buffer-minor-modes client)))
+         (major (pine.client:current-buffer-mode))
+         (minors (pine.client:active-minor-modes client)))
     (with-output-to-string (out)
       (format out "Major mode: ~a (~a)~%"
               (pine.mode:mode-name major) (pine.mode:mode-indicator major))
@@ -798,7 +775,7 @@ a function, or such a node anywhere below."
 lands in it."
   (let ((client (pine.client:current-client))
         (w (pine.layout:window-of leaf)))
-    (pine.buffer:focus-window w)
+    (pine.client:focus-window w)
     (setf (pine.client:current-buffer client) (pine.buffer:buffer-ref w))
     (pine.world:save-world :arrangement)))
 
@@ -816,7 +793,7 @@ between; sizes stay even because siblings share one weight."
     (let* ((w (pine.layout:window-of leaf))
            (buf (pine.buffer:buffer-ref w))
            (weight (max 1 (pine.layout:expand-of leaf)))
-           (nw (pine.buffer:make-window buf (pine.buffer:window-name w)))
+           (nw (pine.client:make-window buf (pine.buffer:window-name w)))
            (nn (pine.layout:window nil :of nw :kind :window :expand weight
                                    :font-px (pine.layout:font-px leaf)
                                    :opacity (pine.layout:window-opacity leaf)))
@@ -839,7 +816,7 @@ left with one child, and dropping its backing window."
          (root (pine.layout:remove-node (pine.client:arrangement client) leaf)))
     (when root
       (setf (pine.client:arrangement client) root)
-      (pine.buffer:remove-window (pine.layout:window-of leaf))
+      (pine.client:remove-window (pine.layout:window-of leaf))
       t)))
 
 (defun delete-window-cmd ()
@@ -875,15 +852,15 @@ left with one child, and dropping its backing window."
 switch to it, and enable layout-mode on it. Returns the buffer."
   (let* ((client (pine.client:current-client))
          (cols (pine.buffer:frame-cols (pine.client:frame client)))
-         (buf (pine.buffer:make-buffer name)))
-    (pine.mode:set-buffer-mode buf mode)
-    (pine.buffer:tell buf :set-layout :builder builder :width cols
+         (buf (pine.client:make-buffer name)))
+    (pine.client:set-buffer-mode buf mode)
+    (pine.ask:tell buf :set-layout :builder builder :width cols
                           :selection selection)
     (pine.render:subscribe-to-buffer buf)
-    (pine.buffer:switch-buffer name)
+    (pine.client:switch-buffer name)
     (let ((r (ignore-errors (pine.client:renderer client))))
       (when r (sento.actor:tell r (list :switch-buffer :buffer buf :name name))))
-    (ignore-errors (pine.mode:enable-minor-mode client :layout-mode))
+    (ignore-errors (pine.client:enable-minor-mode client :layout-mode))
     buf))
 
 
@@ -916,7 +893,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
                 :start-line (pine.buffer:point-line snap) :start-col (pine.buffer:point-col snap)
                 :end-line (pine.buffer:point-line snap) :end-col (1+ (pine.buffer:point-col snap)))))))
   (defcmd "newline" ()
-    (let ((buf (cur-buffer))) (when buf (pine.buffer:tell buf :newline))))
+    (let ((buf (cur-buffer))) (when buf (pine.ask:tell buf :newline))))
   (defcmd "undo" ()
     (let ((buf (cur-buffer))) (when buf (sento.actor:tell buf '(:undo)))))
   (defcmd "redo" ()
@@ -933,25 +910,25 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   (defcmd "isearch-forward" ()  (isearch-start :forward))
   (defcmd "isearch-backward" () (isearch-start :backward))
   (defcmd "universal-argument" () (:prefix)
-    (let ((cli (pine.client:current-client)))
-      (setf (pine.client:prefix-arg cli)
+    (let ((c (pine.client:current-client)))
+      (setf (pine.client:prefix-arg c)
             (list (* 4 (pine.command:prefix-numeric-value
-                        (pine.client:prefix-arg cli)))))))
+                        (pine.client:prefix-arg c)))))))
   (defcmd "digit-argument" () (:prefix)
-    (let* ((cli (pine.client:current-client))
-           (key (pine.client:this-command-key cli))
+    (let* ((c (pine.client:current-client))
+           (key (pine.client:this-command-key c))
            (d (and key (digit-char-p (char (pine.key:key-sym key) 0))))
-           (cur (pine.client:prefix-arg cli)))
+           (cur (pine.client:prefix-arg c)))
       (when d
-        (setf (pine.client:prefix-arg cli)
+        (setf (pine.client:prefix-arg c)
               (cond ((eq cur '-) (- d))
                     ((and (integerp cur) (minusp cur)) (- (+ (* 10 (- cur)) d)))
                     ((integerp cur) (+ (* 10 cur) d))
                     (t d))))))
   (defcmd "negative-argument" () (:prefix)
-    (let* ((cli (pine.client:current-client))
-           (cur (pine.client:prefix-arg cli)))
-      (setf (pine.client:prefix-arg cli)
+    (let* ((c (pine.client:current-client))
+           (cur (pine.client:prefix-arg c)))
+      (setf (pine.client:prefix-arg c)
             (cond ((eq cur '-) nil)
                   ((integerp cur) (- cur))
                   (t '-)))))
@@ -1018,7 +995,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
           ;; write sees the formatted text
           (when (and buf (pine.var:var :format-on-save buf))
             (let ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5)))
-              (pine.buffer:tell buf :indent-lines
+              (pine.ask:tell buf :indent-lines
                                 :from 0 :to (1- (pine.buffer:line-count snap)))))
           (pine.file:save-current-buffer))
       (error (c) (pine.echo:message (format nil "error: ~a" c)))))
@@ -1028,16 +1005,16 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   (defcmd "delete-other-windows" () (delete-other-windows-cmd))
   (defcmd "other-window" () (other-window-cmd))
   (defcmd "switch-buffer" ()
-    (completing-read "Switch to: " (pine.buffer:list-buffers)
+    (completing-read "Switch to: " (pine.client:list-buffers)
       (lambda (name)
         (let* ((client (pine.client:current-client))
-               (buf (pine.buffer:switch-buffer name)))
+               (buf (pine.client:switch-buffer name)))
           (when buf
             (sento.actor:tell (pine.client:renderer client)
                               (list :switch-buffer :buffer buf :name name))
             (pine.render:subscribe-to-buffer buf))))))
   (defcmd "list-buffers" ()
-    (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.buffer:list-buffers))))
+    (pine.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.client:list-buffers))))
   (defcmd "execute-command" ()
     (completing-read "M-x " (pine.command:all-command-names)
       (lambda (name) (pine.command:call-command name))
@@ -1097,17 +1074,17 @@ switch to it, and enable layout-mode on it. Returns the buffer."
                    (pine.actor:list-agents
                     (pine.client:server-of (pine.client:current-client)))))
      (lambda (name)
-       (setf *eval-target* (if (string= name "local") :local name))
+       (setf pine.target:*eval-target* (if (string= name "local") :local name))
        (pine.echo:message (format nil "eval target: ~a" name)))))
   (defcmd "new-buffer" ()
     (prompt "New buffer: "
       (lambda (name)
-        (let ((buf (pine.buffer:make-buffer name))) (pine.render:subscribe-to-buffer buf)))))
+        (let ((buf (pine.client:make-buffer name))) (pine.render:subscribe-to-buffer buf)))))
   (defcmd "open-repl" ()
     (handler-case
         (let* ((client (pine.client:current-client))
                (buf (or (pine.client:repl-buffer client) (pine.repl:start-repl))))
-          (pine.buffer:switch-buffer "*repl*")
+          (pine.client:switch-buffer "*repl*")
           (pine.render:subscribe-to-buffer buf)
           (sento.actor:tell (pine.client:renderer client)
                             (list :switch-buffer :buffer buf :name "*repl*")))
@@ -1118,15 +1095,15 @@ switch to it, and enable layout-mode on it. Returns the buffer."
                (f (pine.client:frame client))
                (cols (pine.buffer:frame-cols f))
                (rows (max 1 (- (pine.buffer:frame-rows f) 2)))
-               (buf (pine.buffer:make-buffer "*terminal*")))
+               (buf (pine.client:make-buffer "*terminal*")))
           (pine.term:open-terminal client buf :rows rows :cols cols)
-          (pine.mode:set-buffer-mode buf :terminal-mode)
-          (pine.buffer:switch-buffer "*terminal*")
+          (pine.client:set-buffer-mode buf :terminal-mode)
+          (pine.client:switch-buffer "*terminal*")
           (sento.actor:tell (pine.client:renderer client)
                             (list :switch-buffer :buffer buf :name "*terminal*")))
       (error (c) (pine.echo:message (format nil "error: ~a" c)))))
   (defcmd "overwrite-mode" ()
-    (let ((on (pine.mode:toggle-minor-mode (pine.client:current-client) :overwrite-mode)))
+    (let ((on (pine.client:toggle-minor-mode (pine.client:current-client) :overwrite-mode)))
       (pine.echo:message (if on "Overwrite mode enabled" "Overwrite mode disabled"))))
   (defcmd "describe-key" ()
     (pine.echo:message "Describe key: ")
@@ -1140,31 +1117,31 @@ switch to it, and enable layout-mode on it. Returns the buffer."
   (defcmd "describe-variables" ()
     (show-layout "*variables*" (%text-layout (%variables-text))))
   (defcmd "insert-tab" ()
-    (let* ((cli (pine.client:current-client))
-           (buf (pine.client:current-buffer cli))
+    (let* ((c (pine.client:current-client))
+           (buf (pine.client:current-buffer c))
            (n (max 0 (pine.var:var :tab-width buf))))
       (when buf
-        (pine.buffer:tell buf :insert :text (make-string n :initial-element #\Space)))))
+        (pine.ask:tell buf :insert :text (make-string n :initial-element #\Space)))))
   (defcmd "indent-for-tab-command" ()
     "Reindent the current line to the column its mode dictates."
     (let ((buf (cur-buffer)))
-      (when buf (pine.buffer:tell buf :indent-lines))))
+      (when buf (pine.ask:tell buf :indent-lines))))
   (defcmd "indent-region" ()
     "Reindent every line spanned by the region."
     (let* ((buf (cur-buffer))
            (state (and buf (sento.actor:ask-s buf '(:get-state) :time-out 5))))
       (when state
-        (multiple-value-bind (sl sc el ec) (region-bounds state)
+        (multiple-value-bind (sl sc el ec) (pine.buffer:region-bounds state)
           (declare (ignore sc ec))
           (if sl
-              (pine.buffer:tell buf :indent-lines :from sl :to el)
+              (pine.ask:tell buf :indent-lines :from sl :to el)
               (pine.echo:message "no region"))))))
   (defcmd "format-buffer" ()
     "Reindent the whole buffer off the parse tree, point preserved (in-image)."
     (let* ((buf (cur-buffer))
            (snap (and buf (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
       (when snap
-        (pine.buffer:tell buf :indent-lines
+        (pine.ask:tell buf :indent-lines
                           :from 0 :to (1- (pine.buffer:line-count snap))))))
   ;; layout buffers: selection nav + activation on the node tree
   (defcmd "layout-next" () (layout-select 1))

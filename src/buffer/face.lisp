@@ -13,10 +13,10 @@
    (underline :initarg :underline :accessor underline :initform nil)))
 
 (defun faces-table ()
-  ;; server-scoped state; a headless daemon (no client) resolves via *server*.
-  ;; read the *client* special directly -- current-client errors when unbound.
-  (let* ((cli pine.client:*client*)
-         (srv (if cli (pine.client:server-of cli) pine.server:*server*)))
+  "The face table of the server this image runs. Faces are server-scoped, and
+every image -- daemon, frontend, shot harness -- has exactly one server, so
+this never asks a client which one it belongs to."
+  (let ((srv pine.server:*server*))
     (or (pine.server:faces srv)
         (setf (pine.server:faces srv) (make-hash-table :test 'eq)))))
 
@@ -124,12 +124,8 @@
 (defmacro deftheme (name &key palette metrics faces)
   `(register-theme (build-theme ',name ',palette ',metrics ',faces)))
 
-(defun %faces-server ()
-  (let ((cli pine.client:*client*))
-    (if cli (pine.client:server-of cli) pine.server:*server*)))
-
 (defun load-theme (name)
-  (setf (pine.server:faces (%faces-server)) (theme-faces (find-theme name))
+  (setf (pine.server:faces pine.server:*server*) (theme-faces (find-theme name))
         *active-theme* (theme-key name))
   *active-theme*)
 

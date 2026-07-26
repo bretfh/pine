@@ -28,26 +28,13 @@
   (let* ((client (pine.client:current-client))
          (buf (pine.client:current-buffer client)))
     (when buf
-      (let ((snap (pine.buffer:current-buffer-snapshot)))
+      (let ((snap (pine.client:current-buffer-snapshot)))
         (when snap
           (sento.actor:tell buf
             (list :set-meta :key :mark-line :value (pine.buffer:point-line snap)))
           (sento.actor:tell buf
             (list :set-meta :key :mark-col :value (pine.buffer:point-col snap)))
           (pine.echo:message "mark set"))))))
-
-(defun region-bounds (state)
-  (let* ((m (pine.buffer:meta state))
-         (ml (fset:@ m :mark-line))
-         (mc (fset:@ m :mark-col))
-         (snap (pine.buffer:state->snapshot state))
-         (pl (pine.buffer:point-line snap))
-         (pc (pine.buffer:point-col snap)))
-    (when (and ml mc)
-      (if (or (< ml pl) (and (= ml pl) (<= mc pc)))
-          (values ml mc pl pc)
-          (values pl pc ml mc)))))
-
 
 ;;;; Kill commands
 
@@ -56,7 +43,7 @@
          (buf (pine.client:current-buffer client)))
     (when buf
       (let ((state (sento.actor:ask-s buf '(:get-state) :time-out 5)))
-        (multiple-value-bind (sl sc el ec) (region-bounds state)
+        (multiple-value-bind (sl sc el ec) (pine.buffer:region-bounds state)
           (when sl
             (let ((text (pine.buffer:region-string state sl sc el ec)))
               (kill-ring-push text)
@@ -68,7 +55,7 @@
   (let* ((client (pine.client:current-client))
          (buf (pine.client:current-buffer client)))
     (when buf
-      (let* ((snap (pine.buffer:current-buffer-snapshot))
+      (let* ((snap (pine.client:current-buffer-snapshot))
              (pl (pine.buffer:point-line snap))
              (pc (pine.buffer:point-col snap))
              (line (fset:@ (pine.buffer:lines snap) pl))
@@ -121,7 +108,7 @@ point-after-move :word lands, into the kill ring."
          (buf (pine.client:current-buffer client))
          (text (kill-ring-top)))
     (when (and text buf)
-      (let ((snap (pine.buffer:current-buffer-snapshot)))
+      (let ((snap (pine.client:current-buffer-snapshot)))
         (when snap
           (setf *last-yank* (list buf (pine.buffer:point-line snap)
                                   (pine.buffer:point-col snap) text))))
@@ -149,7 +136,7 @@ point-after-move :word lands, into the kill ring."
          (buf (pine.client:current-buffer client)))
     (when buf
       (let ((state (sento.actor:ask-s buf '(:get-state) :time-out 5)))
-        (multiple-value-bind (sl sc el ec) (region-bounds state)
+        (multiple-value-bind (sl sc el ec) (pine.buffer:region-bounds state)
           (when sl
             (let ((text (pine.buffer:region-string state sl sc el ec)))
               (kill-ring-push text)

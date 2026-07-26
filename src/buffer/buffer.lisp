@@ -183,6 +183,20 @@ the middle parts become whole lines. Point lands after the inserted text."
   "Set buffer-local KEY to VALUE."
   (copy-state state :meta (fset:with (meta state) key value)))
 
+(defun region-bounds (state)
+  "The region between mark and point as (values start-line start-col end-line
+end-col), normalized so start precedes end. Nil when there is no mark."
+  (let* ((m (meta state))
+         (ml (fset:@ m :mark-line))
+         (mc (fset:@ m :mark-col))
+         (snap (state->snapshot state))
+         (pl (point-line snap))
+         (pc (point-col snap)))
+    (when (and ml mc)
+      (if (or (< ml pl) (and (= ml pl) (<= mc pc)))
+          (values ml mc pl pc)
+          (values pl pc ml mc)))))
+
 (defun line-count-of (state)
   (fset:size (lines state)))
 
@@ -376,175 +390,3 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
                                             (:count
                                              (sento.actor:reply (fset:size sento.actor:*state*)))))))))
 
-(defun make-buffer (name &key (content ""))
-  (let* ((cli (pine.client:current-client))
-         (srv (pine.client:server-of cli))
-         (table (buffer-table srv))
-         (existing (gethash name table)))
-    (when existing (return-from make-buffer existing))
-    (let ((actor (make-buffer-actor (pine.server:actor-system srv) name :content content)))
-      (setf (gethash name table) actor)
-      (sento.actor:tell (pine.server:buffer-registry srv)
-                        (list :register :name name :actor actor))
-      (when (null (pine.client:current-buffer cli))
-        (setf (pine.client:current-buffer cli) actor))
-      actor)))
-
-(defun kill-buffer (name)
-  (let* ((cli (pine.client:current-client))
-         (srv (pine.client:server-of cli))
-         (table (buffer-table srv))
-         (actor (gethash name table)))
-    (when actor
-      (when (eq actor (pine.client:current-buffer cli))
-        (setf (pine.client:current-buffer cli) nil))
-      (remhash name table)
-      (sento.actor-context:stop (pine.server:actor-system srv) actor)
-      (sento.actor:tell (pine.server:buffer-registry srv)
-                        (list :unregister :name name)))))
-
-(defun switch-buffer (name)
-  (let* ((cli (pine.client:current-client))
-         (srv (pine.client:server-of cli))
-         (actor (gethash name (buffer-table srv))))
-    (when actor
-      (setf (pine.client:current-buffer cli) actor)
-      actor)))
-
-
-(defun list-buffers ()
-  (let ((srv (pine.client:server-of (pine.client:current-client))))
-    (loop for k being the hash-keys of (buffer-table srv) collect k)))
-
-(defun buffer-count ()
-  (let ((srv (pine.client:server-of (pine.client:current-client))))
-    (hash-table-count (buffer-table srv))))
-
-(defun current-buffer-text ()
-  (let* ((cli (pine.client:current-client))
-         (buf (pine.client:current-buffer cli)))
-    (when buf
-      (sento.actor:ask-s buf '(:get-text) :time-out 5))))
-
-(defun current-buffer-snapshot ()
-  (let* ((cli (pine.client:current-client))
-         (buf (pine.client:current-buffer cli)))
-    (when buf
-      (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))))
-
-
-(defun buffer (x)
-  "Coerce X to a buffer actor.
-- nil            -> nil
-- string         -> lookup by name in current server's buffer-table
-- :current       -> current client's current-buffer
-- :focused       -> focused window's buffer-ref
-- actor ref      -> passthrough
-Unknown keywords error; nothing silently falls through."
-  (cond
-    ((null x) nil)
-    ((stringp x)
-     (let ((srv (pine.client:server-of (pine.client:current-client))))
-       (gethash x (buffer-table srv))))
-    ((eq x :current)
-     (pine.client:current-buffer (pine.client:current-client)))
-    ((eq x :focused)
-     (let ((w (pine.client:focused-window (pine.client:current-client))))
-       (when w (buffer-ref w))))
-    ((keywordp x)
-     (error "unknown buffer target ~s; use :current, :focused, or a string name"
-            x))
-    (t x)))
-
-(defun tell (target tag &rest plist)
-  "Send (tag . plist) to TARGET (coerced via BUFFER). Returns TARGET.
-Silently no-ops on nil target."
-  (let ((buf (buffer target)))
-    (when buf
-      (sento.actor:tell buf (list* tag plist)))
-    buf))
-
-(defparameter +server-verbs+
-  '(:buffers :clients :modes :commands :faces :actor-system :describe))
-
-(defparameter +client-verbs+
-  '(:current-buffer :focused-window :windows :kill-ring :last-command
-    :pending-keys :describe))
-
-(defparameter +buffer-verbs+
-  '(:state :snapshot :text :meta :name :mode :pathname :point :line :local
-    :describe))
-
-(defun %ask-server (spec)
-  (let ((srv (pine.client:server-of (pine.client:current-client)))
-        (query (first spec)))
-    (case query
-      (:buffers     (loop for k being the hash-keys of (buffer-table srv)
-                          collect k))
-      (:clients     (pine.server:clients srv))
-      (:modes       (loop for k being the hash-keys of (pine.server:modes srv)
-                          collect k))
-      (:commands    (sort (loop for k being the hash-keys
-                                  of (pine.server:commands srv)
-                                collect k)
-                          #'string<))
-      (:faces       (pine.server:faces srv))
-      (:actor-system (pine.server:actor-system srv))
-      (:describe    +server-verbs+)
-      (t (error "unknown :server query ~s; known: ~s" query +server-verbs+)))))
-
-(defun %ask-client (spec)
-  (let ((cli (pine.client:current-client))
-        (query (first spec)))
-    (case query
-      (:current-buffer (pine.client:current-buffer cli))
-      (:focused-window (pine.client:focused-window cli))
-      (:windows        (pine.client:windows cli))
-      (:kill-ring      (pine.client:kill-ring cli))
-      (:last-command   (pine.client:last-command cli))
-      (:pending-keys   (car (pine.client:pending-keys cli)))
-      (:describe       +client-verbs+)
-      (t (error "unknown :client query ~s; known: ~s" query +client-verbs+)))))
-
-(defun %ask-buffer (buf spec)
-  (when buf
-    (let ((query (first spec))
-          (args  (rest spec))
-          (timeout 5))
-      (case query
-        (:state    (sento.actor:ask-s buf '(:get-state) :time-out timeout))
-        (:snapshot (sento.actor:ask-s buf '(:get-snapshot) :time-out timeout))
-        (:text     (sento.actor:ask-s buf '(:get-text) :time-out timeout))
-        (:meta     (meta (sento.actor:ask-s buf '(:get-state)
-                                            :time-out timeout)))
-        (:name     (name (sento.actor:ask-s buf '(:get-snapshot)
-                                            :time-out timeout)))
-        (:mode     (buffer-local
-                    (sento.actor:ask-s buf '(:get-state) :time-out timeout)
-                    :mode))
-        (:pathname (buffer-local
-                    (sento.actor:ask-s buf '(:get-state) :time-out timeout)
-                    :pathname))
-        (:point    (let ((s (sento.actor:ask-s buf '(:get-snapshot)
-                                               :time-out timeout)))
-                     (values (point-line s) (point-col s))))
-        (:line     (let* ((n (first args))
-                          (s (sento.actor:ask-s buf '(:get-snapshot)
-                                                :time-out timeout)))
-                     (fset:@ (lines s) n)))
-        (:local    (let ((key (first args))
-                         (default (getf (rest args) :default)))
-                     (buffer-local
-                      (sento.actor:ask-s buf '(:get-state) :time-out timeout)
-                      key default)))
-        (:describe +buffer-verbs+)
-        (t (error "unknown buffer query ~s; known: ~s" query +buffer-verbs+))))))
-
-(defun ask (target &rest spec)
-  "Synchronous query. TARGET is :server, :client, or anything coercible
-via BUFFER. SPEC is (query &rest args). Use (ask TARGET :describe) for
-the verb list."
-  (case target
-    (:server (%ask-server spec))
-    (:client (%ask-client spec))
-    (t (%ask-buffer (buffer target) spec))))

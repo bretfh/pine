@@ -64,12 +64,12 @@
    #:make-empty-state #:state->snapshot #:state->snapshot-with-hl #:state->string
    #:insert-char #:insert-string #:insert-newline
    #:delete-char #:delete-region
-   #:move-mark #:set-meta
+   #:move-mark #:set-meta #:region-bounds
    #:buffer-local
    #:refresh-highlights #:point-after-move
    #:line-indent-width #:previous-line-indent #:reindent-line
    #:load-content #:notify-subscribers #:split-lines
-   #:line-count-of #:line-at #:region-string
+   #:line-count-of #:line-at #:region-string #:buffer-table
    ;; faces
    #:face #:fg #:bg #:bold #:italic #:underline
    #:defface #:find-face #:face-attr-bits #:install-default-faces
@@ -86,17 +86,11 @@
    #:frame #:windows #:frame-cols #:frame-rows #:bg-face
    #:frame-cells #:frame-cell-count #:frame-cursor-row #:frame-cursor-col
    #:frame-scroll-pixel #:frame-dirtyp #:ensure-frame-cells
-   #:make-window #:remove-window #:focus-window
    #:window-display-lines #:ensure-point-visible #:ensure-col-visible
    ;; buffer actor
    #:make-buffer-actor #:notify-subscribers #:load-content
    ;; registry
-   #:start-buffer-registry
-   #:make-buffer #:kill-buffer #:switch-buffer
-   #:list-buffers #:buffer-count
-   #:current-buffer-text #:current-buffer-snapshot
-   ;; high-level API
-   #:buffer #:ask #:tell))
+   #:start-buffer-registry))
 
 (defpackage :pine.echo
   (:use :cl)
@@ -126,6 +120,13 @@
    #:refresh-editor-tree
    #:frame->rows
    #:relayout))
+
+(defpackage #:pine.target
+  (:use #:cl)
+  (:export #:*eval-target* #:*eval-target-saved* #:eval-in-target)
+  (:documentation "Which image an evaluation runs in. C-x C-e, eval-defun and
+the repl share one path through here, so redirecting the target redirects all
+of them."))
 
 (defpackage :pine.repl
   (:use :cl)
@@ -188,21 +189,23 @@
            #:key-binding #:read-next-key
            #:*terminal-handler*))
 
+(defpackage #:pine.edit
+  (:use #:cl)
+  (:documentation "The dispatch-message methods for base-mode and text-mode:
+what every buffer does with a verb, and what a text buffer layers on top. Adds
+methods only; it exports nothing."))
+
 (defpackage :pine.mode
   (:use :cl)
   (:export
    #:mode #:major-mode #:minor-mode
    #:base-mode #:text-mode #:lisp-mode #:repl-mode #:terminal-mode
-   #:overwrite-mode
+   #:debugger-mode #:minibuffer-mode #:layout-mode #:overwrite-mode
    #:mode-name #:mode-keymap #:mode-indicator #:parent-mode #:ts-language
    #:precedence #:transparent
-   #:register-mode #:find-mode #:global-keymap
-   #:buffer-mode #:current-buffer-mode #:set-buffer-mode #:mode-for-file
-   #:auto-mode #:*auto-modes*
-   #:buffer-active-modes #:buffer-minor-modes #:active-keymaps
-   #:active-modes-instance
-   #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
-   #:toggle-minor-mode #:active-minor-mode-indicators
+   #:register-mode #:find-mode #:all-mode-names #:global-keymap
+   #:mode-for-file #:auto-mode #:*auto-modes*
+   #:modes-dispatch-class
    #:dispatch-message #:install-default-modes))
 
 (defpackage #:pine.store
@@ -385,8 +388,25 @@ Gated by the :world-save editor variable."))
    #:popup-tree
    #:*client*
    #:current-client
+   #:buffer-in-scope
+   #:make-window #:remove-window #:focus-window
+   #:buffer-mode #:current-buffer-mode #:set-buffer-mode
+   #:buffer-active-modes #:active-minor-modes #:active-keymaps
+   #:active-modes-instance
+   #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
+   #:toggle-minor-mode #:active-minor-mode-indicators
+   #:buffer #:make-buffer #:kill-buffer #:switch-buffer
+   #:list-buffers #:buffer-count
+   #:current-buffer-text #:current-buffer-snapshot
    #:start-client
    #:stop-client))
+
+(defpackage #:pine.ask
+  (:use #:cl)
+  (:export #:ask #:tell)
+  (:documentation "Ask and tell: the scripting surface over the live system.
+ASK queries the server, the client or a buffer; TELL messages a buffer. Above
+modes and commands, so it can read the registries that hold them."))
 
 (defpackage :pine.editor
   (:use :cl)
@@ -407,7 +427,7 @@ Gated by the :world-save editor variable."))
    #:scroll-window
    #:eval-last-sexp
    #:eval-buffer
-   #:eval-in-target
+   
    ;; layout buffers (authorable tool buffers)
    #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
    ;; prompt
@@ -417,7 +437,6 @@ Gated by the :world-save editor variable."))
    #:kill-ring-push
    #:kill-ring-top
    #:set-mark
-   #:region-bounds
    #:kill-region-cmd
    #:kill-line-cmd
    #:copy-region-cmd
@@ -463,8 +482,10 @@ Gated by the :world-save editor variable."))
                 #:candidate-actions #:completion-widget)
   (:import-from :pine.buffer
                 #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
-                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
-                #:ask #:tell)
+                )
+  (:import-from :pine.client
+                #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers)
+  (:import-from :pine.ask #:ask #:tell)
   (:import-from :pine.ref #:defref #:ref)
   (:import-from :pine.store #:store #:store-push #:store-items #:store-clear)
   (:import-from :pine.world #:register)
@@ -472,9 +493,9 @@ Gated by the :world-save editor variable."))
                 #:split #:lines #:starts-with #:first-number #:read-int-file
                 #:json)
   (:import-from :pine.command #:call-command #:execute)
-  (:import-from :pine.mode #:find-mode #:current-buffer-mode #:set-buffer-mode
-                #:dispatch-message #:auto-mode)
-  (:import-from :pine.var #:defonce #:var)
+  (:import-from :pine.mode #:find-mode #:dispatch-message #:auto-mode)
+  (:import-from :pine.client #:current-buffer-mode #:set-buffer-mode)
+  (:import-from :pine.var #:defonce)
   (:import-from :pine.client #:current-client #:current-buffer)
   (:import-from :pine.editor #:eval-last-sexp #:eval-buffer
                 #:completing-read #:read-file-name #:prompt

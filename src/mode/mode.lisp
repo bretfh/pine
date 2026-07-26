@@ -35,30 +35,13 @@
 
 (defun register-mode (m) (setf (gethash (mode-name m) *modes*) m))
 (defun find-mode (name) (gethash name *modes*))
+
+(defun all-mode-names ()
+  "Every registered mode's keyword name."
+  (loop :for name :being :the :hash-keys :of *modes* :collect name))
+
 (defun global-keymap () *global-keymap*)
 
-;;;; Buffer association
-
-(defun buffer-mode (buffer-or-snap)
-  (let ((name (pine.buffer:buffer-local buffer-or-snap :mode :base-mode)))
-    (or (find-mode name) (find-mode :base-mode))))
-
-(defun current-buffer-mode ()
-  (let* ((client (pine.client:current-client))
-         (buf (pine.client:current-buffer client))
-         (name (and buf (gethash buf (pine.client:buffer-modes client)))))
-    (or (and name (find-mode name)) (find-mode :base-mode))))
-
-(defun set-buffer-mode (buffer-actor mode-name)
-  (unless (find-mode mode-name) (error "No mode named ~s" mode-name))
-  ;; the buffer's own :mode meta drives highlighting, so set it first and
-  ;; unconditionally; recording it on the client (for the modeline) is
-  ;; best-effort and must not stop the buffer from learning its mode.
-  (sento.actor:tell buffer-actor (list :set-local :key :mode :value mode-name))
-  (let ((cli (ignore-errors (pine.client:current-client))))
-    (when cli
-      (setf (gethash buffer-actor (pine.client:buffer-modes cli)) mode-name)))
-  (find-mode mode-name))
 
 (defvar *auto-modes* (make-hash-table :test 'equalp)
   "File extension (no dot) -> mode keyword, consulted by MODE-FOR-FILE before the
@@ -77,60 +60,10 @@ Replaces any prior mapping, so reloading init.lisp is safe."
            :lisp-mode)
           (t nil))))
 
-;;;; Minor modes. Per-buffer, precedence-numbered (higher = more specific).
-;;;; The enabled set feeds both the active-keymap list and the synthesized
-;;;; dispatch class, so a minor mode augments via keymap bindings and via
-;;;; execute method combination (:before/:after transparent, :around opaque).
-
-(defun %minor-names (client)
-  (gethash (pine.client:current-buffer client)
-           (pine.client:buffer-minor-modes client)))
-
-(defun (setf %minor-names) (names client)
-  (setf (gethash (pine.client:current-buffer client)
-                 (pine.client:buffer-minor-modes client))
-        names))
-
-(defun buffer-minor-modes (client)
-  "Active minor-mode singletons for the current buffer, most specific first."
-  (stable-sort
-   (loop for name in (%minor-names client)
-         for m = (find-mode name)
-         when (typep m 'minor-mode) collect m)
-   #'> :key #'precedence))
-
-(defun minor-mode-enabled-p (client name)
-  (and (member name (%minor-names client)) t))
-
-(defun enable-minor-mode (client name)
-  (unless (typep (find-mode name) 'minor-mode)
-    (error "~s is not a minor mode" name))
-  (pushnew name (%minor-names client))
-  t)
-
-(defun disable-minor-mode (client name)
-  (setf (%minor-names client) (remove name (%minor-names client)))
-  nil)
-
-(defun toggle-minor-mode (client name)
-  (if (minor-mode-enabled-p client name)
-      (disable-minor-mode client name)
-      (enable-minor-mode client name)))
-
-(defun active-minor-mode-indicators (client)
-  (loop for m in (buffer-minor-modes client) collect (mode-indicator m)))
-
-;;;; Active modes -> keymaps + a synthesized dispatch class
-
-(defun buffer-active-modes (client)
-  "Minor modes (most specific first) then the major mode. This is the
-superclass order of the synthesized dispatch class, so minor-mode methods
-run before the major mode's under CLOS method combination."
-  (append (buffer-minor-modes client) (list (current-buffer-mode))))
-
-(defun active-keymaps (client)
-  (append (mapcar #'mode-keymap (buffer-minor-modes client))
-          (list (mode-keymap (current-buffer-mode)) *global-keymap*)))
+;;;; A set of active modes composed into one class, so command execution and
+;;;; buffer behaviour layer minor -> major through method combination. Which
+;;;; modes are active is a client's business (pine.client); building the class
+;;;; from them is this layer's.
 
 (defvar *dispatch-classes* (make-hash-table :test 'equal))
 
@@ -141,16 +74,14 @@ run before the major mode's under CLOS method combination."
               (c2mop:ensure-class (gensym "PINE-MODES")
                                   :direct-superclasses classes)))))
 
-(defun active-modes-instance (client)
-  (make-instance (modes-dispatch-class
-                  (mapcar #'class-of (buffer-active-modes client)))))
-
-
 ;;;; The buffer-behavior interface. The buffer actor's receive calls
 ;;;; (dispatch-message MODE SELF TAG PLIST); the verb methods live in
 ;;;; mode/edit.lisp, layered base -> text -> subclasses.
 
-(defgeneric dispatch-message (mode self tag plist))
+(defgeneric dispatch-message (mode self tag plist)
+  (:documentation "Handle TAG (a keyword verb) with PLIST for the buffer actor
+SELF, under MODE. Specialize on the mode class; call-next-method layers a
+subclass over its parent."))
 
 ;;;; Defaults
 
@@ -194,21 +125,3 @@ run before the major mode's under CLOS method combination."
                                   :keymap (pine.keymap:make-keymap :name :layout)))
     base))
 
-;;;; overwrite-mode: transparent augmentation of self-insert. It runs BEFORE
-;;;; the base insert (method combination), deleting the char under point so the
-;;;; inserted char overwrites it, then falls through to the normal insert.
-
-(defun %overwrite-forward ()
-  (let ((buf (pine.client:current-buffer (pine.client:current-client))))
-    (when buf
-      (multiple-value-bind (l c) (pine.buffer:ask buf :point)
-        (let ((line (pine.buffer:ask buf :line l)))
-          (when (and line (< c (length line)))
-            (pine.buffer:tell buf :delete-region
-                              :start-line l :start-col c
-                              :end-line l :end-col (1+ c))))))))
-
-(defmethod pine.command:execute :before ((modes overwrite-mode) command argument)
-  (declare (ignore argument))
-  (when (string= (pine.command:command-name command) "self-insert-command")
-    (%overwrite-forward)))

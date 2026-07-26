@@ -21,7 +21,7 @@
 ;;;; editor surface the declared tree is the LIVE arrangement the split
 ;;;; commands mutate. MODELINE and ECHO are widgets you place where you want.
 
-(defun buffer (name) (pine.buffer:make-buffer name))          ; get or create by name
+(defun buffer (name) (pine.client:make-buffer name))          ; get or create by name
 (defun window (x &rest props)
   "A live view of X's buffer (an actor or a name string): visible lines,
 highlights, region, terminal grid, or layout rows, rendered at the rect the
@@ -81,11 +81,12 @@ window), or a mode keyword for that mode's map."
 :global, :wm, or a mode keyword."
   (pine.keymap:define-key
    (if (pine.keymap:keymap-p where) where (keymap where))
-   keys command))
+   keys (pine.command:command-key command)))
 
 (defun global-set-key (keys command)
   "Bind KEYS to COMMAND in the global keymap."
-  (pine.keymap:define-key (pine.mode:global-keymap) keys command))
+  (pine.keymap:define-key (pine.mode:global-keymap) keys
+                          (pine.command:command-key command)))
 
 ;;;; Modes. DEFMODE / DEFMINOR make a real CLOS class (named NAME) and register
 ;;;; a mode instance (keyword :NAME) with its own keymap. Behaviour is plain
@@ -128,9 +129,21 @@ after the class exists. Returns :NAME."
 
 ;;;; Minor-mode toggles, client-implicit.
 
-(defun enable-minor-mode  (name) (pine.mode:enable-minor-mode  (current-client) name))
-(defun disable-minor-mode (name) (pine.mode:disable-minor-mode (current-client) name))
-(defun toggle-minor-mode  (name) (pine.mode:toggle-minor-mode  (current-client) name))
+(defun enable-minor-mode  (name) (pine.client:enable-minor-mode  (current-client) name))
+(defun disable-minor-mode (name) (pine.client:disable-minor-mode (current-client) name))
+(defun toggle-minor-mode  (name) (pine.client:toggle-minor-mode  (current-client) name))
+
+;;;; Editor variables. The buffer is implicit here and explicit below: which
+;;;; buffer is current is a client's business, and pine.var sits under every
+;;;; client, so it never guesses.
+
+(defun var (name &optional (buffer (pine.client:buffer-in-scope)))
+  "Editor variable NAME: buffer-local in BUFFER (the current buffer by
+default), else global, else the declared default."
+  (pine.var:var name buffer))
+
+(defun (setf var) (value name &optional buffer)
+  (setf (pine.var:var name buffer) value))
 
 ;;;; Style rules. Add to the one stylesheet the cairo painter and the cell
 ;;;; render both read; user rules win the cascade. VALUES are evaluated, so

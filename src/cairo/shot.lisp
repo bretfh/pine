@@ -37,7 +37,7 @@ session, its tree refreshed and cell-rendered through pine.layout:render."
                 nil :sink (lambda (&rest args) (declare (ignore args)) nil)))
          (client (pine.editor::sess-client sess)))
     (let ((buf (pine.client:current-buffer client)))
-      (pine.buffer:tell buf :replace-content :content text))
+      (pine.ask:tell buf :replace-content :content text))
     (pine.editor:session-feed sess (list :resize :cols 84 :rows 30))
     (sleep 0.8)
     (let* ((pine.client:*client* client)

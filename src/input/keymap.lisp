@@ -12,10 +12,11 @@
 
 (defun define-key (keymap keys command)
   "KEYS is a pine.key:key or a list of them (a chord). COMMAND is a command
-designator: a symbol ('greet) or a string name."
+name string. A keymap stores names and never resolves them, so it knows
+nothing about the command registry and a binding may name a command that does
+not exist yet."
   (let ((table (keymap-table keymap))
-        (keys (if (listp keys) keys (list keys)))
-        (command (pine.command:command-key command)))
+        (keys (if (listp keys) keys (list keys))))
     (loop for (k . rest) on keys do
       (if rest
           (let ((next (gethash k table)))

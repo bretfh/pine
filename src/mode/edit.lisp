@@ -1,7 +1,10 @@
-(in-package #:pine.mode)
+(in-package :pine.edit)
 
-;;;; Buffer behavior: the dispatch-message verb methods. base-mode has the
-;;;; infrastructure verbs; text-mode layers editing; repl/terminal override.
+;;;; Buffer behavior: the dispatch-message verb methods for base-mode and
+;;;; text-mode. base-mode has the infrastructure verbs, text-mode layers
+;;;; editing. The modes that wrap another subsystem carry their own methods
+;;;; where that subsystem lives: repl-mode in pine.repl, terminal-mode in
+;;;; pine.term.
 
 (defun %layout-state (state builder width &optional selection)
   "A fresh buffer state whose content is BUILDER's node tree rendered at WIDTH:
@@ -32,7 +35,7 @@ carry over like :replace-content; point is clamped into the new content."
              (pl (min (pine.buffer:point-line snap) (max 0 (1- (length texts))))))
         (pine.buffer:move-mark new :point pl 0)))))
 
-(defmethod dispatch-message ((mode base-mode) self tag plist)
+(defmethod pine.mode:dispatch-message ((mode pine.mode:base-mode) self tag plist)
   (declare (ignore self))
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
     (case tag
@@ -165,7 +168,7 @@ carry over like :replace-content; point is clamped into the new content."
            (setf sento.actor:*state* (list new nil nil subs hl2 ps2))
            (pine.buffer:notify-subscribers subs new hl2)))))))
 
-(defmethod dispatch-message ((mode text-mode) self tag plist)
+(defmethod pine.mode:dispatch-message ((mode pine.mode:text-mode) self tag plist)
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
     ;; edits push the old state onto UNDO, clear REDO, and reparse the tree
     ;; incrementally so the notified snapshot already carries fresh highlights.
@@ -273,21 +276,3 @@ carry over like :replace-content; point is clamped into the new content."
                 (s5 (pine.buffer:insert-newline s3 s4-line s4-col)))
            (commit (pine.buffer:insert-string s5 (1+ s4-line) 0 pr))))
         (t (call-next-method))))))
-
-(defmethod dispatch-message ((mode repl-mode) self tag plist)
-  (declare (ignore self plist))
-  (case tag
-    (:newline (pine.repl:repl-submit))
-    (t (call-next-method))))
-
-(defmethod dispatch-message ((mode terminal-mode) self tag plist)
-  (case tag
-    (:insert (pine.term:term-write self (getf plist :text)))
-    (:newline (pine.term:term-write self (string #\Newline)))
-    (:backspace (pine.term:term-write self (string (code-char 127))))
-    (:get-text
-     (let ((term (pine.term:terminal-for-buffer self)))
-       (sento.actor:reply (if term (pine.term:gterm-text term) ""))))
-    ((:move-point :delete-region :undo :redo :replace-content :append-with-prompt) nil)
-    (t (call-next-method))))
-

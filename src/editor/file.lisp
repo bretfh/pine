@@ -35,7 +35,7 @@ restore can reopen buffers in bulk."
          (name (file-namestring expanded))
          (content (if exists (or (read-file expanded) "") "")))
     (when (string= name "") (setf name namestring))
-    (let ((buf (pine.buffer:make-buffer name :content content))
+    (let ((buf (pine.client:make-buffer name :content content))
           (place (and exists (pine.store:store (list :place namestring)))))
       (pine.store:store-push :recent-files namestring :unique t :max 100)
       (sento.actor:tell buf (list :set-local :key :pathname :value namestring))
@@ -45,12 +45,12 @@ restore can reopen buffers in bulk."
             (sento.actor:tell buf (list :move-point :line l :col c)))
           (sento.actor:tell buf (list :move-point :line 0 :col 0)))
       (let ((mode-kw (or (pine.mode:mode-for-file namestring) :text-mode)))
-        (pine.mode:set-buffer-mode buf mode-kw))
+        (pine.client:set-buffer-mode buf mode-kw))
       (values buf name exists namestring))))
 
 (defun find-file (path)
   (multiple-value-bind (buf name exists namestring) (%open-file path)
-    (pine.buffer:switch-buffer name)
+    (pine.client:switch-buffer name)
     (sento.actor:tell (pine.client:renderer (pine.client:current-client))
                       (list :switch-buffer :buffer buf :name name))
     (pine.render:subscribe-to-buffer buf)
@@ -77,7 +77,7 @@ restore can reopen buffers in bulk."
 (defun record-place (buf path)
   "Store BUF's point under (:place PATH), so the next find-file resumes there."
   (ignore-errors
-   (multiple-value-bind (line col) (pine.buffer:ask buf :point)
+   (multiple-value-bind (line col) (pine.ask:ask buf :point)
      (when line
        (setf (pine.store:store (list :place path)) (list line col))))))
 
@@ -118,4 +118,4 @@ restore can reopen buffers in bulk."
                          (let ((buf (%open-file path)))
                            (when (and mode
                                       (not (eq mode (pine.mode:mode-for-file path))))
-                             (pine.mode:set-buffer-mode buf mode)))))))
+                             (pine.client:set-buffer-mode buf mode)))))))

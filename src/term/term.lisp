@@ -34,8 +34,8 @@ so memory and latency stay bounded rather than falling minutes behind.")
       (setf (pine.client:terminal-map client) (make-hash-table :test 'eq))))
 
 (defun terminal-for-buffer (buffer)
-  (let ((cli pine.client:*client*))
-    (and cli buffer (gethash buffer (terminal-map cli)))))
+  (let ((c pine.client:*client*))
+    (and c buffer (gethash buffer (terminal-map c)))))
 
 (defun gterm-text (terminal)
   (if terminal (pine.vt:term-dump-to-string (terminal-term terminal)) ""))
@@ -117,8 +117,8 @@ render (main) thread."
       tobj)))
 
 (defun resize-active-terminal (cols rows)
-  (let* ((cli (pine.client:current-client))
-         (buf (pine.client:current-buffer cli))
+  (let* ((c (pine.client:current-client))
+         (buf (pine.client:current-buffer c))
          (tobj (and buf (terminal-for-buffer buf))))
     (when tobj
       (pine.vt:term-resize (terminal-term tobj) cols rows)
@@ -168,3 +168,18 @@ stays an editor prefix so the user can switch away."
 (defun term-write (buffer text)
   (let ((tobj (terminal-for-buffer buffer)))
     (when tobj (pine.vt:pty-write-string (terminal-fd tobj) text))))
+
+;;;; terminal-mode: a terminal buffer's content belongs to the pty, so input
+;;;; goes there and the editing verbs are refused rather than applied to a
+;;;; buffer the pty is about to overwrite.
+
+(defmethod pine.mode:dispatch-message ((mode pine.mode:terminal-mode) self tag plist)
+  (case tag
+    (:insert (term-write self (getf plist :text)))
+    (:newline (term-write self (string #\Newline)))
+    (:backspace (term-write self (string (code-char 127))))
+    (:get-text
+     (let ((term (terminal-for-buffer self)))
+       (sento.actor:reply (if term (gterm-text term) ""))))
+    ((:move-point :delete-region :undo :redo :replace-content :append-with-prompt) nil)
+    (t (call-next-method))))

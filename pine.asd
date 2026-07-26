@@ -24,42 +24,51 @@
     :serial t
     :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
                 (:file "jobs") (:file "event") (:file "hooks") (:file "attach")))
+   ;; keys and modes are the bottom of the editing stack: the buffer actor
+   ;; dispatches a message through its mode, so modes load before buffers.
+   (:module "input"
+    :serial t
+    :components ((:file "key") (:file "keymap")))
+   (:module "mode"
+    :serial t
+    :components ((:file "mode")))
    (:module "buffer"
     :serial t
     :components ((:file "buffer") (:file "window") (:file "face") (:file "rules")))
    (:module "client"
     :serial t
-    :components ((:file "client")))
+    :components ((:file "client") (:file "modes") (:file "registry")))
    (:module "state"
     :serial t
     :components ((:file "store") (:file "ref") (:file "var") (:file "world")))
-   (:module "input"
-    :serial t
-    :components ((:file "key") (:file "keymap") (:file "command")))
-   (:module "mode"
-    :serial t
-    :components ((:file "mode") (:file "edit")))
+   (:module "input-dispatch"
+    :serial t :pathname "input/"
+    :components ((:file "command")))
    (:module "layout"
     :serial t
     :components ((:file "style") (:file "layout")))
    (:module "source"
     :serial t
     :components ((:file "sources")))
-   (:module "term"
-    :serial t
-    :components ((:file "term")))
    (:module "ts"
     :serial t
     :components ((:file "ts") (:file "highlight")))
+   ;; the base/text verb methods, once everything they reach for exists
+   (:module "edit"
+    :serial t :pathname "mode/"
+    :components ((:file "edit")))
+   (:module "term"
+    :serial t
+    :components ((:file "term")))
    (:module "render"
     :serial t
     :components ((:file "render")))
    (:module "editor"
     :serial t
-    :components ((:file "echo") (:file "kill-ring") (:file "completion")
+    :components ((:file "ask") (:file "echo") (:file "kill-ring") (:file "completion")
                 (:file "minibuffer") (:file "isearch") (:file "file")
-                (:file "repl") (:file "editor")
-                (:file "session")))
+                (:file "target") (:file "repl") (:file "overwrite")
+                (:file "editor") (:file "session")))
    (:module "desktop"
     :serial t
     :components ((:file "desktop")))
@@ -78,7 +87,7 @@
   :serial t
   :pathname "tests/"
   :components ((:file "suite") (:file "model") (:file "editor") (:file "agent")
-               (:file "frontend"))
+               (:file "frontend") (:file "deps"))
   :perform (asdf:test-op (o c)
              (unless (uiop:symbol-call :pine.test :run-tests)
                (error "pine tests failed"))))

@@ -11,9 +11,9 @@
     (setf *history* (fset:convert 'fset:seq
                                   (reverse (pine.store:store-items :repl-history)))))
   (let* ((client (pine.client:current-client))
-         (buf (pine.buffer:make-buffer "*repl*" :content "pine> ")))
+         (buf (pine.client:make-buffer "*repl*" :content "pine> ")))
     (setf (pine.client:repl-buffer client) buf)
-    (pine.mode:set-buffer-mode buf :repl-mode)
+    (pine.client:set-buffer-mode buf :repl-mode)
     (let* ((snap (sento.actor:ask-s buf '(:get-snapshot) :time-out 5))
            (line (pine.buffer:line-count snap))
            (col (length "pine> ")))
@@ -33,7 +33,7 @@
   ;; the one eval path, honouring *eval-target*: :local runs in the daemon image,
   ;; a set target runs in that agent's image. Off-thread, so a slow/looping/
   ;; erroring form can't hang the repl and errors reach the debugger surface.
-  (pine.editor:eval-in-target
+  (pine.target:eval-in-target
    input
    (find-package :cl-user)
    :bindings (list (cons 'pine.client:*client* (pine.client:current-client)))
@@ -74,3 +74,12 @@
              (input (if (> (length line-text) 6) (subseq line-text 6) "")))
         (when (plusp (length input))
           (repl-eval input))))))
+
+;;;; repl-mode: Return submits the form at the prompt instead of inserting a
+;;;; newline. Everything else falls through to text-mode.
+
+(defmethod pine.mode:dispatch-message ((mode pine.mode:repl-mode) self tag plist)
+  (declare (ignore self plist))
+  (case tag
+    (:newline (repl-submit))
+    (t (call-next-method))))

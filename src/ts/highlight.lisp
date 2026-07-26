@@ -592,7 +592,8 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
          (ps (progn (ensure-ts runtime) (make-parse-state runtime language))))
     (if (null ps)
         (format t "~&no grammar loaded for ~a~%" language)
-        (let ((lines (coerce (pine.buffer:split-lines source) 'vector)))
+        (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
+                             'vector)))
           (reparse! ps source)
           (dolist (h (parse-highlights ps source))
             (destructuring-bind (line start-col end-col face) h

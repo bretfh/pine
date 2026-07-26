@@ -28,7 +28,7 @@
          (w (* *cols* *cw*))
          (h (* *rows* *ch*)))
     (let ((buf (pine.client:current-buffer client)))
-      (pine.buffer:tell buf :replace-content
+      (pine.ask:tell buf :replace-content
                         :content (format nil "(defun alpha (x)~%  (list x :a))~%~%(defun beta (y)~%  (* y 2))~%")))
     (pine.editor:session-feed sess (list :resize :cols *cols* :rows *rows*
                                          :width w :height h

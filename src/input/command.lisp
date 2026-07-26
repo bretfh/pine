@@ -68,7 +68,8 @@ normalized so start precedes end. nil if no mark."
   (let ((buf (pine.client:current-buffer client)))
     (when buf
       (multiple-value-bind (sl sc el ec)
-          (pine.editor:region-bounds (pine.buffer:ask buf :state))
+          (pine.buffer:region-bounds
+           (sento.actor:ask-s buf '(:get-state) :time-out 5))
         (and sl (list sl sc el ec))))))
 
 (defun gather-arguments (command client argument)
@@ -115,7 +116,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
     (when cmd
       (let ((arg (pine.client:prefix-arg client)))
         (%guarding-errors
-          (execute (pine.mode:active-modes-instance client) cmd arg))
+          (execute (pine.client:active-modes-instance client) cmd arg))
         (setf (pine.client:last-command client) (command-name cmd))
         (unless (command-prefix-p cmd)
           (setf (pine.client:prefix-arg client) nil))))))
@@ -133,7 +134,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
       (when buf
         (let ((n (prefix-numeric-value (pine.client:prefix-arg client))))
           (dotimes (i (max 1 n))
-            (pine.buffer:tell buf :insert :text (pine.key:key-sym key))))))))
+            (sento.actor:tell buf (list :insert :text (pine.key:key-sym key)))))))))
 
 (register-command
  (make-instance 'command :name "self-insert-command"
@@ -144,7 +145,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
 (defun %active-tables (client)
   "Every active keymap's tables in priority order: minor modes first, then
 the major mode with its parent chain, then the global map."
-  (loop for km in (pine.mode:active-keymaps client)
+  (loop for km in (pine.client:active-keymaps client)
         append (pine.keymap:keymap-tables km)))
 
 (defun %step (tables key)

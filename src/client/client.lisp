@@ -82,19 +82,57 @@
 (defun current-client ()
   (or *client* (error "No *client* bound.")))
 
+(defun buffer-in-scope ()
+  "The current buffer, or nil when no client is bound. For the layers that
+want the current buffer if there is one and no error if there is not."
+  (let ((c *client*)) (and c (current-buffer c))))
+
 (defun start-client (server)
-  (let* ((cli (make-instance 'client
+  (let* ((c (make-instance 'client
                 :server-of server
                 :frame (make-instance 'pine.buffer::frame)
                 :terminal-map (make-hash-table :test 'eq)
                 :kill-ring (pine.store:store :kill-ring))))
-    (push cli (pine.server:clients server))
-    cli))
+    (push c (pine.server:clients server))
+    c))
 
-(defun stop-client (cli)
-  (let ((srv (server-of cli)))
+;;;; Windows belong to the client that shows them: the window itself is a view
+;;;; of a buffer, but which windows exist and which one has focus is this
+;;;; client's business, so the text layer never has to know a client exists.
+
+(defun make-window (buffer-actor name &key (row 0) (col 0) (width 80) (height 24) focused)
+  "A window on BUFFER-ACTOR, registered on the client in scope when there is
+one. Without a client the window is detached: a read-only view for a panel or
+a layout buffer."
+  (let ((w (make-instance 'pine.buffer:window
+             :buffer buffer-actor :name name
+             :row row :col col :width width :height height
+             :focused focused))
+        (c *client*))
+    (when c
+      (push w (windows c))
+      (when focused (setf (focused-window c) w)))
+    w))
+
+(defun remove-window (w)
+  (let ((c *client*))
+    (when c
+      (setf (windows c) (remove w (windows c)))
+      (when (eq w (focused-window c))
+        (setf (focused-window c) (first (windows c)))))))
+
+(defun focus-window (w)
+  (let ((c *client*))
+    (when c
+      (let ((prev (focused-window c)))
+        (when prev (setf (pine.buffer:focusedp prev) nil)))
+      (setf (pine.buffer:focusedp w) t
+            (focused-window c) w))))
+
+(defun stop-client (c)
+  (let ((srv (server-of c)))
     (when srv
-      (setf (pine.server:clients srv) (remove cli (pine.server:clients srv)))))
-  (when (eq *client* cli)
+      (setf (pine.server:clients srv) (remove c (pine.server:clients srv)))))
+  (when (eq *client* c)
     (setf *client* nil))
-  cli)
+  c)

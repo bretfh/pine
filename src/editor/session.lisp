@@ -34,7 +34,7 @@ through the client when one is in scope (creating the buffer if missing), else
 through the server's buffer table."
   (etypecase x
     (string (if pine.client:*client*
-                (pine.buffer:make-buffer x)
+                (pine.client:make-buffer x)
                 (let ((srv pine.server:*server*))
                   (and srv (pine.server:buffer-table srv)
                        (gethash x (pine.server:buffer-table srv))))))
@@ -58,10 +58,10 @@ detached (a read-only view in a panel or a layout buffer). The snapshot comes
 through the renderer subscription for client windows; a detached window
 fetches one only off-actor, so seeding never blocks a receive."
   (let ((w (if pine.client:*client*
-               (pine.buffer:make-window buf name)
+               (pine.client:make-window buf name)
                (make-instance 'pine.buffer:window :buffer buf :name name))))
     (unless (or pine.client:*client* (%in-actor-p))
-      (setf (pine.buffer:snap w) (ignore-errors (pine.buffer:ask buf :snapshot))))
+      (setf (pine.buffer:snap w) (ignore-errors (pine.ask:ask buf :snapshot))))
     w))
 
 (defun editor-window-node (x &rest props)
@@ -211,7 +211,7 @@ or the tree has foreign nodes."
                             :key #'pine.buffer:window-name :test #'equal)
                       (first (last ws)))))
           (when w
-            (pine.buffer:focus-window w)
+            (pine.client:focus-window w)
             (setf (pine.client:current-buffer client)
                   (or (let ((srv pine.server:*server*))
                         (and srv (pine.server:buffer-table srv)
@@ -243,7 +243,7 @@ engine default. Focus lands on the saved focus or the first window leaf."
             (setf (pine.client:arrangement client) tree)
             (let ((w (first (last (pine.client:windows client)))))
               (when w
-                (pine.buffer:focus-window w)
+                (pine.client:focus-window w)
                 (setf (pine.client:current-buffer client)
                       (pine.buffer:buffer-ref w))))
             tree)))))
@@ -310,7 +310,7 @@ shutdown sweep can save it."
 (pine.world:register :scratch
   :save #'%scratch-text
   :restore (lambda (text)
-             (let ((buf (pine.buffer:make-buffer "scratch")))
+             (let ((buf (pine.client:make-buffer "scratch")))
                (sento.actor:tell buf (list :replace-content :content text)))))
 
 (defvar *world-restored* nil
@@ -322,10 +322,10 @@ attach (a client must be in scope); the arrangement applies on every seed.")
     (pine.render:start-renderer client)
     (setf (pine.client:paint-sink client) sink)
     (let ((pine.client:*client* client))
-      (let ((buf (pine.buffer:make-buffer "scratch")))
+      (let ((buf (pine.client:make-buffer "scratch")))
         (setf (pine.client:current-buffer client) buf)
-        (pine.mode:set-buffer-mode buf :lisp-mode)
-        (ignore-errors (pine.buffer:tell buf :set-local :key :package :value :pine-user)))
+        (pine.client:set-buffer-mode buf :lisp-mode)
+        (ignore-errors (pine.ask:tell buf :set-local :key :package :value :pine-user)))
       (unless *world-restored*
         (setf *world-restored* t)
         (pine.world:restore-world))
