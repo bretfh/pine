@@ -1,5 +1,31 @@
 # pine style
 
+In general we follow the Google Common Lisp style guide:
+https://google.github.io/styleguide/lispguide.xml
+
+## Alexandria and other utility libraries
+
+pine depends on `alexandria`, so `if-let`, `when-let` and friends are
+available. Use the `alexandria:` prefix, `:import-from`, or a package-local
+nickname.
+
+Do not reach for utility functions you do not already see in the codebase.
+`alexandria-2:line-up-first` is not used here. Prefer higher-order functions
+over `alexandria:curry`.
+
+## Dynamic bindings, functional style
+
+Use `defvar` and `defparameter` for user-facing variables. Avoid them as
+globals that carry state between functions -- pass arguments instead.
+
+Avoid `uiop:symbol-call` and other dynamic symbol lookup; rethink the
+layering instead.
+
+## Compiler warnings
+
+`make check` is warning-free. Keep it that way: a style-warning about an
+undefined function is usually a load-order fault.
+
 ## Packages
 
 The path to a package is its name. `pine.editor.keymap` lives in
@@ -40,8 +66,7 @@ package's generics; it does not reopen that package.
 ## Errors
 
 Never swallow. No `ignore-errors` or bare `handler-case` that turns a fault
-into `nil` -- that is how an undefined function reads as "no result" for
-three tests. Either let it propagate, or route it through
+into `nil`. Either let it propagate, or route it through
 `pine.core.eval:attempt`, which records the failure and surfaces it through
 the debugger.
 
@@ -51,9 +76,8 @@ Docstrings describe what the code does now. Block comments explain why the
 shape is what it is, when that is not visible from the forms.
 
 Do not narrate the change that produced the code. No "now", "previously",
-"the bug this fixes". No restating what the form already says -- a `defclass`
-does not need a comment saying it is a class. Reasoning about a change belongs
-in the PR, not the source.
+"the bug this fixes". No restating what the form already says. Reasoning about
+a change belongs in the PR, not the source.
 
 ## Loop
 

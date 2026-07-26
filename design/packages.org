@@ -18,23 +18,13 @@ One exception, deliberate: =src/wayland/protocol/= is =pine.wayland.protocol=
 over four files, because each file is a =wl-include= of one protocol XML and
 the generated symbols have to share a namespace for the backing to use them.
 
-* Why it matters
-
-A manifest declares every package before any file loads, so a file may name
-any other and nothing notices. Removing it exposed what had been hidden:
-
-- One strongly connected component of 16 packages, broken by 12 moves.
-- Three load-order violations: =client= used =state.store= and loaded first;
-  =buffer= used =ts= and loaded first; the command loop reported through
-  =editor.echo=, 28 lines with no dependencies at all, which loaded near the
-  end.
-- =pine.ts.runtime= dispatching into the language walks in
-  =pine.ts.highlight=, a lower layer calling an upper one.
+* The check
 
 =tests/deps.lisp= reads the source off disk, blanks comments and strings,
-builds the graph and fails on any component larger than one. It matches
-=pkg:sym= references, so a call through =:use= or an unqualified same-package
-call is invisible to it. It checks the part that is written down.
+builds the package graph and fails on any strongly connected component larger
+than one. It matches =pkg:sym= references, so a call through =:use= or an
+unqualified same-package call is invisible to it: it checks the part that is
+written down.
 
 * The map
 
@@ -102,11 +92,3 @@ cell-grid painter) =pine.cairo.shot= (the headless renders)
 =pine.wayland.connection= =pine.wayland.surface= =pine.wayland.input=
 =pine.wayland.app.editor= =pine.wayland.app.keys=
 =pine.wayland.app.desktop= =pine.wayland.app.wm=
-
-* What is still wrong
-
-Export lists were generated from what each package's siblings happened to
-name on it, so several are far wider than their real surface --
-=pine.wayland.app.wm= exports 136 symbols, =pine.editor.frame= 79,
-=pine.editor.session= 60. Internals leaked into the public list. Each wants a
-pass that says what the package actually offers.
