@@ -243,7 +243,12 @@ end-col), normalized so start precedes end. Nil when there is no mark."
 (defun refresh-highlights (pstate new-state)
   "Reparse PSTATE to NEW-STATE's text (creating the parse-state if the buffer has
 a tree-sitter language and none exists yet) and return (values highlights
-pstate). No language available -> (values nil pstate), leaving highlights off."
+pstate). No language available -> (values nil pstate), leaving highlights off.
+
+Highlights cover NEW-STATE's :viewport when it has one: the windows showing this
+buffer only ever paint the lines they show, so walking the whole tree to throw
+most of it away is work nobody reads. A buffer no window has claimed -- a tool
+buffer, a buffer being restored -- has no viewport and gets the whole file."
   (let ((lang (%state-language new-state))
         (rt (%ts-runtime)))
     (if (or (null lang) (null rt))
@@ -251,9 +256,15 @@ pstate). No language available -> (values nil pstate), leaving highlights off."
         (let ((ps (or pstate (pine.ts.runtime:make-parse-state rt lang))))
           (if (null ps)
               (values nil nil)
-              (let ((new-text (state->string new-state)))
+              (let ((new-text (state->string new-state))
+                    (viewport (buffer-local new-state :viewport)))
                 (pine.ts.runtime:reparse! ps new-text)
-                (values (pine.ts.highlight:parse-highlights ps new-text) ps)))))))
+                (values (if viewport
+                            (pine.ts.highlight:parse-highlights
+                             ps new-text
+                             :from-line (car viewport) :to-line (cdr viewport))
+                            (pine.ts.highlight:parse-highlights ps new-text))
+                        ps)))))))
 
 (defun point-after-move (snap unit n)
   "Target (values line col) after moving point UNIT (:char, :word, or :line) by

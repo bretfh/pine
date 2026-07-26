@@ -261,6 +261,19 @@ transport actually writes, which re-encodes those bytes as decimal text."
                       (progn (setf cur (if (eq cur text) alt text))
                              (pine.ts.runtime:reparse! ps cur)
                              (pine.ts.highlight:parse-highlights ps cur)))
+                    rows)
+              ;; the same keystroke against a 30-line window, which is what a
+              ;; buffer with a viewport actually walks
+              (let ((top (max 0 (- (floor (count #\Newline text) 2) 15))))
+                (push (defbench (format nil "edit+reparse+highlight window, ~d forms" n)
+                        (progn (setf cur (if (eq cur text) alt text))
+                               (pine.ts.runtime:reparse! ps cur)
+                               (pine.ts.highlight:parse-highlights
+                                ps cur :from-line top :to-line (+ top 30))))
+                      rows))
+              (push (defbench (format nil "highlight window only, ~d forms" n)
+                      (pine.ts.highlight:parse-highlights
+                       ps cur :from-line 0 :to-line 30))
                     rows))))
         (print-table "tree-sitter reparse + highlight" (nreverse rows)))
     (error (e) (format t "~&(ts group skipped: ~a)~%" e))))

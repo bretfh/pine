@@ -124,6 +124,69 @@
                                  (sorted-highlights
                                   (pine.ts.highlight:parse-highlights ps text)))))))))))
 
+(test a-viewport-walk-agrees-with-the-full-walk-inside-the-viewport
+  "The window a buffer paints is highlighted by walking only its lines. That is
+only sound if the tuples for those lines are the ones the whole-file walk would
+emit, which is what the descent from the root buys."
+  (let ((*num-trials* 20))
+    (for-all ((forms (gen-integer :min 2 :max 14))
+              (from (gen-integer :min 0 :max 60))
+              (span (gen-integer :min 0 :max 12)))
+      (with-parse-state (ps :commonlisp)
+        (let ((text (generated-source forms))
+              (to (+ from span)))
+          (pine.ts.runtime:parse-full! ps text)
+          (flet ((inside (highlights)
+                   (sorted-highlights
+                    (remove-if-not (lambda (tuple) (<= from (first tuple) to))
+                                   highlights))))
+            (is (equal (inside (pine.ts.highlight:parse-highlights ps text))
+                       (inside (pine.ts.highlight:parse-highlights
+                                ps text :from-line from :to-line to)))
+                "viewport ~d..~d over ~d forms" from to forms)))))))
+
+(test a-windowed-walk-stays-correct-across-edits-in-the-window
+  "Repeated edits reuse the window's cached tuples and re-walk only the forms the
+edit touched. Every call must still agree with a walk of the whole file."
+  (let ((*num-trials* 10))
+    (for-all ((script (gen-list :length (gen-integer :min 12 :max 40)
+                                :elements (gen-integer :min 0 :max 4095)))
+              (from (gen-integer :min 0 :max 40)))
+      (with-parse-state (ps :commonlisp)
+        (let ((text (generated-source 10))
+              (to (+ from 20)))
+          (pine.ts.runtime:parse-full! ps text)
+          (pine.ts.highlight:parse-highlights ps text :from-line from :to-line to)
+          (flet ((inside (highlights)
+                   (sorted-highlights
+                    (remove-if-not (lambda (tuple) (<= from (first tuple) to))
+                                   highlights))))
+            (loop :for (op pos) :on script :by #'cddr
+                  :while pos
+                  :do (setf text (mutate text op pos))
+                      (pine.ts.runtime:reparse! ps text)
+                      (is (equal (inside (full-highlights text))
+                                 (inside (pine.ts.highlight:parse-highlights
+                                          ps text :from-line from :to-line to)))
+                          "viewport ~d..~d" from to))))))))
+
+(test a-viewport-walk-costs-less-than-the-whole-file
+  "The point of the window: a screenful out of a large file allocates a small
+fraction of what the full walk does."
+  (with-parse-state (ps :commonlisp)
+    (let ((text (generated-source 200)))
+      (pine.ts.runtime:parse-full! ps text)
+      (let* ((before (sb-ext:get-bytes-consed))
+             (full (progn (pine.ts.highlight:parse-highlights ps text)
+                          (- (sb-ext:get-bytes-consed) before)))
+             (mark (sb-ext:get-bytes-consed))
+             (windowed (progn (pine.ts.highlight:parse-highlights
+                               ps text :from-line 100 :to-line 130)
+                              (- (sb-ext:get-bytes-consed) mark))))
+        (is (< (* 4 windowed) full)
+            "a 30-line window allocated ~:d bytes against the full walk's ~:d"
+            windowed full)))))
+
 (test indent-columns-follow-the-tree
   (with-parse-state (ps :commonlisp)
     (pine.ts.runtime:parse-full!

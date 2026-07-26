@@ -185,6 +185,31 @@ geometry with :resize; (values cell-w cell-h px-w px-h) or nil."
   (let ((cw (pine.editor.frame:cell-w client)))
     (if cw (max 1 (floor (%leaf-width n) cw)) (%leaf-width n))))
 
+(defun %tell-viewports (leaves)
+  "Tell each buffer the union of the line ranges the windows showing it display.
+
+The buffer highlights that range rather than the whole file. Only the renderer
+knows a window's scroll position, and a buffer may be shown by several windows
+at different positions, so the union is computed here and the buffer stays
+ignorant of windows."
+  (let ((ranges (make-hash-table :test 'eq)))
+    (dolist (n leaves)
+      (let ((w (pine.ui.node:window-of n)))
+        (when (and w (eq (pine.ui.node:window-kind n) :window))
+          (let ((buffer (pine.text.window:buffer-ref w)))
+            (when buffer
+              (let* ((top (pine.text.window:scroll-top w))
+                     (bottom (+ top (pine.text.window:win-height w)))
+                     (held (gethash buffer ranges)))
+                (setf (gethash buffer ranges)
+                      (if held
+                          (cons (min (car held) top) (max (cdr held) bottom))
+                          (cons top bottom)))))))))
+    (maphash (lambda (buffer range)
+               (sento.actor:tell buffer (list :set-viewport
+                                              :from (car range) :to (cdr range))))
+             ranges)))
+
 (defun arrange-editor-tree (client)
   "Arrange the client's live editor tree ONCE, on the daemon: in pixels at the
 frontend's reported geometry when it gave one (the rects cross the wire and
@@ -211,6 +236,7 @@ leaf's rect sizes its backing window. Returns the leaves."
                       (if cw (max 1 (floor (%leaf-width n) cw)) (%leaf-width n))
                       (pine.text.window:win-height w)
                       (if ch (max 1 (floor (%leaf-height n) ch)) (%leaf-height n))))))
+          (%tell-viewports leaves)
           leaves)))))
 
 (defun refresh-editor-tree (client)

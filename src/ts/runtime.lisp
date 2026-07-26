@@ -11,7 +11,7 @@
    #:parse-state #:make-parse-state #:free-parse-state
    #:parse-full! #:reparse! #:parse-motion
    #:ps-language #:ps-parser #:ps-tree #:ps-text
-   #:ps-hl-cache #:ps-hl-text #:ps-hl-pending #:ps-hl-stale
+   #:ps-hl-cache #:ps-hl-text #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
    ;; structural motion
    #:call-with-root #:forward-sexp-pos #:backward-sexp-pos #:defun-bounds-pos
    ;; bytes, characters and lines
@@ -353,7 +353,9 @@ end-line end-col), or nil."
    (hl-cache   :initform nil :accessor ps-hl-cache)
    (hl-text    :initform nil :accessor ps-hl-text)
    (hl-pending :initform nil :accessor ps-hl-pending)   ; (lo-row hi-row delta)
-   (hl-stale   :initform nil :accessor ps-hl-stale)))
+   (hl-stale   :initform nil :accessor ps-hl-stale)
+   ;; the line range the cache covers as (FROM . TO), or nil for the whole file
+   (hl-window  :initform nil :accessor ps-hl-window)))
 
 (defun make-parse-state (runtime language)
   "A parse-state for LANGUAGE, or nil if the grammar is unavailable."
@@ -381,6 +383,7 @@ whenever there is no old tree to edit from."
   (setf (ps-text ps) text
         (ps-hl-cache ps) nil
         (ps-hl-text ps) nil
+        (ps-hl-window ps) nil
         (ps-hl-pending ps) nil
         (ps-hl-stale ps) nil)
   ps)

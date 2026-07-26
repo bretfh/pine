@@ -218,6 +218,43 @@ The remaining allocation in both rows is dominated by CFFI by-value TSNode
 returns (a plist per node call through libffi), which is the binding style, not
 the walk.
 
+*** The window a buffer actually paints
+
+Both rows above highlight the whole file. Nothing reads most of that: a window
+paints the lines between its scroll offset and its height, and
+=build-highlight-table= drops the rest. So the buffer is told the union of the
+line ranges the windows showing it display (=:set-viewport=, sent by the
+renderer, which is the only thing that knows a scroll offset), and highlighting
+walks that instead.
+
+#+CAPTION: before -> after (viewport walk: binary search to the forms in range, cache keyed by window)
+| op                                        | before ns/op | after ns/op | before bytes | after bytes |
+|-------------------------------------------+--------------+-------------+--------------+-------------|
+| edit+reparse+highlight, 20 forms          |    1,046,891 |     570,321 |      723,285 |     371,096 |
+| edit+reparse+highlight, 200 forms         |    6,562,609 |     906,266 |    4,563,674 |     467,008 |
+| highlight only, no edit, 20 forms         |    1,046,891 |          54 |      723,285 |           0 |
+| highlight only, no edit, 200 forms        |    6,562,609 |         324 |    4,563,674 |           0 |
+
+A keystroke at 200 forms costs 906 us and 467 KB against 6.56 ms and 4.56 MB:
+7.2x on time, 9.8x on allocation. A repaint with no edit is a cache hit at 324
+ns and no allocation at all. The 20-form rows matter as much as the 200-form
+ones: bounding the work to a window must not cost anything on a small file, and
+it does not, because the cache is kept per window rather than discarded.
+
+Two things make it sound. The walk reaches the forms in range by binary search
+over the root's named children instead of descending through every form, since
+each node call allocates; and a top-level form has no enclosing context, so
+starting the walk at one keeps quote state, depth and head kind exact. Two
+properties in =tests/ts.lisp= hold it: a windowed walk agrees with the whole-file
+walk on every line inside the window, and it still agrees after a script of
+random edits, which is what exercises the cache merge. The merge is only used
+when the edit moved no line and landed inside the window; anything else re-walks
+the window.
+
+What is left in that 906 us is =reparse!= (254 us of it), which is tree-sitter's
+own incremental parse plus the =state->string= that feeds it. That is the next
+item below, and it is now the dominant cost rather than a fraction of one.
+
 ** widget, eval, paint, agent
 
 #+CAPTION: unchanged paths, plus the two previously unmeasured ones
@@ -243,12 +280,14 @@ The two new measurements close the review's open questions:
 
 * What remains, honestly
 
-- =state->string= is O(n) per call (625 us / 4.3 MB at 10k lines) and the
+- =state->string= is O(n) per call (601 us / 4.3 MB at 10k lines) and the
   highlight cycle calls it per edit to feed the reparse diff, which itself
-  re-scans both strings. At current file sizes this is a fraction of the 5.6 ms
-  cycle; making it O(edit) means the buffer describing its own edits to the
-  parse state instead of diffing full strings. Worth doing when files get big;
-  not done in this pass.
+  re-scans both strings. It is no longer a fraction of the cycle: with the
+  viewport walk landing the keystroke path at 906 us, =reparse!= and the string
+  it is handed are most of what is left. Making it O(edit) means the buffer
+  describing its own edits to the parse state instead of diffing full strings,
+  and feeding tree-sitter through a =TSInput= read callback over the fset seq so
+  no contiguous copy of the file exists. Next.
 - The highlight full-walk fallback allocates via by-value TSNode plists. A
   pointer-based node representation would cut the walk's consing several-fold;
   that is a bindings rewrite, separate from this work.

@@ -117,6 +117,19 @@ carry over like :replace-content; point is clamped into the new content."
              (progn
                (setf sento.actor:*state* (list new undo redo subs hl pstate))
                (pine.text.buffer:notify-subscribers subs new hl)))))
+      ;; The lines some window is showing, as (FROM . TO). Highlighting walks
+      ;; this range instead of the file. Sent by the renderer, which is the only
+      ;; thing that knows a window's scroll position; a range equal to the one
+      ;; already held is dropped, so the notify this triggers cannot come back
+      ;; round as another viewport message.
+      (:set-viewport
+       (let ((new-range (cons (getf plist :from) (getf plist :to)))
+             (old-range (pine.text.buffer:buffer-local state :viewport)))
+         (unless (equal new-range old-range)
+           (let ((new (pine.text.buffer:set-meta state :viewport new-range)))
+             (multiple-value-bind (hl2 ps2) (pine.text.buffer:refresh-highlights pstate new)
+               (setf sento.actor:*state* (list new undo redo subs hl2 ps2))
+               (pine.text.buffer:notify-subscribers subs new hl2))))))
       (:set-var
        (let* ((vars (or (fset:@ (pine.text.buffer:meta state) :vars) (fset:empty-map)))
               (new (pine.text.buffer:set-meta

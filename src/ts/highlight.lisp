@@ -154,11 +154,12 @@
 
 ;;;; Common Lisp walk
 
-(defun cl-highlights (root text index &key lo-byte hi-byte)
+(defun cl-highlights (root text index &key lo-byte hi-byte forms)
   "Highlights (line start-col end-col face) for the CL parse tree ROOT over TEXT.
-With LO-BYTE / HI-BYTE, subtrees wholly outside that byte window are skipped;
-the descent from ROOT still runs, so context (quote state, depth, head kind)
-stays exact for everything inside the window."
+With LO-BYTE / HI-BYTE, subtrees wholly outside that byte window are skipped.
+FORMS names the top-level forms to walk instead of descending from ROOT, which
+is how a window avoids enumerating every form in the file; a top-level form has
+no enclosing context, so depth and quote state start where they would anyway."
   (let ((acc nil))
     (labels
         ((char-at (byte)
@@ -406,7 +407,9 @@ stays exact for everything inside the window."
                    (walk child depth nil)))))
          (walk-loop (node depth)
            (walk-children node depth nil)))
-      (walk root 0 nil)
+      (if forms
+          (dolist (form forms) (walk form 0 nil))
+          (walk root 0 nil))
       (nreverse acc))))
 
 
@@ -421,7 +424,7 @@ stays exact for everything inside the window."
     "case" "when" "unless" "and" "or" "begin" "do" "set!" "quote" "quasiquote"
     "unquote" "delay" "parameterize" "guard" "syntax-rules" "else"))
 
-(defun scheme-highlights (root text index &key lo-byte hi-byte)
+(defun scheme-highlights (root text index &key lo-byte hi-byte forms)
   (let ((acc nil))
     (labels
         ((char-at (byte)
@@ -470,18 +473,23 @@ stays exact for everything inside the window."
                 (loop :for i :from 0 :below (ts-node-named-child-count node)
                       :do (walk (ts-node-named-child node i) (1+ depth) (zerop i))))
                (t nil)))))
-      (walk root 0 nil)
+      (if forms
+          (dolist (form forms) (walk form 0 nil))
+          (walk root 0 nil))
       (nreverse acc))))
 
 
 ;;;; Dispatch
 
-(defun walk-highlights (language root text index &key lo-byte hi-byte)
+(defun walk-highlights (language root text index &key lo-byte hi-byte forms)
   "Highlights for LANGUAGE's parse tree ROOT over TEXT, using the line INDEX.
-LO-BYTE / HI-BYTE restrict the walk to subtrees intersecting that byte window."
+LO-BYTE / HI-BYTE restrict the walk to subtrees intersecting that byte window;
+FORMS names the top-level forms to walk instead of all of ROOT's."
   (case language
-    (:commonlisp (cl-highlights root text index :lo-byte lo-byte :hi-byte hi-byte))
-    (:scheme (scheme-highlights root text index :lo-byte lo-byte :hi-byte hi-byte))
+    (:commonlisp (cl-highlights root text index :lo-byte lo-byte :hi-byte hi-byte
+                                               :forms forms))
+    (:scheme (scheme-highlights root text index :lo-byte lo-byte :hi-byte hi-byte
+                                               :forms forms))
     (t nil)))
 
 
@@ -645,23 +653,136 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
                 (ts-tree-delete tree)))))
       (error () nil))))
 
-(defun parse-highlights (ps text)
+(defun %viewport-bytes (index from-line to-line)
+  "The byte range covering lines FROM-LINE to TO-LINE inclusive."
+  (let ((last (1- (length index))))
+    (values (%line-start-byte (max 0 (min from-line last)) index)
+            (%line-start-byte (1+ (max 0 (min to-line last))) index))))
+
+(defun %form-at-or-before (root byte count)
+  "Index of the last of ROOT's named children starting at or before BYTE.
+
+The children are in source order, so this is a binary search: finding the window
+by descending from the root would touch every form in the file, and each node
+call through the by-value TSNode binding allocates."
+  (let ((lo 0) (hi (1- count)))
+    (loop :while (< lo hi)
+          :do (let ((mid (ceiling (+ lo hi) 2)))
+                (if (<= (ts-node-start-byte (ts-node-named-child root mid)) byte)
+                    (setf lo mid)
+                    (setf hi (1- mid)))))
+    lo))
+
+(defun %forms-in-window (root lo-byte hi-byte)
+  "ROOT's top-level named children that intersect [LO-BYTE, HI-BYTE)."
+  (let ((count (ts-node-named-child-count root)))
+    (when (plusp count)
+      (loop :for i :from (%form-at-or-before root lo-byte count) :below count
+            :for form = (ts-node-named-child root i)
+            :while (< (ts-node-start-byte form) hi-byte)
+            :when (> (ts-node-end-byte form) lo-byte)
+              :collect form))))
+
+(defun %hl-window (ps tree text from-line to-line)
+  "Walk the top-level forms covering lines FROM-LINE to TO-LINE, and cache them."
+  (let ((index (build-line-index text))
+        (root (ts-tree-root-node tree)))
+    (multiple-value-bind (lo-byte hi-byte) (%viewport-bytes index from-line to-line)
+      (let ((hl (walk-highlights (ps-language ps) root text index
+                                 :lo-byte lo-byte :hi-byte hi-byte
+                                 :forms (%forms-in-window root lo-byte hi-byte))))
+        (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
+              (ps-hl-window ps) (cons from-line to-line)
+              (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+        hl))))
+
+(defun %hl-window-incremental (ps tree text from-line to-line)
+  "Re-walk only the forms the edit touched and keep the rest of the window's
+cached tuples. Sound because the caller has established that no line moved, so
+every cached tuple outside the re-walked lines still describes its own line."
+  (destructuring-bind (lo hi delta) (ps-hl-pending ps)
+    (declare (ignore delta))
+    (let* ((index (build-line-index text))
+           (root (ts-tree-root-node tree))
+           (last (1- (length index)))
+           (lo-byte (%line-start-byte (max 0 (min lo last)) index))
+           (hi-byte (%line-start-byte (1+ (max 0 (min hi last))) index))
+           (forms nil))
+      ;; Widen to whole forms and then to whole lines until stable, so that a
+      ;; cached tuple is dropped exactly where a fresh one is emitted. Without
+      ;; the line step a form starting on the same line another ends would have
+      ;; its tuples dropped and never re-emitted. The range only grows and is
+      ;; bounded by the file, so this terminates.
+      (loop :for grew = nil
+            :do (setf forms (%forms-in-window root lo-byte hi-byte))
+                (dolist (form forms)
+                  (let ((s (ts-node-start-byte form)) (e (ts-node-end-byte form)))
+                    (when (< s lo-byte) (setf lo-byte s grew t))
+                    (when (> e hi-byte) (setf hi-byte e grew t))))
+                (let ((ll (%line-start-byte (line-of-byte lo-byte index) index))
+                      (hh (%line-start-byte
+                           (1+ (line-of-byte (max lo-byte (1- hi-byte)) index))
+                           index)))
+                  (when (< ll lo-byte) (setf lo-byte ll grew t))
+                  (when (> hh hi-byte) (setf hi-byte hh grew t)))
+            :while grew)
+      (let* ((lo-line (line-of-byte lo-byte index))
+             (hi-line (line-of-byte (max lo-byte (1- hi-byte)) index))
+             (fresh (walk-highlights (ps-language ps) root text index
+                                     :lo-byte lo-byte :hi-byte hi-byte
+                                     :forms forms))
+             (kept (remove-if (lambda (tuple) (<= lo-line (first tuple) hi-line))
+                              (ps-hl-cache ps)))
+             (merged (nconc kept fresh)))
+        (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
+              (ps-hl-window ps) (cons from-line to-line)
+              (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+        merged))))
+
+(defun %window-edit-is-local-p (ps from-line to-line)
+  "True when the pending edit moved no line and lands inside FROM-LINE..TO-LINE,
+which is what makes the window's cached tuples still usable."
+  (let ((pending (ps-hl-pending ps)))
+    (and pending
+         (destructuring-bind (lo hi delta) pending
+           (and (zerop delta) (>= lo from-line) (<= hi to-line))))))
+
+(defun parse-highlights (ps text &key from-line to-line)
   "Highlights (line start-col end-col face) from PS's persistent tree over TEXT.
-Incremental: when exactly one edit was recorded since the last call, only the
-changed top-level forms are re-walked and the cached tuples outside them are
-kept (shifted by the line delta). Anything unexpected falls back to the full
-walk."
+
+With FROM-LINE and TO-LINE, walks only the tree covering those lines. The
+descent from the root still runs, so quote state, form depth and head kind stay
+exact, and every line in the range gets the tuples the full walk would emit.
+Nothing is cached: a window's slice is cheap enough to walk outright, and it
+moves whenever the window scrolls.
+
+Without a range, the whole buffer is walked and cached. Incremental: when
+exactly one edit was recorded since the last call, only the changed top-level
+forms are re-walked and the cached tuples outside them are kept (shifted by the
+line delta). Anything unexpected falls back to the full walk."
   (let ((tree (ps-tree ps)))
     (when tree
       (handler-case
-          (cond
-            ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
-                  (string= text (or (ps-hl-text ps) "")))
-             (ps-hl-cache ps))
-            ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps))
-                  (string= text (ps-text ps)))
-             (%hl-incremental ps tree text))
-            (t (%hl-full ps tree text)))
+          (if (and from-line to-line)
+              (let ((same-window (equal (ps-hl-window ps) (cons from-line to-line))))
+                (cond
+                  ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
+                        (null (ps-hl-pending ps))
+                        (string= text (or (ps-hl-text ps) "")))
+                   (ps-hl-cache ps))
+                  ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
+                        (%window-edit-is-local-p ps from-line to-line)
+                        (string= text (ps-text ps)))
+                   (%hl-window-incremental ps tree text from-line to-line))
+                  (t (%hl-window ps tree text from-line to-line))))
+              (cond
+                ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
+                      (string= text (or (ps-hl-text ps) "")))
+                 (ps-hl-cache ps))
+                ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps))
+                      (string= text (ps-text ps)))
+                 (%hl-incremental ps tree text))
+                (t (%hl-full ps tree text))))
         (error ()
           (setf (ps-hl-cache ps) nil (ps-hl-text ps) nil
                 (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
@@ -674,6 +795,7 @@ walk."
   (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
                              (build-line-index text))))
     (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
+          (ps-hl-window ps) nil
           (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
     hl))
 
@@ -731,6 +853,7 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
                       below))))
           (setf merged (nconc merged (nreverse below))))
         (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
+              (ps-hl-window ps) nil
               (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
         merged))))
 
