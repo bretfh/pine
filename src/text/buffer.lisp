@@ -248,11 +248,11 @@ pstate). No language available -> (values nil pstate), leaving highlights off."
         (rt (%ts-runtime)))
     (if (or (null lang) (null rt))
         (values nil pstate)
-        (let ((ps (or pstate (pine.ts:make-parse-state rt lang))))
+        (let ((ps (or pstate (pine.ts.runtime:make-parse-state rt lang))))
           (if (null ps)
               (values nil nil)
               (let ((new-text (state->string new-state)))
-                (pine.ts:reparse! ps new-text)
+                (pine.ts.runtime:reparse! ps new-text)
                 (values (pine.ts.highlight:parse-highlights ps new-text) ps)))))))
 
 (defun point-after-move (snap unit n)

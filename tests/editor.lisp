@@ -1,7 +1,7 @@
 (in-package :pine.test)
 
-(def-suite :pine.editor :in :pine)
-(in-suite :pine.editor)
+(def-suite :pine.editor.commands :in :pine)
+(in-suite :pine.editor.commands)
 
 ;;;; Live integration over a real server and buffer actors. The substrate is
 ;;;; built once; the tests run in dependency order and carry state forward,
@@ -16,7 +16,7 @@
     (let ((srv (pine.core.server:start-server)))
       (setf pine.core.server:*server* srv
             *server* srv
-            (pine.core.server:ts-runtime srv) (pine.ts:make-ts-runtime))
+            (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
       (pine.core.event:make-event-bus srv)
       (pine.core.actor:start-agent-registry srv)
       (pine.core.actor:start-local-agent srv)

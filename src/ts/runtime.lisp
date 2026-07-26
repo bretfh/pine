@@ -1,8 +1,8 @@
-(defpackage #:pine.ts
+(defpackage #:pine.ts.runtime
   (:use :cl)
   (:export #:%changed-row-span #:%line-of-byte #:*grammars* #:backward-sexp-pos #:build-line-index #:byte-length #:byte-to-line-col #:call-with-root #:char-byte-length #:defun-bounds-pos #:ensure-language #:ensure-ts #:entry-language-ptr #:entry-parser #:forward-sexp-pos #:free-parse-state #:grammar-language-pointer #:grammar-library-candidates #:languages #:libs-loaded #:load-grammar-library #:load-language-entry #:make-parse-state #:make-ts-runtime #:parse-full! #:parse-motion #:parse-state #:pos-to-byte #:ps-hl-cache #:ps-hl-pending #:ps-hl-stale #:ps-hl-text #:ps-language #:ps-parser #:ps-text #:ps-tree #:reparse! #:ts-entry #:ts-loaded-p #:ts-node-child-by-field-name #:ts-node-end-byte #:ts-node-is-null #:ts-node-named-child #:ts-node-named-child-count #:ts-node-named-descendant-for-byte-range #:ts-node-parent #:ts-node-start-byte #:ts-node-type #:ts-parser-delete #:ts-parser-new #:ts-parser-parse-string #:ts-parser-set-language #:ts-runtime #:ts-tree-delete #:ts-tree-edit #:ts-tree-get-changed-ranges #:ts-tree-root-node))
 
-(in-package #:pine.ts)
+(in-package #:pine.ts.runtime)
 
 ;;;; CFFI bindings to libtree-sitter. tree-sitter passes TSNode by value;
 ;;;; cffi-libffi handles the by-value struct, so no C wrapper is needed. The

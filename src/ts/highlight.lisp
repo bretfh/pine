@@ -1,5 +1,5 @@
 (defpackage #:pine.ts.highlight
-  (:use #:cl #:pine.ts)
+  (:use #:cl #:pine.ts.runtime)
   (:export #:%align-column #:%byte->char #:%byte-col #:%byte-line #:%defish-p #:%enclosing-form #:%form-head-name #:%hl-full #:%hl-incremental #:%intern-table #:%line-start-byte #:%node-first-char #:%opens-form-p #:*cl-builtins* #:*cl-class-definers* #:*cl-constants* #:*cl-flat-all-binders* #:*cl-flat-first-binders* #:*cl-nested-binders* #:*cl-special-forms* #:*cl-struct-definers* #:*cl-type-definers* #:*cl-var-definers* #:*scheme-keywords* #:body-form-p #:cl-head-face #:cl-head-kind #:cl-highlights #:compute-highlights #:delimiter-face #:hl-dump #:hl-dump-file #:lambda-list-keyword-p #:parse-highlights #:parse-indent #:scheme-highlights #:ts-field #:ts-named-children #:ts-type #:ts-type= #:walk-highlights))
 
 (in-package #:pine.ts.highlight)

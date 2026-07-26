@@ -199,30 +199,30 @@
 (defun highlights-equivalent-p (rt text edits)
   "Apply EDITS random mutations; incremental highlights must equal the full
 walk after every one. Returns nil, or the divergence description."
-  (let ((inc (pine.ts:make-parse-state rt :commonlisp)))
+  (let ((inc (pine.ts.runtime:make-parse-state rt :commonlisp)))
     (unless inc (return-from highlights-equivalent-p :no-grammar))
-    (pine.ts:parse-full! inc text)
+    (pine.ts.runtime:parse-full! inc text)
     (pine.ts.highlight:parse-highlights inc text)
     (unwind-protect
          (dotimes (i edits nil)
            (setf text (mutate-line text))
-           (pine.ts:reparse! inc text)
+           (pine.ts.runtime:reparse! inc text)
            (let* ((got (sort-highlights (pine.ts.highlight:parse-highlights inc text)))
-                  (fresh (pine.ts:make-parse-state rt :commonlisp)))
-             (pine.ts:parse-full! fresh text)
+                  (fresh (pine.ts.runtime:make-parse-state rt :commonlisp)))
+             (pine.ts.runtime:parse-full! fresh text)
              (let ((want (sort-highlights (pine.ts.highlight:parse-highlights fresh text))))
-               (pine.ts:free-parse-state fresh)
+               (pine.ts.runtime:free-parse-state fresh)
                (unless (equal got want)
                  (return (list i
                                (set-difference got want :test #'equal)
                                (set-difference want got :test #'equal)))))))
-      (pine.ts:free-parse-state inc))))
+      (pine.ts.runtime:free-parse-state inc))))
 
 (test highlights-incremental
   "Incremental highlighting equals the full walk over random edits, on
 generated source and on a real file."
   (setf *seed* 42)
-  (let ((rt (pine.ts:make-ts-runtime)))
+  (let ((rt (pine.ts.runtime:make-ts-runtime)))
     (let ((d (highlights-equivalent-p rt (random-lisp-text 12) 200)))
       (case d
         (:no-grammar (skip "no commonlisp grammar"))
@@ -241,44 +241,44 @@ generated source and on a real file."
 ;;;; Tree-driven indentation.
 
 (test indent-columns
-  (let* ((rt (pine.ts:make-ts-runtime))
-         (ps (pine.ts:make-parse-state rt :commonlisp)))
+  (let* ((rt (pine.ts.runtime:make-ts-runtime))
+         (ps (pine.ts.runtime:make-parse-state rt :commonlisp)))
     (if (null ps)
         (skip "no commonlisp grammar")
         (unwind-protect
              (progn
-               (pine.ts:parse-full!
+               (pine.ts.runtime:parse-full!
                 ps (format nil "(defun f (x)~%(let ((a 1)~%(b 2))~%(+ a~%b)))~%(foo bar~%baz)"))
                (is (equal '(0 2 6 2 3 0 5)
                           (loop for i from 0 to 6 collect (pine.ts.highlight:parse-indent ps i)))))
-          (pine.ts:free-parse-state ps)))))
+          (pine.ts.runtime:free-parse-state ps)))))
 
 (test indent-string-interior
-  (let* ((rt (pine.ts:make-ts-runtime))
-         (ps (pine.ts:make-parse-state rt :commonlisp)))
+  (let* ((rt (pine.ts.runtime:make-ts-runtime))
+         (ps (pine.ts.runtime:make-parse-state rt :commonlisp)))
     (if (null ps)
         (skip "no commonlisp grammar")
         (unwind-protect
              (progn
-               (pine.ts:parse-full!
+               (pine.ts.runtime:parse-full!
                 ps (concatenate 'string "(defvar *x*" (string #\newline)
                                 (string #\") "a" (string #\newline) "b"
                                 (string #\") (string #\newline) "1)"))
                (is (equal '(0 2 nil 2)
                           (loop for i from 0 to 3 collect (pine.ts.highlight:parse-indent ps i)))))
-          (pine.ts:free-parse-state ps)))))
+          (pine.ts.runtime:free-parse-state ps)))))
 
 (test indent-user-def-macro
-  (let* ((rt (pine.ts:make-ts-runtime))
-         (ps (pine.ts:make-parse-state rt :commonlisp)))
+  (let* ((rt (pine.ts.runtime:make-ts-runtime))
+         (ps (pine.ts.runtime:make-parse-state rt :commonlisp)))
     (if (null ps)
         (skip "no commonlisp grammar")
         (unwind-protect
              (progn
-               (pine.ts:parse-full! ps (format nil "(defcommand foo ()~%(bar))"))
+               (pine.ts.runtime:parse-full! ps (format nil "(defcommand foo ()~%(bar))"))
                (is (equal '(0 2)
                           (list (pine.ts.highlight:parse-indent ps 0) (pine.ts.highlight:parse-indent ps 1)))))
-          (pine.ts:free-parse-state ps)))))
+          (pine.ts.runtime:free-parse-state ps)))))
 
 (test reindent-line
   (let ((st (pine.text.buffer:load-content (format nil "(foo~%  bar)"))))

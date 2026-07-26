@@ -4,7 +4,7 @@
   (:import-from :pine.ui.build
                 #:column #:row #:centerbox #:label #:icon #:button #:ring
                 #:gap #:rule #:rows #:choice)
-  (:import-from :pine.editor
+  (:import-from :pine.editor.commands
                 #:candidate #:register-source #:register-actions
                 #:candidate-actions #:completion-widget)
   (:import-from :pine.ui.face

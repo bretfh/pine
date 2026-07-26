@@ -10,8 +10,8 @@
 (defun %shot-substrate ()
   (let ((srv (pine.core.server:start-server)))
     (setf pine.core.server:*server* srv
-          (pine.core.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-    (ignore-errors (pine.ts:ensure-ts (pine.core.server:ts-runtime srv)))
+          (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
+    (ignore-errors (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv)))
     (pine.core.event:make-event-bus srv)
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)

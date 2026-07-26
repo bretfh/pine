@@ -87,7 +87,7 @@ carry over like :replace-content; point is clamped into the new content."
        (when pstate
          (let ((snap (pine.text.buffer:state->snapshot state)))
            (multiple-value-bind (l c)
-               (pine.ts:parse-motion pstate (getf plist :kind)
+               (pine.ts.runtime:parse-motion pstate (getf plist :kind)
                                      (pine.text.buffer:point-line snap)
                                      (pine.text.buffer:point-col snap))
              (when l

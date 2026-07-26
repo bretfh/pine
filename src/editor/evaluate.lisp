@@ -27,7 +27,7 @@
         (if (null lang)
             (eval-last-sexp)
             (multiple-value-bind (sl sc el ec)
-                (pine.ts:defun-bounds-pos (pine.editor.motion:%ts-runtime) lang text
+                (pine.ts.runtime:defun-bounds-pos (pine.editor.motion:%ts-runtime) lang text
                                           (pine.text.buffer:point-line snap)
                                           (pine.text.buffer:point-col snap))
               (if sl

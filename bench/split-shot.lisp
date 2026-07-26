@@ -11,15 +11,15 @@
 
 (let ((srv (pine.core.server:start-server)))
   (setf pine.core.server:*server* srv
-        (pine.core.server:ts-runtime srv) (pine.ts:make-ts-runtime))
-  (ignore-errors (pine.ts:ensure-ts (pine.core.server:ts-runtime srv)))
+        (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
+  (ignore-errors (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv)))
   (pine.core.event:make-event-bus srv)
   (pine.core.actor:start-agent-registry srv)
   (pine.core.actor:start-local-agent srv)
   (pine.text.buffer:start-buffer-registry srv)
   (let* ((sess (pine.editor.session:make-editor-session
                 nil :sink (lambda (&rest _) (declare (ignore _)) nil)))
-         (client (pine.editor::sess-client sess))
+         (client (pine.editor.commands::sess-client sess))
          (w (* *cols* *cw*))
          (h (* *rows* *ch*)))
     (let ((buf (pine.editor.frame:current-buffer client)))

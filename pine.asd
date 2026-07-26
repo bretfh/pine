@@ -75,7 +75,7 @@
                 (:file "minibuffer") (:file "isearch") (:file "file")
                 (:file "target") (:file "repl") (:file "overwrite")
                 (:file "window") (:file "help") (:file "debugger")
-                (:file "evaluate") (:file "editor") (:file "session")))
+                (:file "evaluate") (:file "commands") (:file "session")))
    (:file "desktop")
    (:file "wm")
    (:file "frontend")
@@ -129,7 +129,7 @@ wayland surfaces through the :pine/cairo backend."
   :components
   ((:module "protocol"
     :serial t :pathname "wayland/protocol/"
-    :components ((:file "package") (:file "wlr-layer-shell") (:file "river-wm")
+    :components ((:file "wlr-layer-shell") (:file "river-wm")
                  (:file "river-xkb") (:file "river-layer-shell")))
    (:module "wayland"
     :serial t

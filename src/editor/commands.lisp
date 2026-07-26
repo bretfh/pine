@@ -1,4 +1,4 @@
-(defpackage #:pine.editor
+(defpackage #:pine.editor.commands
   (:use :cl #:pine.editor.kill-ring #:pine.editor.isearch)
   (:export
    #:start-editor
@@ -42,13 +42,13 @@
    #:completion-update-input
    #:completing-read-active-p))
 
-(in-package #:pine.editor)
+(in-package #:pine.editor.commands)
 
 (defun start-editor ()
   (let* ((client (pine.editor.frame:current-client))
          (server (pine.editor.frame:server-of client)))
     (pine.text.buffer:start-buffer-registry server)
-    (handler-case (pine.ts:ensure-ts (pine.core.server:ts-runtime server))
+    (handler-case (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime server))
       (error () nil))
     (pine.ui.render:start-renderer client)
     (pine.editor.minibuffer:ensure-minibuffer client)
