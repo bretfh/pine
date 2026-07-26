@@ -181,10 +181,6 @@ stays an editor prefix so the user can switch away."
   (let ((tobj (terminal-for-buffer buffer)))
     (when tobj (pine.vt:pty-write-string (terminal-fd tobj) text))))
 
-;;;; terminal-mode: a terminal buffer's content belongs to the pty, so input
-;;;; goes there and the editing verbs are refused rather than applied to a
-;;;; buffer the pty is about to overwrite.
-
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:terminal-mode) self tag plist)
   (case tag
     (:insert (term-write self (getf plist :text)))

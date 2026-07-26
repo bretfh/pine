@@ -149,8 +149,7 @@
   (or *client* (error "No *client* bound.")))
 
 (defun buffer-in-scope ()
-  "The current buffer, or nil when no client is bound. For the layers that
-want the current buffer if there is one and no error if there is not."
+  "The current buffer, or nil when no client is bound."
   (let ((c *client*)) (and c (current-buffer c))))
 
 (defun start-client (server)

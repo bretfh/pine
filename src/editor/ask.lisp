@@ -7,11 +7,6 @@ modes and commands, so it can read the registries that hold them."))
 
 (in-package #:pine.editor.ask)
 
-;;;; Ask and tell: the scripting surface over the live system. ASK queries
-;;;; the server, the client or a buffer; TELL messages a buffer. It sits
-;;;; above modes and commands so that (ask :server :modes) and
-;;;; (ask :server :commands) can read the registries that actually hold them.
-
 (defun tell (target tag &rest plist)
   "Send (tag . plist) to TARGET (coerced via BUFFER). Returns TARGET.
 Silently no-ops on nil target."

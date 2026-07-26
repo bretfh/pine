@@ -28,9 +28,6 @@
          (setf (gethash key *agent-jobs*)
                (list :agent agent :id eval-id :status status :values values)))))))
 
-;;;; Route process-agent job reports into the registry, chaining whatever hook
-;;;; is already there so every handler fires.
-
 (let ((prev pine.core.actor:*agent-debug-hook*))
   (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)

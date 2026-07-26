@@ -70,10 +70,12 @@
     :components ((:file "render")))
    (:module "editor"
     :serial t
-    :components ((:file "ask") (:file "kill-ring") (:file "completion")
+    :components ((:file "ask") (:file "motion") (:file "kill-ring")
+                (:file "layout-buffer") (:file "completion")
                 (:file "minibuffer") (:file "isearch") (:file "file")
                 (:file "target") (:file "repl") (:file "overwrite")
-                (:file "editor") (:file "session")))
+                (:file "window") (:file "help") (:file "debugger")
+                (:file "evaluate") (:file "editor") (:file "session")))
    (:module "desktop"
     :serial t
     :components ((:file "desktop")))

@@ -83,9 +83,6 @@
         (when (plusp (length input))
           (repl-eval input))))))
 
-;;;; repl-mode: Return submits the form at the prompt instead of inserting a
-;;;; newline. Everything else falls through to text-mode.
-
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:repl-mode) self tag plist)
   (declare (ignore self plist))
   (case tag

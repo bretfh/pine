@@ -1,4 +1,8 @@
-(in-package :pine.editor)
+(defpackage #:pine.editor.minibuffer
+  (:use #:cl)
+  (:export #:cancel-prompt #:completing-read #:completing-read-active-p #:completion #:completion-next #:completion-prev #:completion-update-input #:ensure-minibuffer #:file-completion-active-p #:file-name-accept #:file-name-complete #:minibuffer-abort #:minibuffer-accept #:minibuffer-active-p #:minibuffer-changed #:minibuffer-complete #:minibuffer-history-next #:minibuffer-history-prev #:minibuffer-set-text #:minibuffer-text #:prompt #:read-file-name))
+
+(in-package #:pine.editor.minibuffer)
 
 (defun completion ()
   (pine.editor.frame:completion-state (pine.editor.frame:current-client)))
@@ -7,7 +11,7 @@
   "Match and rank CANDIDATES against INPUT through the completion engine
 (orderless: space-separated components, any order), tightest first. Returns
 candidate OBJECTS; consumers read candidate-string / candidate-value."
-  (complete input candidates))
+  (pine.editor.completion:complete input candidates))
 
 (defun completing-read (prompt-text candidates cb &key history)
   (let ((c (completion)))
@@ -52,7 +56,7 @@ separately by DEACTIVATE-MINIBUFFER."
 (defun completion-update-input (text)
   (let* ((c (completion))
          (cands (if (pine.editor.frame:dynamic-fn c)
-                    (mapcar #'to-candidate (funcall (pine.editor.frame:dynamic-fn c) text))
+                    (mapcar #'pine.editor.completion:to-candidate (funcall (pine.editor.frame:dynamic-fn c) text))
                     (filter-candidates text (pine.editor.frame:candidates c)))))
     (setf (pine.editor.frame:input c) text
           (pine.editor.frame:filtered c) cands
@@ -73,7 +77,7 @@ for render-chrome to blit above the echo row."
          (cols (pine.text.buffer:frame-cols
                 (pine.editor.frame:frame (pine.editor.frame:current-client)))))
     (multiple-value-bind (rows tree)
-        (pine.ui.node:render (completion-popup visible) (max 10 cols)
+        (pine.ui.node:render (pine.editor.completion:completion-popup visible) (max 10 cols)
                             :selection (and visible (- idx off)))
       (setf (pine.editor.frame:popup-rows c) rows
             (pine.editor.frame:popup-tree c) tree))))
@@ -135,7 +139,7 @@ cannot be read."
             (setf p (subseq p 0 (or (mismatch p s :end1 n :end2 n) n))))))))
 
 (defun default-directory ()
-  (let* ((buf (cur-buffer))
+  (let* ((buf (pine.editor.motion:cur-buffer))
          (path (and buf (ignore-errors
                           (pine.text.buffer:buffer-local
                            (pine.editor.ask:ask buf :state) :pathname nil)))))
@@ -155,7 +159,7 @@ cannot be read."
 (defun file-name-complete ()
   "Tab: extend the path by the entries' common prefix; a lone match completes
 fully (directories keep their trailing slash so the next Tab descends)."
-  (let ((cands (mapcar #'candidate-string (pine.editor.frame:filtered (completion)))))
+  (let ((cands (mapcar #'pine.editor.completion:candidate-string (pine.editor.frame:filtered (completion)))))
     (multiple-value-bind (dir base) (split-path (expand-tilde (pine.editor.frame:input (completion))))
       (declare (ignore base))
       (when cands
@@ -169,7 +173,7 @@ taken; a directory is descended into, a file is opened."
          (typed (expand-tilde (pine.editor.frame:input c)))
          (sel (let ((i (pine.editor.frame:index c)) (f (pine.editor.frame:filtered c)))
                 (when (and (>= i 0) (< i (length f)))
-                  (candidate-string (nth i f)))))
+                  (pine.editor.completion:candidate-string (nth i f)))))
          (target (multiple-value-bind (dir base) (split-path typed)
                    (declare (ignore base))
                    (if (and sel (not (uiop:file-exists-p typed))
@@ -192,7 +196,7 @@ taken; a directory is descended into, a file is opened."
 ;;;; the current buffer, so every editing command -- motion, kill, yank, word
 ;;;; ops, isearch -- operates on the input through the ordinary dispatch, exactly
 ;;;; like any buffer. minibuffer-mode (a minor mode) adds only the completion and
-;;;; exit keys. A controller subscribed to the buffer re-filters the candidate
+;;;; exit keys. A controller subscribed to the buffer re-filters the pine.editor.completion:candidate
 ;;;; list and repaints on every edit, so the completion UI stays live no matter
 ;;;; which command changed the input.
 
@@ -338,7 +342,7 @@ empty input leaves cycling."
             (setf (pine.editor.frame:prompt-history-pos client) nil)
             (minibuffer-set-text ""))))))
 
-;;;; Accept / abort / complete / candidate motion -- the minibuffer-mode command
+;;;; Accept / abort / pine.editor.completion:complete / pine.editor.completion:candidate motion -- the minibuffer-mode command
 ;;;; bodies (the defcmd wrappers live in editor.lisp).
 
 (defun minibuffer-accept ()
@@ -350,7 +354,7 @@ empty input leaves cycling."
        (let* ((c (completion))
               (result (if (and (>= (pine.editor.frame:index c) 0)
                                (< (pine.editor.frame:index c) (length (pine.editor.frame:filtered c))))
-                          (candidate-string (nth (pine.editor.frame:index c)
+                          (pine.editor.completion:candidate-string (nth (pine.editor.frame:index c)
                                                  (pine.editor.frame:filtered c)))
                           text))
               (cb (pine.editor.frame:callback c)))
@@ -376,12 +380,12 @@ empty input leaves cycling."
 (defun minibuffer-complete ()
   (cond ((file-completion-active-p) (file-name-complete))
         ((completing-read-active-p)
-         ;; insert the selected candidate as the input
+         ;; insert the selected pine.editor.completion:candidate as the input
          (let* ((c (completion))
                 (i (pine.editor.frame:index c))
                 (f (pine.editor.frame:filtered c)))
            (when (and (>= i 0) (< i (length f)))
-             (minibuffer-set-text (candidate-string (nth i f))))))))
+             (minibuffer-set-text (pine.editor.completion:candidate-string (nth i f))))))))
 
 
 ;;;; Raw-text prompt (no completion): eval-expression, new-buffer. It activates

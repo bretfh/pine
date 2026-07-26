@@ -13,7 +13,7 @@
    (underline :initarg :underline :accessor underline :initform nil)))
 
 (defvar *faces* (make-hash-table :test 'eq)
-  "Face name -> face, for this image. A theme replaces the whole table.")
+  "Face name -> face. A theme replaces the whole table.")
 
 (defun faces-table () *faces*)
 
@@ -192,8 +192,6 @@
           (:ring-disk      :fg green)
           (:ring-temp      :fg yellow)
           (:ring-track     :fg bg-active)))
-
-;;;; The theme every image starts on. A config's load-theme replaces it.
 
 (load-theme :ef-dream)
 

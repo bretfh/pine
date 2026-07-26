@@ -69,11 +69,8 @@ every global setf writes through."
 (defun var (name &optional buffer)
   "Editor variable NAME: buffer-local in BUFFER when one is given, else global,
 else the declared default. setf-able: (setf (var NAME) V) sets the global,
-(setf (var NAME BUFFER) V) sets it buffer-locally.
-
-The buffer is always explicit here. Which buffer is current is a client's
-business, and this layer is below any client; pine.user:var is the form that
-fills it in."
+(setf (var NAME BUFFER) V) sets it buffer-locally. The buffer is explicit:
+this layer is below any client, so it never guesses which one is current."
   (let ((v (find-variable name)))
     (when buffer
       (multiple-value-bind (local present) (%buffer-var buffer name)

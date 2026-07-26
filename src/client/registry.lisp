@@ -1,9 +1,5 @@
 (in-package :pine.editor.frame)
 
-;;;; The buffer registry as this client sees it: names resolve against the
-;;;; server this client runs on, and creating or killing one updates which
-;;;; buffer the client is currently on.
-
 (defun make-buffer (name &key (content ""))
   (let* ((c (current-client))
          (srv (server-of c))

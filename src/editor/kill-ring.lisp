@@ -10,14 +10,9 @@
    #:editor-terminal-node
    #:editor-modeline-node
    #:editor-echo-node
-   #:focused-snap
-   #:scroll-window
-   #:eval-last-sexp
-   #:eval-buffer
    
    ;; layout buffers (authorable tool buffers)
-   #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
-   ;; prompt
+   ;; pine.editor.frame:prompt
    #:prompt
    #:cancel-prompt
    ;; kill ring
@@ -29,14 +24,14 @@
    #:copy-region-cmd
    #:yank-cmd
    #:yank-pop-cmd
-   ;; the completion facility: candidates, sources, actions, builders
+   ;; the pine.editor.minibuffer:completion facility: candidates, sources, actions, builders
    #:candidate #:to-candidate
    #:candidate-string #:candidate-annotation #:candidate-value
    #:candidate-category #:candidate-source
    #:register-source #:source-table
    #:register-actions #:candidate-actions
    #:completion-popup #:completion-widget
-   ;; completing-read
+   ;; pine.editor.minibuffer:completing-read
    #:completing-read
    #:read-file-name
    #:file-completion-active-p

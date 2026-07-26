@@ -39,8 +39,8 @@ its focused leaf."
 (defvar *keymap* (pine.editor.keymap:make-keymap :name :wm)
   "The window manager's keymap. Chords here are registered with the
 compositor, which delivers them to the window manager rather than to the
-focused window. It has no parent: a window manager has no buffer and no mode
-to fall back through.")
+focused window. It has no parent: there is no buffer and no mode to fall back
+through.")
 
 (defun wm-keymap () *keymap*)
 
@@ -243,9 +243,6 @@ where the next one lands rather than dividing the current one immediately."
 (pine.editor.command:define-command wm-exit ()
   "End the Wayland session."
   (exit-session))
-
-;;;; The default chords. init.lisp rebinds them the same way it rebinds editor
-;;;; keys: (define-key (keymap :wm) (kbd "s-Return") 'wm-terminal).
 
 (pine.editor.keymap:define-keys *keymap*
   "s-Return"  "wm-terminal"

@@ -333,7 +333,7 @@ attach (a client must be in scope); the arrangement applies on every seed.")
       (let ((f (pine.editor.frame:frame client)))
         (setf (pine.text.buffer:frame-cols f) 80 (pine.text.buffer:frame-rows f) 29)
         (pine.ui.render:relayout))
-      (ensure-minibuffer client)
+      (pine.editor.minibuffer:ensure-minibuffer client)
       (let ((s (make-sess :client client :aclient aclient :sink sink)))
         (when aclient
           (setf (pine.core.attach:attached-client-session aclient) s)
@@ -432,18 +432,13 @@ much output arrived, and nothing at all while no terminal is producing any."
 
 (pine.core.attach:register-app (make-instance 'editor-app))
 
-;;;; The hooks this image answers: a key in a terminal buffer goes to the pty,
-;;;; an evaluation that faults opens the restart menu, and a process agent's
-;;;; error comes home to it. Each chains whatever is already there, so the
-;;;; jobs registry and this surface both fire.
-
 (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch
-      pine.core.eval:*on-debug*            #'%eval-error)
+      pine.core.eval:*on-debug*            #'pine.editor.debugger:%eval-error)
 
 (let ((prev pine.core.actor:*agent-debug-hook*))
   (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)
           (when prev
             (pine.core.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-          (pine.core.eval:attempt (lambda () (%agent-debug-surface msg))
+          (pine.core.eval:attempt (lambda () (pine.editor.debugger:%agent-debug-surface msg))
                              "agent debug surface"))))

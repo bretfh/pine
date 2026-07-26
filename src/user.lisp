@@ -25,11 +25,12 @@
   (:import-from :pine.editor.frame #:current-buffer-mode #:set-buffer-mode)
   (:import-from :pine.state.var #:defonce)
   (:import-from :pine.editor.frame #:current-client #:current-buffer)
-  (:import-from :pine.editor #:eval-last-sexp #:eval-buffer
-                #:completing-read #:read-file-name #:prompt
-                #:show-layout #:layout-node-at-point #:layout-select
-                #:layout-activate)
+  (:import-from :pine.editor.minibuffer
+                #:completing-read #:read-file-name #:prompt)
   (:import-from :pine.editor.echo #:message)
+  (:import-from :pine.editor.evaluate #:eval-last-sexp #:eval-buffer)
+  (:import-from :pine.editor.layout #:show-layout #:layout-node-at-point
+                #:layout-select #:layout-activate)
   (:import-from :pine #:*frontends*)
   (:export
    ;; the frontends the daemon owns
@@ -44,7 +45,7 @@
    #:button #:slider #:ring #:choice #:rows
    ;; widgets: views -- a window is a live view of the buffer you name
    #:calendar #:window #:buffer #:terminal #:modeline #:echo #:minibuffer
-   ;; completion facility
+   ;; pine.editor.minibuffer:completion facility
    #:candidate #:register-source #:register-actions #:candidate-actions
    #:completion-widget
    ;; style

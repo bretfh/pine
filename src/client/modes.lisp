@@ -1,10 +1,5 @@
 (in-package :pine.editor.frame)
 
-;;;; Which modes are active. A mode is a class and a singleton, both of which
-;;;; pine.editor.mode owns; which ones a buffer has on right now is this client's
-;;;; state, so it lives here, above the text layer the buffer actor dispatches
-;;;; through.
-
 (defun buffer-mode (buffer-or-snap)
   (let ((name (pine.text.buffer:buffer-local buffer-or-snap :mode :base-mode)))
     (or (pine.editor.mode:find-mode name) (pine.editor.mode:find-mode :base-mode))))

@@ -7,10 +7,6 @@ of them."))
 
 (in-package #:pine.editor.target)
 
-;;;; Where an evaluation runs. One path serves C-x C-e, eval-defun and the
-;;;; repl, so redirecting the target redirects all of them, and nothing above
-;;;; here needs to know whether the image is this one or an agent's.
-
 (defvar *eval-target* :local
   "Where C-x C-e / eval-defun run: :local (this image), or a registered agent
 name (a :process agent's own image). The one eval path, target swappable.")
