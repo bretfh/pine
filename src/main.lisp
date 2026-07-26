@@ -55,8 +55,62 @@ would open somewhere nobody asked for. A session announces itself with
     (%setenv "WAYLAND_DISPLAY" display)
     display))
 
+(defun handle-termination ()
+  "Take the frontends down with the daemon when the supervisor stops it.
+
+`pine stop' does this through the control actor, but a service manager sends a
+signal, and a daemon that exits on one leaves its frontends attached to nothing
+and outliving every restart."
+  (sb-sys:enable-interrupt
+   sb-unix:sigterm
+   (lambda (&rest args)
+     (declare (ignore args))
+     (handler-case (stop-frontends)
+       (error (c) (format *error-output* "pine: ~a~%" c)))
+     (pine.hooks:run-shutdown-hooks)
+     (sb-ext:exit :code 0 :abort t))))
+
+(defun daemon-listening-p (port)
+  (ignore-errors
+    (let ((s (usocket:socket-connect pine.server:*host* port :timeout 1)))
+      (usocket:socket-close s) t)))
+
+(defun run-app (verb)
+  "Run the frontend VERB names, in this image.
+
+The daemon registers one app per kind at startup; the backing defines how each
+one runs. Without a backing the app says so rather than the CLI guessing."
+  (let ((app (pine.attach:find-app (intern (string-upcase verb) :keyword))))
+    (if app
+        (pine.attach:run-frontend app)
+        (format t "pine: no ~a app~%" verb))))
+
+(defun run-all (&key (port pine.server:*port*))
+  "`pine start': the shim. Kick the daemon in its own process if it is not already
+up, then return. The daemon reads init.lisp and spawns + supervises the frontends
+(editor + desktop) as their own processes -- this shim renders nothing itself, so
+the daemon, the editor, and the desktop are three separate images."
+  (if (daemon-listening-p port)
+      (format t "pine: daemon already up on ~a:~d~%" pine.server:*host* port)
+      (progn
+        (let ((self (first sb-ext:*posix-argv*)))
+          (uiop:launch-program (list self "daemon")
+                               :output "/tmp/pine-daemon.log"
+                               :error-output "/tmp/pine-daemon.log"
+                               :if-output-exists :supersede
+                               :if-error-output-exists :supersede))
+        (loop repeat 120 when (daemon-listening-p port) do (return)
+              do (sleep 0.5)
+              finally (format t "pine: daemon did not come up (log /tmp/pine-daemon.log)~%")
+                      (return-from run-all))
+        (format t "pine: daemon up on ~a:~d -- editor + desktop spawning.~%"
+                pine.server:*host* port)))
+  (finish-output))
+
 (defun run-daemon (&key (port pine.server:*port*))
+  (setf pine.server:*port* port)
   (start-daemon :remoting-port port)
+  (handle-termination)
   (start-frontends)
   (format t "pine daemon up on ~a:~d, frontends supervised~%"
           pine.server:*host* port)
@@ -165,23 +219,6 @@ exits after, so the ephemeral actor system needs no teardown."
           (format t "~a~%" (sento.actor:ask-s ref msg :time-out 5)))
       (error () (format t "pine: no daemon at ~a:~d~%" host port)))))
 
-(defvar *start-hook* nil
-  "Set by the frontend layer (:pine/wayland) to a function that starts the daemon
-AND renders the surfaces. When bound, `pine start' brings up the whole desktop;
-otherwise it starts the headless daemon only.")
-
-(defvar *editor-hook* nil
-  "Set by the frontend layer to the editor frontend runner; `pine editor' calls
-it. The editor attaches to the running daemon as its own process.")
-
-(defvar *desktop-hook* nil
-  "Set by the frontend layer to the desktop frontend runner; `pine desktop' calls
-it. The desktop attaches to the running daemon as its own process.")
-
-(defvar *wm-hook* nil
-  "Set by the frontend layer to the river window manager runner; `pine wm'
-calls it. Only meaningful under river (design/wm.org).")
-
 ;;;; Frontends are agents. The editor and the desktop are not part of this
 ;;;; process: the daemon spawns each as its own OS image -- `pine editor' /
 ;;;; `pine desktop', the same binary re-invoked -- so one can crash, be killed,
@@ -203,13 +240,6 @@ itself with a verb. Under `make daemon' argv0 is sbcl, which cannot."
   (let ((self (first sb-ext:*posix-argv*)))
     (and self (not (search "sbcl" (namestring self))))))
 
-(defvar *frontend-forms*
-  '(("editor"  . "(pine.wl-editor:run-editor)")
-    ("desktop" . "(pine.wayland:run-desktop)")
-    ("wm"      . "(pine.wl-wm:run-wm)"))
-  "The form that runs each frontend, for a daemon started from source. The
-built binary takes the verb instead.")
-
 (defun frontend-command (verb)
   "The command that starts frontend VERB as its own process. From the binary
 that is the binary and the verb. From source it is this same sbcl run again on
@@ -217,20 +247,29 @@ the wayland system: argv0 is sbcl and takes no verb, but the child inherits the
 environment that made this image loadable, so it can load what this one did."
   (if (daemon-is-binary-p)
       (list (first sb-ext:*posix-argv*) verb)
-      (let ((form (cdr (assoc verb *frontend-forms* :test #'string=))))
-        (unless form
-          (error "no way to start frontend ~s from source" verb))
-        (list (namestring sb-ext:*runtime-pathname*)
-              "--no-userinit" "--non-interactive"
-              "--eval" "(require :asdf)"
-              "--eval" "(asdf:load-system :pine/wayland)"
-              "--eval" form))))
+      (list (namestring sb-ext:*runtime-pathname*)
+            "--no-userinit" "--non-interactive"
+            "--eval" "(require :asdf)"
+            "--eval" "(asdf:load-system :pine/wayland)"
+            "--eval" (format nil "(pine::run-app ~s)" verb))))
+
+(defun frontend-environment ()
+  "This daemon's environment, with PINE_PORT naming the port it listens on."
+  (let ((prefix "PINE_PORT="))
+    (cons (format nil "~a~d" prefix pine.server:*port*)
+          (remove-if (lambda (entry)
+                       (and (>= (length entry) (length prefix))
+                            (string= prefix entry :end2 (length prefix))))
+                     (sb-ext:posix-environ)))))
 
 (defun spawn-frontend (verb)
-  "Launch one frontend as its own process, logging to /tmp."
+  "Launch one frontend as its own process, logging to /tmp. The child is told
+which daemon started it, so a daemon on any other port keeps its own frontends
+instead of handing them to whoever holds the default."
   (let ((log (format nil "/tmp/pine-~a.log" verb)))
     (setf (gethash verb *frontend-procs*)
           (uiop:launch-program (frontend-command verb)
+                               :environment (frontend-environment)
                                :output log :error-output log
                                :if-output-exists :supersede
                                :if-error-output-exists :supersede))))
@@ -279,13 +318,19 @@ is attached already."
 The decision is made every cycle rather than once, because the configuration
 can change under a reload and the display can appear long after the daemon
 starts. The cycle that first sees a display only observes, leaving a frontend
-started elsewhere time to attach and claim its kind."
+started elsewhere time to attach and claim its kind. Apps that have died are
+reaped first, or their kind would count as attached forever and never come
+back."
   (setf *frontend-supervise* t)
   (bordeaux-threads:make-thread
    (lambda ()
      (let ((previous nil))
        (loop :while *frontend-supervise*
-             :do (let ((display (session-display)))
+             :do (dolist (client (pine.attach:reap-clients))
+                   (format t "pine: ~(~a~) is gone, starting it again~%"
+                           (pine.attach:attached-client-kind client))
+                   (finish-output))
+                 (let ((display (session-display)))
                    (cond
                      ((not (equal display previous))
                       (clrhash *frontend-unavailable*)
@@ -344,7 +389,7 @@ sure the port is free even if it was an old or wedged daemon."
   "Stop the daemon, wait for the port to free, then start it fresh."
   (cli-stop :port port)
   (loop repeat 40 until (port-free-p port) do (sleep 0.25))
-  (if *start-hook* (funcall *start-hook*) (run-daemon)))
+  (run-all))
 
 (defun cli (&optional (args (rest sb-ext:*posix-argv*)))
   ;; a CLI prints its answer, nothing else: quiet sento/log4cl's INFO chatter
@@ -353,16 +398,11 @@ sure the port is free even if it was an old or wedged daemon."
   (let ((verb (first args)) (more (rest args)))
     (cond
       ((null verb) (format t "~a~%" *cli-usage*))
-      ((string= verb "start")  (if *start-hook* (funcall *start-hook*) (run-daemon)))
+      ((string= verb "start")  (run-all))
       ((string= verb "stop")    (cli-stop))
       ((string= verb "restart") (cli-restart))
       ((string= verb "daemon") (run-daemon))
-      ((string= verb "editor") (if *editor-hook* (funcall *editor-hook*)
-                                   (format t "pine: no editor frontend in this build~%")))
-      ((string= verb "desktop") (if *desktop-hook* (funcall *desktop-hook*)
-                                    (format t "pine: no desktop frontend in this build~%")))
-      ((string= verb "wm") (if *wm-hook* (funcall *wm-hook*)
-                               (format t "pine: no wm frontend in this build~%")))
+      ((member verb '("editor" "desktop" "wm") :test #'string=) (run-app verb))
       ((string= verb "status") (cli-request '(:status)))
       ((string= verb "eval")   (cli-request (list :eval (format nil "~{~a~^ ~}" more))))
       ((string= verb "session")

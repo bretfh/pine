@@ -75,7 +75,7 @@ frontend serving itself up for eval and debugging."
 
 (defun connect (&key name master-host master-port self-port)
   (let ((sys (sento.actor-system:make-actor-system
-              '(:dispatchers (:shared (:workers 2 :strategy :random))))))
+               pine.server:*app-actor-config*)))
     (setf *agent-system* sys)
     (sento.remoting:enable-remoting sys :host pine.server:*host* :port self-port)
     (serve sys :name name :master-host master-host :master-port master-port

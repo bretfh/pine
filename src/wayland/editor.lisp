@@ -1,9 +1,4 @@
-(defpackage #:pine.wl-editor
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell)
-  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:s #:pine.display) (#:l #:pine.layout) (#:bt #:bordeaux-threads))
-  (:export #:run-editor #:*keyboard-handler*))
-(in-package #:pine.wl-editor)
+(in-package #:pine.wayland)
 
 ;;;; The editor frontend: an xdg-shell toplevel that attaches to the daemon as
 ;;;; :kind :editor and renders the `editor' surface -- one (:widgets ...) widget
@@ -29,8 +24,9 @@ buffer rows were laid out for."
 (defparameter *x0* 6d0)
 
 (defclass editor ()
-  ((sys        :initarg :sys :reader ed-sys)
+  ((sys        :initarg :sys :accessor ed-sys :initform nil)
    (display    :initarg :display :reader ed-display)
+   (fd         :initarg :fd :reader ed-fd)
    (compositor :initform nil) (shm :initform nil) (xdg-wm-base :initform nil)
    (seat :initform nil) (keyboard :initform nil)
    (wl-surface :initform nil) (xdg-surface :initform nil) (xdg-toplevel :initform nil)
@@ -44,8 +40,7 @@ buffer rows were laid out for."
    (metricsp :initform nil :accessor ed-metricsp)
    (sent-cols :initform -1 :accessor ed-sent-cols)
    (sent-rows :initform -1 :accessor ed-sent-rows)
-   (queue   :initform nil :accessor ed-queue)
-   (qlock   :initform (bt:make-lock) :reader ed-qlock)
+   (pump    :initarg :pump :reader ed-pump)
    (dirty   :initform nil :accessor ed-dirty)
    ;; no buffer may be attached before the first xdg_surface.configure --
    ;; river enforces this where some compositors tolerate it
@@ -76,14 +71,17 @@ compositor's repeat rate. Called from the run-loop tick."
           (setf (ed-last-repeat-ms ed) now)
           (send-input ed msg))))))
 
-(defun enqueue (ed thunk)
-  (bt:with-lock-held ((ed-qlock ed)) (push thunk (ed-queue ed))))
+(defun repeat-deadline (ed)
+  "Milliseconds until the held key repeats again, or nil when none is held.
 
-(defun drain (ed)
-  (let (items)
-    (bt:with-lock-held ((ed-qlock ed))
-      (setf items (nreverse (ed-queue ed)) (ed-queue ed) nil))
-    (dolist (th items) (ignore-errors (funcall th)))))
+The only deadline the editor has. With no key down the loop waits for as long
+as it takes."
+  (let ((msg (ed-held-msg ed))
+        (rate (ed-repeat-rate ed)))
+    (when (and msg (plusp rate))
+      (let ((due (max (+ (ed-held-since-ms ed) (ed-repeat-delay-ms ed))
+                      (+ (ed-last-repeat-ms ed) (floor 1000 rate)))))
+        (max 0 (- due (now-ms)))))))
 
 (defun send-input (ed msg)
   (a:when-let ((ref (ed-ref ed))) (ignore-errors (sento.actor:tell ref msg))))
@@ -95,7 +93,7 @@ compositor's repeat rate. Called from the run-loop tick."
   "Measure the monospace cell once, the same way the layout engine's window node
 does, so a frame laid out at N cols x rows lands exactly in the cells."
   (unless (ed-metricsp ed)
-    (c:select-font-face s:*font-family* :normal :normal)
+    (c:select-font-face pine.display:*font-family* :normal :normal)
     (c:set-font-size (font-px))
     (let ((fe (c:get-font-extents)))
       (multiple-value-bind (xb yb w h ax) (c:text-extents "M")
@@ -152,7 +150,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
 
 ;;;; Connect + xdg surface.
 
-(defun connect (ed)
+(defun connect-editor (ed)
   (with-slots (display compositor shm xdg-wm-base seat) ed
     (let ((registry (wl-display.get-registry display)))
       (push (evlambda
@@ -167,12 +165,12 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                         (wl-proxy-hooks xdg-wm-base)))
                  (wl-seat
                   (setf seat (wl-registry.bind registry name 'wl-seat 5))
-                  (push (a:curry #'handle-seat ed) (wl-proxy-hooks seat))))))
+                  (push (a:curry #'handle-editor-seat ed) (wl-proxy-hooks seat))))))
             (wl-proxy-hooks registry))
       (wl-display-roundtrip display)
       (wl-display-roundtrip display))))
 
-(defun handle-seat (ed &rest event)
+(defun handle-editor-seat (ed &rest event)
   (with-slots (seat keyboard) ed
     (event-case event
       (:capabilities (capabilities)
@@ -205,7 +203,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
 
 ;;;; Frames from the daemon.
 
-(defun handle-display (ed msg)
+(defun handle-editor-message (ed msg)
   (case (first msg)
     (:attached
      (destructuring-bind (&key id client-uri) (rest msg)
@@ -218,52 +216,43 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
     (:rules
      (destructuring-bind (&key rules) (rest msg)
        (pine.buffer:install-rules rules)
-       (enqueue ed (lambda () (setf (ed-dirty ed) t)))))
+       (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
     ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
     ;; -- the buffer's rows ride inside the window node -- and repaint.
     (:widgets
      (destructuring-bind (&key surface tree as) (rest msg)
        (declare (ignore surface as))
-       (enqueue ed (lambda ()
+       (pine.frontend:enqueue (ed-pump ed) (lambda ()
                      (setf (ed-tree ed)
                            (l:wire->node tree :on-action
                                          (lambda (id) (declare (ignore id))
                                            (lambda (&rest args) (declare (ignore args)) nil)))
                            (ed-dirty ed) t)))))))
 
-(defun run-loop (ed)
-  (let ((display (ed-display ed)))
-    (loop until (ed-done ed) do
-      (drain ed)
-      (check-repeat ed)
-      (when (and (ed-dirty ed) (ed-configured ed)) (paint-editor ed))
-      (loop while (wl-display-listen display) do (wl-display-dispatch-event display))
-      (sleep 0.006))))
+(defun editor-loop (ed display fd)
+  (run-loop display fd (ed-pump ed)
+   :done (lambda () (ed-done ed))
+   :ready (lambda ()
+            (check-repeat ed)
+            (when (and (ed-dirty ed) (ed-configured ed)) (paint-editor ed)))
+   :pending (lambda () (and (ed-dirty ed) (ed-configured ed)))
+   :deadline (lambda () (repeat-deadline ed))))
 
 (defun run-editor (&key (host pine.server:*host*) (port pine.server:*port*))
   "Attach an editor window to the daemon at HOST:PORT and paint the frames
 it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up."
-  (unless pine.server:*server*
-    (setf pine.server:*server* (make-instance 'pine.server:server)))
-  (ignore-errors (pine.buffer:install-default-faces))
-  (let* ((sys (sento.actor-system:make-actor-system
-               '(:dispatchers (:shared (:workers 2 :strategy :random)))))
-         (ed (make-instance 'editor :sys sys :display (wl-display-connect))))
-    (connect ed)
-    (open-window ed)
-    (sento.remoting:enable-remoting sys :host pine.server:*host* :port 0)
-    (sento.actor-context:actor-of sys :name "display"
-      :receive (lambda (msg) (handle-display ed msg) nil))
-    (pine.attach:attach-to-daemon sys
-      (pine.server:daemon-uri "attach" :host host :port port)
-      (pine.server:local-uri "display" (sento.remoting:remoting-port sys))
-      :kind :editor)
-    ;; serve this image as agent "editor": daemon-driven eval into the frontend,
-    ;; and errors here ship their restarts home like any process agent
-    (ignore-errors
-     (pine.agent:serve sys :name "editor" :master-host host :master-port port
-                           :self-port (sento.remoting:remoting-port sys)))
-    (unwind-protect (run-loop ed)
-      (wl-display-disconnect (ed-display ed)))))
+  (multiple-value-bind (display fd) (connect-display)
+    (let ((ed (make-instance 'editor :display display :fd fd
+                                     :pump (pine.frontend:make-pump))))
+      (connect-editor ed)
+      (open-window ed)
+      (setf (ed-sys ed) (pine.frontend:attach
+                         :editor (lambda (msg) (handle-editor-message ed msg))
+                         :host host :port port))
+      (unwind-protect (editor-loop ed display fd)
+        (pine.frontend:close-pump (ed-pump ed))
+        (wl-display-disconnect display)))))
 
-(setf pine::*editor-hook* #'run-editor)
+(defmethod pine.attach:run-frontend ((app pine.editor::editor-app))
+  (declare (ignore app))
+  (run-editor))

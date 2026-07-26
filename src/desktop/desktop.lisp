@@ -121,11 +121,32 @@ close it if it is already the open one."
        (destructuring-bind (&key text) (rest msg)
          (pine.ref:set-ref (pine.ref:defref :hint "") (or text "")))))))
 
+(defclass desktop-app (pine.attach:app)
+  ()
+  (:default-initargs :kind :desktop)
+  (:documentation "The bar, the echo strip, and the panels."))
+
+(defmethod pine.attach:attached ((app desktop-app) client)
+  (make-desktop-session client))
+
+(defmethod pine.attach:received ((app desktop-app) client message)
+  (desktop-input client message))
+
+(defmethod pine.attach:detached ((app desktop-app) client)
+  "Drop the surfaces' reactive views, so a dead frontend stops being rendered
+for."
+  (let ((s (pine.attach:attached-client-session client)))
+    (when (dsession-p s)
+      (maphash (lambda (name view)
+                 (declare (ignore name))
+                 (pine.ref:dispose-view view))
+               (dsession-views s))
+      (clrhash (dsession-views s)))))
+
+(pine.attach:register-app (make-instance 'desktop-app))
+
 (defun install-desktop-sessions ()
   "Wire the daemon to host a desktop session per attaching :desktop app."
-  (pine.attach:register-app-kind :desktop
-    :on-attach (lambda (c) (make-desktop-session c))
-    :on-input  (lambda (c msg) (desktop-input c msg)))
   (pine.command:define-command "reload-desktop" () (refresh-all)))
 
 (defun refresh-all ()

@@ -44,16 +44,18 @@ so memory and latency stay bounded rather than falling minutes behind.")
 ;;;; Reader thread + output draining
 
 (defun start-reader (client tobj)
-  (declare (ignore client))
   (flet ((reader ()
            (loop
              (let ((s (pine.vt:pty-read-string (terminal-fd tobj) 8192)))
                (if (null s)
                    (progn (setf (terminal-alive tobj) nil) (return))
-                   ;; O(1) hand-off; the pump drives redraws on its own timer,
-                   ;; so no per-read render signalling (which floods under load).
-                   (bordeaux-threads:with-lock-held ((terminal-lock tobj))
-                     (push s (terminal-pending tobj))))))))
+                   ;; O(1) hand-off, then wake the pump. The pump still paces
+                   ;; the redraws, so a flood of reads is not a flood of frames.
+                   (progn
+                     (bordeaux-threads:with-lock-held ((terminal-lock tobj))
+                       (push s (terminal-pending tobj)))
+                     (sb-thread:signal-semaphore
+                      (pine.client:terminal-wake client))))))))
     (setf (terminal-reader tobj)
           (bordeaux-threads:make-thread #'reader :name "pine-pty-reader"))))
 

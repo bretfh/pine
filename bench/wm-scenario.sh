@@ -42,7 +42,18 @@ log "harness daemon port $port"
 # login takes, so this exercises it.
 cat >"$XDG_CONFIG_HOME/pine/init.lisp" <<'LISP'
 (in-package :pine.user)
-(setf *frontends* (list "wm"))
+(setf *frontends* (list "wm" "desktop"))
+
+;; wm-terminal spawns through a login shell, which resets PATH to the profile:
+;; the manifest's foot is not on it, so name a terminal that is.
+(setf (var :wm-terminal) "alacritty")
+
+(defsurface bar (:as :bar)
+  (column :class "bar" :align :center :spacing 8
+    (label "P") (label "I") (label "N") (label "E")))
+
+(defsurface echo (:as :echo)
+  (row :class "echo" :align :center (label "echo strip")))
 LISP
 
 env -u WAYLAND_DISPLAY \
@@ -64,10 +75,17 @@ sbcl --no-userinit --non-interactive \
      >>"$out/session.log" 2>&1
 
 settle 20
-if pgrep -f "pine.wl-wm:run-wm" >/dev/null; then
+if pgrep -f 'run-app "wm"' >/dev/null; then
   log "daemon started the window manager"
 else
   log "NO WINDOW MANAGER: see daemon.log and /tmp/pine-wm.log"
+fi
+# The bar is a layer surface. river closes those outright unless the window
+# manager binds river_layer_shell_v1, so a bar on screen is the proof it did.
+if pgrep -f 'run-app "desktop"' >/dev/null; then
+  log "daemon started the desktop"
+else
+  log "NO DESKTOP: see daemon.log and /tmp/pine-desktop.log"
 fi
 shot 00-empty
 
@@ -107,7 +125,17 @@ press_super q
 settle 3
 shot 07-after-close
 
+# The frontend logs are superseded per spawn, so a frontend that died and was
+# respawned leaves only its successor's log behind. Keep what is there now.
+for f in wm desktop editor; do
+  cp "/tmp/pine-$f.log" "$out/$f.log" 2>/dev/null || true
+done
+
 log "scenario done"
+# The daemon only tears its frontends down on a clean stop, so a bare kill
+# leaves them orphaned and talking to a daemon that is gone. Take the children
+# first, by parent, so nothing outlives the harness.
+kill $(ps -o pid= --ppid "$daemon_pid" 2>/dev/null) 2>/dev/null || true
 kill "$daemon_pid" 2>/dev/null || true
 
 # river outlives its init; end the session so the harness returns promptly.

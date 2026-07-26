@@ -50,8 +50,8 @@ buffers, surface = wayland placement only). Kept as the record of why.
 - =pine.display= :: the cell-grid PAINTER -- =paint-rows=, =render-frame-to-png=,
   plus a dead abstract =surface= class with =present= / =paint-frame=.
 - =pine.cairo= :: the cairo widget-tree backend.
-- =pine.wayland= =pine.wl-editor= =pine.wlr-layer-shell= :: the wayflan client, its
-  editor, and the generated layer-shell bindings.
+- =pine.frontend= =pine.wayland= =pine.protocol= :: what a frontend is, the
+  wayland backing that implements it, and the generated protocol bindings.
 - =pine.gtk= =pine.desktop-app= :: the GTK editor and desktop (the fallback).
 
 ** user

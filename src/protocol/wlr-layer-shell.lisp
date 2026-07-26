@@ -1,0 +1,11 @@
+;;;; zwlr_layer_shell_v1 and zwlr_layer_surface_v1: the anchored bar and
+;;;; panel surfaces, bound directly with no C shim.
+
+(in-package #:pine.protocol)
+
+(xyz.shunter.wayflan.client.scanner:wl-include
+  (merge-pathnames "share/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml"
+                   (uiop:ensure-directory-pathname
+                    (or (uiop:getenv "GUIX_ENVIRONMENT")
+                        (error "GUIX_ENVIRONMENT unset: build inside guix shell -m manifest.scm"))))
+  :export t)

@@ -1,11 +1,3 @@
-(defpackage #:pine.wayland
-  (:use #:cl #:wayflan-client #:pine.wlr-layer-shell)
-  (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:bt #:bordeaux-threads)
-                    (#:shm #:posix-shm) (#:l #:pine.layout))
-  (:export #:open-layer-surface #:paint-surface #:build-tree #:measure-panel
-           #:layer-surface #:ls-width #:ls-height #:ls-tree #:ls-wl-surface
-           #:wl-conn #:wl-conn-display #:connect
-           #:run-desktop))
 (in-package #:pine.wayland)
 
 ;;;; A wayland layer surface painted by the cairo backend. We bind
@@ -19,7 +11,7 @@
 ;;;; surface->layer-surface for pointer focus, and the live pointer state.
 
 (defstruct wl-conn
-  display compositor shm shell seat pointer
+  display fd compositor shm shell seat pointer
   (surfaces nil)                        ; alist (wl-surface-proxy . layer-surface)
   focus (ptr-x 0) (ptr-y 0) (ptr-serial 0)
   drag)                                 ; a slider being scrubbed, or nil

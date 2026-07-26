@@ -413,6 +413,13 @@ measure through it (pixel/cairo mode); otherwise a character is one cell.")
 (defun %line-h (font-px)
   (if *text-size* (nth-value 1 (%text-size "M" font-px)) 1))
 
+(defgeneric nodes-of (node)
+  (:documentation "NODE's children, in the order they are laid out and painted.
+
+The one place a class says what it contains. Every walk over the tree is
+written on this, so a new node kind states its structure once.")
+  (:method ((n node)) (declare (ignore n)) nil))
+
 (defgeneric measure (node avail-w avail-h)
   (:documentation "The node's natural (values w h) given the available space,
 in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
@@ -422,6 +429,15 @@ in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
 
 (defgeneric paint (node raster)
   (:documentation "Draw the node into its arranged rect on RASTER."))
+
+(defgeneric node-at (node line col)
+  (:documentation "The deepest node at (LINE COL) that answers interaction: an
+action, a selectable, or a slider. Nil when nothing there does.
+
+The default descends into the children, so a container needs no method and an
+interactive node says only what it does with a hit.")
+  (:method ((n node) line col)
+    (some (lambda (child) (node-at child line col)) (nodes-of n))))
 
 (defun %node-width (n) (- (end-col n) (start-col n)))
 
@@ -1125,24 +1141,17 @@ reaches it, or nil when LEAF cannot be removed."
   (and (<= (start-line n) line) (<= line (end-line n))
        (<= (start-col n) col) (< col (end-col n))))
 
-(defun node-at (node line col)
-  "The deepest action, selectable, or slider whose rect contains (LINE COL)."
-  (labels ((walk (n)
-             (when n
-               (typecase n
-                 (action     (when (%node-contains n line col) (or (walk (node n)) n)))
-                 (selectable (when (%node-contains n line col) (or (walk (node n)) n)))
-                 (slider     (when (%node-contains n line col) n))
-                 (hstack (some #'walk (nodes n)))
-                 (vstack (some #'walk (nodes n)))
-                 (centerbox (some #'walk (%cb-parts n)))
-                 (box    (walk (node n)))
-                 (center (walk (node n)))
-                 (scroll (when (%node-contains n line col) (walk (node n))))
-                 (grid   (some (lambda (row) (some #'walk row)) (cells n)))
-                 (list-node (some #'walk (rendered n)))
-                 (t nil)))))
-    (walk node)))
+(defmethod node-at ((n action) line col)
+  (when (%node-contains n line col) (or (call-next-method) n)))
+
+(defmethod node-at ((n selectable) line col)
+  (when (%node-contains n line col) (or (call-next-method) n)))
+
+(defmethod node-at ((n slider) line col)
+  (when (%node-contains n line col) n))
+
+(defmethod node-at ((n scroll) line col)
+  (when (%node-contains n line col) (call-next-method)))
 
 (defun action-at (node line col)
   "The callback of the action under (LINE COL), or nil."
@@ -1154,15 +1163,19 @@ reaches it, or nil when LEAF cannot be removed."
   (let ((n (node-at root line col)))
     (and n (hint n))))
 
-(defun nodes-of (n)
-  "N's node nodes, for tree walks (e.g. the cairo chrome pass)."
-  (typecase n
-    ((or vstack hstack) (nodes n))
-    ((or box center action selectable scroll ring) (and (node n) (list (node n))))
-    (centerbox (%cb-parts n))
-    (grid (apply #'append (cells n)))
-    (list-node (rendered n))
-    (t nil)))
+;;;; Structure: what each class contains. Every tree walk reads this.
+
+(defmethod nodes-of ((n vstack)) (nodes n))
+(defmethod nodes-of ((n hstack)) (nodes n))
+(defmethod nodes-of ((n centerbox)) (%cb-parts n))
+(defmethod nodes-of ((n grid)) (apply #'append (cells n)))
+(defmethod nodes-of ((n list-node)) (rendered n))
+(defmethod nodes-of ((n box)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n center)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n action)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n selectable)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n scroll)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n ring)) (and (node n) (list (node n))))
 
 (defun click-thunk (root line col)
   "A nullary thunk for a click at (LINE COL) on arranged ROOT: an action's
@@ -1179,20 +1192,13 @@ point is over neither."
 ;;;; Selection navigation
 
 (defun collect-selectables (n)
+  "Every selectable in N, in tree order. A selectable is a leaf choice, so the
+walk does not descend past one."
   (let ((result nil))
     (labels ((walk (x)
                (when x
-                 (typecase x
-                   (selectable (push x result))
-                   (vstack (mapc #'walk (nodes x)))
-                   (hstack (mapc #'walk (nodes x)))
-                   (centerbox (mapc #'walk (%cb-parts x)))
-                   (box (walk (node x)))
-                   (center (walk (node x)))
-                   (scroll (walk (node x)))
-                   (grid (dolist (row (cells x)) (mapc #'walk row)))
-                   (action (walk (node x)))
-                   (list-node (mapc #'walk (rendered x)))
-                   (t nil)))))
+                 (if (typep x 'selectable)
+                     (push x result)
+                     (mapc #'walk (nodes-of x))))))
       (walk n))
     (nreverse result)))

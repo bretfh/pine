@@ -15,26 +15,16 @@
 ;;;; marshalling.
 
 (defclass desktop-client ()
-  ((sys      :initarg :sys  :reader client-sys)
+  ((sys      :initarg :sys  :accessor client-sys :initform nil)
    (conn     :initarg :conn :reader conn)
    (ref      :initform nil  :accessor client-ref)          ; remote-ref to daemon
    (surfaces :initform (make-hash-table :test 'equal) :reader client-surfaces)
    (wire     :initform (make-hash-table :test 'equal) :reader client-wire)
    (roles    :initform (make-hash-table :test 'equal) :reader client-roles)
-   (queue    :initform nil  :accessor client-queue)
-   (qlock    :initform (bt:make-lock) :reader client-qlock)
+   (pump     :initarg :pump :reader client-pump)
    (done     :initform nil  :accessor client-done)))
 
 ;;;; Cross-thread command queue.
-
-(defun enqueue (client thunk)
-  (bt:with-lock-held ((client-qlock client)) (push thunk (client-queue client))))
-
-(defun drain (client)
-  (let (items)
-    (bt:with-lock-held ((client-qlock client))
-      (setf items (nreverse (client-queue client)) (client-queue client) nil))
-    (dolist (th items) (ignore-errors (funcall th)))))
 
 ;;;; Outgoing: input back to the daemon.
 
@@ -68,14 +58,19 @@ sends it back with any interaction args (the slider value, or none for buttons).
   "The wayland placement for a surface :as ROLE -- the layer-shell mapping for the
 desktop's furniture. (:toplevel is xdg-shell and is handled by the editor
 frontend, never here.) The daemon declares the role in Wayland's vocabulary; the
-client maps it to a layer, anchor, and exclusive zone."
+client maps it to a layer, anchor, and exclusive zone.
+
+:exclusive is the zone the surface keeps for itself: :w or :h claims the size
+measured on that axis, and windows are laid out in what is left. The furniture
+that frames the session -- the bar and the echo strip -- claims its space; a
+panel or an overlay is transient and floats over the windows instead."
   (case role
     (:background (list :layer :background :anchor '(:top :left :bottom :right) :axis :wh
                        :avail 3840 :exclusive 0 :margin '(0 0 0 0)))
     (:bar     (list :layer :top :anchor '(:top :left :bottom) :axis :w :avail 160
                     :exclusive :w :margin '(0 0 0 0)))
     (:echo    (list :layer :top :anchor '(:bottom :left :right) :axis :h :avail 3840
-                    :exclusive 0 :margin '(0 0 0 0)))
+                    :exclusive :h :margin '(0 0 0 0)))
     (:overlay (list :layer :overlay :anchor '(:top :right) :axis :wh :avail 460
                     :exclusive 0 :margin '(8 8 0 0)))
     (t        (list :layer :overlay :anchor '(:top :left) :axis :wh :avail 460    ; :panel
@@ -98,8 +93,9 @@ client maps it to a layer, anchor, and exclusive zone."
              (ls (open-layer-surface (conn client) tfn
                                      :layer (getf spec :layer) :anchor (getf spec :anchor)
                                      :width w :height h
-                                     :exclusive (if (eq e :w) w e)
-                                     :margin (getf spec :margin))))
+                                     :exclusive (case e (:w w) (:h h) (t e))
+                                     :margin (getf spec :margin)
+                                     :on-closed (lambda () (destroy-surface client name)))))
         (setf (gethash name (client-surfaces client)) ls)))))
 
 (defun destroy-surface (client name)
@@ -129,7 +125,7 @@ for (:panel :show)."
         (when (gethash name (client-wire client)) (create-surface client name)))
       (destroy-surface client name)))
 
-(defun handle-display (client msg)
+(defun handle-desktop-message (client msg)
   "Runs on a sento pool thread: set the daemon ref, otherwise enqueue wayland
 work for the loop thread."
   (case (first msg)
@@ -141,14 +137,14 @@ work for the loop thread."
        (send-refresh client)))
     (:widgets
      (destructuring-bind (&key surface tree as) (rest msg)
-       (enqueue client (lambda () (on-widgets client surface tree as)))))
+       (pine.frontend:enqueue (client-pump client) (lambda () (on-widgets client surface tree as)))))
     (:panel
      (destructuring-bind (&key name show) (rest msg)
-       (enqueue client (lambda () (on-panel client name show)))))
+       (pine.frontend:enqueue (client-pump client) (lambda () (on-panel client name show)))))
     (:rules
      (destructuring-bind (&key rules) (rest msg)
        (pine.buffer:install-rules rules)
-       (enqueue client
+       (pine.frontend:enqueue (client-pump client)
                 (lambda ()
                   (maphash (lambda (name ls) (declare (ignore name))
                              (build-tree ls)
@@ -157,65 +153,24 @@ work for the loop thread."
 
 ;;;; The loop: drain queued wayland work, dispatch pending events, idle.
 
-(defun run-loop (client)
-  (let ((display (wl-conn-display (conn client))))
-    (loop until (client-done client) do
-      (drain client)
-      (loop while (wl-display-listen display) do (wl-display-dispatch-event display))
-      (sleep 0.006))))
+
 
 (defun run-desktop (&key (host pine.server:*host*) (port pine.server:*port*))
   "Attach to the daemon at HOST:PORT and run the bar, echo, and toggled panels as
 wayland layer surfaces. Opens surfaces on the current display -- run it yourself;
 the daemon (make daemon) must already be up."
-  (unless pine.server:*server*
-    (setf pine.server:*server* (make-instance 'pine.server:server)))
-  (ignore-errors (pine.buffer:install-default-faces))
-  (let* ((sys (sento.actor-system:make-actor-system
-               '(:dispatchers (:shared (:workers 2 :strategy :random)))))
-         (conn (connect))
-         (client (make-instance 'desktop-client :sys sys :conn conn)))
-    (sento.remoting:enable-remoting sys :host pine.server:*host* :port 0)
+  (let* ((conn (connect-desktop))
+         (client (make-instance 'desktop-client :conn conn
+                                :pump (pine.frontend:make-pump))))
     (setf *on-hover* (lambda (node) (send-hint client (or (and node (l:hint node)) ""))))
-    (sento.actor-context:actor-of sys :name "display"
-      :receive (lambda (msg) (handle-display client msg) nil))
-    (pine.attach:attach-to-daemon sys
-      (pine.server:daemon-uri "attach" :host host :port port)
-      (pine.server:local-uri "display" (sento.remoting:remoting-port sys))
-      :kind :desktop)
-    ;; serve this image as agent "desktop": daemon-driven eval into the frontend,
-    ;; and errors here ship their restarts home like any process agent
-    (ignore-errors
-     (pine.agent:serve sys :name "desktop" :master-host host :master-port port
-                           :self-port (sento.remoting:remoting-port sys)))
-    (run-loop client)))
+    (setf (client-sys client)
+          (pine.frontend:attach :desktop (lambda (msg) (handle-desktop-message client msg))
+                                :host host :port port))
+    (unwind-protect
+         (run-loop (wl-conn-display conn) (wl-conn-fd conn) (client-pump client)
+                   :done (lambda () (client-done client)))
+      (pine.frontend:close-pump (client-pump client)))))
 
-(defun daemon-listening-p (port)
-  (ignore-errors
-    (let ((s (usocket:socket-connect pine.server:*host* port :timeout 1)))
-      (usocket:socket-close s) t)))
-
-(defun run-all (&key (port pine.server:*port*))
-  "`pine start': the shim. Kick the daemon in its own process if it is not already
-up, then return. The daemon reads init.lisp and spawns + supervises the frontends
-(editor + desktop) as their own processes -- this shim renders nothing itself, so
-the daemon, the editor, and the desktop are three separate images."
-  (if (daemon-listening-p port)
-      (format t "pine: daemon already up on ~a:~d~%" pine.server:*host* port)
-      (progn
-        (let ((self (first sb-ext:*posix-argv*)))
-          (uiop:launch-program (list self "daemon")
-                               :output "/tmp/pine-daemon.log"
-                               :error-output "/tmp/pine-daemon.log"
-                               :if-output-exists :supersede
-                               :if-error-output-exists :supersede))
-        (loop repeat 120 when (daemon-listening-p port) do (return)
-              do (sleep 0.5)
-              finally (format t "pine: daemon did not come up (log /tmp/pine-daemon.log)~%")
-                      (return-from run-all))
-        (format t "pine: daemon up on ~a:~d -- editor + desktop spawning.~%"
-                pine.server:*host* port)))
-  (finish-output))
-
-(setf pine::*start-hook* #'run-all
-      pine::*desktop-hook* #'run-desktop)
+(defmethod pine.attach:run-frontend ((app pine.desktop::desktop-app))
+  (declare (ignore app))
+  (run-desktop))

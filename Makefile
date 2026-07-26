@@ -36,7 +36,7 @@ daemon:
 # the editor: an xdg-shell window painting the editor surface, xkb keyboard,
 # its own process attached to the daemon (make daemon must be up).
 editor:
-	$(GUIX) sh -c '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine.wl-editor:run-editor)"'
+	$(GUIX) sh -c '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine.wayland:run-editor)"'
 
 # the desktop: bar, echo, and panels as wayland layer surfaces, its own process
 # attached to the daemon.
@@ -53,7 +53,7 @@ dev:
 	  for i in $$(seq 1 90); do grep -q "daemon up" /tmp/pine-daemon.log && break; sleep 1; done; \
 	  $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(pine.wayland:run-desktop)" >/tmp/pine-desktop.log 2>&1 & \
 	  WPID=$$!; \
-	  $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine.wl-editor:run-editor)"; \
+	  $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine.wayland:run-editor)"; \
 	  kill $$DPID $$WPID 2>/dev/null'
 
 check:

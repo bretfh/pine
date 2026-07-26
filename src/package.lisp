@@ -3,6 +3,7 @@
   (:export
    #:server
    #:*server*
+   #:*app-actor-config*
    #:actor-system
    #:event-bus
    #:agent-registry
@@ -284,10 +285,12 @@ Gated by the :world-save editor variable."))
 (defpackage #:pine.attach
   (:use #:cl)
   (:export #:start-attach-listener #:attach-listener
-           #:attach-to-daemon #:register-app-kind
+           #:attach-to-daemon
+           #:app #:app-kind #:register-app #:find-app
+           #:attached #:received #:detached #:run-frontend
            #:attached-client #:attached-client-id #:attached-client-kind
            #:attached-client-display #:attached-client-input #:attached-client-session
-           #:*clients* #:push-to-app))
+           #:*clients* #:push-to-app #:client-alive-p #:reap-clients))
 
 (defpackage #:pine.agent
   (:use #:cl)
@@ -361,6 +364,7 @@ Gated by the :world-save editor variable."))
    #:server-of
    #:terminals
    #:terminal-map
+   #:terminal-wake
    #:repl-buffer
    #:prompt-callback
    #:prompt-active
@@ -525,3 +529,15 @@ Gated by the :world-save editor variable."))
    #:ask #:tell #:current-client #:current-buffer
    #:find-mode #:current-buffer-mode #:set-buffer-mode
    #:eval-last-sexp #:eval-buffer))
+
+;;;; The client side: what a frontend is. Its backings declare their own
+;;;; packages, since those rest on libraries this system does not load.
+
+(defpackage #:pine.frontend
+  (:use #:cl)
+  (:export #:pump #:make-pump #:close-pump #:pump-wake-in
+           #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
+           #:attach)
+  (:documentation "The client interface: what every frontend is, with no
+platform in it. Bootstraps the actor system and the daemon attachment, and
+owns the queue the daemon's threads hand work across."))

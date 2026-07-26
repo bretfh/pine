@@ -1,7 +1,7 @@
 (in-package #:pine.wm)
 
 ;;;; Window management policy, daemon side. The compositor holds the windows
-;;;; and the frontend (pine.wl-wm) speaks the protocol, but every decision is
+;;;; and the backing (pine.wayland) speaks the protocol, but every decision is
 ;;;; made here: which chords exist, what they run, and where each window
 ;;;; goes. The frontend answers river's sequences from what it was last told
 ;;;; and never decides a rect.
@@ -74,9 +74,19 @@ dropping window state silently is how geometry goes missing."
 (defun focused-leaf (&optional (session *session*))
   (or (session-focus session) (first (leaves session))))
 
+(defun %frame ()
+  "The space a window's chrome occupies, as a layout margin.
+
+The compositor draws borders outside the window's content, so the arrangement
+has to leave room for them: without it, neighbouring windows sit edge to edge
+and each one's border is drawn over the other's content."
+  (let ((border (pine.buffer:metric :border 2)))
+    (list border border border border)))
+
 (defun %leaf (window)
-  "A fresh os-window leaf for WINDOW."
-  (pine.layout:window nil :of window :kind :os-window :expand 1))
+  "A fresh os-window leaf for WINDOW, holding room for its chrome."
+  (pine.layout:window nil :of window :kind :os-window :expand 1
+                          :margin (%frame)))
 
 (defun %divider (orient)
   (pine.layout:rule :vertical (eq orient :row) :face :border-inactive))
@@ -116,20 +126,22 @@ dropping window state silently is how geometry goes missing."
       (push-arrangement))))
 
 (defun arrange ()
-  "Arrange the tree at the output's pixel size and return the leaf rects as
-(ID X Y WIDTH HEIGHT). Pixels are cells one pixel wide, so the engine's own
-measure and arrange do the work unchanged."
+  "Arrange the tree over the area the frontend reports and return the leaf rects
+as (ID X Y WIDTH HEIGHT). Pixels are cells one pixel wide, so the engine's own
+measure and arrange do the work unchanged. The area is in global coordinates
+and need not start at the origin: layer surfaces such as a bar take their strip
+of the output first."
   (let* ((session *session*)
          (tree (and session (session-tree session)))
          (output (and session (session-output session))))
     (when (and tree output)
-      (destructuring-bind (width height) output
+      (destructuring-bind (x y width height) output
         (let ((pine.layout:*text-size*
                 (lambda (text font-px)
                   (declare (ignore font-px))
                   (values (length text) 1))))
           (pine.layout:measure tree width height)
-          (pine.layout:arrange tree 0 0 width height))
+          (pine.layout:arrange tree x y width height))
         (mapcar (lambda (leaf)
                   (list (leaf-id leaf)
                         (pine.layout:start-col leaf)
@@ -140,13 +152,24 @@ measure and arrange do the work unchanged."
                                (pine.layout:start-line leaf)))))
                 (leaves session))))))
 
+(defun %border ()
+  "The border the compositor should draw: its width, and the colour for the
+focused window and for the rest.
+
+The theme lives here, with the configuration that loads it, so the frontend is
+told colours rather than resolving faces in an image that has no theme."
+  (list :width (pine.buffer:metric :border 2)
+        :active (pine.buffer:face-fg :border-active)
+        :inactive (pine.buffer:face-fg :border-inactive)))
+
 (defun push-arrangement ()
-  "Send the arranged rects and the focused window to the frontend."
+  "Send the arranged rects, the focused window, and the border to the frontend."
   (let ((rects (arrange))
         (focus (focused-leaf)))
     (when rects
       (%tell-frontend :arrangement :rects rects
-                                   :focus (and focus (leaf-id focus))))))
+                                   :focus (and focus (leaf-id focus))
+                                   :border (%border)))))
 
 ;;;; The actions only the frontend can take: it holds the protocol objects
 ;;;; and the compositor's session environment.
@@ -245,36 +268,52 @@ chords were registered with the compositor from this keymap alone."
 ;;;; The session: one attached frontend, told the bindings on arrival, and
 ;;;; kept current with what the compositor reports.
 
+(defclass wm-app (pine.attach:app)
+  ()
+  (:default-initargs :kind :wm)
+  (:documentation "Window management: the compositor's windows as a layout
+tree, and the chords that move them."))
+
+(defmethod pine.attach:attached ((app wm-app) client)
+  (setf *session* (%make-session
+                   :app client
+                   :client (pine.client:start-client pine.server:*server*)))
+  (push-bindings))
+
+(defmethod pine.attach:detached ((app wm-app) client)
+  "Forget the session. Its windows belong to the compositor and outlive the
+frontend; the next one to attach reports them again."
+  (declare (ignore client))
+  (setf *session* nil))
+
+(defmethod pine.attach:received ((app wm-app) client message)
+  (declare (ignore client))
+  (case (first message)
+    (:binding
+     (destructuring-bind (&key keys) (rest message)
+       (run-binding keys)))
+    (:output
+     (destructuring-bind (&key x y width height) (rest message)
+       (setf (session-output *session*)
+             (list (or x 0) (or y 0) width height))
+       (push-arrangement)))
+    (:window-added
+     (destructuring-bind (&key id title app-id) (rest message)
+       (add-window id title app-id)))
+    (:window-closed
+     (destructuring-bind (&key id) (rest message)
+       (forget-window id)))
+    (:window-focused
+     (destructuring-bind (&key id) (rest message)
+       (let ((leaf (find-leaf id)))
+         (when leaf
+           (setf (session-focus *session*) leaf)
+           (push-arrangement)))))
+    (t nil)))
+
+(pine.attach:register-app (make-instance 'wm-app))
+
 (defun install-wm-sessions ()
   (install-commands)
   (install-bindings)
-  (pine.attach:register-app-kind :wm
-    :on-attach (lambda (app)
-                 (setf *session*
-                       (%make-session
-                        :app app
-                        :client (pine.client:start-client pine.server:*server*)))
-                 (push-bindings))
-    :on-input (lambda (app message)
-                (declare (ignore app))
-                (case (first message)
-                  (:binding
-                   (destructuring-bind (&key keys) (rest message)
-                     (run-binding keys)))
-                  (:output
-                   (destructuring-bind (&key width height) (rest message)
-                     (setf (session-output *session*) (list width height))
-                     (push-arrangement)))
-                  (:window-added
-                   (destructuring-bind (&key id title app-id) (rest message)
-                     (add-window id title app-id)))
-                  (:window-closed
-                   (destructuring-bind (&key id) (rest message)
-                     (forget-window id)))
-                  (:window-focused
-                   (destructuring-bind (&key id) (rest message)
-                     (let ((leaf (find-leaf id)))
-                       (when leaf
-                         (setf (session-focus *session*) leaf)
-                         (push-arrangement)))))
-                  (t nil)))))
+  nil)

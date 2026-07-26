@@ -5,6 +5,7 @@
   :version "0.0.1"
   :depends-on (#:sento
                #:sento-remoting
+               #:usocket
                #:fset
                #:alexandria
                #:bordeaux-threads
@@ -65,6 +66,9 @@
    (:module "wm"
     :serial t
     :components ((:file "wm")))
+   (:module "frontend"
+    :serial t
+    :components ((:file "frontend")))
    (:file "user")
    (:file "main")))
 
@@ -79,7 +83,7 @@
                (error "pine tests failed"))))
 
 (asdf:defsystem #:pine/vt
-  :description "Self-contained terminal emulator (ex hemlock.term) + native pty."
+  :description "Native terminal emulator"
   :depends-on (#:cffi)
   :serial t
   :pathname "vt/"
@@ -104,12 +108,20 @@ the layout tree to a cairo context, styled by the shared pine.style resolver
   :components ((:file "display") (:file "paint") (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
-  :description "Wayland client: wlr-layer-shell bindings + shm/cairo surfaces
-painting the pine.layout tree through the :pine/cairo backend. Uses the wayflan
-library for the raw protocol."
+  :description "The wayland backing: the protocol bindings pine generates from
+the compositor's own XML, and the client that paints the pine.layout tree onto
+wayland surfaces through the :pine/cairo backend."
   :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
   :serial t
-  :pathname "src/wayland/"
-  :components ((:file "layer-shell") (:file "river-wm") (:file "river-xkb")
-               (:file "surface") (:file "input") (:file "client")
-               (:file "editor") (:file "editor-keys") (:file "wm")))
+  :pathname "src/"
+  :components
+  ((:file "wayland/package")
+   (:module "protocol"
+    :serial t
+    :components ((:file "wlr-layer-shell") (:file "river-wm")
+                 (:file "river-xkb") (:file "river-layer-shell")))
+   (:module "wayland"
+    :serial t
+    :components ((:file "connection") (:file "surface") (:file "input")
+                 (:file "desktop") (:file "editor") (:file "editor-keys")
+                 (:file "wm")))))

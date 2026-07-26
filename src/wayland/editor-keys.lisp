@@ -1,4 +1,4 @@
-(in-package #:pine.wl-editor)
+(in-package #:pine.wayland)
 
 ;;;; xkb keyboard for the wayland editor. Sets *keyboard-handler* at load time so
 ;;;; run-editor types. A key becomes a printable utf8 string, or else the keysym

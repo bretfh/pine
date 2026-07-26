@@ -159,18 +159,10 @@ is the ancestor class-set list, root-first, for style resolution."))
     (multiple-value-bind (x y w h) (node-rect n)
       (draw-chrome st x y w h))))
 
-(defmethod paint-px ((n node) chain) (declare (ignore chain)) nil)
-
 (defun paint-children (n chain list)
   (let ((cc (child-chain n chain))) (dolist (c list) (when c (paint-px c cc)))))
 
-(defmethod paint-px ((n vstack) chain) (paint-children n chain (nodes n)))
-(defmethod paint-px ((n hstack) chain) (paint-children n chain (nodes n)))
-(defmethod paint-px ((n centerbox) chain) (paint-children n chain (%cb-parts n)))
-(defmethod paint-px ((n grid) chain) (paint-children n chain (apply #'append (cells n))))
-(defmethod paint-px ((n list-node) chain) (paint-children n chain (rendered n)))
-(defmethod paint-px ((n box) chain) (paint-children n chain (list (node n))))
-(defmethod paint-px ((n center) chain) (paint-children n chain (list (node n))))
+(defmethod paint-px ((n node) chain) (paint-children n chain (nodes-of n)))
 
 (defmethod paint-px ((n scroll) chain)
   "Clip to the viewport rect before painting the (taller, offset) content."
@@ -178,10 +170,8 @@ is the ancestor class-set list, root-first, for style resolution."))
     (cairo:save)
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:clip)
-    (paint-children n chain (list (node n)))
+    (paint-children n chain (nodes-of n))
     (cairo:restore)))
-(defmethod paint-px ((n action) chain) (paint-children n chain (list (node n))))
-(defmethod paint-px ((n selectable) chain) (paint-children n chain (list (node n))))
 
 (defmethod paint-px ((n text-node) chain)
   (paint-glyph-run n chain (content n)))

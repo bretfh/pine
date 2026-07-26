@@ -330,19 +330,30 @@ attach (a client must be in scope); the arrangement applies on every seed.")
         s))))
 
 (defun start-term-pump (s)
-  "Periodically ask the renderer to drain pending terminal output and repaint,
-while a terminal buffer is live."
-  (let ((client (sess-client s)))
+  "Ask the renderer to drain pending terminal output and repaint.
+
+Woken by the pty readers, then paced: one repaint per 30th of a second however
+much output arrived, and nothing at all while no terminal is producing any."
+  (let* ((client (sess-client s))
+         (wake (pine.client:terminal-wake client)))
     (setf (sess-pump s)
           (bordeaux-threads:make-thread
            (lambda ()
-             (loop until (sess-stop s) do
-               (sleep 1/30)
-               (let ((tm (pine.client:terminal-map client)))
-                 (when (and tm (plusp (hash-table-count tm)))
-                   (ignore-errors
-                    (sento.actor:tell (pine.client:renderer client) '(:term-tick)))))))
+             (loop :until (sess-stop s)
+                   :do (sb-thread:wait-on-semaphore wake)
+                       (loop :while (sb-thread:try-semaphore wake))
+                       (unless (sess-stop s)
+                         (sleep 1/30)
+                         (sento.actor:tell (pine.client:renderer client)
+                                           '(:term-tick)))))
            :name "pine-term-pump"))))
+
+(defun stop-session (s)
+  "End SESS's threads. Both wait rather than poll, so both are signalled."
+  (setf (sess-stop s) t)
+  (bordeaux-threads:with-lock-held ((sess-lock s))
+    (bordeaux-threads:condition-notify (sess-cvar s)))
+  (sb-thread:signal-semaphore (pine.client:terminal-wake (sess-client s))))
 
 (defun session-input (aclient msg)
   (let ((s (pine.attach:attached-client-session aclient)))
@@ -381,6 +392,24 @@ while a terminal buffer is live."
           (handler-case (apply-input s m)
             (error (c) (pine.command:command-error c))))))))
 
+(defclass editor-app (pine.attach:app)
+  ()
+  (:default-initargs :kind :editor)
+  (:documentation "The editor window: buffers, windows, the mode line."))
+
+(defmethod pine.attach:attached ((app editor-app) client)
+  (make-editor-session
+   client :sink (lambda (&rest _) (declare (ignore _)) (editor-frame client))))
+
+(defmethod pine.attach:received ((app editor-app) client message)
+  (session-input client message))
+
+(defmethod pine.attach:detached ((app editor-app) client)
+  (let ((s (pine.attach:attached-client-session client)))
+    (when (sess-p s) (stop-session s))))
+
+(pine.attach:register-app (make-instance 'editor-app))
+
 (defun install-editor-sessions ()
   (ignore-errors (install-variables))
   (setf pine.command:*terminal-handler*   #'pine.term:terminal-dispatch
@@ -392,8 +421,4 @@ while a terminal buffer is live."
           (lambda (msg)
             (when prev (ignore-errors (funcall prev msg)))
             (ignore-errors (%agent-debug-surface msg)))))
-  (pine.attach:register-app-kind :editor
-    :on-attach (lambda (c)
-                 (make-editor-session
-                  c :sink (lambda (&rest _) (declare (ignore _)) (editor-frame c))))
-    :on-input  (lambda (c msg) (session-input c msg))))
+  nil)

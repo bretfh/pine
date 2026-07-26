@@ -6,19 +6,20 @@
 ;;;; arranged tree -- so hover highlights and clicks land on exactly what is
 ;;;; painted. wayflan delivers pointer x/y already in surface pixels.
 
-(defconstant +btn-left+ #x110)
-
 (defvar *on-hover* nil
   "When set, a function of the hovered node (or nil) called on each hover change
 -- the daemon-attached client uses it to push the node's hint to the echo.")
 
+(defconstant +btn-left+ #x110)
+
+
 ;;;; Connect + bind globals, including the seat.
 
-(defun connect ()
+(defun connect-desktop ()
   "Open the display and bind compositor, shm, layer-shell, and seat globals."
-  (let* ((display (wl-display-connect))
-         (registry (wl-display.get-registry display))
-         (conn (make-wl-conn :display display)))
+  (multiple-value-bind (display fd) (connect-display)
+   (let* ((registry (wl-display.get-registry display))
+          (conn (make-wl-conn :display display :fd fd)))
     (push (evlambda
             (:global (name interface version)
              (declare (ignore version))
@@ -32,16 +33,16 @@
                (wl-seat
                 (let ((seat (wl-registry.bind registry name 'wl-seat 5)))
                   (setf (wl-conn-seat conn) seat)
-                  (push (a:curry #'handle-seat conn) (wl-proxy-hooks seat)))))))
+                  (push (a:curry #'handle-desktop-seat conn) (wl-proxy-hooks seat)))))))
           (wl-proxy-hooks registry))
     (wl-display-roundtrip display)            ; globals + seat bound
     (wl-display-roundtrip display)            ; seat capabilities -> pointer
     (unless (wl-conn-shell conn)
       (wl-display-disconnect display)
       (error "compositor does not advertise zwlr_layer_shell_v1"))
-    conn))
+    conn)))
 
-(defun handle-seat (conn &rest event)
+(defun handle-desktop-seat (conn &rest event)
   (event-case event
     (:capabilities (capabilities)
      (if (member :pointer capabilities)

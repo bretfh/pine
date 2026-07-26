@@ -59,6 +59,7 @@
    (last-command    :initarg :last-command    :accessor last-command    :initform nil)
    (terminals       :initarg :terminals       :accessor terminals       :initform nil)
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
+   (terminal-wake   :accessor terminal-wake   :initform (sb-thread:make-semaphore))
    (repl-buffer     :initarg :repl-buffer     :accessor repl-buffer     :initform nil)
    (prompt-callback :initarg :prompt-callback :accessor prompt-callback :initform nil)
    (prompt-active   :initarg :prompt-active   :accessor prompt-active   :initform nil)

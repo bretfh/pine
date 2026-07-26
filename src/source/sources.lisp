@@ -38,7 +38,8 @@
 
 ;;; source primitives
 
-(defstruct source name actor process super (stopped nil) (faults 0) (last-fault nil))
+(defstruct source name actor process super (stopped nil) (faults 0) (last-fault nil)
+                (wake (sb-thread:make-semaphore)))
 
 (defparameter *source-fault-cap* 6
   "Consecutive faults before a source is disabled instead of retried, so a broken
@@ -118,19 +119,23 @@ cleanly. No thread is ever killed."
 
 (defun start-poll (system interval refresh-fn)
   "Run REFRESH-FN every INTERVAL seconds on the source's OWN dedicated thread, so
-its blocking IO never touches the shared pool. Sleeps in one-second steps so a
-stop takes effect promptly."
+its blocking IO never touches the shared pool. Waits out the interval on its
+wake semaphore, which `stop-sources' signals, so a stop takes effect at once
+without the thread waking to ask whether it should."
   (let ((src (make-source :actor (%actor system))))
     (setf (source-super src)
           (bordeaux-threads:make-thread
            (lambda ()
-             (loop until (source-stopped src) do
-               ;; wait the interval on success, the backoff (growing, then
-               ;; disable) on a fault; the fault is recorded, never swallowed.
-               (let ((wait (handler-case
-                               (progn (funcall refresh-fn) (%source-ok src) (max 1 interval))
-                             (error (e) (%source-fault src e)))))
-                 (loop repeat wait until (source-stopped src) do (sleep 1)))))
+             (loop :until (source-stopped src)
+                   ;; wait the interval on success, the backoff (growing, then
+                   ;; disable) on a fault; the fault is recorded, never swallowed.
+                   :do (let ((wait (handler-case
+                                       (progn (funcall refresh-fn)
+                                              (%source-ok src)
+                                              (max 1 interval))
+                                     (error (e) (%source-fault src e)))))
+                         (sb-thread:wait-on-semaphore (source-wake src)
+                                                      :timeout wait))))
            :name "pine-source-poll"))
     src))
 
@@ -186,6 +191,7 @@ so the read hits EOF and the supervisor loop ends. Actors and timers die with
 the actor system. No thread is killed."
   (dolist (s *running*)
     (setf (source-stopped s) t)
+    (sb-thread:signal-semaphore (source-wake s))
     (when (source-process s)
       (ignore-errors (uiop:terminate-process (source-process s) :urgent t))))
   (setf *running* nil))

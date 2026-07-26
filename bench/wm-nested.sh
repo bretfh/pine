@@ -32,7 +32,7 @@ sleep 12
 exec sbcl --no-userinit --non-interactive \
      --eval '(require :asdf)' \
      --eval '(asdf:load-system :pine/wayland)' \
-     --eval "(pine.wl-wm:run-wm :port $port)" >"$out/wm.log" 2>&1
+     --eval "(pine.wayland:run-wm :port $port)" >"$out/wm.log" 2>&1
 EOF
 chmod +x "$out/init"
 
