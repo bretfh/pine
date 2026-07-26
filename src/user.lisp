@@ -105,14 +105,14 @@
   "A live view of X's buffer (an actor or a name string): visible lines,
 highlights, region, terminal grid, or layout rows, rendered at the rect the
 tree arranges it into. Props are node style: :opacity :font-px :class :expand."
-  (apply #'pine.editor:editor-window-node x props))
+  (apply #'pine.editor.session:editor-window-node x props))
 (defun terminal (x &rest props)
   "A window view of a terminal buffer."
-  (apply #'pine.editor:editor-terminal-node x props))
+  (apply #'pine.editor.session:editor-terminal-node x props))
 (defun modeline (&optional x)
   "The mode line: the focused window's by default, or X's buffer's."
-  (pine.editor:editor-modeline-node x))
-(defun echo () (pine.editor:editor-echo-node))
+  (pine.editor.session:editor-modeline-node x))
+(defun echo () (pine.editor.session:editor-echo-node))
 (defun minibuffer () (echo))
 
 ;;;; Data. SH captures a command's output for a poll or source body; LAUNCH runs

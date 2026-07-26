@@ -202,15 +202,15 @@ walk after every one. Returns nil, or the divergence description."
   (let ((inc (pine.ts:make-parse-state rt :commonlisp)))
     (unless inc (return-from highlights-equivalent-p :no-grammar))
     (pine.ts:parse-full! inc text)
-    (pine.ts:parse-highlights inc text)
+    (pine.ts.highlight:parse-highlights inc text)
     (unwind-protect
          (dotimes (i edits nil)
            (setf text (mutate-line text))
            (pine.ts:reparse! inc text)
-           (let* ((got (sort-highlights (pine.ts:parse-highlights inc text)))
+           (let* ((got (sort-highlights (pine.ts.highlight:parse-highlights inc text)))
                   (fresh (pine.ts:make-parse-state rt :commonlisp)))
              (pine.ts:parse-full! fresh text)
-             (let ((want (sort-highlights (pine.ts:parse-highlights fresh text))))
+             (let ((want (sort-highlights (pine.ts.highlight:parse-highlights fresh text))))
                (pine.ts:free-parse-state fresh)
                (unless (equal got want)
                  (return (list i

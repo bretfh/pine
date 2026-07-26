@@ -253,7 +253,7 @@ pstate). No language available -> (values nil pstate), leaving highlights off."
               (values nil nil)
               (let ((new-text (state->string new-state)))
                 (pine.ts:reparse! ps new-text)
-                (values (pine.ts:parse-highlights ps new-text) ps)))))))
+                (values (pine.ts.highlight:parse-highlights ps new-text) ps)))))))
 
 (defun point-after-move (snap unit n)
   "Target (values line col) after moving point UNIT (:char, :word, or :line) by

@@ -28,12 +28,12 @@
   "Render the editor's live tree for TEXT to a PNG at PATH, headless: a real
 session, its tree refreshed and cell-rendered through pine.ui.cells:render."
   (unless pine.core.server:*server* (%shot-substrate))
-  (let* ((sess (pine.editor:make-editor-session
+  (let* ((sess (pine.editor.session:make-editor-session
                 nil :sink (lambda (&rest args) (declare (ignore args)) nil)))
-         (client (pine.editor::sess-client sess)))
+         (client (pine.editor.session:sess-client sess)))
     (let ((buf (pine.editor.frame:current-buffer client)))
       (pine.editor.ask:tell buf :replace-content :content text))
-    (pine.editor:session-feed sess (list :resize :cols 84 :rows 30))
+    (pine.editor.session:session-feed sess (list :resize :cols 84 :rows 30))
     (sleep 0.8)
     (let* ((pine.editor.frame:*client* client)
            (tree (pine.ui.render:refresh-editor-tree client))

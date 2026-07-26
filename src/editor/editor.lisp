@@ -1,3 +1,47 @@
+(defpackage #:pine.editor
+  (:use :cl #:pine.editor.kill-ring #:pine.editor.isearch)
+  (:export
+   #:start-editor
+   #:make-editor-session
+   #:session-feed
+   #:reseed-editor-sessions
+   ;; the editor's live tree: view leaves the render walk refreshes
+   #:editor-window-node
+   #:editor-terminal-node
+   #:editor-modeline-node
+   #:editor-echo-node
+   
+   ;; layout buffers (authorable tool buffers)
+   ;; pine.editor.frame:prompt
+   #:prompt
+   #:cancel-prompt
+   ;; kill ring
+   #:kill-ring-push
+   #:kill-ring-top
+   #:set-mark
+   #:kill-region-cmd
+   #:kill-line-cmd
+   #:copy-region-cmd
+   #:yank-cmd
+   #:yank-pop-cmd
+   ;; the pine.editor.minibuffer:completion facility: candidates, sources, actions, builders
+   #:candidate #:to-candidate
+   #:candidate-string #:candidate-annotation #:candidate-value
+   #:candidate-category #:candidate-source
+   #:register-source #:source-table
+   #:register-actions #:candidate-actions
+   #:completion-popup #:completion-widget
+   ;; pine.editor.minibuffer:completing-read
+   #:completing-read
+   #:read-file-name
+   #:file-completion-active-p
+   #:file-name-complete
+   #:file-name-accept
+   #:completion-next
+   #:completion-prev
+   #:completion-update-input
+   #:completing-read-active-p))
+
 (in-package #:pine.editor)
 
 (defun start-editor ()

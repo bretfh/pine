@@ -185,7 +185,7 @@ An error is reported and the daemon keeps whatever loaded before it."
                       "no display given")))
               (:reload (load-init)
                        (ignore-errors (pine.desktop:refresh-all))
-                       (ignore-errors (pine.editor:reseed-editor-sessions))
+                       (ignore-errors (pine.editor.session:reseed-editor-sessions))
                        (r "reloaded"))
               (:agents (r (mapcar #'pine.core.actor:agent-info-name (pine.core.actor:list-agents server))))
               (:spawn (pine.core.actor:spawn-agent server (second msg)) (r "spawned"))

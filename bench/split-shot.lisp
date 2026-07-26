@@ -17,7 +17,7 @@
   (pine.core.actor:start-agent-registry srv)
   (pine.core.actor:start-local-agent srv)
   (pine.text.buffer:start-buffer-registry srv)
-  (let* ((sess (pine.editor:make-editor-session
+  (let* ((sess (pine.editor.session:make-editor-session
                 nil :sink (lambda (&rest _) (declare (ignore _)) nil)))
          (client (pine.editor::sess-client sess))
          (w (* *cols* *cw*))
@@ -25,7 +25,7 @@
     (let ((buf (pine.editor.frame:current-buffer client)))
       (pine.editor.ask:tell buf :replace-content
                         :content (format nil "(defun alpha (x)~%  (list x :a))~%~%(defun beta (y)~%  (* y 2))~%")))
-    (pine.editor:session-feed sess (list :resize :cols *cols* :rows *rows*
+    (pine.editor.session:session-feed sess (list :resize :cols *cols* :rows *rows*
                                          :width w :height h
                                          :cell-w *cw* :cell-h *ch*))
     (sleep 0.7)
@@ -58,7 +58,7 @@
                     surface (format nil "/tmp/split-~a.png" name))
                    (format t "~&wrote /tmp/split-~a.png~%" name)))))
            (key (s &key ctrl)
-             (pine.editor:session-feed sess (list :key :key-str s :ctrl ctrl))
+             (pine.editor.session:session-feed sess (list :key :key-str s :ctrl ctrl))
              (sleep 0.25)))
       (shot "0-initial")
       (key "x" :ctrl t) (key "2") (sleep 0.3) (shot "1-cx2")

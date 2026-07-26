@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.highlight
   (:use #:cl #:pine.ts)
-  (:export #:%align-column #:%byte->char #:%byte-col #:%byte-line #:%defish-p #:%enclosing-form #:%form-head-name #:%intern-table #:%node-first-char #:%opens-form-p #:*cl-builtins* #:*cl-class-definers* #:*cl-constants* #:*cl-flat-all-binders* #:*cl-flat-first-binders* #:*cl-nested-binders* #:*cl-special-forms* #:*cl-struct-definers* #:*cl-type-definers* #:*cl-var-definers* #:*scheme-keywords* #:body-form-p #:cl-head-face #:cl-head-kind #:cl-highlights #:delimiter-face #:hl-dump #:hl-dump-file #:lambda-list-keyword-p #:parse-indent #:scheme-highlights #:ts-field #:ts-named-children #:ts-type #:ts-type= #:walk-highlights))
+  (:export #:%align-column #:%byte->char #:%byte-col #:%byte-line #:%defish-p #:%enclosing-form #:%form-head-name #:%hl-full #:%hl-incremental #:%intern-table #:%line-start-byte #:%node-first-char #:%opens-form-p #:%record-hl-edit #:*cl-builtins* #:*cl-class-definers* #:*cl-constants* #:*cl-flat-all-binders* #:*cl-flat-first-binders* #:*cl-nested-binders* #:*cl-special-forms* #:*cl-struct-definers* #:*cl-type-definers* #:*cl-var-definers* #:*scheme-keywords* #:body-form-p #:cl-head-face #:cl-head-kind #:cl-highlights #:compute-highlights #:delimiter-face #:hl-dump #:hl-dump-file #:lambda-list-keyword-p #:parse-highlights #:parse-indent #:scheme-highlights #:ts-field #:ts-named-children #:ts-type #:ts-type= #:walk-highlights))
 
 (in-package #:pine.ts.highlight)
 
@@ -612,3 +612,131 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
         (format t "~&no such file: ~a~%" path)
         (let ((source (make-string (file-length s))))
           (hl-dump (subseq source 0 (read-sequence source s)) language)))))
+
+;;;; Producing highlights from a parse tree: the runtime holds the tree,
+;;;; the language walks live here, so the dispatch does too.
+
+(defun compute-highlights (runtime language text)
+  (let ((entry (ensure-language runtime language)))
+    (unless entry (return-from compute-highlights nil))
+    (handler-case
+        (cffi:with-foreign-string (cstr text :encoding :utf-8)
+          (let ((tree (ts-parser-parse-string (entry-parser entry) (cffi:null-pointer)
+                                              cstr (byte-length text))))
+            (when (and tree (not (cffi:null-pointer-p tree)))
+              (unwind-protect
+                   (walk-highlights language (ts-tree-root-node tree) text
+                                    (build-line-index text))
+                (ts-tree-delete tree)))))
+      (error () nil))))
+
+(defun parse-highlights (ps text)
+  "Highlights (line start-col end-col face) from PS's persistent tree over TEXT.
+Incremental: when exactly one edit was recorded since the last call, only the
+changed top-level forms are re-walked and the cached tuples outside them are
+kept (shifted by the line delta). Anything unexpected falls back to the full
+walk."
+  (let ((tree (ps-tree ps)))
+    (when tree
+      (handler-case
+          (cond
+            ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
+                  (string= text (or (ps-hl-text ps) "")))
+             (ps-hl-cache ps))
+            ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps))
+                  (string= text (ps-text ps)))
+             (%hl-incremental ps tree text))
+            (t (%hl-full ps tree text)))
+        (error ()
+          (setf (ps-hl-cache ps) nil (ps-hl-text ps) nil
+                (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+          (handler-case
+              (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
+                               (build-line-index text))
+            (error () nil)))))))
+
+(defun %hl-full (ps tree text)
+  (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree) text
+                             (build-line-index text))))
+    (setf (ps-hl-cache ps) hl (ps-hl-text ps) text
+          (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+    hl))
+
+(defun %hl-incremental (ps tree text)
+  "Re-walk only the top-level forms covering the recorded edit and merge with
+the cached tuples: keep lines above, shift lines below by the edit's delta.
+The re-walk window is widened to whole lines and whole top-level forms (to a
+fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
+  (destructuring-bind (lo hi delta) (ps-hl-pending ps)
+    (let* ((index (build-line-index text))
+           (root (ts-tree-root-node tree))
+           (nlines (length index))
+           (lo-byte (%line-start-byte (min lo (1- nlines)) index))
+           (hi-byte (%line-start-byte (1+ hi) index)))
+      ;; widen to whole lines and whole top-level forms until stable; the
+      ;; window only grows and is bounded by the file, so this terminates
+      (loop for grew = nil
+            do (loop for i from 0 below (ts-node-named-child-count root)
+                     for child = (ts-node-named-child root i)
+                     for s = (ts-node-start-byte child)
+                     for e = (ts-node-end-byte child)
+                     do (when (and (< s hi-byte) (> e lo-byte)
+                                   (or (< s lo-byte) (> e hi-byte)))
+                          (setf lo-byte (min lo-byte s)
+                                hi-byte (max hi-byte e)
+                                grew t)))
+               (let ((ll (%line-start-byte (%line-of-byte lo-byte index) index))
+                     (hl (%line-start-byte
+                          (1+ (%line-of-byte (max lo-byte (1- hi-byte)) index))
+                          index)))
+                 (when (< ll lo-byte) (setf lo-byte ll grew t))
+                 (when (> hl hi-byte) (setf hi-byte hl grew t)))
+            while grew)
+      ;; a window that swallowed most of the file: the merge bookkeeping buys
+      ;; nothing over the plain full walk
+      (when (>= (- hi-byte lo-byte) (* 3 (floor (max 1 (byte-length text)) 4)))
+        (return-from %hl-incremental (%hl-full ps tree text)))
+      (let* ((lo-line (%line-of-byte lo-byte index))
+             (hi-line (%line-of-byte (max lo-byte (1- hi-byte)) index))
+             (old-hi-line (- hi-line delta))
+             (fresh (walk-highlights (ps-language ps) root text index
+                                     :lo-byte lo-byte :hi-byte hi-byte))
+             (merged nil))
+        (dolist (tup (ps-hl-cache ps))
+          (let ((line (first tup)))
+            (when (< line lo-line)
+              (push tup merged))))
+        (setf merged (nreverse merged))
+        (setf merged (nconc merged (copy-list fresh)))
+        (let ((below nil))
+          (dolist (tup (ps-hl-cache ps))
+            (let ((line (first tup)))
+              (when (> line old-hi-line)
+                (push (list (+ line delta) (second tup) (third tup) (fourth tup))
+                      below))))
+          (setf merged (nconc merged (nreverse below))))
+        (setf (ps-hl-cache ps) merged (ps-hl-text ps) text
+              (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+        merged))))
+
+(defun %record-hl-edit (ps old new start-row old-end-row new-end-row)
+  "Note one edit for incremental highlighting: rows from tree-sitter's changed
+ranges unioned with the raw edit's rows (a pure line insert shifts everything
+below while changing no named ranges), plus the line delta. A second edit before
+the next highlight call, or any failure here, marks the cache stale."
+  (when (ps-hl-cache ps)
+    (if (ps-hl-pending ps)
+        (setf (ps-hl-stale ps) t)
+        (handler-case
+            (let ((lo start-row)
+                  (hi new-end-row)
+                  (delta (- new-end-row old-end-row)))
+              (unless (cffi:pointer-eq new old)
+                (multiple-value-bind (rlo rhi) (%changed-row-span old new)
+                  (when rlo
+                    (setf lo (min lo rlo) hi (max hi rhi)))))
+              (setf (ps-hl-pending ps) (list lo hi delta)))
+          (error () (setf (ps-hl-stale ps) t))))))
+
+(defun %line-start-byte (line index)
+  (if (< line (length index)) (car (aref index line)) most-positive-fixnum))

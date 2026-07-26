@@ -1,4 +1,8 @@
-(in-package #:pine.editor)
+(defpackage #:pine.editor.session
+  (:use #:cl)
+  (:export #:*world-restored* #:apply-input #:editor-app #:editor-echo-node #:editor-font-px #:editor-frame #:editor-modeline-node #:editor-terminal-node #:editor-window-node #:make-editor-session #:make-sess #:push-editor-surface #:reseed-editor-sessions #:sess #:sess-a #:sess-aclient #:sess-and #:sess-anything #:sess-be #:sess-bordeaux-threads #:sess-can #:sess-carry #:sess-client #:sess-cvar #:sess-for #:sess-frame #:sess-frontend #:sess-generation #:sess-holding #:sess-inbox #:sess-last #:sess-lines #:sess-lock #:sess-mean #:sess-moved #:sess-must #:sess-next #:sess-nil #:sess-one #:sess-only #:sess-p #:sess-patch #:sess-pump #:sess-sent #:sess-sent-wire #:sess-session #:sess-signal #:sess-sink #:sess-so #:sess-stop #:sess-that #:sess-the #:sess-this #:sess-thread #:sess-to #:session-feed #:session-input #:session-loop #:start-term-pump #:stop-session))
+
+(in-package #:pine.editor.session)
 
 (defstruct sess
   client aclient sink

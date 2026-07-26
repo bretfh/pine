@@ -1,4 +1,8 @@
-(in-package :pine.editor)
+(defpackage #:pine.editor.overwrite
+  (:use #:cl)
+  (:export ))
+
+(in-package #:pine.editor.overwrite)
 
 ;;;; overwrite-mode: transparent augmentation of self-insert. It runs BEFORE
 ;;;; the base insert (method combination), deleting the char under point so the

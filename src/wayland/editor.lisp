@@ -282,6 +282,6 @@ it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up.
       (pine.frontend:close-pump (ed-pump ed))
       (pine.frontend:shutdown backing))))
 
-(defmethod pine.core.attach:run-frontend ((app pine.editor::editor-app))
+(defmethod pine.core.attach:run-frontend ((app pine.editor.session:editor-app))
   (declare (ignore app))
   (run-editor))
