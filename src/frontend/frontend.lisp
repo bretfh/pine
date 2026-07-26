@@ -63,6 +63,45 @@ remaining ones still run."
   (sb-unix:unix-close (pump-wake-in pump))
   (sb-unix:unix-close (pump-wake-out pump)))
 
+;;;; The backing: whatever a frontend draws on and waits for. The loop is here
+;;;; because it is the same everywhere; only the waiting differs.
+
+(defclass backing ()
+  ()
+  (:documentation "What a frontend draws on. A backing waits for work and
+delivers what arrived; the loop around it is not its business."))
+
+(defgeneric wait-for-work (backing pump timeout)
+  (:documentation "Block until BACKING or PUMP has something, or TIMEOUT
+milliseconds pass. TIMEOUT of -1 waits for as long as it takes. Returns true
+when the pump was what woke us, so the loop knows to drain the pipe."))
+
+(defgeneric dispatch-pending (backing)
+  (:documentation "Handle everything BACKING has already delivered, without
+blocking."))
+
+(defgeneric shutdown (backing)
+  (:documentation "Release what the backing holds.")
+  (:method ((b backing)) (declare (ignore b)) nil))
+
+(defun run (backing pump &key done ready pending deadline)
+  "Serve BACKING and the daemon until DONE returns true.
+
+READY runs once before each wait, for work the frontend owes itself: a
+repaint, a key it is repeating. PENDING is true while there is more to do now,
+which keeps the loop from settling down on a surface it has just dirtied.
+DEADLINE gives the milliseconds until the frontend's next deadline, or nil
+when it has none."
+  (loop :until (funcall done)
+        :do (drain pump)
+            (when ready (funcall ready))
+            (dispatch-pending backing)
+            (unless (or (pump-queued-p pump)
+                        (and pending (funcall pending)))
+              (when (wait-for-work backing pump
+                                   (or (and deadline (funcall deadline)) -1))
+                (drain-wake pump)))))
+
 ;;;; Joining the daemon.
 
 (defparameter *attach-attempts* 60

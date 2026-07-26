@@ -25,7 +25,7 @@
   (staged-focus nil)
   (dirty nil)                           ; a manage sequence has been asked for
   (pending nil)                         ; thunks to run in the next manage seq
-  fd                                    ; the connection, to wait on
+  backing                               ; the connection, as something to wait on
   pump                                  ; the queue the daemon's threads fill
   (focus nil)
   (ref nil)                             ; daemon client actor
@@ -479,8 +479,9 @@ it. Always finishes."
 daemon for policy, and run the sequence loop until the server finishes with
 us. Errors out plainly when the compositor is not river or another window
 manager holds the global."
-  (multiple-value-bind (display fd) (connect-display)
-   (let ((wm (%make-wm :display display :fd fd :pump (pine.frontend:make-pump))))
+  (let* ((backing (connect-display))
+         (wm (%make-wm :display (display backing) :backing backing
+                       :pump (pine.frontend:make-pump))))
     (connect-wm wm)
     (unless (wm-manager wm)
       (wl-display-disconnect (wm-display wm))
@@ -494,10 +495,10 @@ offers no window management, or another manager holds it~%")
                        :host host :port port
                        :ready (lambda () (and (wm-ref wm) t))))
     (unwind-protect
-         (run-loop (wm-display wm) (wm-fd wm) (wm-pump wm)
-                   :done (lambda () (wm-done wm)))
+         (pine.frontend:run (wm-backing wm) (wm-pump wm)
+                            :done (lambda () (wm-done wm)))
       (pine.frontend:close-pump (wm-pump wm))
-      (wl-display-disconnect (wm-display wm))))))
+      (pine.frontend:shutdown backing))))
 
 (defmethod pine.attach:run-frontend ((app pine.wm::wm-app))
   (declare (ignore app))

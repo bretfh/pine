@@ -11,7 +11,7 @@
 ;;;; surface->layer-surface for pointer focus, and the live pointer state.
 
 (defstruct wl-conn
-  display fd compositor shm shell seat pointer
+  display backing compositor shm shell seat pointer
   (surfaces nil)                        ; alist (wl-surface-proxy . layer-surface)
   focus (ptr-x 0) (ptr-y 0) (ptr-serial 0)
   drag)                                 ; a slider being scrubbed, or nil

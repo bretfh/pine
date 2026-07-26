@@ -167,8 +167,8 @@ the daemon (make daemon) must already be up."
           (pine.frontend:attach :desktop (lambda (msg) (handle-desktop-message client msg))
                                 :host host :port port))
     (unwind-protect
-         (run-loop (wl-conn-display conn) (wl-conn-fd conn) (client-pump client)
-                   :done (lambda () (client-done client)))
+         (pine.frontend:run (wl-conn-backing conn) (client-pump client)
+                            :done (lambda () (client-done client)))
       (pine.frontend:close-pump (client-pump client)))))
 
 (defmethod pine.attach:run-frontend ((app pine.desktop::desktop-app))

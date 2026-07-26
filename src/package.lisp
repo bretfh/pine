@@ -537,6 +537,7 @@ Gated by the :world-save editor variable."))
   (:use #:cl)
   (:export #:pump #:make-pump #:close-pump #:pump-wake-in
            #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
+           #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run
            #:attach)
   (:documentation "The client interface: what every frontend is, with no
 platform in it. Bootstraps the actor system and the daemon attachment, and

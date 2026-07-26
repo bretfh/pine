@@ -17,9 +17,10 @@
 
 (defun connect-desktop ()
   "Open the display and bind compositor, shm, layer-shell, and seat globals."
-  (multiple-value-bind (display fd) (connect-display)
-   (let* ((registry (wl-display.get-registry display))
-          (conn (make-wl-conn :display display :fd fd)))
+  (let* ((backing (connect-display))
+         (display (display backing))
+         (registry (wl-display.get-registry display))
+         (conn (make-wl-conn :display display :backing backing)))
     (push (evlambda
             (:global (name interface version)
              (declare (ignore version))
@@ -40,7 +41,7 @@
     (unless (wl-conn-shell conn)
       (wl-display-disconnect display)
       (error "compositor does not advertise zwlr_layer_shell_v1"))
-    conn)))
+    conn))
 
 (defun handle-desktop-seat (conn &rest event)
   (event-case event

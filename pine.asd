@@ -77,7 +77,8 @@
   :depends-on (#:pine #:fiveam)
   :serial t
   :pathname "tests/"
-  :components ((:file "suite") (:file "model") (:file "editor") (:file "agent"))
+  :components ((:file "suite") (:file "model") (:file "editor") (:file "agent")
+               (:file "frontend"))
   :perform (asdf:test-op (o c)
              (unless (uiop:symbol-call :pine.test :run-tests)
                (error "pine tests failed"))))

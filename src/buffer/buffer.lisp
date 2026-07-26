@@ -76,8 +76,6 @@
           and do (setf start (1+ i))
         finally (return (append parts (list (subseq string start))))))
 
-(defgeneric insert-string (state line-idx col string))
-
 (defun %insert-multiline (state line-idx col string)
   "Insert multi-line STRING at LINE-IDX/COL, splitting on its newlines: the
 first part joins the line before the cut, the last part takes the remainder,
@@ -102,7 +100,8 @@ the middle parts become whole lines. Point lands after the inserted text."
                                     :point-charpos (length last-part)))
                 :tick (1+ (tick state)))))
 
-(defmethod insert-string ((state buffer-state) line-idx col string)
+(defun insert-string (state line-idx col string)
+  "Insert STRING at LINE-IDX/COL, splitting on any newlines it holds."
   (if (find #\Newline string)
       (%insert-multiline state line-idx col string)
       (let* ((ls (lines state))
@@ -116,14 +115,12 @@ the middle parts become whole lines. Point lands after the inserted text."
                                         :point-charpos (+ c (length string))))
                     :tick (1+ (tick state))))))
 
-(defgeneric insert-char (state line-idx col char))
-
-(defmethod insert-char ((state buffer-state) line-idx col char)
+(defun insert-char (state line-idx col char)
+  "Insert CHAR at LINE-IDX/COL."
   (insert-string state line-idx col (string char)))
 
-(defgeneric insert-newline (state line-idx col))
-
-(defmethod insert-newline ((state buffer-state) line-idx col)
+(defun insert-newline (state line-idx col)
+  "Split the line at LINE-IDX/COL in two."
   (let* ((ls (lines state))
          (old (if (< line-idx (fset:size ls)) (fset:@ ls line-idx) ""))
          (c (min col (length old)))
@@ -140,9 +137,8 @@ the middle parts become whole lines. Point lands after the inserted text."
                                   :point-charpos 0)
                 :tick (1+ (tick state)))))
 
-(defgeneric delete-char (state line-idx col))
-
-(defmethod delete-char ((state buffer-state) line-idx col)
+(defun delete-char (state line-idx col)
+  "Delete the character before LINE-IDX/COL, joining lines at a line start."
   (let* ((ls (lines state))
          (line (fset:@ ls line-idx))
          (len (length line)))
@@ -159,9 +155,8 @@ the middle parts become whole lines. Point lands after the inserted text."
          (copy-state state :lines built :tick (1+ (tick state)))))
       (t state))))
 
-(defgeneric delete-region (state start-line start-col end-line end-col))
-
-(defmethod delete-region ((state buffer-state) start-line start-col end-line end-col)
+(defun delete-region (state start-line start-col end-line end-col)
+  "Delete from START-LINE/START-COL up to END-LINE/END-COL."
   (let* ((ls (lines state))
          (first-line (fset:@ ls start-line))
          (last-line (fset:@ ls end-line))
@@ -177,17 +172,15 @@ the middle parts become whole lines. Point lands after the inserted text."
                                   :point-charpos start-col)
                 :tick (1+ (tick state)))))
 
-(defgeneric move-mark (state mark-name line-idx col))
-
-(defmethod move-mark ((state buffer-state) mark-name line-idx col)
+(defun move-mark (state mark-name line-idx col)
+  "Put MARK-NAME at LINE-IDX/COL."
   (let ((key-line (intern (format nil "~a-LINE" mark-name) :keyword))
         (key-col (intern (format nil "~a-CHARPOS" mark-name) :keyword)))
     (copy-state state
                 :marks (fset:with (fset:with (marks state) key-line line-idx) key-col col))))
 
-(defgeneric set-meta (state key value))
-
-(defmethod set-meta ((state buffer-state) key value)
+(defun set-meta (state key value)
+  "Set buffer-local KEY to VALUE."
   (copy-state state :meta (fset:with (meta state) key value)))
 
 (defun line-count-of (state)

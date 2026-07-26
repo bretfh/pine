@@ -26,7 +26,7 @@ buffer rows were laid out for."
 (defclass editor ()
   ((sys        :initarg :sys :accessor ed-sys :initform nil)
    (display    :initarg :display :reader ed-display)
-   (fd         :initarg :fd :reader ed-fd)
+   (backing    :initarg :backing :reader ed-backing)
    (compositor :initform nil) (shm :initform nil) (xdg-wm-base :initform nil)
    (seat :initform nil) (keyboard :initform nil)
    (wl-surface :initform nil) (xdg-surface :initform nil) (xdg-toplevel :initform nil)
@@ -229,8 +229,8 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                                            (lambda (&rest args) (declare (ignore args)) nil)))
                            (ed-dirty ed) t)))))))
 
-(defun editor-loop (ed display fd)
-  (run-loop display fd (ed-pump ed)
+(defun editor-loop (ed)
+  (pine.frontend:run (ed-backing ed) (ed-pump ed)
    :done (lambda () (ed-done ed))
    :ready (lambda ()
             (check-repeat ed)
@@ -241,17 +241,17 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
 (defun run-editor (&key (host pine.server:*host*) (port pine.server:*port*))
   "Attach an editor window to the daemon at HOST:PORT and paint the frames
 it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up."
-  (multiple-value-bind (display fd) (connect-display)
-    (let ((ed (make-instance 'editor :display display :fd fd
-                                     :pump (pine.frontend:make-pump))))
+  (let* ((backing (connect-display))
+         (ed (make-instance 'editor :backing backing :display (display backing)
+                                    :pump (pine.frontend:make-pump))))
       (connect-editor ed)
       (open-window ed)
       (setf (ed-sys ed) (pine.frontend:attach
                          :editor (lambda (msg) (handle-editor-message ed msg))
                          :host host :port port))
-      (unwind-protect (editor-loop ed display fd)
-        (pine.frontend:close-pump (ed-pump ed))
-        (wl-display-disconnect display)))))
+    (unwind-protect (editor-loop ed)
+      (pine.frontend:close-pump (ed-pump ed))
+      (pine.frontend:shutdown backing))))
 
 (defmethod pine.attach:run-frontend ((app pine.editor::editor-app))
   (declare (ignore app))

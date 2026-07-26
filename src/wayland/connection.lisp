@@ -26,8 +26,14 @@
           ((and dir (plusp (length dir))) (format nil "~a/~a" dir name))
           (t (error "XDG_RUNTIME_DIR is unset")))))
 
+(defclass backing (pine.frontend:backing)
+  ((display :initarg :display :reader display)
+   (fd :initarg :fd :reader fd
+       :documentation "The connection's descriptor, to wait on."))
+  (:documentation "A compositor connection, as something a frontend waits on."))
+
 (defun connect-display ()
-  "Open the compositor connection. Returns the display and its descriptor.
+  "Open the compositor connection and return it as a backing.
 
 The socket is opened here, rather than by `wl-display-connect', because a
 display built by that function keeps its descriptor where a client cannot read
@@ -40,22 +46,23 @@ it and there is then nothing to wait on."
       (error "cannot open a socket for ~a" path))
     (let ((socket (make-instance 'wire:data-socket :fd fd)))
       (wire:connect socket path)
-      (values (wl-display-connect socket) fd))))
+      (make-instance 'backing :display (wl-display-connect socket) :fd fd))))
 
-(defun dispatch-pending (display)
-  "Dispatch every event already read from the connection."
-  (loop :while (wl-display-listen display)
-        :do (wl-display-dispatch-event display)))
+(defmethod pine.frontend:dispatch-pending ((b backing))
+  (let ((display (display b)))
+    (loop :while (wl-display-listen display)
+          :do (wl-display-dispatch-event display))))
 
-(defun wait-for-work (fd pump timeout)
-  "Block until the compositor or another thread has something for us.
+(defmethod pine.frontend:shutdown ((b backing))
+  (wl-display-disconnect (display b)))
 
-TIMEOUT is in milliseconds, or -1 to wait for as long as it takes. Returns
-true when the queue was what woke us."
+(defmethod pine.frontend:wait-for-work ((b backing) pump timeout)
+  "Wait on the connection and the queue at once, which is the whole reason the
+descriptor is held."
   (cffi:with-foreign-object (fds '(:struct pollfd) 2)
     (let ((connection (cffi:mem-aptr fds '(:struct pollfd) 0))
           (queue (cffi:mem-aptr fds '(:struct pollfd) 1)))
-      (setf (cffi:foreign-slot-value connection '(:struct pollfd) 'fd) fd
+      (setf (cffi:foreign-slot-value connection '(:struct pollfd) 'fd) (fd b)
             (cffi:foreign-slot-value connection '(:struct pollfd) 'events) +pollin+
             (cffi:foreign-slot-value connection '(:struct pollfd) 'revents) 0
             (cffi:foreign-slot-value queue '(:struct pollfd) 'fd)
@@ -69,21 +76,3 @@ true when the queue was what woke us."
              (plusp (logand +pollin+
                             (cffi:foreign-slot-value queue '(:struct pollfd)
                                                      'revents))))))))
-
-(defun run-loop (display fd pump &key done ready pending deadline)
-  "Serve the compositor and the daemon until DONE returns true.
-
-READY runs once before each wait, for work the frontend owes itself: a
-repaint, a key it is repeating. PENDING is true while there is more to do now,
-which keeps the loop from settling down on a surface it has just dirtied.
-DEADLINE gives the milliseconds until the frontend's next deadline, or nil when
-it has none."
-  (loop :until (funcall done)
-        :do (pine.frontend:drain pump)
-            (when ready (funcall ready))
-            (dispatch-pending display)
-            (unless (or (pine.frontend:pump-queued-p pump)
-                        (and pending (funcall pending)))
-              (when (wait-for-work fd pump
-                                   (or (and deadline (funcall deadline)) -1))
-                (pine.frontend:drain-wake pump)))))
