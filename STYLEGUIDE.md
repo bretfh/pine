@@ -1,117 +1,73 @@
+# pine style
 
-Thanks for contributing to Lem! Here are some guidelines that we follow in the codebase.
+## Packages
 
-In general, we follow the Google guide: https://google.github.io/styleguide/lispguide.xml
+The path to a package is its name. `pine.editor.keymap` lives in
+`src/editor/keymap.lisp` and declares itself there. There is no manifest.
 
+A directory whose name is a package holds only that package's files, and none
+of them repeats the directory name. A directory whose name is not a package is
+a group, and every file directly in it is one package.
 
-## Alexandria and other utility libraries
+A file opens with its own `defpackage`, then `in-package`, then the code. Name
+what it needs with `:local-nicknames` or `:use` when it builds on a vocabulary
+(`pine.ui.node`, `pine.ts.runtime`); qualify otherwise. A file's dependencies
+belong at its top, where you are already looking.
 
-Lem depends on `alexandria`, so you can use `if-let`, `when-let` and similar functions.
+A file may only name packages that load before it. `tests/deps.lisp` reads the
+source off disk and fails on a cycle. It sees `pkg:sym` references, so it
+cannot see a call through `:use` -- it is a check on the part that is written
+down, not a proof of layering.
 
-You can `:import-from` these symbols in your package definition, use the `alexandria:` package prefix, and define a package-local nickname.
+## Defining is registering
 
-Try to not use new utility functions that you don't see in the codebase yet.
+Writing the form is the whole of it. `defmode` makes the class, the keymap and
+the singleton. `define-command` registers. `defface` registers. Bindings are
+top-level `define-key` / `define-keys` forms beside the commands they name.
 
-For instance, we won't use `alexandria-2:line-up-first`.
+Nothing walks the system afterwards installing anything, and no file lists
+what to install in what order. There is no `install-*`.
 
-Try to not use `alexandria:curry` and prefer higher-order functions.
+## CLOS
 
-## Dynamic bindings, functional style
+A keyword in a `kind` slot switched on in two places is a class that has not
+been written yet.
 
-Avoid dynamic symbol calls (`uiop:symbol-call`) but rethink your architecture instead.
+Modes are classes; their behaviour is `dispatch-message` and `execute`
+methods, layered by method combination. A backend adds methods to another
+package's generics; it does not reopen that package.
 
-Use `defvar` and `defparameter` for user-facing variables, but avoid
-using them as global variables that store state and that are used from
-functions to functions. Have a more functional style, give explicit
-arguments to functions.
+## Errors
 
-Example:
+Never swallow. No `ignore-errors` or bare `handler-case` that turns a fault
+into `nil` -- that is how an undefined function reads as "no result" for
+three tests. Either let it propagate, or route it through
+`pine.core.eval:attempt`, which records the failure and surfaces it through
+the debugger.
 
-```lisp
-;; avoid this
-(defvar *var* 1)
-(defun foo ()
-   *var*)
-(let ((*var* 2))
-    (foo))
-```
+## Comments
 
-instead, have `foo` take one argument.
+Docstrings describe what the code does now. Block comments explain why the
+shape is what it is, when that is not visible from the forms.
 
-
-## Don't ignore compiler warnings
-
-Please take attention to compiler warnings.
-
-
-## Deprecation warnings
-
-If you change or delete a feature, if only a variable name, you must
-take care of deprecation warnings. A user should be notified that
-something changed. If possible, her old config file should not fail
-loading, or it should not fail without notice. Measures can vary. Ideas:
-
-- don't delete or rename a `defvar`, a `defparameter` or a function, but leave it and if it is used, signal a warning or an error. Add a `;; DEPRECATED` comment with the date of the comment.
-- document the breaking change on the "next release changelog" issue (like https://github.com/lem-project/lem/issues/1027 or equivalent).
-
-
-## Documentation
-
-Write thorough docstrings to interactive commands (`define-command`),
-give meaningful documentation to important functions, give a
-high-level overview in packages and comments (the "why", not the
-"how"). Use the `:documentation` option of packages, generic functions
-and CLOS slots.
-
-Please also contribute to Lem's website if you add or change a feature.
-
-https://github.com/lem-project/lem-project.github.io/
-
-or at least, open an issue about it so we don't forget to do it, thank you.
-
-
-## Errors in Lem
-
-`error` is for internal errors, and `editor-error` is displayed nicely to the user.
-
-## File layout
-
-Variables and parameters (`defvar`, `defparameter`) should be grouped
-and appear near the top of the file, before conditions, classes and
-functions.
-
-### Major and minor modes keybindings layout
-
-Lem modes should define all their keybindings at the top of the file.
-
-## Git and pull requests
-
-Please rebase and squash small commits together (you can do this with lem/legit ! ;) ).
-
-When your changes are about a mode or a feature, we like the commit message to say it upfront, for example:
-
-    legit: add k to discard changes of unstaged files
-
+Do not narrate the change that produced the code. No "now", "previously",
+"the bug this fixes". No restating what the form already says -- a `defclass`
+does not need a comment saying it is a class. Reasoning about a change belongs
+in the PR, not the source.
 
 ## Loop
 
-Loop keywords are written as keywords, with the `:`:
+Loop keywords take the colon: `(loop :for k :in list :collect ...)`.
 
-```lisp
-(loop :for key :in … )
-```
+## Naming
 
-## Macros, backquote, comma
+`c` is a client. `cli` is the command line interface. Check whether an
+abbreviation already means something else in this tree before adopting it.
 
-Don't write long macros, use the "call-with-" pattern.
+Lose redundant nouns: `place!` not `paint-tile!`. A constructor and the class
+it makes may share a name across two packages -- `pine.ui.build:ring` makes a
+`pine.ui.node:ring` -- and the constructor package shadows it explicitly.
 
-Avoid defining lists with quote, backquote and comma, only do it when
-you know you need them. Prefer using the `list` constructor.
+## Text
 
-
-## User-visible variables names
-
-Parameters that can be changed by the user should not have a "-p"
-suffix. Keep them for the functions' key arguments.
-
-They can be saved and set-able with the `lem:config` system.
+ASCII only. No em-dashes; use `--`, a colon, or a semicolon.

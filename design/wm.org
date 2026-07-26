@@ -179,7 +179,7 @@ its protocols are bound (src/protocol/), and the frontend
 the daemon (src/wm/wm.lisp) fills: os-window leaves in a live tree,
 split and focus and close as commands, chords from the =:wm= keymap
 registered with the compositor. The tree surgery those commands use
-lives with the node language (pine.layout: split-node, remove-node,
+lives with the node language (pine.ui.node: split-node, remove-node,
 node-parent, replace-child, remove-with-divider) and the editor's own
 window commands call the same functions.
 

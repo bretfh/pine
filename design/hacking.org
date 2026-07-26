@@ -52,12 +52,12 @@ The mechanics that make redefining live feel like C-c C-c, not a chore.
   unlocks C-c C-c, C-c C-k, and the rest of the SLIME set in lisp-mode.
 - NEW result persistence (editor.lisp %eval-done). The eval `=>` line clobbers a
   user's own echo message and vanishes. Keep the last result in a value the
-  modeline or a *result* line shows, and do not overwrite a fresh pine.echo
+  modeline or a *result* line shows, and do not overwrite a fresh pine.editor.echo
   message with the auto result.
 - NEW surface redisplay (desktop.lisp). After redefining a builder, the surface
   only repaints when a cell it reads changes. Add `refresh-all (aclient)` that
   re-pushes every registered surface plus the open panel, and a `reload-desktop`
-  command that finds each :desktop client in pine.attach:*clients* and calls it.
+  command that finds each :desktop client in pine.core.attach:*clients* and calls it.
   One key instead of a hand-written push-surface with a hand-found aclient.
 
 * P2. Navigation and introspection
@@ -78,7 +78,7 @@ The layer that makes a codebase browsable, all over SBCL's sb-introspect.
 
 This is what makes the process boundary worth its cost during development.
 
-- NEW jobs buffer (jobs.lisp). pine.eval:list-evaluations already yields every
+- NEW jobs buffer (jobs.lisp). pine.core.eval:list-evaluations already yields every
   live evaluation (id, form, package, status). Render them into a *jobs* buffer,
   auto-refreshing, with abort-evaluation and pick-restart on the selected row.
   One place to see and kill every running eval across every agent.

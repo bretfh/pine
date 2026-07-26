@@ -10,7 +10,7 @@ empty (the one commented bootstrap fallback in face.lisp is the sole literal).
 
 deftheme names a :palette (role -> hex) and :faces (semantic name -> fg/bg plus
 bold/italic/underline, each colour either a hex or a palette role). ef-dream is
-the built-in theme; install-default-faces loads it and sets *active-theme*.
+the built-in theme; loading pine.ui.face installs it and sets *active-theme*.
 
 * Resolvers (all read the active theme)
 

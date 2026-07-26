@@ -31,7 +31,7 @@ Three display layers only: buffer (content) -> window (view) -> surface
 
 * The primitives
 
-The runtime exposes three primitives in ~pine.buffer~, also imported into
+The runtime exposes three primitives in ~pine.text.buffer~, also imported into
 the scratch default package ~pine-user~: ~buffer~, ~ask~, ~tell~. Everything
 REPL-useful is one of these.
 
@@ -166,7 +166,7 @@ Messages the buffer actor understands:
 
 The scratch buffer is pinned to ~:pine-user~ at startup (via
 ~:set-local :key :package :value :pine-user~). ~pine-user~ imports the
-three primitives plus common handles from ~pine.client~ and ~pine.mode~.
+three primitives plus common handles from ~pine.editor.frame~ and ~pine.editor.mode~.
 Unqualified ~ask~, ~tell~, ~buffer~, ~current-client~, ~current-buffer~,
 ~find-mode~, ~set-buffer-mode~, ~defmode~, ~eval-last-sexp~,
 ~eval-buffer~ all resolve.

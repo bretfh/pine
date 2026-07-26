@@ -36,7 +36,7 @@ command named vc-anything.
 
 * The backend: libgit2 in a process agent
 
-git operations run in a supervised process agent (pine.actor: spawn,
+git operations run in a supervised process agent (pine.core.actor: spawn,
 supervise-agent, and the debug hook that surfaces an agent's
 conditions in the editor by name), calling libgit2 through CFFI.
 Placing the FFI in an agent bounds the damage of a fault in the C

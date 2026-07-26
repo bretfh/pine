@@ -67,7 +67,7 @@ working directory, so callers need not special-case it.
 
 - project-find-file: completing-read over (ask :project :files) with
   :history :files, bound beside find-file.
-- project-search: a pine.jobs job running rg at the root; results in a
+- project-search: a pine.core.jobs job running rg at the root; results in a
   layout buffer of hits (file:line and match text); Return jumps via
   find-file and move-point, and the match region is propertized in the
   target buffer (properties.org). The hits buffer is built with

@@ -229,7 +229,7 @@ dropped a stack and kept the idea.
   surface, the agent registry, the layout node tree. Dropped QML, ECL, mobile,
   roswell.
 - pine: SBCL, sento with remoting, fset, closer-mop, cairo, wayflan. Adds
-  pine.eval and reactive refs.
+  pine.core.eval and reactive refs.
 
 * Status
 
@@ -251,7 +251,7 @@ Built and running (make check loads clean; make test is green):
   shim); commonlisp and scheme grammars from Guix; highlight via the renderer
   actor; structural motion; byte to character mapping correct under UTF-8.
 - pine.vt terminal buffers: pty, reader thread, bounded drain, terminal-mode.
-- pine.eval: off-thread evaluation, uniform evaluation object, restart-capable
+- pine.core.eval: off-thread evaluation, uniform evaluation object, restart-capable
   debugger surface in the editor. C-x C-e, eval-buffer, the repl, and desktop
   clicks route through it.
 - the desktop: layer-shell surfaces on reactive cells fed by data sources; a
@@ -280,7 +280,7 @@ backing, wayland (src/wayland/, src/cairo/), behind one frontend interface
 - One eval path, swappable target: BUILT. *eval-target* + M-x set-eval-target
   (editor.lisp) route C-x C-e / eval-defun / load-file into any agent's image via
   agent-eval; :local goes through the local-agent.
-- Jobs surface: BUILT. pine.jobs + M-x jobs lists every live evaluation across the
+- Jobs surface: BUILT. pine.core.jobs + M-x jobs lists every live evaluation across the
   daemon and every agent.
 - Sources isolated off the shared pool: BUILT. each source runs on its own thread
   (widget/sources.lisp start-poll / start-stream), never the dispatcher pool.

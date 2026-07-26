@@ -20,9 +20,9 @@ of the whole, =api.org=, =theming.org=, =client-actor.org=, =treesitter.org=,
 names the design note that carries it.
 
 A word on how to read the names. Every subsystem is a package, and the package
-name is the concept: =pine.buffer=, =pine.layout=, =pine.ref=. When this manual
-says "the layout engine" it means =pine.layout=, and when it names a function it
-gives the package, as in =pine.buffer:make-buffer=. You can follow any of them
+name is the concept: =pine.text.buffer=, =pine.ui.node=, =pine.state.ref=. When this manual
+says "the layout engine" it means =pine.ui.node=, and when it names a function it
+gives the package, as in =pine.text.buffer:make-buffer=. You can follow any of them
 into the source; the source is the final authority and this manual tracks it.
 
 * Pine
@@ -74,7 +74,7 @@ actor detail.
 
 ** The daemon
 
-The daemon is =pine.server:*server*= and the actor system that runs inside it.
+The daemon is =pine.core.server:*server*= and the actor system that runs inside it.
 It has no window and needs no display. Started with =pine:run-daemon=, it stands
 up the buffer registry, the theme faces, the evaluation thread, the reactive
 sources, and a listener that clients connect to. Everything with real state or
@@ -94,7 +94,7 @@ loopback by default) and declares what kind of frontend it is. Today there are
 two kinds, =:editor= and =:desktop=; the compositor will be a third. The daemon
 keeps a table of app kinds, and each kind registers what to do when a client of
 that kind attaches and what to do with the input it sends. This is
-=pine.attach:register-app-kind=. The consequence worth holding onto: a new
+=pine.core.attach:register-app-kind=. The consequence worth holding onto: a new
 frontend is a new kind and a renderer, not a change to the core. The wayflan
 desktop and the wayflan editor were added this way, with the daemon untouched.
 
@@ -123,7 +123,7 @@ in the layout chapter for the widget half of this.
 :END:
 
 A buffer is a named piece of editable content and the actor that owns it. This
-is =pine.buffer=. If you come from Emacs the word means what you expect: text you
+is =pine.text.buffer=. If you come from Emacs the word means what you expect: text you
 edit, with a point and possibly a mark, a major mode, and local variables. What
 differs is underneath.
 
@@ -134,7 +134,7 @@ changes. The lines are an =fset= sequence, an immutable persistent structure, so
 a state value can be shared and compared without defensive copying. Point is a
 mark like any other; the mark that anchors a region is another. You do not mutate
 a buffer's text in place from the outside. You tell the buffer actor to do it:
-=(pine.buffer:tell buf :insert :text "x")=, =:delete=, =:replace-content=. The
+=(pine.text.buffer:tell buf :insert :text "x")=, =:delete=, =:replace-content=. The
 actor applies the edit to its own state, alone, and moves on.
 
 ** Snapshots and subscription
@@ -150,7 +150,7 @@ change underfoot.
 ** Highlighting
 
 A buffer in a language mode carries syntax highlights, produced by the tree
-sitter runtime (=pine.ts=, see =design/treesitter.org=) and attached to the
+sitter runtime (=pine.ts.runtime=, see =design/treesitter.org=) and attached to the
 snapshot as a list of (line, start, end, face) spans. The renderer turns spans
 into per-cell foreground colors when it builds the frame. Highlighting is a
 property of the snapshot, computed on the daemon, so a frontend renders colored
@@ -179,7 +179,7 @@ only the thing that ships it to a surface.
 A face is a named bundle of visual attributes, a foreground, an optional
 background, bold, italic, underline, and a theme is a palette of color roles plus
 metrics plus a set of faces that resolve against that palette. This is
-=pine.buffer=, and the argument for doing it this way is in =design/theming.org=.
+=pine.text.buffer=, and the argument for doing it this way is in =design/theming.org=.
 
 ** Palette, metrics, faces
 
@@ -187,8 +187,8 @@ A theme is defined with =deftheme=. Its palette names colors by role, =bg=,
 =accent=, =fg-dim=, not by hex at the use site. Its metrics name the layout
 numbers, radius, border, opacity, the font. Its faces map a face name like
 =:keyword= or =:modeline= to palette roles. You look up a color role with
-=pine.buffer:color=, a metric with =pine.buffer:metric=, and a face's foreground
-with =pine.buffer:face-fg=. Change the active theme and every face, every widget,
+=pine.text.buffer:color=, a metric with =pine.text.buffer:metric=, and a face's foreground
+with =pine.text.buffer:face-fg=. Change the active theme and every face, every widget,
 every rendered cell resolves against the new palette, because nothing downstream
 holds a literal color.
 
@@ -196,7 +196,7 @@ holds a literal color.
 
 Beyond faces, the desktop has a stylesheet, and it is data, not code. It is a
 list of (selector, properties) pairs where the properties are CSS strings, kept
-in =pine.buffer:theme-rules= so a single source drives every renderer. The cairo
+in =pine.text.buffer:theme-rules= so a single source drives every renderer. The cairo
 painter parses each value and paints it in pixels; the cell render resolves the
 same rules into cell colors. Both consume the same list: same rules, same
 radius, same glass. Styling as data is what lets a surface and a layout buffer
@@ -208,7 +208,7 @@ share one look.
 :END:
 
 The layout engine is how Pine draws anything that is not a text buffer: bars,
-panels, menus, pickers, the editor's own chrome. It is =pine.layout=, and it is
+panels, menus, pickers, the editor's own chrome. It is =pine.ui.node=, and it is
 the piece to understand well, because the desktop, the apps, and the styling all
 rest on it. See =design/layout.html= for the worked example.
 
@@ -224,7 +224,7 @@ exact rectangle, so hit testing a click is exact too.
 
 The same tree measures and arranges in two units. In cell mode a character is one
 cell, and the tree lays out a text grid. When the dynamic variable
-=pine.layout:*text-size*= is bound to a pixel measurer the identical passes lay
+=pine.ui.node:*text-size*= is bound to a pixel measurer the identical passes lay
 out in pixels, and the tree becomes a cairo drawing. One engine, two backends,
 because the size of a piece of text is the only thing that differs and it is a
 hook.
@@ -266,7 +266,7 @@ It sends a coordinate, and the engine on the daemon decides what was pressed.
 A ref is a named box holding a value that notifies when it changes, and a source
 is something that keeps a ref current from the outside world. Together they are
 how the desktop stays live without anyone wiring updates by hand. Refs are
-=pine.ref=, sources are =pine.source=.
+=pine.state.ref=, sources are =pine.source=.
 
 ** Refs and views
 
@@ -276,7 +276,7 @@ dependency tracking. When a widget builder reads refs inside a tracked render,
 the render records exactly which refs it touched and subscribes to that set; the
 next render re-subscribes to the possibly different set it touches this time. You
 write a builder that reads =(ref :volume 0)= and it re-runs when the volume ref
-changes and only then, with no manual subscription. This is =pine.ref:make-view=
+changes and only then, with no manual subscription. This is =pine.state.ref:make-view=
 and =render-view=, and it is the eww =var= idea made native.
 
 ** Sources
@@ -295,8 +295,8 @@ widget reads.
 :DESCRIPTION: How input becomes behavior. (to be written)
 :END:
 
-Major and minor modes (=pine.mode=), keymaps and key parsing (=pine.keymap=,
-=pine.key=), and how the active modes layer their keymaps and their behavior. A
+Major and minor modes (=pine.editor.mode=), keymaps and key parsing (=pine.editor.keymap=,
+=pine.editor.key=), and how the active modes layer their keymaps and their behavior. A
 mode can also intercept dispatch, which is how a terminal buffer sends keys to a
 pty instead of inserting them. To be written; the code is the current authority.
 
@@ -305,7 +305,7 @@ pty instead of inserting them. To be written; the code is the current authority.
 :DESCRIPTION: Named actions and reading input. (to be written)
 :END:
 
-Commands (=pine.command=), how a key resolves to a command through the active
+Commands (=pine.editor.command=), how a key resolves to a command through the active
 keymaps, and the minibuffer: prompting, and =completing-read= with its filtered
 candidates and its callback. The completion facility, sources of candidates and
 actions on the selection, is the natural extension point here. To be written.
@@ -331,12 +331,12 @@ a frontend only painting it.
 
 Rendering is the daemon turning buffers and widget trees into the two wire forms,
 and a backend is the client turning those forms into pixels on a surface. The
-daemon side is =pine.render= (a buffer's frame to rows) and the cairo cell
+daemon side is =pine.ui.render= (a buffer's frame to rows) and the cairo cell
 painter shared by the frontends. The backends are the interesting part.
 
 ** The cairo backend
 
-=pine.cairo= is the pixel renderer. It binds =pine.layout:*text-size*= to a
+=pine.cairo.shot= is the pixel renderer. It binds =pine.ui.node:*text-size*= to a
 cairo text measurer so the layout engine lays out in pixels, resolves each node's
 style from =theme-rules= as data, and paints the tree: rounded backgrounds,
 borders, themed text, sliders, rings, a calendar grid. It renders headless to a
@@ -370,9 +370,9 @@ you look at.
 :DESCRIPTION: Running Lisp, and processes with a boundary. (to be written)
 :END:
 
-Evaluation off the interaction thread (=pine.eval=), so a blocking or looping
+Evaluation off the interaction thread (=pine.core.eval=), so a blocking or looping
 form drops into the debugger without freezing the world, and agents
-(=pine.actor=), computations that live in their own supervised processes with the
+(=pine.core.actor=), computations that live in their own supervised processes with the
 hard boundary the one idea calls for. To be written; this is where the "cannot
 crash, can distribute" half of the sentence is implemented.
 

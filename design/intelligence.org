@@ -79,7 +79,7 @@ All image queries honor *eval-target*.
 For languages with a grammar and no image to ask: definitions and
 references resolved syntactically. The tree already held in buffer
 meta answers in-buffer queries; project-wide queries parse across
-(ask :project :files) filtered by extension, running under pine.jobs
+(ask :project :files) filtered by extension, running under pine.core.jobs
 so the session does not block. Syntactic answers are labeled as such
 in result buffers: a tree-sitter :references answer means occurrences
 of the same identifier, not call sites. This producer gives M-. and

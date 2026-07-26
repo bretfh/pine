@@ -55,7 +55,7 @@ no =da-click=/=dasurface= (use =on-click=/=surface= in pine.desktop-app). The "d
 name is dead; "desktop" is the daemon-side desktop, "desktop-app" is the renderer.
 
 Packages:
-- pine.layout   (widget/layout) -- widget engine, constructors, wire codec (node<->data).
+- pine.ui.node   (widget/layout) -- widget engine, constructors, wire codec (node<->data).
 - pine.desktop  (desktop/desktop) -- daemon-side desktop: card/header/pill/gauge, glyphs,
                  sidebar, the 5 panels, surface registry, session, toggle. No GTK.
 - pine.desktop-app (app/paint + app/desktop-app) -- cairo painter + layer-shell + the
@@ -124,9 +124,9 @@ per run, not per cell). paint-cell-grid still exists but is unused by the editor
 
 ** The desktop widget wire
 
-pine.layout:node->wire serializes a pine.layout tree to plain data; handler
+pine.ui.node:node->wire serializes a pine.ui.node tree to plain data; handler
 closures are replaced by an :action id (the daemon keeps the closure keyed by id;
-the app sends the id back on interaction). pine.layout:wire->node rebuilds it.
+the app sends the id back on interaction). pine.ui.node:wire->node rebuilds it.
 Sliders: a click maps to a value via slider-value-at (uses the arranged pixel
 width -- NOT the dynamic *text-size*, which is only bound during a draw) and the
 value is sent as the widget-action arg.
@@ -174,13 +174,13 @@ the theme faces locally (faces live in the daemon; only names cross the wire).
 
 * Agents, eval, cross-image debugger, jobs, supervision
 
-- pine.eval: every evaluation runs on its own thread; captures restarts + blocks;
+- pine.core.eval: every evaluation runs on its own thread; captures restarts + blocks;
   a surface (*on-debug*) picks a restart by name or aborts. list-evaluations,
   find-evaluation, pick-restart, abort-evaluation.
 - Agents: :local (in-image actor), :process (spawn-agent -> a real SBCL that
-  loads :pine and calls pine.agent:connect, enables remoting, registers back).
-  Cached ref: pine.actor:*local-agent*. agent-eval/agent-run/agent-compile.
-- Cross-image debugger: a process agent sets pine.eval:*on-debug* to ship the
+  loads :pine and calls pine.core.agent:connect, enables remoting, registers back).
+  Cached ref: pine.core.actor:*local-agent*. agent-eval/agent-run/agent-compile.
+- Cross-image debugger: a process agent sets pine.core.eval:*on-debug* to ship the
   restart list home to the daemon's /user/agent-debug actor; the master picks a
   name and sends (:resume :eval-id N :restart NAME); the agent invokes it locally.
 - Jobs (core/jobs.lisp): list-jobs aggregates local evaluations + agent-reported
@@ -263,7 +263,7 @@ client-side number first, then fix the actual bottleneck.
   daemon dies -- orphans. They should heartbeat the master and exit on loss.
 - Panels are snapshot-on-open (not live-reactive while open).
 - The desktop control panel uses linear meters where eww uses circular-progress
-  rings; a ring/arc primitive in pine.layout is requested but not built.
+  rings; a ring/arc primitive in pine.ui.node is requested but not built.
 - Each eww menu needs a one-by-one comparison against ~/dots/files/eww/*.yuck
   (bar/audio/network/media/control/echo) -- some render, some partial.
 

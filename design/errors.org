@@ -153,7 +153,7 @@ does not drop to a console; it becomes a debugger session and the thread parks
 =(error () nil)= era is a boundary on the source loop, the render loop, and the
 message pump, not a smarter =handler-case=.
 
-The seed exists: =pine.eval:with-debugger= / =call-with-debugger= (core/eval.lisp)
+The seed exists: =pine.core.eval:with-debugger= / =call-with-debugger= (core/eval.lisp)
 wraps a thunk so an unhandled =error= is caught in the signal's own dynamic
 context (=handler-bind=, so it wins before the actor pump's own handler can trap
 it), builds the session, and blocks on a resume. Today it wraps the buffer
@@ -166,7 +166,7 @@ code that signals, not for malformed sends.
 
 * The debugger session object
 
-Today =pine.eval:evaluation= is the error object, and two specials hold "the one
+Today =pine.core.eval:evaluation= is the error object, and two specials hold "the one
 in the debugger": =*pending-debugger*= and =*pending-agent-debug*=. That is a
 single-slot model. A multi-thread image faults in more than one place at once (a
 source and a buffer, an agent and a command), so the object is promoted to a
@@ -324,7 +324,7 @@ debugger is its first and most demanding instance, because its objects
 
 Built and running:
 
-- =pine.eval:with-debugger= / =call-with-debugger=: the condition boundary seed,
+- =pine.core.eval:with-debugger= / =call-with-debugger=: the condition boundary seed,
   =handler-bind= based so it wins before the actor pump, with an always-present
   =abort=. Wraps the buffer actor's dispatch and the eval worker.
 - =eval-debugger-hook=: the single debugger-entry; if no surface is installed it
