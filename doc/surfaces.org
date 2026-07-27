@@ -72,7 +72,7 @@ produces a new state. No =with-silent-modifications=, no marker juggling.
 
 The node model lives in the buffer's fset meta, beside =:vars= and =:name=. That
 is the low-friction seam: meta already rides every snapshot to every subscriber
-(design/architecture.org, "immutable data is the only thing that crosses"), so a
+(architecture.org, "immutable data is the only thing that crosses"), so a
 structured surface's model reaches the renderer and any remote frontend for free,
 exactly as buffer-local variables do. No separate actor, no second channel.
 
@@ -198,10 +198,10 @@ already resolve.
 * Reference
 
 - The debugger as the forcing instance, and the error substrate it sits on:
-  design/errors.org.
+  errors.org.
 - Buffers as immutable fset actors, meta, snapshots to subscribers, the wire
-  formats (cell grid, widget tree): design/architecture.org.
+  formats (cell grid, widget tree): architecture.org.
 - The candidate object and completion (the near-done structured surface):
   src/editor/completion.lisp, src/editor/minibuffer.lisp.
-- Modes as CLOS composition, keymap resolution: design/architecture.org "modes";
+- Modes as CLOS composition, keymap resolution: architecture.org "modes";
   src/mode/mode.lisp.

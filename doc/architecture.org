@@ -285,7 +285,7 @@ backing, wayland (src/wayland/, src/cairo/), behind one frontend interface
 - Sources isolated off the shared pool: BUILT. each source runs on its own thread
   (widget/sources.lisp start-poll / start-stream), never the dispatcher pool.
 
-Genuinely still open (the debugger items are detailed in design/errors.org):
+Genuinely still open (the debugger items are detailed in errors.org):
 
 - The debugger is single-slot (*pending-debugger* / *pending-agent-debug*,
   editor.lisp): concurrent faults from multiple agents or buffers collide. Needs a
@@ -302,7 +302,7 @@ Genuinely still open (the debugger items are detailed in design/errors.org):
   design question, though eval/compile-into-a-target already works.
 - Two completion UIs coexist: the editor minibuffer (editor/minibuffer.lisp, cell
   grid) and the desktop palette (desktop/palette.lisp, widget tree), not unified
-  onto one structured-surface model (design/surfaces.org).
+  onto one structured-surface model (surfaces.org).
 - :media depends on a running emacs/EMMS via emacsclient (widget/sources.lisp) --
   a tool pine aims to replace.
 - The push path is unmeasured and known to be wasteful: sento's transport
@@ -312,12 +312,12 @@ Genuinely still open (the debugger items are detailed in design/errors.org):
 
 * Reference
 
-- Interactive API (ask / tell / buffer): design/api.org.
-- Client actor and attach model: design/client-actor.org.
+- Interactive API (ask / tell / buffer): api.org.
+- Client actor and attach model: architecture.org.
 - Conditions, errors, and the debugger (the in-image half of "errors come
-  home"): design/errors.org.
+  home"): errors.org.
 - Structured object-backed surfaces (the debugger, dired, jobs, completion):
-  design/surfaces.org.
-- Tree-sitter: design/treesitter.org.
+  surfaces.org.
+- Tree-sitter: treesitter.org.
 - Task list and system inventory: ~/org/pine-scope.org, ~/org/pine.org.
 - sento (actor library with remoting): vendor/cl-gserver/.

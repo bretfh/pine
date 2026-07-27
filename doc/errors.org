@@ -30,7 +30,7 @@ That is the target.
 
 pine is many images -- the daemon, the editor app, the desktop app, and every
 agent and service you write to replace a tool on this machine, each its own SBCL
-process over remoting. This split is BUILT (see design/architecture.org Status):
+process over remoting. This split is BUILT (see architecture.org Status):
 the daemon spawns and supervises the frontends, agents are real SBCL images, and
 each frontend serves itself as an agent so the daemon can eval into it. The
 debugger is not here to report faults. It is here so you can repair any of those
@@ -352,9 +352,9 @@ Designed here, not yet built:
 
 * Reference
 
-- The substrate contract and cross-image debugger: design/architecture.org.
+- The substrate contract and cross-image debugger: architecture.org.
 - Structured object-backed surfaces (the debugger, dired, jobs, completion):
-  design/surfaces.org.
-- The eval object and off-thread evaluation: design/architecture.org "Eval and
+  surfaces.org.
+- The eval object and off-thread evaluation: architecture.org "Eval and
   agents"; src/core/eval.lisp.
 - Task tracking: ~/org/pine.org, ~/org/pine-scope.org.

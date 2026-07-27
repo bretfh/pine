@@ -18,7 +18,7 @@ Help is computed from the running system, not written beside it. A
 help buffer is built at ask time from the registries and docstrings of
 the running image. Text that could disagree with the code it describes
 does not belong in the help system; the org files under doc/ and
-design/ record intent and architecture, and the current state of any
+ record intent and architecture, and the current state of any
 definition is answered only by the image.
 
 * What exists

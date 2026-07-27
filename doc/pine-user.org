@@ -322,7 +322,7 @@ which delivers them to pine instead of to the focused window.
   =wm-terminal= (or anything else that opens a window) fills it.
 - =make wm-nested= runs river as a window in the current session for
   driving by hand; =make wm-shot= runs it headless and screenshots each
-  step. design/wm.org is the design.
+  step. wm.org is the design.
 
 * Modes
 

@@ -10,14 +10,14 @@ and how they fit together. It is organized by concept, not by file. The prose
 tells you the model first and the specifics second, so a chapter is worth
 reading start to end once, then returning to for reference.
 
-Three kinds of document sit beside each other in this tree, and it helps to know
-which you are in. This manual, under =doc/=, explains the concepts and how to use
-and extend them. The design notes under =design/= argue the rationale and the
-internals: =philosophy.org= for the one idea, =architecture.org= for the shape
-of the whole, =api.org=, =theming.org=, =client-actor.org=, =treesitter.org=,
-=hacking.org= for their subjects. The living state of the work is in
+Every document sits in =doc/=, flat, and =index.org= lists them. This manual
+explains the concepts and how to use and extend them; the notes beside it argue
+the rationale and the internals -- =philosophy.org= for the one idea,
+=architecture.org= for the shape of the whole, =api.org=, =theming.org=,
+=treesitter.org=, =hacking.org= for their subjects. A few state a design that is
+not built, and say so in their first lines. The living state of the work is in
 =~/org/pine*=, not here. When a chapter has a deeper argument to point at, it
-names the design note that carries it.
+names the note that carries it.
 
 A word on how to read the names. Every subsystem is a package, and the package
 name is the concept: =pine.text.buffer=, =pine.ui.node=, =pine.state.ref=. When this manual
@@ -32,7 +32,7 @@ into the source; the source is the final authority and this manual tracks it.
 
 Pine is the Lisp Machine you cannot crash and can distribute. That one sentence
 is the design, and every concept in this manual exists to hold it true. The full
-argument is in =design/philosophy.org=; here is only what you need to use the
+argument is in =philosophy.org=; here is only what you need to use the
 system.
 
 Three commitments follow from the sentence, and they shape everything else.
@@ -69,7 +69,7 @@ the world: the buffers, the evaluation, the reactive state, the widget trees,
 the themes. A client holds none of that. It opens surfaces on a display, paints
 what the daemon pushes to it, and sends back what the user did. The intelligence
 is in one place; the frontends are thin and replaceable. See
-=design/architecture.org= for the diagram and =design/client-actor.org= for the
+=architecture.org= for the diagram and =architecture.org= for the
 actor detail.
 
 ** The daemon
@@ -150,7 +150,7 @@ change underfoot.
 ** Highlighting
 
 A buffer in a language mode carries syntax highlights, produced by the tree
-sitter runtime (=pine.ts.runtime=, see =design/treesitter.org=) and attached to the
+sitter runtime (=pine.ts.runtime=, see =treesitter.org=) and attached to the
 snapshot as a list of (line, start, end, face) spans. The renderer turns spans
 into per-cell foreground colors when it builds the frame. Highlighting is a
 property of the snapshot, computed on the daemon, so a frontend renders colored
@@ -179,7 +179,7 @@ only the thing that ships it to a surface.
 A face is a named bundle of visual attributes, a foreground, an optional
 background, bold, italic, underline, and a theme is a palette of color roles plus
 metrics plus a set of faces that resolve against that palette. This is
-=pine.text.buffer=, and the argument for doing it this way is in =design/theming.org=.
+=pine.text.buffer=, and the argument for doing it this way is in =theming.org=.
 
 ** Palette, metrics, faces
 
@@ -210,7 +210,7 @@ share one look.
 The layout engine is how Pine draws anything that is not a text buffer: bars,
 panels, menus, pickers, the editor's own chrome. It is =pine.ui.node=, and it is
 the piece to understand well, because the desktop, the apps, and the styling all
-rest on it. See =design/layout.html= for the worked example.
+rest on it. See =pine.ui.layout= for the worked example.
 
 ** Nodes and the three passes
 
