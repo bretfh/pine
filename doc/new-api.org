@@ -117,6 +117,14 @@ directory writes its leaves, merging its keys; =[:set MAP]= replaces the subtree
 (write /audio/volume 40)
 #+end_src
 
+=nil= is nothing inside a map as well as at a path, so the write above leaves
+=/audio/muted= not there rather than there and empty, and =(read /audio)= is
+={:volume 40}=.
+
+A read hands back the object that is in the tree rather than a copy of it, which
+is what makes the pointer compare above true of a widget tree and not only of a
+number.
+
 * Paths
 
 ** Literals
@@ -298,6 +306,16 @@ Toggling twice toggles twice, and a click always fires.
 Which verbs a path takes is the provider's business and is answered by
 =(read /doc/$@{path})=. There is no control file: a control file was a second
 vocabulary for acting on the thing you already have a name for.
+
+A path with no provider takes the verbs that are about the value itself:
+
+| =[:set X]=   | X, whatever it looks like  |
+| =[:toggle]=  | the opposite               |
+| =[:conj X]=  | added to a set             |
+| =[:disj X]=  | taken out of a set         |
+| =[:merge M]= | M's keys over what is there |
+
+Anything else names the path and the verb rather than guessing.
 
 ** A map is a transaction
 
@@ -596,6 +614,11 @@ A pattern with no =:write= is read only. A provider with no =:on= is polled at
 the rate its readers ask for. =:doc= is what =(read /doc/$@{path})= answers, and
 it is the system's only documentation, so it lives beside the code that answers.
 
+=:ls= is what a pattern read walks, and it is only needed where the names are
+not known in advance. =/audio/sinks= has to answer =:ls= because nobody can
+guess a sink's name; =/audio/sinks/?name/desc= does not, because a read of
+=/audio/sinks/*/desc= already knows it is looking for =desc=.
+
 ** Overlays
 
 Writing a provider over an occupied path stacks it: reads fall through to the one
@@ -605,6 +628,8 @@ overrides a single leaf of a shipped provider without forking it.
 #+begin_src lisp
 (write /sys (provider (/sys/temp {:read (fn () (my-weird-sensor))})))
 #+end_src
+
+Writing =nil= where a provider is mounted takes it back off.
 
 * The namespace
 
