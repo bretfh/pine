@@ -132,6 +132,35 @@ declare separately."
     (pine.ns:write /display "wayland-1")
     (is-true (settle (lambda () (eq :running (pine.ns:read /proc/probe/state)))))))
 
+(test a-declaration-stands-down-for-what-is-already-there
+  "The rule that kept a second editor from starting was a condition inside a
+loop. It is a path now."
+  (with-proc ()
+    (pine.ns:write /attached/probe t)
+    (pine.ns:write /proc/probe {:run ["sleep" "30"] :unless [/attached/probe]})
+    (pine.proc:tick)
+    (is (not (eq :running (pine.ns:read /proc/probe/state))))
+    (pine.ns:write /attached/probe nil)
+    (is-true (settle (lambda () (eq :running (pine.ns:read /proc/probe/state)))))))
+
+(test what-a-process-said-on-its-way-out-is-readable
+  "A frontend says it cannot run here by exiting 70. Pine records what it said
+rather than deciding what it meant."
+  (with-proc ()
+    (pine.ns:write /proc/probe {:run ["sh" "-c" "exit 70"]})
+    (is-true (settle (lambda () (eql 70 (pine.ns:read /proc/probe/exit)))))))
+
+(test the-environment-a-declaration-asks-for-reaches-it
+  (with-proc ()
+    ;; the environment given replaces the one inherited, so it carries
+    ;; everything the command needs to run at all
+    (pine.ns:write /proc/probe
+                   {:run ["sh" "-c" "echo $PINE_PROBE; sleep 30"]
+                    :env (fset:convert 'fset:seq
+                                       (cons "PINE_PROBE=here"
+                                             (sb-ext:posix-environ)))})
+    (is-true (settle (lambda () (equal "here" (pine.ns:read /proc/probe/out)))))))
+
 ;;;; an interval instead of staying up
 
 (test an-interval-runs-it-again-rather-than-keeping-it-up

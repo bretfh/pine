@@ -484,7 +484,6 @@ supervisor notices, and a fresh one registers and answers."
                (is (wait-for (lambda () (pine.core.actor:agent-alive-p server "stress-agent"))
                              :seconds 60)
                    "a replacement agent could not be started"))
-          (pine.core.actor:unsupervise-agent "stress-agent")
           (ignore-errors (pine.core.actor:kill-agent server "stress-agent")))))))
 
 (test a-million-line-buffer-stays-answerable-while-it-parses

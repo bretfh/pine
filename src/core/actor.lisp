@@ -12,7 +12,6 @@
    #:register-agent #:unregister-agent #:find-agent #:list-agents
    #:agent-eval #:agent-compile #:agent-run #:*local-agent*
    #:start-local-agent #:start-agent-debug #:*agent-debug-hook*
-   #:start-agent-supervisor #:supervise-agent #:unsupervise-agent
    #:agent-alive-p #:request
    #:spawn-agent #:kill-agent
    #:ask #:in-actor-p #:blocking-ask-in-receive
@@ -240,40 +239,17 @@ without touching the daemon or any app. Returns the agent-info once it connects.
                            :output nil :error-output nil)
       (loop for i from 0 below 400
             for info = (ignore-errors (find-agent server name))
-            when info return (progn (supervise-agent name) info)
+            when info return info
             do (sleep 0.25)
             finally (error "Agent ~s did not connect in time." name)))))
 
-;;;; Supervision. The registry watches process agents: it pings each supervised
-;;;; agent on an interval and, when one is dead (ping fails / no info), respawns
-;;;; it. The check runs on its own dedicated thread, never the shared pool. Let
-;;;; it crash: an isolated agent can die and be brought back without the daemon
-;;;; noticing.
-
-(defvar *supervised* (make-hash-table :test 'equal)
-  "process-agent name -> t: agents the supervisor keeps alive.")
-
-(defun supervise-agent (name) (setf (gethash name *supervised*) t))
-(defun unsupervise-agent (name) (remhash name *supervised*))
+;;;; Whether an agent is still there. What keeps it there is its declaration
+;;;; under /proc, attended on the actor system's own timer.
 
 (defun agent-alive-p (server name)
   (let ((info (ignore-errors (find-agent server name))))
     (and info
          (ignore-errors (eq :pong (ask (agent-info-actor info) '(:ping) :timeout 2))))))
-
-(defun start-agent-supervisor (server &key (interval 3))
-  "Watch every supervised process agent; respawn any that has died. Runs on its
-own thread."
-  (bordeaux-threads:make-thread
-   (lambda ()
-     (loop
-       (sleep interval)
-       (let (names)
-         (maphash (lambda (k v) (declare (ignore v)) (push k names)) *supervised*)
-         (dolist (name names)
-           (unless (agent-alive-p server name)
-             (ignore-errors (spawn-agent server name)))))))
-   :name "pine-agent-supervisor"))
 
 (defun request (server capability name)
   "Broker a capability from the registry by name: an agent ref or a buffer actor.

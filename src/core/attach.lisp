@@ -141,11 +141,19 @@ app's process, so a refused connection is the app being gone."
           (error () nil))
         t)))
 
+(defun %note-attached (kind there)
+  "Say at /attached whether an app of KIND is here, so anything that cares --
+whether to start one, what to draw -- reads it rather than being told."
+  (pine.ns:write (pine.path:child (pine.path:parse "/attached")
+                                  (string-downcase (string kind)))
+                 there))
+
 (defun reap-clients ()
   "Drop the apps that are gone and return them, so their kind can start again."
   (let ((dead (remove-if #'client-alive-p *clients*)))
     (dolist (client dead)
       (setf *clients* (remove client *clients*))
+      (%note-attached (attached-client-kind client) nil)
       (on-client-detach client)
       (let ((input (attached-client-input client)))
         (when input (sento.actor:tell input :stop))))
@@ -181,6 +189,7 @@ attach handler, and the reply telling it where to send input."
             :dispatcher :pinned
             :receive (lambda (m) (on-client-input client m))))
     (push client *clients*)
+    (%note-attached kind t)
     (let ((app (%app-of client)))
       (when app
         (handler-case (attached app client)

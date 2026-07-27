@@ -41,7 +41,6 @@
                                  (pine.core.actor:list-agents server))
                          :test #'string=))
              (is-true (pine.core.actor:agent-alive-p server "ping-agent")))
-        (pine.core.actor:unsupervise-agent "ping-agent")
         (pine.core.actor:kill-agent server "ping-agent")))))
 
 (test killing-an-agent-unregisters-it
@@ -49,7 +48,6 @@
     (ensure-remoting)
     (let ((server *server*))
       (pine.core.actor:spawn-agent server "gone-agent")
-      (pine.core.actor:unsupervise-agent "gone-agent")
       (pine.core.actor:kill-agent server "gone-agent")
       (is (null (pine.core.actor:find-agent server "gone-agent")))
       (is-false (pine.core.actor:agent-alive-p server "gone-agent")))))

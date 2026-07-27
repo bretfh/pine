@@ -34,6 +34,7 @@
   reader
   (attempts 0)
   (due 0)                           ; not before this universal time
+  (exit nil)                        ; what it said on its way out
   (wanted nil))                     ; whether it is meant to be up
 
 (defvar *table* (make-hash-table :test 'equal))
@@ -69,11 +70,19 @@ joins this daemon. Nothing here knows what that command looks like.")
 
 ;;;; Starting and stopping
 
+(defun %paths (value)
+  (cond ((null value) nil)
+        ((fset:seq? value) (fset:convert 'list value))
+        ((p:pathp value) (list value))
+        (t value)))
+
 (defun %needs-met-p (declaration)
-  (let ((needs (fset:lookup declaration :needs)))
-    (or (null needs)
-        (every (lambda (path) (ns:read path))
-               (if (fset:seq? needs) (fset:convert 'list needs) (list needs))))))
+  "Whether what the declaration waits for is there, and what it waits to be
+gone is gone."
+  (and (every (lambda (path) (ns:read path))
+              (%paths (fset:lookup declaration :needs)))
+       (notany (lambda (path) (ns:read path))
+               (%paths (fset:lookup declaration :unless)))))
 
 (defun %argv (value)
   (cond ((stringp value) (list "sh" "-c" value))
@@ -95,8 +104,13 @@ because a process that says nothing must not block one that does."
      :name (format nil "pine-proc-out-~a" (entry-name entry)))))
 
 (defun %launch (entry argv)
-  (let ((process (uiop:launch-program argv :output :stream
-                                           :error-output :output)))
+  (let* ((env (fset:lookup (entry-declaration entry) :env))
+         (process (if env
+                      (uiop:launch-program argv :output :stream
+                                                :error-output :output
+                                                :environment (%argv env))
+                      (uiop:launch-program argv :output :stream
+                                                :error-output :output))))
     (setf (entry-process entry) process
           (entry-reader entry) (%reader entry (uiop:process-info-output process)))
     process))
@@ -158,8 +172,16 @@ because a process that says nothing must not block one that does."
 (defun %intervalp (entry)
   (fset:lookup (entry-declaration entry) :every))
 
+(defun %note-exit (entry)
+  "Record what a process that has stopped said on its way out, so a policy
+above can act on it rather than pine guessing."
+  (let ((process (entry-process entry)))
+    (when (and process (not (uiop:process-alive-p process)))
+      (setf (entry-exit entry) (uiop:wait-process process)))))
+
 (defun %attend (entry)
   "Bring ENTRY to what its declaration asks for."
+  (unless (%alive-p entry) (%note-exit entry))
   (cond
     ((not (entry-wanted entry))
      (when (%alive-p entry) (%stop entry)))
@@ -240,6 +262,9 @@ because a process that says nothing must not block one that does."
    (/proc/?name/pid
     {:read (pine.data:fn [] (let ((e (%entry name))) (and e (%pid e))))
      :doc "the pid, where it has one"})
+   (/proc/?name/exit
+    {:read (pine.data:fn [] (let ((e (%entry name))) (and e (entry-exit e))))
+     :doc "what it said on its way out, last time it stopped"})
    (/proc/?name
     {:read (pine.data:fn [] (let ((e (%entry name))) (and e (entry-declaration e))))
      :write (pine.data:fn [v] (%declare name v))

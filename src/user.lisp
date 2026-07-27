@@ -70,7 +70,7 @@
    ;; layout buffers (authorable tool buffers)
    #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
    ;; processes
-   #:defagent #:spawn #:supervise #:kill
+   #:defagent #:spawn #:kill
    ;; buffers / editor
    #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
    #:ask #:tell #:current-client #:current-buffer
@@ -206,20 +206,18 @@ replaces it. Reload-safe; the rules reach every attached frontend."
                                (list ,@props))))
                     rules))))
 
-;;;; Processes. SPAWN / SUPERVISE / KILL take the running server implicitly.
+;;;; Processes. What keeps one running is its declaration under /proc.
 
-(defun spawn (name)     (pine.core.actor:spawn-agent     pine.core.server:*server* (string name)))
-(defun supervise (name) (pine.core.actor:supervise-agent (string name)))
-(defun kill (name)      (pine.core.actor:kill-agent       pine.core.server:*server* (string name)))
+(defun spawn (name) (pine.core.actor:spawn-agent pine.core.server:*server* (string name)))
+(defun kill (name)  (pine.core.actor:kill-agent  pine.core.server:*server* (string name)))
 
 (defmacro defagent (name &body body)
-  "Spawn a supervised process agent named NAME and run BODY in its own image."
+  "Spawn a process agent named NAME and run BODY in its own image."
   (let ((n (string name)))
     `(progn
        (spawn ,n)
        (pine.core.actor:agent-eval pine.core.server:*server* ,n
                               ,(format nil "~s" `(progn ,@body)))
-       (supervise ,n)
        ,n)))
 
 ;;;; Surfaces. A name is a symbol; the desktop machinery keys by its downcased

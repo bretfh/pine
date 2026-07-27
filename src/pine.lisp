@@ -11,6 +11,7 @@
    #:+frontend-unavailable+))
 
 (in-package #:pine)
+(named-readtables:in-readtable pine.path:syntax)
 
 (defun main (&key (workers 4) (remoting-port 0))
   "Start the whole daemon in this image, for REPL use: (pine:main)."
@@ -56,6 +57,7 @@ would open somewhere nobody asked for. A session announces itself with
   "Adopt DISPLAY as the session's, for frontends started from now on."
   (when (and display (plusp (length display)))
     (%setenv "WAYLAND_DISPLAY" display)
+    (pine.ns:write /display display)
     display))
 
 (defun handle-termination ()
@@ -222,20 +224,17 @@ exits after, so the ephemeral actor system needs no teardown."
           (format t "~a~%" (pine.core.actor:ask ref msg :timeout 5)))
       (error () (format t "pine: no daemon at ~a:~d~%" host port)))))
 
-;;;; Frontends are agents. The editor and the desktop are not part of this
-;;;; process: the daemon spawns each as its own OS image -- `pine editor' /
-;;;; `pine desktop', the same binary re-invoked -- so one can crash, be killed,
-;;;; or hang without touching the daemon or the other, and a supervisor respawns
-;;;; any that dies. Each attaches back over remoting and renders the surfaces the
-;;;; daemon builds from init.lisp. This is spawn-agent / start-agent-supervisor
-;;;; (core/actor.lisp) applied to the things you look at.
+;;;; Frontends. The editor and the desktop are not part of this process: each
+;;;; is its own OS image -- `pine editor' / `pine desktop', the same binary
+;;;; re-invoked -- so one can crash, be killed, or hang without touching the
+;;;; daemon or the other. Each attaches back over remoting and renders the
+;;;; surfaces the daemon builds from init.lisp.
+;;;;
+;;;; They are declarations under /proc like anything else that runs.
 
 (defvar *frontends* '("desktop" "editor")
-  "The frontend verbs the daemon spawns and keeps alive, each its own process.
+  "The frontend verbs the daemon keeps alive, each its own process.
 init.lisp may rebind this to choose which frontends come up.")
-
-(defvar *frontend-procs* (make-hash-table :test 'equal)
-  "frontend verb -> its uiop process, so the supervisor can see it has died.")
 
 (defun daemon-is-binary-p ()
   "True when this daemon runs from the built `pine' binary, which can re-invoke
@@ -265,98 +264,61 @@ environment that made this image loadable, so it can load what this one did."
                             (string= prefix entry :end2 (length prefix))))
                      (sb-ext:posix-environ)))))
 
-(defun spawn-frontend (verb)
-  "Launch one frontend as its own process, logging to /tmp. The child is told
-which daemon started it, so a daemon on any other port keeps its own frontends
-instead of handing them to whoever holds the default."
-  (let ((log (format nil "/tmp/pine-~a.log" verb)))
-    (setf (gethash verb *frontend-procs*)
-          (uiop:launch-program (frontend-command verb)
-                               :environment (frontend-environment)
-                               :output log :error-output log
-                               :if-output-exists :supersede
-                               :if-error-output-exists :supersede))))
-
-(defvar *frontend-supervise* t
-  "While true the supervisor respawns dead frontends; cleared on daemon stop so
-it does not fight a deliberate shutdown.")
-
 (defconstant +frontend-unavailable+ 70
   "Exit status a frontend uses to say it cannot run in this session.
 
 The window manager exits with it under a compositor that offers no window
-management. The supervisor then stops starting that frontend until the
-display changes.")
+management. Nothing starts that frontend again until the display changes.")
 
-(defvar *frontend-unavailable* (make-hash-table :test 'equal)
-  "Frontend verb to the display on which it reported itself unavailable.")
+(defun declare-frontends ()
+  "Declare the frontends under /proc, and say what makes each one runnable.
 
-(defun frontend-attached-p (verb)
-  "Return the attached client of VERB's kind, whichever process started it."
-  (let ((kind (intern (string-upcase verb) :keyword)))
-    (find kind pine.core.attach:*clients* :key #'pine.core.attach:attached-client-kind)))
+Writing the declaration is what keeps it running. The two rules that are not
+just liveness are said as paths: it needs a display to run on, and it does not
+run when a frontend of its kind has attached from somewhere else."
+  (dolist (verb *frontends*)
+    (let ((kind (string-downcase verb)))
+      (pine.ns:write (pine.path:child /proc kind)
+                     (fset:map (:run (fset:convert 'fset:seq (frontend-command verb)))
+                               (:env (fset:convert 'fset:seq (frontend-environment)))
+                               (:needs (fset:seq /display))
+                               (:unless (fset:seq (pine.path:child /attached kind))))))))
 
-(defun note-frontend-exit (verb display)
-  "Record VERB as unavailable on DISPLAY when its process said so."
-  (let ((process (gethash verb *frontend-procs*)))
-    (when (and process (not (uiop:process-alive-p process))
-               (eql (uiop:wait-process process) +frontend-unavailable+))
-      (setf (gethash verb *frontend-unavailable*) display))))
-
-(defun frontend-runnable-p (verb display)
-  "Return true when the daemon should start VERB on DISPLAY.
-
-False when there is no display, when VERB reported itself unavailable there,
-when the process the daemon started is alive, or when a frontend of that kind
-is attached already."
-  (let ((process (gethash verb *frontend-procs*)))
-    (and display
-         (not (equal (gethash verb *frontend-unavailable*) display))
-         (not (and process (uiop:process-alive-p process)))
-         (not (frontend-attached-p verb)))))
+(defun watch-unavailable ()
+  "A frontend that says it cannot run here is not started again until the
+display changes."
+  (pine.ns:watch /proc
+                 (lambda (value)
+                   (declare (ignore value))
+                   (let ((stop (fset:empty-map)))
+                     (dolist (verb *frontends* stop)
+                       (let ((at (pine.path:child /proc (string-downcase verb))))
+                         (when (eql +frontend-unavailable+
+                                    (pine.ns:read (pine.path:child at "exit")))
+                           (setf stop (fset:with stop at (fset:seq :stop))))))))
+                 :as :frontend-unavailable)
+  (pine.ns:watch /display
+                 (lambda (value)
+                   (declare (ignore value))
+                   (let ((start (fset:empty-map)))
+                     (dolist (verb *frontends* start)
+                       (setf start (fset:with start
+                                              (pine.path:child /proc
+                                                               (string-downcase verb))
+                                              (fset:seq :start))))))
+                 :as :frontend-display))
 
 (defun start-frontends ()
-  "Keep the frontends named by `*frontends*' running, one process each.
-
-The decision is made every cycle rather than once, because the configuration
-can change under a reload and the display can appear long after the daemon
-starts. The cycle that first sees a display only observes, leaving a frontend
-started elsewhere time to attach and claim its kind. Apps that have died are
-reaped first, or their kind would count as attached forever and never come
-back."
-  (setf *frontend-supervise* t)
-  (bordeaux-threads:make-thread
-   (lambda ()
-     (let ((previous nil))
-       (loop :while *frontend-supervise*
-             :do (dolist (client (pine.core.attach:reap-clients))
-                   (format t "pine: ~(~a~) is gone, starting it again~%"
-                           (pine.core.attach:attached-client-kind client))
-                   (finish-output))
-                 (let ((display (session-display)))
-                   (cond
-                     ((not (equal display previous))
-                      (clrhash *frontend-unavailable*)
-                      (setf previous display))
-                     (t
-                      (dolist (verb *frontends*)
-                        (note-frontend-exit verb display)
-                        (when (frontend-runnable-p verb display)
-                          (handler-case (spawn-frontend verb)
-                            (error (c)
-                              (format *error-output*
-                                      "pine: cannot start ~a: ~a~%" verb c))))))))
-                 (sleep 3))))
-   :name "pine-frontend-supervisor"))
+  "Keep the frontends running, one process each, attended with everything else."
+  (pine.ns:write /display (session-display))
+  (declare-frontends)
+  (watch-unavailable))
 
 (defun stop-frontends ()
-  "Stop supervising and kill every frontend process this daemon spawned, so a
-daemon shutdown takes its editor and desktop down with it."
-  (setf *frontend-supervise* nil)
-  (maphash (lambda (v p) (declare (ignore v))
-             (ignore-errors (uiop:terminate-process p :urgent t)))
-           *frontend-procs*)
-  (clrhash *frontend-procs*))
+  "Stop every frontend this daemon declared, so a daemon shutdown takes its
+editor and desktop down with it."
+  (dolist (verb *frontends*)
+    (pine.ns:write (pine.path:child /proc (string-downcase verb)) nil)))
 
 (defun kill-port (port)
   "Kill whatever process holds PORT. Version-independent, so `pine stop' works
