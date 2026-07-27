@@ -10,6 +10,7 @@
                              #:alexandria
                              #:bordeaux-threads
                              #:closer-mop
+                             #:named-readtables
                              #:cffi
                              #:cffi-libffi
                              #:com.inuoe.jzon
@@ -20,6 +21,7 @@
                 :pathname "src/"
                 :components
                 (
+                 (:file "data")
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
@@ -98,6 +100,7 @@
                 :serial t
                 :pathname "tests/"
                 :components ((:file "suite") (:file "fixtures")
+                             (:file "data")
                              (:file "buffer") (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")

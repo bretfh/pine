@@ -34,7 +34,8 @@ here and is not this suite's to judge.")
       (special-operator-p symbol)
       (find-class symbol nil)
       (fboundp (list 'setf symbol))
-      (sb-int:info :type :kind symbol)))
+      (sb-int:info :type :kind symbol)
+      (named-readtables:find-readtable symbol)))
 
 ;;;; "A file may only name packages that load before it." Read off the image's
 ;;;; cross-reference tables and the systems' own component order, so a name
