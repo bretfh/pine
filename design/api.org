@@ -19,11 +19,11 @@
 |             | (setf (ref K) V) writes (deduped)                            |
 | var         | editor variable: defonce declares, (var k [buf]) reads,      |
 |             | (setf (var k [buf])) writes                                  |
-| store       | durable value in the daemon's SQLite store: (store K) reads, |
-|             | (setf (store K) V) writes; store-push / store-items keep     |
-|             | bounded lists; defonce/defref :persist ride it               |
-| world       | what restarts restore: registered :save/:restore pairs over  |
-|             | (:world NAME) store keys -- buffers, arrangement, scratch    |
+| world       | how anything persists: (world:value K) reads, (setf ...)     |
+|             | writes; world:push / world:items keep bounded lists;         |
+|             | snapshot/revive methods carry state computed at save time    |
+|             | -- buffers, arrangement. defonce/defref :persist ride it     |
+| store       | the sqlite file under world, and world is its only caller    |
 
 Three display layers only: buffer (content) -> window (view) -> surface
 (placement). Everything else is content vocabulary. There is no "pane"; no

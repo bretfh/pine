@@ -188,50 +188,85 @@ so the surface re-renders when a ref it read changes, and only then.
 
 * Persistence
 
-One engine-owned SQLite store (XDG data home =pine/store.db=), open for the
-daemon's whole life. Values are readable lisp. Nothing else in pine writes
-state files; a mode that wants to persist something marks a variable
-=:persist= or uses its own store key -- never a file of its own.
+One facility, whatever the value is and whoever owns it: a mode's state, a
+command's scrap, a subsystem's history. One keyspace, one gate. Nothing else in
+pine writes state files, and nothing reaches past =world= to the SQLite file
+under it -- that is how an editor ends up with a dozen private save paths.
 
-| symbol        | form                                        | status |
-|---------------+---------------------------------------------+--------|
-| =store=       | =(store KEY [default])= -- setf-able         | [have] |
-| =store-push=  | =(store-push NAME V :max N :unique B)=       | [have] |
-| =store-items= | =(store-items NAME :limit N)= newest first   | [have] |
-| =store-clear= | =(store-clear NAME)=                         | [have] |
+Alias it the way a namespace is aliased:
 
-- KEY is any readable lisp: =:greeting=, =(:place "/etc/hosts")=. =store= is
-  the durable sibling of =ref= / =var=: =(setf (store :k) v)= writes through.
-- =store-push= keeps a bounded list: =:unique= (the default) moves an equal
-  entry to the front, =:max= trims to the newest N. Histories and recents.
-- =(defonce :name ... :persist t)= and =(defref :name V :persist t)= make the
-  global value survive restarts: the declaration seeds it from the store,
-  every write goes through.
-- Out of the box: kill ring, repl history, prompt histories (M-x, files,
-  eval), recent files (=find-recent=, =C-x C-r=), and save-place (=find-file=
-  reopens at the point you left; recorded on save and daemon shutdown).
+#+begin_src lisp
+(defpackage :my-thing
+  (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world)))
+#+end_src
+
+*** A durable value
+
+| symbol   | form                                    | status |
+|----------+-----------------------------------------+--------|
+| =value=  | =(world:value KEY [default])= setf-able | [have] |
+| =forget= | =(world:forget KEY)=                    | [have] |
+
+KEY is any readable lisp: =:greeting=, =(:place "/etc/hosts")=. It is the
+durable sibling of =ref= and =var=: =(setf (world:value :k) v)= writes through.
+
+*** A durable bounded list
+
+| symbol  | form                                        | status |
+|---------+---------------------------------------------+--------|
+| =push=  | =(world:push NAME V :max N :unique B)=      | [have] |
+| =items= | =(world:items NAME :limit N)= newest first  | [have] |
+| =clear= | =(world:clear NAME)=                        | [have] |
+
+=:unique= (the default) moves an equal entry to the front; =:max= trims to the
+newest N. Histories and recents.
+
+Out of the box: kill ring, repl history, prompt histories (M-x, files, eval),
+recent files (=find-recent=, =C-x C-r=), and save-place (=find-file= reopens at
+the point you left; recorded on save and at shutdown).
+
+=(defonce :name ... :persist t)= and =(defref :name V :persist t)= make the
+global value survive restarts: the declaration seeds it, every write goes
+through.
 
 ** The world
 
-What comes back after a restart: open file buffers (reread from disk, mode
-kept), scratch's text, and the window arrangement -- splits, weights, which
-buffer where, focus. The arrangement also survives killing just the editor
-window. Structure saves write-through on every mutation; content saves at
-shutdown. Terminals restore as scratch windows (the pty died with the
-daemon); unsaved file edits are not the world's job.
+State computed from what is live rather than written as it changes: open file
+buffers (reread from disk, mode kept), buffers with no file (their text), and
+the window arrangement -- splits, weights, which buffer where, focus. The
+arrangement also survives killing just the editor window. Structure saves
+write-through on every mutation; content saves at shutdown. Terminals restore
+as scratch windows (the pty died with the daemon), and a tool buffer (=*...*=)
+is a projection of live state, so it is not kept.
 
-| symbol        | form                                       | status |
-|---------------+--------------------------------------------+--------|
-| =register=    | =(register NAME :save FN :restore FN)=     | [have] |
-| =:world-save= | =(setf (var :world-save) nil)= to opt out  | [have] |
+| symbol      | form                              | status |
+|-------------+-----------------------------------+--------|
+| =snapshot=  | =(defmethod world:snapshot ...)=  | [have] |
+| =revive=    | =(defmethod world:revive ...)=    | [have] |
+| =save=      | =(world:save [NAME])=             | [have] |
+| =restore=   | =(world:restore [NAME])=          | [have] |
+| =*enabled*= | =(setf world:*enabled* nil)= off  | [have] |
 
-- =register= is the extension point: =:save= is () -> readable data (its
-  world entry), =:restore= applies it on the next start. The data rides a
-  =(:world NAME)= store key -- inspect yours with =(store '(:world
-  :arrangement))=; the arrangement reads in the same builder language the
-  editor form uses.
-- Reloading init (=:reload= / =C-M-x= on the editor form) is the declared
-  reset: the builder reseeds the tree and becomes the new saved world.
+Writing the methods is the whole registration; nothing lists them anywhere.
+
+#+begin_src lisp
+(defmethod world:snapshot ((name (eql :my-thing))) (compute-it))
+(defmethod world:revive ((name (eql :my-thing)) data) (apply-it data))
+#+end_src
+
+=snapshot= answers readable data, or nil to leave the stored entry standing.
+=revive= applies it on the next start. The data rides a =(:world NAME)= key --
+inspect yours with =(world:value :arrangement)=; the arrangement reads in the
+same builder language the editor form uses.
+
+=*enabled*= gates the sweep only. Durable values and lists write through as they
+change, which is what they are for. It is a plain special rather than an editor
+variable because this layer sits under the editor and the editor's own
+variables persist through it.
+
+Reloading init (=:reload= / =C-M-x= on the editor form) is the declared reset:
+the builder reseeds the tree and becomes the new saved world.
 
 * Behavior
 

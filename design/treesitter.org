@@ -1,9 +1,9 @@
 #+TITLE: pine tree-sitter
 #+AUTHOR: Bret Horne
 
-Describes what src/ts.lisp actually does. Supersedes the old hecl plan (ECL
-c-inline + a ts-wrapper.c C shim + .dylib grammars from homebrew); none of that
-was built.
+Describes what src/ts/ actually does: index (byte offsets over the line seq),
+runtime (bindings, grammars, parse state, the band, motion), parser (the
+per-buffer actor) and highlight (the language walks and indentation).
 
 * Bindings
 
@@ -16,9 +16,9 @@ are never read from Lisp, only passed back to ts_node_*.
 
 libtree-sitter itself is the Guix "tree-sitter" package, loaded by name.
 
-* Grammars and queries
+* Grammars
 
-*grammars* maps a language keyword to (library c-fn query-relpath):
+*grammars* maps a language keyword to (library c-fn):
 
 | language    | library                   | fn                     |
 |-------------+---------------------------+------------------------|
@@ -27,19 +27,41 @@ libtree-sitter itself is the Guix "tree-sitter" package, loaded by name.
 
 Grammar shared libraries are Guix packages (see guix/tree-sitter-commonlisp.scm)
 loaded off the search path by name; Guix puts them under lib/tree-sitter/, not
-lib/, so grammar-library-candidates checks there plus pine's own tree. Highlight
-queries ship in-tree under queries/<lang>/highlights.scm and are read at load.
+lib/, so grammar-library-candidates checks there plus pine's own tree.
 
 * Runtime
 
 - ts-runtime : libs-loaded flag + a languages hash. One per server (server
   slot ts-runtime).
-- ts-entry   : a loaded language = parser + compiled query + capture-id->name
-  cache.
+- ts-entry   : a loaded language = its TSLanguage pointer and a parser.
+- parse-state : per buffer. Its own parser, its persistent tree, the byte index
+  the tree was read through, the band those cover, and the highlight cache.
 - ensure-ts       loads libtree-sitter once.
-- ensure-language loads a grammar + compiles its query once, memoized in the
-  runtime. Unsupported or missing grammar/query -> nil (highlighting and motion
-  just no-op; the editor runs fine without tree-sitter).
+- ensure-language loads a grammar once, memoized in the runtime. Unsupported or
+  missing grammar -> nil (highlighting and motion just no-op; the editor runs
+  fine without tree-sitter).
+
+* The band
+
+Past +whole-file-lines+ a buffer is not handed to tree-sitter whole. The cost of
+a parse follows the root's child count, and a million lines of lisp is a quarter
+of a million top-level forms: rebuilding that array per keystroke was 1.8s.
+
+parse-lines! takes the :viewport a window is showing and slices the band around
+it out of the line seq. That slice is the parser's entire input -- there are no
+included ranges, and the byte index covers the band rather than the file.
+
+- the band covers whole multiples of +band-lines+, so typing inside one leaves
+  it where it is and the tree is shifted rather than rebuilt
+- the tree, the index, and every position they report are relative to the
+  band's first line. ps-offset is that line, and parse-highlights, parse-indent
+  and parse-motion convert at the edge, so callers speak buffer lines
+- a scroll changes the viewport while the line seq stays eq, so the band is
+  what decides whether the tree still applies
+
+The parse and the byte index never touch the lines outside the band. At a
+million lines a banded parse costs 2.6ms and 1.5MB of resident set, against
+5.4s and 2.9GB for the file.
 
 * Highlighting: single-pass walker
 
@@ -92,40 +114,29 @@ the grammar still loads for parsing and motion.
 Checkable headless with `make hl FORM='...'`, which prints each token and its
 face, so every rule and the binding/namespace/unicode cases stay regressions.
 
-* Highlighting
+* byte <-> char (UTF-8), without a flat string
 
-Gated on ts-loaded-p in the renderer actor (render.lisp), so it never runs on
-the UI thread. Flow:
+tree-sitter asks for bytes at an offset; the buffer is an fset seq of lines and
+the cell grid and point are in characters. pine.ts.index is the map between
+them, and it never builds the string: build-index walks the band once into a
+per-line offset array, and an edit inside a line records a pending shift rather
+than rebuilding.
 
-  buffer text
-    -> ts_parser_parse_string (full parse; UTF-8 octets, no old tree yet)
-    -> query cursor over the root node
-    -> captures: (start-byte end-byte capture-name)
-    -> capture-name-to-face, then reclassify (a :function-name that is a CL
-       special form becomes :keyword; a :variable that is a CL constant becomes
-       :constant) -- capture names alone don't know the language
-    -> byte range -> (line start-col end-col) as CHARACTER columns
-    -> list of (line start-col end-col face), stored as the buffer's :highlights
-  render:
-    build-highlight-table turns that into per-cell faces; the painter reads the
-    face RGB from face.lisp.
-
-Faces are catppuccin defaults in face.lisp. Multi-line spans are split per line
-(end-col 999 = to end of line).
-
-** byte <-> char (UTF-8)
-
-tree-sitter positions are UTF-8 byte offsets; the cell grid and point are in
-characters. build-line-index builds a per-line (start-byte . start-char) vector;
-byte-to-line-col and pos-to-byte convert both ways by walking the line's
-characters and their UTF-8 byte widths. So a multibyte character earlier on a
-line does not shift highlight columns or motion targets.
+source-line-col, source-byte, source-substring and source-char-at are the four
+questions the walks ask. Each counts UTF-8 widths across the line, so a
+multibyte character earlier on a line does not shift highlight columns or motion
+targets. The count is carried forward per line, since a walk emits spans left to
+right -- and the pair it carries is the byte offset OF the column it reached,
+which is not the byte it was asked about when that byte falls inside a
+character.
 
 * Structural navigation
 
-Each motion parses the buffer, walks the tree once, and returns a target
-position; the tree lives only for that call (call-with-root). No persistent tree
-yet.
+parse-motion walks the buffer's own persistent tree and answers a target; there
+is no reparse and no flat string. The buffer sends :ts-motion to its parser and
+takes :move-point back, so a structural jump in a large buffer waits on nothing
+in the buffer's receive. call-with-root remains for a caller holding a string
+rather than a buffer.
 
 | command            | node walk                                                       |
 |--------------------+-----------------------------------------------------------------|
@@ -140,15 +151,31 @@ carries :ts-language :commonlisp; a buffer in it gets highlight + motion.
 
 * Threading
 
-Highlight parses run on the renderer actor. Motion parses run one-shot on the
-command path from a fresh snapshot (so a prefix count repeats correctly).
-Buffers are only ever mutated through their actor; tree-sitter reads text, never
-writes.
+A buffer with a language owns a parser actor, pinned to its own thread. An edit
+commits and paints at once and tells the parser; the answer arrives later as
+:highlights, :indent-region or :move-point. A buffer's receive never waits for
+tree-sitter, and a parse fault parks that one actor while the buffer keeps
+taking edits and painting its last good colours.
+
+One request is in flight per buffer, with a dirty flag for the rest, so a
+typing burst costs one parse per completed parse and the parser's mailbox
+cannot grow behind a slow file. An answer carries the tick it was computed for
+and is dropped when the buffer has moved on.
+
+Buffers are only ever mutated through their actor; tree-sitter reads text,
+never writes. Nothing on the edit path builds a flat string: the parser reads
+the line seq through a TSInput callback and a byte index.
 
 * Not done
 
-- Incremental parsing. Every highlight is a full re-parse (old-tree is null).
-  The immutable buffer state makes an edit descriptor cheap to compute later.
+- Every node call crosses cffi-libffi as a by-value TSNode, which costs 2.7us
+  and allocates 1664 bytes. The highlight walk makes about 56 of them per
+  source line, so a walk is ~93KB and ~166us per line and that is the dominant
+  cost left. A pointer-taking shim over the dozen calls the walks use would
+  take the allocation to zero.
+- Type dispatch is a fresh lisp string per node and up to fifteen string= per
+  walk step. ts_node_symbol answers a uint16; the names this file cares about
+  could resolve to ids once per language.
 - Language injection (C inside ffi strings, SQL in strings). The grammar parses
   the forms; merging a second parser's highlights over injected regions is the
   next capability.
@@ -159,6 +186,6 @@ writes.
 | dependency                 | source                                          |
 |----------------------------+-------------------------------------------------|
 | libtree-sitter             | Guix "tree-sitter"                              |
-| cffi, cffi-libffi          | ocicl                                           |
+| cffi, cffi-libffi          | Guix "sbcl-cffi"                                |
 | tree-sitter-commonlisp .so | Guix package (guix/tree-sitter-commonlisp.scm)  |
 | queries/*/highlights.scm   | ship in-tree                                     |

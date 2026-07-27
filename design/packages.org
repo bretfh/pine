@@ -42,8 +42,10 @@ The actor system and its registries, off-thread evaluation and the debugger
 model, process agents, the seam a frontend attaches through.
 
 ** state/ -- durable and reactive values
-=pine.state.store= (sqlite) =pine.state.ref= (reactive cells)
-=pine.state.var= (editor variables) =pine.state.world= (restore after restart)
+=pine.state.world= (how anything persists: values, bounded lists, and the
+snapshot/revive methods a subsystem answers) =pine.state.store= (the sqlite
+file under it, and world is its only caller) =pine.state.ref= (reactive cells)
+=pine.state.var= (editor variables, persisted through world)
 
 ** text/ -- buffers
 =pine.text.buffer= (state, snapshot, the actor, the registry)
@@ -80,8 +82,10 @@ modes are active.
 =pine.editor.overwrite= =pine.editor.ask= =pine.editor.session=
 
 ** ts/ -- tree-sitter
-=pine.ts.runtime= (the parser, grammars, node access, parse state, motion)
-=pine.ts.highlight= (the language walks and everything that produces faces)
+=pine.ts.runtime= (the parser, grammars, node access, parse state, the band,
+motion) =pine.ts.index= (byte offsets over the line seq, without a flat string)
+=pine.ts.parser= (the per-buffer parser actor) =pine.ts.highlight= (the
+language walks, indentation, and everything that produces faces)
 
 ** cairo/ -- the pixel backend
 =pine.cairo.paint= (=paint-px= over the node tree) =pine.cairo.grid= (the

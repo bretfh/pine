@@ -145,9 +145,11 @@ Each attached :editor app gets a session: a pine client + a scratch buffer
 - Render condition: on a fresh buffer snapshot (typing/motion), and on input
   only when the minibuffer is active (M-x / completing-read change client state,
   not the buffer). This avoids a stale pre-edit frame per keystroke.
-- ts highlighting is scoped to the visible line range + a 12-line margin
-  (ts-request-parse takes base/n = scroll-top/win-height), NOT the whole file.
-  Highlights come back offset to buffer lines. The ts-actor lives in render.lisp.
+- ts highlighting is scoped to the lines a window shows, NOT the whole file.
+  The renderer is the only thing that knows a scroll offset, so it tells each
+  buffer the union of its windows' ranges (:set-viewport); the buffer's own
+  parser actor bands the parse around that and walks only the forms in range.
+  Highlights come back offset to buffer lines.
 
 The editor commands, minibuffer routing, completion, and eval all run in this
 session with *client* bound. src/editor/session.lisp sets the hooks at load
