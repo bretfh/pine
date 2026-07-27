@@ -3,7 +3,7 @@
   (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:start-editor
-   #:revive-buffer #:register-supervision
+   #:revive-buffer
    ;; the kill ring, which this package uses and the editor's commands drive
    #:kill-ring-push
    #:kill-ring-top
@@ -27,11 +27,6 @@
     (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
     (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error
           pine.core.eval:*attended-p* #'pine.editor.debugger:attended-eval-p)
-    ;; one loop watches everything the kernel keeps alive: buffers whose thread
-    ;; died come back from the store, agents respawn, and what is parked or dead
-    ;; is visible in *supervisor* rather than only in a log
-    (register-supervision server)
-    (pine.core.supervision:start-supervisor)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -73,62 +68,6 @@ disappears into a mailbox nobody is reading."
           (setf (pine.editor.frame:current-buffer c) actor))
         (pine.ui.render:subscribe-to-buffer actor)
         actor))))
-
-(defun register-supervision (server)
-  "Tell the kernel how to look at this daemon's buffers and agents, and how to
-bring one back. The loop owns when and in what order; these own what a healthy
-one looks like.
-
-A parked buffer reports :parked, never :dead, so a fault someone is reading is
-never repaired out from under them."
-  (pine.core.supervision:register-check
-   :buffer
-   (lambda ()
-     (let (found)
-       (maphash (lambda (name actor)
-                  (push (list name (if (pine.text.buffer:actor-dead-p actor) :dead :running)
-                              :label name)
-                        found))
-                (pine.text.buffer:buffer-table server))
-       found))
-   #'revive-buffer)
-  (pine.core.supervision:register-check
-   :agent
-   (lambda ()
-     (mapcar (lambda (info)
-               (let ((name (pine.core.actor:agent-info-name info)))
-                 (list name
-                       (if (pine.core.actor:agent-alive-p server name) :running :dead)
-                       :label (format nil "~a (~(~a~))" name
-                                      (pine.core.actor:agent-info-type info)))))
-             (ignore-errors (pine.core.actor:list-agents server))))
-   (lambda (name) (pine.core.actor:spawn-agent server name)))
-  (pine.core.supervision:register-check
-   :eval
-   (lambda ()
-     (mapcar (lambda (job)
-               (list (format nil "~a-~a" (getf job :agent) (getf job :id))
-                     (if (eq :error (getf job :status)) :parked :running)
-                     :detail job
-                     :label (format nil "~a ~a: ~a" (getf job :agent) (getf job :status)
-                                    (or (getf job :form) (getf job :condition) ""))))
-             (pine.core.jobs:list-jobs)))
-   ;; an eval is not something the kernel restarts; it is aborted by hand
-   (lambda (key) (declare (ignore key)) nil))
-  (pine.core.supervision:register-check
-   :world
-   (lambda ()
-     (mapcar (lambda (entry)
-               (let ((path (getf entry :path)))
-                 (list (or path (getf entry :name)) :running
-                       :detail entry
-                       :label (if path
-                                  (format nil "~a" path)
-                                  (format nil "~a  ~d character~:p"
-                                          (getf entry :name)
-                                          (length (getf entry :content "")))))))
-             (world:value :buffers)))
-   (lambda (key) (declare (ignore key)) nil)))
 
 
 ;;;; Commands

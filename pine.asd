@@ -23,7 +23,7 @@
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
-                                       (:file "jobs") (:file "supervision") (:file "event")
+                                       (:file "jobs") (:file "event")
                                        (:file "hooks") (:file "attach")))
                  ;; keys and modes are the bottom of the editing stack: the buffer actor
                  ;; dispatches a message through its mode, so modes load before buffers.
@@ -82,7 +82,7 @@
                                        (:file "target") (:file "repl") (:file "overwrite")
                                        (:file "window") (:file "help") (:file "debugger")
                                        (:file "evaluate") (:file "commands")
-                                       (:file "supervisor") (:file "session")))
+                                       (:file "session")))
                  (:file "desktop")
                  (:file "wm")
                  (:file "frontend")
@@ -102,7 +102,6 @@
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")
                              (:file "isearch") (:file "repl") (:file "liveness") (:file "async")
-                             (:file "supervision")
                              (:file "term") (:file "wm")
                              (:file "source")
                              (:file "packages") (:file "editor") (:file "agent")

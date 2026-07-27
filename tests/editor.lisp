@@ -154,21 +154,6 @@
       (sleep 0.3)
       (is (= 3 done)))))
 
-(test the-supervisor-lists-the-local-evaluations
-  "Evaluations had a surface of their own when they were the only thing worth
-watching. They are one section of the supervisor now, so M-x jobs opens it."
-  (with-fixture substrate ()
-    (pine.editor.commands:register-supervision *server*)
-    (pine.editor.target:eval-in-target "(+ 1 2)" (find-package :cl-user))
-    (sleep 0.2)
-    (pine.core.supervision:supervise-once)
-    (pine.editor.command::call-command "jobs")
-    (sleep 0.15)
-    (let ((text (btext "*supervisor*")))
-      (is (search "Supervisor" text))
-      (is (search "local" text)
-          "the local evaluation should be listed, saw:~%~a" text))))
-
 (test a-layout-buffer-renders-selects-activates-and-reprojects
   (with-fixture substrate ()
     (let ((fired nil)
