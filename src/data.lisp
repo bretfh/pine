@@ -1,6 +1,6 @@
 (defpackage #:pine.data
   (:use #:cl)
-  (:export #:syntax
+  (:export #:syntax #:data
            #:fn
            #:keys #:vals #:fold
            #:serialize #:deserialize))
@@ -88,6 +88,21 @@ for a stray right parenthesis."
   (:macro-char #\[ #'read-seq-data)
   (:macro-char #\] #'read-close)
   (:dispatch-macro-char #\# #\{ #'read-set-data))
+
+;;;; A literal read into a fasl has to be dumpable, which is what a path with a
+;;;; constraint asks for: the constraint is a map, built when the file is read.
+
+(defmethod make-load-form ((m fset:map) &optional environment)
+  (declare (ignore environment))
+  `(fset:convert 'fset:map ',(fset:convert 'list m)))
+
+(defmethod make-load-form ((s fset:seq) &optional environment)
+  (declare (ignore environment))
+  `(fset:convert 'fset:seq ',(fset:convert 'list s)))
+
+(defmethod make-load-form ((s fset:set) &optional environment)
+  (declare (ignore environment))
+  `(fset:convert 'fset:set ',(fset:convert 'list s)))
 
 (defun %emit (value stream)
   (cond

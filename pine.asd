@@ -22,6 +22,7 @@
                 :components
                 (
                  (:file "data")
+                 (:file "path")
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
@@ -100,7 +101,7 @@
                 :serial t
                 :pathname "tests/"
                 :components ((:file "suite") (:file "fixtures")
-                             (:file "data")
+                             (:file "data") (:file "path")
                              (:file "buffer") (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")
