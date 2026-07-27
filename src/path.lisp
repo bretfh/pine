@@ -4,7 +4,7 @@
   (:export #:path #:pathp #:segments #:segment-count #:root #:rootp
            #:parent #:leaf #:child #:under #:prefixp #:subpath
            #:text #:parse #:name #:spliced
-           #:patternp #:match
+           #:patternp #:binders #:match #:literal-at #:key #:keys
            #:syntax))
 
 (in-package #:pine.path)
@@ -27,7 +27,10 @@
 (defstruct (path (:constructor %make-path (segments))
                  (:predicate pathp)
                  (:copier nil))
-  (segments #() :type simple-vector))
+  (segments #() :type simple-vector)
+  ;; the tree's key for each segment, computed once: a path is immutable and
+  ;; usually a constant, so a lookup never pays to make one
+  (cached-keys nil))
 
 ;;;; Dumped through their constructors rather than slot by slot: a compiled
 ;;;; test is built on use and belongs to the image that built it, so a segment
@@ -58,6 +61,21 @@ interpolated index and a written one name the same place."
     (symbol (if (keywordp x) (string-downcase (symbol-name x)) (string x)))
     (integer (format nil "~d" x))
     (character (string x))))
+
+(defun key (segment)
+  "The name a segment is stored under: a keyword where the name survives the
+trip back, and the string itself where it would not."
+  (let ((upper (string-upcase segment)))
+    (if (string= segment (string-downcase upper))
+        (intern upper :keyword)
+        segment)))
+
+(defun keys (p)
+  "P's segments as the names they are stored under."
+  (or (path-cached-keys p)
+      (setf (path-cached-keys p)
+            (map 'list (lambda (s) (if (stringp s) (key s) s))
+                 (path-segments p)))))
 
 (defun spliced (x)
   "X as a list of segments: a path's own, a string split on /, or a list."
@@ -174,6 +192,35 @@ one segment."
   (and (symbolp x) x
        (plusp (length (symbol-name x)))
        (char= #\? (char (symbol-name x) 0))))
+
+(defun %constraint-binders (s)
+  (let ((acc nil))
+    (when (seg-constraint s)
+      (fset:do-map (key pattern (seg-constraint s))
+        (declare (ignore key))
+        (when (%binderp pattern) (push (%variable pattern) acc))))
+    (nreverse acc)))
+
+(defun literal-at (p n)
+  "P's Nth segment when it is a literal that nothing before it can shift, so a
+walk can try that child without being told the child exists. NIL otherwise."
+  (let ((segments (path-segments p)))
+    (when (< n (length segments))
+      (loop :for i :from 0 :below n
+            :for s = (aref segments i)
+            :when (and (seg-p s) (member (seg-kind s) '(:deep :bind-rest)))
+              :do (return-from literal-at nil))
+      (let ((s (aref segments n)))
+        (when (stringp s) s)))))
+
+(defun binders (p)
+  "The variables P's binders name, in the order they appear. A fan-out write
+and a provider clause both bind these around the body they run."
+  (loop :for s :across (path-segments p)
+        :when (seg-p s)
+          :append (append (when (member (seg-kind s) '(:bind :bind-rest))
+                            (list (%variable (seg-value s))))
+                          (%constraint-binders s))))
 
 (defun %substitute-% (form)
   "FORM with every symbol named % replaced by this package's, so a constraint
