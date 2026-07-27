@@ -33,6 +33,8 @@
                           :components ((:file "server") (:file "actor") (:file "agent")
                                        (:file "jobs")
                                        (:file "hooks") (:file "attach")))
+                 ;; another pine, over the remoting the frontends already use
+                 (:file "host")
                  ;; keys and modes are the bottom of the editing stack: the buffer actor
                  ;; dispatches a message through its mode, so modes load before buffers.
                  (:module "input"
@@ -108,7 +110,7 @@
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
                              (:file "keep") (:file "self") (:file "err")
-                             (:file "proc")
+                             (:file "proc") (:file "host")
                              (:file "buffer") (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")

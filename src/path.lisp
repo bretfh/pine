@@ -4,7 +4,7 @@
   (:export #:path #:pathp #:segments #:segment-count #:root #:rootp
            #:parent #:leaf #:child #:under #:prefixp #:subpath
            #:text #:parse #:name #:spliced
-           #:patternp #:binders #:match #:literal-at #:key #:keys
+           #:patternp #:binders #:match #:literal-at #:key #:keys #:any
            #:syntax #:data))
 
 (in-package #:pine.path)
@@ -97,8 +97,13 @@ one segment."
            'simple-vector)))
 
 (defun parse (string)
-  "The path STRING names."
+  "The path STRING names. Every segment is a literal: a pattern is written, not
+parsed out of text someone else supplied."
   (%make-path (coerce (spliced string) 'simple-vector)))
+
+(defun any ()
+  "A wildcard segment, for building a pattern where the shape is computed."
+  (%seg :any nil))
 
 (defun %seg-text (s)
   (with-output-to-string (out)
