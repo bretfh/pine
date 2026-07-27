@@ -29,7 +29,6 @@ minibuffer. Returns the server."
     (setf pine.core.server:*server* srv
           *server* srv
           (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
-    (pine.core.event:make-event-bus srv)
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.text.buffer:start-buffer-registry srv)

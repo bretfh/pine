@@ -491,9 +491,15 @@ create table changes (                -- bounded; retention is a held path
   n     integer primary key,
   path  text, old text, new text, at integer
 );
-
-create table self (id text, name text, since integer);
 #+end_src
+
+Code is not data and is not stored: a command, a provider and a view are
+functions, and whatever declared them declares them again at boot. That is
+decided before the write rather than caught after it, so nothing is lost
+quietly.
+
+Identity needs no table of its own, because =/self/id= is a held path like any
+other.
 
 Held paths write through as they change; boot reads =held= in. The in-memory side
 needs nothing from the file, because the namespace is a persistent map and this

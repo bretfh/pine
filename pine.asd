@@ -25,10 +25,11 @@
                  (:file "path")
                  (:file "ns")
                  (:file "keep")
+                 (:file "self")
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
-                                       (:file "jobs") (:file "event")
+                                       (:file "jobs")
                                        (:file "hooks") (:file "attach")))
                  ;; keys and modes are the bottom of the editing stack: the buffer actor
                  ;; dispatches a message through its mode, so modes load before buffers.
@@ -104,7 +105,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
-                             (:file "keep")
+                             (:file "keep") (:file "self")
                              (:file "buffer") (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")

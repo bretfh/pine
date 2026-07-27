@@ -5,7 +5,6 @@
    #:*server*
    #:*app-actor-config*
    #:actor-system
-   #:event-bus
    #:agent-registry
    #:buffer-registry
    #:buffer-table
@@ -36,9 +35,10 @@ A headless daemon has no client, so registry accessors fall back to this.")
 (defparameter *app-actor-config*
   (list :dispatchers (list :shared (list :workers 2 :strategy :random))
         :timeout-timer (list :resolution 1000 :max-size 500)
-        :scheduler (list :enabled :false))
+        :scheduler (list :enabled :true))
   "The actor system of an image that attaches to the daemon: a frontend or a
-process agent. Two workers, and none of the timers it does not use.")
+process agent. Two workers, and the wheel timer every interval in pine runs on
+rather than a thread of its own.")
 
 (defparameter *port*
   (or (parse-integer (or (uiop:getenv "PINE_PORT") "") :junk-allowed t) 17000)
@@ -58,7 +58,6 @@ frontend would attach to whichever daemon holds the default port.")
 
 (defclass server ()
   ((actor-system    :initarg :actor-system    :accessor actor-system    :initform nil)
-   (event-bus       :initarg :event-bus       :accessor event-bus       :initform nil)
    (agent-registry  :initarg :agent-registry  :accessor agent-registry  :initform nil)
    (buffer-registry :initarg :buffer-registry :accessor buffer-registry :initform nil)
    (buffer-table    :initarg :buffer-table    :accessor buffer-table    :initform nil)
@@ -71,7 +70,7 @@ frontend would attach to whichever daemon holds the default port.")
                `(:dispatchers
                  (:shared (:workers ,workers :strategy :random))
                  :timeout-timer (:resolution 500 :max-size 500)
-                 :scheduler (:enabled :false))))
+                 :scheduler (:enabled :true))))
          (srv (make-instance 'server
                 :actor-system sys
                 :buffer-table (make-hash-table :test 'equal))))

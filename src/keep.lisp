@@ -2,7 +2,7 @@
   (:use #:cl)
   (:shadow #:open #:close)
   (:local-nicknames (#:p #:pine.path) (#:ns #:pine.ns))
-  (:export #:open #:close #:restore #:revert #:storablep #:id #:*changes-kept*))
+  (:export #:open #:close #:restore #:revert #:storablep #:*changes-kept*))
 
 (in-package #:pine.keep)
 (named-readtables:in-readtable pine.path:syntax)
@@ -79,8 +79,6 @@ CREATE TABLE IF NOT EXISTS changes (
   old TEXT, new TEXT, at INTEGER NOT NULL)")
         (sqlite:execute-non-query db "
 CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
-        (sqlite:execute-non-query db "
-CREATE TABLE IF NOT EXISTS self (id TEXT, name TEXT, since INTEGER)")
         (setf *db* db)))
     (restore)
     (setf ns:*after-commit* #'record)
@@ -95,12 +93,6 @@ CREATE TABLE IF NOT EXISTS self (id TEXT, name TEXT, since INTEGER)")
     (when *db*
       (sqlite:disconnect *db*)
       (setf *db* nil))))
-
-(defun id ()
-  "A fresh 128-bit identity, from sqlite's own entropy."
-  (bordeaux-threads:with-lock-held (*lock*)
-    (when *db*
-      (sqlite:execute-single *db* "SELECT lower(hex(randomblob(16)))"))))
 
 ;;;; Write through
 

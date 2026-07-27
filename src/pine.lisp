@@ -22,7 +22,6 @@
     (setf (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
     (handler-case (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv))
       (error () nil))
-    (pine.core.event:make-event-bus srv)
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.core.actor:start-agent-debug srv)
