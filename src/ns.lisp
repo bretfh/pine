@@ -5,7 +5,7 @@
   (:export #:space #:fresh #:*space* #:with-space
            #:read #:write #:watch #:preview #:toggle
            #:provider #:here
-           #:kind #:setting #:*after-commit*
+           #:kind #:setting #:watched #:*after-commit*
            #:refused #:no-verb #:cycle #:at #:why))
 
 (in-package #:pine.ns)
@@ -28,11 +28,20 @@
   (lock (bordeaux-threads:make-recursive-lock "pine-ns")))
 
 (defvar *space* (fresh)
-  "The namespace this image serves.")
+  "The namespace this image serves. One per image, and every thread sees the
+same one: a buffer's actor, an evaluation's own thread and a provider's poll
+are all looking at the tree the daemon is serving.")
 
 (defmacro with-space ((&optional (space '(fresh))) &body body)
-  "Run BODY against SPACE, so a test or a tool can hold one of its own."
-  `(let ((*space* ,space)) ,@body))
+  "Run BODY against SPACE, so a test or a tool can hold one of its own.
+
+Sets the variable rather than binding it, because a dynamic binding reaches
+only this thread and the work pine does happens on others."
+  (let ((previous (gensym "PREVIOUS")))
+    `(let ((,previous *space*))
+       (setf *space* ,space)
+       (unwind-protect (progn ,@body)
+         (setf *space* ,previous)))))
 
 (defstruct (reaction (:copier nil))
   path                                ; where the value lands
@@ -410,6 +419,13 @@ of (path old new) that moved."
 anything under it: watching a directory watches the subtree."
   (or (p:match pattern path :value #'%read-one)
       (and (not (p:patternp pattern)) (p:prefixp pattern path))))
+
+(defun watched (path)
+  "True when some watch would hear about a change at PATH: whether anyone is
+listening, which is the difference between a fault someone can attend to and
+one nobody will ever look at."
+  (loop :for watch :in (space-watches *space*)
+        :thereis (%watching-p (second watch) path)))
 
 (defun %run-watches (space moved)
   (let ((out nil))

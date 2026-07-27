@@ -188,13 +188,13 @@ no symbol to complete."
                             (eval form) (incf count) (setf pos new-pos))))))
              (done (lambda (ev)
                      (pine.editor.debugger:eval-notify
-                      (case (pine.core.eval:evaluation-status ev)
+                      (case (pine.err:evaluation-status ev)
                         (:ok (format nil "eval-buffer: ~a forms"
-                                     (first (pine.core.eval:evaluation-values ev))))
+                                     (first (pine.err:evaluation-values ev))))
                         (:aborted "eval-buffer aborted")
                         (t "eval-buffer: error"))))))
         ;; one eval path: route the whole-buffer eval through the local agent.
         (if pine.core.actor:*local-agent*
             (pine.core.actor:agent-run nil pine.core.actor:*local-agent* thunk
                                   :package package :on-done done)
-            (pine.core.eval:evaluate-thunk thunk :package package :on-done done))))))
+            (pine.err:evaluate-thunk thunk :package package :on-done done))))))

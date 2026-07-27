@@ -1,29 +1,28 @@
-(defpackage #:pine.core.eval
+(defpackage #:pine.err
   (:use #:cl)
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
   (:export #:evaluation #:evaluation-id #:evaluation-form #:evaluation-status
            #:evaluation-values #:evaluation-output #:evaluation-condition
            #:evaluation-condition-type #:evaluation-restarts #:evaluation-backtrace
            #:evaluate #:evaluate-string #:evaluate-thunk
            #:list-evaluations #:find-evaluation
            #:pick-restart #:abort-evaluation #:*on-debug*
-           #:*attended-p* #:*park-seconds* #:attended-p #:await-restart
+           #:mount #:parked #:evaluation-attended
+           #:*park-seconds* #:attended-p #:await-restart
            #:with-debugger #:call-with-debugger #:make-error-evaluation
            #:attempt #:report-failure))
 
-(in-package #:pine.core.eval)
+(in-package #:pine.err)
+(named-readtables:in-readtable pine.path:syntax)
+
+;;;; A fault parks at /err holding its live restarts, and whoever is looking
+;;;; chooses one by writing the path. That works across images because a fault
+;;;; on another host lands at /host/NAME/err and reads identically.
 
 (defvar *on-debug* nil
   "Default surface for an evaluation that enters the debugger: a function of the
 evaluation, installed by the editor. Any eval path (C-x C-e, repl, widget
 onclick, remote) reaches the same debugger through it.")
-
-(defvar *attended-p* nil
-  "Function of an evaluation answering whether a restart can still be chosen for
-it, installed by the layer that owns the debugger sessions.
-
-A faulted thread waits for a decision, so something has to say whether a decision
-is still coming. Without this there is no attended fault at all and every park
-resolves itself on the deadline.")
 
 (defparameter *park-seconds* 300
   "How long a faulted thread waits with nobody attending it before aborting
@@ -63,9 +62,73 @@ agent) may start an evaluation concurrently.")
   thread
   on-done
   on-error
+  (attended nil)                    ; someone has this fault open
   (lock (bordeaux-threads:make-lock))
   (cvar (bordeaux-threads:make-condition-variable))
   (chosen nil))
+
+;;;; What is parked, and the paths it is parked at.
+
+(defvar *parked* (make-hash-table :test 'eql)
+  "id -> evaluation, for every fault waiting on a decision.")
+
+(defvar *parked-lock* (bordeaux-threads:make-lock "pine-err-parked"))
+
+(defun parked (&optional id)
+  "Every parked fault, or the one with ID."
+  (bordeaux-threads:with-lock-held (*parked-lock*)
+    (if id
+        (gethash id *parked*)
+        (let (acc)
+          (maphash (lambda (k v) (declare (ignore k)) (push v acc)) *parked*)
+          (sort acc #'< :key #'evaluation-id)))))
+
+(defun %park (ev)
+  (bordeaux-threads:with-lock-held (*parked-lock*)
+    (setf (gethash (evaluation-id ev) *parked*) ev)))
+
+(defun %unpark (ev)
+  (bordeaux-threads:with-lock-held (*parked-lock*)
+    (remhash (evaluation-id ev) *parked*)))
+
+(defun %describe (ev)
+  (fset:map (:id (evaluation-id ev))
+            (:form (princ-to-string (or (evaluation-form ev) "")))
+            (:condition (or (evaluation-condition ev) ""))
+            (:type (or (evaluation-condition-type ev) ""))
+            (:restarts (fset:convert 'fset:seq
+                                     (mapcar #'first (evaluation-restarts ev))))
+            (:backtrace (or (evaluation-backtrace ev) ""))
+            (:attended (and (evaluation-attended ev) t))))
+
+(defun %id-of (segment)
+  (parse-integer segment :junk-allowed t))
+
+(defun mount ()
+  "Serve /err from what is actually parked. It is live, not held: the faults
+are threads waiting in this image, and the file has no business holding them."
+  (ns:write /err
+    (ns:provider
+     (/err {:ls (pine.data:fn []
+                  (mapcar (lambda (ev) (princ-to-string (evaluation-id ev)))
+                          (parked)))
+            :doc "every fault waiting on a restart"})
+     (/err/?id
+      {:read (pine.data:fn []
+               (let ((ev (parked (%id-of id))))
+                 (and ev (%describe ev))))
+       :verbs {:restart (pine.data:fn [name]
+                          (let ((ev (parked (%id-of id))))
+                            (when ev (pick-restart ev name))))}
+       :doc "a parked fault; write [:restart NAME] to resume it"})
+     (/err/?id/attended
+      {:read (pine.data:fn []
+               (let ((ev (parked (%id-of id))))
+                 (and ev (evaluation-attended ev))))
+       :write (pine.data:fn [v]
+                (let ((ev (parked (%id-of id))))
+                  (when ev (setf (evaluation-attended ev) v))))
+       :doc "true while someone has this fault open"}))))
 
 ;;;; Failures on the paths that cannot stop to ask.
 ;;;;
@@ -154,14 +217,20 @@ it would wait forever."
            nil))))
 
 (defun attended-p (ev)
-  "Whether a restart can still be chosen for EV, per *attended-p*."
-  (and *attended-p*
-       (handler-case (funcall *attended-p* ev)
-         (error (c)
-           (format *error-output* "pine: the attended check failed on ~a: ~a~%"
-                   (evaluation-form ev) c)
-           (finish-output *error-output*)
-           nil))))
+  "Whether someone has EV open and is still in a position to decide, so the
+faulted thread has a reason to keep waiting."
+  (and (evaluation-attended ev) (%can-be-attended-p) t))
+
+(defun (setf attended-p) (value ev)
+  "Say that someone has EV open, or has stopped looking."
+  (setf (evaluation-attended ev) (and value t)))
+
+(defun %can-be-attended-p ()
+  "Whether anything in this image could take a fault: a surface is installed,
+or something is watching /err. With neither, a parked thread would wait for a
+decision nobody is in a position to make."
+  (or (and *on-debug* t)
+      (ns:watched /err)))
 
 (defun await-restart (ev)
   "Wait for a restart to be chosen for EV and answer its name.
@@ -199,17 +268,19 @@ when the wait went unattended past *park-seconds*."
         (evaluation-condition-type ev) (string (type-of condition))
         (evaluation-restarts ev) (%restart-descriptions condition)
         (evaluation-backtrace ev) (%capture-backtrace))
+  (%park ev)
   (let ((surface (or (evaluation-on-error ev) *on-debug*)))
-    ;; Nothing can drive a restart choice unless a surface actually took the
-    ;; fault, so abort rather than block this thread forever. A surface that
-    ;; signalled is no better than none: it is not showing anything, and a
-    ;; parked thread here is a worker of the shared dispatcher that never comes
-    ;; back. A hung worker/actor is exactly the wedge we avoid.
-    (unless (surfaced-p surface ev)
+    ;; Nothing can drive a restart choice unless someone is in a position to
+    ;; make one, so abort rather than block this thread forever. A parked
+    ;; thread here is a worker of the shared dispatcher that never comes back,
+    ;; which is exactly the wedge we avoid.
+    (unless (or (surfaced-p surface ev) (%can-be-attended-p))
+      (%unpark ev)
       (let ((r (find-restart 'abort condition)))
         (when r (invoke-restart r)))
       (return-from eval-debugger-hook)))
   (let ((name (await-restart ev)))
+    (%unpark ev)
     (let ((r (or (find name (compute-restarts condition)
                        :key (lambda (x) (and (restart-name x) (string (restart-name x))))
                        :test (lambda (a b) (and a b (string-equal a b))))

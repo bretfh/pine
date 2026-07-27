@@ -25,8 +25,8 @@
     (pine.ui.render:start-renderer client)
     (pine.editor.minibuffer:ensure-minibuffer client)
     (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
-    (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error
-          pine.core.eval:*attended-p* #'pine.editor.debugger:attended-eval-p)
+    (setf pine.err:*on-debug* #'pine.editor.debugger:eval-error)
+    (pine.err:mount)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -81,7 +81,7 @@ disappears into a mailbox nobody is reading."
   ;; (kills a runaway loop) and resolves the session.
   (let ((s pine.editor.debugger:*attended-session*))
     (when (and s (eq (pine.editor.debugger:dbg-session-kind s) :local) (pine.editor.debugger:dbg-session-ev s))
-      (pine.core.eval:abort-evaluation (pine.editor.debugger:dbg-session-ev s))
+      (pine.err:abort-evaluation (pine.editor.debugger:dbg-session-ev s))
       (pine.editor.debugger:resolve-session s)))
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf

@@ -599,7 +599,7 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
         ;; NIL is a real answer here: leave the line where it is. A failure is
         ;; not that answer, so it says so before falling back to it.
         (error (c)
-          (pine.core.eval:report-failure c (format nil "indenting line ~d" line))
+          (pine.err:report-failure c (format nil "indenting line ~d" line))
           nil)))))
 
 
@@ -801,7 +801,7 @@ line delta). Anything unexpected falls back to the full walk."
         ;; recovery, not concealment: the condition is reported either way, and
         ;; a second failure is the walk's own and belongs to the caller.
         (error (c)
-          (pine.core.eval:report-failure
+          (pine.err:report-failure
            c (format nil "highlighting ~a, retrying without the cache"
                      (ps-language ps)))
           (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil

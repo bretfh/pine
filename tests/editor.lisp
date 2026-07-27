@@ -85,14 +85,14 @@
       (pine.editor.frame::set-buffer-mode buf :text-mode)
       (sento.actor:tell buf (list :insert :text "hello"))
       (sleep 0.1)
-      (setf pine.core.eval:*on-debug*
-            (lambda (ev) (setf seen ev) (pine.core.eval:pick-restart ev "ABORT")))
+      (setf pine.err:*on-debug*
+            (lambda (ev) (setf seen ev) (pine.err:pick-restart ev "ABORT")))
       (sento.actor:tell buf (list :insert :text 42))
       (sleep 0.25)
       (is (not (null seen)))
-      (is (eq :error (pine.core.eval:evaluation-status seen)))
+      (is (eq :error (pine.err:evaluation-status seen)))
       (is (string= "hello" (btext buf)))
-      (is (member "RETRY" (mapcar #'first (pine.core.eval:evaluation-restarts seen))
+      (is (member "RETRY" (mapcar #'first (pine.err:evaluation-restarts seen))
                   :test #'string=))
       (sento.actor:tell buf (list :insert :text "!"))
       (sleep 0.15)
@@ -102,7 +102,7 @@
   (with-fixture substrate ()
     (let ((seen nil))
       (pine.editor.command::define-command "probe-boom" () (error "boom"))
-      (setf pine.core.eval:*on-debug* (lambda (ev) (setf seen ev)))
+      (setf pine.err:*on-debug* (lambda (ev) (setf seen ev)))
       (setf (pine.state.var:var :debug-on-error) t)
       (pine.editor.command::call-command "probe-boom")
       (is (not (null seen)))
@@ -150,7 +150,7 @@
     (let ((done :none))
       (pine.editor.target:eval-in-target
        "(+ 1 2)" (find-package :cl-user)
-       :on-done (lambda (ev) (setf done (first (pine.core.eval:evaluation-values ev)))))
+       :on-done (lambda (ev) (setf done (first (pine.err:evaluation-values ev)))))
       (sleep 0.3)
       (is (= 3 done)))))
 

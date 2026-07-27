@@ -1,10 +1,10 @@
 (defpackage #:pine.editor.debugger
   (:use #:cl)
-  (:export #:agent-debug-surface #:attend-session #:attended-eval-p #:debugger-quit #:eval-done #:eval-error #:eval-notify #:jobs-builder #:resolve-session #:text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
+  (:export #:agent-debug-surface #:attend-session #:note-attendance #:debugger-quit #:eval-done #:eval-error #:eval-notify #:jobs-builder #:resolve-session #:text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
 
 (in-package #:pine.editor.debugger)
 
-;;;; Evaluation runs through pine.core.eval on its own thread, never on the UI
+;;;; Evaluation runs through pine.err on its own thread, never on the UI
 ;;;; thread, so a slow/looping/erroring form can't hang or crash the editor.
 
 ;;;; Debugger sessions. A fault -- a local evaluation, or an error shipped home
@@ -19,7 +19,7 @@
 (defstruct dbg-session
   id                 ; small integer, for the switcher header
   kind               ; :local or :agent
-  ev                 ; the pine.core.eval:evaluation (kind :local), resumed by pick-restart
+  ev                 ; the pine.err:evaluation (kind :local), resumed by pick-restart
   agent eval-id      ; agent name + eval-id (kind :agent), resumed by :resume
   header             ; one-line title
   condition          ; condition text
@@ -39,8 +39,8 @@
 (defun eval-done (ev &optional at)
   "Surface a finished eval: the result echoes, and lands inline as an overlay
 on the form's line when AT is (BUFFER . LINE)."
-  (case (pine.core.eval:evaluation-status ev)
-    (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.core.eval:evaluation-values ev))))
+  (case (pine.err:evaluation-status ev)
+    (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.err:evaluation-values ev))))
            (when at
              (ignore-errors
               (sento.actor:tell (car at)
@@ -119,6 +119,7 @@ were before any fault."
     (setf *debugger-return-to* (ignore-errors (pine.editor.ask:ask :current :name))
           pine.editor.target:*eval-target-saved* pine.editor.target:*eval-target*))
   (push session *debugger-sessions*)
+  (note-attendance session t)
   (attend-session session))
 
 (defun %dismiss-debugger ()
@@ -132,6 +133,7 @@ resolve anything -- any sessions still in the registry stay parked."
   "Drop SESSION from the registry (its thread was just resumed); attend the next
 live session, or dismiss the buffer and clear the return-to when none remain."
   (setf *debugger-sessions* (remove session *debugger-sessions*))
+  (note-attendance session nil)
   (let ((next (first *debugger-sessions*)))
     (cond (next (attend-session next))
           (t (setf *attended-session* nil
@@ -139,27 +141,22 @@ live session, or dismiss the buffer and clear the return-to when none remain."
              (%dismiss-debugger)
              (setf *debugger-return-to* nil)))))
 
-(defun attended-eval-p (ev)
-  "Whether EV still has a debugger session someone can pick a restart in.
-
-Installed as pine.core.eval:*attended-p*: the faulted thread waits while its
-session is live and an app is attached to show it, and stops waiting once the
-session was resolved or every app is gone. The supervisor reaps clients that
-died, so an empty client list means nobody is coming."
-  (and (find ev *debugger-sessions* :key #'dbg-session-ev)
-       pine.core.attach:*clients*
-       t))
+(defun note-attendance (session open)
+  "Say whether SESSION's evaluation is being looked at, so the thread parked in
+it knows whether a decision is still coming."
+  (let ((ev (dbg-session-ev session)))
+    (when ev (setf (pine.err:attended-p ev) open))))
 
 (defun eval-error (ev)
   (%push-session
    (make-dbg-session
     :id (incf *debugger-session-counter*) :kind :local :ev ev
-    :header (format nil "Evaluation error: ~a" (pine.core.eval:evaluation-condition-type ev))
-    :condition (pine.core.eval:evaluation-condition ev)
-    :restarts (pine.core.eval:evaluation-restarts ev)
-    :backtrace (pine.core.eval:evaluation-backtrace ev)))
+    :header (format nil "Evaluation error: ~a" (pine.err:evaluation-condition-type ev))
+    :condition (pine.err:evaluation-condition ev)
+    :restarts (pine.err:evaluation-restarts ev)
+    :backtrace (pine.err:evaluation-backtrace ev)))
   (eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
-                        (pine.core.eval:evaluation-condition-type ev))))
+                        (pine.err:evaluation-condition-type ev))))
 
 (defun agent-debug-surface (msg)
   "A process agent's error, surfaced in the editor: show its restarts and drive
@@ -182,8 +179,8 @@ local eval, or :resume to the agent that shipped its restarts home."
   (ecase (dbg-session-kind session)
     (:local
      (when (and (dbg-session-ev session)
-                (eq (pine.core.eval:evaluation-status (dbg-session-ev session)) :error))
-       (pine.core.eval:pick-restart (dbg-session-ev session) name)))
+                (eq (pine.err:evaluation-status (dbg-session-ev session)) :error))
+       (pine.err:pick-restart (dbg-session-ev session) name)))
     (:agent
      (let ((info (pine.core.actor:find-agent
                   (pine.editor.frame:server-of (pine.editor.frame:current-client))
@@ -230,7 +227,7 @@ status."
                              (eql (dbg-session-eval-id s) (getf j :id))))
                 (:local (and (equal (getf j :agent) "local")
                              (dbg-session-ev s)
-                             (eql (pine.core.eval:evaluation-id (dbg-session-ev s))
+                             (eql (pine.err:evaluation-id (dbg-session-ev s))
                                   (getf j :id))))))
             *debugger-sessions*)))
     (if s

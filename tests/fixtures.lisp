@@ -70,7 +70,7 @@ argument, the debugger sessions and the world gate."
       (setf pine.editor.debugger:*debugger-sessions* nil
             pine.editor.debugger:*attended-session* nil
             pine.editor.target:*eval-target* :local
-            pine.core.eval:*on-debug* nil
+            pine.err:*on-debug* nil
             pine.editor.isearch:*isearch* nil)
       (pine.editor.echo:message "")
       (setf pine.state.world:*enabled* nil

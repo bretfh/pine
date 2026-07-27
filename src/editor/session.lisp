@@ -447,13 +447,13 @@ much output arrived, and nothing at all while no terminal is producing any."
 (pine.core.attach:register-app (make-instance 'editor-app))
 
 (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch
-      pine.core.eval:*on-debug*            #'pine.editor.debugger:eval-error
-      pine.core.eval:*attended-p*          #'pine.editor.debugger:attended-eval-p)
+      pine.err:*on-debug*            #'pine.editor.debugger:eval-error)
+(pine.err:mount)
 
 (let ((prev pine.core.actor:*agent-debug-hook*))
   (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)
           (when prev
-            (pine.core.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-          (pine.core.eval:attempt (lambda () (pine.editor.debugger:agent-debug-surface msg))
+            (pine.err:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+          (pine.err:attempt (lambda () (pine.editor.debugger:agent-debug-surface msg))
                              "agent debug surface"))))

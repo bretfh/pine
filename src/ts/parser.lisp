@@ -94,6 +94,6 @@ TSParser."
          ;; A parse fault parks this actor alone: the buffer keeps taking edits
          ;; and keeps painting its last good highlights, so the file stays
          ;; editable while the fault is attended.
-         (pine.core.eval:with-debugger
+         (pine.err:with-debugger
              (:label (format nil "parser ~a <- ~a" name (first msg)))
            (%receive sento.actor:*state* msg)))))))

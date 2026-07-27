@@ -191,7 +191,7 @@ dropped."
           (is (wait-for (lambda () faults)) "the fault never reached the surface")
           (dotimes (i 200) (sento.actor:tell buf (list :insert :text "x")))
           (sleep 0.5)
-          (pine.core.eval:pick-restart (first faults) "ABORT")
+          (pine.err:pick-restart (first faults) "ABORT")
           (is (wait-for (lambda () (let ((text (btext "stress-parked-queue")))
                                      (and (stringp text) (= 200 (char-count text)))))
                         :seconds 60)
@@ -212,7 +212,7 @@ come back, so the session thread can report and carry on."
                           (error (c) c))))
             (is (not (stringp answer))
                 "a parked buffer answered text, so it was not parked"))
-          (pine.core.eval:pick-restart (first faults) "ABORT")
+          (pine.err:pick-restart (first faults) "ABORT")
           (is (wait-for (lambda () (stringp (btext "stress-parked-ask"))))
               "the buffer never resumed"))))))
 
@@ -229,7 +229,7 @@ doing the killing comes back."
           (finishes (pine.editor.frame::kill-buffer "stress-kill-parked"))
           (is (null (pine.editor.frame::buffer "stress-kill-parked"))
               "the killed buffer is still registered")
-          (pine.core.eval:pick-restart (first faults) "ABORT")
+          (pine.err:pick-restart (first faults) "ABORT")
           (is (stringp (btext "scratch"))
               "the daemon stopped answering after a parked buffer was killed"))))))
 
@@ -238,9 +238,9 @@ doing the killing comes back."
 fault aborts and the buffer keeps working."
   (with-fixture substrate ()
     (within-seconds 90
-      (let ((saved pine.core.eval:*on-debug*)
+      (let ((saved pine.err:*on-debug*)
             (calls 0))
-        (setf pine.core.eval:*on-debug*
+        (setf pine.err:*on-debug*
               (lambda (ev) (declare (ignore ev)) (incf calls) (error "surface is broken")))
         (unwind-protect
              (let ((buf (probe-buffer "stress-broken-surface")))
@@ -250,7 +250,7 @@ fault aborts and the buffer keeps working."
                (sento.actor:tell buf (list :replace-content :content "alive"))
                (is (wait-for (lambda () (equal "alive" (btext "stress-broken-surface"))))
                    "the buffer stopped working when the surface was broken"))
-          (setf pine.core.eval:*on-debug* saved))))))
+          (setf pine.err:*on-debug* saved))))))
 
 (test an-attended-check-that-signals-is-treated-as-unattended
   "The attended check is code too. If it breaks, the park must end, not become
@@ -280,7 +280,7 @@ the thread waiting for one that will never be found."
           (sleep 0.2)
           (sento.actor:tell buf '(:probe-fault))
           (is (wait-for (lambda () faults)) "the fault never reached the surface")
-          (pine.core.eval:pick-restart (first faults) "NO-SUCH-RESTART")
+          (pine.err:pick-restart (first faults) "NO-SUCH-RESTART")
           (is (wait-for (lambda () (equal "before" (btext "stress-bad-restart")))
                         :seconds 30)
               "an unknown restart name left the buffer parked"))))))

@@ -81,7 +81,7 @@ safe; subscribers run outside the lock. Returns non-nil if it changed."
         (setf (world:value (list :ref (ref-name ref))) new))
       ;; one subscriber's failure is its own: the rest still see the change
       (dolist (s subs)
-        (pine.core.eval:attempt (cdr s)
+        (pine.err:attempt (cdr s)
                            (format nil "ref ~a subscriber" (ref-name ref)))))
     changed))
 

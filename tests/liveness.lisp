@@ -27,25 +27,25 @@
     buf))
 
 (defmacro with-surface ((var &key (attended nil) (park-seconds nil)) &body body)
-  "Run BODY with a debug surface that records each evaluation into VAR, an
-attended check of ATTENDED and the unattended bound at PARK-SECONDS.
+  "Run BODY with a debug surface that records each evaluation into VAR and the
+unattended park bounded at PARK-SECONDS. With ATTENDED the surface also marks
+each fault as being looked at, so it keeps its restarts past the deadline.
 
-All three are set globally, because the thread that faults is the buffer's own
-and a dynamic binding here would not reach it."
+Both are set globally, because the thread that faults is the buffer's own and a
+dynamic binding here would not reach it."
   (let ((saved-surface (gensym "SURFACE"))
-        (saved-attended (gensym "ATTENDED"))
         (saved-park (gensym "PARK")))
     `(let ((,var nil)
-           (,saved-surface pine.core.eval:*on-debug*)
-           (,saved-attended pine.core.eval:*attended-p*)
-           (,saved-park pine.core.eval:*park-seconds*))
-       (setf pine.core.eval:*on-debug* (lambda (ev) (push ev ,var))
-             pine.core.eval:*attended-p* ,attended
-             pine.core.eval:*park-seconds* ,park-seconds)
+           (,saved-surface pine.err:*on-debug*)
+           (,saved-park pine.err:*park-seconds*))
+       (setf pine.err:*on-debug* (lambda (ev)
+                                   (push ev ,var)
+                                   (when ,attended
+                                     (setf (pine.err:attended-p ev) t)))
+             pine.err:*park-seconds* ,park-seconds)
        (unwind-protect (progn ,@body)
-         (setf pine.core.eval:*on-debug* ,saved-surface
-               pine.core.eval:*attended-p* ,saved-attended
-               pine.core.eval:*park-seconds* ,saved-park)))))
+         (setf pine.err:*on-debug* ,saved-surface
+               pine.err:*park-seconds* ,saved-park)))))
 
 (defun wait-for (predicate &key (seconds 5))
   "Poll PREDICATE until it holds, and answer whether it did."
@@ -63,7 +63,7 @@ path and the input path are all asked whether they still work."
       (let ((painted 0))
         (setf (pine.editor.frame::paint-sink *client*)
               (lambda (&rest args) (declare (ignore args)) (incf painted)))
-        (with-surface (faults :attended (lambda (ev) (declare (ignore ev)) t))
+        (with-surface (faults :attended t)
           (let ((probe (probe-buffer "probe-parked")))
             (sento.actor:tell probe '(:probe-fault))
             (is (wait-for (lambda () faults))
@@ -79,7 +79,7 @@ path and the input path are all asked whether they still work."
                 "command dispatch stopped reaching buffers while one was parked")
             (is (plusp painted)
                 "the renderer stopped painting while a buffer was parked")
-            (pine.core.eval:pick-restart (first faults) "ABORT")
+            (pine.err:pick-restart (first faults) "ABORT")
             (is (wait-for (lambda () (stringp (btext "probe-parked"))))
                 "the buffer did not resume after its restart was chosen")))))))
 
@@ -97,7 +97,7 @@ path and the input path are all asked whether they still work."
           (is (wait-for (lambda () (equal "before" (btext "probe-unattended")))
                         :seconds 10)
               "the buffer never came back, so the daemon lost the thread")
-          (is (eq :error (pine.core.eval:evaluation-status (first faults)))))))))
+          (is (eq :error (pine.err:evaluation-status (first faults)))))))))
 
 (test asking-your-own-actor-signals-instead-of-hanging
   "The liveness contract is checked, not documented: a receive that blocks on
@@ -110,7 +110,7 @@ itself gets a condition, which the debugger surfaces like any other fault."
           (is (wait-for (lambda () faults))
               "asking your own actor hung instead of signalling")
           (is (string= "BLOCKING-ASK-IN-RECEIVE"
-                       (pine.core.eval:evaluation-condition-type (first faults))))
+                       (pine.err:evaluation-condition-type (first faults))))
           (is (wait-for (lambda () (stringp (btext "probe-self-ask"))))
               "the buffer must keep receiving after a refused ask"))))))
 

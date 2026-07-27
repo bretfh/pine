@@ -62,7 +62,7 @@ old ones), and push it to the app."
     (setf view (pine.state.ref:make-view
                 (lambda () (push-surface aclient name))
                 (lambda ()
-                  (pine.core.eval:attempt (lambda () (pine.state.ref:render-view view))
+                  (pine.err:attempt (lambda () (pine.state.ref:render-view view))
                                      (format nil "surface ~a" name)))))
     view))
 
@@ -109,12 +109,12 @@ close it if it is already the open one."
   (let ((s (pine.core.attach:attached-client-session aclient)))
     (case (first msg)
       (:widget-action
-       ;; run the handler through pine.core.eval (its own thread), never inline on the
+       ;; run the handler through pine.err (its own thread), never inline on the
        ;; pool -- a handler that blocks on IO or errors cannot stall the daemon.
        (destructuring-bind (&key id args) (rest msg)
          (let ((cb (and s (gethash id (dsession-actions s)))))
            (when cb
-             (pine.core.eval:evaluate-thunk
+             (pine.err:evaluate-thunk
               (lambda () (let ((*surface-client* aclient)) (apply cb args)))
               :package (find-package :pine-user))))))
       ;; the app asks for a fresh push once its surfaces exist (its first push on

@@ -107,9 +107,9 @@ non-nil, route it through the same debugger surface evaluations use (*on-debug*
 the command loop lives on -- this never blocks the session thread. Call from a
 handler-bind so the backtrace is captured while the stack is still live."
   (if (and (ignore-errors (pine.state.var:var :debug-on-error))
-           pine.core.eval:*on-debug*)
+           pine.err:*on-debug*)
       (ignore-errors
-       (funcall pine.core.eval:*on-debug* (pine.core.eval:make-error-evaluation condition)))
+       (funcall pine.err:*on-debug* (pine.err:make-error-evaluation condition)))
       (pine.editor.echo:message (format nil "error: ~a" condition))))
 
 (defmacro %guarding-errors (&body body)

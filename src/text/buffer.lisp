@@ -462,7 +462,7 @@ persistence and does not."
                                       ;; step, so an error before the commit leaves
                                       ;; the prior buffer intact; `abort' drops the
                                       ;; edit and the actor keeps receiving.
-                                      (pine.core.eval:with-debugger
+                                      (pine.err:with-debugger
                                           (:label (format nil "buffer ~a <- ~a" name (first msg)))
                                         ;; RETRY re-runs the edit after a live fix
                                         ;; (fix the failing defun in this image,
@@ -484,7 +484,7 @@ snapshots is a window that has quietly stopped painting."
     (dolist (ref subscribers)
       (handler-case (sento.actor:tell ref (list :snapshot :snapshot snap))
         (error (c)
-          (pine.core.eval:report-failure
+          (pine.err:report-failure
            c (format nil "notifying a subscriber of ~a"
                      (buffer-local state :name "a buffer"))))))))
 

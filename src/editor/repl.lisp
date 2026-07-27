@@ -74,13 +74,13 @@ agent's."
      (lambda (ev)
        (append-output
         buffer prompt
-        (case (pine.core.eval:evaluation-status ev)
-          (:ok (let ((out (pine.core.eval:evaluation-output ev)))
+        (case (pine.err:evaluation-status ev)
+          (:ok (let ((out (pine.err:evaluation-output ev)))
                  (format nil "~@[~a~%~]~{~s~^~%~}"
                          (and (plusp (length out)) out)
-                         (pine.core.eval:evaluation-values ev))))
+                         (pine.err:evaluation-values ev))))
           (:aborted "; aborted")
-          (t (format nil "; error: ~a" (pine.core.eval:evaluation-condition ev)))))))))
+          (t (format nil "; error: ~a" (pine.err:evaluation-condition ev)))))))))
 
 (defun run-shell-command (buffer state cmd)
   "Run CMD through the shell and append its output to BUFFER."

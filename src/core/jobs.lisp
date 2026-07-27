@@ -5,7 +5,7 @@
 (in-package #:pine.core.jobs)
 
 ;;;; The jobs surface's data: every live evaluation across the daemon and every
-;;;; agent, in one place. Local evals come from pine.core.eval's registry; agent evals
+;;;; agent, in one place. Local evals come from pine.err's registry; agent evals
 ;;;; are reported here by their :agent-debug / :agent-result messages (the same
 ;;;; ones that drive the cross-image debugger). The editor renders this list as a
 ;;;; buffer where an errored job opens its restarts and a running one can be
@@ -32,16 +32,16 @@
   (setf pine.core.actor:*agent-debug-hook*
         (lambda (msg)
           (when prev
-            (pine.core.eval:attempt (lambda () (funcall prev msg)) "agent debug relay"))
-          (pine.core.eval:attempt (lambda () (record msg)) "jobs record"))))
+            (pine.err:attempt (lambda () (funcall prev msg)) "agent debug relay"))
+          (pine.err:attempt (lambda () (record msg)) "jobs record"))))
 
 (defun list-jobs ()
   "Every live job: the daemon's local evaluations plus every agent's reported
 evals, as a flat list of plists (:agent :id :status ...)."
   (append
    (mapcar (lambda (ev)
-             (list :agent "local" :id (pine.core.eval:evaluation-id ev)
-                   :status (pine.core.eval:evaluation-status ev)
-                   :form (princ-to-string (pine.core.eval:evaluation-form ev))))
-           (pine.core.eval:list-evaluations))
+             (list :agent "local" :id (pine.err:evaluation-id ev)
+                   :status (pine.err:evaluation-status ev)
+                   :form (princ-to-string (pine.err:evaluation-form ev))))
+           (pine.err:list-evaluations))
    (loop for v being the hash-values of *agent-jobs* collect v)))

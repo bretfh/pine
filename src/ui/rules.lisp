@@ -45,7 +45,7 @@ from the daemon here."
 so the pixel painters in the frontend images restyle too. Reload-safe."
   (install-rules rules)
   (dolist (c pine.core.attach:*clients*)
-    (pine.core.eval:attempt (lambda () (pine.core.attach:push-to-app c :rules :rules *user-rules*))
+    (pine.err:attempt (lambda () (pine.core.attach:push-to-app c :rules :rules *user-rules*))
                        "rules broadcast"))
   *user-rules*)
 

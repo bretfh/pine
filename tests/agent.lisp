@@ -60,7 +60,7 @@
       (is (not (null (pine.core.actor:find-agent *server* "local"))))
       (pine.core.actor:agent-eval *server* "local" "(+ 20 22)"
                                   :on-done (lambda (ev)
-                                             (setf done (first (pine.core.eval:evaluation-values ev)))))
+                                             (setf done (first (pine.err:evaluation-values ev)))))
       (sleep 0.4)
       (is (= 42 done)))))
 

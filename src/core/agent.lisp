@@ -5,7 +5,7 @@
 (in-package #:pine.core.agent)
 
 ;;;; A process agent's own code. A spawned SBCL image loads :pine and calls
-;;;; connect: it enables remoting, runs evals through pine.core.eval (the same engine
+;;;; connect: it enables remoting, runs evals through pine.err (the same engine
 ;;;; the daemon uses), and -- crucially -- routes any error's restarts HOME to
 ;;;; the master by name. The eval blocks in its own thread holding the live
 ;;;; restarts; the master (the editor, the helm) picks a name and sends :resume;
@@ -29,7 +29,7 @@ frontend serving itself up for eval and debugging."
         (sento.remoting:make-remote-ref
          sys (pine.core.server:daemon-uri "agent-debug" :host master-host :port master-port)))
   ;; an error in this image ships its restart list home, by name
-  (setf pine.core.eval:*on-debug*
+  (setf pine.err:*on-debug*
         (lambda (ev)
           ;; Reported here rather than through ATTEMPT: attempt reports via
           ;; *on-debug*, which is this lambda, so a failing tell would recur.
@@ -38,8 +38,8 @@ frontend serving itself up for eval and debugging."
           (handler-case
               (sento.actor:tell *master-debug*
                 (list :agent-debug :agent name :eval-id (gethash ev *ev-ids*)
-                      :condition (princ-to-string (pine.core.eval:evaluation-condition ev))
-                      :restarts (mapcar #'first (pine.core.eval:evaluation-restarts ev))))
+                      :condition (princ-to-string (pine.err:evaluation-condition ev))
+                      :restarts (mapcar #'first (pine.err:evaluation-restarts ev))))
             (error (c)
               (format *error-output*
                       "pine agent ~a: could not report a fault home: ~a~%" name c)
@@ -54,17 +54,17 @@ frontend serving itself up for eval and debugging."
          (destructuring-bind (&key form package &allow-other-keys) (rest msg)
            (let* ((id (incf *counter*))
                   (pkg (or (and package (find-package package)) (find-package :cl-user)))
-                  (ev (pine.core.eval:evaluate-string
+                  (ev (pine.err:evaluate-string
                        form :package pkg
                        :on-done
                        (lambda (ev)
-                         (pine.core.eval:attempt
+                         (pine.err:attempt
                           (lambda ()
                             (sento.actor:tell *master-debug*
                               (list :agent-result :agent name :eval-id id
-                                    :status (pine.core.eval:evaluation-status ev)
+                                    :status (pine.err:evaluation-status ev)
                                     :values (mapcar #'prin1-to-string
-                                                    (pine.core.eval:evaluation-values ev)))))
+                                                    (pine.err:evaluation-values ev)))))
                           "agent result home")
                          ;; on-done runs after any debugger resolves, so the
                          ;; eval is finished with: drop it rather than pin it
@@ -76,7 +76,7 @@ frontend serving itself up for eval and debugging."
         (:resume
          (destructuring-bind (&key eval-id restart) (rest msg)
            (let ((ev (gethash eval-id *evals*)))
-             (when ev (pine.core.eval:pick-restart ev restart)))
+             (when ev (pine.err:pick-restart ev restart)))
            (sento.actor:reply :resumed)))
         (:shutdown
          ;; kill-agent means the process ends, not just a reply: answer, then

@@ -118,7 +118,7 @@ one place this may not be used."
     (t agent-or-name)))
 
 (defun agent-eval (server agent-or-name form-string &key on-done package bindings)
-  "Evaluate FORM-STRING in AGENT-OR-NAME through pine.core.eval, off the agent's
+  "Evaluate FORM-STRING in AGENT-OR-NAME through pine.err, off the agent's
 mailbox thread. Returns immediately; the result reaches ON-DONE and any error
 reaches the shared debugger surface."
   (act:tell (resolve-agent server agent-or-name)
@@ -131,7 +131,7 @@ reaches the shared debugger surface."
                   :bindings bindings :on-done on-done)))
 
 (defun agent-run (server agent-or-name thunk &key on-done package)
-  "Run THUNK (a live in-image closure) in AGENT-OR-NAME through pine.core.eval, off the
+  "Run THUNK (a live in-image closure) in AGENT-OR-NAME through pine.err, off the
 agent's mailbox thread. The desktop's widget-click path -- one addressable eval
 path, :local by default."
   (act:tell (resolve-agent server agent-or-name)
@@ -150,7 +150,7 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
                   :receive
                   (lambda (msg)
                     (case (first msg)
-                      ;; Evaluation runs through pine.core.eval on its own thread, so
+                      ;; Evaluation runs through pine.err on its own thread, so
                       ;; a looping or erroring form can neither block this actor's
                       ;; mailbox nor drop to a console debugger. Fire-and-forget:
                       ;; the result reaches
@@ -161,7 +161,7 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
                            (rest msg)
                          (let ((source (or form text)))
                            (when source
-                             (pine.core.eval:evaluate-string
+                             (pine.err:evaluate-string
                               source
                               :package (or (and package (find-package package))
                                            (find-package :cl-user))
@@ -171,11 +171,11 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
                       ;; A thunk job (a live closure, in-image): the desktop's
                       ;; click path routes here, so a widget click is agent-eval
                       ;; :local like every other eval -- off this mailbox thread,
-                      ;; through the one pine.core.eval engine.
+                      ;; through the one pine.err engine.
                       (:run
                        (destructuring-bind (&key thunk package on-done) (rest msg)
                          (when thunk
-                           (pine.core.eval:evaluate-thunk
+                           (pine.err:evaluate-thunk
                             thunk
                             :package (or (and package (find-package package))
                                          (find-package :cl-user))
@@ -201,7 +201,7 @@ it (agent-eval :local) by ref without a blocking registry lookup on a hot path."
 
 (defun %agent-command (name master-port self-port)
   "The argv for a spawned SBCL process agent: load :pine, connect back to this
-daemon over the same pine.core.eval engine (shipping errors' restarts home by name),
+daemon over the same pine.err engine (shipping errors' restarts home by name),
 and idle. Passed as --eval forms, so nothing is written to disk. Isolated: it can
 loop, block, or crash in its own image without touching the daemon."
   (list "sbcl" "--non-interactive" "--no-userinit"
@@ -225,7 +225,7 @@ its restart list here, by name, and the helm drives the choice back."
     :dispatcher :pinned
     :receive (lambda (msg)
                (when *agent-debug-hook*
-                 (pine.core.eval:attempt (lambda () (funcall *agent-debug-hook* msg))
+                 (pine.err:attempt (lambda () (funcall *agent-debug-hook* msg))
                                     "agent debug relay"))
                nil)))
 

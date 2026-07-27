@@ -256,7 +256,7 @@ rather than refuses, and LIBS-LOADED stays false."
         (progn (cffi:load-foreign-library 'libtree-sitter)
                (setf (libs-loaded runtime) t))
       (error (c)
-        (pine.core.eval:report-failure c "loading libtree-sitter"))))
+        (pine.err:report-failure c "loading libtree-sitter"))))
   runtime)
 
 (defun grammar-library-candidates (library-name)
@@ -281,7 +281,7 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
         (let ((fn (cffi:foreign-symbol-pointer fn-name)))
           (when fn (cffi:foreign-funcall-pointer fn () :pointer))))
     (error (c)
-      (pine.core.eval:report-failure
+      (pine.err:report-failure
        c (format nil "loading the ~a grammar" library-name)))))
 
 (defun load-language-entry (language)
@@ -367,7 +367,7 @@ converts both ways without assuming one byte per character."
                 (unwind-protect (funcall fn (ts-tree-root-node tree))
                   (ts-tree-delete tree)))))
         (error (c)
-          (pine.core.eval:report-failure c (format nil "parsing ~a source" language)))))))
+          (pine.err:report-failure c (format nil "parsing ~a source" language)))))))
 
 (defun pos-to-byte (text line col index)
   "UTF-8 byte offset of the character position LINE/COL."
@@ -649,7 +649,7 @@ is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Returns
         ;; no target is a real answer (point is already at the edge of the
         ;; tree), a failure is not
         (error (c)
-          (pine.core.eval:report-failure c (format nil "~a from line ~d" kind line))
+          (pine.err:report-failure c (format nil "~a from line ~d" kind line))
           nil)))))
 
 (defun %record-hl-edit (ps old new start-row old-end-row new-end-row)

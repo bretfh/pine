@@ -136,7 +136,7 @@ the state it was projected from, so it does not persist."
   (let ((srv pine.core.server:*server*) (acc nil))
     (when (and srv (pine.core.server:buffer-table srv))
       (loop :for buf :being :the :hash-values :of (pine.core.server:buffer-table srv)
-            :do (pine.core.eval:attempt
+            :do (pine.err:attempt
                  (lambda () (let ((entry (%buffer-entry buf)))
                               (when entry (push entry acc))))
                  "saving a buffer to the world")))
@@ -172,5 +172,5 @@ thread died is rebuilt from."
 
 (defmethod world:revive ((name (eql :buffers)) entries)
   (dolist (entry entries)
-    (pine.core.eval:attempt (lambda () (%restore-entry entry))
+    (pine.err:attempt (lambda () (%restore-entry entry))
                             "restoring a buffer from the world")))
