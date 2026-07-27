@@ -60,7 +60,8 @@ interpolated index and a written one name the same place."
     (string x)
     (symbol (if (keywordp x) (string-downcase (symbol-name x)) (string x)))
     (integer (format nil "~d" x))
-    (character (string x))))
+    (character (string x))
+    (pathname (namestring x))))
 
 (defun key (segment)
   "The name a segment is stored under: a keyword where the name survives the
@@ -82,6 +83,7 @@ trip back, and the string itself where it would not."
   (etypecase x
     (path (coerce (path-segments x) 'list))
     (string (remove "" (uiop:split-string x :separator "/") :test #'string=))
+    (pathname (spliced (namestring x)))
     (list (mapcar #'name x))))
 
 (defun path (&rest pieces)
