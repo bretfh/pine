@@ -12,6 +12,7 @@
    #:parse-lines! #:parse-text! #:parse-motion
    #:ps-language #:ps-parser #:ps-tree
    #:ps-byte-index #:ps-lines #:ps-scratch #:ps-read-buffer
+   #:ps-band #:ps-band-lines #:ps-offset
    #:call-with-input #:+read-chunk+
    #:ps-hl-cache #:ps-hl-lines #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
    ;; structural motion
@@ -198,6 +199,12 @@ many were written, which is zero at the end of the buffer."
 
 (cffi:defcfun ("ts_tree_get_changed_ranges" ts-tree-get-changed-ranges) :pointer
   (old-tree :pointer) (new-tree :pointer) (length (:pointer :uint32)))
+
+;;;; A parser given ranges parses only those ranges, so the root's children
+;;;; follow the window and not the file.
+
+(cffi:defcfun ("ts_parser_set_included_ranges" ts-parser-set-included-ranges) :bool
+  (parser :pointer) (ranges :pointer) (count :uint32))
 
 (defun %changed-row-span (old-tree new-tree)
   "Union of changed line rows between OLD-TREE and NEW-TREE as (values lo hi),
@@ -466,7 +473,13 @@ end-line end-col), or nil."
    ;; the foreign buffer the read callback serves out of
    (byte-index :initform nil :accessor ps-byte-index)
    (lines      :initform nil :accessor ps-lines)
-   (scratch    :initform nil :accessor ps-scratch)))
+   (scratch    :initform nil :accessor ps-scratch)
+   (band       :initform nil :accessor ps-band)
+   (band-lines :initform nil :accessor ps-band-lines)))
+
+(defun ps-offset (ps)
+  "The buffer line PS's tree starts at."
+  (let ((band (ps-band ps))) (if band (car band) 0)))
 
 (defun make-parse-state (runtime language)
   "A parse-state for LANGUAGE, or nil if the grammar is unavailable."
@@ -498,57 +511,100 @@ is what makes this arithmetic-free."
     (setf (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'start-byte) start-byte
           (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'old-end-byte) old-end-byte
           (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'new-end-byte) new-end-byte)
-    (%set-point edit 'start-point (cons start-row 0))
-    (%set-point edit 'old-end-point (cons old-end-row 0))
-    (%set-point edit 'new-end-point (cons new-end-row 0))
+    (%set-point edit '(:struct ts-input-edit) 'start-point (cons start-row 0))
+    (%set-point edit '(:struct ts-input-edit) 'old-end-point (cons old-end-row 0))
+    (%set-point edit '(:struct ts-input-edit) 'new-end-point (cons new-end-row 0))
     (ts-tree-edit tree edit)))
 
-(defun parse-lines! (ps lines &key edit)
+(defparameter +whole-file-lines+ 4096
+  "Buffers this many lines or fewer are parsed entire. Above it only a band
+around the window is, since the cost of a parse follows the root's child count
+and the cost of a byte index follows the line count.")
+
+(defparameter +band-lines+ 512
+  "The band's granularity: it covers whole multiples of this many lines, so
+scrolling within one moves it not at all.")
+
+(defun %band (lines viewport)
+  "The line band to parse for VIEWPORT over LINES, or NIL for all of them."
+  (let ((n (fset:size lines)))
+    (when (and viewport (> n +whole-file-lines+))
+      (cons (max 0 (* +band-lines+ (floor (car viewport) +band-lines+)))
+            (min (1- n) (1- (* +band-lines+ (ceiling (1+ (cdr viewport))
+                                                     +band-lines+))))))))
+
+(defun %band-lines (lines band)
+  "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
+  (if band (fset:subseq lines (car band) (1+ (cdr band))) lines))
+
+(defun parse-lines! (ps lines &key edit viewport)
   "Parse LINES into PS's tree, reading the bytes straight from the seq.
 
 EDIT is (LINE OLD-LINES NEW-LINES BYTE-DELTA): at LINE, OLD-LINES lines became
 NEW-LINES lines and the buffer grew by BYTE-DELTA bytes. Given one, the tree is
 shifted and reused and the byte index is carried forward; without one, both are
-built from scratch."
+built from scratch.
+
+VIEWPORT is the (FROM-LINE . TO-LINE) some window shows. Past
++WHOLE-FILE-LINES+ only a band around it is given to tree-sitter at all, so
+neither the parse nor the byte index touches the rest of the buffer. The tree,
+the index and every position they report are relative to the band's first line;
+PS-OFFSET is that line."
+  (let* ((band (%band lines viewport))
+         (band-lines (%band-lines lines band))
+         (same-band (equal band (ps-band ps)))
+         (old-tree (ps-tree ps)))
+    (when (and old-tree same-band (eq lines (ps-lines ps)) (null edit))
+      (return-from parse-lines! ps))
+    (%parse-band ps lines band band-lines same-band edit)))
+
+(defun %parse-band (ps lines band band-lines same-band edit)
   (let* ((old-tree (ps-tree ps))
          (old-index (ps-byte-index ps))
-         (incremental (and edit old-index old-tree))
+         (shifted (and edit old-index old-tree same-band
+                       (<= (car (or band '(0))) (first edit))
+                       (< (first edit) (+ (or (and band (car band)) 0)
+                                          (fset:size band-lines)))))
          (index nil))
-    (when incremental
+    (when shifted
       (destructuring-bind (line old-lines new-lines byte-delta) edit
-        ;; the old side has to be read before the index moves under it
-        (let ((start (pine.ts.index:line-start old-index line))
-              (old-end (pine.ts.index:line-start old-index (+ line old-lines))))
-          (setf index (pine.ts.index:index-edit old-index lines line byte-delta
+        (let* ((at (- line (if band (car band) 0)))
+               (start (pine.ts.index:line-start old-index at))
+               (old-end (pine.ts.index:line-start old-index (+ at old-lines))))
+          (setf index (pine.ts.index:index-edit old-index band-lines at byte-delta
                                                 (- new-lines old-lines)))
           (%tree-edit old-tree start old-end
-                      (pine.ts.index:line-start index (+ line new-lines))
-                      line (+ line old-lines) (+ line new-lines)))))
-    (unless index (setf index (pine.ts.index:build-index lines)))
-    (let ((new (call-with-input
-                lines index (ps-read-buffer ps)
-                (lambda (input)
-                  (ts-parser-parse (ps-parser ps)
-                                   (if incremental old-tree (cffi:null-pointer))
-                                   input)))))
-      (cond
-        ((or (null new) (cffi:null-pointer-p new)) nil)
-        (t (if incremental
-               (destructuring-bind (line old-lines new-lines byte-delta) edit
-                 (declare (ignore byte-delta))
-                 (%record-hl-edit ps old-tree new line (+ line old-lines)
-                                  (+ line new-lines)))
-               (setf (ps-hl-cache ps) nil
-                     (ps-hl-lines ps) nil
-                     (ps-hl-window ps) nil
-                     (ps-hl-pending ps) nil
-                     (ps-hl-stale ps) nil))
-           (when (and old-tree (not (cffi:pointer-eq new old-tree)))
-             (ts-tree-delete old-tree))
-           (setf (ps-tree ps) new
-                 (ps-byte-index ps) index
-                 (ps-lines ps) lines)
-           ps)))))
+                      (pine.ts.index:line-start index (+ at new-lines))
+                      at (+ at old-lines) (+ at new-lines)))))
+    (unless index (setf index (pine.ts.index:build-index band-lines)))
+    (let ((incremental shifted))
+      (let ((new (call-with-input
+                  band-lines index (ps-read-buffer ps)
+                  (lambda (input)
+                    (ts-parser-parse (ps-parser ps)
+                                     (if incremental old-tree (cffi:null-pointer))
+                                     input)))))
+        (cond
+          ((or (null new) (cffi:null-pointer-p new)) nil)
+          (t (if incremental
+                 (destructuring-bind (line old-lines new-lines byte-delta) edit
+                   (declare (ignore byte-delta))
+                   (let ((at (- line (if band (car band) 0))))
+                     (%record-hl-edit ps old-tree new at (+ at old-lines)
+                                      (+ at new-lines))))
+                 (setf (ps-hl-cache ps) nil
+                       (ps-hl-lines ps) nil
+                       (ps-hl-window ps) nil
+                       (ps-hl-pending ps) nil
+                       (ps-hl-stale ps) nil))
+             (when (and old-tree (not (cffi:pointer-eq new old-tree)))
+               (ts-tree-delete old-tree))
+             (setf (ps-tree ps) new
+                   (ps-byte-index ps) index
+                   (ps-band ps) band
+                   (ps-band-lines ps) band-lines
+                   (ps-lines ps) lines)
+             ps))))))
 
 (defun parse-text! (ps text)
   "Parse TEXT from scratch by splitting it into lines. For callers holding a
@@ -557,8 +613,10 @@ through PARSE-LINES! with an edit descriptor and never build a string."
   (parse-lines! ps (fset:convert 'fset:seq
                                  (uiop:split-string text :separator '(#\Newline)))))
 
-(defun %set-point (edit slot point)
-  (let ((p (cffi:foreign-slot-pointer edit '(:struct ts-input-edit) slot)))
+(defun %set-point (object type slot point)
+  "Write POINT into OBJECT's TSPoint SLOT. TYPE is OBJECT's own foreign type:
+ts-input-edit and ts-range both hold points, at different offsets."
+  (let ((p (cffi:foreign-slot-pointer object type slot)))
     (setf (cffi:foreign-slot-value p '(:struct ts-point) 'row)    (car point)
           (cffi:foreign-slot-value p '(:struct ts-point) 'column) (cdr point))))
 
@@ -566,12 +624,17 @@ through PARSE-LINES! with an edit descriptor and never build a string."
   "A structural target from PS's persistent tree at LINE/COL, no reparse. KIND
 is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Returns
 (values line col) or nil."
-  (let ((tree (ps-tree ps)) (src (ps-byte-index ps)))
-    (when (and tree src)
+  (let* ((tree (ps-tree ps)) (src (ps-byte-index ps))
+         (offset (ps-offset ps))
+         (line (- line offset)))
+    (when (and tree src (<= 0 line))
       (handler-case
           (let ((byte (pine.ts.index:source-byte src line col))
                 (root (ts-tree-root-node tree)))
-            (flet ((at (b) (when b (pine.ts.index:source-line-col src b))))
+            (flet ((at (b) (when b
+                             (multiple-value-bind (l c)
+                                 (pine.ts.index:source-line-col src b)
+                               (values (+ l offset) c)))))
               (ecase kind
                 (:forward-sexp (at (%forward-sexp-byte root byte)))
                 (:backward-sexp (at (%backward-sexp-byte root byte)))

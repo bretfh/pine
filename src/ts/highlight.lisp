@@ -574,8 +574,9 @@ past the open paren."
 (defun parse-indent (ps line)
   "Target indentation column for LINE from PS's persistent tree, or nil to leave
 the line as-is (inside a multiline string). 0 at top level. No reparse."
-  (let ((tree (ps-tree ps)) (src (ps-byte-index ps)) (lang (ps-language ps)))
-    (when (and tree src)
+  (let ((tree (ps-tree ps)) (src (ps-byte-index ps)) (lang (ps-language ps))
+        (line (- line (pine.ts.runtime:ps-offset ps))))
+    (when (and tree src (<= 0 line))
       (handler-case
           (let* ((line (max 0 (min line (1- (index-line-count src)))))
                  (lstart (line-start src line))
@@ -740,8 +741,18 @@ which is what makes the window's cached tuples still usable."
          (destructuring-bind (lo hi delta) pending
            (and (zerop delta) (>= lo from-line) (<= hi to-line))))))
 
+(defun %shift-tuples (tuples offset)
+  "TUPLES with every line moved from band-relative to buffer coordinates."
+  (if (zerop offset)
+      tuples
+      (mapcar (lambda (tuple)
+                (list (+ (first tuple) offset) (second tuple)
+                      (third tuple) (fourth tuple)))
+              tuples)))
+
 (defun parse-highlights (ps &key from-line to-line)
-  "Highlights (line start-col end-col face) from PS's persistent tree.
+  "Highlights (line start-col end-col face) from PS's persistent tree, in the
+buffer's own line numbers.
 
 The source is PS's own lines and byte index, the ones its tree was parsed from,
 so a caller cannot hand this a text the tree does not describe. Cache identity is
@@ -758,28 +769,33 @@ Without a range, the whole buffer is walked and cached. Incremental: when
 exactly one edit was recorded since the last call, only the changed top-level
 forms are re-walked and the cached tuples outside them are kept (shifted by the
 line delta). Anything unexpected falls back to the full walk."
-  (let ((tree (ps-tree ps))
-        (lines (ps-lines ps)))
+  (let* ((tree (ps-tree ps))
+         (lines (ps-lines ps))
+         (offset (pine.ts.runtime:ps-offset ps))
+         (from-line (and from-line (- from-line offset)))
+         (to-line (and to-line (- to-line offset))))
     (when (and tree (ps-byte-index ps))
       (handler-case
-          (if (and from-line to-line)
-              (let ((same-window (equal (ps-hl-window ps) (cons from-line to-line))))
-                (cond
-                  ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
-                        (null (ps-hl-pending ps))
-                        (eq lines (ps-hl-lines ps)))
-                   (ps-hl-cache ps))
-                  ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
-                        (%window-edit-is-local-p ps from-line to-line))
-                   (%hl-window-incremental ps tree from-line to-line))
-                  (t (%hl-window ps tree from-line to-line))))
-              (cond
-                ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
-                      (eq lines (ps-hl-lines ps)))
-                 (ps-hl-cache ps))
-                ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps)))
-                 (%hl-incremental ps tree))
-                (t (%hl-full ps tree))))
+          (%shift-tuples
+           (if (and from-line to-line)
+               (let ((same-window (equal (ps-hl-window ps) (cons from-line to-line))))
+                 (cond
+                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
+                         (null (ps-hl-pending ps))
+                         (eq lines (ps-hl-lines ps)))
+                    (ps-hl-cache ps))
+                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
+                         (%window-edit-is-local-p ps from-line to-line))
+                    (%hl-window-incremental ps tree from-line to-line))
+                   (t (%hl-window ps tree from-line to-line))))
+               (cond
+                 ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
+                       (eq lines (ps-hl-lines ps)))
+                  (ps-hl-cache ps))
+                 ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps)))
+                  (%hl-incremental ps tree))
+                 (t (%hl-full ps tree))))
+           offset)
         ;; The cached tuples are the likeliest thing to be wrong, so they are
         ;; dropped and the tree walked once more from scratch. That retry is
         ;; recovery, not concealment: the condition is reported either way, and
@@ -790,10 +806,15 @@ line delta). Anything unexpected falls back to the full walk."
                      (ps-language ps)))
           (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil
                 (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
-          (walk-highlights (ps-language ps) (ts-tree-root-node tree)
-                           (ps-byte-index ps)))))))
+          (%shift-tuples
+           (walk-highlights (ps-language ps) (ts-tree-root-node tree)
+                            (ps-byte-index ps))
+           offset))))))
 
 (defun %hl-full (ps tree)
+  ;; a full walk asks about every line; a window asks about thirty
+  (when (byte-index-pending (ps-byte-index ps))
+    (setf (ps-byte-index ps) (compact-index (ps-byte-index ps))))
   (let ((hl (walk-highlights (ps-language ps) (ts-tree-root-node tree)
                              (ps-byte-index ps))))
     (setf (ps-hl-cache ps) hl (ps-hl-lines ps) (ps-lines ps)

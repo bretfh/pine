@@ -270,3 +270,62 @@ fraction of what the full walk does."
     (is (not (null ps)))
     (finishes (pine.ts.runtime:free-parse-state ps))
     (finishes (pine.ts.runtime:free-parse-state ps))))
+
+;;;; The band. Past +WHOLE-FILE-LINES+ only the lines around the window are
+;;;; given to tree-sitter, so a scroll has to move the band: the line seq is
+;;;; unchanged and EQ across a scroll, and a parse keyed on that alone leaves
+;;;; the old band's tree in place while the window asks about lines it does not
+;;;; cover.
+
+(defun banded-lines (n)
+  (fset:convert 'fset:seq
+                (loop :repeat (ceiling n 4)
+                      :append (list "(defun f (x y)" "  (let ((z (+ x y)))"
+                                    "    (* z 1)))" ""))))
+
+(test a-scroll-moves-the-band-and-highlights-the-lines-it-lands-on
+  (let* ((rt (pine.ts.runtime:make-ts-runtime))
+         (lines (banded-lines 40000))
+         (n (fset:size lines))
+         (ps (progn (pine.ts.runtime:ensure-ts rt)
+                    (pine.ts.runtime:make-parse-state rt :commonlisp))))
+    (when ps
+      (unwind-protect
+           (let ((top (cons 0 43))
+                 (end (cons (- n 44) (1- n))))
+             (pine.ts.runtime:parse-lines! ps lines :viewport top)
+             (let ((band-at-top (pine.ts.runtime:ps-band ps))
+                   (hl-top (pine.ts.highlight:parse-highlights
+                            ps :from-line (car top) :to-line (cdr top))))
+               (is (not (null band-at-top))
+                   "a buffer this size should be banded, not parsed whole")
+               (is (plusp (length hl-top)) "the top window should be highlighted")
+               ;; the seq is EQ across a scroll; only the viewport moved
+               (pine.ts.runtime:parse-lines! ps lines :viewport end)
+               (let ((band-at-end (pine.ts.runtime:ps-band ps))
+                     (hl-end (pine.ts.highlight:parse-highlights
+                              ps :from-line (car end) :to-line (cdr end))))
+                 (is (not (equal band-at-top band-at-end))
+                     "the band must follow the window, was ~s still ~s"
+                     band-at-top band-at-end)
+                 (is (plusp (length hl-end))
+                     "the lines scrolled to must be highlighted, got none")
+                 (is (every (lambda (tuple) (<= (car end) (first tuple) (cdr end)))
+                            hl-end)
+                     "every tuple should name a line the window shows"))))
+        (pine.ts.runtime:free-parse-state ps)))))
+
+(test a-repeated-viewport-does-no-work
+  (let* ((rt (pine.ts.runtime:make-ts-runtime))
+         (lines (banded-lines 40000))
+         (ps (progn (pine.ts.runtime:ensure-ts rt)
+                    (pine.ts.runtime:make-parse-state rt :commonlisp))))
+    (when ps
+      (unwind-protect
+           (let ((vp (cons 0 43)))
+             (pine.ts.runtime:parse-lines! ps lines :viewport vp)
+             (let ((tree (pine.ts.runtime:ps-tree ps)))
+               (pine.ts.runtime:parse-lines! ps lines :viewport vp)
+               (is (eq tree (pine.ts.runtime:ps-tree ps))
+                   "the same lines at the same viewport should keep the tree")))
+        (pine.ts.runtime:free-parse-state ps)))))

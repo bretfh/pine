@@ -35,10 +35,10 @@ an edit has landed since it went out, and the tick that was last requested."
 (defun link-dirty (link) (parse-link-dirty link))
 (defun link-tick (link) (parse-link-tick link))
 
-(defun %ensure-tree (ps lines edit)
-  "Bring PS's tree up to LINES, using EDIT when it describes the difference."
-  (unless (eq lines (pine.ts.runtime:ps-lines ps))
-    (pine.ts.runtime:parse-lines! ps lines :edit edit))
+(defun %ensure-tree (ps lines edit viewport)
+  "Bring PS's tree up to LINES over the band VIEWPORT needs, using EDIT when it
+describes the difference."
+  (pine.ts.runtime:parse-lines! ps lines :edit edit :viewport viewport)
   ps)
 
 (defun %highlights (ps viewport)
@@ -60,17 +60,17 @@ parser never replies to an ask, so no caller can be waiting on it."
       msg
     (case tag
       (:parse
-       (%ensure-tree ps lines edit)
+       (%ensure-tree ps lines edit viewport)
        (sento.actor:tell buffer (list :highlights :tick tick
                                                   :hl (%highlights ps viewport))))
       (:indent
-       (%ensure-tree ps lines edit)
+       (%ensure-tree ps lines edit viewport)
        (let ((targets (loop :for l :from from :to to
                             :for target = (pine.ts.highlight:parse-indent ps l)
                             :when target :collect (cons l target))))
          (sento.actor:tell buffer (list :indent-region :tick tick :targets targets))))
       (:motion
-       (%ensure-tree ps lines edit)
+       (%ensure-tree ps lines edit viewport)
        (multiple-value-bind (l c) (pine.ts.runtime:parse-motion ps kind line col)
          (when l
            (sento.actor:tell buffer (list :move-point :line l :col c)))))

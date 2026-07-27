@@ -43,7 +43,11 @@ bounded per-query cost against an amortised per-edit one.")
   ;; the lines this index currently describes, and the edits that took the base
   ;; there: each is (LINE BYTE-DELTA LINE-DELTA), oldest first
   (lines nil)
-  (pending nil :type list))
+  (pending nil :type list)
+  (memo-line -1 :type fixnum)
+  (memo-text "" :type string)
+  (memo-offset 0 :type (unsigned-byte 62))
+  (memo-col 0 :type (unsigned-byte 62)))
 
 (defun string-bytes (string)
   "STRING's length in UTF-8 bytes, counted rather than encoded."
@@ -128,18 +132,24 @@ from."
 ;;;; UTF-8 bytes; the cell grid, point and the walks all speak characters. These
 ;;;; are the four questions the highlight walks used to ask a flat string.
 
+(declaim (inline %char-bytes))
+(defun %char-bytes (ch)
+  (let ((code (char-code ch)))
+    (cond ((< code #x80) 1)
+          ((< code #x800) 2)
+          ((< code #x10000) 3)
+          (t 4))))
+
 (defun %byte-offset-to-col (line offset)
-  "The character column OFFSET bytes into LINE."
+  "(values COL BYTES): the character column OFFSET bytes into LINE, and the byte
+offset COL itself begins at. The two differ when OFFSET falls inside a character,
+and only the pair is safe to resume a count from."
   (let ((bytes 0) (col 0))
     (loop :for ch :across line
           :while (< bytes offset)
-          :do (incf bytes (let ((code (char-code ch)))
-                            (cond ((< code #x80) 1)
-                                  ((< code #x800) 2)
-                                  ((< code #x10000) 3)
-                                  (t 4))))
+          :do (incf bytes (%char-bytes ch))
               (incf col))
-    col))
+    (values col bytes)))
 
 (defun %col-to-byte-offset (line col)
   "The byte offset COL characters into LINE."
@@ -153,16 +163,44 @@ from."
     bytes))
 
 (defun line-string (index line)
-  "LINE's text, or the empty string past the end."
-  (let ((lines (byte-index-lines index)))
-    (if (and (>= line 0) (< line (fset:size lines)))
-        (fset:@ lines line)
-        "")))
+  "LINE's text, or the empty string past the end. Memoised on the last line
+asked for, which a walk asks about once per node."
+  (if (= line (byte-index-memo-line index))
+      (byte-index-memo-text index)
+      (let* ((lines (byte-index-lines index))
+             (text (if (and (>= line 0) (< line (fset:size lines)))
+                       (fset:@ lines line)
+                       "")))
+        (setf (byte-index-memo-line index) line
+              (byte-index-memo-text index) text
+              (byte-index-memo-offset index) 0
+              (byte-index-memo-col index) 0)
+        text)))
+
+(defun %col-at (index line offset)
+  "The character column OFFSET bytes into LINE.
+
+Carried forward from the last column asked for on this line: a walk emits spans
+left to right, so counting resumes rather than starting over."
+  (let ((text (line-string index line)))
+    (if (>= offset (byte-index-memo-offset index))
+        (let ((bytes (byte-index-memo-offset index))
+              (col (byte-index-memo-col index)))
+          (loop :while (and (< bytes offset) (< col (length text)))
+                :do (incf bytes (%char-bytes (char text col)))
+                    (incf col))
+          (setf (byte-index-memo-offset index) bytes
+                (byte-index-memo-col index) col)
+          col)
+        (multiple-value-bind (col bytes) (%byte-offset-to-col text offset)
+          (setf (byte-index-memo-offset index) bytes
+                (byte-index-memo-col index) col)
+          col))))
 
 (defun source-line-col (index byte)
   "The (values line character-column) that BYTE falls at."
   (multiple-value-bind (line offset) (byte-line index byte)
-    (values line (%byte-offset-to-col (line-string index line) offset))))
+    (values line (%col-at index line offset))))
 
 (defun source-byte (index line col)
   "The byte offset of LINE at character column COL."
@@ -174,6 +212,12 @@ from."
       ""
       (multiple-value-bind (start-line start-offset) (byte-line index start-byte)
         (multiple-value-bind (end-line end-offset) (byte-line index end-byte)
+          (when (= start-line end-line)
+            (let ((text (line-string index start-line))
+                  (from (%col-at index start-line start-offset))
+                  (to (%col-at index start-line end-offset)))
+              (return-from source-substring
+                (subseq text (min from (length text)) (min to (length text))))))
           (with-output-to-string (out)
             (loop :for line :from start-line :to (min end-line (1- (index-line-count index)))
                   :for text = (line-string index line)
@@ -191,7 +235,7 @@ from."
   "The character at BYTE, or nil past the end."
   (multiple-value-bind (line offset) (byte-line index byte)
     (let* ((text (line-string index line))
-           (col (%byte-offset-to-col text offset)))
+           (col (%col-at index line offset)))
       (cond ((< col (length text)) (char text col))
             ((< line (1- (index-line-count index))) #\Newline)
             (t nil)))))

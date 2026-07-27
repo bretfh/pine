@@ -1,5 +1,6 @@
 (defpackage #:pine.ui.render
   (:use #:cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:start-renderer
    #:subscribe-to-buffer
@@ -238,7 +239,11 @@ leaf's rect sizes its backing window. Returns the leaves."
                 (setf (pine.text.window:win-width w)
                       (if cw (max 1 (floor (%leaf-width n) cw)) (%leaf-width n))
                       (pine.text.window:win-height w)
-                      (if ch (max 1 (floor (%leaf-height n) ch)) (%leaf-height n))))))
+                      (if ch (max 1 (floor (%leaf-height n) ch)) (%leaf-height n)))
+                ;; scroll before the range is read: point moved this frame, and a
+                ;; viewport taken from the scroll it had last frame asks the
+                ;; buffer to colour lines the window has already left
+                (pine.text.window:ensure-point-visible w))))
           (%tell-viewports leaves)
           leaves)))))
 
@@ -279,7 +284,7 @@ the tree, or nil when the client has none."
 save the arrangement to the world -- every structural mutation ends here, so
 a crash never loses the split shape."
   (prog1 (arrange-editor-tree (pine.editor.frame:current-client))
-    (pine.state.world:save-world :arrangement)))
+    (world:save :arrangement)))
 
 
 ;;;; Cell emission

@@ -399,6 +399,72 @@ home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
               (ignore-errors (pine.core.actor:unregister-agent srv "bench-agent"))))))
     (error (e) (format t "~&(agent group skipped: ~a)~%" e))))
 
+(defun %rss-mb ()
+  "This image's resident set, in MB."
+  (with-open-file (f "/proc/self/statm" :if-does-not-exist nil)
+    (when f
+      (let ((fields (uiop:split-string (read-line f nil "") :separator " ")))
+        (/ (* (parse-integer (second fields) :junk-allowed t) 4096) 1048576.0)))))
+
+(defun bench-huge ()
+  "A keystroke in a file too big to parse whole, both ways: the parser given all
+of it, and the parser given only the band around the window a buffer shows.
+Reports the image's resident set at each stage, because the point of the band is
+that the rest of the buffer is never touched."
+  (handler-case
+      (let* ((rt (pine.ts.runtime:make-ts-runtime))
+             (src "(defun f (x) (+ x 1))")
+             (n 1000000)
+             (lines (fset:convert 'fset:seq (loop :repeat n :collect src)))
+             (mid (floor n 2))
+             (edited (fset:with lines mid "(defun f (x) (+ x 11))"))
+             (window (cons (- mid 15) (+ mid 15)))
+             rows)
+        (pine.ts.runtime:ensure-ts rt)
+        (format t "~&rss holding ~:d lines, unparsed: ~,1f MB~%" n (%rss-mb))
+        (let ((whole (pine.ts.runtime:make-parse-state rt :commonlisp))
+              (windowed (pine.ts.runtime:make-parse-state rt :commonlisp)))
+          (unless whole (error "no commonlisp grammar"))
+          (pine.ts.runtime:parse-lines! windowed lines :viewport window)
+          (format t "~&rss after a banded parse:            ~,1f MB~%" (%rss-mb))
+          (pine.ts.runtime:parse-lines! whole lines)
+          (format t "~&rss after parsing the whole file:    ~,1f MB~%" (%rss-mb))
+          (push (defbench (format nil "cold parse, window only, ~:d lines" n)
+                  (pine.ts.runtime:parse-lines!
+                   (pine.ts.runtime:make-parse-state rt :commonlisp)
+                   lines :viewport window))
+                rows)
+          (pine.ts.runtime:parse-lines! windowed lines :viewport window)
+          (let ((flip nil))
+            (push (defbench (format nil "keystroke, whole file, ~:d lines" n)
+                    (progn (setf flip (not flip))
+                           (pine.ts.runtime:parse-lines!
+                            whole (if flip edited lines)
+                            :edit (list mid 1 1 (if flip 1 -1)))))
+                  rows))
+          (let ((flip nil))
+            (push (defbench (format nil "keystroke, window only, ~:d lines" n)
+                    (progn (setf flip (not flip))
+                           (pine.ts.runtime:parse-lines!
+                            windowed (if flip edited lines)
+                            :edit (list mid 1 1 (if flip 1 -1))
+                            :viewport window)))
+                  rows))
+          (let ((flip nil))
+            (push (defbench (format nil "keystroke + window highlight, ~:d lines" n)
+                    (progn (setf flip (not flip))
+                           (pine.ts.runtime:parse-lines!
+                            windowed (if flip edited lines)
+                            :edit (list mid 1 1 (if flip 1 -1))
+                            :viewport window)
+                           (pine.ts.highlight:parse-highlights
+                            windowed :from-line (car window) :to-line (cdr window))))
+                  rows))
+          (pine.ts.runtime:free-parse-state whole)
+          (pine.ts.runtime:free-parse-state windowed))
+        (print-table "a file too big to parse whole" (nreverse rows)))
+    (error (e) (format t "~&(huge group skipped: ~a)~%" e))))
+
 (defun bench-mailbox ()
   "What a buffer's own thread costs. A buffer actor is pinned: its own thread and
 mailbox, so a receive that parks in the debugger cannot take a worker the
@@ -451,7 +517,8 @@ measured against the same receive on the shared dispatcher."
   (machine-header)
   (dolist (g (list #'bench-buffer #'bench-load-content #'bench-vt
                    #'bench-widget #'bench-push #'bench-ts #'bench-refresh
-                   #'bench-eval #'bench-mailbox #'bench-paint #'bench-agent))
+                   #'bench-eval #'bench-huge #'bench-mailbox #'bench-paint
+                   #'bench-agent))
     (handler-case (funcall g)
       (error (e) (format t "~&(group ~a failed: ~a)~%" g e))))
   (finish-output))
