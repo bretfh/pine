@@ -143,11 +143,14 @@ back as itself whatever package is current later."
           (*package* (find-package :keyword)))
       (%emit value out))))
 
-(defun deserialize (string)
-  "The value SERIALIZE wrote. Reads only: nothing in STRING is evaluated."
+(defun deserialize (string &optional (readtable 'data))
+  "The value SERIALIZE wrote. Reads only: nothing in STRING is evaluated.
+
+READTABLE names which serialization syntax to read: a layer that adds a literal
+of its own passes the readtable that knows it."
   (let ((*read-eval* nil)
         (*package* (find-package :cl-user))
-        (*readtable* (named-readtables:find-readtable 'data)))
+        (*readtable* (named-readtables:find-readtable readtable)))
     (values (read-from-string string))))
 
 ;;;; The vocabulary a caller needs that fset does not already give in this

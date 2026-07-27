@@ -5,6 +5,7 @@
   (:export #:space #:fresh #:*space* #:with-space
            #:read #:write #:watch #:preview #:toggle
            #:provider #:here
+           #:kind #:setting #:*after-commit*
            #:refused #:no-verb #:cycle #:at #:why))
 
 (in-package #:pine.ns)
@@ -23,6 +24,7 @@
   (mounts nil)                        ; (path . backing), newest first
   (reactions (fset:empty-map))        ; path -> reaction
   (watches nil)                       ; (name pattern function)
+  (settings (fset:empty-map))         ; path -> the write options that outlive it
   (lock (bordeaux-threads:make-recursive-lock "pine-ns")))
 
 (defvar *space* (fresh)
@@ -156,6 +158,11 @@ the segment it matched. HERE answers the path being served."
         :when fn :do (return (values (funcall fn) t))
         :finally (return (values nil nil))))
 
+(defun %servedp (space path)
+  "True when some mounted provider has a clause for PATH."
+  (loop :for backing :in (%backings space path)
+        :thereis (and (%handlers backing path) t)))
+
 (defun %served-write (space path value)
   "Give VALUE to the provider serving PATH. True when one took it."
   (loop :for backing :in (%backings space path)
@@ -165,7 +172,8 @@ the segment it matched. HERE answers the path being served."
                     (write (fset:lookup handlers :write)))
                 (cond ((and (%verbp value) verbs
                             (fset:lookup verbs (%verb-name value)))
-                       (funcall (fset:lookup verbs (%verb-name value)))
+                       (apply (fset:lookup verbs (%verb-name value))
+                              (%verb-args value))
                        (return t))
                       ((%verbp value)
                        (error 'no-verb :at path :why (%verb-name value)))
@@ -288,6 +296,43 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
 (defvar *preview* nil "When bound, writes collect here instead of being made.")
 (defvar *propagating* nil)
 
+(defvar *after-commit* nil
+  "Called with the list of (path old new) each commit moved. The store hangs
+here, because whether a value outlives the daemon is a property of the path and
+not something anyone should have to remember to ask for.")
+
+(defun kind (path)
+  "Where the value at PATH comes from.
+
+:LIVE   a provider reads it; the world it came from is the storage
+:DERIVED an expression computed it from other paths, so it is computed again
+:HELD   someone wrote it, and nothing else determines it"
+  (let ((space *space*))
+    (cond ((%servedp space path) :live)
+          ((let ((r (fset:lookup (space-reactions space) path)))
+             (and r (not (fset:empty? (reaction-deps r)))))
+           :derived)
+          (t :held))))
+
+(defun setting (path key &optional default)
+  "The write option KEY that PATH was given, or DEFAULT."
+  (let ((options (fset:lookup (space-settings *space*) path)))
+    (if (and options (fset:domain-contains? options key))
+        (fset:lookup options key)
+        default)))
+
+(defun %remember (path options)
+  "Keep the write options that outlive the write itself."
+  (let ((space *space*))
+    (loop :for (key value) :on options :by #'cddr
+          :when (member key '(:keep :max))
+            :do (setf (space-settings space)
+                      (fset:with (space-settings space) path
+                                 (fset:with (or (fset:lookup (space-settings space)
+                                                             path)
+                                                (fset:empty-map))
+                                            key value))))))
+
 (defun %ring-push (current value limit)
   (let ((seq (fset:with-first (if (fset:seq? current) current (fset:empty-seq))
                               value)))
@@ -310,7 +355,9 @@ of (path old new) that moved."
               (setf root (%put root (p:keys path) value))
               (push (list path old value) moved)))))
       (setf (space-root space) root)
-      (nreverse moved))))
+      (setf moved (nreverse moved))
+      (when (and moved *after-commit*) (funcall *after-commit* moved))
+      moved)))
 
 (defun %evaluate (thunk)
   "Run THUNK, answering (values value paths-it-read)."
@@ -318,10 +365,12 @@ of (path old new) that moved."
     (let ((value (funcall thunk)))
       (values value (fset:convert 'fset:set (cdr *reads*))))))
 
-(defun %write-one (path value &key when max force)
+(defun %write-one (path value &rest options &key when max force keep)
   "Put VALUE at PATH. Answers the (path old new) it moved, as a list."
+  (declare (ignore keep))
   (let* ((space *space*)
          (current (%read-one path)))
+    (when options (%remember path options))
     (when (and (not force) (%whole-tree-p path))
       (error 'refused :at path :why "** at the root would take the whole tree"))
     (when (and when (not (fset:equal? current when)))
@@ -454,15 +503,19 @@ whenever one of those paths moves. A provider written here mounts instead."
         (%unmount path))
       (if (backing-p value)
           (%mount path value)
-          (let ((moved (apply #'%write-one path value options)))
+          ;; the reaction is registered before the value lands, so whatever
+          ;; watches the commit already knows this path is computed rather than
+          ;; held, and does not store it
+          (progn
             (setf (space-reactions space)
                   (if (fset:empty? deps)
                       (fset:less (space-reactions space) path)
                       (fset:with (space-reactions space) path
                                  (make-reaction :path path :thunk thunk
                                                 :deps deps))))
-            (%propagate space moved)
-            (%changes moved))))))
+            (let ((moved (apply #'%write-one path value options)))
+              (%propagate space moved)
+              (%changes moved)))))))
 
 (defmacro write (place &optional (value nil value-p) &rest options)
   "Put VALUE at the path PLACE, or apply PLACE as a transaction when it is a

@@ -5,7 +5,7 @@
            #:parent #:leaf #:child #:under #:prefixp #:subpath
            #:text #:parse #:name #:spliced
            #:patternp #:binders #:match #:literal-at #:key #:keys
-           #:syntax))
+           #:syntax #:data))
 
 (in-package #:pine.path)
 
@@ -395,4 +395,12 @@ namespace value at a path, for a constraint to test."
 
 (named-readtables:defreadtable syntax
   (:merge pine.data:syntax)
+  (:macro-char #\/ #'read-path))
+
+;;;; The serialization readtable with paths in it: a stored value may hold one,
+;;;; and it has to read back as a path rather than as whatever /a/b would mean
+;;;; to the standard reader.
+
+(named-readtables:defreadtable data
+  (:merge pine.data:data)
   (:macro-char #\/ #'read-path))
