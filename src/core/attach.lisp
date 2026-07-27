@@ -7,7 +7,8 @@
            #:attached #:received #:detached #:run-frontend
            #:attached-client #:attached-client-id #:attached-client-kind
            #:attached-client-display #:attached-client-input #:attached-client-session
-           #:*clients* #:push-to-app #:client-alive-p #:reap-clients))
+           #:*clients* #:push-to-app #:client-alive-p #:reap-clients
+           #:accept-attached))
 
 (in-package #:pine.core.attach)
 
@@ -211,6 +212,17 @@ attach handler, and the reply telling it where to send input."
                    (%accept-attach sys server display display-uri kind)
                    (%refuse-attach display kind version)))))
           (t nil))))))
+
+(defun accept-attached (sys message)
+  "The client ref an :ATTACHED reply names, for the frontend that received it.
+
+The reply's shape is a contract between separately built images, so it is read
+here rather than in each frontend: a key added to the daemon's side would
+otherwise kill three display actors, and a display actor that dies never builds
+this ref, never sends input, and never takes a frame."
+  (destructuring-bind (&key client-uri &allow-other-keys) (rest message)
+    (when client-uri
+      (sento.remoting:make-remote-ref sys client-uri))))
 
 (defun attach-to-daemon (app-sys daemon-attach-uri display-uri &key (kind :app))
   "App-side: send the attach request to the daemon. The reply (:attached ...)

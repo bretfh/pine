@@ -223,3 +223,47 @@ thread that waits is the eval's own."
     (sleep 0.2)
     (is (eq ev (pine.core.eval:find-evaluation (pine.core.eval:evaluation-id ev))))
     (is (member ev (pine.core.eval:list-evaluations)))))
+
+
+;;;; The attach handshake. The daemon's reply and the frontend that reads it are
+;;;; a contract between separately built images: a key added to one side killed
+;;;; every display actor on the other, and a display actor that dies never
+;;;; builds its client ref, so it sends no input and takes no frame while the
+;;;; process looks alive and the surface stays blank.
+
+(defun attach-reply (&rest extra)
+  "The daemon's :attached reply, as %ACCEPT-ATTACH sends it."
+  (append (list :attached :id 1
+                :client-uri "sento://127.0.0.1:17000/user/client-1"
+                :version (pine.core.attach:protocol-version))
+          extra))
+
+(test the-daemon-s-attached-reply-is-the-one-the-frontends-read
+  "Every key %ACCEPT-ATTACH puts in the reply has to survive the read, and the
+read has to answer a ref. This is the check the :version key walked past."
+  (let ((sys (sento.actor-system:make-actor-system
+              '(:dispatchers (:shared (:workers 1 :strategy :random))))))
+    (unwind-protect
+         (progn
+           (sento.remoting:enable-remoting sys :host "127.0.0.1" :port 0)
+           (is (not (null (pine.core.attach:accept-attached sys (attach-reply))))
+               "the reply the daemon sends must yield a client ref")
+           (is (not (null (pine.core.attach:accept-attached
+                           sys (attach-reply :future-key :whatever))))
+               "a key a newer daemon adds must not break an older frontend")
+           (is (null (pine.core.attach:accept-attached sys '(:attached :id 1)))
+               "a reply naming no client is no ref, not a fault"))
+      (sento.actor-context:shutdown sys :wait t))))
+
+(test the-frontends-read-the-reply-through-that-one-function
+  "Three frontends had three copies of the destructuring and one keyword broke
+all of them. They call ACCEPT-ATTACHED now; this fails if a copy comes back."
+  (dolist (file '("src/wayland/app/editor.lisp"
+                  "src/wayland/app/desktop.lisp"
+                  "src/wayland/app/wm.lisp"))
+    (let ((source (uiop:read-file-string
+                   (merge-pathnames file (asdf:system-source-directory :pine)))))
+      (is (search "accept-attached" source)
+          "~a should read the attach reply through accept-attached" file)
+      (is (not (search "client-uri)" source))
+          "~a should not destructure the attach reply itself" file))))

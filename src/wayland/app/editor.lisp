@@ -219,9 +219,8 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
 (defun handle-editor-message (ed msg)
   (case (first msg)
     (:attached
-     (destructuring-bind (&key id client-uri) (rest msg)
-       (declare (ignore id))
-       (setf (ed-ref ed) (sento.remoting:make-remote-ref (ed-sys ed) client-uri))
+     (progn
+       (setf (ed-ref ed) (pine.core.attach:accept-attached (ed-sys ed) msg))
        (send-input ed (list :resize :cols (ed-cols ed) :rows (ed-rows ed)
                             :width (ed-width ed) :height (ed-height ed)
                             :cell-w (round (ed-cell-w ed))

@@ -137,10 +137,9 @@ for (:panel :show)."
 work for the loop thread."
   (case (first msg)
     (:attached
-     (destructuring-bind (&key id client-uri) (rest msg)
-       (declare (ignore id))
+     (progn
        (setf (client-ref client)
-             (sento.remoting:make-remote-ref (client-sys client) client-uri))
+             (pine.core.attach:accept-attached (client-sys client) msg))
        (send-refresh client)))
     (:widgets
      (destructuring-bind (&key surface tree as) (rest msg)

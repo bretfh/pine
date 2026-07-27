@@ -244,9 +244,8 @@ gains a daemon."
 the wayland thread."
   (case (first message)
     (:attached
-     (destructuring-bind (&key id client-uri) (rest message)
-       (declare (ignore id))
-       (setf (wm-ref wm) (sento.remoting:make-remote-ref (wm-sys wm) client-uri))
+     (progn
+       (setf (wm-ref wm) (pine.core.attach:accept-attached (wm-sys wm) message))
        (%enqueue wm (lambda () (%report-state wm)))))
     (:bindings
      (destructuring-bind (&key table) (rest message)
