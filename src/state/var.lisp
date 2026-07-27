@@ -1,5 +1,6 @@
 (defpackage #:pine.state.var
   (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    ;; the API: declare once, one setf-able accessor
    #:defonce #:var
@@ -35,7 +36,7 @@
           (evar-documentation v) (or documentation "")
           (evar-persist v) persist)
     (when (and persist (not (evar-global-set v)))
-      (let ((stored (pine.state.store:store (list :var name) '%absent)))
+      (let ((stored (world:value (list :var name) '%absent)))
         (unless (eq stored '%absent)
           (setf (evar-global v) stored (evar-global-set v) t))))
     v))
@@ -84,7 +85,7 @@ this layer is below any client, so it never guesses which one is current."
       (let ((v (find-variable name)))
         (setf (evar-global v) value (evar-global-set v) t)
         (when (evar-persist v)
-          (setf (pine.state.store:store (list :var name)) value))))
+          (setf (world:value (list :var name)) value))))
   value)
 
 (defun variable-scope (name &optional buffer)

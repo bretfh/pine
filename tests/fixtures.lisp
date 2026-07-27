@@ -14,12 +14,12 @@ and holds the user's own recents, places and kill ring.")
 
 (defun open-fresh-store (&optional (path +store-path+))
   "Delete the database at PATH and open it."
-  (pine.state.store:close-store)
+  (pine.state.world:close)
   (dolist (f (list path
                    (concatenate 'string path "-wal")
                    (concatenate 'string path "-shm")))
     (uiop:delete-file-if-exists f))
-  (pine.state.store:open-store path))
+  (pine.state.world:open path))
 
 (defun build-substrate ()
   "Start the daemon's actors, a client with a renderer, scratch and the
@@ -33,7 +33,7 @@ minibuffer. Returns the server."
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.text.buffer:start-buffer-registry srv)
-    (setf (pine.state.var:var :world-save) nil)
+    (setf pine.state.world:*enabled* nil)
     (let ((client (pine.editor.frame::start-client srv)))
       ;; *client* is NOT set globally. The daemon binds it per thread -- the
       ;; session loop, the renderer actor, the minibuffer controller each bind
@@ -74,7 +74,7 @@ argument, the debugger sessions and the world gate."
             pine.core.eval:*on-debug* nil
             pine.editor.isearch:*isearch* nil)
       (pine.editor.echo:message "")
-      (setf (pine.state.var:var :world-save) nil
+      (setf pine.state.world:*enabled* nil
             (pine.state.var:var :debug-on-error) nil)
       (let ((scratch (pine.editor.frame::buffer "scratch")))
         (when scratch
@@ -93,9 +93,15 @@ conditions the daemon does."
     (unwind-protect (&body)
       (reset-session))))
 
+(defun mailbox-thread (actor)
+  "ACTOR's own mailbox thread, for a test that has to kill one."
+  (let ((box (sento.actor-cell:msgbox actor)))
+    (when (typep box 'sento.messageb:message-box/bt)
+      (slot-value box 'sento.messageb::queue-thread))))
+
 (def-fixture memory-store ()
   "A private in-memory store; the suite's store is restored after the body."
-  (pine.state.store:open-store ":memory:")
+  (pine.state.world:open ":memory:")
   (unwind-protect (&body)
     (open-fresh-store)))
 

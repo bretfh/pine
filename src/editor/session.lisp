@@ -1,5 +1,6 @@
 (defpackage #:pine.editor.session
   (:use #:cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export #:*world-restored*
            #:sess #:make-sess #:sess-p
            #:sess-client #:sess-aclient #:sess-sink #:sess-inbox #:sess-lock
@@ -207,7 +208,7 @@ or the tree has foreign nodes."
                   :focus (and fw (pine.text.window:window-name fw))
                   :current (and cur (%buffer-name cur cur)))))))))
 
-(pine.state.world:register :arrangement :save #'%arrangement-data)
+(defmethod world:snapshot ((name (eql :arrangement))) (%arrangement-data))
 
 (defun %restore-arrangement (client saved)
   "Build SAVED's tree for CLIENT and land its focus. nil when building fails
@@ -240,8 +241,8 @@ engine default. Focus lands on the saved focus or the first window leaf."
         (builder (gethash "editor"
                           (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
         (saved (and world
-                    (ignore-errors (pine.state.var:var :world-save nil))
-                    (pine.state.store:store '(:world :arrangement)))))
+                    world:*enabled*
+                    (world:value :arrangement))))
     (setf (pine.editor.frame:windows client) nil
           (pine.editor.frame:focused-window client) nil)
     (or (and saved (getf saved :tree) (%restore-arrangement client saved))
@@ -316,11 +317,11 @@ shutdown sweep can save it."
                          (pine.core.actor:ask buf '(:get-text) :timeout 2)))))
     (and (stringp text) (plusp (length text)) text)))
 
-(pine.state.world:register :scratch
-  :save #'%scratch-text
-  :restore (lambda (text)
-             (let ((buf (pine.editor.frame:make-buffer "scratch")))
-               (sento.actor:tell buf (list :replace-content :content text)))))
+(defmethod world:snapshot ((name (eql :scratch))) (%scratch-text))
+
+(defmethod world:revive ((name (eql :scratch)) text)
+  (let ((buf (pine.editor.frame:make-buffer "scratch")))
+    (sento.actor:tell buf (list :replace-content :content text))))
 
 (defvar *world-restored* nil
   "The buffer/scratch restore runs once per daemon life, at the first editor
@@ -337,7 +338,7 @@ attach (a client must be in scope); the arrangement applies on every seed.")
         (ignore-errors (pine.editor.ask:tell buf :set-local :key :package :value :pine-user)))
       (unless *world-restored*
         (setf *world-restored* t)
-        (pine.state.world:restore-world))
+        (world:restore))
       (%seed-editor-tree client)
       (let ((f (pine.editor.frame:frame client)))
         (setf (pine.text.window:frame-cols f) 80 (pine.text.window:frame-rows f) 29)

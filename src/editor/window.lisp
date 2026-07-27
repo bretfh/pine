@@ -1,5 +1,6 @@
 (defpackage #:pine.editor.window
   (:use #:cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export #:split-window #:delete-other-windows-cmd #:delete-window-cmd #:other-window-cmd #:scroll-window))
 
 (in-package #:pine.editor.window)
@@ -32,7 +33,7 @@ lands in it."
         (w (pine.ui.node:window-of leaf)))
     (pine.editor.frame:focus-window w)
     (setf (pine.editor.frame:current-buffer client) (pine.text.window:buffer-ref w))
-    (pine.state.world:save-world :arrangement)))
+    (world:save :arrangement)))
 
 (defun split-window (orient)
   "Split the focused window along ORIENT (:column below, :row beside): a new

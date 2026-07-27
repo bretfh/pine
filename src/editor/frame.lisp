@@ -1,5 +1,6 @@
 (defpackage #:pine.editor.frame
   (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:client
    #:completion
@@ -57,8 +58,7 @@
    #:active-modes-instance
    #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
    #:toggle-minor-mode #:active-minor-mode-indicators
-   #:buffer #:make-buffer #:kill-buffer #:switch-buffer
-   #:buffer-of-id #:restore-buffer #:snapshot-source
+   #:buffer #:make-buffer #:kill-buffer #:switch-buffer #:buffer-of-id
    #:list-buffers #:buffer-count
    #:current-buffer-text #:current-buffer-snapshot
    #:start-client
@@ -156,7 +156,7 @@
                 :server-of server
                 :frame (make-instance 'pine.text.window:frame)
                 :terminal-map (make-hash-table :test 'eq)
-                :kill-ring (pine.state.store:store :kill-ring))))
+                :kill-ring (world:value :kill-ring))))
     (push c (pine.core.server:clients server))
     c))
 
@@ -288,8 +288,9 @@ Dispatch flattens each one's own parent chain into the table list."
          (table (pine.text.buffer:buffer-table srv))
          (existing (gethash name table)))
     (when existing (return-from make-buffer existing))
-    (let ((actor (pine.text.buffer:make-buffer-actor (pine.core.server:actor-system srv) name
-                                                     :content content :id id)))
+    (let ((actor (pine.text.buffer:make-buffer-actor
+                  (pine.core.server:actor-system srv) name :content content
+                  :id (or id (world:id)))))
       (setf (gethash name table) actor)
       (sento.actor:tell (pine.core.server:buffer-registry srv)
                         (list :register :name name :actor actor))
@@ -298,7 +299,8 @@ Dispatch flattens each one's own parent chain into the table list."
       actor)))
 
 (defun buffer-of-id (id)
-  "The live buffer carrying ID, or nil."
+  "The live buffer carrying ID, or nil. How an image holding only the id reaches
+the buffer."
   (let* ((c (current-client))
          (srv (and c (server-of c)))
          (table (and srv (pine.text.buffer:buffer-table srv))))
@@ -308,34 +310,6 @@ Dispatch flattens each one's own parent chain into the table list."
                              (pine.text.buffer:buffer-local
                               (pine.core.actor:ask actor '(:get-state) :timeout 2) :id)))
               :return actor))))
-
-(defun snapshot-source (id)
-  "(values NAME META CONTENT TICK) for the live buffer ID, for the journal to
-compact against. Asked from the writer's thread, which is not a receive."
-  (let ((actor (buffer-of-id id)))
-    (when actor
-      (let ((state (pine.core.actor:ask actor '(:get-state) :timeout 5)))
-        (when (typep state 'pine.text.buffer:buffer-state)
-          (values (pine.text.buffer:buffer-local state :name "")
-                  (pine.text.buffer:meta state)
-                  (pine.text.buffer:state->string state)
-                  (pine.text.buffer:tick state)))))))
-
-(defun restore-buffer (id)
-  "Bring back the buffer ID as the store last saw it: its snapshot, then the
-edits recorded after it, replayed through the buffer's own verbs. Answers the
-actor, or nil when the store has never seen ID."
-  (multiple-value-bind (name meta content tick verbs) (pine.state.journal:restore-state id)
-    (declare (ignore tick))
-    (when name
-      (let ((actor (make-buffer name :content content :id id)))
-        ;; the mode comes back with it, so a restored lisp buffer is a lisp
-        ;; buffer and its parser starts the same way it would have
-        (let ((mode (and meta (fset:@ meta :mode))))
-          (when mode (set-buffer-mode actor mode)))
-        (dolist (verb verbs)
-          (sento.actor:tell actor verb))
-        actor))))
 
 (defun kill-buffer (name)
   (let* ((c (current-client))

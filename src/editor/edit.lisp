@@ -192,7 +192,8 @@ itself, and by the parser's :indent-region answer."
                (pine.text.buffer:request-parse link new))
              (progn
                (setf sento.actor:*state* (list new undo redo subs hl pstate))
-               (pine.text.buffer:notify-subscribers subs new hl)))))
+               (pine.text.buffer:notify-subscribers subs new hl)))
+))
       ;; The lines some window is showing, as (FROM . TO). Highlighting walks
       ;; this range instead of the file. Sent by the renderer, which is the only
       ;; thing that knows a window's scroll position; a range equal to the one
@@ -296,12 +297,6 @@ itself, and by the parser's :indent-region answer."
                                 new pstate (pine.text.buffer:buffer-local new :name ""))))
                     (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 link))
                     (pine.text.buffer:notify-subscribers subs new hl2)
-                    ;; the edit is durable from here: a row on a queue, committed
-                    ;; by the journal writer on its own thread
-                    (pine.state.journal:record!
-                     (pine.text.buffer:buffer-local new :id)
-                     (pine.text.buffer:tick new)
-                     (cons tag plist))
                     (pine.text.buffer:request-parse
                      link new :extra (list :edit descriptor)))))
       (case tag

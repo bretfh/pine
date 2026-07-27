@@ -1,61 +1,114 @@
 (defpackage #:pine.state.world
   (:use #:cl)
-  (:export #:register #:save-world #:restore-world)
-  (:documentation "What comes back after a restart. Subsystems register
-:save/:restore function pairs; the data rides (:world NAME) store keys.
-Gated by the :world-save editor variable."))
+  (:local-nicknames (#:store #:pine.state.store))
+  (:shadow #:push #:open #:close)
+  (:export #:*enabled* #:open #:close #:id
+           #:value #:push #:items #:clear #:forget
+           #:snapshot #:revive #:names #:save #:restore)
+  (:documentation "How anything in pine persists.
+
+One facility, whatever the value is and whoever owns it: a mode's state, a
+command's scrap, a subsystem's history.
+
+  (value NAME)          a durable value; (setf (value NAME) V) writes
+  (push NAME V)         a durable bounded list, newest first
+  (snapshot NAME)       a method a subsystem answers; state computed at save
+  (revive NAME DATA)    its other half"))
 
 (in-package #:pine.state.world)
 
-;;;; The world: what comes back after a restart. Subsystems register a pair
-;;;; of functions. :save computes readable data from live state when asked and
-;;;; :restore applies it; the data rides ordinary (:world NAME) store keys.
-;;;; This file knows no contributor; each lives with its own subsystem.
-;;;; The :world-save editor variable gates the whole thing.
+(defvar *enabled* t
+  "When true, SAVE and RESTORE run their contributors.
 
-(pine.state.var:defonce :world-save :default t
-  :documentation "When non-nil, the world (buffers, arrangement, scratch)
-saves to the store and restores on the next start.")
+A plain special rather than an editor variable: this layer sits under the
+editor, and the editor's own variables persist through here.
 
-(defvar *contributors* nil
-  "Ordered alist of (NAME . (SAVE-FN . RESTORE-FN)); re-register replaces.")
+Durable values and lists are not gated; writing through as they change is what
+they are for.")
 
-(defun register (name &key save restore)
-  "Register world contributor NAME. SAVE is () -> readable data (nil =
-nothing to save); RESTORE is (data) -> applies it. Registration order is
-restore order."
-  (setf *contributors*
-        (append (remove name *contributors* :key #'first)
-                (list (cons name (cons save restore)))))
-  name)
+;;;; Every durable thing lives under (:world NAME), so there is one namespace to
+;;;; inspect or clear rather than one per feature.
 
-(defun %enabled-p ()
-  (ignore-errors (pine.state.var:var :world-save nil)))
+(defun %key (name) (list :world name))
 
-(defun save-world (&optional name)
-  "Run NAME's (or every) contributor's :save and store the result under
-(:world NAME). Silent no-op when :world-save is off or no store is open."
-  (when (%enabled-p)
-    (loop :for (n save . nil) :in *contributors*
-          :when (and save (or (null name) (eq n name)))
-            :do (handler-case
-                   (let ((data (funcall save)))
-                     ;; nil means nothing to save from this context, so the
-                     ;; stored entry stands rather than being erased
-                     (when data
-                       (setf (pine.state.store:store (list :world n)) data)))
-                 (error (c)
-                   (format *error-output* "world save ~a failed: ~a~%" n c))))))
+(defun open (&optional path)
+  "Open the store everything persists into. Returns the path opened."
+  (store:open path))
 
-(defun restore-world (&optional name)
-  "Read NAME's (or every) contributor's (:world NAME) entry and apply it. A
-failing contributor logs and skips, so the daemon always comes up."
-  (when (%enabled-p)
-    (loop :for (n nil . restore) :in *contributors*
-          :when (and restore (or (null name) (eq n name)))
-            :do (let ((data (pine.state.store:store (list :world n))))
-                 (when data
-                   (handler-case (funcall restore data)
-                     (error (c)
-                       (format *error-output*
-                               "world restore ~a failed: ~a~%" n c))))))))
+(defun close ()
+  "Close it. Safe with none open."
+  (store:close))
+
+(defun id ()
+  "A fresh identity for something that has to be nameable from another image."
+  (store:id))
+
+(defun value (name &optional default)
+  "The durable value under NAME, or DEFAULT when it has none. setf-able."
+  (store:value (%key name) default))
+
+(defun (setf value) (new name &optional default)
+  (declare (ignore default))
+  (setf (store:value (%key name)) new))
+
+(defun forget (name)
+  "Drop the durable value under NAME."
+  (store:forget (%key name)))
+
+;;;; Bounded lists: histories, recents, rings. Newest first, trimmed to MAX, an
+;;;; equal entry moved to the front rather than duplicated under UNIQUE.
+
+(defun push (name new &key (max 100) (unique t))
+  "Append NEW to the durable list NAME, trimmed to its newest MAX entries."
+  (store:push (%key name) new :max max :unique unique))
+
+(defun items (name &key limit)
+  "The durable list NAME, newest first, LIMIT entries at most."
+  (store:items (%key name) :limit limit))
+
+(defun clear (name)
+  "Drop the whole durable list NAME."
+  (store:clear (%key name)))
+
+;;;; State computed from what is live rather than written as it changes -- the
+;;;; window arrangement, the open buffers. A subsystem answers SNAPSHOT for its
+;;;; own name and applies REVIVE; writing the method is the whole registration,
+;;;; and this file names none of them.
+
+(defgeneric snapshot (name)
+  (:documentation "NAME's durable form, computed from live state. NIL when
+there is nothing to save from here, which leaves the stored entry standing.")
+  (:method (name) (declare (ignore name)) nil))
+
+(defgeneric revive (name data)
+  (:documentation "Apply DATA as NAME.")
+  (:method (name data) (declare (ignore name data)) nil))
+
+(defun names ()
+  "Every name a subsystem answers SNAPSHOT for, in definition order."
+  (loop :for method :in (c2mop:generic-function-methods #'snapshot)
+        :for spec = (first (c2mop:method-specializers method))
+        :when (typep spec 'c2mop:eql-specializer)
+          :collect (c2mop:eql-specializer-object spec)))
+
+(defun save (&optional name)
+  "Store NAME's snapshot, or every name's. No-op when *ENABLED* is off or
+nothing is open."
+  (when *enabled*
+    (dolist (n (if name (list name) (names)))
+      (handler-case
+          (let ((data (snapshot n)))
+            (when data (setf (value n) data)))
+        (error (c)
+          (format *error-output* "world save ~a failed: ~a~%" n c))))))
+
+(defun restore (&optional name)
+  "Revive NAME from the store, or every name. A failure logs and skips, so the
+daemon always comes up."
+  (when *enabled*
+    (dolist (n (if name (list name) (names)))
+      (let ((data (value n)))
+        (when data
+          (handler-case (revive n data)
+            (error (c)
+              (format *error-output* "world restore ~a failed: ~a~%" n c))))))))

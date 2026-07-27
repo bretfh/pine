@@ -23,7 +23,8 @@
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "eval") (:file "actor") (:file "agent")
-                                       (:file "jobs") (:file "event") (:file "hooks") (:file "attach")))
+                                       (:file "jobs") (:file "supervision") (:file "event")
+                                       (:file "hooks") (:file "attach")))
                  ;; keys and modes are the bottom of the editing stack: the buffer actor
                  ;; dispatches a message through its mode, so modes load before buffers.
                  (:module "input"
@@ -47,10 +48,13 @@
                  (:module "text"
                           :serial t
                           :components ((:file "buffer") (:file "window")))
+                 ;; store is the file, world is the API over it, and everything
+                 ;; that persists (refs, editor variables, and the contributors
+                 ;; above) goes through world, so world loads under them.
                  (:module "state"
                           :serial t
-                          :components ((:file "store") (:file "journal") (:file "ref")
-                                       (:file "var") (:file "world")))
+                          :components ((:file "store") (:file "world")
+                                       (:file "ref") (:file "var")))
                  (:module "frame"
                           :serial t :pathname "editor/"
                           :components ((:file "frame")))
@@ -77,7 +81,8 @@
                                        (:file "minibuffer") (:file "isearch") (:file "file")
                                        (:file "target") (:file "repl") (:file "overwrite")
                                        (:file "window") (:file "help") (:file "debugger")
-                                       (:file "evaluate") (:file "commands") (:file "session")))
+                                       (:file "evaluate") (:file "commands")
+                                       (:file "supervisor") (:file "session")))
                  (:file "desktop")
                  (:file "wm")
                  (:file "frontend")
@@ -97,7 +102,7 @@
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")
                              (:file "isearch") (:file "repl") (:file "liveness") (:file "async")
-                             (:file "journal")
+                             (:file "supervision")
                              (:file "term") (:file "wm")
                              (:file "source")
                              (:file "packages") (:file "editor") (:file "agent")

@@ -1,5 +1,6 @@
 (defpackage #:pine.editor.minibuffer
   (:use #:cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export #:cancel-prompt #:completing-read #:completing-read-active-p #:completion #:completion-next #:completion-prev #:completion-update-input #:ensure-minibuffer #:file-completion-active-p #:file-name-accept #:file-name-complete #:minibuffer-abort #:minibuffer-accept #:minibuffer-active-p #:minibuffer-changed #:minibuffer-complete #:minibuffer-history-next #:minibuffer-history-prev #:minibuffer-set-text #:minibuffer-text #:prompt #:read-file-name))
 
 (in-package #:pine.editor.minibuffer)
@@ -311,7 +312,7 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
 (defun %push-prompt-history (client input)
   (let ((h (pine.editor.frame:prompt-history client)))
     (when (and h (stringp input) (plusp (length input)))
-      (pine.state.store:store-push h input :max 200))))
+      (world:push h input :max 200))))
 
 (defun minibuffer-history-prev ()
   "M-p: replace the input with the previous (older) history entry."
@@ -320,7 +321,7 @@ restore to the minibuffer itself -- fall back to the focused window's buffer."
     (when h
       (unless (pine.editor.frame:prompt-history-items client)
         (setf (pine.editor.frame:prompt-history-items client)
-              (pine.state.store:store-items h :limit 200)))
+              (world:items h :limit 200)))
       (let* ((items (pine.editor.frame:prompt-history-items client))
              (pos (pine.editor.frame:prompt-history-pos client))
              (next (if pos (1+ pos) 0)))

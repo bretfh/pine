@@ -1,11 +1,14 @@
 (defpackage #:pine.editor.file
   (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:read-file
    #:write-file
    #:find-file
    #:save-current-buffer
-   #:record-places))
+   #:record-places
+   #:buffer-entry
+   #:restore-buffer))
 
 (in-package #:pine.editor.file)
 
@@ -45,8 +48,8 @@ restore can reopen buffers in bulk."
          (content (if exists (or (read-file expanded) "") "")))
     (when (string= name "") (setf name namestring))
     (let ((buf (pine.editor.frame:make-buffer name :content content))
-          (place (and exists (pine.state.store:store (list :place namestring)))))
-      (pine.state.store:store-push :recent-files namestring :unique t :max 100)
+          (place (and exists (world:value (list :place namestring)))))
+      (world:push :recent-files namestring :unique t :max 100)
       (sento.actor:tell buf (list :set-local :key :pathname :value namestring))
       (if place
           (multiple-value-bind (l c)
@@ -63,7 +66,7 @@ restore can reopen buffers in bulk."
     (sento.actor:tell (pine.editor.frame:renderer (pine.editor.frame:current-client))
                       (list :switch-buffer :buffer buf :name name))
     (pine.ui.render:subscribe-to-buffer buf)
-    (pine.state.world:save-world :buffers)
+    (world:save :buffers)
     (pine.editor.echo:message
             (if exists (format nil "~a" namestring)
                 (format nil "(new file) ~a" namestring)))
@@ -79,7 +82,7 @@ restore can reopen buffers in bulk."
             (progn
               (write-file path text)
               (record-place buf path)
-              (pine.state.store:store-push :recent-files path :unique t :max 100)
+              (world:push :recent-files path :unique t :max 100)
               (pine.editor.echo:message (format nil "wrote ~a" path)))
             (pine.editor.echo:message "no file path for this buffer"))))))
 
@@ -88,7 +91,7 @@ restore can reopen buffers in bulk."
   (ignore-errors
    (multiple-value-bind (line col) (pine.editor.ask:ask buf :point)
      (when line
-       (setf (pine.state.store:store (list :place path)) (list line col))))))
+       (setf (world:value (list :place path)) (list line col))))))
 
 (defun record-places ()
   "Store the point of every file-backed buffer. The shutdown sweep."
@@ -101,30 +104,73 @@ restore can reopen buffers in bulk."
                        (path (pine.text.buffer:buffer-local state :pathname)))
                   (when path (record-place buf path))))))))
 
-;;;; World: the open files. Computed from the live buffer table at save time
-;;;; and reopened from disk on restore, so a stale entry can only show less,
-;;;; never corrupt.
+;;;; World: the buffers. Computed from the live table at save time. A buffer
+;;;; with a file is its path, reopened from disk; one without is its text,
+;;;; because there is nowhere else for that to come back from. A stale entry can
+;;;; only show less, never corrupt.
 
-(defun %file-buffers ()
-  "((PATH MODE-KW) ...) for every live buffer backed by a file."
+(defun tool-buffer-p (name)
+  "True for a buffer that is a view of live state rather than text someone
+wrote: the debugger, the supervisor, help. Its content means nothing without
+the state it was projected from, so it does not persist."
+  (and (stringp name)
+       (plusp (length name))
+       (char= #\* (char name 0))))
+
+(defun %buffer-entry (buf)
+  "BUF as a readable plist: (:path P :mode M) with a file, else
+(:name N :mode M :content C). NIL for a buffer with nothing worth keeping."
+  (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 2))
+         (mode (pine.text.buffer:buffer-local state :mode))
+         (name (pine.text.buffer:buffer-local state :name ""))
+         (path (pine.text.buffer:buffer-local state :pathname)))
+    (cond
+      (path (list :path path :mode mode))
+      ((tool-buffer-p name) nil)
+      ((pine.text.buffer:buffer-local state :layout-builder) nil)
+      (t (let ((content (pine.text.buffer:state->string state)))
+           (when (plusp (length content))
+             (list :name name :mode mode :content content)))))))
+
+(defun %buffers ()
   (let ((srv pine.core.server:*server*) (acc nil))
     (when (and srv (pine.core.server:buffer-table srv))
-      (loop for buf being the hash-values of (pine.core.server:buffer-table srv)
-            do (ignore-errors
-                (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 2))
-                       (path (pine.text.buffer:buffer-local state :pathname)))
-                  (when path
-                    (push (list path (pine.text.buffer:buffer-local state :mode))
-                          acc))))))
+      (loop :for buf :being :the :hash-values :of (pine.core.server:buffer-table srv)
+            :do (pine.core.eval:attempt
+                 (lambda () (let ((entry (%buffer-entry buf)))
+                              (when entry (push entry acc))))
+                 "saving a buffer to the world")))
     acc))
 
-(pine.state.world:register :buffers
-  :save #'%file-buffers
-  :restore (lambda (entries)
-             (loop for (path mode) in entries
-                   when (probe-file path)
-                     do (ignore-errors
-                         (let ((buf (%open-file path)))
-                           (when (and mode
-                                      (not (eq mode (pine.editor.mode:mode-for-file path))))
-                             (pine.editor.frame:set-buffer-mode buf mode)))))))
+(defun %restore-entry (entry)
+  (destructuring-bind (&key path name mode content) entry
+    (cond
+      ((and path (probe-file path))
+       (let ((buf (%open-file path)))
+         (when (and mode (not (eq mode (pine.editor.mode:mode-for-file path))))
+           (pine.editor.frame:set-buffer-mode buf mode))
+         buf))
+      (name
+       (let ((buf (pine.editor.frame:make-buffer name :content (or content ""))))
+         (when mode (pine.editor.frame:set-buffer-mode buf mode))
+         buf)))))
+
+(defun buffer-entry (name)
+  "The saved entry for the buffer called NAME, or nil. What a buffer whose
+thread died is rebuilt from."
+  (find-if (lambda (entry)
+             (let ((path (getf entry :path)))
+               (equal name (if path (file-namestring path) (getf entry :name)))))
+           (world:value :buffers)))
+
+(defun restore-buffer (name)
+  "Rebuild the buffer called NAME from the world. Answers the actor, or nil."
+  (let ((entry (buffer-entry name)))
+    (when entry (%restore-entry entry))))
+
+(defmethod world:snapshot ((name (eql :buffers))) (%buffers))
+
+(defmethod world:revive ((name (eql :buffers)) entries)
+  (dolist (entry entries)
+    (pine.core.eval:attempt (lambda () (%restore-entry entry))
+                            "restoring a buffer from the world")))

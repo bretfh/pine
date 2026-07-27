@@ -1,5 +1,6 @@
 (defpackage #:pine
   (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:main
    #:start-daemon
@@ -28,12 +29,12 @@
     (pine.text.buffer:start-buffer-registry srv)
     (pine.core.attach:start-attach-listener srv)
     (start-control srv)
-    (pine.state.store:open-store)
+    (world:open)
     (pine.core.hooks:add-shutdown-hook :store
       (lambda ()
-        (pine.state.world:save-world)
+        (world:save)
         (pine.editor.file:record-places)
-        (pine.state.store:close-store)))
+        (world:close)))
     (load-init)
     (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads
     (format t "pine daemon ready [remoting ~a]~%" (pine.core.server:remoting-port srv))

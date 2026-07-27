@@ -1,5 +1,6 @@
 (defpackage #:pine.editor.repl
   (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:+buffer-name+
    #:start-repl
@@ -27,7 +28,7 @@ from then on, so a second repl or an agent's can prompt differently.")
 
 (defun repl-history ()
   "The forms submitted to a repl, most recent first."
-  (pine.state.store:store-items :repl-history))
+  (world:items :repl-history))
 
 (defun start-repl ()
   "Open the repl buffer with a prompt on its last line, and answer it."
@@ -54,7 +55,7 @@ from then on, so a second repl or an agent's can prompt differently.")
 
 (defun repl-eval (buffer state input)
   "Evaluate INPUT for BUFFER: a shell command when it starts with !, else lisp."
-  (pine.state.store:store-push :repl-history input :unique nil :max 500)
+  (world:push :repl-history input :unique nil :max 500)
   (if (and (plusp (length input)) (char= (char input 0) #\!))
       (run-shell-command buffer state (subseq input 1))
       (eval-lisp buffer state input)))

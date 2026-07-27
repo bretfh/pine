@@ -1,7 +1,9 @@
 (defpackage #:pine.editor.commands
   (:use :cl #:pine.editor.kill-ring #:pine.editor.isearch)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:start-editor
+   #:revive-buffer #:register-supervision
    ;; the kill ring, which this package uses and the editor's commands drive
    #:kill-ring-push
    #:kill-ring-top
@@ -25,11 +27,11 @@
     (setf pine.editor.command:*terminal-handler* #'pine.term:terminal-dispatch)
     (setf pine.core.eval:*on-debug* #'pine.editor.debugger:eval-error
           pine.core.eval:*attended-p* #'pine.editor.debugger:attended-eval-p)
-    ;; buffers become durable here: the writer commits edits off every actor's
-    ;; thread, and compaction asks this layer for a buffer's content because the
-    ;; store cannot reach up into it
-    (setf pine.state.journal:*snapshot-source* #'pine.editor.frame:snapshot-source)
-    (pine.state.journal:start-journal-writer)
+    ;; one loop watches everything the kernel keeps alive: buffers whose thread
+    ;; died come back from the store, agents respawn, and what is parked or dead
+    ;; is visible in *supervisor* rather than only in a log
+    (register-supervision server)
+    (pine.core.supervision:start-supervisor)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
@@ -37,6 +39,97 @@
       (pine.editor.frame:set-buffer-mode buf :text-mode)
       (pine.editor.ask:tell buf :set-local :key :package :value :pine-user))
     (pine.ui.render:relayout)))
+
+(defun revive-buffer (name)
+  "Replace the buffer NAME, whose thread is gone, with a fresh actor carrying
+what the world last knew of it.
+
+An actor that parked in the debugger recovers on its own; one whose thread died
+cannot, and leaving it in the table means every message to that buffer
+disappears into a mailbox nobody is reading."
+  (let* ((c (pine.editor.frame:current-client))
+         (srv (pine.editor.frame:server-of c))
+         (table (pine.text.buffer:buffer-table srv))
+         (dead (gethash name table)))
+    (when dead
+      (remhash name table)
+      ;; the actor context still holds the dead actor's name, and it refuses a
+      ;; second actor with the same one, so the corpse is stopped before its
+      ;; replacement is made. Its parser goes with it, as in kill-buffer.
+      (let ((sys (pine.core.server:actor-system srv)))
+        (let ((parser (ignore-errors
+                       (pine.core.actor:ask dead '(:get-parser) :timeout 1))))
+          (when (and parser (typep parser 'sento.actor:actor))
+            (ignore-errors (sento.actor-context:stop sys parser))))
+        (ignore-errors (sento.actor-context:stop sys dead)))
+      (let ((actor (or (pine.editor.file:restore-buffer name)
+                       (pine.editor.frame:make-buffer name))))
+        ;; whoever was painting it holds a ref to a corpse, so the windows on
+        ;; this buffer are pointed at the new actor and resubscribed
+        (dolist (w (pine.editor.frame:windows c))
+          (when (equal name (pine.text.window:window-name w))
+            (setf (pine.text.window:buffer-ref w) actor)))
+        (when (eq dead (pine.editor.frame:current-buffer c))
+          (setf (pine.editor.frame:current-buffer c) actor))
+        (pine.ui.render:subscribe-to-buffer actor)
+        actor))))
+
+(defun register-supervision (server)
+  "Tell the kernel how to look at this daemon's buffers and agents, and how to
+bring one back. The loop owns when and in what order; these own what a healthy
+one looks like.
+
+A parked buffer reports :parked, never :dead, so a fault someone is reading is
+never repaired out from under them."
+  (pine.core.supervision:register-check
+   :buffer
+   (lambda ()
+     (let (found)
+       (maphash (lambda (name actor)
+                  (push (list name (if (pine.text.buffer:actor-dead-p actor) :dead :running)
+                              :label name)
+                        found))
+                (pine.text.buffer:buffer-table server))
+       found))
+   #'revive-buffer)
+  (pine.core.supervision:register-check
+   :agent
+   (lambda ()
+     (mapcar (lambda (info)
+               (let ((name (pine.core.actor:agent-info-name info)))
+                 (list name
+                       (if (pine.core.actor:agent-alive-p server name) :running :dead)
+                       :label (format nil "~a (~(~a~))" name
+                                      (pine.core.actor:agent-info-type info)))))
+             (ignore-errors (pine.core.actor:list-agents server))))
+   (lambda (name) (pine.core.actor:spawn-agent server name)))
+  (pine.core.supervision:register-check
+   :eval
+   (lambda ()
+     (mapcar (lambda (job)
+               (list (format nil "~a-~a" (getf job :agent) (getf job :id))
+                     (if (eq :error (getf job :status)) :parked :running)
+                     :detail job
+                     :label (format nil "~a ~a: ~a" (getf job :agent) (getf job :status)
+                                    (or (getf job :form) (getf job :condition) ""))))
+             (pine.core.jobs:list-jobs)))
+   ;; an eval is not something the kernel restarts; it is aborted by hand
+   (lambda (key) (declare (ignore key)) nil))
+  (pine.core.supervision:register-check
+   :world
+   (lambda ()
+     (mapcar (lambda (entry)
+               (let ((path (getf entry :path)))
+                 (list (or path (getf entry :name)) :running
+                       :detail entry
+                       :label (if path
+                                  (format nil "~a" path)
+                                  (format nil "~a  ~d character~:p"
+                                          (getf entry :name)
+                                          (length (getf entry :content "")))))))
+             (world:value :buffers)))
+   (lambda (key) (declare (ignore key)) nil)))
+
 
 ;;;; Commands
 
@@ -153,7 +246,7 @@
         (error (c) (pine.editor.echo:message (format nil "error: ~a" c)))))
     :history :files))
 (defcmd "find-recent" ()
-  (let ((items (pine.state.store:store-items :recent-files)))
+  (let ((items (world:items :recent-files)))
     (if items
         (pine.editor.minibuffer:completing-read "Recent: " items
           (lambda (path)

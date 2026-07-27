@@ -1,5 +1,6 @@
 (defpackage #:pine.editor.kill-ring
   (:use #:cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export #:*last-yank* #:copy-region-cmd #:kill-line-cmd #:kill-region-cmd #:kill-ring-push #:kill-ring-top #:kill-words-cmd #:set-mark #:yank-cmd #:yank-pop-cmd))
 
 (in-package #:pine.editor.kill-ring)
@@ -20,7 +21,7 @@
               (setf (pine.editor.frame:kill-ring client)
                     (subseq (pine.editor.frame:kill-ring client) 0
                             (pine.editor.frame:kill-ring-max client))))))
-      (setf (pine.state.store:store :kill-ring) (pine.editor.frame:kill-ring client)))))
+      (setf (world:value :kill-ring) (pine.editor.frame:kill-ring client)))))
 
 (defun kill-ring-top ()
   (first (pine.editor.frame:kill-ring (pine.editor.frame:current-client))))

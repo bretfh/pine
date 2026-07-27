@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -338,7 +338,8 @@ buffer, a buffer being restored -- has no viewport and gets the whole file."
           (if (null ps)
               (values nil nil)
               (let ((viewport (buffer-local new-state :viewport)))
-                (pine.ts.runtime:parse-lines! ps (lines new-state) :edit edit)
+                (pine.ts.runtime:parse-lines! ps (lines new-state)
+                                              :edit edit :viewport viewport)
                 (values (if viewport
                             (pine.ts.highlight:parse-highlights
                              ps
@@ -410,20 +411,30 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
          (new-col (if (<= point-col cur-indent) target (+ point-col (- target cur-indent)))))
     (values s2 (max 0 new-col))))
 
-(defun buffer-id ()
-  "A fresh buffer identity: unique here and, with the host in it, elsewhere."
-  (format nil "~a-~36r-~36r" (machine-instance) (get-universal-time) (random (expt 2 48))))
+(defun actor-dead-p (actor)
+  "True when ACTOR will never take another message: stopped, or its own thread
+gone.
+
+A buffer parked in the debugger is not dead. Its thread is alive and waiting for
+a restart, and mistaking that for death would throw away the fault someone is
+looking at, so this asks about the thread rather than about whether it answers."
+  (or (not (sento.actor-cell:running-p actor))
+      (let ((box (sento.actor-cell:msgbox actor)))
+        (and (typep box 'sento.messageb:message-box/bt)
+             (let ((thread (slot-value box 'sento.messageb::queue-thread)))
+               ;; sento's mailbox threads are bordeaux-threads-2 objects, which
+               ;; the v1 predicates this codebase otherwise uses will not take
+               (and thread (not (bordeaux-threads-2:thread-alive-p thread))))))))
 
 (defun make-buffer-actor (system name &key (content "") id)
   "A buffer as an actor on SYSTEM: NAME holding CONTENT, dispatching each message
 through its mode on a thread of its own.
 
-ID names the buffer durably, for the store and for another pine following it; a
-restored buffer is created with the id it had."
+ID names the buffer across images: another pine, or an agent, addresses this
+buffer by it. The layer that creates buffers mints it; this one is below
+persistence and does not."
   (let ((initial (move-mark (set-meta (set-meta (load-content content) :name name)
-                                      ;; identity that outlives the name and does
-                                      ;; not collide with another host's scratch
-                                      :id (or id (buffer-id)))
+                                      :id id)
                             :point 0 0)))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)

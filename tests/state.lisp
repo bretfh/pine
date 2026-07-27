@@ -6,59 +6,59 @@
 
 (test lisp-values-round-trip-through-the-store
   (with-fixture memory-store ()
-    (setf (pine.state.store:store :n) 42
-          (pine.state.store:store :f) 0.5
-          (pine.state.store:store :s) "hi"
-          (pine.state.store:store :list) '(1 (2 3) "four" :five)
-          (pine.state.store:store (list :place "/x")) '(3 7))
-    (is (= 42 (pine.state.store:store :n)))
-    (is (= 0.5 (pine.state.store:store :f)))
-    (is (string= "hi" (pine.state.store:store :s)))
-    (is (equal '(1 (2 3) "four" :five) (pine.state.store:store :list)))
-    (is (equal '(3 7) (pine.state.store:store (list :place "/x"))))
-    (is (eq :none (pine.state.store:store :missing :none)))))
+    (setf (pine.state.world:value :n) 42
+          (pine.state.world:value :f) 0.5
+          (pine.state.world:value :s) "hi"
+          (pine.state.world:value :list) '(1 (2 3) "four" :five)
+          (pine.state.world:value (list :place "/x")) '(3 7))
+    (is (= 42 (pine.state.world:value :n)))
+    (is (= 0.5 (pine.state.world:value :f)))
+    (is (string= "hi" (pine.state.world:value :s)))
+    (is (equal '(1 (2 3) "four" :five) (pine.state.world:value :list)))
+    (is (equal '(3 7) (pine.state.world:value (list :place "/x"))))
+    (is (eq :none (pine.state.world:value :missing :none)))))
 
 (test an-unstorable-value-fails-at-the-write
   (with-fixture memory-store ()
     (signals error
-      (setf (pine.state.store:store :fn) (lambda () nil)))))
+      (setf (pine.state.world:value :fn) (lambda () nil)))))
 
 (test forgetting-a-key-drops-it
   (with-fixture memory-store ()
-    (setf (pine.state.store:store :gone) 1)
-    (pine.state.store:store-forget :gone)
-    (is (null (pine.state.store:store :gone)))))
+    (setf (pine.state.world:value :gone) 1)
+    (pine.state.world:forget :gone)
+    (is (null (pine.state.world:value :gone)))))
 
 (test a-bounded-list-keeps-order-uniqueness-and-its-cap
   (with-fixture memory-store ()
-    (dolist (v '("a" "b" "c")) (pine.state.store:store-push :log v))
-    (is (equal '("c" "b" "a") (pine.state.store:store-items :log)))
-    (pine.state.store:store-push :log "a")
-    (is (equal '("a" "c" "b") (pine.state.store:store-items :log)))
-    (is (equal '("a" "c") (pine.state.store:store-items :log :limit 2)))
-    (dotimes (i 5) (pine.state.store:store-push :trim (format nil "t~d" i) :max 3))
-    (is (equal '("t4" "t3" "t2") (pine.state.store:store-items :trim)))
-    (pine.state.store:store-clear :log)
-    (is (null (pine.state.store:store-items :log)))))
+    (dolist (v '("a" "b" "c")) (pine.state.world:push :log v))
+    (is (equal '("c" "b" "a") (pine.state.world:items :log)))
+    (pine.state.world:push :log "a")
+    (is (equal '("a" "c" "b") (pine.state.world:items :log)))
+    (is (equal '("a" "c") (pine.state.world:items :log :limit 2)))
+    (dotimes (i 5) (pine.state.world:push :trim (format nil "t~d" i) :max 3))
+    (is (equal '("t4" "t3" "t2") (pine.state.world:items :trim)))
+    (pine.state.world:clear :log)
+    (is (null (pine.state.world:items :log)))))
 
 (test a-list-may-hold-duplicates-when-asked
   (with-fixture memory-store ()
-    (dotimes (i 3) (pine.state.store:store-push :dup "x" :unique nil))
-    (is (equal '("x" "x" "x") (pine.state.store:store-items :dup)))))
+    (dotimes (i 3) (pine.state.world:push :dup "x" :unique nil))
+    (is (equal '("x" "x" "x") (pine.state.world:items :dup)))))
 
 (test a-fresh-connection-sees-what-was-written
   (let ((path "/tmp/pine-test-reopen.db"))
     (open-fresh-store path)
-    (setf (pine.state.store:store :kept) "yes")
-    (pine.state.store:open-store path)
-    (is (string= "yes" (pine.state.store:store :kept)))
+    (setf (pine.state.world:value :kept) "yes")
+    (pine.state.world:open path)
+    (is (string= "yes" (pine.state.world:value :kept)))
     (open-fresh-store)))
 
 (test a-closed-store-answers-defaults-and-swallows-no-writes
-  (pine.state.store:close-store)
-  (is (eq :closed (pine.state.store:store :anything :closed)))
-  (finishes (setf (pine.state.store:store :anything) "zz"))
-  (is (null (pine.state.store:store-items :anything)))
+  (pine.state.world:close)
+  (is (eq :closed (pine.state.world:value :anything :closed)))
+  (finishes (setf (pine.state.world:value :anything) "zz"))
+  (is (null (pine.state.world:items :anything)))
   (open-fresh-store))
 
 ;;;; refs
@@ -122,7 +122,7 @@
   (with-fixture memory-store ()
     (let ((ref (pine.state.ref:make-ref :name :probe-persist :value 0 :persist t)))
       (pine.state.ref:set-ref ref 9))
-    (is (= 9 (pine.state.store:store '(:ref :probe-persist))))
+    (is (= 9 (pine.state.world:value '(:ref :probe-persist))))
     (remhash :probe-persist pine.state.ref::*refs*)
     (is (= 9 (pine.state.ref:deref
               (pine.state.ref:make-ref :name :probe-persist :value 0 :persist t))))))
@@ -169,80 +169,122 @@
   (with-fixture memory-store ()
     (pine.state.var:defonce :probe-var-persist :default 1 :persist t)
     (setf (pine.state.var:var :probe-var-persist) 5)
-    (is (= 5 (pine.state.store:store '(:var :probe-var-persist))))
+    (is (= 5 (pine.state.world:value '(:var :probe-var-persist))))
     (remhash :probe-var-persist pine.state.var::*variables*)
     (pine.state.var:defonce :probe-var-persist :default 1 :persist t)
     (is (= 5 (pine.state.var:var :probe-var-persist)))))
 
 ;;;; the world
+;;;;
+;;;; A subsystem answers SNAPSHOT and REVIVE for its own name; the method is
+;;;; the registration. These probes hold their halves in specials, so a test
+;;;; says what each does without defining methods while it runs.
 
-(defun forget-world-contributors (&rest names)
-  (setf pine.state.world::*contributors*
-        (remove-if (lambda (entry) (member (first entry) names))
-                   pine.state.world::*contributors*)))
+(defvar *probe-save* nil "Plist name -> thunk answering that name's snapshot.")
+(defvar *probe-revive* nil "Plist name -> function of the data.")
+
+(defmacro define-probe (name)
+  `(progn
+     (defmethod pine.state.world:snapshot ((n (eql ,name)))
+       (let ((fn (getf *probe-save* ,name))) (and fn (funcall fn))))
+     (defmethod pine.state.world:revive ((n (eql ,name)) data)
+       (let ((fn (getf *probe-revive* ,name))) (when fn (funcall fn data))))))
+
+(define-probe :probe-a)
+(define-probe :probe-b)
+(define-probe :probe-bad)
+(define-probe :probe-after)
+(define-probe :probe-nil)
+(define-probe :probe-gate)
+
+(defmacro with-probes ((&rest specs) &body body)
+  "Bind each (NAME :save FN :restore FN) for the extent of BODY."
+  `(let ((*probe-save* (list ,@(loop :for (name . plist) :in specs
+                                     :append (list name (getf plist :save)))))
+         (*probe-revive* (list ,@(loop :for (name . plist) :in specs
+                                       :append (list name (getf plist :restore))))))
+     ,@body))
 
 (test the-world-saves-and-restores-through-the-store
   (with-fixture memory-store ()
-    (setf (pine.state.var:var :world-save) t)
+    (setf pine.state.world:*enabled* t)
     (let ((a nil) (b nil))
       (unwind-protect
-           (progn
-             (pine.state.world:register :probe-a
-               :save (lambda () :init) :restore (lambda (d) (setf a d)))
-             (pine.state.world:register :probe-b
-               :save (lambda () '(1 2)) :restore (lambda (d) (setf b d)))
-             (pine.state.world:save-world)
-             (is (eq :init (pine.state.store:store '(:world :probe-a))))
-             (pine.state.world:restore-world)
+           (with-probes ((:probe-a :save (lambda () :init)
+                                   :restore (lambda (d) (setf a d)))
+                         (:probe-b :save (lambda () (list 1 2))
+                                   :restore (lambda (d) (setf b d))))
+             (pine.state.world:save :probe-a)
+             (pine.state.world:save :probe-b)
+             (is (eq :init (pine.state.world:value :probe-a)))
+             (pine.state.world:restore :probe-a)
+             (pine.state.world:restore :probe-b)
              (is (eq :init a))
              (is (equal '(1 2) b)))
-        (forget-world-contributors :probe-a :probe-b)
-        (setf (pine.state.var:var :world-save) nil)))))
+        (setf pine.state.world:*enabled* nil)))))
 
 (test a-throwing-restore-skips-without-breaking-the-rest
   (with-fixture memory-store ()
-    (setf (pine.state.var:var :world-save) t)
+    (setf pine.state.world:*enabled* t)
     (let ((reached nil))
       (unwind-protect
            (let ((*error-output* (make-broadcast-stream)))
-             (pine.state.world:register :probe-bad
-               :save (lambda () :x)
-               :restore (lambda (d) (declare (ignore d)) (error "boom")))
-             (pine.state.world:register :probe-after
-               :save (lambda () :y) :restore (lambda (d) (setf reached d)))
-             (pine.state.world:save-world)
-             (pine.state.world:restore-world)
-             (is (eq :y reached)))
-        (forget-world-contributors :probe-bad :probe-after)
-        (setf (pine.state.var:var :world-save) nil)))))
+             (with-probes ((:probe-bad :save (lambda () :x)
+                                       :restore (lambda (d) (declare (ignore d))
+                                                  (error "boom")))
+                           (:probe-after :save (lambda () :y)
+                                         :restore (lambda (d) (setf reached d))))
+               (pine.state.world:save)
+               (pine.state.world:restore)
+               (is (eq :y reached))))
+        (setf pine.state.world:*enabled* nil)))))
 
 (test a-nil-save-keeps-the-previous-entry
   (with-fixture memory-store ()
-    (setf (pine.state.var:var :world-save) t)
+    (setf pine.state.world:*enabled* t)
     (unwind-protect
          (progn
-           (pine.state.world:register :probe-nil :save (lambda () :first))
-           (pine.state.world:save-world :probe-nil)
-           (pine.state.world:register :probe-nil :save (lambda () nil))
-           (pine.state.world:save-world :probe-nil)
-           (is (eq :first (pine.state.store:store '(:world :probe-nil)))))
-      (forget-world-contributors :probe-nil)
-      (setf (pine.state.var:var :world-save) nil))))
+           (with-probes ((:probe-nil :save (lambda () :first)))
+             (pine.state.world:save :probe-nil))
+           (with-probes ((:probe-nil :save (lambda () nil)))
+             (pine.state.world:save :probe-nil))
+           (is (eq :first (pine.state.world:value :probe-nil))))
+      (setf pine.state.world:*enabled* nil))))
 
 (test the-world-gate-stops-both-directions
   (with-fixture memory-store ()
     (let ((restored :untouched))
       (unwind-protect
-           (progn
-             (setf (pine.state.var:var :world-save) t)
-             (pine.state.world:register :probe-gate
-               :save (lambda () :fresh)
-               :restore (lambda (d) (setf restored d)))
-             (setf (pine.state.store:store '(:world :probe-gate)) :stale)
-             (setf (pine.state.var:var :world-save) nil)
-             (pine.state.world:save-world :probe-gate)
-             (is (eq :stale (pine.state.store:store '(:world :probe-gate))))
-             (pine.state.world:restore-world :probe-gate)
+           (with-probes ((:probe-gate :save (lambda () :fresh)
+                                      :restore (lambda (d) (setf restored d))))
+             (setf pine.state.world:*enabled* t)
+             (setf (pine.state.world:value :probe-gate) :stale)
+             (setf pine.state.world:*enabled* nil)
+             (pine.state.world:save :probe-gate)
+             (is (eq :stale (pine.state.world:value :probe-gate)))
+             (pine.state.world:restore :probe-gate)
              (is (eq :untouched restored)))
-        (forget-world-contributors :probe-gate)
-        (setf (pine.state.var:var :world-save) nil)))))
+        (setf pine.state.world:*enabled* nil)))))
+
+;;;; Which buffers the world keeps. A tool buffer is a projection of live state
+;;;; -- the debugger's frames, the supervisor's table -- so its text means
+;;;; nothing on the next start, and restoring it puts a stale view on screen
+;;;; over state that no longer exists.
+
+(test the-world-keeps-written-buffers-and-drops-tool-buffers
+  (with-fixture substrate ()
+    (let ((pine.state.world:*enabled* t))
+      (pine.editor.frame::make-buffer "notes")
+      (sento.actor:tell (pine.editor.frame::buffer "notes")
+                        (list :replace-content :content "kept"))
+      (pine.editor.frame::make-buffer "*debugger*")
+      (sento.actor:tell (pine.editor.frame::buffer "*debugger*")
+                        (list :replace-content :content "dropped"))
+      (sleep 0.3)
+      (pine.state.world:save :buffers)
+      (let ((names (mapcar (lambda (e) (getf e :name))
+                           (pine.state.world:value :buffers))))
+        (is (member "notes" names :test #'equal)
+            "a buffer someone wrote in should be kept, saw ~s" names)
+        (is (not (member "*debugger*" names :test #'equal))
+            "a tool buffer should not be kept, saw ~s" names)))))

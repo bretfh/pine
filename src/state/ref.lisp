@@ -1,5 +1,6 @@
 (defpackage #:pine.state.ref
   (:use #:cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:export #:ref #:make-ref #:defref #:find-ref #:ref-name
            #:ref-value #:deref #:set-ref #:update-ref
            #:ref-subscribe #:ref-unsubscribe
@@ -30,7 +31,7 @@
 (defun make-ref (&key value (test #'equal) name persist)
   (let ((r (%make-ref :value value :test test :name name :persist persist)))
     (when (and persist name)
-      (let ((stored (pine.state.store:store (list :ref name) '%absent)))
+      (let ((stored (world:value (list :ref name) '%absent)))
         (unless (eq stored '%absent)
           (setf (ref-value r) stored))))
     (when name (setf (gethash name *refs*) r))
@@ -77,7 +78,7 @@ safe; subscribers run outside the lock. Returns non-nil if it changed."
               subs (copy-list (ref-subscribers ref)))))
     (when changed
       (when (and (ref-persist ref) (ref-name ref))
-        (setf (pine.state.store:store (list :ref (ref-name ref))) new))
+        (setf (world:value (list :ref (ref-name ref))) new))
       ;; one subscriber's failure is its own: the rest still see the change
       (dolist (s subs)
         (pine.core.eval:attempt (cdr s)

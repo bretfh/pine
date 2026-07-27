@@ -1,6 +1,7 @@
 (defpackage :pine.user
   (:nicknames :pine-user)
   (:use :cl)
+  (:local-nicknames (#:world #:pine.state.world))
   (:import-from :pine.ui.build
                 #:column #:row #:centerbox #:label #:icon #:button #:ring
                 #:gap #:rule #:rows #:choice)
@@ -15,9 +16,7 @@
                 #:current-buffer-mode #:set-buffer-mode)
   (:import-from :pine.editor.ask #:ask #:tell)
   (:import-from :pine.state.ref #:defref #:ref)
-  (:import-from :pine.state.store #:store #:store-push #:store-items #:store-clear)
   (:import-from :pine.state.var #:defonce)
-  (:import-from :pine.state.world #:register)
   (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
                 #:split #:lines #:starts-with #:first-number #:read-int-file
                 #:json)
@@ -54,8 +53,6 @@
    ;; writing a source: the stream/poll primitives and their helpers
    #:start-stream #:start-poll
    #:split #:lines #:starts-with #:first-number #:read-int-file #:json
-   ;; persistence
-   #:store #:store-push #:store-items #:store-clear #:register
    ;; style rules
    #:defrules
    ;; behavior
