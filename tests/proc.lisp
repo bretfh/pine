@@ -175,10 +175,13 @@ rather than deciding what it meant."
 ;;;; an image without one to start
 
 (test asking-for-an-image-with-no-way-to-start-one-says-so
+  "A start that does not take is something about the process, so it reads
+where the process is read rather than being raised as a fault in pine."
   (with-proc ()
     (pine.ns:write /proc/probe {:image "pine editor"})
     (pine.proc:tick)
-    (is (eq :failed (pine.ns:read /proc/probe/state)))))
+    (is (eq :failed (pine.ns:read /proc/probe/state)))
+    (is (search "image" (pine.ns:read /proc/probe/error)))))
 
 ;;;; the pass runs on the actor system's timer
 

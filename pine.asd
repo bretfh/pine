@@ -63,6 +63,10 @@
                  (:module "text"
                           :serial t
                           :components ((:file "buffer") (:file "window")))
+                 ;; /buf, once there are buffers to serve
+                 (:module "provider-buf"
+                          :serial t :pathname "provider/"
+                          :components ((:file "buf")))
                  ;; store is the file, world is the API over it, and everything
                  ;; that persists (refs, editor variables, and the contributors
                  ;; above) goes through world, so world loads under them.
@@ -116,7 +120,8 @@
                              (:file "data") (:file "path") (:file "ns")
                              (:file "keep") (:file "self") (:file "err")
                              (:file "proc") (:file "host") (:file "provider")
-                             (:file "buffer") (:file "vt") (:file "index") (:file "ts")
+                             (:file "buffer") (:file "buf")
+                             (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")
                              (:file "isearch") (:file "repl") (:file "liveness") (:file "async")

@@ -35,6 +35,7 @@
   (attempts 0)
   (due 0)                           ; not before this universal time
   (exit nil)                        ; what it said on its way out
+  (error nil)                       ; why the last start did not take
   (wanted nil))                     ; whether it is meant to be up
 
 (defvar *table* (make-hash-table :test 'equal))
@@ -190,19 +191,27 @@ above can act on it rather than pine guessing."
        (when (and (not (%alive-p entry))
                   (>= (get-universal-time) (entry-due entry)))
          (setf (entry-due entry) (+ (get-universal-time) every))
-         (pine.err:attempt (lambda () (%start entry))
-                           (format nil "starting ~a" (entry-name entry))))))
+         (%try entry))))
     ((%alive-p entry) (setf (entry-state entry) :running
-                            (entry-attempts entry) 0))
+                            (entry-attempts entry) 0
+                            (entry-error entry) nil))
     ((>= (get-universal-time) (entry-due entry))
      (incf (entry-attempts entry))
      (%backoff entry)
-     (multiple-value-bind (started condition)
-         (pine.err:attempt (lambda () (%start entry))
-                           (format nil "starting ~a" (entry-name entry)))
-       (unless (and started (null condition))
-         (setf (entry-state entry) :failed))))
+     (unless (%try entry) (setf (entry-state entry) :failed)))
     (t (setf (entry-state entry) :failed))))
+
+(defun %try (entry)
+  "Start ENTRY, and answer whether it took.
+
+A start that does not take is something about the process -- a command that is
+not there, a permission -- so it is recorded where the process is read rather
+than raised as a fault in pine."
+  (handler-case (progn (setf (entry-error entry) nil) (%start entry))
+    (error (c)
+      (setf (entry-error entry) (princ-to-string c)
+            (entry-state entry) :failed)
+      nil)))
 
 (defun tick ()
   "One pass over the table. Answers the names it touched."
@@ -265,6 +274,9 @@ above can act on it rather than pine guessing."
    (/proc/?name/exit
     {:read (pine.data:fn [] (let ((e (%entry name))) (and e (entry-exit e))))
      :doc "what it said on its way out, last time it stopped"})
+   (/proc/?name/error
+    {:read (pine.data:fn [] (let ((e (%entry name))) (and e (entry-error e))))
+     :doc "why the last start did not take"})
    (/proc/?name
     {:read (pine.data:fn [] (let ((e (%entry name))) (and e (entry-declaration e))))
      :write (pine.data:fn [v] (%declare name v))
