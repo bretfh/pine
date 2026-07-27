@@ -71,7 +71,7 @@ path back into the namespace, and keep it written through from here on.
         (sqlite:execute-non-query db "
 CREATE TABLE IF NOT EXISTS held (
   path TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0,
-  value TEXT NOT NULL, at INTEGER NOT NULL,
+  value TEXT NOT NULL, at INTEGER NOT NULL, bound INTEGER,
   PRIMARY KEY (path, seq))")
         (sqlite:execute-non-query db "
 CREATE TABLE IF NOT EXISTS changes (
@@ -121,9 +121,9 @@ CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
                     (sqlite:execute-non-query
                      *db* "DELETE FROM held WHERE path = ?" text)
                     (sqlite:execute-non-query
-                     *db* "INSERT OR REPLACE INTO held (path, seq, value, at)
-                           VALUES (?, 0, ?, ?)"
-                     text (%out new) (%now)))
+                     *db* "INSERT OR REPLACE INTO held (path, seq, value, at, bound)
+                           VALUES (?, 0, ?, ?, ?)"
+                     text (%out new) (%now) (ns:setting path :max)))
                 (sqlite:execute-non-query
                  *db* "INSERT INTO changes (path, old, new, at) VALUES (?, ?, ?, ?)"
                  text (and old (%out old)) (and new (%out new)) (%now))
@@ -135,11 +135,15 @@ wins over the one a config seeded, which is what makes it durable."
   (let ((rows (bordeaux-threads:with-lock-held (*lock*)
                 (when *db*
                   (sqlite:execute-to-list
-                   *db* "SELECT path, value FROM held ORDER BY path")))))
+                   *db* "SELECT path, value, bound FROM held ORDER BY path")))))
     (let ((*restoring* t))
       (dolist (row rows)
-        (destructuring-bind (text value) row
-          (ns:write (p:parse text) (%in value)))))
+        (destructuring-bind (text value bound) row
+          (let ((path (p:parse text)))
+            ;; the whole ring comes back as it stood, so it is set rather than
+            ;; pushed; the bound is put back beside it
+            (ns:write path (%in value))
+            (when bound (setf (ns:setting path :max) bound))))))
     (length rows)))
 
 ;;;; History, as paths

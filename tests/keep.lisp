@@ -130,7 +130,8 @@
     (dolist (word '("one" "two" "three"))
       (pine.ns:write /kill word :max 2))
     (pine.keep:restore)
-    (is (fset:equal? ["three" "two"] (pine.ns:read /kill)))))
+    (is (string= "three" (pine.ns:read /kill)))
+    (is (= 2 (fset:size (pine.ns:read /kill/*))))))
 
 ;;;; nothing open
 

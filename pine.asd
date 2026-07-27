@@ -27,6 +27,7 @@
                  (:file "keep")
                  (:file "self")
                  (:file "err")
+                 (:file "proc")
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "actor") (:file "agent")
@@ -107,6 +108,7 @@
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
                              (:file "keep") (:file "self") (:file "err")
+                             (:file "proc")
                              (:file "buffer") (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
                              (:file "state") (:file "keys") (:file "completion")

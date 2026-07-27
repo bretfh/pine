@@ -168,7 +168,10 @@ to come back as the same object."
   (with-ns
     (dolist (word '("one" "two" "three"))
       (pine.ns:write /kill word :max 2))
-    (is (fset:equal? ["three" "two"] (pine.ns:read /kill)))))
+    (is (string= "three" (pine.ns:read /kill)) "a ring reads as its newest")
+    (is (= 2 (fset:size (pine.ns:read /kill/*))) "and each entry has a place")
+    (is (string= "three" (pine.ns:read /kill/0)))
+    (is (string= "two" (pine.ns:read /kill/1)))))
 
 ;;;; re-evaluation
 

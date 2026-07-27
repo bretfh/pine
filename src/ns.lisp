@@ -204,18 +204,38 @@ the segment it matched. HERE answers the path being served."
 
 (defvar *reads* nil "Where the paths read while computing a value collect.")
 
+(defun %ringp (path)
+  (and (setting path :max) t))
+
+(defun %index (text)
+  (multiple-value-bind (n used) (parse-integer text :junk-allowed t)
+    (and n (= used (length text)) n)))
+
 (defun %read-one (path &optional default)
   (let ((space *space*))
     (when *reads* (push path (cdr *reads*)))
     (multiple-value-bind (value served) (%served-read space path)
-      (if served
-          (if (null value) default value)
-          (let ((value (%get (space-root space) (p:keys path))))
-            (if (null value) default value))))))
+      (cond
+        (served (if (null value) default value))
+        ;; a ring reads as its newest entry, and each entry has a place
+        ((%ringp path)
+         (let ((seq (%get (space-root space) (p:keys path))))
+           (if (fset:seq? seq) (fset:lookup seq 0) default)))
+        ((and (not (p:rootp path)) (%ringp (p:parent path)) (%index (p:leaf path)))
+         (let ((seq (%get (space-root space) (p:keys (p:parent path)))))
+           (if (fset:seq? seq)
+               (or (fset:lookup seq (%index (p:leaf path))) default)
+               default)))
+        (t (let ((value (%get (space-root space) (p:keys path))))
+             (if (null value) default value)))))))
 
 (defun %children (space path)
   "PATH's children: the tree's, or the provider's."
   (let ((node (%get (space-root space) (p:keys path))))
+    (when (and (%ringp path) (fset:seq? node))
+      (return-from %children
+        (loop :for i :from 0 :below (fset:size node)
+              :collect (p:child path i))))
     (or (when (fset:map? node)
           (let ((acc nil))
             (fset:do-map (k v node)
@@ -236,6 +256,11 @@ A pattern only ever matches what exists, so a walk asks this before it counts
 a candidate."
   (or (p:rootp path)
       (not (null (%get (space-root space) (p:keys path))))
+      (and (not (p:rootp path))
+           (%ringp (p:parent path))
+           (let ((n (%index (p:leaf path)))
+                 (seq (%get (space-root space) (p:keys (p:parent path)))))
+             (and n (fset:seq? seq) (< n (fset:size seq)))))
       (nth-value 1 (%served-read space path))
       (not (null (%children space path)))))
 
@@ -329,6 +354,17 @@ not something anyone should have to remember to ask for.")
     (if (and options (fset:domain-contains? options key))
         (fset:lookup options key)
         default)))
+
+(defun (setf setting) (value path key)
+  "Say that PATH carries the write option KEY, without writing the path. The
+store uses it to give a restored ring back its bound."
+  (let ((space *space*))
+    (setf (space-settings space)
+          (fset:with (space-settings space) path
+                     (fset:with (or (fset:lookup (space-settings space) path)
+                                    (fset:empty-map))
+                                key value))))
+  value)
 
 (defun %remember (path options)
   "Keep the write options that outlive the write itself."
