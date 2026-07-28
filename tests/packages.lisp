@@ -152,3 +152,66 @@ the interface and the convention disagree."
     (is (plusp (length order)))
     (loop :for path :across order
           :do (is (probe-file path) "~a is named by a system but missing" path))))
+
+;;;; The tree against the doc
+;;;;
+;;;; doc/new-api.org says what a buffer is. A leaf the code keeps under one and
+;;;; the doc does not name is drift, and drift is how an API becomes a port of
+;;;; whatever was there before.
+
+(defun %doc-text ()
+  (uiop:read-file-string
+   (merge-pathnames "doc/new-api.org" (asdf:system-source-directory :pine))))
+
+(defun %doc-paths (under)
+  "Every path the doc names under UNDER, as text. A path is written =/like/this=."
+  (let ((text (%doc-text))
+        (found nil)
+        (i 0))
+    (loop :for start = (search (concatenate 'string "=" under) text :start2 i)
+          :while start
+          :for end = (position #\= text :start (1+ start))
+          :while end
+          :do (push (subseq text (1+ start) end) found)
+              (setf i (1+ end)))
+    (remove-duplicates (nreverse found) :test #'string=)))
+
+(defun %doc-buffer-leaves ()
+  "The leaf of every /buf/?name/... path the doc's table names."
+  (let ((prefix "/buf/?name/"))
+    (remove-duplicates
+     (loop :for path :in (%doc-paths "/buf/")
+           :when (and (> (length path) (length prefix))
+                      (string= prefix path :end2 (length prefix)))
+             :collect (let ((rest (subseq path (length prefix))))
+                        (subseq rest 0 (or (position #\/ rest) (length rest)))))
+     :test #'string=)))
+
+(defparameter +leaves-with-another-home-coming+ '("tick")
+  "Leaves still under a buffer that the doc does not name. The tick belongs to
+what the buffer and its parser say to each other and leaves with the buffer
+actor; nothing else is allowed to join it.")
+
+(test the-doc-names-a-buffers-leaves
+  (let ((named (%doc-buffer-leaves)))
+    (dolist (leaf '("text" "line" "face" "point" "mark" "file" "mode" "minor"
+                    "modified" "tree" "view"))
+      (is (member leaf named :test #'string=)
+          "the doc no longer names /buf/?name/~a, but the code serves it" leaf))))
+
+(test a-buffer-carries-only-the-leaves-the-doc-names
+  (pine.ns:with-space ()
+    (pine.buf:mount)
+    (pine.ns:write (pine.buf:at "probe" :text) "hello")
+    (pine.ns:write (pine.buf:at "probe" :text) (fset:seq :insert "!"))
+    (pine.ns:write (pine.buf:at "probe" :mode) :text)
+    (let* ((named (append (%doc-buffer-leaves) +leaves-with-another-home-coming+))
+           (leaves (let ((acc nil))
+                     (fset:do-map (key value (pine.ns:read (pine.buf:at "probe")))
+                       (declare (ignore value))
+                       (push (pine.path:name key) acc))
+                     acc))
+           (extra (remove-if (lambda (leaf) (member leaf named :test #'string=))
+                             leaves)))
+      (is (null extra)
+          "a buffer carries leaves the doc does not name: ~{~a~^ ~}" extra))))
