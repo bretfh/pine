@@ -95,8 +95,24 @@ agent's."
         (append-output buffer prompt (format nil "shell error: ~a" c))))))
 
 (defun append-output (buffer prompt text)
-  (when buffer
-    (sento.actor:tell buffer (list :append-with-prompt :text text :prompt prompt))))
+  "Put TEXT at the end of BUFFER and start a fresh PROMPT line under it.
+
+Computed here and written, because that is what the repl does with its own
+buffer: a mode's behaviour is a function from what is there to what should be."
+  (let ((name (pine.text.buffer:name-of buffer)))
+    (when name
+      (let* ((state (pine.text.buffer:from-paths name))
+             (last-line (1- (pine.text.buffer:line-count-of state)))
+             (last-col (length (pine.text.buffer:line-at state last-line)))
+             (s1 (pine.text.buffer:move-mark state :point last-line last-col))
+             (s2 (pine.text.buffer:insert-newline s1 last-line last-col))
+             (s3 (pine.text.buffer:insert-string s2 (1+ last-line) 0 text))
+             (line (1- (pine.text.buffer:line-count-of s3)))
+             (col (length (pine.text.buffer:line-at s3 line)))
+             (s4 (pine.text.buffer:insert-newline s3 line col)))
+        (pine.ns:write
+         (pine.text.buffer:to-paths
+          name (pine.text.buffer:insert-string s4 (1+ line) 0 prompt)))))))
 
 (defun repl-submit (buffer state)
   "Evaluate the input on STATE's last line, appending the result to BUFFER.
@@ -109,8 +125,11 @@ buffer actor binds *client*."
     (when (plusp (length input))
       (repl-eval buffer state input))))
 
-(defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:repl-mode) self tag plist)
-  (declare (ignore plist))
-  (case tag
-    (:newline (repl-submit self (first sento.actor:*state*)))
-    (t (call-next-method))))
+;;;; What repl-mode overrides, as a path. Return is not a newline here: it is
+;;;; the submit, and the only thing this mode claims.
+
+(pine.ns:write (pine.path:parse "/mode/repl-mode/on/newline")
+               (lambda (name)
+                 (repl-submit (pine.editor.frame:buffer name)
+                              (pine.text.buffer:from-paths name))
+                 (fset:empty-map)))

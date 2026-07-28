@@ -54,9 +54,7 @@
           (when sl
             (let ((text (pine.text.buffer:region-string state sl sc el ec)))
               (kill-ring-push text)
-              (sento.actor:tell buf
-                (list :delete-region :start-line sl :start-col sc
-                      :end-line el :end-col ec)))))))))
+              (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))))))))
 
 (defun kill-line-cmd ()
   (let* ((client (pine.editor.frame:current-client))
@@ -70,9 +68,7 @@
         (if (< pc len)
             (let ((text (subseq line pc)))
               (kill-ring-push text)
-              (sento.actor:tell buf
-                (list :delete-region :start-line pl :start-col pc
-                      :end-line pl :end-col len)))
+              (pine.text.buffer:edit buf (fset:seq :delete (fset:seq pl pc) (fset:seq pl len))))
             (when (< (1+ pl) (pine.text.buffer:line-count snap))
               (kill-ring-push (string #\Newline))
               (sento.actor:tell buf
@@ -96,9 +92,7 @@ point-after-move :word lands, into the kill ring."
                   (values pl pc tl tc))
             (unless (and (= sl el) (= sc ec))
               (kill-ring-push (pine.text.buffer:region-string state sl sc el ec))
-              (sento.actor:tell buf
-                (list :delete-region :start-line sl :start-col sc
-                      :end-line el :end-col ec)))))))))
+              (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))))))))
 
 ;;;; The most recent yank, so yank-pop can delete it before inserting the next
 ;;;; ring entry: (buffer start-line start-col inserted-text).
@@ -119,7 +113,7 @@ point-after-move :word lands, into the kill ring."
         (when snap
           (setf *last-yank* (list buf (pine.text.buffer:point-line snap)
                                   (pine.text.buffer:point-col snap) text))))
-      (sento.actor:tell buf (list :insert :text text)))))
+      (pine.text.buffer:edit buf (fset:seq :insert text)))))
 
 (defun yank-pop-cmd ()
   (let ((client (pine.editor.frame:current-client)))
@@ -133,9 +127,8 @@ point-after-move :word lands, into the kill ring."
       (destructuring-bind (buf sl sc old-text) *last-yank*
         (let ((new-text (kill-ring-top)))
           (multiple-value-bind (el ec) (%advance-pos sl sc old-text)
-            (sento.actor:tell buf (list :delete-region :start-line sl :start-col sc
-                                        :end-line el :end-col ec)))
-          (sento.actor:tell buf (list :insert :text new-text))
+            (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))
+          (pine.text.buffer:edit buf (fset:seq :insert new-text))
           (setf *last-yank* (list buf sl sc new-text)))))))
 
 (defun copy-region-cmd ()

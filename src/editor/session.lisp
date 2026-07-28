@@ -321,7 +321,7 @@ shutdown sweep can save it."
 
 (defmethod world:revive ((name (eql :scratch)) text)
   (let ((buf (pine.editor.frame:make-buffer "scratch")))
-    (sento.actor:tell buf (list :replace-content :content text))))
+    (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of buf) :text) text)))
 
 (defvar *world-restored* nil
   "The buffer/scratch restore runs once per daemon life, at the first editor

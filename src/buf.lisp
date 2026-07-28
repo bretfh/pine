@@ -72,36 +72,56 @@ change does not move, so this is the whole of applying an edit."
                                           (or (fset:lookup marks :point-charpos) 0)))
               ((at name :tick) (b:tick state)))))
 
-(defun %edit (name fn)
-  "Apply FN, a state-to-state function, to NAME."
-  (ns:write (%landing name (funcall fn (state name)))))
+(defun %edit (name fn &optional descriptor)
+  "Apply FN, a state-to-state function, to NAME.
+
+DESCRIPTOR says what the edit did -- at which line, how many lines became how
+many, and by how many bytes -- so the parser can shift its tree instead of
+rebuilding it. It carries the lines it produced, so it can only be used for the
+edit that produced them. Overlays describe the text as it was, so they go."
+  (let* ((next (funcall fn (state name)))
+         (landing (%landing name next)))
+    (ns:write (fset:with (fset:with landing (at name :overlays) nil)
+                         (at name :edit)
+                         (when descriptor
+                           (fset:with descriptor :lines (b:lines next)))))))
 
 ;;;; The verbs
 
 (defun %insert (name text)
-  (%edit name (lambda (s)
-                (multiple-value-bind (line col) (%point name)
-                  (b:insert-string s line col text)))))
+  (multiple-value-bind (line col) (%point name)
+    (%edit name
+           (lambda (s) (b:insert-string s line col text))
+           ;; pasted text carries its own newlines, so one line can become
+           ;; several
+           {:at line :old 1 :new (1+ (count #\Newline text))
+            :bytes (pine.ts.index:string-bytes text)})))
 
 (defun %newline (name)
-  (%edit name (lambda (s)
-                (multiple-value-bind (line col) (%point name)
-                  (b:insert-newline s line col)))))
+  (multiple-value-bind (line col) (%point name)
+    (%edit name
+           (lambda (s) (b:insert-newline s line col))
+           {:at line :old 1 :new 2 :bytes 1})))
 
 (defun %backspace (name)
   (multiple-value-bind (line col) (%point name)
     (cond
       ((plusp col)
-       (%edit name (lambda (s)
-                     (let ((deleted (b:delete-char s line (1- col))))
-                       (b:move-mark deleted :point line (1- col))))))
+       (%edit name
+              (lambda (s)
+                (b:move-mark (b:delete-char s line (1- col)) :point line (1- col)))
+              {:at line :old 1 :new 1 :bytes -1}))
       ((plusp line)
-       (let* ((s (state name))
-              (previous (length (b:line-at s (1- line)))))
-         (ns:write (%landing name (b:move-mark (b:delete-char s (1- line) previous)
-                                               :point (1- line) previous))))))))
+       (let ((previous (length (b:line-at (state name) (1- line)))))
+         (%edit name
+                (lambda (s)
+                  (b:move-mark (b:delete-char s (1- line) previous)
+                               :point (1- line) previous))
+                {:at (1- line) :old 2 :new 1 :bytes -1}))))))
 
 (defun %delete (name from to)
+  "Delete the region FROM..TO. No descriptor: a region spans lines and the
+parser rebuilds rather than being told a shift that cannot express it."
   (%edit name (lambda (s)
                 (b:delete-region s (fset:lookup from 0) (fset:lookup from 1)
                                  (fset:lookup to 0) (fset:lookup to 1)))))
@@ -141,7 +161,18 @@ stack anywhere."
         (dolist (change rows)
           (when (eql commit (fset:lookup change :commit))
             (ns:write (fset:lookup change :path)
-                      (fset:lookup change :old))))))))
+                      (fset:lookup change :old))))
+        ;; what was put back, so a redo knows which edit to apply again
+        (ns:write (at name :undone) commit :keep nil)))))
+
+(defun %redo (name)
+  "Apply again the edit the last undo put back."
+  (let ((commit (ns:read (at name :undone))))
+    (when commit
+      (dolist (change (%changes-under name))
+        (when (eql commit (fset:lookup change :commit))
+          (ns:write (fset:lookup change :path) (fset:lookup change :new))))
+      (ns:write (at name :undone) nil :keep nil))))
 
 ;;;; The file it visits
 
@@ -194,6 +225,21 @@ and comes back by being read again."
                                      (<= from (first run) to))
                                    (fset:convert 'list face))))))
 
+;;;; The verbs, through whatever mode claims them
+;;;;
+;;;; A minor mode's :on entry answers first, then the major mode's and its
+;;;; parents', then the built-in below. A handler answers a map of writes, which
+;;;; is applied as one transaction; nothing is asked, so this is safe from
+;;;; wherever the verb was written.
+
+(defun %verb (name verb args fallback)
+  (let ((handler (pine.mode:handler name verb)))
+    (if handler
+        (let ((answer (apply handler name args)))
+          (when (fset:map? answer) (ns:write answer))
+          nil)
+        (funcall fallback))))
+
 ;;;; The paths
 
 (defun provider ()
@@ -218,11 +264,17 @@ and comes back by being read again."
               (ns:write (fset:map ((at name :lines)
                                    (fset:convert 'fset:seq (b:split-lines v)))
                                   ((at name :point) (fset:seq 0 0)))))
-     :verbs {:insert (pine.data:fn [text] (%insert name text))
-             :newline (pine.data:fn [] (%newline name))
-             :backspace (pine.data:fn [] (%backspace name))
+     :verbs {:insert (pine.data:fn [text]
+                       (%verb name :insert (list text)
+                              (lambda () (%insert name text))))
+             :newline (pine.data:fn []
+                        (%verb name :newline nil (lambda () (%newline name))))
+             :backspace (pine.data:fn []
+                          (%verb name :backspace nil
+                                 (lambda () (%backspace name))))
              :delete (pine.data:fn [from to] (%delete name from to))
              :undo (pine.data:fn [] (%undo name))
+             :redo (pine.data:fn [] (%redo name))
              :save (pine.data:fn [] (%save name))
              :visit (pine.data:fn [file] (%visit name file))}
      :doc "the whole string; [:insert TEXT] [:newline] [:backspace] [:undo]"})

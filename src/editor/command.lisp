@@ -145,7 +145,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
       (when buf
         (let ((n (prefix-numeric-value (pine.editor.frame:prefix-arg client))))
           (dotimes (i (max 1 n))
-            (sento.actor:tell buf (list :insert :text (pine.editor.key:key-sym key)))))))))
+            (pine.text.buffer:edit buf (fset:seq :insert (pine.editor.key:key-sym key)))))))))
 
 (register-command
  (make-instance 'command :name "self-insert-command"

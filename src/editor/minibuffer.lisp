@@ -255,7 +255,7 @@ and file-name descent."
   (let* ((c (pine.editor.frame:current-client))
          (mb (pine.editor.frame:minibuffer-buffer c)))
     (when mb
-      (sento.actor:tell mb (list :replace-content :content text))
+      (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of mb) :text) text)
       (pine.text.buffer:put-point mb 0 (length text)))))
 
 (defun minibuffer-changed (client snap)
@@ -285,7 +285,7 @@ vanishes (the frozen-buffer wedge)."
     (pine.editor.frame:set-buffer-mode mb :text-mode)
     (ignore-errors (pine.editor.frame:enable-minor-mode client :minibuffer-mode))
     (pine.editor.echo:show-prompt prompt-text)
-    (sento.actor:tell mb (list :replace-content :content initial))
+    (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of mb) :text) initial)
     (pine.text.buffer:put-point mb 0 (length initial))
     mb))
 

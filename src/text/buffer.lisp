@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:at #:band #:name-of #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:at #:band #:name-of #:edit #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -473,6 +473,12 @@ holds -- the minibuffer, a detached view -- is still a buffer."
 has landed when it answers."
   (let ((name (name-of x)))
     (when name (pine.ns:write (at name key) value))))
+
+(defun edit (x verb)
+  "Give VERB to X's text: [:insert TEXT] [:newline] [:backspace] and the rest.
+An edit is a write, so it has landed when this answers."
+  (let ((name (name-of x)))
+    (when name (pine.ns:write (at name :text) verb))))
 
 (defun put-point (x line col)
   "Put X's point at LINE and COL."

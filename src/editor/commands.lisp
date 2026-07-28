@@ -86,20 +86,20 @@ disappears into a mailbox nobody is reading."
       (pine.text.buffer:put buf :mark nil)))
   (pine.editor.minibuffer:cancel-prompt))
 (defcmd "backspace" ()
-  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (sento.actor:tell buf '(:backspace)))))
+  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.text.buffer:edit buf (fset:seq :backspace)))))
 (defcmd "delete-char" ()
   (let ((buf (pine.editor.motion:cur-buffer)) (snap (pine.editor.motion:focused-snap)))
     (when (and buf snap)
-      (sento.actor:tell buf
-        (list :delete-region
-              :start-line (pine.text.buffer:point-line snap) :start-col (pine.text.buffer:point-col snap)
-              :end-line (pine.text.buffer:point-line snap) :end-col (1+ (pine.text.buffer:point-col snap)))))))
+      (let ((line (pine.text.buffer:point-line snap))
+            (col (pine.text.buffer:point-col snap)))
+        (pine.text.buffer:edit
+         buf (fset:seq :delete (fset:seq line col) (fset:seq line (1+ col))))))))
 (defcmd "newline" ()
-  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.editor.ask:tell buf :newline))))
+  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.text.buffer:edit buf (fset:seq :newline)))))
 (defcmd "undo" ()
-  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (sento.actor:tell buf '(:undo)))))
+  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.text.buffer:edit buf (fset:seq :undo)))))
 (defcmd "redo" ()
-  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (sento.actor:tell buf '(:redo)))))
+  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.text.buffer:edit buf (fset:seq :redo)))))
 
 (defcmd "forward-char" (n)  (:interactive :number) (pine.editor.motion:move-chars n))
 (defcmd "backward-char" (n) (:interactive :number) (pine.editor.motion:move-chars (- n)))
