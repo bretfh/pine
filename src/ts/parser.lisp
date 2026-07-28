@@ -36,7 +36,8 @@ describes the difference."
 No viewport means no window is showing this buffer, and highlights exist only to
 be painted, so there is nothing to compute. Walking anyway is how a background
 buffer of a million lines produced millions of tuples nobody would ever look at.
-A window claims the buffer by sending :set-viewport, and that asks for a parse."
+A window claims the buffer by saying what it is showing, and that asks for a
+parse."
   (when viewport
     (pine.ts.highlight:parse-highlights ps :from-line (car viewport)
                                            :to-line (cdr viewport))))
@@ -51,7 +52,7 @@ Every answer is a write. The parser never replies to an ask, so nothing can be
 waiting on it, and what it computed is a place anyone can read rather than a
 message one caller receives."
   (destructuring-bind (tag &key lines edit tick viewport name from to kind line col
-                       &allow-other-keys)
+                       answer &allow-other-keys)
       msg
     (declare (ignorable tick))
     (case tag
@@ -59,11 +60,13 @@ message one caller receives."
        (%ensure-tree ps lines edit viewport)
        (pine.ns:write (%at name "face") (%highlights ps viewport) :keep nil))
       (:indent
+       ;; where a line should sit is not a place, so it goes back to whoever
+       ;; asked rather than through a path of its own
        (%ensure-tree ps lines edit viewport)
        (let ((targets (loop :for l :from from :to to
                             :for target = (pine.ts.highlight:parse-indent ps l)
                             :when target :collect (cons l target))))
-         (pine.ns:write (%at name "indent") targets :keep nil)))
+         (when answer (funcall answer targets))))
       (:motion
        (%ensure-tree ps lines edit viewport)
        (multiple-value-bind (l c) (pine.ts.runtime:parse-motion ps kind line col)

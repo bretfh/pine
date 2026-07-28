@@ -434,7 +434,7 @@ the walks below take a cons. This is the one place the two meet."
         ((fset:seq? viewport) (cons (fset:lookup viewport 0) (fset:lookup viewport 1)))
         (t viewport)))
 
-(defparameter +structural+ (quote (:text :point :tick :face :indent))
+(defparameter +structural+ (quote (:text :point :tick :face :modified))
   "The leaves this bridge carries itself, or that the parser owns. Everything
 else under a buffer is a local and rides the meta.")
 

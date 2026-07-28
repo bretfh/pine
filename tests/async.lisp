@@ -15,8 +15,7 @@ live session.")
 (defun lisp-buffer (name content)
   (let ((buf (pine.editor.frame::make-buffer name :content content)))
     (pine.editor.frame::set-buffer-mode buf :lisp-mode)
-    (sento.actor:tell buf (list :set-viewport :from (car +test-viewport+)
-                                              :to (cdr +test-viewport+)))
+    (pine.buf:showing name (fset:seq (car +test-viewport+) (cdr +test-viewport+)))
     (sleep 0.2)
     buf))
 
@@ -33,7 +32,7 @@ snapshot only carries highlights when one is built for a subscriber."
     (format nil "buffer=~a parser=~a mode=~s viewport=~s grammar=~a"
             (if buf "yes" "no") (if parser "yes" "no")
             (and snap (pine.text.buffer:buffer-local snap :mode))
-            (and snap (pine.text.buffer:buffer-local snap :viewport))
+            (pine.buf:asked (pine.text.buffer:name-of buf) :viewport)
             (if (pine.ts.runtime:ensure-language
                  (pine.core.server:ts-runtime *server*) :commonlisp)
                 "loaded" "MISSING"))))

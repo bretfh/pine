@@ -122,19 +122,6 @@ carry over like :replace-content; point is clamped into the new content."
                (setf sento.actor:*state* (list new undo redo subs hl pstate))
                nil))
 ))
-      ;; The lines some window is showing, as (FROM . TO). Highlighting walks
-      ;; this range instead of the file. Sent by the renderer, which is the only
-      ;; thing that knows a window's scroll position; a range equal to the one
-      ;; already held is dropped, so the notify this triggers cannot come back
-      ;; round as another viewport message.
-      (:set-viewport
-       (let ((new-range (cons (getf plist :from) (getf plist :to)))
-             (old-range (pine.text.buffer:buffer-local state :viewport)))
-         (unless (equal new-range old-range)
-           ;; scrolling asks for the new window's colours; what is on screen
-           ;; stays until they arrive
-           (let ((new (pine.text.buffer:set-meta state :viewport new-range)))
-             (setf sento.actor:*state* (list new undo redo subs hl pstate))))))
       (:set-var
        (let* ((vars (or (fset:@ (pine.text.buffer:meta state) :vars) (fset:empty-map)))
               (new (pine.text.buffer:set-meta
@@ -217,20 +204,17 @@ carry over like :replace-content; point is clamped into the new content."
     ;; driving one shifts a tree that has already moved.
     (macrolet ((commit (new-state &key edit)
                  `(let* ((descriptor ,edit)
-                         (with-edit (pine.text.buffer:set-meta
-                                     (pine.text.buffer:set-meta ,new-state
-                                                                :overlays nil)
-                                     :edit nil))
-                         (new (if descriptor
-                                  (pine.text.buffer:set-meta
-                                   with-edit :edit
-                                   (fset:map (:at (first descriptor))
-                                             (:old (second descriptor))
-                                             (:new (third descriptor))
-                                             (:bytes (fourth descriptor))
-                                             (:lines (pine.text.buffer:lines
-                                                      with-edit))))
-                                  with-edit))
+                         (new (pine.text.buffer:set-meta ,new-state :overlays nil))
+                         (ignored (setf (pine.buf:asked
+                                         (pine.text.buffer:buffer-local new :name "")
+                                         :edit)
+                                        (when descriptor
+                                          (fset:map (:at (first descriptor))
+                                                    (:old (second descriptor))
+                                                    (:new (third descriptor))
+                                                    (:bytes (fourth descriptor))
+                                                    (:lines (pine.text.buffer:lines
+                                                             new))))))
                          (hl2 (if descriptor
                                   (pine.text.buffer:shift-highlights
                                    hl (first descriptor)
@@ -238,7 +222,7 @@ carry over like :replace-content; point is clamped into the new content."
                                   hl))
                          (link (pine.text.buffer:ensure-parser
                                 new pstate (pine.text.buffer:buffer-local new :name ""))))
-                    (declare (ignorable link))
+                    (declare (ignorable link ignored))
                     (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 link))
                     nil)))
       (case tag
@@ -252,9 +236,9 @@ carry over like :replace-content; point is clamped into the new content."
                    ;; become several
                    :edit (list l 1 (1+ (count #\Newline text))
                                (pine.ts.index:string-bytes text)))))
-        ;; The newline lands now and the electric indent follows as a message:
-        ;; the line appears the moment it is typed however long the parse takes,
-        ;; and the parser answers by writing /buf/?name/indent.
+        ;; The newline lands now and the electric indent follows: the line
+        ;; appears the moment it is typed however long the parse takes, and the
+        ;; parser answers with the column when it has one.
         (:newline
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))
@@ -264,14 +248,11 @@ carry over like :replace-content; point is clamped into the new content."
                    :edit (list l 1 2 1))
            ;; the indent is asked for beside the lines it is about, so it
            ;; reaches the parser behind the parse it needs
-           (destructuring-bind (new undo2 redo2 subs2 hl2 link)
-               sento.actor:*state*
-             (setf sento.actor:*state*
-                   (list (pine.text.buffer:set-meta
-                          new :indent-request
-                          (fset:map (:from (1+ l)) (:to (1+ l))
-                                    (:lines (pine.text.buffer:lines new))))
-                         undo2 redo2 subs2 hl2 link)))))
+           (let ((new (first sento.actor:*state*)))
+             (setf (pine.buf:asked (pine.text.buffer:buffer-local new :name "")
+                                   :indent-request)
+                   (fset:map (:from (1+ l)) (:to (1+ l))
+                             (:lines (pine.text.buffer:lines new)))))))
         (:backspace
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))

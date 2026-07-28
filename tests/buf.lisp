@@ -255,7 +255,7 @@ anything called the parser. The colours land at /buf/?name/face."
       (unwind-protect
            (progn
              (pine.ns:write /buf/probe/mode :lisp)
-             (pine.ns:write /buf/probe/viewport [0 200])
+             (pine.buf:showing "probe" [0 200])
              (pine.ns:write /buf/probe/text ["(defun f (x) x)"])
              (is-true (wait-for (lambda () (pine.ns:read /buf/probe/face))
                                 :seconds 15)

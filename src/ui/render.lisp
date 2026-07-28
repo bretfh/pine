@@ -211,8 +211,9 @@ ignorant of windows."
                           (cons (min (car held) top) (max (cdr held) bottom))
                           (cons top bottom)))))))))
     (maphash (lambda (buffer range)
-               (pine.text.buffer:put buffer :viewport
-                                     (fset:seq (car range) (cdr range))))
+               (let ((name (pine.text.buffer:name-of buffer)))
+                 (when name
+                   (pine.buf:showing name (fset:seq (car range) (cdr range))))))
              ranges)))
 
 (defun arrange-editor-tree (client)

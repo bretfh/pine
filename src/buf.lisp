@@ -1,7 +1,8 @@
 (defpackage #:pine.buf
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text.buffer))
-  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop #:motion #:indent))
+  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop #:motion
+           #:indent #:showing #:asked #:forget #:band-of))
 
 (in-package #:pine.buf)
 (named-readtables:in-readtable pine.path:syntax)
@@ -35,6 +36,32 @@
 (defun at (name &rest leaf)
   "NAME's path, or the leaf under it."
   (apply #'p:path /buf name leaf))
+
+;;;; What a buffer and its parser say to each other is not a place. The edit
+;;;; descriptor, the indent a newline asked for and the range a window is
+;;;; showing are one side of a conversation, so they live here rather than
+;;;; under the buffer, and (read /buf/?name) is the buffer the doc describes.
+
+(defvar *asked* (sento.atomic:make-atomic-reference :value (fset:empty-map))
+  "Name to what has been asked about it.")
+
+(defun asked (name key)
+  (let ((m (fset:lookup (sento.atomic:atomic-get *asked*) name)))
+    (and m (fset:lookup m key))))
+
+(defun (setf asked) (value name key)
+  (sento.atomic:atomic-swap
+   *asked*
+   (lambda (m)
+     (let ((mine (or (fset:lookup m name) (fset:empty-map))))
+       (fset:with m name (if (null value)
+                             (fset:less mine key)
+                             (fset:with mine key value))))))
+  value)
+
+(defun forget (name)
+  "Forget what was asked about NAME. What a buffer going away does."
+  (sento.atomic:atomic-swap *asked* (lambda (m) (fset:less m name))))
 
 (defun names ()
   "Every buffer there is. /buf/current is the one that is current and not a
@@ -86,10 +113,11 @@ rebuilding it. It carries the lines it produced, so it can only be used for the
 edit that produced them. Overlays describe the text as it was, so they go."
   (let* ((next (funcall fn (state name)))
          (landing (%landing name next)))
-    (ns:write (fset:with (fset:with landing (at name :overlays) nil)
-                         (at name :edit)
-                         (when descriptor
-                           (fset:with descriptor :lines (b:lines next)))))))
+    ;; said before the lines move, because the lines moving is what wakes the
+    ;; parse, and it happens on this thread before the write answers
+    (setf (asked name :edit)
+          (when descriptor (fset:with descriptor :lines (b:lines next))))
+    (ns:write (fset:with landing (at name :overlays) nil))))
 
 ;;;; The verbs
 
@@ -111,13 +139,10 @@ newline is never waiting on tree-sitter."
   (multiple-value-bind (line col) (%point name)
     (let* ((next (b:insert-newline (state name) line col))
            (lines (b:lines next)))
-      (ns:write
-       (fset:with
-        (fset:with (fset:with (%landing name next) (at name :overlays) nil)
-                   (at name :edit)
-                   {:at line :old 1 :new 2 :bytes 1 :lines lines})
-        (at name :indent-request)
-        {:from (1+ line) :to (1+ line) :lines lines})))))
+      (setf (asked name :edit) {:at line :old 1 :new 2 :bytes 1 :lines lines}
+            (asked name :indent-request)
+            {:from (1+ line) :to (1+ line) :lines lines})
+      (ns:write (fset:with (%landing name next) (at name :overlays) nil)))))
 
 (defun %delete (name from to)
   "Delete the region FROM..TO, which is what a backspace is one character back.
@@ -161,10 +186,6 @@ moves its tree by the bytes that went rather than rebuilding it."
   "The write-map that reindents each (LINE . COLUMN) of TARGETS, or an empty
 one when every line already sits where it should.
 
-Answered rather than written, because this runs inside a watch: a handler
-answers a map and pine applies it as part of the same cascade, so what it
-changed goes on to wake whatever was watching that.
-
 Point rides its character: anchored as an offset past its line's first
 non-whitespace, which also lands it on the first non-whitespace when it sat
 inside the old indentation.
@@ -191,8 +212,8 @@ parse rebuilds."
         (fset:empty-map)
         (let* ((indent (b:line-indent-width (b:line-at next line)))
                (final (b:move-mark next :point line (+ indent tail))))
-          (fset:with (fset:with (%landing name final) (at name :overlays) nil)
-                     (at name :edit) nil)))))
+          (setf (asked name :edit) nil)
+          (fset:with (%landing name final) (at name :overlays) nil)))))
 
 ;;;; Undo has no stacks. The doc: undo of a paste and undo of a window split are
 ;;;; the same operation, because they are the same kind of thing. So an undo is
@@ -225,16 +246,16 @@ stack anywhere."
             (ns:write (fset:lookup change :path)
                       (fset:lookup change :old))))
         ;; what was put back, so a redo knows which edit to apply again
-        (ns:write (at name :undone) commit :keep nil)))))
+        (setf (asked name :undone) commit)))))
 
 (defun %redo (name)
   "Apply again the edit the last undo put back."
-  (let ((commit (ns:read (at name :undone))))
+  (let ((commit (asked name :undone)))
     (when commit
       (dolist (change (%changes-under name))
         (when (eql commit (fset:lookup change :commit))
           (ns:write (fset:lookup change :path) (fset:lookup change :new))))
-      (ns:write (at name :undone) nil :keep nil))))
+      (setf (asked name :undone) nil))))
 
 ;;;; What text is, on the way in and on the way out
 
@@ -445,14 +466,15 @@ that changed."
                 link)))))))
 
 (defun %for (name key lines)
-  "What NAME's KEY says about LINES, or NIL when it describes some other lines.
+  "What was asked about NAME under KEY, or NIL when it describes some other
+lines.
 
-An edit descriptor and an indent request are written in the same transaction as
-the lines they belong to, and they carry those lines, so identity is the whole
-of the check: the same object means it is that very edit."
-  (let ((asked (ns:read (at name key))))
-    (when (and asked (eq (fset:lookup asked :lines) lines))
-      asked)))
+An edit descriptor and an indent request are said just before the lines they
+belong to move, and they carry those lines, so identity is the whole of the
+check: the same object means it is that very edit."
+  (let ((about (asked name key)))
+    (when (and about (eq (fset:lookup about :lines) lines))
+      about)))
 
 (defun parser-of (name)
   "The actor parsing NAME, or NIL. /buf owns the parsers, so this is where
@@ -465,7 +487,12 @@ anything that has business with one asks."
   (let ((actor (parser-of name)))
     (when actor (sento.actor:tell actor '(:stop)))
     (sento.atomic:atomic-swap *parsers* (lambda (m) (fset:less m name)))
+    (forget name)
     actor))
+
+(defun band-of (name)
+  "The range a window said it is showing NAME over, as the parser wants it."
+  (b:band (asked name :viewport)))
 
 (defun motion (name kind)
   "Ask NAME's parser for a structural target of KIND from where point is.
@@ -478,14 +505,18 @@ lands the way any other move does."
         (sento.actor:tell actor
                           (list :motion :name name :kind kind :line line :col col
                                 :lines (or (ns:held (at name :text)) (fset:seq ""))
-                                :viewport (pine.text.buffer:band
-                                           (ns:read (at name :viewport)))))))))
+                                :viewport (band-of name)))))))
+
+(defun %reindent (name)
+  "How the parser answers an indent: with the lines it says should move, which
+this puts in. Not a place, so it goes back to whoever asked."
+  (lambda (targets) (ns:write (%indented name targets))))
 
 (defun indent (name &optional from to)
   "Indent the lines FROM through TO, defaulting to the line point is on.
 
-With a parser, it is asked for every target at once and the watch below applies
-what it said; without one, each line takes its previous line's indent."
+With a parser, it is asked for every target at once and applies what it says
+when it answers; without one, each line takes its previous line's indent."
   (let* ((current (state name))
          (snap (b:state->snapshot current))
          (count (b:line-count snap))
@@ -496,45 +527,61 @@ what it said; without one, each line takes its previous line's indent."
         (sento.actor:tell actor
                           (list :indent :name name :from first-line :to last-line
                                 :lines (b:lines current)
-                                :viewport (b:band (ns:read (at name :viewport)))))
+                                :viewport (band-of name)
+                                :answer (%reindent name)))
         (ns:write
          (%indented name
                     (loop :for line :from first-line :to last-line
                           :for target = (b:previous-line-indent current line)
                           :when target :collect (cons line target)))))))
 
-(defun %parse (name system runtime)
-  "Tell NAME's parser the lines as they stand, over the range a window said it
-is showing.
+(defun %tell-parse (name actor)
+  "Tell ACTOR the lines as they stand, over the range a window said it is
+showing.
 
-This is the only thing that drives a parse. Whoever edited wrote what it did at
-/buf/?name/edit in the same transaction as the lines, so the parser can shift
-its tree instead of rebuilding it, and an indent someone asked for goes into the
-same mailbox behind the parse it needs."
+Whoever edited said what it did just before the lines moved, so the parser can
+shift its tree instead of rebuilding it, and an indent someone asked for goes
+into the same mailbox behind the parse it needs."
+  (let* ((lines (or (ns:held (at name :text)) (fset:seq "")))
+         (band (band-of name))
+         (edit (%for name :edit lines))
+         (indent (%for name :indent-request lines)))
+    (sento.actor:tell
+     actor
+     (list :parse :name name :lines lines :viewport band
+           :tick (or (ns:read (at name :tick)) 0)
+           :edit (when edit
+                   (list (fset:lookup edit :at) (fset:lookup edit :old)
+                         (fset:lookup edit :new) (fset:lookup edit :bytes)))))
+    (when indent
+      (sento.actor:tell
+       actor
+       (list :indent :name name :lines lines :viewport band
+             :from (fset:lookup indent :from)
+             :to (fset:lookup indent :to)
+             :answer (%reindent name))))))
+
+(defun %parse (name system runtime)
+  "Parse NAME, starting its parser when it names a grammar and has none. This
+is the only thing that drives a parse."
   (let ((link (%link name system runtime)))
-    (when link
-      (let* ((actor (pine.ts.parser:link-actor link))
-             (lines (or (ns:held (at name :text)) (fset:seq "")))
-             (band (pine.text.buffer:band (ns:read (at name :viewport))))
-             (edit (%for name :edit lines))
-             (indent (%for name :indent-request lines)))
-        (sento.actor:tell
-         actor
-         (list :parse :name name :lines lines :viewport band
-               :tick (or (ns:read (at name :tick)) 0)
-               :edit (when edit
-                       (list (fset:lookup edit :at) (fset:lookup edit :old)
-                             (fset:lookup edit :new) (fset:lookup edit :bytes)))))
-        (when indent
-          (sento.actor:tell
-           actor
-           (list :indent :name name :lines lines :viewport band
-                 :from (fset:lookup indent :from)
-                 :to (fset:lookup indent :to))))))))
+    (when link (%tell-parse name (pine.ts.parser:link-actor link)))))
+
+(defun showing (name band)
+  "Say which lines a window is showing NAME over, as [from to].
+
+Highlights exist to be painted, so what is painted is what bounds the parse.
+That is why a background buffer of a million lines costs nothing: nobody read
+its faces, so nobody computed them."
+  (unless (fset:equal? band (asked name :viewport))
+    (setf (asked name :viewport) band)
+    (let ((actor (parser-of name)))
+      (when actor (%tell-parse name actor))))
+  band)
 
 (defun mount (&key system runtime)
   "Serve /buf. With SYSTEM and RUNTIME a buffer that names a grammar is parsed
-whenever its lines or its window's range move."
+whenever its text or its mode moves."
   (ns:write /buf (provider))
   (when (and system runtime)
     (ns:watch /buf/*/text
@@ -543,35 +590,22 @@ whenever its lines or its window's range move."
                 (%parse (p:leaf (p:parent (ns:here))) system runtime)
                 {})
               :as :buf-parse)
-    (ns:watch /buf/*/viewport
-              (pine.data:fn [v]
-                (declare (ignore v))
-                (%parse (p:leaf (p:parent (ns:here))) system runtime)
-                {})
-              :as :buf-band)
     (ns:watch /buf/*/mode
               (pine.data:fn [v]
                 (declare (ignore v))
                 (%parse (p:leaf (p:parent (ns:here))) system runtime)
                 {})
               :as :buf-mode))
-  ;; what the parser said the indentation should be, applied
-  (ns:watch /buf/*/indent
-            (pine.data:fn [targets]
-              (if targets
-                  (%indented (p:leaf (p:parent (ns:here))) targets)
-                  {}))
-            :as :buf-indent)
   nil)
 
 (defun unmount ()
   (ns:watch /buf/*/text nil :as :buf-parse)
-  (ns:watch /buf/*/viewport nil :as :buf-band)
   (ns:watch /buf/*/mode nil :as :buf-mode)
-  (ns:watch /buf/*/indent nil :as :buf-indent)
   (fset:do-map (name link (sento.atomic:atomic-get *parsers*))
     (declare (ignore name))
     (sento.actor:tell (pine.ts.parser:link-actor link) '(:stop)))
   (sento.atomic:atomic-swap *parsers* (lambda (m) (declare (ignore m))
                                         (fset:empty-map)))
+  (sento.atomic:atomic-swap *asked* (lambda (m) (declare (ignore m))
+                                      (fset:empty-map)))
   (ns:write /buf nil))
