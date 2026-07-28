@@ -9,6 +9,7 @@
    #:buffer-registry
    #:buffer-table
    #:ts-runtime
+   #:proc
    #:clients
    #:remoting-port
    #:start-server
@@ -62,6 +63,8 @@ frontend would attach to whichever daemon holds the default port.")
    (buffer-registry :initarg :buffer-registry :accessor buffer-registry :initform nil)
    (buffer-table    :initarg :buffer-table    :accessor buffer-table    :initform nil)
    (ts-runtime      :initarg :ts-runtime      :accessor ts-runtime      :initform nil)
+   ;; what /proc is mounted as, so shutdown can take it back off
+   (proc            :initarg :proc            :accessor proc            :initform nil)
    (clients         :initarg :clients         :accessor clients         :initform nil)
    (remoting-port   :initarg :remoting-port   :accessor remoting-port   :initform nil)))
 

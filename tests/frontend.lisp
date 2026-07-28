@@ -1,4 +1,5 @@
 (in-package :pine.test)
+(named-readtables:in-readtable pine.path:syntax)
 
 (def-suite* :pine.frontend :in :pine)
 
@@ -265,3 +266,26 @@ all of them. They call ACCEPT-ATTACHED now; this fails if a copy comes back."
           "~a should read the attach reply through accept-attached" file)
       (is (not (search "client-uri)" source))
           "~a should not destructure the attach reply itself" file))))
+
+;;;; a kind stops being taken when the app holding it goes away
+
+(test an-app-that-is-gone-gives-its-kind-back
+  "Remoting says nothing when a peer dies, so a frontend that was killed would
+hold /attached/<kind> forever and the :unless rule on its declaration would
+never let another start. Reaping is what gives the kind back."
+  (pine.ns:with-space ()
+    (let ((clients pine.core.attach:*clients*))
+      (unwind-protect
+           (let ((client (pine.core.attach::make-attached-client
+                          :id 9001 :kind :probe-kind
+                          ;; a port nothing listens on: the app is gone
+                          :uri "sento://127.0.0.1:1/user/display")))
+             (setf pine.core.attach:*clients* (list client))
+             (pine.ns:write /attached/probe-kind t)
+             (is (eq t (pine.ns:read /attached/probe-kind)))
+             (let ((dead (pine.core.attach:reap-clients)))
+               (is (equal (list client) dead) "the gone app was reaped")
+               (is (null (pine.ns:read /attached/probe-kind))
+                   "and its kind is free for another to take")
+               (is (null pine.core.attach:*clients*)))))
+      (setf pine.core.attach:*clients* clients))))

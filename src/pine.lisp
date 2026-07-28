@@ -27,6 +27,10 @@
     (pine.core.actor:start-local-agent srv)
     (pine.core.actor:start-agent-debug srv)
     (pine.text.buffer:start-buffer-registry srv)
+    ;; /proc is what attends everything this daemon runs, so it is mounted
+    ;; before anything is declared under it
+    (setf (pine.core.server:proc srv)
+          (pine.proc:mount :system (pine.core.server:actor-system srv)))
     (pine.core.attach:start-attach-listener srv)
     (start-control srv)
     (world:open)
@@ -308,10 +312,20 @@ display changes."
                                               (fset:seq :start))))))
                  :as :frontend-display))
 
+(defun declare-reaper ()
+  "Remoting says nothing when a peer dies, so an app that was killed would hold
+its kind forever and the :unless rule above would never let another start. The
+check is a socket connect, so it is declared on an interval like anything else
+that runs."
+  (pine.ns:write /proc/reap
+                 (fset:map (:every 5)
+                           (:thread (lambda () (pine.core.attach:reap-clients))))))
+
 (defun start-frontends ()
   "Keep the frontends running, one process each, attended with everything else."
   (pine.ns:write /display (session-display))
   (declare-frontends)
+  (declare-reaper)
   (watch-unavailable))
 
 (defun stop-frontends ()
