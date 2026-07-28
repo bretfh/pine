@@ -1,127 +1,78 @@
 (defpackage #:pine.editor.window
   (:use #:cl)
-  (:local-nicknames (#:world #:pine.state.world))
-  (:export #:split-window #:delete-other-windows-cmd #:delete-window-cmd #:other-window-cmd #:scroll-window))
+  (:export #:split-window #:delete-other-windows-cmd #:delete-window-cmd
+           #:other-window-cmd #:scroll-window #:reproject))
 
 (in-package #:pine.editor.window)
+(named-readtables:in-readtable pine.path:syntax)
 
-;;;; Window commands over the live editor tree. The arrangement is layout
-;;;; nodes; a split wraps the focused window leaf in a column/row with a new
-;;;; window on the same buffer, delete prunes, other-window cycles the leaves.
+;;;; Window commands, as writes to /win. The arrangement is the path, so a
+;;;; split is a verb on the focused window and the live tree is built again
+;;;; from what the path now says.
 
-(defun %editor-leaves (&optional (client (pine.editor.frame:current-client)))
-  "The window leaves of CLIENT's live tree, in tree order."
-  (let ((tree (pine.editor.frame:arrangement client)) (acc nil))
-    (when tree
-      (labels ((walk (n)
-                 (when (and (typep n 'pine.ui.node:window-node)
-                            (eq (pine.ui.node:window-kind n) :window)
-                            (pine.ui.node:window-of n))
-                   (push n acc))
-                 (dolist (c (pine.ui.layout:nodes-of n)) (walk c))))
-        (walk tree)))
-    (nreverse acc)))
-
-(defun %focused-leaf (&optional (client (pine.editor.frame:current-client)))
-  (find (pine.editor.frame:focused-window client) (%editor-leaves client)
-        :key #'pine.ui.node:window-of))
-
-(defun %focus-leaf (leaf)
-  "Focus LEAF's backing window and follow with the current buffer, so typing
-lands in it."
-  (let ((client (pine.editor.frame:current-client))
-        (w (pine.ui.node:window-of leaf)))
-    (pine.editor.frame:focus-window w)
-    (setf (pine.editor.frame:current-buffer client) (pine.text.window:buffer-ref w))
-    (world:save :arrangement)))
+(defun reproject ()
+  "Build the live tree again from /win and lay it out."
+  (let ((client (pine.editor.frame:current-client)))
+    (setf (pine.editor.frame:arrangement client)
+          (pine.editor.session:editor-tree client))
+    (let ((w (pine.editor.frame:focused-window)))
+      (when w
+        (setf (pine.editor.frame:current-buffer client)
+              (pine.text.window:buffer-ref w))))
+    (pine.ui.render:relayout)))
 
 (defun split-window (orient)
-  "Split the focused window along ORIENT (:column below, :row beside): a new
-window on the same buffer joins the parent as a flat sibling when the parent
-already stacks that way, else the leaf wraps in a fresh stack. A divider sits
-between; sizes stay even because siblings share one weight."
-  (let* ((client (pine.editor.frame:current-client))
-         (tree (pine.editor.frame:arrangement client))
-         (leaf (%focused-leaf client)))
-    (unless leaf
-      (pine.editor.echo:message "no window to split")
-      (return-from split-window))
-    (let* ((w (pine.ui.node:window-of leaf))
-           (buf (pine.text.window:buffer-ref w))
-           (weight (max 1 (pine.ui.node:expand-of leaf)))
-           (nw (pine.editor.frame:make-window buf (pine.text.window:window-name w)))
-           (nn (pine.ui.build:window nil :of nw :kind :window :expand weight
-                                   :font-px (pine.ui.node:font-px leaf)
-                                   :opacity (pine.ui.node:window-opacity leaf)))
-           (div (pine.ui.build:rule :vertical (eq orient :row)
-                                  :face :border-inactive))
-           (root (pine.ui.layout:split-node tree leaf nn orient :divider div)))
-      (setf (pine.text.window:snap nw) (pine.text.window:snap w)
-            (pine.text.window:scroll-top nw) (pine.text.window:scroll-top w))
-      (unless root
-        (pine.editor.echo:message "cannot split here")
-        (return-from split-window))
-      (setf (pine.editor.frame:arrangement client) root)
-      (%focus-leaf leaf)
-      (pine.ui.render:relayout))))
-
-(defun %delete-leaf (leaf)
-  "Remove LEAF and its divider from the live tree, splicing out a container
-left with one child, and dropping its backing window."
-  (let* ((client (pine.editor.frame:current-client))
-         (root (pine.ui.layout:remove-node (pine.editor.frame:arrangement client) leaf)))
-    (when root
-      (setf (pine.editor.frame:arrangement client) root)
-      (pine.editor.frame:remove-window (pine.ui.node:window-of leaf))
-      t)))
+  "Split the focused window: :column puts the new one below, :row beside. It
+shows the same buffer, and the two share the weight the one had."
+  (pine.ns:write /win/focused
+                 (fset:seq :split (if (eq orient :row) :beside :below)))
+  (reproject))
 
 (defun delete-window-cmd ()
-  (let* ((client (pine.editor.frame:current-client))
-         (leaves (%editor-leaves client))
-         (leaf (%focused-leaf client)))
-    (cond
-      ((null (rest leaves)) (pine.editor.echo:message "only one window"))
-      ((and leaf (%delete-leaf leaf))
-       (let ((next (first (%editor-leaves client))))
-         (when next (%focus-leaf next)))
-       (pine.ui.render:relayout))
-      (t (pine.editor.echo:message "cannot delete this window")))))
+  (if (null (rest (pine.win:windows)))
+      (pine.editor.echo:message "only one window")
+      (progn (pine.ns:write /win/focused [:close])
+             (reproject))))
 
 (defun delete-other-windows-cmd ()
-  (let* ((client (pine.editor.frame:current-client))
-         (leaf (%focused-leaf client)))
-    (when leaf
-      (dolist (other (remove leaf (%editor-leaves client) :test #'eq))
-        (%delete-leaf other))
-      (%focus-leaf leaf)
-      (pine.ui.render:relayout))))
+  (pine.ns:write /win/focused [:only])
+  (reproject))
 
 (defun other-window-cmd ()
-  (let* ((client (pine.editor.frame:current-client))
-         (leaves (%editor-leaves client))
-         (pos (position (%focused-leaf client) leaves :test #'eq)))
-    (when (and leaves (rest leaves))
-      (%focus-leaf (nth (mod (1+ (or pos 0)) (length leaves)) leaves)))))
+  (let* ((windows (pine.win:windows))
+         (at (position (pine.win:focused) windows :test #'fset:equal?)))
+    (when (rest windows)
+      (pine.win:focus (nth (mod (1+ (or at 0)) (length windows)) windows))
+      (reproject))))
 
 (defun scroll-window (delta)
+  "Scroll the focused window by DELTA lines, taking point with it when it
+would otherwise leave the window."
   (let* ((client (pine.editor.frame:current-client))
-         (w (pine.editor.frame:focused-window client))
+         (path (pine.win:focused))
+         (w (pine.editor.frame:focused-window))
          (buf (pine.editor.frame:current-buffer client)))
-    (when (and w buf)
+    (when (and path w buf)
       (let ((snap (pine.text.window:snap w)))
         (when (and snap (typep snap 'pine.text.buffer:snapshot))
           (let* ((max-scroll (max 0 (- (pine.text.buffer:line-count snap)
                                        (pine.text.window:win-height w))))
                  (new-scroll (max 0 (min max-scroll
-                                         (+ (pine.text.window:scroll-top w) delta))))
+                                         (+ (pine.win:scroll-of path) delta))))
                  (h (pine.text.window:win-height w))
                  (pl (pine.text.buffer:point-line snap))
                  (pc (pine.text.buffer:point-col snap)))
+            (pine.ns:write (pine.path:child path "scroll") new-scroll)
             (setf (pine.text.window:scroll-top w) new-scroll)
             (cond
               ((< pl new-scroll)
-               (pine.text.buffer:put-point buf new-scroll (min pc (length (fset:@ (pine.text.buffer:lines snap) new-scroll)))))
+               (pine.text.buffer:put-point
+                buf new-scroll
+                (min pc (length (fset:@ (pine.text.buffer:lines snap) new-scroll)))))
               ((>= pl (+ new-scroll h))
                (let ((target (+ new-scroll h -1)))
-                 (pine.text.buffer:put-point buf target (min pc (length (fset:@ (pine.text.buffer:lines snap) target)))))))
-            (sento.actor:tell (pine.editor.frame:renderer client) '(:force-render))))))))
+                 (pine.text.buffer:put-point
+                  buf target
+                  (min pc (length (fset:@ (pine.text.buffer:lines snap) target)))))))
+            (sento.actor:tell (pine.editor.frame:renderer client)
+                              '(:force-render))))))))

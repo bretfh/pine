@@ -32,6 +32,7 @@ minibuffer. Returns the server."
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.text.buffer:start-buffer-registry srv)
+    (pine.win:mount)
     (pine.mode:mount)
     (pine.cmd:mount)
     (pine.editor.keymap:mount)
@@ -86,6 +87,8 @@ argument, the debugger sessions and the world gate."
             (pine.state.var:var :debug-on-error) nil)
       (let ((scratch (pine.editor.frame::buffer "scratch")))
         (when scratch
+          (pine.win:reset (pine.buf:at "scratch"))
+          (pine.ns:write (pine.buf:at "scratch" :text) "")
           (setf (pine.editor.frame::current-buffer c) scratch)
           (pine.editor.frame::set-buffer-mode scratch :text))))))
 

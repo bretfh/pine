@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
   (:export #:mount #:unmount #:windows #:focused #:focus #:stack-p
-           #:buf-of #:scroll-of #:weight-of #:runs-of #:seed))
+           #:buf-of #:scroll-of #:weight-of #:runs-of #:seed #:reset))
 
 (in-package #:pine.win)
 (named-readtables:in-readtable pine.path:syntax)
@@ -124,6 +124,12 @@ focus lands on whatever is still there."
                         (/win/0/weight 1)))
     (focus /win/0))
   (focused))
+
+(defun reset (buf)
+  "One window on BUF, whatever was there: what a fresh session starts from."
+  (dolist (part (%parts /win)) (ns:write part nil))
+  (ns:write /win/focused nil)
+  (seed buf))
 
 (defun provider ()
   (ns:provider

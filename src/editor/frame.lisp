@@ -13,9 +13,7 @@
    #:px-height
    #:cell-w
    #:cell-h
-   #:windows
    #:arrangement
-   #:focused-window
    #:mode-stack
    #:current-buffer
    #:server-of
@@ -26,7 +24,8 @@
    #:*client*
    #:current-client
    #:buffer-in-scope
-   #:make-window #:remove-window #:focus-window
+   #:make-window #:remove-window #:focus-window #:window-of #:windows
+   #:focused-window
    #:buffer-mode #:current-buffer-mode #:set-buffer-mode
    #:active-minor-modes #:active-keymaps
    #:minor-mode-enabled-p #:enable-minor-mode #:disable-minor-mode
@@ -56,12 +55,8 @@
    (px-height       :initarg :px-height       :accessor px-height       :initform nil)
    (cell-w          :initarg :cell-w          :accessor cell-w          :initform nil)
    (cell-h          :initarg :cell-h          :accessor cell-h          :initform nil)
-   (windows         :initarg :windows         :accessor windows         :initform nil)
-   ;; the window arrangement: a pine.text.window:window leaf, or (:column ...) /
-   ;; (:row ...) over such trees -- the split shape C-x 2/3/0/1 rewrite.
-   ;; nil means the single window in WINDOWS.
+   ;; the live editor tree, rebuilt from /win whenever the arrangement moves
    (arrangement     :initarg :arrangement     :accessor arrangement     :initform nil)
-   (focused-window  :initarg :focused-window  :accessor focused-window  :initform nil)
    (mode-stack      :initarg :mode-stack      :accessor mode-stack      :initform nil)
    (terminals       :initarg :terminals       :accessor terminals       :initform nil)
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
@@ -114,38 +109,81 @@ holds, so it answers for its own name."
     (push c (pine.core.server:clients server))
     c))
 
-;;;; Windows belong to the client that shows them: the window itself is a view
-;;;; of a buffer, but which windows exist and which one has focus is this
-;;;; client's business, so the text layer never has to know a client exists.
+;;;; A window is /win/?n, and the object here is the view of it the renderer
+;;;; paints: the same window as long as the path is, so its snapshot and its
+;;;; display cache survive everything except that window going away.
 
-(defun make-window (buffer-actor name &key (row 0) (col 0) (width 80) (height 24) focused)
-  "A window on BUFFER-ACTOR, registered on the client in scope when there is
-one. Without a client the window is detached: a read-only view for a panel or
-a layout buffer."
-  (let ((w (make-instance 'pine.text.window:window
-             :buffer buffer-actor :name name
-             :row row :col col :width width :height height
-             :focused focused))
-        (c *client*))
-    (when c
-      (push w (windows c))
-      (when focused (setf (focused-window c) w)))
-    w))
+(defvar *views* (sento.atomic:make-atomic-reference :value (fset:empty-map))
+  "Window path to the object showing it.")
+
+(defun %fresh-view (path)
+  (let ((buf (pine.win:buf-of path)))
+    (make-instance 'pine.text.window:window
+                   :buffer (and buf (buffer (pine.path:leaf buf)))
+                   :name (and buf (pine.path:leaf buf)))))
+
+(defun window-of (path)
+  "The window object showing PATH, made on first use and kept in step with
+what the path says."
+  (when path
+    (let* ((key (pine.path:text path))
+           (view (or (fset:lookup (sento.atomic:atomic-get *views*) key)
+                     (let ((fresh (%fresh-view path)))
+                       (sento.atomic:atomic-swap
+                        *views* (lambda (m) (fset:with m key fresh)))
+                       fresh)))
+           (buf (pine.win:buf-of path)))
+      (when buf
+        (let ((name (pine.path:leaf buf)))
+          (unless (equal name (pine.text.window:window-name view))
+            (setf (pine.text.window:window-name view) name
+                  (pine.text.window:buffer-ref view) (buffer name)
+                  (pine.text.window:snap view) nil
+                  (pine.text.window:win-display view) nil))))
+      (setf (pine.text.window:scroll-top view) (pine.win:scroll-of path)
+            (pine.text.window:focusedp view)
+            (fset:equal? path (pine.win:focused)))
+      view)))
+
+(defun %view-path (w)
+  "The path the window object W shows, or NIL for a detached view."
+  (loop :for path :in (pine.win:windows)
+        :when (eq w (window-of path)) :return path))
+
+(defun windows (&optional client)
+  "Every window there is, in tree order."
+  (declare (ignore client))
+  (mapcar #'window-of (pine.win:windows)))
+
+(defun focused-window (&optional client)
+  (declare (ignore client))
+  (window-of (pine.win:focused)))
+
+(defun (setf focused-window) (w &optional client)
+  (declare (ignore client))
+  (let ((path (and w (%view-path w))))
+    (when path (pine.win:focus path)))
+  w)
+
+(defun make-window (buffer-actor name &key (row 0) (col 0) (width 80) (height 24)
+                                        focused)
+  "A fixed view of BUFFER-ACTOR: a panel, a tool buffer, a modeline's subject.
+
+The arrangement's windows are not made here -- they are /win/?n, and the object
+showing one comes from WINDOW-OF."
+  (declare (ignore focused))
+  (make-instance 'pine.text.window:window
+                 :buffer buffer-actor :name name
+                 :row row :col col :width width :height height))
 
 (defun remove-window (w)
-  (let ((c *client*))
-    (when c
-      (setf (windows c) (remove w (windows c)))
-      (when (eq w (focused-window c))
-        (setf (focused-window c) (first (windows c)))))))
+  (let ((path (%view-path w)))
+    (when path (pine.ns:write (pine.path:parse "/win/focused") (fset:seq :close)))))
 
 (defun focus-window (w)
-  (let ((c *client*))
-    (when c
-      (let ((prev (focused-window c)))
-        (when prev (setf (pine.text.window:focusedp prev) nil)))
-      (setf (pine.text.window:focusedp w) t
-            (focused-window c) w))))
+  (let ((path (%view-path w)))
+    (when path (pine.win:focus path))
+    w))
 
 (defun stop-client (c)
   (let ((srv (server-of c)))
@@ -271,10 +309,16 @@ the buffer."
                         (list :unregister :name name)))))
 
 (defun switch-buffer (name)
+  "Show NAME in the focused window. What a window shows is /win/?n/buf, so this
+is a write and the window follows it."
   (let* ((c (current-client))
          (srv (server-of c))
-         (actor (gethash name (pine.text.buffer:buffer-table srv))))
+         (actor (gethash name (pine.text.buffer:buffer-table srv)))
+         (at (pine.win:focused)))
     (when actor
+      (when at
+        (pine.ns:write (fset:map ((pine.path:child at "buf") (pine.buf:at name))
+                                 ((pine.path:child at "scroll") 0))))
       (setf (current-buffer c) actor)
       actor)))
 

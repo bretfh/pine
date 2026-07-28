@@ -9,7 +9,7 @@
            #:editor-app #:editor-font-px #:editor-frame
            #:editor-window-node #:editor-terminal-node
            #:editor-modeline-node #:editor-echo-node
-           #:make-editor-session #:reseed-editor-sessions
+           #:editor-tree #:make-editor-session #:reseed-editor-sessions
            #:push-editor-surface #:start-term-pump #:stop-session
            #:session-input #:session-feed #:session-loop #:apply-input))
 
@@ -62,6 +62,7 @@ itself, or a reverse lookup in the server's buffer table."
         name)))
 
 (defun %backing-window (buf name)
+  ;; a detached view: a panel, or a tool buffer rendered once
   "A pine.text.window:window viewing BUF. Registered on the client's window list
 when one is in scope (an editor view the commands can focus and split), else
 detached (a read-only view in a panel or a layout buffer).
@@ -74,24 +75,27 @@ be told about a window that has just appeared."
     (setf (pine.text.window:snap w) (pine.text.buffer:snapshot-of buf))
     w))
 
-(defun editor-window-node (x &rest props)
-  "A live view of X's buffer as a window leaf: visible lines, highlights,
-region, terminal grid, or layout rows, rendered at the rect the tree arranges
-it into. In an editor session the leaf joins the live tree (rows refresh every
-frame, the focused one carries the caret); elsewhere it renders once at build."
-  (let* ((buf (%resolve-buffer x))
-         (name (%buffer-name x buf))
-         (w (and buf (%backing-window buf name)))
-         (node (apply #'pine.ui.build:window nil :of w :kind :window
-                      (append props (list :font-px (editor-font-px))))))
-    (when (and buf pine.editor.frame:*client*)
-      )
-    (unless pine.editor.frame:*client*
-      (when w
-        (setf (pine.text.window:win-width w) 80 (pine.text.window:win-height w) 24)
-        (setf (pine.ui.node:window-rows node)
-              (nth-value 0 (pine.ui.render:render-window-rows w)))))
-    node))
+(defun editor-window-node (&optional x &rest props)
+  "A live view as a window leaf: visible lines, highlights, region, terminal
+grid, or a tool buffer's rows, rendered at the rect the tree arranges it into.
+
+With no buffer it is the arrangement -- every window there is, laid out the way
+/win says. With one it is a fixed view of that buffer, which is what a panel or
+a detached view wants."
+  (if (null x)
+      (%arrangement-node)
+      (let* ((buf (%resolve-buffer x))
+             (name (%buffer-name x buf))
+             (w (and buf (%backing-window buf name)))
+             (node (apply #'pine.ui.build:window nil :of w :kind :window
+                          (append props (list :font-px (editor-font-px))))))
+        (unless pine.editor.frame:*client*
+          (when w
+            (setf (pine.text.window:win-width w) 80
+                  (pine.text.window:win-height w) 24)
+            (setf (pine.ui.node:window-rows node)
+                  (nth-value 0 (pine.ui.render:render-window-rows w)))))
+        node)))
 
 (defun editor-terminal-node (x &rest props)
   "A window leaf on a terminal buffer; the emulator grid renders in its rect."
@@ -116,147 +120,66 @@ row, so the input line never moves), and the minibuffer caret."
   "The engine's editor surface, used when init.lisp declares none: one window
 on scratch, the echo line, the mode line."
   (pine.ui.build:column :align :stretch
-    (editor-window-node "scratch" :expand 1)
+    (editor-window-node)
     (editor-echo-node)
     (editor-modeline-node)))
 
-;;;; World: the arrangement serialized in the builder language. %tree->form
-;;;; walks the live tree into (:column ... (:window "name" :expand 1) (:rule)
-;;;; (:echo) (:modeline)) -- pure readable data, the same vocabulary init.lisp
-;;;; speaks -- and %form->tree rebuilds it with the same constructors the seed
-;;;; uses. A node outside this vocabulary makes the whole form nil, so exotic
-;;;; init chrome falls back to its source of truth, the builder.
+;;;; The arrangement is /win, so the live tree is built from it rather than
+;;;; mutated and serialized: a split writes the path, and this is what the
+;;;; renderer paints of what the path says.
 
-(defun %node-props (n)
-  "The declared props worth persisting on N: :expand and :class, when set.
-Font size is derived and opacity is a style rule -- neither is identity."
-  (append (let ((e (pine.ui.node:expand-of n)))
-            (when (and (numberp e) (not (zerop e))) (list :expand e)))
-          (let ((c (pine.ui.node:css-class n)))
-            (when c (list :class c)))))
+(defun %win-leaf (path)
+  "A window leaf viewing PATH."
+  (let ((w (pine.editor.frame:window-of path)))
+    (pine.ui.build:window nil :of w :kind :window
+                          :expand (max 1 (pine.win:weight-of path))
+                          :font-px (editor-font-px))))
 
-(defun %tree->form (n)
-  "N in the builder language, or nil when N (or a descendant) is outside the
-editor vocabulary."
-  (typecase n
-    (pine.ui.node:window-node
-     (case (pine.ui.node:window-kind n)
-       (:window (let ((w (pine.ui.node:window-of n)))
-                  (and w (list* :window (pine.text.window:window-name w)
-                                (%node-props n)))))
-       (:modeline (let ((w (pine.ui.node:window-of n)))
-                    (if w (list :modeline (pine.text.window:window-name w))
-                        (list :modeline))))
-       (:echo (list :echo))))
-    (pine.ui.node:separator (list :rule))
-    ((or pine.ui.node:vstack pine.ui.node:hstack)
-     (let ((kids (mapcar #'%tree->form (pine.ui.node:nodes n))))
-       (unless (member nil kids)
-         (list* (if (typep n 'pine.ui.node:vstack) :column :row)
-                (append
-                 (let ((s (pine.ui.node:spacing n)))
-                   (unless (zerop s) (list :spacing s)))
-                 (let ((a (pine.ui.node:align n)))
-                   (unless (eq a :start) (list :align a)))
-                 (%node-props n)
-                 kids)))))))
+(defun %win-node (path)
+  "PATH as live nodes: a window leaf, or the stack its parts make, with a
+divider between them."
+  (if (pine.win:stack-p path)
+      (let* ((row (eq :row (pine.win:runs-of path)))
+             (parts (mapcar #'%win-node (pine.win::%parts path)))
+             (kids (loop :for part :in parts
+                         :for first = t :then nil
+                         :append (if first
+                                     (list part)
+                                     (list (pine.ui.build:rule
+                                            :vertical row
+                                            :face :border-inactive)
+                                           part)))))
+        (apply (if row #'pine.ui.build:row #'pine.ui.build:column)
+               :align :stretch :expand 1 kids))
+      (%win-leaf path)))
 
-(defun %live-name (name)
-  "NAME when that buffer still exists, else scratch -- a restored window never
-points at nothing (killed buffers, dead terminals)."
-  (let ((srv pine.core.server:*server*))
-    (if (and (stringp name) srv (pine.core.server:buffer-table srv)
-             (gethash name (pine.core.server:buffer-table srv)))
-        name
-        "scratch")))
+(defun %arrangement-node ()
+  "Every window there is, as one node: what (window) with no buffer builds."
+  (let ((parts (pine.win::%parts (pine.path:parse "/win"))))
+    (cond ((null parts) (%win-leaf (pine.win:seed (pine.buf:at "scratch"))))
+          ((null (rest parts)) (%win-node (first parts)))
+          (t (apply #'pine.ui.build:column :align :stretch :expand 1
+                    (mapcar #'%win-node parts))))))
 
-(defun %split-props (rest)
-  "(values PLIST CHILD-FORMS): the leading keyword pairs, then the subtrees."
-  (loop for tail on rest by #'cddr
-        while (keywordp (first tail))
-        append (list (first tail) (second tail)) into props
-        finally (return (values props tail))))
-
-(defun %form->tree (form)
-  "Rebuild a live node from FORM with the seed's own constructors."
-  (destructuring-bind (tag . rest) form
-    (ecase tag
-      (:window (apply #'editor-window-node (%live-name (first rest))
-                      (rest rest)))
-      (:modeline (if (stringp (first rest))
-                     (editor-modeline-node (%live-name (first rest)))
-                     (editor-modeline-node)))
-      (:echo (editor-echo-node))
-      (:rule (pine.ui.build:rule))
-      ((:column :row)
-       (multiple-value-bind (props kids) (%split-props rest)
-         (apply (if (eq tag :column) #'pine.ui.build:column #'pine.ui.build:row)
-                (append props (mapcar #'%form->tree kids))))))))
-
-(defun %arrangement-data ()
-  "The :arrangement world entry for the client in scope: the tree in builder
-form plus the focused and current buffer names. nil when no client is bound
-or the tree has foreign nodes."
-  (let ((client pine.editor.frame:*client*))
-    (when client
-      (let* ((tree (pine.editor.frame:arrangement client))
-             (form (and tree (%tree->form tree))))
-        (when form
-          (let ((fw (pine.editor.frame:focused-window client))
-                (cur (pine.editor.frame:current-buffer client)))
-            (list :tree form
-                  :focus (and fw (pine.text.window:window-name fw))
-                  :current (and cur (%buffer-name cur cur)))))))))
-
-(defmethod world:snapshot ((name (eql :arrangement))) (%arrangement-data))
-
-(defun %restore-arrangement (client saved)
-  "Build SAVED's tree for CLIENT and land its focus. nil when building fails
-(the seed then falls back to the builder)."
-  (handler-case
-      (let ((tree (%form->tree (getf saved :tree))))
-        (setf (pine.editor.frame:arrangement client) tree)
-        (let* ((ws (pine.editor.frame:windows client))
-               (w (or (find (getf saved :focus) ws
-                            :key #'pine.text.window:window-name :test #'equal)
-                      (first (last ws)))))
-          (when w
-            (pine.editor.frame:focus-window w)
-            (setf (pine.editor.frame:current-buffer client)
-                  (or (let ((srv pine.core.server:*server*))
-                        (and srv (pine.core.server:buffer-table srv)
-                             (gethash (getf saved :current)
-                                      (pine.core.server:buffer-table srv))))
-                      (pine.text.window:buffer-ref w)))))
-        tree)
-    (error (c)
-      (format *error-output* "world arrangement restore failed: ~a~%" c)
-      nil)))
-
-(defun %seed-editor-tree (client &key (world t))
-  "Seed CLIENT's live editor tree: the saved world arrangement when WORLD and
-one exists, else the registered `editor' surface builder (init.lisp), else the
-engine default. Focus lands on the saved focus or the first window leaf."
+(defun editor-tree (client)
+  "CLIENT's live editor tree: the registered `editor' surface builder from
+init.lisp, else the engine default. The arrangement inside it comes from /win,
+which is where it survives a restart, so there is nothing to restore."
   (let ((pine.editor.frame:*client* client)
         (builder (gethash "editor"
-                          (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
-        (saved (and world
-                    world:*enabled*
-                    (world:value :arrangement))))
-    (setf (pine.editor.frame:windows client) nil
-          (pine.editor.frame:focused-window client) nil)
-    (or (and saved (getf saved :tree) (%restore-arrangement client saved))
-        (progn
-          (setf (pine.editor.frame:windows client) nil
-                (pine.editor.frame:focused-window client) nil)
-          (let ((tree (if builder (funcall builder nil) (%default-editor-tree))))
-            (setf (pine.editor.frame:arrangement client) tree)
-            (let ((w (first (last (pine.editor.frame:windows client)))))
-              (when w
-                (pine.editor.frame:focus-window w)
-                (setf (pine.editor.frame:current-buffer client)
-                      (pine.text.window:buffer-ref w))))
-            tree)))))
+                          (symbol-value (find-symbol "*SURFACES*" :pine.desktop)))))
+    (if builder (funcall builder nil) (%default-editor-tree))))
+
+(defun %seed-editor-tree (client &key (world t))
+  "Build CLIENT's tree and land the focus."
+  (declare (ignore world))
+  (let ((pine.editor.frame:*client* client))
+    (setf (pine.editor.frame:arrangement client) (editor-tree client))
+    (let ((w (pine.editor.frame:focused-window)))
+      (when w
+        (setf (pine.editor.frame:current-buffer client)
+              (pine.text.window:buffer-ref w))))
+    (pine.editor.frame:arrangement client)))
 
 (defun reseed-editor-sessions ()
   "Re-seed every attached editor session's live tree from the (re)loaded

@@ -354,10 +354,13 @@ a held path, so it is what the store keeps."
     (press "Escape")
     (sleep 0.1)))
 
-(test the-world-round-trips-the-splits-the-open-file-and-the-focus
+(test the-world-round-trips-the-open-file-and-the-arrangement-holds-itself
+  "The buffers a session had come back through the world; the arrangement does
+not need to, because /win is held: the splits are paths and the paths are the
+store's business like any other."
   (with-fixture substrate ()
     (setf pine.state.world:*enabled* t)
-    (pine.editor.session::%seed-editor-tree *client* :world nil)
+    (pine.editor.session::%seed-editor-tree *client*)
     (pine.ui.render:relayout)
     (let ((path "/tmp/pine-world-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
@@ -369,67 +372,29 @@ a held path, so it is what the store keeps."
       (pine.editor.command::call-command "split-window-right")
       (sleep 0.1)
       (pine.state.world:save)
-      (let ((arrangement (pine.state.world:value :arrangement))
-            (buffers (pine.state.world:value :buffers)))
-        (is (eq :column (first (getf arrangement :tree))))
-        (is (equal "pine-world-probe.txt" (getf arrangement :current)))
+      (is (= 3 (length (pine.win:windows))))
+      (is (equal "pine-world-probe.txt"
+                 (pine.text.window:window-name
+                  (pine.editor.frame::focused-window))))
+      (is (eq :held (pine.ns:kind (pine.path:child (pine.win:focused) "buf")))
+          "the arrangement is held, so it comes back with the store")
+      (let ((buffers (pine.state.world:value :buffers)))
         (is (find path buffers :key (lambda (e) (getf e :path)) :test #'equal)
-            "the world should hold the open file, saw ~s" buffers)
-        (pine.editor.frame::kill-buffer "pine-world-probe.txt")
-        (sleep 0.1)
-        (pine.editor.session::%seed-editor-tree *client* :world nil)
-        (pine.ui.render:relayout)
-        (is (= 1 (length (pine.editor.window::%editor-leaves *client*))))
-        (setf (pine.state.world:value :arrangement) arrangement)
-        (pine.state.world:restore :buffers)
-        (sleep 0.15)
-        (pine.editor.session::%seed-editor-tree *client*)
-        (pine.ui.render:relayout)
-        (let* ((leaves (pine.editor.window::%editor-leaves *client*))
-               (names (mapcar (lambda (leaf)
-                                (pine.text.window:window-name
-                                 (pine.ui.node:window-of leaf)))
-                              leaves)))
-          (is (= 3 (length leaves)))
-          (is (= 2 (count "pine-world-probe.txt" names :test #'equal)))
-          (is (equal "pine-world-probe.txt"
-                     (pine.text.window:window-name
-                      (pine.editor.frame::focused-window *client*))))
-          (is (string= "alpha" (subseq (btext "pine-world-probe.txt") 0 5)))))
+            "the world should hold the open file, saw ~s" buffers))
+      (pine.editor.command::call-command "delete-other-windows")
       (pine.editor.frame::kill-buffer "pine-world-probe.txt")
-      (setf pine.state.world:*enabled* nil)
-      (pine.editor.session::%seed-editor-tree *client* :world nil)
-      (pine.ui.render:relayout))))
+      (setf pine.state.world:*enabled* nil))))
 
-(test scratch-text-rides-its-own-world-contributor
+(test the-arrangement-is-paths-so-there-is-nothing-to-serialize
+  "A split is a write to /win, and /win is held: it comes back with the store
+like any other path, so no tree is ever turned into a form."
   (with-fixture substrate ()
-    (setf pine.state.world:*enabled* t)
-    (let ((scratch (pine.editor.frame::buffer "scratch")))
-      (sento.actor:tell scratch '(:replace-content :content "world-scratch"))
-      (sleep 0.1)
-      (pine.state.world:save :scratch)
-      (sento.actor:tell scratch '(:replace-content :content ""))
-      (sleep 0.1)
-      (pine.state.world:restore :scratch)
-      (sleep 0.1)
-      (is (search "world-scratch" (btext scratch)))
-      (sento.actor:tell scratch '(:replace-content :content ""))
-      (sleep 0.1))
-    (setf pine.state.world:*enabled* nil)))
-
-(test the-arrangement-serializes-into-the-builder-language-and-back
-  (with-fixture substrate ()
-    (pine.editor.session::%seed-editor-tree *client* :world nil)
-    (let ((form (pine.editor.session::%tree->form
-                 (pine.editor.frame::arrangement *client*))))
-      (is (eq :column (first form)))
-      (is (member '(:echo) form :test #'equal))
-      (is (find-if (lambda (part) (and (consp part) (eq :window (first part)))) form))
-      (let ((rebuilt (pine.editor.session::%form->tree form)))
-        (is (equal form (pine.editor.session::%tree->form rebuilt)))))))
-
-(test a-node-outside-the-vocabulary-refuses-to-serialize
-  (is (null (pine.editor.session::%tree->form (pine.ui.build:label "x")))))
+    (pine.editor.session::%seed-editor-tree *client*)
+    (pine.editor.command::call-command "split-window-below")
+    (is (= 2 (length (pine.win:windows))))
+    (is (eq :column (pine.ns:read (pine.path:parse "/win/0/runs"))))
+    (is (eq :held (pine.ns:kind (pine.path:parse "/win/0/0/buf"))))
+    (pine.editor.command::call-command "delete-other-windows")))
 
 (test the-shipped-example-loads-clean-and-its-definitions-land
   (with-fixture substrate ()
@@ -450,15 +415,16 @@ a held path, so it is what the store keeps."
       (sento.actor:tell other (list :insert :text "beta-two"))
       (sleep 0.1)
       (pine.editor.session::%seed-editor-tree *client*)
-      (let ((tree (pine.ui.render:refresh-editor-tree *client*))
-            (leaves (pine.editor.window::%editor-leaves *client*)))
+      (let* ((tree (pine.ui.render:refresh-editor-tree *client*))
+             (leaves (remove :window (pine.ui.render:window-leaves tree)
+                             :key #'pine.ui.node:window-kind :test-not #'eq)))
         (is (not (null tree)))
-        (is (= 1 (length leaves)))
+        (is (= 1 (length (pine.win:windows))))
         (is (= 10 (length (pine.ui.node:window-rows (first leaves))))))
       (pine.editor.session::%seed-editor-tree *client*)
       (pine.ui.render:relayout)
       (pine.editor.command::call-command "split-window-below")
-      (is (= 2 (length (pine.editor.window::%editor-leaves *client*))))
+      (is (= 2 (length (pine.win:windows))))
       (pine.editor.command::call-command "other-window")
       (let ((buf (pine.editor.frame::switch-buffer "editor-b2")))
         (sento.actor:tell (pine.editor.frame::renderer *client*)
@@ -469,16 +435,19 @@ a held path, so it is what the store keeps."
       (sleep 0.15)
       (is (search "x" (btext other)))
       (is (not (search "x" (btext scratch))))
-      (pine.ui.render:refresh-editor-tree *client*)
-      (let ((modeline (find :modeline (pine.ui.render:window-leaves
-                                       (pine.editor.frame::arrangement *client*))
-                            :key #'pine.ui.node:window-kind)))
-        (is (search "editor-b2" (car (first (pine.ui.node:window-rows modeline)))))
+      (flet ((modeline-text ()
+               (pine.ui.render:refresh-editor-tree *client*)
+               (let ((n (find :modeline (pine.ui.render:window-leaves
+                                         (pine.editor.frame::arrangement *client*))
+                              :key #'pine.ui.node:window-kind)))
+                 (car (first (pine.ui.node:window-rows n))))))
+        ;; the tree is built again from /win after every command, so the node
+        ;; is looked up again rather than held
+        (is (search "editor-b2" (modeline-text)))
         (pine.editor.command::call-command "other-window")
-        (pine.ui.render:refresh-editor-tree *client*)
-        (is (search "scratch" (car (first (pine.ui.node:window-rows modeline))))))
+        (is (search "scratch" (modeline-text))))
       (pine.editor.command::call-command "delete-other-windows")
-      (is (= 1 (length (pine.editor.window::%editor-leaves *client*))))
+      (is (= 1 (length (pine.win:windows))))
       (is (eq scratch (pine.text.window:buffer-ref
                        (pine.editor.frame::focused-window *client*)))))))
 
@@ -501,8 +470,6 @@ a held path, so it is what the store keeps."
       (sleep 0.1)
       (sento.actor:tell buf (list :overlay :line 0 :text "=> 3"))
       (sleep 0.1)
-      (setf (pine.editor.frame::windows *client*) nil
-            (pine.editor.frame::focused-window *client*) nil)
       (let* ((node (pine.editor.session:editor-window-node "overlay-probe" :expand 1))
              (tree (pine.ui.build:column :align :stretch
                                          node

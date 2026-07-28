@@ -105,9 +105,10 @@ attached frontend -- the editor session's sink refreshes the live tree
                           ;; paints, so a resize has nothing to reproject
                           (paint-frame client)))
                        (:switch-buffer
-                        (destructuring-bind (&key buffer name) (rest msg)
-                          (switch-window-buffer buffer name)
-                          (paint-frame client)))
+                        ;; what a window shows is /win/?n/buf, already
+                        ;; written; this is the repaint that follows
+                        (rs-update :dirty t)
+                        (paint-frame client))
                        (:term-tick
                         (when (pine.term:drain-terminals client)
                           (paint-frame client)))
@@ -132,17 +133,6 @@ attached frontend -- the editor session's sink refreshes the live tree
       (dolist (w (pine.editor.frame:windows (pine.editor.frame:current-client)))
         (when (string= (pine.text.window:window-name w) snap-name)
           (setf (pine.text.window:snap w) snap))))))
-
-(defun switch-window-buffer (buf name)
-  (let ((w (pine.editor.frame:focused-window (pine.editor.frame:current-client))))
-    (when w
-      (setf (pine.text.window:buffer-ref w) buf
-            (pine.text.window:window-name w) name
-            (pine.text.window:scroll-top w) 0
-            (pine.text.window:col w) 0
-            (pine.text.window:snap w) nil
-            (pine.text.window:win-display w) nil)))
-  (rs-update :dirty t))
 
 (defun window-leaves (tree)
   "The view leaves under TREE (window nodes carrying a kind), in tree order."
@@ -255,6 +245,14 @@ the tree, or nil when the client has none."
             (:window
              (let ((w (pine.ui.node:window-of n)))
                (when w
+                 ;; what a window shows is what its buffer says now: the
+                 ;; snapshot is read here rather than pushed, so a view nothing
+                 ;; is watching is as fresh as one that is
+                 (let ((buf (pine.text.window:buffer-ref w)))
+                   (when buf
+                     (setf (pine.text.window:snap w)
+                           (pine.text.buffer:snapshot-of buf)
+                           (pine.text.window:win-display w) nil)))
                  (multiple-value-bind (rows crow ccol) (render-window-rows w)
                    (setf (pine.ui.node:window-rows n) rows)
                    (when (and (eq w focused) (not prompt))
@@ -274,11 +272,11 @@ the tree, or nil when the client has none."
       tree)))
 
 (defun relayout ()
-  "Re-arrange the current client's live editor tree at the frame size, and
-save the arrangement to the world -- every structural mutation ends here, so
-a crash never loses the split shape."
-  (prog1 (arrange-editor-tree (pine.editor.frame:current-client))
-    (world:save :arrangement)))
+  "Re-arrange the current client's live editor tree at the frame size.
+
+Nothing is saved here: the split shape is /win, and a held path is already the
+store's business, so a crash cannot lose it."
+  (arrange-editor-tree (pine.editor.frame:current-client)))
 
 
 ;;;; Cell emission
