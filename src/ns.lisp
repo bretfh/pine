@@ -167,6 +167,11 @@ the segment it matched. HERE answers the path being served."
                       forms))
       ,(or options '(fset:empty-map)))))
 
+(defun %mounted-at (path)
+  "True when a provider is mounted at PATH itself."
+  (loop :for mount :in (space-mounts (current))
+        :thereis (fset:equal? (car mount) path)))
+
 (defun %backings (space path)
   "Every provider whose mount point is at or above PATH, newest first."
   (loop :for (at . backing) :in (space-mounts space)
@@ -816,7 +821,10 @@ overrides a single leaf of a shipped provider without forking it."
   "Put THUNK's value at PATH and remember what it read, so it is computed again
 whenever one of those paths moves. A provider written here mounts instead."
   (multiple-value-bind (value deps) (%evaluate thunk)
-    (when (and (null value) (%backings (current) path))
+    ;; writing nothing where a provider is mounted takes it off -- where it is
+    ;; mounted, not anywhere under it: clearing one leaf of a served subtree is
+    ;; an ordinary write
+    (when (and (null value) (%mounted-at path))
       (%unmount path))
     (if (backing-p value)
         (%mount path value)

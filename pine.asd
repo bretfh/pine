@@ -37,6 +37,8 @@
                  (:file "host")
                  ;; modes are maps at /mode; this is the lookup over them
                  (:file "mode")
+                 ;; a window is a view onto a buffer, and the arrangement is the path
+                 (:file "win")
                  ;; a command is a path holding a handler or a write-map
                  (:file "cmd")
                  ;; the drivers: one file per system, the only impure code here
@@ -123,6 +125,7 @@
                              (:file "data") (:file "path") (:file "ns")
                              (:file "store") (:file "self") (:file "err")
                              (:file "proc") (:file "host") (:file "mode")
+                             (:file "win")
                              (:file "provider")
                              (:file "buffer") (:file "buf")
                              (:file "vt") (:file "index") (:file "ts")
