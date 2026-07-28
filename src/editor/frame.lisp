@@ -113,7 +113,6 @@
    (completion-state
      :initarg :completion-state :accessor completion-state
      :initform (make-instance 'completion))
-   (current-buffer  :initarg :current-buffer  :accessor current-buffer  :initform nil)
    (buffer-modes    :initarg :buffer-modes    :accessor buffer-modes
                     :initform (make-hash-table :test 'eq))
    (buffer-minor-modes :initarg :buffer-minor-modes :accessor buffer-minor-modes
@@ -146,6 +145,31 @@
 (defun buffer-in-scope ()
   "The current buffer, or nil when no client is bound."
   (let ((c *client*)) (and c (current-buffer c))))
+
+;;;; Which buffer is current is /buf/current, not a slot. A command that acts
+;;;; on it writes a path, so it works from another image and from a script that
+;;;; never heard of a client.
+
+(defun %actor-named (name)
+  "The actor serving the buffer NAME. The minibuffer is a buffer no table
+holds, so it answers for its own name."
+  (let* ((c *client*)
+         (mb (and c (minibuffer-buffer c))))
+    (cond ((null name) nil)
+          ((and mb (equal name (pine.text.buffer:name-of mb))) mb)
+          (c (gethash name (pine.text.buffer:buffer-table (server-of c)))))))
+
+(defun current-buffer (&optional client)
+  "The buffer /buf/current names."
+  (declare (ignore client))
+  (let ((value (pine.ns:held (pine.buf:at "current"))))
+    (when value (%actor-named (pine.path:leaf value)))))
+
+(defun (setf current-buffer) (actor &optional client)
+  (declare (ignore client))
+  (let ((name (pine.text.buffer:name-of actor)))
+    (pine.ns:write (pine.buf:at "current") (and name (pine.buf:at name))))
+  actor)
 
 (defun start-client (server)
   (let* ((c (make-instance 'client
