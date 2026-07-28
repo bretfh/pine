@@ -26,8 +26,6 @@
    #:current-buffer
    #:buffer-modes
    #:buffer-minor-modes
-   #:kill-ring
-   #:kill-ring-max
    #:last-command
    #:server-of
    #:terminals
@@ -120,8 +118,6 @@
                     :initform (make-hash-table :test 'eq))
    (buffer-minor-modes :initarg :buffer-minor-modes :accessor buffer-minor-modes
                     :initform (make-hash-table :test 'eq))
-   (kill-ring       :initarg :kill-ring       :accessor kill-ring       :initform nil)
-   (kill-ring-max   :initarg :kill-ring-max   :accessor kill-ring-max   :initform 60)
    (last-command    :initarg :last-command    :accessor last-command    :initform nil)
    (terminals       :initarg :terminals       :accessor terminals       :initform nil)
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
@@ -155,8 +151,7 @@
   (let* ((c (make-instance 'client
                 :server-of server
                 :frame (make-instance 'pine.text.window:frame)
-                :terminal-map (make-hash-table :test 'eq)
-                :kill-ring (world:value :kill-ring))))
+                :terminal-map (make-hash-table :test 'eq))))
     (push c (pine.core.server:clients server))
     c))
 

@@ -124,7 +124,7 @@ no symbol to complete."
                      (lambda (choice) (%replace-prefix buf prefix choice)))))))))))
 
 (defun %replace-prefix (buf prefix choice)
-  (dotimes (i (length prefix)) (pine.text.buffer:edit buf (fset:seq :backspace)))
+  (dotimes (i (length prefix)) (pine.text.buffer:delete-back buf))
   (pine.editor.ask:tell buf :insert :text choice))
 
 (defun symbol-arglist ()

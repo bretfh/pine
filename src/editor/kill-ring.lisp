@@ -1,31 +1,26 @@
 (defpackage #:pine.editor.kill-ring
   (:use #:cl)
-  (:local-nicknames (#:world #:pine.state.world))
   (:export #:*last-yank* #:copy-region-cmd #:kill-line-cmd #:kill-region-cmd #:kill-ring-push #:kill-ring-top #:kill-words-cmd #:set-mark #:yank-cmd #:yank-pop-cmd))
 
 (in-package #:pine.editor.kill-ring)
+(named-readtables:in-readtable pine.path:syntax)
+
+;;;; The kill ring is /kill: a ring is a write option, so pushing is a write,
+;;;; the newest is a read, and the whole ring is a pattern read. Nothing here
+;;;; holds it, and it survives a restart because a held path does.
+
+(defparameter +kills+ 60 "How many kills /kill remembers.")
 
 (defun kill-ring-push (text)
-  (let ((client (pine.editor.frame:current-client)))
-    (when (and text (plusp (length text)))
-      (if (and (member (pine.editor.frame:last-command client)
-                       '("kill-line" "kill-region" "kill-word" "backward-kill-word")
-                       :test #'equal)
-               (pine.editor.frame:kill-ring client))
-          (setf (first (pine.editor.frame:kill-ring client))
-                (concatenate 'string (first (pine.editor.frame:kill-ring client)) text))
-          (progn
-            (push text (pine.editor.frame:kill-ring client))
-            (when (> (length (pine.editor.frame:kill-ring client))
-                     (pine.editor.frame:kill-ring-max client))
-              (setf (pine.editor.frame:kill-ring client)
-                    (subseq (pine.editor.frame:kill-ring client) 0
-                            (pine.editor.frame:kill-ring-max client))))))
-      (setf (world:value :kill-ring) (pine.editor.frame:kill-ring client)))))
+  (when (and text (plusp (length text)))
+    (pine.ns:write /kill text :max +kills+)))
 
 (defun kill-ring-top ()
-  (first (pine.editor.frame:kill-ring (pine.editor.frame:current-client))))
+  (pine.ns:read /kill))
 
+(defun kill-ring-entry (n)
+  "The Nth newest kill, or NIL."
+  (pine.ns:read (pine.path:path /kill (princ-to-string n))))
 
 ;;;; Mark and region
 
@@ -48,12 +43,7 @@
   (let* ((client (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer client)))
     (when buf
-      (let ((state (pine.text.buffer:state-of buf)))
-        (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds state)
-          (when sl
-            (let ((text (pine.text.buffer:region-string state sl sc el ec)))
-              (kill-ring-push text)
-              (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))))))))
+      (pine.text.buffer:edit buf (fset:seq :kill)))))
 
 (defun kill-line-cmd ()
   (let* ((client (pine.editor.frame:current-client))
@@ -93,7 +83,7 @@ point-after-move :word lands, into the kill ring."
               (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))))))))
 
 ;;;; The most recent yank, so yank-pop can delete it before inserting the next
-;;;; ring entry: (buffer start-line start-col inserted-text).
+;;;; ring entry: (buffer start-line start-col inserted-text how-far-back).
 (defvar *last-yank* nil)
 
 (defun %advance-pos (line col text)
@@ -110,24 +100,25 @@ point-after-move :word lands, into the kill ring."
       (let ((snap (pine.editor.frame:current-buffer-snapshot)))
         (when snap
           (setf *last-yank* (list buf (pine.text.buffer:point-line snap)
-                                  (pine.text.buffer:point-col snap) text))))
+                                  (pine.text.buffer:point-col snap) text 0))))
       (pine.text.buffer:edit buf (fset:seq :insert text)))))
 
 (defun yank-pop-cmd ()
+  "Replace what the last yank inserted with the next entry back in the ring.
+The ring does not move: which entry this is walks back through it."
   (let ((client (pine.editor.frame:current-client)))
     (when (and (member (pine.editor.frame:last-command client) '("yank" "yank-pop")
                        :test #'equal)
-               *last-yank*
-               (rest (pine.editor.frame:kill-ring client)))
-      (let ((top (pop (pine.editor.frame:kill-ring client))))
-        (setf (pine.editor.frame:kill-ring client)
-              (append (pine.editor.frame:kill-ring client) (list top))))
-      (destructuring-bind (buf sl sc old-text) *last-yank*
-        (let ((new-text (kill-ring-top)))
-          (multiple-value-bind (el ec) (%advance-pos sl sc old-text)
-            (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))
-          (pine.text.buffer:edit buf (fset:seq :insert new-text))
-          (setf *last-yank* (list buf sl sc new-text)))))))
+               *last-yank*)
+      (destructuring-bind (buf sl sc old-text back) *last-yank*
+        (let ((new-text (or (kill-ring-entry (1+ back)) (kill-ring-entry 0))))
+          (when new-text
+            (multiple-value-bind (el ec) (%advance-pos sl sc old-text)
+              (pine.text.buffer:edit buf (fset:seq :delete (fset:seq sl sc) (fset:seq el ec))))
+            (pine.text.buffer:edit buf (fset:seq :insert new-text))
+            (setf *last-yank*
+                  (list buf sl sc new-text
+                        (if (kill-ring-entry (1+ back)) (1+ back) 0)))))))))
 
 (defun copy-region-cmd ()
   (let* ((client (pine.editor.frame:current-client))

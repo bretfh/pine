@@ -86,7 +86,7 @@ disappears into a mailbox nobody is reading."
       (pine.text.buffer:put buf :mark nil)))
   (pine.editor.minibuffer:cancel-prompt))
 (defcmd "backspace" ()
-  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.text.buffer:edit buf (fset:seq :backspace)))))
+  (let ((buf (pine.editor.motion:cur-buffer))) (when buf (pine.text.buffer:delete-back buf))))
 (defcmd "delete-char" ()
   (let ((buf (pine.editor.motion:cur-buffer)) (snap (pine.editor.motion:focused-snap)))
     (when (and buf snap)

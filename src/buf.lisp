@@ -55,16 +55,14 @@
 (defun state (name)
   "NAME's leaves as a buffer-state."
   (multiple-value-bind (line col) (%point name)
-    (let ((mark (ns:read (at name :mark))))
-      (b:copy-state
-       (b:make-empty-state name)
-       :lines (or (ns:held (at name :text)) (fset:seq ""))
-       :marks (fset:map (:point-line line) (:point-charpos col))
-       :meta (fset:map (:name name)
-                       (:mode (ns:read (at name :mode)))
-                       (:mark-line (and (fset:seq? mark) (fset:lookup mark 0)))
-                       (:mark-col (and (fset:seq? mark) (fset:lookup mark 1))))
-       :tick (or (ns:read (at name :tick)) 0)))))
+    (b:copy-state
+     (b:make-empty-state name)
+     :lines (or (ns:held (at name :text)) (fset:seq ""))
+     :marks (fset:map (:point-line line) (:point-charpos col))
+     :meta (fset:map (:name name)
+                     (:mode (ns:read (at name :mode)))
+                     (:mark (ns:read (at name :mark))))
+     :tick (or (ns:read (at name :tick)) 0))))
 
 (defun %landing (name state)
   "The write-map taking NAME's leaves to what STATE says. A value that did not
@@ -117,28 +115,30 @@ newline is never waiting on tree-sitter."
         (at name :indent-request)
         {:from (1+ line) :to (1+ line) :lines lines})))))
 
-(defun %backspace (name)
-  (multiple-value-bind (line col) (%point name)
-    (cond
-      ((plusp col)
-       (%edit name
-              (lambda (s)
-                (b:move-mark (b:delete-char s line (1- col)) :point line (1- col)))
-              {:at line :old 1 :new 1 :bytes -1}))
-      ((plusp line)
-       (let ((previous (length (b:line-at (state name) (1- line)))))
-         (%edit name
-                (lambda (s)
-                  (b:move-mark (b:delete-char s (1- line) previous)
-                               :point (1- line) previous))
-                {:at (1- line) :old 2 :new 1 :bytes -1}))))))
-
 (defun %delete (name from to)
-  "Delete the region FROM..TO. No descriptor: a region spans lines and the
-parser rebuilds rather than being told a shift that cannot express it."
-  (%edit name (lambda (s)
-                (b:delete-region s (fset:lookup from 0) (fset:lookup from 1)
-                                 (fset:lookup to 0) (fset:lookup to 1)))))
+  "Delete the region FROM..TO, which is what a backspace is one character back.
+
+The lines it spans become one, and that is a whole-line shift, so the parser
+moves its tree by the bytes that went rather than rebuilding it."
+  (let* ((s (state name))
+         (from-line (fset:lookup from 0))
+         (from-col (fset:lookup from 1))
+         (to-line (fset:lookup to 0))
+         (to-col (fset:lookup to 1))
+         (gone (b:region-string s from-line from-col to-line to-col)))
+    (%edit name
+           (lambda (s) (b:delete-region s from-line from-col to-line to-col))
+           {:at from-line :old (1+ (- to-line from-line)) :new 1
+            :bytes (- (pine.ts.index:string-bytes gone))})))
+
+(defun %kill (name)
+  "Cut the region to /kill, the ring a yank reads."
+  (let ((s (state name)))
+    (multiple-value-bind (from-line from-col to-line to-col) (b:region-bounds s)
+      (when from-line
+        (ns:write /kill (b:region-string s from-line from-col to-line to-col)
+                  :max 60)
+        (%delete name (fset:seq from-line from-col) (fset:seq to-line to-col))))))
 
 (defun %move (name unit n)
   (let ((s (state name)))
@@ -248,13 +248,18 @@ is its lines, so the next edit shares every line it did not touch."
 
 ;;;; The file it visits
 
+(defun %file-path (file)
+  "The /file path FILE names. A file is a place, so saving and visiting are a
+write and a read of one."
+  (p:path /file (p:spliced (if (stringp file) file (p:text file)))))
+
 (defun %text (name)
   (%joined (ns:held (at name :text))))
 
 (defun %save (name)
   (let ((file (ns:read (at name :file))))
     (when file
-      (ns:write (p:path /file (p:spliced (p:text file))) (%text name))
+      (ns:write (%file-path file) (%text name))
       (ns:write (at name :modified) nil)
       t)))
 
@@ -263,8 +268,14 @@ is its lines, so the next edit shares every line it did not touch."
 and comes back by being read again."
   (ns:write (fset:map ((at name :file) file)
                       ((at name :text)
-                       (or (ns:read (p:path /file (p:spliced (p:text file)))) ""))
+                       (or (ns:read (%file-path file)) ""))
                       ((at name :point) (fset:seq 0 0)))))
+
+(defun %revert (name)
+  "Read the file again, throwing away what was typed. There is no revert
+function and nothing to invalidate: the file is a path, so this is a read."
+  (let ((file (ns:read (at name :file))))
+    (when file (%visit name file))))
 
 ;;;; Reading a range, which is the only reason the whole file is ever walked
 
@@ -333,19 +344,23 @@ and comes back by being read again."
                               (lambda () (%insert name text))))
              :newline (pine.data:fn []
                         (%verb name :newline nil (lambda () (%newline name))))
-             :backspace (pine.data:fn []
-                          (%verb name :backspace nil
-                                 (lambda () (%backspace name))))
-             :delete (pine.data:fn [from to] (%delete name from to))
+             :delete (pine.data:fn [from to]
+                       (%verb name :delete (list from to)
+                              (lambda () (%delete name from to))))
              :indent (pine.data:fn (&optional from to) (indent name from to))
+             :kill (pine.data:fn [] (%kill name))
              :undo (pine.data:fn [] (%undo name))
              :redo (pine.data:fn [] (%redo name))
              :save (pine.data:fn [] (%save name))
-             :visit (pine.data:fn [file] (%visit name file))}
-     :doc "the whole string; [:insert TEXT] [:newline] [:backspace] [:undo]"})
+             :revert (pine.data:fn [] (%revert name))}
+     :doc "the whole string; [:insert TEXT] [:delete FROM TO] [:kill] [:undo]"})
    (/buf/?name/point
     {:verbs {:move (pine.data:fn [unit n] (%move name unit n))}
      :doc "[line col]; [:move :word 1] to step by something"})
+   (/buf/?name
+    {:verbs {:visit (pine.data:fn [file] (%visit name file))
+             :indent-line (pine.data:fn [] (indent name))}
+     :doc "the buffer; [:visit FILE] to read another one into it"})
    (/buf
     {:ls (pine.data:fn [] (names))
      :doc "every buffer"})))

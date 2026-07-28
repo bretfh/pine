@@ -307,11 +307,14 @@
     (in-user "(defref :persist-ref-probe 0 :persist t)")
     (is (= 9 (in-user "(ref :persist-ref-probe)")))))
 
-(test a-kill-reaches-the-store
+(test a-kill-is-a-write-to-the-ring
+  "The kill ring is /kill: pushing is a write, the newest is a read, and it is
+a held path, so it is what the store keeps."
   (with-fixture substrate ()
     (pine.editor.kill-ring::kill-ring-push "persist-kill-probe")
-    (is (member "persist-kill-probe" (pine.state.world:value :kill-ring)
-                :test #'equal))))
+    (is (string= "persist-kill-probe"
+                 (pine.ns:read (pine.path:parse "/kill"))))
+    (is (eq :held (pine.ns:kind (pine.path:parse "/kill"))))))
 
 (test find-file-records-a-recent-and-restores-the-saved-place
   (with-fixture substrate ()

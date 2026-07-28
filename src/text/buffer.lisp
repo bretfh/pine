@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:at #:band #:name-of #:edit #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:at #:band #:name-of #:edit #:delete-back #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -471,10 +471,28 @@ has landed when it answers."
     (when name (pine.ns:write (at name key) value))))
 
 (defun edit (x verb)
-  "Give VERB to X's text: [:insert TEXT] [:newline] [:backspace] and the rest.
+  "Give VERB to X's text: [:insert TEXT] [:newline] [:delete FROM TO] and the rest.
 An edit is a write, so it has landed when this answers."
   (let ((name (name-of x)))
     (when name (pine.ns:write (at name :text) verb))))
+
+(defun delete-back (x)
+  "Delete the character before point.
+
+Backspace is not a verb of its own: it is [:delete FROM TO] over the one
+character back, which at the start of a line is the newline joining the pair."
+  (let ((snap (snapshot-of x)))
+    (when snap
+      (let ((line (point-line snap))
+            (col (point-col snap)))
+        (cond ((plusp col)
+               (edit x (fset:seq :delete (fset:seq line (1- col))
+                                 (fset:seq line col))))
+              ((plusp line)
+               (edit x (fset:seq :delete
+                                 (fset:seq (1- line)
+                                           (length (fset:@ (lines snap) (1- line))))
+                                 (fset:seq line 0)))))))))
 
 (defun put-point (x line col)
   "Put X's point at LINE and COL."

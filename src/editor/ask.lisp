@@ -6,6 +6,7 @@ ASK queries the server, the client or a buffer; TELL messages a buffer. Above
 modes and commands, so it can read the registries that hold them."))
 
 (in-package #:pine.editor.ask)
+(named-readtables:in-readtable pine.path:syntax)
 
 (defun tell (target tag &rest plist)
   "Do TAG to TARGET's buffer. Returns the buffer, or nil when there is none.
@@ -20,7 +21,8 @@ buffer's text. Both have landed when this answers."
         (:move-point
          (pine.text.buffer:put-point buf (getf plist :line) (getf plist :col)))
         (:insert (pine.text.buffer:edit buf (fset:seq :insert (getf plist :text))))
-        ((:newline :backspace :undo :redo) (pine.text.buffer:edit buf (fset:seq tag)))
+        (:backspace (pine.text.buffer:delete-back buf))
+        ((:newline :undo :redo) (pine.text.buffer:edit buf (fset:seq tag)))
         (:delete-region
          (pine.text.buffer:edit
           buf (fset:seq :delete
@@ -66,7 +68,7 @@ buffer's text. Both have landed when this answers."
       (:current-buffer (pine.editor.frame:current-buffer c))
       (:focused-window (pine.editor.frame:focused-window c))
       (:windows        (pine.editor.frame:windows c))
-      (:kill-ring      (pine.editor.frame:kill-ring c))
+      (:kill-ring      (fset:convert (quote list) (or (pine.ns:held /kill) (fset:empty-seq))))
       (:last-command   (pine.editor.frame:last-command c))
       (:pending-keys   (car (pine.editor.frame:pending-keys c)))
       (:describe       +client-verbs+)

@@ -72,20 +72,41 @@ edit is a write and it has landed when the write answers."
     (is (fset:equal? ["ab" "cd"] (pine.ns:held /buf/scratch/text)))
     (is (fset:equal? [1 0] (pine.ns:read /buf/scratch/point)))))
 
-(test backspace-takes-the-character-before-point
+(test a-backspace-is-a-delete-of-the-character-before-point
+  "There is no backspace verb. It is [:delete FROM TO] one character back."
   (with-buf
     (pine.ns:write /buf/scratch/text [:insert "abc"])
-    (pine.ns:write /buf/scratch/text [:backspace])
+    (pine.ns:write /buf/scratch/text [:delete [0 2] [0 3]])
     (is (text-is "scratch" "ab"))
     (is (fset:equal? [0 2] (pine.ns:read /buf/scratch/point)))))
 
-(test backspace-at-a-line-start-joins-the-lines
+(test deleting-across-a-line-end-joins-the-lines
   (with-buf
     (pine.ns:write /buf/scratch/text ["ab" "cd"])
-    (pine.ns:write /buf/scratch/point [1 0])
-    (pine.ns:write /buf/scratch/text [:backspace])
+    (pine.ns:write /buf/scratch/text [:delete [0 2] [1 0]])
     (is (fset:equal? ["abcd"] (pine.ns:held /buf/scratch/text)))
     (is (fset:equal? [0 2] (pine.ns:read /buf/scratch/point)))))
+
+(test a-kill-cuts-the-region-to-the-ring
+  (with-buf
+    (pine.ns:write /buf/scratch/text ["one" "two"])
+    (pine.ns:write /buf/scratch/mark [0 1])
+    (pine.ns:write /buf/scratch/point [1 2])
+    (pine.ns:write /buf/scratch/text [:kill])
+    (is (text-is "scratch" "oo"))
+    (is (string= (format nil "ne~%tw") (pine.ns:read /kill)))))
+
+(test reverting-reads-the-file-again
+  (with-buf
+    (pine.provider.file:mount)
+    (let ((path "/tmp/pine-revert-probe.txt"))
+      (with-open-file (s path :direction :output :if-exists :supersede)
+        (format s "from disk~%"))
+      (pine.ns:write /buf/scratch [:visit path])
+      (pine.ns:write /buf/scratch/text [:insert "typed "])
+      (is (string= (format nil "typed from disk~%") (pine.ns:read /buf/scratch/text)))
+      (pine.ns:write /buf/scratch/text [:revert])
+      (is (string= (format nil "from disk~%") (pine.ns:read /buf/scratch/text))))))
 
 (test delete-takes-a-region
   (with-buf
