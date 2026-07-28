@@ -147,3 +147,24 @@ are no undo stacks anywhere."
     (is (eq :live (pine.ns:kind /buf/scratch/text)))
     (is (eq :held (pine.ns:kind /buf/scratch/lines))
         "the lines are what someone wrote, so they are what is stored")))
+
+;;;; the parse is a watch, and it answers with a write
+
+(test lines-moving-is-what-asks-for-a-parse
+  "A buffer that names a grammar is parsed because its lines moved, not because
+anything called the parser. The colours land at /buf/?name/face."
+  (with-fixture substrate ()
+    (pine.ns:with-space ()
+      (pine.ns:write /mode/lisp {:grammar :commonlisp})
+      (pine.buf:mount :system (pine.core.server:actor-system *server*)
+                      :runtime (pine.core.server:ts-runtime *server*))
+      (unwind-protect
+           (progn
+             (pine.ns:write /buf/probe/mode :lisp)
+             (pine.ns:write /buf/probe/viewport [0 200])
+             (pine.ns:write /buf/probe/lines ["(defun f (x) x)"])
+             (is-true (wait-for (lambda () (pine.ns:read /buf/probe/face))
+                                :seconds 15)
+                      "no colours ever landed")
+             (is (plusp (length (pine.ns:read /buf/probe/face)))))
+        (pine.buf:unmount)))))

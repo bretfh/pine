@@ -563,7 +563,9 @@ one nobody will ever look at."
           (destructuring-bind (name pattern fn) watch
             (declare (ignore name))
             (when (%watching-p pattern path)
-              (let ((answer (funcall fn new)))
+              ;; a watch over a pattern hears about several paths, so HERE
+              ;; answers which one moved, as it does inside a provider
+              (let ((answer (let ((*here* path)) (funcall fn new))))
                 (when (fset:map? answer)
                   (setf out (append out (%apply answer))))))))))))
 

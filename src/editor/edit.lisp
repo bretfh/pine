@@ -105,22 +105,17 @@ itself, and by the parser's :indent-region answer."
       ;; The parser's answers. Both carry the tick they were computed for and are
       ;; dropped when the buffer has moved on, because a late answer describes
       ;; text that no longer exists.
+      ;; What the parser wrote. There is no tick to check: the colours are a
+      ;; place, the newest write is what is there, and a watch only wakes on a
+      ;; change, so a stale answer cannot arrive.
       (:highlights
-       (let ((new-hl (getf plist :hl))
-             (link pstate))
-         (when link
-           (setf (pine.ts.parser::parse-link-inflight link) nil))
-         (when (eql (getf plist :tick) (pine.text.buffer:tick state))
-           (setf sento.actor:*state* (list state undo redo subs new-hl link))
-           ;; a repaint only earns itself when the colours actually moved
-           (unless (equal new-hl hl)
-             (pine.text.buffer:notify-subscribers subs state new-hl)))
-         ;; edits landed while that parse was out: send the newest lines now
-         (when (and link (pine.ts.parser:link-dirty link))
-           (pine.text.buffer:request-parse link (first sento.actor:*state*)))))
+       (let ((new-hl (getf plist :hl)))
+         (setf sento.actor:*state* (list state undo redo subs new-hl pstate))
+         ;; a repaint only earns itself when the colours actually moved
+         (unless (equal new-hl hl)
+           (pine.text.buffer:notify-subscribers subs state new-hl))))
       (:indent-region
-       (when (eql (getf plist :tick) (pine.text.buffer:tick state))
-         (apply-indent-targets state undo subs hl pstate (getf plist :targets))))
+       (apply-indent-targets state undo subs hl pstate (getf plist :targets)))
       ;; explicit highlights for tool buffers (debugger, help): the buffer's
       ;; face runs are handed in as data instead of computed from a parse tree
       (:set-highlights

@@ -277,6 +277,22 @@ is what keeps a big file from flickering while its parse catches up."
                                (third tuple) (fourth tuple))
                          tuple))))
 
+(defun %hear-the-parser (name self)
+  "Bring what the parser writes back to the buffer actor SELF.
+
+The parser answers by writing /buf/NAME/face and /buf/NAME/indent rather than
+replying, so the buffer reads those places like anything else would. This is
+the whole of the buffer's side of the parse, and it goes when the actor does."
+  (pine.ns:watch (pine.path:path (pine.path:parse "/buf") name "face")
+                 (lambda (hl) (sento.actor:tell self (list :highlights :hl hl))
+                   (fset:empty-map))
+                 :as (list :buffer-face name))
+  (pine.ns:watch (pine.path:path (pine.path:parse "/buf") name "indent")
+                 (lambda (targets)
+                   (sento.actor:tell self (list :indent-region :targets targets))
+                   (fset:empty-map))
+                 :as (list :buffer-indent name)))
+
 (defun ensure-parser (state link name)
   "LINK, starting the buffer's parser actor the first time its mode names a
 language. NIL when the buffer has no language or the grammar is unavailable."
@@ -287,30 +303,25 @@ language. NIL when the buffer has no language or the grammar is unavailable."
         (when (and lang rt srv)
           (let ((actor (pine.ts.parser:start-parser
                         (pine.core.server:actor-system srv) rt lang name)))
-            (when actor (pine.ts.parser:make-parse-link actor)))))))
+            (when actor
+              (%hear-the-parser name sento.actor:*self*)
+              (pine.ts.parser:make-parse-link actor)))))))
 
 (defun request-parse (link state &key (verb :parse) extra)
-  "Ask LINK's parser for STATE, unless a request is already out: then mark it
-dirty so the answer's arrival sends the newest lines instead.
+  "Tell LINK's parser about STATE.
 
-One request in flight per buffer is the whole backpressure story. A burst of
-typing costs one parse per completed parse, and the parser's mailbox cannot grow
-behind a file that parses slowly."
+Its mailbox is the queue and its one thread drains it in order, so a burst of
+typing arrives as a burst and the newest lines are the last thing parsed. The
+answer is a write, not a reply, so nothing here waits and nothing has to
+remember that a request is out."
   (when link
-    (if (and (eq verb :parse) (pine.ts.parser:link-inflight link))
-        (setf (pine.ts.parser::parse-link-dirty link) t)
-        (progn
-          (when (eq verb :parse)
-            (setf (pine.ts.parser::parse-link-inflight link) t
-                  (pine.ts.parser::parse-link-dirty link) nil))
-          (setf (pine.ts.parser::parse-link-tick link) (tick state))
-          (sento.actor:tell (pine.ts.parser:link-actor link)
-                            (list* verb
-                                   :lines (lines state)
-                                   :tick (tick state)
-                                   :viewport (buffer-local state :viewport)
-                                   :buffer sento.actor:*self*
-                                   extra)))))
+    (sento.actor:tell (pine.ts.parser:link-actor link)
+                      (list* verb
+                             :lines (lines state)
+                             :tick (tick state)
+                             :viewport (buffer-local state :viewport)
+                             :name (buffer-local state :name "")
+                             extra)))
   link)
 
 (defun refresh-highlights (pstate new-state &key edit)

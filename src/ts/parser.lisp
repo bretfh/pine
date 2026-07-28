@@ -5,35 +5,24 @@
    #:parse-link
    #:make-parse-link
    #:parse-link-p
-   #:link-actor
-   #:link-inflight
-   #:link-dirty
-   #:link-tick)
-  (:documentation "Parsing as an actor, off the buffer's thread.
+   #:link-actor)
+  (:documentation "Parsing as an actor, off whatever asked for it.
 
-A buffer's receive owes its mailbox an answer, so it cannot afford to wait for
-tree-sitter: at a million lines one edit costs over a second inside the parser,
-and that would be a second of input latency. The parse lives here instead, on a
-thread of its own, and answers arrive at the buffer as ordinary messages.
+Nothing can afford to wait for tree-sitter: at a million lines one edit costs
+over a second inside the parser, and that would be a second of input latency.
+The parse lives here instead, on a thread of its own, because a TSParser may not
+be touched from two threads at once.
 
-The buffer keeps at most one request in flight, so a burst of typing produces one
-parse per completed parse rather than one per keystroke, and this mailbox cannot
-grow behind a slow file."))
+It is told and never asked, and it answers by writing what it computed, so
+nothing is ever waiting on it and the answer is a place rather than a message."))
 
 (in-package #:pine.ts.parser)
 
 (defstruct (parse-link (:constructor make-parse-link (actor)))
-  "A buffer's handle on its parser: the actor, whether a parse is out, whether
-an edit has landed since it went out, and the tick that was last requested."
-  actor
-  (inflight nil)
-  (dirty nil)
-  (tick 0))
+  "A buffer's handle on its parser."
+  actor)
 
 (defun link-actor (link) (parse-link-actor link))
-(defun link-inflight (link) (parse-link-inflight link))
-(defun link-dirty (link) (parse-link-dirty link))
-(defun link-tick (link) (parse-link-tick link))
 
 (defun %ensure-tree (ps lines edit viewport)
   "Bring PS's tree up to LINES over the band VIEWPORT needs, using EDIT when it
@@ -52,28 +41,34 @@ A window claims the buffer by sending :set-viewport, and that asks for a parse."
     (pine.ts.highlight:parse-highlights ps :from-line (car viewport)
                                            :to-line (cdr viewport))))
 
+(defun %at (name &rest leaf)
+  (apply #'pine.path:path (pine.path:parse "/buf") name leaf))
+
 (defun %receive (ps msg)
-  "Handle one request against PS. Every answer is a TELL back to the buffer: the
-parser never replies to an ask, so no caller can be waiting on it."
-  (destructuring-bind (tag &key lines edit tick viewport buffer from to kind line col
+  "Handle one request against PS.
+
+Every answer is a write. The parser never replies to an ask, so nothing can be
+waiting on it, and what it computed is a place anyone can read rather than a
+message one caller receives."
+  (destructuring-bind (tag &key lines edit tick viewport name from to kind line col
                        &allow-other-keys)
       msg
+    (declare (ignorable tick))
     (case tag
       (:parse
        (%ensure-tree ps lines edit viewport)
-       (sento.actor:tell buffer (list :highlights :tick tick
-                                                  :hl (%highlights ps viewport))))
+       (pine.ns:write (%at name "face") (%highlights ps viewport) :keep nil))
       (:indent
        (%ensure-tree ps lines edit viewport)
        (let ((targets (loop :for l :from from :to to
                             :for target = (pine.ts.highlight:parse-indent ps l)
                             :when target :collect (cons l target))))
-         (sento.actor:tell buffer (list :indent-region :tick tick :targets targets))))
+         (pine.ns:write (%at name "indent") targets :keep nil)))
       (:motion
        (%ensure-tree ps lines edit viewport)
        (multiple-value-bind (l c) (pine.ts.runtime:parse-motion ps kind line col)
          (when l
-           (sento.actor:tell buffer (list :move-point :line l :col c)))))
+           (pine.ns:write (%at name "point") (fset:seq l c)))))
       (:stop
        (pine.ts.runtime:free-parse-state ps))
       (t (error "The parser has no handler for ~s." msg)))))

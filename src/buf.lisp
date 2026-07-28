@@ -233,8 +233,75 @@ and comes back by being read again."
     {:ls (pine.data:fn [] (names))
      :doc "every buffer"})))
 
-(defun mount ()
-  (ns:write /buf (provider)))
+;;;; The parse, off a watch
+;;;;
+;;;; A buffer's parser owns a TSParser, which may not be touched from two
+;;;; threads, so it stays an actor of its own. It is told and never asked, and
+;;;; it answers by writing /buf/?name/face, so nothing waits on a parse and
+;;;; what it computed is a place rather than a message.
+;;;;
+;;;; What starts one is the lines moving, and what bounds it is the range some
+;;;; window said it was showing.
+
+(defvar *parsers* (sento.atomic:make-atomic-reference :value (fset:empty-map))
+  "Name to parse-link, for the buffers that have a language.")
+
+(defun %link (name system runtime)
+  (or (fset:lookup (sento.atomic:atomic-get *parsers*) name)
+      (let* ((mode (ns:read (at name :mode)))
+             (grammar (and mode (pine.mode:setting mode :grammar))))
+        (when (and grammar system runtime)
+          (let ((actor (pine.ts.parser:start-parser system runtime grammar name)))
+            (when actor
+              (let ((link (pine.ts.parser:make-parse-link actor)))
+                (sento.atomic:atomic-swap
+                 *parsers* (lambda (m) (fset:with m name link)))
+                link)))))))
+
+(defun %parse (name system runtime)
+  "Tell NAME's parser the lines as they stand, over the range a window said it
+is showing.
+
+Its mailbox is the queue and its one thread drains it in order, so a burst of
+typing arrives as a burst and the newest lines are the last thing parsed."
+  (let ((link (%link name system runtime)))
+    (when link
+      (let ((viewport (ns:read (at name :viewport))))
+        (sento.actor:tell
+         (pine.ts.parser:link-actor link)
+         (list :parse
+               :name name
+               :lines (or (ns:read (at name :lines)) (fset:seq ""))
+               :tick (or (ns:read (at name :tick)) 0)
+               :viewport (when (fset:seq? viewport)
+                           (cons (fset:lookup viewport 0)
+                                 (fset:lookup viewport 1)))))))))
+
+(defun mount (&key system runtime)
+  "Serve /buf. With SYSTEM and RUNTIME a buffer that names a grammar is parsed
+whenever its lines or its window's range move."
+  (ns:write /buf (provider))
+  (when (and system runtime)
+    (ns:watch /buf/*/lines
+              (pine.data:fn [v]
+                (declare (ignore v))
+                (%parse (p:leaf (p:parent (ns:here))) system runtime)
+                {})
+              :as :buf-parse)
+    (ns:watch /buf/*/viewport
+              (pine.data:fn [v]
+                (declare (ignore v))
+                (%parse (p:leaf (p:parent (ns:here))) system runtime)
+                {})
+              :as :buf-band))
+  nil)
 
 (defun unmount ()
+  (ns:watch /buf/*/lines nil :as :buf-parse)
+  (ns:watch /buf/*/viewport nil :as :buf-band)
+  (fset:do-map (name link (sento.atomic:atomic-get *parsers*))
+    (declare (ignore name))
+    (sento.actor:tell (pine.ts.parser:link-actor link) '(:stop)))
+  (sento.atomic:atomic-swap *parsers* (lambda (m) (declare (ignore m))
+                                        (fset:empty-map)))
   (ns:write /buf nil))
