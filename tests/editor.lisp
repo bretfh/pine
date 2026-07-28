@@ -101,7 +101,7 @@
 (test a-failing-command-routes-by-debug-on-error
   (with-fixture substrate ()
     (let ((seen nil))
-      (pine.editor.command::define-command "probe-boom" () (error "boom"))
+      (pine.ns:write (pine.cmd:at "probe-boom") (lambda () (error "boom")))
       (setf pine.err:*on-debug* (lambda (ev) (setf seen ev)))
       (setf (pine.state.var:var :debug-on-error) t)
       (pine.editor.command::call-command "probe-boom")

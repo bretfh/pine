@@ -37,6 +37,8 @@
                  (:file "host")
                  ;; modes are maps at /mode; this is the lookup over them
                  (:file "mode")
+                 ;; a command is a path holding a handler or a write-map
+                 (:file "cmd")
                  ;; the drivers: one file per system, the only impure code here
                  (:module "provider"
                           :serial t

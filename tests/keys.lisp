@@ -78,19 +78,22 @@
       (is (equal "parent-b" (cdr (assoc "b" bindings :test #'string=)))))))
 
 (test a-command-answers-to-a-symbol-and-a-string-alike
-  (is (string= "greet" (pine.editor.command:command-key 'greet)))
-  (is (string= "greet" (pine.editor.command:command-key "greet")))
-  (pine.editor.command:define-command probe-sym () :ran)
-  (is (not (null (pine.editor.command:find-command "probe-sym"))))
-  (is (not (null (pine.editor.command:find-command 'probe-sym)))))
+  "A command is a path, and 'greet and \"greet\" name the same one."
+  (is (fset:equal? (pine.cmd:at 'greet) (pine.cmd:at "greet")))
+  (is (string= "/cmd/greet" (pine.path:text (pine.cmd:at 'greet))))
+  (with-fixture substrate ()
+    (pine.ns:write (pine.cmd:at "probe-sym") (lambda () :ran))
+    (is (member "probe-sym" (pine.cmd:names) :test #'string=))
+    (is (not (null (pine.ns:read (pine.cmd:at 'probe-sym)))))))
 
 (test the-prefix-argument-reads-as-a-number
-  (is (= 1 (pine.editor.command:prefix-numeric-value nil)))
-  (is (= 7 (pine.editor.command:prefix-numeric-value nil 7)))
-  (is (= 3 (pine.editor.command:prefix-numeric-value 3)))
-  (is (= 4 (pine.editor.command:prefix-numeric-value '(4))))
-  (is (= 16 (pine.editor.command:prefix-numeric-value '(16))))
-  (is (= -1 (pine.editor.command:prefix-numeric-value '-))))
+  (flet ((times (arg) (setf (pine.cmd:prefix) arg) (pine.cmd:times)))
+    (is (= 1 (times nil)))
+    (is (= 3 (times 3)))
+    (is (= 4 (times '(4))))
+    (is (= 16 (times '(16))))
+    (is (= -1 (times '-)))
+    (setf (pine.cmd:prefix) nil)))
 
 (test only-a-bare-printable-key-self-inserts
   (is-true (pine.editor.command:self-insert-key-p (pine.editor.key:parse-key "a")))
@@ -135,19 +138,19 @@
 (test a-universal-argument-multiplies-and-a-digit-accumulates
   (with-fixture substrate ()
     (press "C-u")
-    (is (equal '(4) (pine.editor.frame:prefix-arg *client*)))
+    (is (equal '(4) (pine.cmd:prefix)))
     (press "C-u")
-    (is (equal '(16) (pine.editor.frame:prefix-arg *client*)))
+    (is (equal '(16) (pine.cmd:prefix)))
     (press "C-g")
     (press* "M-1" "M-2")
-    (is (= 12 (pine.editor.frame:prefix-arg *client*)))))
+    (is (= 12 (pine.cmd:prefix)))))
 
 (test a-negative-argument-flips-the-sign
   (with-fixture substrate ()
     (press "M--")
-    (is (eq '- (pine.editor.frame:prefix-arg *client*)))
+    (is (eq '- (pine.cmd:prefix)))
     (press "M-3")
-    (is (= -3 (pine.editor.frame:prefix-arg *client*)))))
+    (is (= -3 (pine.cmd:prefix)))))
 
 (test the-prefix-argument-repeats-a-self-insert
   (with-fixture substrate ()
@@ -163,7 +166,7 @@
       (pine.editor.command:read-next-key *client* (lambda (k) (setf seen k)))
       (press "q")
       (is (eq (pine.editor.key:parse-key "q") seen))
-      (is (null (pine.editor.frame:pending-key-reader *client*))))))
+      (is (null (pine.cmd:said :reader))))))
 
 (test key-binding-reports-a-command-a-prefix-or-nothing
   (with-fixture substrate ()

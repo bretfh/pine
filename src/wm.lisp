@@ -216,31 +216,31 @@ where the next one lands rather than dividing the current one immediately."
 (pine.state.var:defonce :wm-terminal :default "foot"
   :documentation "The program wm-terminal launches.")
 
-(pine.editor.command:define-command wm-terminal ()
+(pine.cmd:defcmd wm-terminal ()
   "Launch the terminal named by the :wm-terminal variable."
   (spawn (pine.state.var:var :wm-terminal)))
 
-(pine.editor.command:define-command wm-close-window ()
+(pine.cmd:defcmd wm-close-window ()
   "Ask the focused window to close."
   (close-window))
 
-(pine.editor.command:define-command wm-focus-next ()
+(pine.cmd:defcmd wm-focus-next ()
   "Focus the next window."
   (focus-step 1))
 
-(pine.editor.command:define-command wm-focus-prev ()
+(pine.cmd:defcmd wm-focus-prev ()
   "Focus the previous window."
   (focus-step -1))
 
-(pine.editor.command:define-command wm-split-below ()
+(pine.cmd:defcmd wm-split-below ()
   "The next window opens below the focused one."
   (split :column))
 
-(pine.editor.command:define-command wm-split-beside ()
+(pine.cmd:defcmd wm-split-beside ()
   "The next window opens beside the focused one."
   (split :row))
 
-(pine.editor.command:define-command wm-exit ()
+(pine.cmd:defcmd wm-exit ()
   "End the Wayland session."
   (exit-session))
 

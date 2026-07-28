@@ -23,7 +23,7 @@
   (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
                 #:split #:lines #:starts-with #:first-number #:read-int-file
                 #:json)
-  (:import-from :pine.editor.command #:call-command #:execute)
+  (:import-from :pine.editor.command #:call-command)
   (:import-from :pine.editor.minibuffer
                 #:completing-read #:read-file-name #:prompt)
   (:import-from :pine.editor.echo #:message)
@@ -61,7 +61,6 @@
    ;; keys
    #:kbd #:keymap #:define-key #:global-set-key
    ;; modes: a mode is a map at /mode, so a config writes one
-   #:execute
    #:enable-minor-mode #:disable-minor-mode #:toggle-minor-mode
    ;; editor variables
    #:defonce #:var
@@ -127,7 +126,7 @@ tree arranges it into. Props are node style: :opacity :font-px :class :expand."
 ;;;; Behavior.
 
 (defmacro defcommand (name args &body body)
-  `(pine.editor.command:define-command ,name ,args ,@body))
+  `(pine.cmd:defcmd ,name ,args ,@body))
 
 ;;;; Keys (Emacs voice). KBD parses a chord sequence; KEYMAP names one; a
 ;;;; command is bound by its string name. A defcommand becomes reachable by key.
@@ -154,12 +153,12 @@ window), or a mode keyword for that mode's map."
 :global, :wm, or a mode keyword."
   (pine.editor.keymap:define-key
    (if (pine.editor.keymap:keymap-p where) where (keymap where))
-   keys (pine.editor.command:command-key command)))
+   keys (pine.path:leaf (pine.cmd:at command))))
 
 (defun global-set-key (keys command)
   "Bind KEYS to COMMAND in the global keymap."
   (pine.editor.keymap:define-key (pine.editor.keymap:global-keymap) keys
-                          (pine.editor.command:command-key command)))
+                          (pine.path:leaf (pine.cmd:at command))))
 
 ;;;; Modes. A mode is a map at /mode, so defining one is writing it:
 ;;;;

@@ -118,7 +118,7 @@
 
 (test every-bound-chord-names-a-command-that-exists
   (dolist (entry (pine.wm:binding-table))
-    (is (not (null (pine.editor.command:find-command (cdr entry))))
+    (is (not (null (pine.ns:read (pine.cmd:at (cdr entry)))))
         "~a is bound to ~a, which is not a command" (car entry) (cdr entry))))
 
 (test the-window-manager-keymap-has-no-parent-to-fall-through-to

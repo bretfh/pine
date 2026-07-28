@@ -33,6 +33,7 @@ minibuffer. Returns the server."
     (pine.core.actor:start-local-agent srv)
     (pine.text.buffer:start-buffer-registry srv)
     (pine.mode:mount)
+    (pine.cmd:mount)
     (pine.term:mount-mode)
     (pine.editor.overwrite:mount-mode)
     (pine.editor.repl:mount-mode)
@@ -70,9 +71,9 @@ argument, the debugger sessions and the world gate."
   (let ((c *client*))
     (when c
       (pine.editor.minibuffer:minibuffer-abort)
-      (setf (pine.editor.frame::pending-keys c) nil
-            (pine.editor.frame::prefix-arg c) nil
-            (pine.editor.frame::pending-key-reader c) nil
+      (setf (pine.cmd:said :pending) nil
+            (pine.cmd:prefix) nil
+            (pine.cmd:said :reader) nil
             (pine.editor.frame::prompt-callback c) nil)
       (setf pine.editor.debugger:*debugger-sessions* nil
             pine.editor.debugger:*attended-session* nil

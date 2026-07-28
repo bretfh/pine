@@ -152,7 +152,7 @@ for."
 
 (pine.core.attach:register-app (make-instance 'desktop-app))
 
-(pine.editor.command:define-command "reload-desktop" ()
+(pine.cmd:defcmd "reload-desktop" ()
   "Re-push every surface for every attached desktop client."
   (refresh-all))
 

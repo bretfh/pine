@@ -1,11 +1,7 @@
 (defpackage #:pine.editor.command
   (:use #:cl)
-  (:export #:command #:command-name #:command-fn #:command-arguments #:command-prefix-p
-           #:command-key
-           #:define-command #:register-command #:find-command #:all-command-names
-           #:execute #:call-command #:dispatch #:command-error
+  (:export #:call-command #:dispatch #:command-error
            #:self-insert #:self-insert-key-p
-           #:prefix-numeric-value #:this-command-key
            #:key-binding #:read-next-key
            #:*terminal-handler*))
 
@@ -13,93 +9,10 @@
 
 (defvar *terminal-handler* nil)
 
-(defclass command ()
-  ((name      :initarg :name      :reader command-name)
-   (fn        :initarg :fn        :reader command-fn)
-   ;; interactive spec: a list of argument descriptors gathered before the fn
-   ;; runs (:universal :number :region ...). nil = a 0-arg command.
-   (arguments :initarg :arguments :reader command-arguments :initform nil)
-   ;; prefix commands (C-u, digit-argument) set the prefix arg instead of
-   ;; consuming it, so dispatch must not clear it after they run.
-   (prefix-p  :initarg :prefix-p  :reader command-prefix-p  :initform nil)))
-
-(defvar *commands* (make-hash-table :test 'equal))
-
-(defun command-key (designator)
-  "A command's registry name: a string as-is, a symbol downcased -- so
-'greet and \"greet\" name the same command."
-  (etypecase designator
-    (string designator)
-    (symbol (string-downcase (symbol-name designator)))))
-
-(defun register-command (command)
-  (setf (gethash (command-name command) *commands*) command))
-
-(defun find-command (name)
-  (etypecase name
-    (command name)
-    ((or string symbol) (gethash (command-key name) *commands*))))
-
-(defun all-command-names ()
-  (sort (loop for k being the hash-keys of *commands* collect k) #'string<))
-
-(defmacro define-command (name (&rest lambda-list) &body body)
-  "Define and register a command. NAME is a symbol (registered by its
-downcased name) or a string. An optional interactive spec may lead the body
-as (:interactive DESCRIPTOR...) or (:prefix); the descriptors gather the
-LAMBDA-LIST arguments before the body runs."
-  (let ((arguments nil) (prefix-p nil))
-    (loop while (and (consp (first body)) (keywordp (car (first body))))
-          for clause = (pop body)
-          do (case (car clause)
-               (:interactive (setf arguments (cdr clause)))
-               (:prefix      (setf prefix-p t))
-               (t (push clause body) (loop-finish))))
-    `(register-command
-      (make-instance 'command :name (command-key ',name)
-                     :arguments ',arguments :prefix-p ,prefix-p
-                     :fn (lambda ,lambda-list ,@body)))))
-
-;;;; Prefix argument (C-u / digit-argument). Stored raw on the client:
-;;;; nil = none, an integer = explicit, (4) = one bare C-u, (16) = C-u C-u.
-
-(defun prefix-numeric-value (arg &optional (default 1))
-  "The numeric value of a raw prefix ARG (Emacs prefix-numeric-value)."
-  (cond ((null arg) default)
-        ((integerp arg) arg)
-        ((consp arg) (car arg))
-        ((eq arg '-) -1)
-        (t default)))
-
-(defun this-command-key (client) (pine.editor.frame:this-command-key client))
-
-(defun %region-bounds (client)
-  "Region as (start-line start-col end-line end-col) from mark and point,
-normalized so start precedes end. nil if no mark."
-  (let ((buf (pine.editor.frame:current-buffer client)))
-    (when buf
-      (multiple-value-bind (sl sc el ec)
-          (pine.text.buffer:region-bounds
-           (pine.text.buffer:state-of buf))
-        (and sl (list sl sc el ec))))))
-
-(defun gather-arguments (command client argument)
-  "Turn COMMAND's interactive descriptors into the actual argument list,
-using the raw prefix ARGUMENT and current client state."
-  (loop for d in (command-arguments command)
-        append (ecase d
-                 (:universal (list argument))
-                 (:number    (list (prefix-numeric-value argument)))
-                 (:region    (or (%region-bounds client) (list nil nil nil nil))))))
-
-(defun execute (command argument)
-  "Run COMMAND with the raw prefix ARGUMENT.
-
-Nothing layers here. What a mode changes is the verb the command writes, and
-that is an :on handler under /mode, so a command runs the same way whatever
-mode is on."
-  (apply (command-fn command)
-         (gather-arguments command (pine.editor.frame:current-client) argument)))
+;;;; Keys, and what they run. A command is a path under /cmd; nothing here
+;;;; holds one. What this has is the walk from a chord to a binding and the
+;;;; bookkeeping a command loop needs: the chord typed so far, the prefix
+;;;; argument, and what ran last.
 
 (defun command-error (condition)
   "Surface an error from the interactive command/edit loop. With :debug-on-error
@@ -122,16 +35,19 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
                              (return-from %guarded nil))))
        ,@body)))
 
-(defun call-command (name-or-command)
-  (let ((cmd (find-command name-or-command))
-        (client (pine.editor.frame:current-client)))
-    (when cmd
-      (let ((arg (pine.editor.frame:prefix-arg client)))
-        (%guarding-errors
-          (execute cmd arg))
-        (setf (pine.editor.frame:last-command client) (command-name cmd))
-        (unless (command-prefix-p cmd)
-          (setf (pine.editor.frame:prefix-arg client) nil))))))
+(defun call-command (name)
+  "Run the command NAME, which is a path, a string or a symbol.
+
+The prefix argument is cleared after, unless the command set one: C-u and the
+digit arguments are commands like any other, and what makes them different is
+that they wrote the prefix rather than used it."
+  (let ((command (if (pine.path:pathp name) name (pine.cmd:at name)))
+        (before (pine.cmd:prefix)))
+    (when (pine.ns:read command)
+      (%guarding-errors (pine.cmd:run command))
+      (setf (pine.cmd:last) (pine.path:leaf command))
+      (when (eq before (pine.cmd:prefix))
+        (setf (pine.cmd:prefix) nil)))))
 
 (defun self-insert-key-p (key)
   "True when KEY should insert its own character (printable, no C-/M-/super)."
@@ -144,15 +60,11 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
   (when (and key (self-insert-key-p key))
     (let ((buf (pine.editor.frame:current-buffer client)))
       (when buf
-        (let ((n (prefix-numeric-value (pine.editor.frame:prefix-arg client))))
-          (dotimes (i (max 1 n))
-            (pine.text.buffer:edit buf (fset:seq :insert (pine.editor.key:key-sym key)))))))))
+        (dotimes (i (max 1 (pine.cmd:times)))
+          (pine.text.buffer:edit buf (fset:seq :insert (pine.editor.key:key-sym key))))))))
 
-(register-command
- (make-instance 'command :name "self-insert-command"
-                :fn (lambda ()
-                      (let ((client (pine.editor.frame:current-client)))
-                        (self-insert client (pine.editor.frame:this-command-key client))))))
+(pine.cmd:defcmd "self-insert-command" ()
+  (self-insert (pine.editor.frame:current-client) (pine.cmd:key)))
 
 (defun %active-tables (client)
   "Every active keymap's tables in priority order: minor modes first, then
@@ -181,7 +93,8 @@ of prefix continuation tables, or nil."
 (defun read-next-key (client fn)
   "Capture the next dispatched key and hand it to FN instead of running its
 binding. One-shot. The basis for describe-key, quoted-insert, etc."
-  (setf (pine.editor.frame:pending-key-reader client) fn))
+  (declare (ignore client))
+  (setf (pine.cmd:said :reader) fn))
 
 (defun %seq-string (pending key)
   "The chord typed so far as a string: PENDING's prefix (if any) plus KEY."
@@ -193,31 +106,31 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
 typed so far and the live continuation tables from every active keymap.
 A key that dead-ends a chord echoes \"SEQ is undefined\" -- unless it is
 bound to keyboard-quit at top level, which always escapes a chord."
-  (setf (pine.editor.frame:this-command-key client) key)
-  (let ((reader (pine.editor.frame:pending-key-reader client)))
+  (setf (pine.cmd:key) key)
+  (let ((reader (pine.cmd:said :reader)))
     (when reader
-      (setf (pine.editor.frame:pending-key-reader client) nil)
+      (setf (pine.cmd:said :reader) nil)
       (return-from dispatch (funcall reader key))))
   ;; in a terminal, keys go to the pty -- unless a prefix (C-x ...) is pending.
-  (when (and *terminal-handler* (null (pine.editor.frame:pending-keys client))
+  (when (and *terminal-handler* (null (pine.cmd:said :pending))
              (funcall *terminal-handler* client key))
     (return-from dispatch))
   (%guarding-errors
     (handler-bind ((error (lambda (c) (declare (ignore c))
-                            (setf (pine.editor.frame:pending-keys client) nil))))
-      (let* ((pending (pine.editor.frame:pending-keys client))
+                            (setf (pine.cmd:said :pending) nil))))
+      (let* ((pending (pine.cmd:said :pending))
              (tables (if pending (cdr pending) (%active-tables client))))
         (multiple-value-bind (cmd conts) (%step tables key)
           (cond
             (cmd
-             (setf (pine.editor.frame:pending-keys client) nil)
+             (setf (pine.cmd:said :pending) nil)
              (call-command cmd))
             (conts
-             (setf (pine.editor.frame:pending-keys client)
+             (setf (pine.cmd:said :pending)
                    (cons (%seq-string pending key) conts)))
             (pending
-             (setf (pine.editor.frame:pending-keys client) nil
-                   (pine.editor.frame:prefix-arg client) nil)
+             (setf (pine.cmd:said :pending) nil
+                   (pine.cmd:prefix) nil)
              (let ((top (%step (%active-tables client) key)))
                (if (equal top "keyboard-quit")
                    (call-command top)
@@ -227,4 +140,4 @@ bound to keyboard-quit at top level, which always escapes a chord."
              (if (self-insert-key-p key)
                  (call-command "self-insert-command")
                  ;; an unbound non-self-inserting key still terminates a prefix arg
-                 (setf (pine.editor.frame:prefix-arg client) nil)))))))))
+                 (setf (pine.cmd:prefix) nil)))))))))

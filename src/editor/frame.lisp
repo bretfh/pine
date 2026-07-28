@@ -17,14 +17,9 @@
    #:windows
    #:arrangement
    #:focused-window
-   #:pending-keys
-   #:prefix-arg
-   #:this-command-key
-   #:pending-key-reader
    #:mode-stack
    #:completion-state
    #:current-buffer
-   #:last-command
    #:server-of
    #:terminals
    #:terminal-map
@@ -101,16 +96,10 @@
    ;; nil means the single window in WINDOWS.
    (arrangement     :initarg :arrangement     :accessor arrangement     :initform nil)
    (focused-window  :initarg :focused-window  :accessor focused-window  :initform nil)
-   (pending-keys    :initarg :pending-keys    :accessor pending-keys    :initform nil)
-   (prefix-arg      :initarg :prefix-arg      :accessor prefix-arg      :initform nil)
-   (this-command-key :initarg :this-command-key :accessor this-command-key :initform nil)
-   (pending-key-reader :initarg :pending-key-reader :accessor pending-key-reader
-                    :initform nil)
    (mode-stack      :initarg :mode-stack      :accessor mode-stack      :initform nil)
    (completion-state
      :initarg :completion-state :accessor completion-state
      :initform (make-instance 'completion))
-   (last-command    :initarg :last-command    :accessor last-command    :initform nil)
    (terminals       :initarg :terminals       :accessor terminals       :initform nil)
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
    (terminal-wake   :accessor terminal-wake   :initform (sb-thread:make-semaphore))
