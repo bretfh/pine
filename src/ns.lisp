@@ -5,7 +5,7 @@
   (:export #:space #:fresh #:*space* #:with-space
            #:read #:write #:watch #:preview #:toggle
            #:provider #:here
-           #:kind #:setting #:watched #:*after-commit*
+           #:kind #:setting #:watched #:on-commit
            #:refused #:no-verb #:cycle #:at #:why))
 
 (in-package #:pine.ns)
@@ -37,6 +37,7 @@
   (reactions (fset:empty-map))        ; path -> reaction
   (watches nil)                       ; (name pattern function)
   (settings (fset:empty-map))         ; path -> the write options that outlive it
+  (on-commit nil)                     ; told what each commit moved
   (moved nil))                        ; what the swap that made this space did
 
 (defun fresh ()
@@ -354,10 +355,23 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
 (defvar *preview* nil "When bound, writes collect here instead of being made.")
 (defvar *propagating* nil)
 
-(defvar *after-commit* nil
-  "Called with the list of (path old new) each commit moved. The store hangs
+(defun on-commit ()
+  "What this space tells each commit to, or NIL."
+  (space-on-commit (current)))
+
+(defun (setf on-commit) (fn)
+  "Call FN with the list of (path old new) each commit moves. The store hangs
 here, because whether a value outlives the daemon is a property of the path and
-not something anyone should have to remember to ask for.")
+not something anyone should have to remember to ask for.
+
+It belongs to the space rather than the image: a pine is a space, and an image
+can hold more than one."
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-on-commit next) fn
+                   (space-moved next) nil)
+             next)))
+  fn)
 
 (defun kind (path)
   "Where the value at PATH comes from.
@@ -463,7 +477,8 @@ against the space it is handed rather than one read a moment ago."
 (defun %told (moved)
   "Tell whoever is keeping the file what moved, outside the swap: a disk write
 has no business inside a compare-and-swap."
-  (when (and moved *after-commit*) (funcall *after-commit* moved))
+  (let ((fn (space-on-commit (current))))
+    (when (and moved fn) (funcall fn moved)))
   moved)
 
 (defun %evaluate (thunk)

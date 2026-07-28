@@ -24,7 +24,7 @@
                  (:file "data")
                  (:file "path")
                  (:file "ns")
-                 (:file "keep")
+                 (:file "store")
                  (:file "self")
                  (:file "err")
                  (:file "proc")
@@ -118,7 +118,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
-                             (:file "keep") (:file "self") (:file "err")
+                             (:file "store") (:file "self") (:file "err")
                              (:file "proc") (:file "host") (:file "provider")
                              (:file "buffer") (:file "buf")
                              (:file "vt") (:file "index") (:file "ts")

@@ -47,18 +47,18 @@
          (progn
            (%forget-file file)
            (pine.ns:with-space ()
-             (pine.keep:open file)
-             (pine.self:claim)
-             (setf id (pine.ns:read /self/id))
-             (pine.keep:close))
+             (let ((store (pine.store:open file)))
+               (pine.self:claim)
+               (setf id (pine.ns:read /self/id))
+               (pine.store:close store)))
            ;; a fresh image, knowing nothing but the file
            (pine.ns:with-space ()
-             (pine.keep:open file)
-             (is (string= id (pine.ns:read /self/id)))
-             (pine.self:claim)
-             (is (string= id (pine.ns:read /self/id))
-                 "claiming again does not make a second identity")
-             (pine.keep:close)))
+             (let ((store (pine.store:open file)))
+               (is (string= id (pine.ns:read /self/id)))
+               (pine.self:claim)
+               (is (string= id (pine.ns:read /self/id))
+                   "claiming again does not make a second identity")
+               (pine.store:close store))))
       (%forget-file file))))
 
 ;;;; the actor system's own timer
