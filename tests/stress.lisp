@@ -135,7 +135,7 @@ producing frames rather than queueing behind the edits that caused them."
               (lambda (&rest args) (declare (ignore args)) (incf painted)))
         (let ((buffers (loop :for i :below 20
                              :collect (let ((b (stress-buffer (format nil "stress-paint-~d" i))))
-                                        (pine.ui.render:subscribe-to-buffer b)
+                                        
                                         b))))
           (dotimes (round 50)
             (dolist (b buffers)
@@ -402,14 +402,14 @@ dead actor have to be survivable: the daemon keeps painting and editing."
         (setf (pine.editor.frame::paint-sink *client*)
               (lambda (&rest args) (declare (ignore args)) (incf painted)))
         (let ((buf (stress-buffer "stress-dead")))
-          (pine.ui.render:subscribe-to-buffer buf)
+          
           (sento.actor:tell buf (list :insert :text "x"))
           (sleep 0.2)
           (pine.editor.frame::kill-buffer "stress-dead")
           (dotimes (i 50) (ignore-errors (sento.actor:tell buf (list :insert :text "x"))))
           (sleep 0.5)
           (let ((live (stress-buffer "stress-dead-live")))
-            (pine.ui.render:subscribe-to-buffer live)
+            
             (setf painted 0)
             (sento.actor:tell live (list :insert :text "z"))
             (is (wait-for (lambda () (equal "z" (btext "stress-dead-live"))))

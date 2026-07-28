@@ -64,14 +64,14 @@ itself, or a reverse lookup in the server's buffer table."
 (defun %backing-window (buf name)
   "A pine.text.window:window viewing BUF. Registered on the client's window list
 when one is in scope (an editor view the commands can focus and split), else
-detached (a read-only view in a panel or a layout buffer). The snapshot comes
-through the renderer subscription for client windows; a detached window
-fetches one only off-actor, so seeding never blocks a receive."
+detached (a read-only view in a panel or a layout buffer).
+
+It takes its first snapshot here, by reading the buffer's leaves. Nothing has to
+be told about a window that has just appeared."
   (let ((w (if pine.editor.frame:*client*
                (pine.editor.frame:make-window buf name)
                (make-instance 'pine.text.window:window :buffer buf :name name))))
-    (unless (or pine.editor.frame:*client* (pine.core.actor:in-actor-p))
-      (setf (pine.text.window:snap w) (ignore-errors (pine.editor.ask:ask buf :snapshot))))
+    (setf (pine.text.window:snap w) (pine.text.buffer:snapshot-of buf))
     w))
 
 (defun editor-window-node (x &rest props)
@@ -85,7 +85,7 @@ frame, the focused one carries the caret); elsewhere it renders once at build."
          (node (apply #'pine.ui.build:window nil :of w :kind :window
                       (append props (list :font-px (editor-font-px))))))
     (when (and buf pine.editor.frame:*client*)
-      (pine.ui.render:subscribe-to-buffer buf))
+      )
     (unless pine.editor.frame:*client*
       (when w
         (setf (pine.text.window:win-width w) 80 (pine.text.window:win-height w) 24)

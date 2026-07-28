@@ -30,7 +30,7 @@
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
-      (pine.ui.render:subscribe-to-buffer buf)
+      
       (pine.editor.frame:set-buffer-mode buf :text-mode)
       (pine.editor.ask:tell buf :set-local :key :package :value :pine-user))
     (pine.ui.render:relayout)))
@@ -64,7 +64,7 @@ disappears into a mailbox nobody is reading."
             (setf (pine.text.window:buffer-ref w) actor)))
         (when (eq dead (pine.editor.frame:current-buffer c))
           (setf (pine.editor.frame:current-buffer c) actor))
-        (pine.ui.render:subscribe-to-buffer actor)
+        
         actor))))
 
 
@@ -214,7 +214,7 @@ disappears into a mailbox nobody is reading."
         (when buf
           (sento.actor:tell (pine.editor.frame:renderer client)
                             (list :switch-buffer :buffer buf :name name))
-          (pine.ui.render:subscribe-to-buffer buf))))))
+          )))))
 (defcmd "list-buffers" ()
   (pine.editor.echo:message (format nil "buffers: ~{~a~^, ~}" (pine.editor.frame:list-buffers))))
 (defcmd "execute-command" ()
@@ -281,13 +281,13 @@ disappears into a mailbox nobody is reading."
 (defcmd "new-buffer" ()
   (pine.editor.minibuffer:prompt "New buffer: "
     (lambda (name)
-      (let ((buf (pine.editor.frame:make-buffer name))) (pine.ui.render:subscribe-to-buffer buf)))))
+      (let ((buf (pine.editor.frame:make-buffer name))) ))))
 (defcmd "open-repl" ()
   (let* ((client (pine.editor.frame:current-client))
          (name pine.editor.repl:+buffer-name+)
          (buf (or (pine.editor.repl:repl-buffer) (pine.editor.repl:start-repl))))
     (pine.editor.frame:switch-buffer name)
-    (pine.ui.render:subscribe-to-buffer buf)
+    
     (sento.actor:tell (pine.editor.frame:renderer client)
                       (list :switch-buffer :buffer buf :name name))))
 (defcmd "terminal" ()

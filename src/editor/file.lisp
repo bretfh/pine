@@ -65,7 +65,7 @@ restore can reopen buffers in bulk."
     (pine.editor.frame:switch-buffer name)
     (sento.actor:tell (pine.editor.frame:renderer (pine.editor.frame:current-client))
                       (list :switch-buffer :buffer buf :name name))
-    (pine.ui.render:subscribe-to-buffer buf)
+    
     (world:save :buffers)
     (pine.editor.echo:message
             (if exists (format nil "~a" namestring)

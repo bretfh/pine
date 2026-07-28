@@ -464,7 +464,7 @@
       (let ((buf (pine.editor.frame::switch-buffer "editor-b2")))
         (sento.actor:tell (pine.editor.frame::renderer *client*)
                           (list :switch-buffer :buffer buf :name "editor-b2"))
-        (pine.ui.render:subscribe-to-buffer buf))
+        )
       (sleep 0.15)
       (press "x")
       (sleep 0.15)

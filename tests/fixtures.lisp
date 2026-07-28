@@ -54,7 +54,7 @@ minibuffer. Returns the server."
           (pine.editor.frame::set-buffer-mode buf :text-mode)
           ;; the window needs snapshots for the commands that read point through
           ;; the focused window, which is what a live session's renderer does
-          (pine.ui.render:subscribe-to-buffer buf))
+          )
         (pine.editor.minibuffer:ensure-minibuffer client))
       (sleep 0.2))
     srv))
@@ -139,10 +139,10 @@ agents, and the attach handshake.")
   (loop :for ch :across string :do (press (string ch))))
 
 (defun btext (buffer)
-  (pine.core.actor:ask (pine.editor.frame::buffer buffer) '(:get-text) :timeout 5))
+  (pine.text.buffer:text-of (pine.editor.frame::buffer buffer)))
 
 (defun bsnap (buffer)
-  (pine.core.actor:ask (pine.editor.frame::buffer buffer) '(:get-snapshot) :timeout 5))
+  (pine.text.buffer:snapshot-of (pine.editor.frame::buffer buffer)))
 
 (defun minibuffer-input ()
   (btext (pine.editor.frame::minibuffer-buffer *client*)))

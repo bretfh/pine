@@ -3,8 +3,8 @@
   (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:start-renderer
-   #:subscribe-to-buffer
-   #:unsubscribe-from-buffer
+   #:watch-buffers
+   #:unwatch-buffers
    #:render-window-rows
    #:modeline-rows
    #:echo-rows
@@ -128,6 +128,7 @@ attached frontend -- the editor session's sink refreshes the live tree
                    (error (e)
                      (ignore-errors (pine.editor.command:command-error e)))))))))
     (setf (pine.editor.frame:renderer client) renderer)
+    (watch-buffers client)
     renderer))
 
 
@@ -600,14 +601,24 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
 ;;;; Subscribers are identified by the client's renderer actor ref.
 ;;;; Buffers `tell` snapshots to the ref; unsubscribe matches by eq.
 
-(defun subscribe-to-buffer (buffer-actor)
-  (let ((renderer (pine.editor.frame:renderer (pine.editor.frame:current-client))))
-    (when (and buffer-actor renderer)
-      (sento.actor:tell buffer-actor
-                        (list :subscribe :renderer renderer)))))
+(defun watch-buffers (client)
+  "Repaint because a buffer moved.
 
-(defun unsubscribe-from-buffer (buffer-actor)
-  (let ((renderer (pine.editor.frame:renderer (pine.editor.frame:current-client))))
-    (when (and buffer-actor renderer)
-      (sento.actor:tell buffer-actor
-                        (list :unsubscribe :renderer renderer)))))
+The renderer reads what changed rather than being sent it, so nothing has to
+remember to subscribe and a buffer nobody is watching costs nothing."
+  (pine.ns:watch
+   (pine.path:parse "/buf")
+   (lambda (value)
+     (declare (ignore value))
+     (let* ((path (pine.ns:here))
+            (name (second (pine.path:spliced path)))
+            (renderer (pine.editor.frame:renderer client)))
+       (when (and name renderer (stringp name))
+         (sento.actor:tell renderer
+                           (list :snapshot
+                                 :snapshot (pine.text.buffer:snapshot-of name))))
+       (fset:empty-map)))
+   :as (list :renderer client)))
+
+(defun unwatch-buffers (client)
+  (pine.ns:watch (pine.path:parse "/buf") nil :as (list :renderer client)))

@@ -90,7 +90,7 @@ switch to it, and enable layout-mode on it. Returns the buffer."
     (pine.editor.frame:set-buffer-mode buf mode)
     (pine.editor.ask:tell buf :set-layout :builder builder :width cols
                           :selection selection)
-    (pine.ui.render:subscribe-to-buffer buf)
+    
     (pine.editor.frame:switch-buffer name)
     (let ((r (ignore-errors (pine.editor.frame:renderer client))))
       (when r (sento.actor:tell r (list :switch-buffer :buffer buf :name name))))
