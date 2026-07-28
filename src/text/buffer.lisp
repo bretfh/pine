@@ -434,7 +434,7 @@ the walks below take a cons. This is the one place the two meet."
         ((fset:seq? viewport) (cons (fset:lookup viewport 0) (fset:lookup viewport 1)))
         (t viewport)))
 
-(defparameter +structural+ (quote (:lines :point :tick :face :indent))
+(defparameter +structural+ (quote (:text :point :tick :face :indent))
   "The leaves this bridge carries itself, or that the parser owns. Everything
 else under a buffer is a local and rides the meta.")
 
@@ -501,7 +501,7 @@ An edit is a write, so it has landed when this answers."
     (flet ((part (seq n) (and (fset:seq? seq) (fset:lookup seq n))))
       (copy-state
        (make-empty-state name)
-       :lines (or (pine.ns:read (at name :lines)) (fset:seq ""))
+       :lines (or (pine.ns:held (at name :text)) (fset:seq ""))
        :marks (fset:map (:point-line (or (part point 0) 0))
                         (:point-charpos (or (part point 1) 0)))
        :meta (fset:with (%locals name) :name name)
@@ -513,7 +513,7 @@ nothing sees the buffer half edited."
   (let ((marks (marks state))
         (meta (meta state))
         (out (fset:empty-map)))
-    (setf out (fset:with out (at name :lines) (lines state)))
+    (setf out (fset:with out (at name :text) (lines state)))
     (setf out (fset:with out (at name :point)
                          (fset:seq (or (fset:lookup marks :point-line) 0)
                                    (or (fset:lookup marks :point-charpos) 0))))

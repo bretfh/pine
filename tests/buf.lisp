@@ -8,7 +8,7 @@
 edit is a write and it has landed when the write answers."
   `(pine.ns:with-space ()
      (pine.buf:mount)
-     (pine.ns:write /buf/scratch/lines [""])
+     (pine.ns:write /buf/scratch/text [""])
      (pine.ns:write /buf/scratch/point [0 0])
      ,@body))
 
@@ -19,24 +19,24 @@ edit is a write and it has landed when the write answers."
 
 (test every-buffer-is-under-buf
   (with-buf
-    (pine.ns:write /buf/notes/lines ["a"])
+    (pine.ns:write /buf/notes/text ["a"])
     (is (equal '("notes" "scratch") (pine.buf:names)))))
 
 (test text-is-the-lines-joined
   (with-buf
-    (pine.ns:write /buf/scratch/lines ["one" "two" "three"])
+    (pine.ns:write /buf/scratch/text ["one" "two" "three"])
     (is (text-is "scratch" (format nil "one~%two~%three")))
     (is (string= "two" (pine.ns:read /buf/scratch/line/1)))))
 
 (test writing-text-lands-as-lines
   (with-buf
     (pine.ns:write /buf/scratch/text (format nil "one~%two"))
-    (is (fset:equal? ["one" "two"] (pine.ns:read /buf/scratch/lines)))))
+    (is (fset:equal? ["one" "two"] (pine.ns:held /buf/scratch/text)))))
 
 (test a-window-reads-the-range-it-shows
   "The band is not a policy in the parser; it is what the window asked for."
   (with-buf
-    (pine.ns:write /buf/scratch/lines
+    (pine.ns:write /buf/scratch/text
                    (fset:convert 'fset:seq
                                  (loop :for i :below 50
                                        :collect (format nil "line ~d" i))))
@@ -47,7 +47,7 @@ edit is a write and it has landed when the write answers."
 
 (test a-range-past-the-end-is-what-is-there
   (with-buf
-    (pine.ns:write /buf/scratch/lines ["one"])
+    (pine.ns:write /buf/scratch/text ["one"])
     (is (= 1 (fset:size (pine.ns:read /buf/scratch/line/0..99))))))
 
 ;;;; editing is writing, and it has landed when the write answers
@@ -61,7 +61,7 @@ edit is a write and it has landed when the write answers."
 (test insert-carries-its-own-newlines
   (with-buf
     (pine.ns:write /buf/scratch/text [:insert (format nil "one~%two")])
-    (is (fset:equal? ["one" "two"] (pine.ns:read /buf/scratch/lines)))
+    (is (fset:equal? ["one" "two"] (pine.ns:held /buf/scratch/text)))
     (is (fset:equal? [1 3] (pine.ns:read /buf/scratch/point)))))
 
 (test newline-splits-the-line-at-point
@@ -69,7 +69,7 @@ edit is a write and it has landed when the write answers."
     (pine.ns:write /buf/scratch/text [:insert "abcd"])
     (pine.ns:write /buf/scratch/point [0 2])
     (pine.ns:write /buf/scratch/text [:newline])
-    (is (fset:equal? ["ab" "cd"] (pine.ns:read /buf/scratch/lines)))
+    (is (fset:equal? ["ab" "cd"] (pine.ns:held /buf/scratch/text)))
     (is (fset:equal? [1 0] (pine.ns:read /buf/scratch/point)))))
 
 (test backspace-takes-the-character-before-point
@@ -81,17 +81,17 @@ edit is a write and it has landed when the write answers."
 
 (test backspace-at-a-line-start-joins-the-lines
   (with-buf
-    (pine.ns:write /buf/scratch/lines ["ab" "cd"])
+    (pine.ns:write /buf/scratch/text ["ab" "cd"])
     (pine.ns:write /buf/scratch/point [1 0])
     (pine.ns:write /buf/scratch/text [:backspace])
-    (is (fset:equal? ["abcd"] (pine.ns:read /buf/scratch/lines)))
+    (is (fset:equal? ["abcd"] (pine.ns:held /buf/scratch/text)))
     (is (fset:equal? [0 2] (pine.ns:read /buf/scratch/point)))))
 
 (test delete-takes-a-region
   (with-buf
-    (pine.ns:write /buf/scratch/lines ["one" "two" "three"])
+    (pine.ns:write /buf/scratch/text ["one" "two" "three"])
     (pine.ns:write /buf/scratch/text [:delete [0 1] [2 2]])
-    (is (fset:equal? ["oree"] (pine.ns:read /buf/scratch/lines)))))
+    (is (fset:equal? ["oree"] (pine.ns:held /buf/scratch/text)))))
 
 (test point-moves-by-a-unit
   (with-buf
@@ -125,7 +125,7 @@ are no undo stacks anywhere."
       (unwind-protect
            (progn
              (pine.buf:mount)
-             (pine.ns:write /buf/scratch/lines ["one"])
+             (pine.ns:write /buf/scratch/text ["one"])
              (pine.ns:write /buf/scratch/point [0 3])
              (pine.ns:write /buf/scratch/text [:insert "!"])
              (is (text-is "scratch" "one!"))
@@ -168,11 +168,19 @@ when the root moves."
 
 ;;;; what it is
 
-(test text-is-live-because-it-is-computed-from-the-lines
+(test a-buffer-with-no-file-has-held-text
+  "Text is written as a string and held as its lines. It is still a value in
+the tree, so it is what is stored."
   (with-buf
-    (is (eq :live (pine.ns:kind /buf/scratch/text)))
-    (is (eq :held (pine.ns:kind /buf/scratch/lines))
-        "the lines are what someone wrote, so they are what is stored")))
+    (is (eq :held (pine.ns:kind /buf/scratch/text)))
+    (is (eq :held (pine.ns:kind /buf/scratch/point)))))
+
+(test text-reads-as-the-whole-string-and-is-held-as-lines
+  (with-buf
+    (pine.ns:write /buf/scratch/text (format nil "one~%two"))
+    (is (string= (format nil "one~%two") (pine.ns:read /buf/scratch/text)))
+    (is (fset:equal? ["one" "two"] (pine.ns:held /buf/scratch/text))
+        "an edit shares the lines it did not touch, so the lines are the value")))
 
 ;;;; the parse is a watch, and it answers with a write
 
@@ -188,7 +196,7 @@ anything called the parser. The colours land at /buf/?name/face."
            (progn
              (pine.ns:write /buf/probe/mode :lisp)
              (pine.ns:write /buf/probe/viewport [0 200])
-             (pine.ns:write /buf/probe/lines ["(defun f (x) x)"])
+             (pine.ns:write /buf/probe/text ["(defun f (x) x)"])
              (is-true (wait-for (lambda () (pine.ns:read /buf/probe/face))
                                 :seconds 15)
                       "no colours ever landed")

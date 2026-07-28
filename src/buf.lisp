@@ -11,7 +11,7 @@
 ;;;; and another image reaches them without an accessor written for the
 ;;;; occasion.
 ;;;;
-;;;;   /buf/?name/lines   the seq of strings, held
+;;;;   /buf/?name/text    the whole string, held as its lines
 ;;;;   /buf/?name/point   [line col]
 ;;;;   /buf/?name/mark    [line col], or nothing
 ;;;;   /buf/?name/mode    a mode keyword
@@ -22,9 +22,12 @@
 ;;;;
 ;;;; and computed from those:
 ;;;;
-;;;;   /buf/?name/text            the lines joined
 ;;;;   /buf/?name/line/?n         one line, or the range FROM..TO
 ;;;;   /buf/?name/face/${a}..${b} the runs a window's range needs
+;;;;
+;;;; Text is written as a string and held as a seq of lines, so an edit is a
+;;;; new seq sharing every line it did not touch rather than a new copy of the
+;;;; file, and a line is a lookup rather than a scan.
 ;;;;
 ;;;; The band that made a million lines work is not a policy in the parser: it
 ;;;; is what the window read.
@@ -36,7 +39,7 @@
 (defun names ()
   "Every buffer there is."
   (sort (mapcar (lambda (path) (p:leaf (p:parent path)))
-                (pine.data:keys (ns:read /buf/*/lines {})))
+                (pine.data:keys (ns:read /buf/*/text {})))
         #'string<))
 
 ;;;; The leaves as one value, so the pure functions in pine.text.buffer apply
@@ -55,7 +58,7 @@
     (let ((mark (ns:read (at name :mark))))
       (b:copy-state
        (b:make-empty-state name)
-       :lines (or (ns:read (at name :lines)) (fset:seq ""))
+       :lines (or (ns:held (at name :text)) (fset:seq ""))
        :marks (fset:map (:point-line line) (:point-charpos col))
        :meta (fset:map (:name name)
                        (:mode (ns:read (at name :mode)))
@@ -67,7 +70,7 @@
   "The write-map taking NAME's leaves to what STATE says. A value that did not
 change does not move, so this is the whole of applying an edit."
   (let ((marks (b:marks state)))
-    (fset:map ((at name :lines) (b:lines state))
+    (fset:map ((at name :text) (b:lines state))
               ((at name :point) (fset:seq (or (fset:lookup marks :point-line) 0)
                                           (or (fset:lookup marks :point-charpos) 0)))
               ((at name :tick) (b:tick state)))))
@@ -229,13 +232,24 @@ stack anywhere."
           (ns:write (fset:lookup change :path) (fset:lookup change :new))))
       (ns:write (at name :undone) nil :keep nil))))
 
+;;;; What text is, on the way in and on the way out
+
+(defun %lines (value)
+  "VALUE as the lines the tree holds. Text is written as a string; what lands
+is its lines, so the next edit shares every line it did not touch."
+  (if (stringp value)
+      (fset:convert 'fset:seq (b:split-lines value))
+      value))
+
+(defun %joined (lines)
+  (if (fset:seq? lines)
+      (format nil "~{~a~^~%~}" (fset:convert 'list lines))
+      ""))
+
 ;;;; The file it visits
 
 (defun %text (name)
-  (let ((lines (ns:read (at name :lines))))
-    (if (fset:seq? lines)
-        (format nil "~{~a~^~%~}" (fset:convert 'list lines))
-        "")))
+  (%joined (ns:held (at name :text))))
 
 (defun %save (name)
   (let ((file (ns:read (at name :file))))
@@ -248,11 +262,8 @@ stack anywhere."
   "Read FILE into NAME. Its text is derived from the file, so it is not stored
 and comes back by being read again."
   (ns:write (fset:map ((at name :file) file)
-                      ((at name :lines)
-                       (fset:convert 'fset:seq
-                                     (b:split-lines
-                                      (or (ns:read (p:path /file (p:spliced (p:text file))))
-                                          ""))))
+                      ((at name :text)
+                       (or (ns:read (p:path /file (p:spliced (p:text file)))) ""))
                       ((at name :point) (fset:seq 0 0)))))
 
 ;;;; Reading a range, which is the only reason the whole file is ever walked
@@ -266,7 +277,7 @@ and comes back by being read again."
         (when (and from to) (cons from to))))))
 
 (defun %range (name from to)
-  (let* ((lines (ns:read (at name :lines)))
+  (let* ((lines (ns:held (at name :text)))
          (size (and (fset:seq? lines) (fset:size lines))))
     (when size
       (fset:subseq lines (max 0 (min from size)) (max 0 (min (1+ to) size))))))
@@ -306,7 +317,7 @@ and comes back by being read again."
                (if span
                    (%range name (car span) (cdr span))
                    (let ((n (parse-integer which :junk-allowed t))
-                         (lines (ns:read (at name :lines))))
+                         (lines (ns:held (at name :text))))
                      (and n (fset:seq? lines) (fset:lookup lines n))))))
      :doc "one line, or the range FROM..TO a window is showing"})
    (/buf/?name/face/?which
@@ -315,11 +326,8 @@ and comes back by being read again."
                (when span (%runs name (car span) (cdr span)))))
      :doc "the highlight runs a window's range needs"})
    (/buf/?name/text
-    {:read (pine.data:fn [] (%text name))
-     :write (pine.data:fn [v]
-              (ns:write (fset:map ((at name :lines)
-                                   (fset:convert 'fset:seq (b:split-lines v)))
-                                  ((at name :point) (fset:seq 0 0)))))
+    {:in (pine.data:fn [v] (%lines v))
+     :out (pine.data:fn [lines] (%joined lines))
      :verbs {:insert (pine.data:fn [text]
                        (%verb name :insert (list text)
                               (lambda () (%insert name text))))
@@ -400,7 +408,7 @@ lands the way any other move does."
       (multiple-value-bind (line col) (%point name)
         (sento.actor:tell actor
                           (list :motion :name name :kind kind :line line :col col
-                                :lines (or (ns:read (at name :lines)) (fset:seq ""))
+                                :lines (or (ns:held (at name :text)) (fset:seq ""))
                                 :viewport (pine.text.buffer:band
                                            (ns:read (at name :viewport)))))))))
 
@@ -437,7 +445,7 @@ same mailbox behind the parse it needs."
   (let ((link (%link name system runtime)))
     (when link
       (let* ((actor (pine.ts.parser:link-actor link))
-             (lines (or (ns:read (at name :lines)) (fset:seq "")))
+             (lines (or (ns:held (at name :text)) (fset:seq "")))
              (band (pine.text.buffer:band (ns:read (at name :viewport))))
              (edit (%for name :edit lines))
              (indent (%for name :indent-request lines)))
@@ -460,7 +468,7 @@ same mailbox behind the parse it needs."
 whenever its lines or its window's range move."
   (ns:write /buf (provider))
   (when (and system runtime)
-    (ns:watch /buf/*/lines
+    (ns:watch /buf/*/text
               (pine.data:fn [v]
                 (declare (ignore v))
                 (%parse (p:leaf (p:parent (ns:here))) system runtime)
@@ -488,7 +496,7 @@ whenever its lines or its window's range move."
   nil)
 
 (defun unmount ()
-  (ns:watch /buf/*/lines nil :as :buf-parse)
+  (ns:watch /buf/*/text nil :as :buf-parse)
   (ns:watch /buf/*/viewport nil :as :buf-band)
   (ns:watch /buf/*/mode nil :as :buf-mode)
   (ns:watch /buf/*/indent nil :as :buf-indent)

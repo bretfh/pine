@@ -3,7 +3,7 @@
   (:shadow #:read #:write #:space)
   (:local-nicknames (#:p #:pine.path))
   (:export #:space #:fresh #:*space* #:with-space
-           #:read #:write #:watch #:preview #:toggle
+           #:read #:write #:watch #:preview #:toggle #:held
            #:provider #:here
            #:kind #:setting #:watched #:on-commit
            #:refused #:no-verb #:cycle #:at #:why))
@@ -184,13 +184,35 @@ the segment it matched. HERE answers the path being served."
                                  (mapcar (lambda (v) (fset:lookup bindings v))
                                          (p:binders (clause-pattern clause))))))))))
 
+;;;; A clause says either what a path is, or how it is written and read.
+;;;;
+;;;;   :read   the provider is the value; the world behind it is the storage
+;;;;   :write  the provider takes the write, as an effect on that world
+;;;;   :out    the tree holds the value, and this is how it reads
+;;;;   :in     the tree takes the write, and this is what lands
+;;;;
+;;;; The second pair is a representation and not a place: a chord written to
+;;;; /key normalizes on the way in, a buffer's text is written as a string and
+;;;; held as its lines, and both are still values in the tree, so both are
+;;;; still undone, watched and stored like anything else.
+
 (defun %served-read (space path)
-  "Answer (values value t) when a mounted provider reads PATH."
+  "Answer (values value t) when a mounted provider answers a read of PATH."
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
-        :for fn = (and handlers (fset:lookup handlers :read))
-        :when fn :do (return (values (funcall fn) t))
+        :when handlers
+          :do (let ((read (fset:lookup handlers :read))
+                    (out (fset:lookup handlers :out)))
+                (cond (read (return (values (funcall read) t)))
+                      (out (let ((held (%get (space-root space) (p:keys path))))
+                             (unless (null held)
+                               (return (values (funcall out held) t)))))))
         :finally (return (values nil nil))))
+
+(defun held (path)
+  "The value in the tree at PATH, with no provider between it and the caller:
+what a clause's :IN put there, rather than what its :OUT makes of it."
+  (%get (space-root (current)) (p:keys path)))
 
 (defun %servedp (space path)
   "True when a mounted provider reads PATH: the world behind it is the storage.
@@ -202,25 +224,29 @@ is normalized -- leaves the value in the tree, so the path is still held."
         :thereis (and handlers (fset:lookup handlers :read) t)))
 
 (defun %served-write (space path value)
-  "Give VALUE to the provider serving PATH. True when one took it.
+  "Give VALUE to the provider serving PATH.
+
+Answers :DONE when a provider took it, or (values :STORE V) when a clause says
+what a written value becomes and V is to land in the tree.
 
 A clause that declares only :VERBS says what the path does, not what it holds,
-so an ordinary value falls through to the tree. That is how a path can take a
-verb and still be a place: /buf/NAME/point is [line col] and also takes
-[:move :word 1]."
+so an ordinary value falls through. That is how a path can take a verb and
+still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
         :when handlers
           :do (let ((verbs (fset:lookup handlers :verbs))
-                    (write (fset:lookup handlers :write)))
+                    (write (fset:lookup handlers :write))
+                    (in (fset:lookup handlers :in)))
                 (cond ((and (%verbp value) verbs
                             (fset:lookup verbs (%verb-name value)))
                        (apply (fset:lookup verbs (%verb-name value))
                               (%verb-args value))
-                       (return t))
+                       (return :done))
                       ((%verbp value)
                        (error 'no-verb :at path :why (%verb-name value)))
-                      (write (funcall write value) (return t))
+                      (in (return (values :store (funcall in value))))
+                      (write (funcall write value) (return :done))
                       ((fset:lookup handlers :read)
                        (error 'refused :at path
                               :why "no provider writes it"))))
@@ -540,8 +566,11 @@ has no business inside a compare-and-swap."
   (let ((space (current)))
     ;; a provider decides what a write to its subtree means, and its IO cannot
     ;; run inside a swap that may be retried
-    (when (%served-write space path value)
-      (return-from %write-one (list (list path (%read-one path) value))))
+    (multiple-value-bind (served normalized) (%served-write space path value)
+      (case served
+        (:done (return-from %write-one
+                 (list (list path (%read-one path) value))))
+        (:store (setf value normalized))))
     (when *preview*
       (let* ((was (%get (space-root space) (p:keys path)))
              (stored (%stored path was value max)))
@@ -608,9 +637,13 @@ is what makes a map a transaction."
         (moved nil)
         (staged nil))
     (fset:do-map (path value map)
-      (cond ((and (not *preview*) (%served-write space path value))
-             (setf moved (append moved (list (list path (%read-one path) value)))))
-            (t (push (cons path value) staged))))
+      (multiple-value-bind (served normalized)
+          (unless *preview* (%served-write space path value))
+        (case served
+          (:done (setf moved (append moved
+                                     (list (list path (%read-one path) value)))))
+          (:store (push (cons path normalized) staged))
+          (t (push (cons path value) staged)))))
     (setf staged (nreverse staged))
     (append moved
             (if *preview*
