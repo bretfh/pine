@@ -8,7 +8,8 @@
    #:gterm-text
    #:drain-terminals
    #:resize-active-terminal
-   #:terminal-dispatch))
+   #:terminal-dispatch
+   #:mount-mode))
 
 (in-package #:pine.term)
 
@@ -181,13 +182,24 @@ stays an editor prefix so the user can switch away."
   (let ((tobj (terminal-for-buffer buffer)))
     (when tobj (pine.vt:pty-write-string (terminal-fd tobj) text))))
 
-(defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:terminal-mode) self tag plist)
-  (case tag
-    (:insert (term-write self (getf plist :text)))
-    (:newline (term-write self (string #\Newline)))
-    (:backspace (term-write self (string (code-char 127))))
-    (:get-text
-     (let ((term (terminal-for-buffer self)))
-       (sento.actor:reply (if term (gterm-text term) ""))))
-    ((:move-point :delete-region :undo :redo :replace-content :append-with-prompt) nil)
-    (t (call-next-method))))
+;;;; What a terminal does with an edit is write it to the pty and let the shell
+;;;; answer, so terminal-mode claims the text verbs. It is a mode like any
+;;;; other: a map with :on handlers, and this is the whole of it.
+
+(defun mount-mode ()
+  (pine.ns:write (pine.path:parse "/mode/terminal")
+                 (fset:map (:parent :text)
+                           (:indicator "Term")
+                           (:on (fset:map
+                                 (:insert (lambda (buf text)
+                                            (term-write (pine.editor.frame:buffer buf) text)
+                                            (fset:empty-map)))
+                                 (:newline (lambda (buf)
+                                             (term-write (pine.editor.frame:buffer buf)
+                                                         (string #\Newline))
+                                             (fset:empty-map)))
+                                 (:delete (lambda (buf from to)
+                                            (declare (ignore from to))
+                                            (term-write (pine.editor.frame:buffer buf)
+                                                        (string (code-char 127)))
+                                            (fset:empty-map))))))))

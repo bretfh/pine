@@ -33,6 +33,10 @@
           (pine.proc:mount :system (pine.core.server:actor-system srv)))
     ;; /buf serves the buffers and drives their parsers: a buffer is parsed
     ;; because its lines, its window's range or its mode moved
+    (pine.mode:mount)
+    (pine.term:mount-mode)
+    (pine.editor.overwrite:mount-mode)
+    (pine.editor.repl:mount-mode)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
                     :runtime (pine.core.server:ts-runtime srv))
     (pine.core.attach:start-attach-listener srv)

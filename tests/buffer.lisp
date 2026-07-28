@@ -176,9 +176,9 @@ Returns (values state model)."
 
 (test buffer-local-reads-through-state-and-snapshot
   (let ((state (pine.text.buffer:set-meta
-                (pine.text.buffer:load-content "x") :mode :lisp-mode)))
-    (is (eq :lisp-mode (pine.text.buffer:buffer-local state :mode)))
-    (is (eq :lisp-mode (pine.text.buffer:buffer-local
+                (pine.text.buffer:load-content "x") :mode :lisp)))
+    (is (eq :lisp (pine.text.buffer:buffer-local state :mode)))
+    (is (eq :lisp (pine.text.buffer:buffer-local
                         (pine.text.buffer:state->snapshot state) :mode)))
     (is (eq :fallback (pine.text.buffer:buffer-local state :absent :fallback)))))
 

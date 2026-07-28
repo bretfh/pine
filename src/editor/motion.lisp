@@ -22,8 +22,7 @@ command like beginning-of-line must see its input, not the window behind it."
   (let ((buf (cur-buffer))) (when buf (pine.editor.ask:ask buf :snapshot))))
 
 (defun buffer-ts-language ()
-  (let ((mode (pine.editor.frame:current-buffer-mode)))
-    (and (typep mode 'pine.editor.mode:major-mode) (pine.editor.mode:ts-language mode))))
+  (pine.mode:setting (pine.editor.frame:current-buffer-mode) :grammar))
 
 (defun ts-runtime ()
   (pine.core.server:ts-runtime (pine.editor.frame:server-of (pine.editor.frame:current-client))))

@@ -52,11 +52,6 @@
                  (:module "echo"
                           :serial t :pathname "editor/"
                           :components ((:file "echo")))
-                 ;; the CLOS mode registry, until the dispatch-message methods
-                 ;; move to :on handlers under /mode
-                 (:module "editor-mode"
-                          :serial t :pathname "editor/"
-                          :components ((:file "mode")))
                  (:module "ts"
                           :serial t
                           :components ((:file "index") (:file "runtime") (:file "highlight")

@@ -282,8 +282,8 @@ vanishes (the frozen-buffer wedge)."
       (setf (pine.editor.frame:saved-buffer client) (pine.editor.frame:current-buffer client)))
     (setf (pine.editor.frame:current-buffer client) mb
           (pine.editor.frame:prompt-active client) t)
-    (pine.editor.frame:set-buffer-mode mb :text-mode)
-    (ignore-errors (pine.editor.frame:enable-minor-mode client :minibuffer-mode))
+    (pine.editor.frame:set-buffer-mode mb :text)
+    (ignore-errors (pine.editor.frame:enable-minor-mode client :minibuffer))
     (pine.editor.echo:show-prompt prompt-text)
     (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of mb) :text) initial)
     (pine.text.buffer:put-point mb 0 (length initial))
@@ -292,7 +292,7 @@ vanishes (the frozen-buffer wedge)."
 (defun deactivate-minibuffer (client)
   "Leave the minibuffer: restore the previous buffer and clear the prompt. Never
 restore to the minibuffer itself -- fall back to the focused window's buffer."
-  (ignore-errors (pine.editor.frame:disable-minor-mode client :minibuffer-mode))
+  (ignore-errors (pine.editor.frame:disable-minor-mode client :minibuffer))
   (let* ((mb (pine.editor.frame:minibuffer-buffer client))
          (back (pine.editor.frame:saved-buffer client)))
     (when (or (null back) (eq back mb))

@@ -82,7 +82,7 @@
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "err-scratch"))
           (seen nil))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (sento.actor:tell buf (list :insert :text "hello"))
       (sleep 0.1)
       (setf pine.err:*on-debug*
@@ -193,22 +193,21 @@
     (is (eq :yes (user-value "*RAN*")))
     (in-user "(defvar *min* nil)")
     (in-user "(defcommand \"user-min-cmd\" () (setf *min* :hit))")
-    (in-user "(defminor user-probe-minor (:precedence 12))")
-    (in-user "(define-key (keymap :user-probe-minor) (kbd \"z\") \"user-min-cmd\")")
+    (in-user "(write /minor/user-probe {:precedence 12})")
+    (in-user "(define-key (keymap :user-probe) (kbd \"z\") \"user-min-cmd\")")
     (is (null (pine.editor.command::key-binding
                *client* (pine.editor.key::parse-key "z"))))
-    (in-user "(enable-minor-mode :user-probe-minor)")
+    (in-user "(enable-minor-mode :user-probe)")
     (is (equal "user-min-cmd" (pine.editor.command::key-binding
                                *client* (pine.editor.key::parse-key "z"))))
-    (in-user "(disable-minor-mode :user-probe-minor)")
+    (in-user "(disable-minor-mode :user-probe)")
     (is (null (pine.editor.command::key-binding
                *client* (pine.editor.key::parse-key "z"))))
-    (in-user "(defmode user-probe-mode (:parent :text-mode :indicator \"UP\"))")
-    (in-user "(auto-mode \"upx\" :user-probe-mode)")
-    (is (eq :user-probe-mode (pine.editor.mode::mode-for-file "/tmp/x.upx")))
-    (in-user "(set-buffer-mode (buffer \"scratch\") :user-probe-mode)")
-    (is (eq :user-probe-mode (pine.editor.ask:ask "scratch" :mode)))
-    (in-user "(set-buffer-mode (buffer \"scratch\") :text-mode)")
+    (in-user "(write /mode/user-probe {:parent :text :indicator \"UP\" :files [\"*.upx\"]})")
+    (is (eq :user-probe (pine.mode:for-file "/tmp/x.upx")))
+    (in-user "(set-buffer-mode (buffer \"scratch\") :user-probe)")
+    (is (eq :user-probe (pine.editor.ask:ask "scratch" :mode)))
+    (in-user "(set-buffer-mode (buffer \"scratch\") :text)")
     (in-user "(defonce :user-probe-var :default 1 :documentation \"probe\")")
     (in-user "(setf (var :user-probe-var) 42)")
     (is (= 42 (in-user "(var :user-probe-var)")))
@@ -439,8 +438,7 @@ a held path, so it is what the store keeps."
     (finishes
       (load (merge-pathnames "../examples/init.lisp"
                              #.(or *compile-file-truename* *load-truename*))))
-    (is (not (null (pine.editor.mode::find-mode :todo-mode))))
-    (is (eq :todo-mode (pine.editor.mode::mode-for-file "/x.todo")))
+    (is (eq :todo (pine.mode:for-file "/x.todo")))
     (is (string= "hi" (in-user "(var :greeting)")))))
 
 (test the-live-tree-seeds-splits-focuses-and-follows-the-modeline
@@ -450,7 +448,7 @@ a held path, so it is what the store keeps."
            (other (pine.editor.frame::make-buffer "editor-b2")))
       (setf (pine.text.window:frame-cols frame) 40
             (pine.text.window:frame-rows frame) 12)
-      (pine.editor.frame::set-buffer-mode other :text-mode)
+      (pine.editor.frame::set-buffer-mode other :text)
       (sento.actor:tell other (list :insert :text "beta-two"))
       (sleep 0.1)
       (pine.editor.session::%seed-editor-tree *client*)
@@ -489,7 +487,7 @@ a held path, so it is what the store keeps."
 (test a-window-node-built-with-no-client-renders-once-at-build
   (with-fixture substrate ()
     (let ((other (pine.editor.frame::make-buffer "editor-b3")))
-      (pine.editor.frame::set-buffer-mode other :text-mode)
+      (pine.editor.frame::set-buffer-mode other :text)
       (sento.actor:tell other (list :insert :text "beta-three"))
       (sleep 0.1)
       (let ((pine.editor.frame::*client* nil))
@@ -500,7 +498,7 @@ a held path, so it is what the store keeps."
 (test an-overlay-renders-after-the-line-and-dies-on-the-next-edit
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "overlay-probe")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (sento.actor:tell buf (list :insert :text "abc"))
       (sleep 0.1)
       (sento.actor:tell buf (list :overlay :line 0 :text "=> 3"))
@@ -528,7 +526,7 @@ a held path, so it is what the store keeps."
 (test eval-last-sexp-leaves-its-result-inline
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "eval-probe")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :insert :text "(+ 1 2)"))
       (sleep 0.1)
@@ -543,7 +541,7 @@ a held path, so it is what the store keeps."
 (test kill-and-yank-round-trip-multi-line-text
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "yank-probe")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :insert :text (format nil "alpha~%beta~%gamma")))
       (sleep 0.1)
@@ -563,7 +561,7 @@ a held path, so it is what the store keeps."
 (test undo-and-redo-walk-the-edit-history
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "undo-probe")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (sento.actor:tell buf (list :insert :text "one"))
       (sleep 0.1)
       (sento.actor:tell buf (list :insert :text "-two"))
@@ -579,7 +577,7 @@ a held path, so it is what the store keeps."
 (test a-lisp-buffer-indents-electrically-on-a-newline
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "indent-probe")))
-      (pine.editor.frame::set-buffer-mode buf :lisp-mode)
+      (pine.editor.frame::set-buffer-mode buf :lisp)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content
                                   :content (format nil "(defun f ()~%(bar))")))

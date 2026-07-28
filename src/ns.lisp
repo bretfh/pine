@@ -631,6 +631,29 @@ one nobody will ever look at."
                 (when (fset:map? answer)
                   (setf out (append out (%apply answer))))))))))))
 
+(defun %ordered (map)
+  "MAP's entries, deepest path first and the later name of two at the same
+depth before the earlier.
+
+A map has no order and a value does not need one: every path in a transaction
+gets its value and nothing observes the half of it. A verb is an event, and two
+events in one map do need one, so pine says what it is. Deepest first is what
+makes the doc's own handlers mean what they read as:
+
+  {/buf/${buf}/text [:newline] /buf/${buf} [:indent-line]}
+  {/buf/${buf}/text [:insert \")\"] /buf/${buf}/point [:move :char -1]}
+
+the line splits before it is indented, and the paren is typed before point
+steps back over it."
+  (let ((acc nil))
+    (fset:do-map (path value map) (push (cons path value) acc))
+    (sort acc (lambda (a b)
+                (let ((da (p:segment-count (car a)))
+                      (db (p:segment-count (car b))))
+                  (if (= da db)
+                      (string> (p:text (car a)) (p:text (car b)))
+                      (> da db)))))))
+
 (defun %apply (map)
   "Write every entry of MAP as one change, without propagating: the caller owns
 that.
@@ -641,14 +664,15 @@ is what makes a map a transaction."
   (let ((space (current))
         (moved nil)
         (staged nil))
-    (fset:do-map (path value map)
-      (multiple-value-bind (served normalized)
-          (unless *preview* (%served-write space path value))
-        (case served
-          (:done (setf moved (append moved
-                                     (list (list path (%read-one path) value)))))
-          (:store (push (cons path normalized) staged))
-          (t (push (cons path value) staged)))))
+    (loop :for (path . value) :in (%ordered map)
+          :do (multiple-value-bind (served normalized)
+                  (unless *preview* (%served-write space path value))
+                (case served
+                  (:done (setf moved
+                               (append moved
+                                       (list (list path (%read-one path) value)))))
+                  (:store (push (cons path normalized) staged))
+                  (t (push (cons path value) staged)))))
     (setf staged (nreverse staged))
     (append moved
             (if *preview*

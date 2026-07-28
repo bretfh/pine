@@ -54,7 +54,7 @@ buffer's text. Both have landed when this answers."
       (:buffers     (loop for k being the hash-keys of (pine.text.buffer:buffer-table srv)
                           collect k))
       (:clients     (pine.core.server:clients srv))
-      (:modes       (pine.editor.mode:all-mode-names))
+      (:modes       (pine.mode:names))
       (:commands    (pine.editor.command:all-command-names))
       (:faces       (pine.ui.face:faces-table))
       (:actor-system (pine.core.server:actor-system srv))

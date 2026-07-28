@@ -56,17 +56,20 @@ debug-on-error; edit-actor and eval errors always reach the debugger.")
          (minors (pine.editor.frame:active-minor-modes client)))
     (with-output-to-string (out)
       (format out "Major mode: ~a (~a)~%"
-              (pine.editor.mode:mode-name major) (pine.editor.mode:mode-indicator major))
-      (loop for m = major then (pine.editor.mode:parent-mode m) while m
-            do (format out "  ~a~%" (pine.editor.mode:mode-name m)))
-      (let ((lang (and (typep major 'pine.editor.mode:major-mode)
-                       (pine.editor.mode:ts-language major))))
+              major (or (pine.mode:setting major :indicator) ""))
+      (dolist (m (pine.mode:chain major))
+        (format out "  ~a~%" m))
+      (let ((lang (pine.mode:setting major :grammar)))
         (when lang (format out "  tree-sitter language: ~a~%" lang)))
       (format out "~%Minor modes:~%")
       (if minors
           (dolist (m minors)
-            (format out "  ~a (~a) precedence ~a~a~%"
-                    (pine.editor.mode:mode-name m) (pine.editor.mode:mode-indicator m)
-                    (pine.editor.mode:precedence m)
-                    (if (pine.editor.mode:transparent m) " transparent" "")))
+            (format out "  ~a (~a) precedence ~a~%"
+                    m
+                    (or (pine.ns:read (pine.path:path (pine.path:parse "/minor")
+                                                      m :indicator))
+                        "")
+                    (or (pine.ns:read (pine.path:path (pine.path:parse "/minor")
+                                                      m :precedence))
+                        0)))
           (format out "  none~%")))))

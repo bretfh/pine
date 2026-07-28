@@ -115,10 +115,10 @@
     (in-user "(defvar *probe-which* nil)")
     (in-user "(defcommand probe-global () (setf *probe-which* :global))")
     (in-user "(defcommand probe-mode () (setf *probe-which* :mode))")
-    (in-user "(defmode probe-chord-mode (:parent :text-mode))")
-    (in-user "(define-key (keymap :probe-chord-mode) (kbd \"C-c C-q\") 'probe-mode)")
+    (in-user "(write /mode/probe-chord {:parent :text})")
+    (in-user "(define-key (keymap :probe-chord) (kbd \"C-c C-q\") 'probe-mode)")
     (in-user "(global-set-key (kbd \"C-c q\") 'probe-global)")
-    (in-user "(set-buffer-mode (buffer \"scratch\") :probe-chord-mode)")
+    (in-user "(set-buffer-mode (buffer \"scratch\") :probe-chord)")
     (press* "C-c" "q")
     (is (eq :global (user-value "*PROBE-WHICH*")))
     (press* "C-c" "C-q")
@@ -126,7 +126,7 @@
 
 (test a-dead-end-chord-echoes-undefined-instead-of-inserting
   (with-fixture substrate ()
-    (in-user "(set-buffer-mode (buffer \"scratch\") :text-mode)")
+    (in-user "(set-buffer-mode (buffer \"scratch\") :text)")
     (let ((before (btext "scratch")))
       (press* "C-c" "j")
       (is (equal before (btext "scratch")))
@@ -152,7 +152,7 @@
 (test the-prefix-argument-repeats-a-self-insert
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "prefix-probe")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (press* "M-3" "z")
       (is (string= "zzz" (btext buf))))))

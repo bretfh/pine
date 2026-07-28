@@ -406,7 +406,7 @@ point position."
          (line (if (and s (typep s 'pine.text.buffer:snapshot))
                    (format nil " ~a   ~a   L~d C~d"
                            (pine.text.window:window-name w)
-                           (pine.editor.mode:mode-indicator (pine.editor.frame:buffer-mode s))
+                           (or (pine.mode:setting (pine.editor.frame:buffer-mode s) :indicator) "")
                            (1+ (pine.text.buffer:point-line s))
                            (pine.text.buffer:point-col s))
                    (format nil " ~a" (pine.text.window:window-name w)))))

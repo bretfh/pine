@@ -131,17 +131,15 @@ edit that produced them. Overlays describe the text as it was, so they go."
             :bytes (pine.ts.index:string-bytes text)})))
 
 (defun %newline (name)
-  "Split the line at point, and ask for the new line's indent in the same
-transaction.
+  "Split the line at point.
 
-The line lands now and the column follows when the parse says what it is, so a
-newline is never waiting on tree-sitter."
+Nothing here indents: a mode that wants an electric indent says so, and
+lisp-mode does, so the line lands now and takes its column when the parse says
+what it is."
   (multiple-value-bind (line col) (%point name)
     (let* ((next (b:insert-newline (state name) line col))
            (lines (b:lines next)))
-      (setf (asked name :edit) {:at line :old 1 :new 2 :bytes 1 :lines lines}
-            (asked name :indent-request)
-            {:from (1+ line) :to (1+ line) :lines lines})
+      (setf (asked name :edit) {:at line :old 1 :new 2 :bytes 1 :lines lines})
       (ns:write (fset:with (%landing name next) (at name :overlays) nil)))))
 
 (defun %delete (name from to)
@@ -347,12 +345,23 @@ that changed."
 ;;;; is applied as one transaction; nothing is asked, so this is safe from
 ;;;; wherever the verb was written.
 
+(defvar *dispatching* nil
+  "The (buffer . verb) pairs a mode handler is answering right now.")
+
 (defun %verb (name verb args fallback)
-  (let ((handler (pine.mode:handler name verb)))
+  "Answer VERB for NAME through whatever mode claims it, or the built-in.
+
+A handler writes the verb it claimed to reach the built-in one, which is what
+lisp-mode's newline does: {text [:newline] buf [:indent-line]}. So while a
+handler for a verb is running, that verb on that buffer is the built-in."
+  (let* ((claim (cons name verb))
+         (handler (unless (member claim *dispatching* :test #'equal)
+                    (pine.mode:handler name verb))))
     (if handler
-        (let ((answer (apply handler name args)))
-          (when (fset:map? answer) (ns:write answer))
-          nil)
+        (let ((*dispatching* (cons claim *dispatching*)))
+          (let ((answer (apply handler name args)))
+            (when (fset:map? answer) (ns:write answer))
+            nil))
         (funcall fallback))))
 
 ;;;; The buffer that is current, which is a place like any other. Nothing holds

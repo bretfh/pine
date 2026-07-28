@@ -94,7 +94,7 @@ shared dispatcher, because every actor in the daemon draws from it."
       (sleep 0.5)
       (is (equal '("a" "b")
                  (let ((probe (pine.editor.frame::make-buffer "post-repl-probe")))
-                   (pine.editor.frame::set-buffer-mode probe :text-mode)
+                   (pine.editor.frame::set-buffer-mode probe :text)
                    (sento.actor:tell probe (list :replace-content
                                                  :content (format nil "a~%b")))
                    (sleep 0.2)

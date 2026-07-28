@@ -92,13 +92,14 @@ using the raw prefix ARGUMENT and current client state."
                  (:number    (list (prefix-numeric-value argument)))
                  (:region    (or (%region-bounds client) (list nil nil nil nil))))))
 
-(defgeneric execute (modes command argument)
-  (:documentation "Run COMMAND. MODES is the active-modes instance so modes can
-layer :before/:after/:around methods. ARGUMENT is the raw prefix argument.")
-  (:method (modes command argument)
-    (declare (ignore modes))
-    (apply (command-fn command)
-           (gather-arguments command (pine.editor.frame:current-client) argument))))
+(defun execute (command argument)
+  "Run COMMAND with the raw prefix ARGUMENT.
+
+Nothing layers here. What a mode changes is the verb the command writes, and
+that is an :on handler under /mode, so a command runs the same way whatever
+mode is on."
+  (apply (command-fn command)
+         (gather-arguments command (pine.editor.frame:current-client) argument)))
 
 (defun command-error (condition)
   "Surface an error from the interactive command/edit loop. With :debug-on-error
@@ -127,7 +128,7 @@ The surface runs inside the handler (stack live), then we unwind out of BODY."
     (when cmd
       (let ((arg (pine.editor.frame:prefix-arg client)))
         (%guarding-errors
-          (execute (pine.editor.frame:active-modes-instance client) cmd arg))
+          (execute cmd arg))
         (setf (pine.editor.frame:last-command client) (command-name cmd))
         (unless (command-prefix-p cmd)
           (setf (pine.editor.frame:prefix-arg client) nil))))))

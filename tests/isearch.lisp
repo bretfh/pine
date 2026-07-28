@@ -47,7 +47,7 @@
 (test typing-extends-the-search-and-moves-point
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "isearch-probe")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content
                                   :content (format nil "alpha~%beta~%gamma")))
@@ -66,7 +66,7 @@
 (test backspace-shrinks-the-search-back-to-the-origin
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "isearch-shrink")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content
                                   :content (format nil "alpha~%beta")))
@@ -83,7 +83,7 @@
 (test c-g-aborts-back-to-where-the-search-began
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "isearch-abort")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content
                                   :content (format nil "alpha~%beta")))
@@ -101,7 +101,7 @@
 (test a-failing-search-says-so-and-leaves-point-alone
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "isearch-fail")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content :content "alpha"))
       (sleep 0.1)
@@ -115,7 +115,7 @@
 (test an-accepted-search-is-remembered-for-the-next-one
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "isearch-last")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content
                                   :content (format nil "alpha~%beta")))
@@ -130,7 +130,7 @@
 (test any-other-key-accepts-the-search-and-then-does-its-own-job
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "isearch-fallthrough")))
-      (pine.editor.frame::set-buffer-mode buf :text-mode)
+      (pine.editor.frame::set-buffer-mode buf :text)
       (setf (pine.editor.frame::current-buffer *client*) buf)
       (sento.actor:tell buf (list :replace-content :content "alpha beta"))
       (sleep 0.1)

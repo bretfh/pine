@@ -14,7 +14,7 @@ live session.")
 
 (defun lisp-buffer (name content)
   (let ((buf (pine.editor.frame::make-buffer name :content content)))
-    (pine.editor.frame::set-buffer-mode buf :lisp-mode)
+    (pine.editor.frame::set-buffer-mode buf :lisp)
     (pine.buf:showing name (fset:seq (car +test-viewport+) (cdr +test-viewport+)))
     (sleep 0.2)
     buf))
@@ -41,7 +41,7 @@ snapshot only carries highlights when one is built for a subscriber."
   "The highlights a synchronous walk gives for CONTENT over the same window."
   (let ((state (pine.text.buffer:set-meta
                 (pine.text.buffer:set-meta
-                 (pine.text.buffer:load-content content) :mode :lisp-mode)
+                 (pine.text.buffer:load-content content) :mode :lisp)
                 :viewport viewport)))
     (pine.text.buffer:refresh-highlights nil state)))
 
@@ -151,7 +151,7 @@ insertion: whole-line shifts cannot express a split."
   (with-fixture substrate ()
     (within-seconds 20
       (let ((buf (pine.editor.frame::make-buffer "async-plain")))
-        (pine.editor.frame::set-buffer-mode buf :text-mode)
+        (pine.editor.frame::set-buffer-mode buf :text)
         (sento.actor:tell buf (list :insert :text "plain"))
         (is (wait-for (lambda () (equal "plain" (btext "async-plain"))))
             "a text buffer stopped editing")

@@ -1,6 +1,7 @@
 (defpackage #:pine.editor.keymap
   (:use #:cl)
   (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
+           #:mode-keymap #:global-keymap
            #:define-key #:define-keys #:keymap-lookup #:prefix-p
            #:keymap-tables #:keymap-bindings))
 
@@ -33,9 +34,27 @@ not exist yet."
           (setf (gethash k table) command)))
     command))
 
+;;;; A keymap per mode, and one no mode owns. Keyed by the mode's name, since a
+;;;; mode is a map at /mode and has no object to hang this on.
+
+(defvar *keymaps* (make-hash-table :test 'eq))
+
+(defun mode-keymap (name)
+  "The keymap for the mode NAME, made on first use.
+
+It stands alone. What a mode falls back to is its :parent, and that is read
+when a key is looked up rather than wired in here, so a config that gives a
+mode a parent after binding a key to it still gets the fallback."
+  (or (gethash name *keymaps*)
+      (setf (gethash name *keymaps*) (make-keymap :name name))))
+
+(defun global-keymap ()
+  (mode-keymap :global))
+
 (defgeneric keymap (object)
   (:documentation "OBJECT's keymap.")
-  (:method ((k keymap)) k))
+  (:method ((k keymap)) k)
+  (:method ((name symbol)) (mode-keymap name)))
 
 (defmacro define-keys (designator &body pairs)
   "Bind CHORD COMMAND pairs in the keymap DESIGNATOR names."

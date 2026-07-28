@@ -8,7 +8,8 @@
    #:repl-eval
    #:repl-input
    #:repl-submit
-   #:repl-history))
+   #:repl-history
+   #:mount-mode))
 
 (in-package #:pine.editor.repl)
 
@@ -33,7 +34,7 @@ from then on, so a second repl or an agent's can prompt differently.")
 (defun start-repl ()
   "Open the repl buffer with a prompt on its last line, and answer it."
   (let ((buf (pine.editor.frame:make-buffer +buffer-name+ :content +prompt+)))
-    (pine.editor.frame:set-buffer-mode buf :repl-mode)
+    (pine.editor.frame:set-buffer-mode buf :repl)
     (pine.text.buffer:put buf :prompt +prompt+)
     (let* ((snap (pine.text.buffer:snapshot-of buf))
            (line (pine.text.buffer:line-count snap)))
@@ -125,11 +126,16 @@ buffer actor binds *client*."
     (when (plusp (length input))
       (repl-eval buffer state input))))
 
-;;;; What repl-mode overrides, as a path. Return is not a newline here: it is
-;;;; the submit, and the only thing this mode claims.
+;;;; The repl is a mode, and Return is the only thing it claims: not a newline
+;;;; here, but the submit.
 
-(pine.ns:write (pine.path:parse "/mode/repl-mode/on/newline")
-               (lambda (name)
-                 (repl-submit (pine.editor.frame:buffer name)
-                              (pine.text.buffer:from-paths name))
-                 (fset:empty-map)))
+(defun mount-mode ()
+  (pine.ns:write (pine.path:parse "/mode/repl")
+                 (fset:map (:parent :lisp)
+                           (:indicator "REPL")
+                           (:on (fset:map
+                                 (:newline
+                                  (lambda (name)
+                                    (repl-submit (pine.editor.frame:buffer name)
+                                                 (pine.text.buffer:from-paths name))
+                                    (fset:empty-map))))))))

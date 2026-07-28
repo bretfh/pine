@@ -3,6 +3,7 @@
 ;;;; engine. Copy to ~/.config/pine/init.lisp and edit.
 
 (in-package :pine.user)
+(named-readtables:in-readtable pine.path:syntax)
 
 (load-theme :ef-dream)
 
@@ -38,15 +39,15 @@
 (defcommand greet () (message (var :greeting)))
 (global-set-key (kbd "C-c g") 'greet)
 
-;; a minor mode with its own key, toggled by a command
-(defminor focus-minor (:precedence 12 :indicator "Focus"))
-(define-key (keymap :focus-minor) (kbd "C-c f") 'greet)
-(defcommand toggle-focus () (toggle-minor-mode :focus-minor))
+;; a minor mode with its own key, toggled by a command. A mode is a map, so
+;; writing it is the whole of defining it: no class, no registration step.
+(write /minor/focus {:precedence 12 :indicator "Focus"})
+(define-key (keymap :focus) (kbd "C-c f") 'greet)
+(defcommand toggle-focus () (toggle-minor-mode :focus))
 (global-set-key (kbd "C-c t") 'toggle-focus)
 
-;; a major mode for .todo files, deriving from text-mode
-(defmode todo-mode (:parent :text-mode :indicator "TODO"))
-(auto-mode "todo" :todo-mode)
+;; a major mode for .todo files
+(write /mode/todo {:parent :text :indicator "TODO" :files ["*.todo"]})
 
 ;; a styled tool buffer: selectable rows whose Return runs a thunk
 (defrules (:tool-title :color (color :accent) :font-weight "bold")

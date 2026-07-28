@@ -334,7 +334,7 @@ attach (a client must be in scope); the arrangement applies on every seed.")
     (let ((pine.editor.frame:*client* client))
       (let ((buf (pine.editor.frame:make-buffer "scratch")))
         (setf (pine.editor.frame:current-buffer client) buf)
-        (pine.editor.frame:set-buffer-mode buf :lisp-mode)
+        (pine.editor.frame:set-buffer-mode buf :lisp)
         (ignore-errors (pine.editor.ask:tell buf :set-local :key :package :value :pine-user)))
       (unless *world-restored*
         (setf *world-restored* t)

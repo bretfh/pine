@@ -56,7 +56,7 @@ restore can reopen buffers in bulk."
               (%clamped-place content (first place) (second place))
             (pine.text.buffer:put-point buf l c))
           (pine.text.buffer:put-point buf 0 0))
-      (let ((mode-kw (or (pine.editor.mode:mode-for-file namestring) :text-mode)))
+      (let ((mode-kw (or (pine.mode:for-file namestring) :text)))
         (pine.editor.frame:set-buffer-mode buf mode-kw))
       (values buf name exists namestring))))
 
@@ -147,7 +147,7 @@ the state it was projected from, so it does not persist."
     (cond
       ((and path (probe-file path))
        (let ((buf (%open-file path)))
-         (when (and mode (not (eq mode (pine.editor.mode:mode-for-file path))))
+         (when (and mode (not (eq mode (pine.mode:for-file path))))
            (pine.editor.frame:set-buffer-mode buf mode))
          buf))
       (name

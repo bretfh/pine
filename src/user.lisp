@@ -2,6 +2,9 @@
   (:nicknames :pine-user)
   (:use :cl)
   (:local-nicknames (#:world #:pine.state.world))
+  ;; one namespace and three verbs: everything a config says, it says with
+  ;; these, and a path is a literal the reader builds
+  (:shadowing-import-from :pine.ns #:read #:write #:watch)
   (:import-from :pine.ui.build
                 #:column #:row #:centerbox #:label #:icon #:button #:ring
                 #:gap #:rule #:rows #:choice)
@@ -21,8 +24,6 @@
                 #:split #:lines #:starts-with #:first-number #:read-int-file
                 #:json)
   (:import-from :pine.editor.command #:call-command #:execute)
-  (:import-from :pine.editor.mode #:find-mode #:dispatch-message #:auto-mode
-                #:defmode #:defminor)
   (:import-from :pine.editor.minibuffer
                 #:completing-read #:read-file-name #:prompt)
   (:import-from :pine.editor.echo #:message)
@@ -46,6 +47,8 @@
    ;; completion facility
    #:candidate #:register-source #:register-actions #:candidate-actions
    #:completion-widget
+   ;; the namespace
+   #:read #:write #:watch
    ;; style
    #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
    ;; data
@@ -59,9 +62,8 @@
    #:defcommand #:call-command
    ;; keys
    #:kbd #:keymap #:define-key #:global-set-key
-   ;; modes -- defmode/defminor make real classes; execute/dispatch-message are
-   ;; the CLOS behaviour hooks users specialise
-   #:defmode #:defminor #:execute #:dispatch-message #:auto-mode
+   ;; modes: a mode is a map at /mode, so a config writes one
+   #:execute
    #:enable-minor-mode #:disable-minor-mode #:toggle-minor-mode
    ;; editor variables
    #:defonce #:var
@@ -74,7 +76,7 @@
    ;; buffers / editor
    #:make-buffer #:kill-buffer #:switch-buffer #:list-buffers
    #:ask #:tell #:current-client #:current-buffer
-   #:find-mode #:current-buffer-mode #:set-buffer-mode
+   #:current-buffer-mode #:set-buffer-mode
    #:eval-last-sexp #:eval-buffer))
 
 (in-package #:pine.user)
@@ -147,10 +149,9 @@ chord) or a list of keys (a sequence), exactly what DEFINE-KEY takes."
 manager's (whose chords the compositor delivers instead of the focused
 window), or a mode keyword for that mode's map."
   (case designator
-    (:global (pine.editor.mode:global-keymap))
+    (:global (pine.editor.keymap:global-keymap))
     (:wm (pine.wm:wm-keymap))
-    (t (let ((m (find-mode designator)))
-         (if m (pine.editor.mode:mode-keymap m) (error "no mode ~s" designator))))))
+    (t (pine.editor.keymap:mode-keymap designator))))
 
 (defun define-key (where keys command)
   "Bind KEYS (from KBD) to COMMAND (a command designator) in WHERE -- a keymap,
@@ -161,14 +162,16 @@ window), or a mode keyword for that mode's map."
 
 (defun global-set-key (keys command)
   "Bind KEYS to COMMAND in the global keymap."
-  (pine.editor.keymap:define-key (pine.editor.mode:global-keymap) keys
+  (pine.editor.keymap:define-key (pine.editor.keymap:global-keymap) keys
                           (pine.editor.command:command-key command)))
 
-;;;; Modes. DEFMODE / DEFMINOR come from pine.editor.mode, which is where pine's own
-;;;; modes are defined with them: one form makes the class, gives it a keymap
-;;;; parented to its parent mode's, and registers the singleton. Behaviour is
-;;;; plain CLOS on the class -- (defmethod dispatch-message ((m NAME) ..)) for
-;;;; buffer actions, (defmethod execute ((m NAME) ..)) for command layering.
+;;;; Modes. A mode is a map at /mode, so defining one is writing it:
+;;;;
+;;;;   (write /mode/python {:parent :prog :grammar :python :files ["*.py"]
+;;;;                        :on {:newline (fn (buf) {...})}})
+;;;;
+;;;; There is no defmode, no class and no registration step, and what a mode
+;;;; changes about a verb is the :on entry the verb finds.
 
 ;;;; Minor-mode toggles, client-implicit.
 

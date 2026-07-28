@@ -18,7 +18,7 @@
 
 (defun stress-buffer (name &optional (content ""))
   (let ((buf (pine.editor.frame::make-buffer name :content content)))
-    (pine.editor.frame::set-buffer-mode buf :text-mode)
+    (pine.editor.frame::set-buffer-mode buf :text)
     buf))
 
 (defun char-count (text)
@@ -496,7 +496,7 @@ happens while parses are in flight, and each one has to come back promptly."
              (content (with-output-to-string (s)
                         (dotimes (i 1000000) (write-line line s))))
              (buf (pine.editor.frame::make-buffer "stress-million")))
-        (pine.editor.frame::set-buffer-mode buf :lisp-mode)
+        (pine.editor.frame::set-buffer-mode buf :lisp)
         (sento.actor:tell buf (list :replace-content :content content))
         ;; An ask that lands while the buffer is in the middle of loading 22 MB
         ;; comes back NO-RESULT rather than waiting, so the load is waited out on
@@ -538,7 +538,7 @@ lines of a twenty thousand line buffer stays well under a frame."
                      (dotimes (i 4000) (write-line form s))))
              (state (pine.text.buffer:set-meta
                      (pine.text.buffer:load-content text)
-                     :mode :lisp-mode))
+                     :mode :lisp))
              (windowed (pine.text.buffer:set-meta state :viewport (cons 100 130))))
         (is (> (pine.text.buffer:line-count-of state) 3999))
         ;; warm the parse, then time the walk the window actually asks for

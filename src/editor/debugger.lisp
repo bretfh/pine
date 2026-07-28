@@ -109,7 +109,7 @@ in the image that broke -- fix the defun there, then pick retry."
                         (:local :local)))
   (pine.editor.layout:show-layout "*debugger*"
                 (%debugger-builder session (reverse *debugger-sessions*))
-                :mode :debugger-mode :selection 0))
+                :mode :debugger :selection 0))
 
 (defun %push-session (session)
   "Register SESSION and attend it. The return-to buffer is captured the first

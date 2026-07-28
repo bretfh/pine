@@ -81,7 +81,7 @@ a function, or such a node anywhere below."
             (funcall thunk)
             (pine.editor.echo:message "nothing to activate here"))))))
 
-(defun show-layout (name builder &key (mode :base-mode) (selection 0))
+(defun show-layout (name builder &key (mode :text) (selection 0))
   "Open buffer NAME as a layout buffer showing BUILDER (state -> node tree),
 switch to it, and enable layout-mode on it. Returns the buffer."
   (let* ((client (pine.editor.frame:current-client))
@@ -94,5 +94,5 @@ switch to it, and enable layout-mode on it. Returns the buffer."
     (pine.editor.frame:switch-buffer name)
     (let ((r (ignore-errors (pine.editor.frame:renderer client))))
       (when r (sento.actor:tell r (list :switch-buffer :buffer buf :name name))))
-    (ignore-errors (pine.editor.frame:enable-minor-mode client :layout-mode))
+    (ignore-errors (pine.editor.frame:enable-minor-mode client :layout))
     buf))

@@ -1,16 +1,14 @@
 (defpackage #:pine.editor.edit
   (:use #:cl)
-  (:export #:layout-state)
-  (:documentation "The dispatch-message methods for base-mode and text-mode:
-what every buffer does with a verb, and what a text buffer layers on top."))
+  (:export #:layout-state #:message)
+  (:documentation "What a buffer actor does with a message."))
 
 (in-package #:pine.editor.edit)
 
-;;;; Buffer behavior: the dispatch-message verb methods for base-mode and
-;;;; text-mode. base-mode has the infrastructure verbs, text-mode layers
-;;;; editing. The modes that wrap another subsystem carry their own methods
-;;;; where that subsystem lives: repl-mode in pine.editor.repl, terminal-mode in
-;;;; pine.term.
+;;;; The verbs a buffer actor still takes: the edits, and the infrastructure
+;;;; under them. A mode does not reach here at all -- what a mode changes about
+;;;; a verb is an :on handler under /mode, which /buf consults before it gets
+;;;; this far.
 
 (defun layout-state (state builder width &optional selection)
   "A fresh buffer state whose content is BUILDER's node tree rendered at WIDTH:
@@ -41,7 +39,8 @@ carry over like :replace-content; point is clamped into the new content."
              (pl (min (pine.text.buffer:point-line snap) (max 0 (1- (length texts))))))
         (pine.text.buffer:move-mark new :point pl 0)))))
 
-(defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:base-mode) self tag plist)
+(defun %base (self tag plist)
+  "What every buffer does with a verb."
   (declare (ignore self))
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
     (case tag
@@ -188,7 +187,8 @@ carry over like :replace-content; point is clamped into the new content."
       (t (error "Buffer ~a has no handler for ~s~@[ ~s~]."
                 (pine.text.buffer:buffer-local state :name "?") tag plist)))))
 
-(defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:text-mode) self tag plist)
+(defun message (self tag plist)
+  "What a buffer does with a verb: the edits, then everything else."
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
     (declare (ignorable redo))
     ;; edits push the old state onto UNDO, clear REDO, and reparse the tree
@@ -290,4 +290,9 @@ carry over like :replace-content; point is clamped into the new content."
                                                    (getf plist :end-line)
                                                    (getf plist :end-col))
                    :edit (list sl (1+ (- el sl)) 1 (- removed)))))
-        (t (call-next-method))))))
+        (t (%base self tag plist))))))
+
+;;;; The buffer actor has no verbs of its own. This is them, installed where a
+;;;; buffer is made.
+
+(setf pine.text.buffer:*message* #'message)

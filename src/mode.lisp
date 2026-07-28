@@ -1,7 +1,8 @@
 (defpackage #:pine.mode
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:chain #:setting #:for-file #:minors #:handler #:matches-p))
+  (:export #:chain #:setting #:for-file #:minors #:handler #:matches-p
+           #:minor-p #:names #:mount))
 
 (in-package #:pine.mode)
 (named-readtables:in-readtable pine.path:syntax)
@@ -99,3 +100,41 @@ Lookup, not method combination, so the whole of the dispatch reads back:
       (loop :for mode :in (chain (ns:read (p:path /buf buf :mode)))
             :for fn = (ns:read (p:path /mode mode :on verb))
             :when fn :do (return fn))))
+
+(defun minor-p (name)
+  "True when NAME is a minor mode: something is written at /minor/?name."
+  (and name (ns:read (p:path /minor name)) t))
+
+(defun names ()
+  "Every mode there is, majors and minors."
+  (append (mapcar (lambda (path) (p:key (p:leaf path)))
+                  (pine.data:keys (ns:read /mode/* {})))
+          (mapcar (lambda (path) (p:key (p:leaf path)))
+                  (pine.data:keys (ns:read /minor/* {})))))
+
+;;;; The modes pine ships. A mode is a map, so this is the whole of defining
+;;;; them: no class, no defmode, no registration step. What a machine or a
+;;;; config adds is another write.
+
+(defun mount ()
+  (ns:write /mode/text {:indicator "Text"})
+  (ns:write /mode/prog {:parent :text
+                        :indent {:width 2}
+                        :comment {:line ";"}})
+  (ns:write /mode/lisp {:parent :prog
+                        :grammar :commonlisp
+                        :indicator "Lisp"
+                        :files ["*.lisp" "*.asd" "*.cl" "*.lsp"]
+                        :comment {:line ";;"}
+                        :indent {:width 2}
+                        ;; a newline in lisp lands now and takes its column
+                        ;; when the parse says what it is
+                        :on {:newline (pine.data:fn [buf]
+                                        (fset:map ((p:path /buf buf :text)
+                                                   [:newline])
+                                                  ((p:path /buf buf)
+                                                   [:indent-line])))}})
+  (ns:write /mode/debugger {:parent :text :indicator "Debug"})
+  (ns:write /minor/minibuffer {:precedence 20})
+  (ns:write /minor/layout {:precedence 15})
+  nil)

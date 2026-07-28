@@ -8,21 +8,19 @@
 ;;;; path, the input path. Every check is bounded, so a daemon that does get stuck
 ;;;; fails the suite instead of hanging it.
 
-;; the mode class is built by ENSURE-CLASS at load time, so the specializer below
-;; has to exist before this file's methods are compiled
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (pine.editor.mode:defmode probe-mode (:parent :text-mode :indicator "PROBE")))
+;;;; A buffer that faults on demand. The verbs come from the same place every
+;;;; buffer's do -- the message function the layer with the verbs installed --
+;;;; so this wraps it rather than specializing anything.
 
-(defmethod pine.editor.mode:dispatch-message ((mode probe-mode) self tag plist)
+(defun %probe-message (self tag plist)
   (case tag
     (:probe-fault (error "probe fault"))
     (:probe-self-ask (pine.core.actor:ask self '(:get-state) :timeout 1))
-    (t (call-next-method))))
+    (t (pine.editor.edit:message self tag plist))))
 
 (defun probe-buffer (name)
-  "A buffer in probe-mode, ready to be faulted on demand."
-  (let ((buf (pine.editor.frame::make-buffer name)))
-    (pine.editor.frame::set-buffer-mode buf :probe-mode)
+  "A buffer ready to be faulted on demand."
+  (let ((buf (pine.editor.frame::make-buffer name :message #'%probe-message)))
     (sleep 0.1)
     buf))
 

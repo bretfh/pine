@@ -31,7 +31,7 @@
       (pine.editor.frame:make-window buf "scratch"
                                :row 0 :col 0 :width 80 :height 29 :focused t)
       
-      (pine.editor.frame:set-buffer-mode buf :text-mode)
+      (pine.editor.frame:set-buffer-mode buf :text)
       (pine.editor.ask:tell buf :set-local :key :package :value :pine-user))
     (pine.ui.render:relayout)))
 
@@ -298,13 +298,13 @@ disappears into a mailbox nobody is reading."
              (rows (max 1 (- (pine.text.window:frame-rows f) 2)))
              (buf (pine.editor.frame:make-buffer "*terminal*")))
         (pine.term:open-terminal client buf :rows rows :cols cols)
-        (pine.editor.frame:set-buffer-mode buf :terminal-mode)
+        (pine.editor.frame:set-buffer-mode buf :terminal)
         (pine.editor.frame:switch-buffer "*terminal*")
         (sento.actor:tell (pine.editor.frame:renderer client)
                           (list :switch-buffer :buffer buf :name "*terminal*")))
     (error (c) (pine.editor.echo:message (format nil "error: ~a" c)))))
 (defcmd "overwrite-mode" ()
-  (let ((on (pine.editor.frame:toggle-minor-mode (pine.editor.frame:current-client) :overwrite-mode)))
+  (let ((on (pine.editor.frame:toggle-minor-mode (pine.editor.frame:current-client) :overwrite)))
     (pine.editor.echo:message (if on "Overwrite mode enabled" "Overwrite mode disabled"))))
 (defcmd "describe-key" ()
   (pine.editor.echo:message "Describe key: ")
@@ -393,7 +393,7 @@ disappears into a mailbox nobody is reading."
     (pine.editor.keymap:define-key map (pine.editor.key:parse-chord (format nil "M-~d" d))
                             "digit-argument")))
 
-(pine.editor.keymap:define-keys :text-mode
+(pine.editor.keymap:define-keys :text
   "BackSpace"   "backspace"
   "Return"      "newline"
   "Tab"         "indent-for-tab-command"
@@ -440,7 +440,7 @@ disappears into a mailbox nobody is reading."
   "C-M-\\"      "indent-region")
 
 ;;;; lisp-mode: the SLIME chord set.
-(pine.editor.keymap:define-keys :lisp-mode
+(pine.editor.keymap:define-keys :lisp
   "C-c C-c"  "eval-defun"
   "C-c C-k"  "eval-buffer"
   "C-c C-l"  "load-file"
@@ -450,13 +450,13 @@ disappears into a mailbox nobody is reading."
 
 ;;;; debugger-mode: the restart rows answer to layout-mode's Return/C-n/C-p;
 ;;;; these are the extras.
-(pine.editor.keymap:define-keys :debugger-mode
+(pine.editor.keymap:define-keys :debugger
   "a"    "debugger-abort"
   "q"    "debugger-quit"
   "Tab"  "debugger-next-session")
 
 ;;;; layout-mode: selection nav and activation on a layout buffer.
-(pine.editor.keymap:define-keys :layout-mode
+(pine.editor.keymap:define-keys :layout
   "Down"    "layout-next"
   "C-n"     "layout-next"
   "Up"      "layout-prev"
@@ -465,7 +465,7 @@ disappears into a mailbox nobody is reading."
 
 ;;;; minibuffer-mode: accept, abort, complete, candidate motion. Every other
 ;;;; key falls through to text-mode, so the prompt has full editing.
-(pine.editor.keymap:define-keys :minibuffer-mode
+(pine.editor.keymap:define-keys :minibuffer
   "Return"  "minibuffer-accept"
   "Escape"  "minibuffer-abort"
   "C-g"     "minibuffer-abort"

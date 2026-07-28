@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:at #:band #:name-of #:edit #:delete-back #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:at #:band #:name-of #:edit #:delete-back #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:*message* #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -256,9 +256,8 @@ end-col), normalized so start precedes end. Nil when there is no mark."
 
 (defun %state-language (state)
   "The tree-sitter language keyword for STATE's mode, or nil."
-  (let* ((mode-name (buffer-local state :mode :base-mode))
-         (mode (pine.editor.mode:find-mode mode-name)))
-    (and mode (typep mode 'pine.editor.mode:major-mode) (pine.editor.mode:ts-language mode))))
+  (let ((mode (buffer-local state :mode nil)))
+    (and mode (pine.mode:setting mode :grammar))))
 
 (defun %ts-runtime ()
   (when pine.core.server:*server* (pine.core.server:ts-runtime pine.core.server:*server*)))
@@ -556,9 +555,16 @@ looking at, so this asks about the thread rather than about whether it answers."
                ;; the v1 predicates this codebase otherwise uses will not take
                (and thread (not (bordeaux-threads-2:thread-alive-p thread))))))))
 
-(defun make-buffer-actor (system name &key (content "") id)
-  "A buffer as an actor on SYSTEM: NAME holding CONTENT, dispatching each message
-through its mode on a thread of its own.
+(defvar *message* nil
+  "What a buffer actor does with a message, as a function of (SELF TAG PLIST).
+
+The layer that has the verbs installs it, so this one owns the thread and the
+tree and knows nothing about editing. Nothing here dispatches on a mode: what a
+mode changes about a verb is an :on handler under /mode, and /buf consults that
+before a message ever reaches an actor.")
+
+(defun make-buffer-actor (system name &key (content "") id (message *message*))
+  "A buffer as an actor on SYSTEM: NAME holding CONTENT, on a thread of its own.
 
 ID names the buffer across images: another pine, or an agent, addresses this
 buffer by it. The layer that creates buffers mints it; this one is below
@@ -594,10 +600,7 @@ persistence and does not."
                                                  (pine.ns:read (at name :face))
                                                  (list (sixth sento.actor:*state*))))
                                     (let* ((state (first sento.actor:*state*))
-                                           (before state)
-                                           (mode-name (buffer-local state :mode :base-mode))
-                                           (mode (or (pine.editor.mode:find-mode mode-name)
-                                                     (pine.editor.mode:find-mode :base-mode))))
+                                           (before state))
                                       ;; The buffer runs off the session thread, so
                                       ;; an edit error opens the *debugger* restart
                                       ;; menu and parks THIS thread while the fault
@@ -619,9 +622,11 @@ persistence and does not."
                                                   (with-simple-restart
                                                       (retry "Retry this edit")
                                                     (return
-                                                      (pine.editor.mode:dispatch-message
-                                                       mode sento.actor:*self*
-                                                       (first msg) (rest msg))))))))
+                                                      (when message
+                                                        (funcall message
+                                                                 sento.actor:*self*
+                                                                 (first msg)
+                                                                 (rest msg)))))))))
                                         ;; landed only on a normal return, so an
                                         ;; edit that aborted in the debugger
                                         ;; leaves the buffer as it was. The

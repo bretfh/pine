@@ -32,6 +32,10 @@ minibuffer. Returns the server."
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.text.buffer:start-buffer-registry srv)
+    (pine.mode:mount)
+    (pine.term:mount-mode)
+    (pine.editor.overwrite:mount-mode)
+    (pine.editor.repl:mount-mode)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
                     :runtime (pine.core.server:ts-runtime srv))
     (setf pine.state.world:*enabled* nil)
@@ -51,7 +55,7 @@ minibuffer. Returns the server."
                                           :row 0 :col 0 :width 80 :height 29
                                           :focused t)
           (setf (pine.editor.frame::current-buffer client) buf)
-          (pine.editor.frame::set-buffer-mode buf :text-mode)
+          (pine.editor.frame::set-buffer-mode buf :text)
           ;; the window needs snapshots for the commands that read point through
           ;; the focused window, which is what a live session's renderer does
           )
@@ -80,7 +84,7 @@ argument, the debugger sessions and the world gate."
       (let ((scratch (pine.editor.frame::buffer "scratch")))
         (when scratch
           (setf (pine.editor.frame::current-buffer c) scratch)
-          (pine.editor.frame::set-buffer-mode scratch :text-mode))))))
+          (pine.editor.frame::set-buffer-mode scratch :text))))))
 
 (def-fixture substrate ()
   "The live daemon substrate, reset around the body.
@@ -153,7 +157,8 @@ agents, and the attach handshake.")
 
 (defun in-user (form)
   "Read and evaluate FORM, a string, in PINE.USER."
-  (let ((*package* (find-package :pine.user)))
+  (let ((*package* (find-package :pine.user))
+        (*readtable* (named-readtables:find-readtable (quote pine.path:syntax))))
     (eval (read-from-string form))))
 
 (defun user-value (name)
