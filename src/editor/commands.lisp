@@ -197,8 +197,8 @@ disappears into a mailbox nobody is reading."
         ;; write sees the formatted text
         (when (and buf (pine.state.var:var :format-on-save buf))
           (let ((snap (pine.text.buffer:snapshot-of buf)))
-            (pine.editor.ask:tell buf :indent-lines
-                              :from 0 :to (1- (pine.text.buffer:line-count snap)))))
+            (pine.buf:indent (pine.text.buffer:name-of buf) 0
+                       (1- (pine.text.buffer:line-count snap)))))
         (pine.editor.file:save-current-buffer))
     (error (c) (pine.editor.echo:message (format nil "error: ~a" c)))))
 (defcmd "split-window-below" () (pine.editor.window:split-window :column))
@@ -326,7 +326,7 @@ disappears into a mailbox nobody is reading."
 (defcmd "indent-for-tab-command" ()
   "Reindent the current line to the column its mode dictates."
   (let ((buf (pine.editor.motion:cur-buffer)))
-    (when buf (pine.editor.ask:tell buf :indent-lines))))
+    (when buf (pine.buf:indent (pine.text.buffer:name-of buf)))))
 (defcmd "indent-region" ()
   "Reindent every line spanned by the region."
   (let* ((buf (pine.editor.motion:cur-buffer))
@@ -335,15 +335,15 @@ disappears into a mailbox nobody is reading."
       (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds state)
         (declare (ignore sc ec))
         (if sl
-            (pine.editor.ask:tell buf :indent-lines :from sl :to el)
+            (pine.buf:indent (pine.text.buffer:name-of buf) sl el)
             (pine.editor.echo:message "no region"))))))
 (defcmd "format-buffer" ()
   "Reindent the whole buffer off the parse tree, point preserved (in-image)."
   (let* ((buf (pine.editor.motion:cur-buffer))
          (snap (and buf (pine.text.buffer:snapshot-of buf))))
     (when snap
-      (pine.editor.ask:tell buf :indent-lines
-                        :from 0 :to (1- (pine.text.buffer:line-count snap))))))
+      (pine.buf:indent (pine.text.buffer:name-of buf) 0
+                       (1- (pine.text.buffer:line-count snap))))))
 ;; layout buffers: selection nav + activation on the node tree
 (defcmd "layout-next" () (pine.editor.layout:layout-select 1))
 (defcmd "layout-prev" () (pine.editor.layout:layout-select -1))

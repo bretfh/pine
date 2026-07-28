@@ -1,7 +1,7 @@
 (defpackage #:pine.buf
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text.buffer))
-  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop #:motion))
+  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop #:motion #:indent))
 
 (in-package #:pine.buf)
 (named-readtables:in-readtable pine.path:syntax)
@@ -142,6 +142,50 @@ parser rebuilds rather than being told a shift that cannot express it."
     (multiple-value-bind (line col)
         (b:point-after-move (b:state->snapshot s) unit n)
       (ns:write (at name :point) (fset:seq line col)))))
+
+;;;; Indenting
+;;;;
+;;;; A buffer with a tree asks its parser for every target in the region at
+;;;; once and applies them when the answer lands, so Tab on a thousand lines
+;;;; costs one parse instead of one per line. A buffer without one indents from
+;;;; its previous line, here and now.
+
+(defun %indented (name targets)
+  "The write-map that reindents each (LINE . COLUMN) of TARGETS, or an empty
+one when every line already sits where it should.
+
+Answered rather than written, because this runs inside a watch: a handler
+answers a map and pine applies it as part of the same cascade, so what it
+changed goes on to wake whatever was watching that.
+
+Point rides its character: anchored as an offset past its line's first
+non-whitespace, which also lands it on the first non-whitespace when it sat
+inside the old indentation.
+
+No edit descriptor: reindenting rewrites a line's leading whitespace through a
+delete and an insert, and one whole-line shift cannot describe that pair, so the
+parse rebuilds."
+  (let* ((before (state name))
+         (snap (b:state->snapshot before))
+         (line (b:point-line snap))
+         (col (b:point-col snap))
+         (first-nw (b:line-indent-width (b:line-at before line)))
+         (tail (max 0 (- col first-nw)))
+         (next before)
+         (changed nil))
+    (dolist (target targets)
+      (let ((where (car target))
+            (want (cdr target)))
+        (let ((have (b:line-indent-width (b:line-at next where))))
+          (unless (eql want have)
+            (setf next (nth-value 0 (b:reindent-line next where have want col))
+                  changed t)))))
+    (if (not changed)
+        (fset:empty-map)
+        (let* ((indent (b:line-indent-width (b:line-at next line)))
+               (final (b:move-mark next :point line (+ indent tail))))
+          (fset:with (fset:with (%landing name final) (at name :overlays) nil)
+                     (at name :edit) nil)))))
 
 ;;;; Undo has no stacks. The doc: undo of a paste and undo of a window split are
 ;;;; the same operation, because they are the same kind of thing. So an undo is
@@ -284,6 +328,7 @@ and comes back by being read again."
                           (%verb name :backspace nil
                                  (lambda () (%backspace name))))
              :delete (pine.data:fn [from to] (%delete name from to))
+             :indent (pine.data:fn (&optional from to) (indent name from to))
              :undo (pine.data:fn [] (%undo name))
              :redo (pine.data:fn [] (%redo name))
              :save (pine.data:fn [] (%save name))
@@ -358,6 +403,28 @@ lands the way any other move does."
                                 :viewport (pine.text.buffer:band
                                            (ns:read (at name :viewport)))))))))
 
+(defun indent (name &optional from to)
+  "Indent the lines FROM through TO, defaulting to the line point is on.
+
+With a parser, it is asked for every target at once and the watch below applies
+what it said; without one, each line takes its previous line's indent."
+  (let* ((current (state name))
+         (snap (b:state->snapshot current))
+         (count (b:line-count snap))
+         (first-line (max 0 (or from (b:point-line snap))))
+         (last-line (min (or to (b:point-line snap)) (1- count)))
+         (actor (parser-of name)))
+    (if actor
+        (sento.actor:tell actor
+                          (list :indent :name name :from first-line :to last-line
+                                :lines (b:lines current)
+                                :viewport (b:band (ns:read (at name :viewport)))))
+        (ns:write
+         (%indented name
+                    (loop :for line :from first-line :to last-line
+                          :for target = (b:previous-line-indent current line)
+                          :when target :collect (cons line target)))))))
+
 (defun %parse (name system runtime)
   "Tell NAME's parser the lines as they stand, over the range a window said it
 is showing.
@@ -410,12 +477,20 @@ whenever its lines or its window's range move."
                 (%parse (p:leaf (p:parent (ns:here))) system runtime)
                 {})
               :as :buf-mode))
+  ;; what the parser said the indentation should be, applied
+  (ns:watch /buf/*/indent
+            (pine.data:fn [targets]
+              (if targets
+                  (%indented (p:leaf (p:parent (ns:here))) targets)
+                  {}))
+            :as :buf-indent)
   nil)
 
 (defun unmount ()
   (ns:watch /buf/*/lines nil :as :buf-parse)
   (ns:watch /buf/*/viewport nil :as :buf-band)
   (ns:watch /buf/*/mode nil :as :buf-mode)
+  (ns:watch /buf/*/indent nil :as :buf-indent)
   (fset:do-map (name link (sento.atomic:atomic-get *parsers*))
     (declare (ignore name))
     (sento.actor:tell (pine.ts.parser:link-actor link) '(:stop)))

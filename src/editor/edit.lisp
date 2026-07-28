@@ -41,49 +41,6 @@ carry over like :replace-content; point is clamped into the new content."
              (pl (min (pine.text.buffer:point-line snap) (max 0 (1- (length texts))))))
         (pine.text.buffer:move-mark new :point pl 0)))))
 
-(defun apply-indent-targets (state undo subs hl link targets)
-  "Reindent each (LINE . COLUMN) of TARGETS, commit and repaint.
-
-Point rides its character: anchored as an offset past its line's first
-non-whitespace, which also lands it on the first non-whitespace when it sat
-inside the old indentation. Shared by the treeless path, which computes targets
-itself, and by the parser's :indent-region answer."
-  (let* ((snap (pine.text.buffer:state->snapshot state))
-         (pl (pine.text.buffer:point-line snap))
-         (pc (pine.text.buffer:point-col snap))
-         (p-firstnw (pine.text.buffer:line-indent-width
-                     (fset:@ (pine.text.buffer:lines state) pl)))
-         (p-tail (max 0 (- pc p-firstnw)))
-         (st state)
-         (changed nil)
-         (bytes 0)
-         (lo most-positive-fixnum)
-         (hi 0))
-    (loop :for (line . target) :in targets
-          :for cur = (pine.text.buffer:line-indent-width
-                      (fset:@ (pine.text.buffer:lines st) line))
-          :do (when (/= target cur)
-                (setf st (nth-value 0 (pine.text.buffer:reindent-line st line cur target pc))
-                      changed t
-                      lo (min lo line)
-                      hi (max hi line))
-                (incf bytes (- target cur))))
-    (if (not changed)
-        (setf sento.actor:*state* (list state undo nil subs hl link))
-        (let* ((new-indent (pine.text.buffer:line-indent-width
-                            (fset:@ (pine.text.buffer:lines st) pl)))
-               (final (pine.text.buffer:set-meta
-                       (pine.text.buffer:move-mark st :point pl (+ new-indent p-tail))
-                       :overlays nil))
-               (span (1+ (- hi lo))))
-          (setf sento.actor:*state*
-                (list (pine.text.buffer:set-meta
-                       final :edit (fset:map (:at lo) (:old span) (:new span)
-                                             (:bytes bytes)
-                                             (:lines (pine.text.buffer:lines final))))
-                      (cons state undo) nil subs hl link))
-          nil))))
-
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:base-mode) self tag plist)
   (declare (ignore self))
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
@@ -108,10 +65,7 @@ itself, and by the parser's :indent-region answer."
          (setf sento.actor:*state* (list state undo redo subs new-hl pstate))
          ;; a repaint only earns itself when the colours actually moved
          (unless (equal new-hl hl)
-           nil)))
-      (:indent-region
-       (apply-indent-targets state undo subs hl pstate (getf plist :targets)))
-      ;; explicit highlights for tool buffers (debugger, help): the buffer's
+           nil)))      ;; explicit highlights for tool buffers (debugger, help): the buffer's
       ;; face runs are handed in as data instead of computed from a parse tree
       (:set-highlights
        (let ((new-hl (getf plist :highlights)))
@@ -249,6 +203,7 @@ itself, and by the parser's :indent-region answer."
 
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:text-mode) self tag plist)
   (destructuring-bind (state undo redo subs hl pstate) sento.actor:*state*
+    (declare (ignorable redo))
     ;; edits push the old state onto UNDO, clear REDO, and reparse the tree
     ;; incrementally so the notified snapshot already carries fresh highlights.
     ;; An edit commits and paints at once; the parse happens on the parser's own
@@ -299,7 +254,7 @@ itself, and by the parser's :indent-region answer."
                                (pine.ts.index:string-bytes text)))))
         ;; The newline lands now and the electric indent follows as a message:
         ;; the line appears the moment it is typed however long the parse takes,
-        ;; and the parser answers with :indent-region when it knows the column.
+        ;; and the parser answers by writing /buf/?name/indent.
         (:newline
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))
@@ -317,34 +272,6 @@ itself, and by the parser's :indent-region answer."
                           (fset:map (:from (1+ l)) (:to (1+ l))
                                     (:lines (pine.text.buffer:lines new))))
                          undo2 redo2 subs2 hl2 link)))))
-        ;; Reindent lines [:from .. :to] (default: the point line). Each line is
-        ;; reindented from the parse tree and the tree reparsed before the next,
-        ;; so column alignment sees the shifted text. Point rides its character:
-        ;; anchored as offset past its line's first non-whitespace, which also
-        ;; lands point on the first non-ws when it sat in the old indentation.
-        ;; This one primitive serves Tab, indent-region, and format-buffer.
-        ;; A treeless buffer indents from its previous line, here and now. A
-        ;; buffer with a tree asks its parser for every target in the region at
-        ;; once and applies them when :indent-region comes back, so Tab on a
-        ;; thousand lines costs one parse instead of one per line.
-        (:indent-lines
-         (let* ((snap0 (pine.text.buffer:state->snapshot state))
-                (nlines (pine.text.buffer:line-count snap0))
-                (from (max 0 (or (getf plist :from) (pine.text.buffer:point-line snap0))))
-                (to   (min (or (getf plist :to) (pine.text.buffer:point-line snap0))
-                           (1- nlines)))
-                (link (pine.text.buffer:ensure-parser
-                       state pstate (pine.text.buffer:buffer-local state :name ""))))
-           (if link
-               (progn
-                 (setf sento.actor:*state* (list state undo redo subs hl link))
-                 (pine.text.buffer:request-parse link state :verb :indent
-                                                 :extra (list :from from :to to)))
-               (apply-indent-targets
-                state undo subs hl link
-                (loop :for l :from from :to to
-                      :for target = (pine.text.buffer:previous-line-indent state l)
-                      :when target :collect (cons l target))))))
         (:backspace
          (let* ((snap (pine.text.buffer:state->snapshot state))
                 (l (pine.text.buffer:point-line snap))

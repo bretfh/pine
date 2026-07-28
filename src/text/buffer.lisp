@@ -287,11 +287,7 @@ the whole of the buffer's side of the parse, and it goes when the actor does."
                  (lambda (hl) (sento.actor:tell self (list :highlights :hl hl))
                    (fset:empty-map))
                  :as (list :buffer-face name))
-  (pine.ns:watch (pine.path:path (pine.path:parse "/buf") name "indent")
-                 (lambda (targets)
-                   (sento.actor:tell self (list :indent-region :targets targets))
-                   (fset:empty-map))
-                 :as (list :buffer-indent name)))
+  nil)
 
 (defun ensure-parser (state link name)
   "LINK, starting the buffer's parser actor the first time its mode names a
