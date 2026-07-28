@@ -15,8 +15,6 @@
 ;;;; a buffer visiting a file keeps its point and its mode and not its text:
 ;;;; the text came from the file.
 
-(defvar *db* nil)
-(defvar *lock* (bordeaux-threads:make-lock "pine-keep"))
 (defvar *restoring* nil "True while reading the file back, so it is not rewritten.")
 (defparameter *changes-kept* 5000
   "How many changes the file remembers, which is how far back a revert reaches.")
@@ -51,7 +49,61 @@ without saying so, so this decides before the write rather than after."
 (defun %out (value) (pine.data:serialize value))
 (defun %in (text) (pine.data:deserialize text 'p:data))
 
+;;;; The keeper: the connection has an owner, and every statement runs on its
+;;;; thread. Recording is a TELL, so a write to the namespace answers as soon as
+;;;; the value has moved and the file catches up behind it. Everything that
+;;;; needs an answer is an ASK, which the mailbox orders behind the records
+;;;; already told, so a read of the log never misses a write that preceded it.
+
+(defvar *keeper* (sento.atomic:make-atomic-reference :value nil))
+
+(defun %keeper ()
+  (or (sento.atomic:atomic-get *keeper*)
+      (let ((fresh (sento.agent:make-agent (lambda () nil))))
+        (cond ((sento.atomic:atomic-cas *keeper* nil fresh) fresh)
+              (t (sento.agent:agent-stop fresh)
+                 (sento.atomic:atomic-get *keeper*))))))
+
+(defun %answer (answer)
+  "ANSWER as the caller's value, signalling here what failed on the keeper's
+thread rather than leaving the caller with a condition object for a result."
+  (if (and (consp answer) (eq :handler-error (car answer)))
+      (error (cdr answer))
+      answer))
+
+(defun %ask (fn)
+  "Call FN with the connection on the keeper's thread and answer what it did."
+  (%answer (sento.agent:agent-get (%keeper) fn)))
+
+(defun %change (fn)
+  "Call FN with the connection on the keeper's thread, take its value as the
+connection from here on, and wait for it."
+  (%answer (sento.agent:agent-update-and-get (%keeper) fn)))
+
+(defun %tell (fn)
+  "Call FN with the connection on the keeper's thread, without waiting."
+  (let ((keeper (sento.atomic:atomic-get *keeper*)))
+    (when keeper
+      (sento.agent:agent-update keeper (lambda (db) (funcall fn db) db)))))
+
 ;;;; The file
+
+(defun %connect (target)
+  (let ((db (sqlite:connect target)))
+    (sqlite:execute-single db "PRAGMA journal_mode=WAL")
+    (sqlite:execute-non-query db "PRAGMA busy_timeout=2000")
+    (sqlite:execute-non-query db "
+CREATE TABLE IF NOT EXISTS held (
+  path TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0,
+  value TEXT NOT NULL, at INTEGER NOT NULL, bound INTEGER,
+  PRIMARY KEY (path, seq))")
+    (sqlite:execute-non-query db "
+CREATE TABLE IF NOT EXISTS changes (
+  n INTEGER PRIMARY KEY, path TEXT NOT NULL,
+  old TEXT, new TEXT, at INTEGER NOT NULL)")
+    (sqlite:execute-non-query db "
+CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
+    db))
 
 (defun open (&optional path)
   "Open the file at PATH, by default XDG data home pine/pine.db, read every held
@@ -64,22 +116,7 @@ path back into the namespace, and keep it written through from here on.
                     (namestring (uiop:xdg-data-home "pine/pine.db")))))
     (unless (string= target ":memory:")
       (ensure-directories-exist target))
-    (bordeaux-threads:with-lock-held (*lock*)
-      (let ((db (sqlite:connect target)))
-        (sqlite:execute-single db "PRAGMA journal_mode=WAL")
-        (sqlite:execute-non-query db "PRAGMA busy_timeout=2000")
-        (sqlite:execute-non-query db "
-CREATE TABLE IF NOT EXISTS held (
-  path TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0,
-  value TEXT NOT NULL, at INTEGER NOT NULL, bound INTEGER,
-  PRIMARY KEY (path, seq))")
-        (sqlite:execute-non-query db "
-CREATE TABLE IF NOT EXISTS changes (
-  n INTEGER PRIMARY KEY, path TEXT NOT NULL,
-  old TEXT, new TEXT, at INTEGER NOT NULL)")
-        (sqlite:execute-non-query db "
-CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
-        (setf *db* db)))
+    (%change (lambda (db) (declare (ignore db)) (%connect target)))
     (restore)
     (setf ns:*after-commit* #'record)
     (ns:write /history (history-provider))
@@ -89,10 +126,9 @@ CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
 (defun close ()
   "Close the file. Safe with none open."
   (setf ns:*after-commit* nil)
-  (bordeaux-threads:with-lock-held (*lock*)
-    (when *db*
-      (sqlite:disconnect *db*)
-      (setf *db* nil))))
+  (when (sento.atomic:atomic-get *keeper*)
+    (%change (lambda (db) (when db (sqlite:disconnect db)) nil)))
+  nil)
 
 ;;;; Write through
 
@@ -105,37 +141,45 @@ CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
      db "DELETE FROM changes WHERE n NOT IN
          (SELECT n FROM changes ORDER BY n DESC LIMIT ?)" *changes-kept*)))
 
+(defun %rows (moved)
+  "The rows MOVED asks the file to write, decided against the namespace as it
+stands at the commit rather than whenever the keeper reaches them."
+  (loop :for (path old new) :in moved
+        :when (and (eq :held (ns:kind path))
+                   (ns:setting path :keep t)
+                   (storablep new)
+                   (storablep old))
+          :collect (list (p:text path) old new (ns:setting path :max))))
+
+(defun %write (db rows)
+  (when db
+    (dolist (row rows)
+      (destructuring-bind (text old new bound) row
+        (if (null new)
+            (sqlite:execute-non-query db "DELETE FROM held WHERE path = ?" text)
+            (sqlite:execute-non-query
+             db "INSERT OR REPLACE INTO held (path, seq, value, at, bound)
+                 VALUES (?, 0, ?, ?, ?)"
+             text (%out new) (%now) bound))
+        (sqlite:execute-non-query
+         db "INSERT INTO changes (path, old, new, at) VALUES (?, ?, ?, ?)"
+         text (and old (%out old)) (and new (%out new)) (%now))
+        (%trim db)))))
+
 (defun record (moved)
   "Put every held change in the file. Installed as the namespace's commit hook."
   (unless *restoring*
-    (bordeaux-threads:with-lock-held (*lock*)
-      (when *db*
-        (dolist (change moved)
-          (destructuring-bind (path old new) change
-            (when (and (eq :held (ns:kind path))
-                       (ns:setting path :keep t)
-                       (storablep new)
-                       (storablep old))
-              (let ((text (p:text path)))
-                (if (null new)
-                    (sqlite:execute-non-query
-                     *db* "DELETE FROM held WHERE path = ?" text)
-                    (sqlite:execute-non-query
-                     *db* "INSERT OR REPLACE INTO held (path, seq, value, at, bound)
-                           VALUES (?, 0, ?, ?, ?)"
-                     text (%out new) (%now) (ns:setting path :max)))
-                (sqlite:execute-non-query
-                 *db* "INSERT INTO changes (path, old, new, at) VALUES (?, ?, ?, ?)"
-                 text (and old (%out old)) (and new (%out new)) (%now))
-                (%trim *db*)))))))))
+    (let ((rows (%rows moved)))
+      (when rows
+        (%tell (lambda (db) (%write db rows)))))))
 
 (defun restore ()
   "Write every held path in the file back into the namespace. A stored value
 wins over the one a config seeded, which is what makes it durable."
-  (let ((rows (bordeaux-threads:with-lock-held (*lock*)
-                (when *db*
-                  (sqlite:execute-to-list
-                   *db* "SELECT path, value, bound FROM held ORDER BY path")))))
+  (let ((rows (%ask (lambda (db)
+                      (when db
+                        (sqlite:execute-to-list
+                         db "SELECT path, value, bound FROM held ORDER BY path"))))))
     (let ((*restoring* t))
       (dolist (row rows)
         (destructuring-bind (text value bound) row
@@ -149,14 +193,14 @@ wins over the one a config seeded, which is what makes it durable."
 ;;;; History, as paths
 
 (defun %changes (&optional limit)
-  (bordeaux-threads:with-lock-held (*lock*)
-    (when *db*
-      (if limit
-          (sqlite:execute-to-list
-           *db* "SELECT n, path, old, new, at FROM changes ORDER BY n DESC LIMIT ?"
-           limit)
-          (sqlite:execute-to-list
-           *db* "SELECT n, path, old, new, at FROM changes ORDER BY n DESC")))))
+  (%ask (lambda (db)
+          (when db
+            (if limit
+                (sqlite:execute-to-list
+                 db "SELECT n, path, old, new, at FROM changes ORDER BY n DESC LIMIT ?"
+                 limit)
+                (sqlite:execute-to-list
+                 db "SELECT n, path, old, new, at FROM changes ORDER BY n DESC"))))))
 
 (defun %row (row)
   (destructuring-bind (n text old new at) row
@@ -168,27 +212,31 @@ wins over the one a config seeded, which is what makes it durable."
 
 The newest change to it at or before N, or the oldest one after N read
 backwards, or -- when the file remembers no change to it -- what it holds now."
-  (bordeaux-threads:with-lock-held (*lock*)
-    (when *db*
-      (let ((newer (sqlite:execute-to-list
-                    *db* "SELECT new FROM changes WHERE path = ? AND n <= ?
-                          ORDER BY n DESC LIMIT 1" text n)))
-        (if newer
-            (values (and (first (first newer)) (%in (first (first newer)))) t)
-            (let ((older (sqlite:execute-to-list
-                          *db* "SELECT old FROM changes WHERE path = ? AND n > ?
-                                ORDER BY n ASC LIMIT 1" text n)))
-              (if older
-                  (values (and (first (first older)) (%in (first (first older)))) t)
-                  (values nil nil))))))))
+  (let ((found (%ask
+                (lambda (db)
+                  (when db
+                    (let ((newer (sqlite:execute-to-list
+                                  db "SELECT new FROM changes WHERE path = ? AND n <= ?
+                                      ORDER BY n DESC LIMIT 1" text n)))
+                      (if newer
+                          (list (first (first newer)))
+                          (let ((older (sqlite:execute-to-list
+                                        db "SELECT old FROM changes WHERE path = ? AND n > ?
+                                            ORDER BY n ASC LIMIT 1" text n)))
+                            (and older (list (first (first older))))))))))))
+    ;; an ask answers one value, so what was found and whether anything was
+    ;; travel together
+    (if found
+        (values (and (first found) (%in (first found))) t)
+        (values nil nil))))
 
 (defun revert (n)
   "Undo every change after N, newest first, so the namespace reads as it did."
-  (let ((rows (bordeaux-threads:with-lock-held (*lock*)
-                (when *db*
-                  (sqlite:execute-to-list
-                   *db* "SELECT path, old FROM changes WHERE n > ? ORDER BY n DESC"
-                   n)))))
+  (let ((rows (%ask (lambda (db)
+                      (when db
+                        (sqlite:execute-to-list
+                         db "SELECT path, old FROM changes WHERE n > ? ORDER BY n DESC"
+                         n))))))
     (dolist (row rows (length rows))
       (destructuring-bind (text old) row
         (ns:write (p:parse text) (and old (%in old)))))))

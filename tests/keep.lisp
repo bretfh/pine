@@ -140,3 +140,31 @@
     (pine.ns:write /a 1)
     (is (= 1 (pine.ns:read /a)))
     (is (zerop (pine.keep:restore)))))
+
+;;;; the file is behind the write, not in it
+
+(test the-log-reads-back-every-write-that-preceded-it
+  (with-keep
+    (dotimes (i 50) (pine.ns:write /n i))
+    (let ((history (pine.ns:read /history)))
+      (is (= 50 (fset:size history))
+          "recording does not wait, and the log still has all of it")
+      (is (= 49 (fset:lookup (fset:lookup history 0) :new))
+          "newest first"))))
+
+(test writers-on-many-threads-all-reach-the-file
+  (let ((space (pine.ns:fresh)))
+    (pine.ns:with-space (space)
+      (pine.keep:open ":memory:")
+      (let ((threads (loop :for i :below 8
+                           :collect (let ((n i))
+                                      (bordeaux-threads:make-thread
+                                       (lambda ()
+                                         (dotimes (j 20)
+                                           (pine.ns:write (pine.path:path "n" n) j))))))))
+        (mapc #'bordeaux-threads:join-thread threads))
+      (pine.ns:with-space ((pine.ns:fresh))
+        (is (= 8 (pine.keep:restore)))
+        (is (= 19 (pine.ns:read /n/${0})))
+        (is (= 19 (pine.ns:read /n/${7}))))
+      (pine.keep:close))))
