@@ -97,10 +97,13 @@ CREATE TABLE IF NOT EXISTS held (
   path TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0,
   value TEXT NOT NULL, at INTEGER NOT NULL, bound INTEGER,
   PRIMARY KEY (path, seq))")
+    ;; COMMIT groups the rows one write moved. A transaction is one new root, so
+    ;; going back to before it means putting all of its rows back, and without
+    ;; the group that has to be guessed at from the order.
     (sqlite:execute-non-query db "
 CREATE TABLE IF NOT EXISTS changes (
-  n INTEGER PRIMARY KEY, path TEXT NOT NULL,
-  old TEXT, new TEXT, at INTEGER NOT NULL)")
+  n INTEGER PRIMARY KEY, commits INTEGER NOT NULL DEFAULT 0,
+  path TEXT NOT NULL, old TEXT, new TEXT, at INTEGER NOT NULL)")
     (sqlite:execute-non-query db "
 CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
     db))
@@ -165,22 +168,25 @@ landed on rather than whenever the store reaches them."
           :collect (list (p:text path) old new (ns:setting path :max))))
 
 (defun %write (state rows kept)
-  "STATE after ROWS have gone in, keeping KEPT changes in the log."
+  "STATE after ROWS -- one commit's worth -- have gone in, keeping KEPT changes
+in the log."
   (let ((db (%db state)))
     (if (null db)
         state
-        (dolist (row rows state)
-          (destructuring-bind (text old new bound) row
-            (if (null new)
-                (sqlite:execute-non-query db "DELETE FROM held WHERE path = ?" text)
-                (sqlite:execute-non-query
-                 db "INSERT OR REPLACE INTO held (path, seq, value, at, bound)
-                     VALUES (?, 0, ?, ?, ?)"
-                 text (%out new) (%now) bound))
-            (sqlite:execute-non-query
-             db "INSERT INTO changes (path, old, new, at) VALUES (?, ?, ?, ?)"
-             text (and old (%out old)) (and new (%out new)) (%now))
-            (setf state (%trim state kept)))))))
+        (let ((commit (1+ (or (fset:lookup state :commit) 0))))
+          (dolist (row rows (fset:with state :commit commit))
+            (destructuring-bind (text old new bound) row
+              (if (null new)
+                  (sqlite:execute-non-query db "DELETE FROM held WHERE path = ?" text)
+                  (sqlite:execute-non-query
+                   db "INSERT OR REPLACE INTO held (path, seq, value, at, bound)
+                       VALUES (?, 0, ?, ?, ?)"
+                   text (%out new) (%now) bound))
+              (sqlite:execute-non-query
+               db "INSERT INTO changes (commits, path, old, new, at)
+                   VALUES (?, ?, ?, ?, ?)"
+               commit text (and old (%out old)) (and new (%out new)) (%now))
+              (setf state (%trim state kept))))))))
 
 (defun record (store moved)
   "Put every held change in the file. The space tells this each commit.
@@ -222,14 +228,14 @@ wins over the one a config seeded, which is what makes it durable."
             (when db
               (if limit
                   (sqlite:execute-to-list
-                   db "SELECT n, path, old, new, at FROM changes ORDER BY n DESC LIMIT ?"
+                   db "SELECT n, commits, path, old, new, at FROM changes ORDER BY n DESC LIMIT ?"
                    limit)
                   (sqlite:execute-to-list
-                   db "SELECT n, path, old, new, at FROM changes ORDER BY n DESC")))))))
+                   db "SELECT n, commits, path, old, new, at FROM changes ORDER BY n DESC")))))))
 
 (defun %row (row)
-  (destructuring-bind (n text old new at) row
-    (fset:map (:n n) (:path (p:parse text)) (:at at)
+  (destructuring-bind (n commit text old new at) row
+    (fset:map (:n n) (:commit commit) (:path (p:parse text)) (:at at)
               (:old (and old (%in old))) (:new (and new (%in new))))))
 
 (defun %at-change (store text n)

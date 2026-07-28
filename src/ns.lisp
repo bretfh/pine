@@ -198,7 +198,12 @@ the segment it matched. HERE answers the path being served."
         :thereis (and (%handlers backing path) t)))
 
 (defun %served-write (space path value)
-  "Give VALUE to the provider serving PATH. True when one took it."
+  "Give VALUE to the provider serving PATH. True when one took it.
+
+A clause that declares only :VERBS says what the path does, not what it holds,
+so an ordinary value falls through to the tree. That is how a path can take a
+verb and still be a place: /buf/NAME/point is [line col] and also takes
+[:move :word 1]."
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
         :when handlers
@@ -212,8 +217,9 @@ the segment it matched. HERE answers the path being served."
                       ((%verbp value)
                        (error 'no-verb :at path :why (%verb-name value)))
                       (write (funcall write value) (return t))
-                      (t (error 'refused :at path
-                                :why "no provider writes it"))))
+                      ((fset:lookup handlers :read)
+                       (error 'refused :at path
+                              :why "no provider writes it"))))
         :finally (return nil)))
 
 (defun %served-children (space path)
@@ -386,12 +392,17 @@ can hold more than one."
            :derived)
           (t :held))))
 
-(defun setting (path key &optional default)
-  "The write option KEY that PATH was given, or DEFAULT."
-  (let ((options (fset:lookup (space-settings (current)) path)))
+(defun %setting-in (space path key &optional default)
+  "The write option KEY that PATH carries in SPACE. Inside a swap the space is
+the one being swapped, not whichever one CURRENT answers a moment later."
+  (let ((options (fset:lookup (space-settings space) path)))
     (if (and options (fset:domain-contains? options key))
         (fset:lookup options key)
         default)))
+
+(defun setting (path key &optional default)
+  "The write option KEY that PATH was given, or DEFAULT."
+  (%setting-in (current) path key default))
 
 (defun %settings-with (settings path key value)
   "SETTINGS with PATH's option KEY set. Pure."
@@ -458,16 +469,22 @@ against the space it is handed rather than one read a moment ago."
             next)))))
 
 (defun %commit (changes)
-  "Put CHANGES, a list of (path . value), in as one step. Answers what moved."
+  "Put CHANGES, a list of (path . value), in as one step: one new root, so
+nothing ever observes the system half changed. Answers what moved.
+
+Pure, so a swap may run it again: a verb, a ring and a de-duplication are all
+decided against the space the write lands on."
   (let ((new (%swap (lambda (old)
                       (let ((root (space-root old))
                             (moved nil))
                         (dolist (change changes)
                           (destructuring-bind (path . value) change
-                            (let ((was (%get root (p:keys path))))
-                              (unless (fset:equal? was value)
-                                (setf root (%put root (p:keys path) value))
-                                (push (list path was value) moved)))))
+                            (let* ((was (%get root (p:keys path)))
+                                   (stored (%stored path was value
+                                                    (%setting-in old path :max))))
+                              (unless (fset:equal? was stored)
+                                (setf root (%put root (p:keys path) stored))
+                                (push (list path was stored) moved)))))
                         (let ((next (copy-space old)))
                           (setf (space-root next) root
                                 (space-moved next) (nreverse moved))
@@ -551,11 +568,25 @@ one nobody will ever look at."
                   (setf out (append out (%apply answer))))))))))))
 
 (defun %apply (map)
-  "Write every entry of MAP, without propagating: the caller owns that."
-  (let ((moved nil))
+  "Write every entry of MAP as one change, without propagating: the caller owns
+that.
+
+A path a provider serves is given to the provider, because that is an effect on
+the world and not a place in the tree; everything else lands in one swap, which
+is what makes a map a transaction."
+  (let ((space (current))
+        (moved nil)
+        (staged nil))
     (fset:do-map (path value map)
-      (setf moved (append moved (%write-one path value))))
-    moved))
+      (cond ((and (not *preview*) (%served-write space path value))
+             (setf moved (append moved (list (list path (%read-one path) value)))))
+            (t (push (cons path value) staged))))
+    (setf staged (nreverse staged))
+    (append moved
+            (if *preview*
+                (loop :for (path . value) :in staged
+                      :append (%write-one path value))
+                (%commit staged)))))
 
 (defun %propagate (moved)
   "Compute again everything that read a path that moved, then run the watches
