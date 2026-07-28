@@ -40,15 +40,33 @@ makes that impossible rather than unlikely.")
 ;;;; BLOCKS, and a surface picks one (invoke-restart) or aborts. Same object for
 ;;;; C-x C-e, the repl, a widget onclick, or a remote agent.
 
-(defvar *evaluations* nil)
-(defvar *counter* 0)
 (defvar *current* nil)
-(defvar *registry-lock* (bordeaux-threads:make-lock "pine-eval-registry")
-  "Guards *evaluations* and *counter*, since any thread (command path, repl,
-agent) may start an evaluation concurrently.")
+
+;;;; What has run and what is parked, as one value.
+;;;;
+;;;; Neither owns a resource, so neither gets a thread: they are a map an
+;;;; atomic swap replaces, the shape the namespace itself has. Nothing on the
+;;;; path a fault takes waits on anything, which matters because that is a
+;;;; thread already in a bad place.
+;;;;
+;;;;   {:n NEXT-ID :ran (EVALUATION ...) :parked {ID EVALUATION}}
+
+(defvar *registry*
+  (sento.atomic:make-atomic-reference
+   :value {:n 0 :ran nil :parked (fset:empty-map)}))
+
+(defun %registry () (sento.atomic:atomic-get *registry*))
+
+(defun %note (fn)
+  "Replace the registry with FN's answer, retrying until it lands. FN is pure."
+  (sento.atomic:atomic-swap *registry* fn))
+
+(defun %next-id ()
+  "The next evaluation's id. Two threads starting one at once get two."
+  (fset:lookup (%note (lambda (r) (fset:with r :n (1+ (fset:lookup r :n))))) :n))
 
 (defstruct (evaluation (:constructor %make-evaluation))
-  (id (incf *counter*))
+  (id (%next-id))
   form
   thunk
   package
@@ -69,27 +87,24 @@ agent) may start an evaluation concurrently.")
 
 ;;;; What is parked, and the paths it is parked at.
 
-(defvar *parked* (make-hash-table :test 'eql)
-  "id -> evaluation, for every fault waiting on a decision.")
-
-(defvar *parked-lock* (bordeaux-threads:make-lock "pine-err-parked"))
-
 (defun parked (&optional id)
-  "Every parked fault, or the one with ID."
-  (bordeaux-threads:with-lock-held (*parked-lock*)
+  "Every parked fault, oldest first, or the one with ID."
+  (let ((parked (fset:lookup (%registry) :parked)))
     (if id
-        (gethash id *parked*)
+        (fset:lookup parked id)
         (let (acc)
-          (maphash (lambda (k v) (declare (ignore k)) (push v acc)) *parked*)
+          (fset:do-map (k ev parked) (declare (ignore k)) (push ev acc))
           (sort acc #'< :key #'evaluation-id)))))
 
 (defun %park (ev)
-  (bordeaux-threads:with-lock-held (*parked-lock*)
-    (setf (gethash (evaluation-id ev) *parked*) ev)))
+  (%note (lambda (r)
+           (fset:with r :parked
+                      (fset:with (fset:lookup r :parked) (evaluation-id ev) ev)))))
 
 (defun %unpark (ev)
-  (bordeaux-threads:with-lock-held (*parked-lock*)
-    (remhash (evaluation-id ev) *parked*)))
+  (%note (lambda (r)
+           (fset:with r :parked
+                      (fset:less (fset:lookup r :parked) (evaluation-id ev))))))
 
 (defun %describe (ev)
   (fset:map (:id (evaluation-id ev))
@@ -148,8 +163,7 @@ by the time this is called, so the surface only has to display it."
                                            (error () "<unprintable condition>"))
                               :condition-type (string (type-of condition))
                               :backtrace (%capture-backtrace))))
-    (bordeaux-threads:with-lock-held (*registry-lock*)
-      (push ev *evaluations*))
+    (%ran ev)
     (let ((surface *on-debug*))
       (if surface
           (handler-case (funcall surface ev)
@@ -172,11 +186,16 @@ the caller still has work to finish."
   (handler-case (values (funcall thunk) nil)
     (error (c) (values nil (report-failure c context)))))
 
+(defun %ran (ev)
+  "Note EV as one this image started."
+  (%note (lambda (r) (fset:with r :ran (cons ev (fset:lookup r :ran)))))
+  ev)
+
 (defun list-evaluations ()
-  (bordeaux-threads:with-lock-held (*registry-lock*) (copy-list *evaluations*)))
+  (fset:lookup (%registry) :ran))
+
 (defun find-evaluation (id)
-  (bordeaux-threads:with-lock-held (*registry-lock*)
-    (find id *evaluations* :key #'evaluation-id)))
+  (find id (list-evaluations) :key #'evaluation-id))
 
 (defun %capture-backtrace ()
   (handler-case
@@ -353,13 +372,8 @@ call-with-debugger)."
   "Evaluate FORM (or call THUNK) on a fresh thread. Returns the EVALUATION
 immediately. BINDINGS is an alist (special-symbol . value) rebound around the
 eval (e.g. *client*). ON-DONE / ON-ERROR run on the eval thread."
-  (let ((ev (bordeaux-threads:with-lock-held (*registry-lock*)
-              ;; id assignment (incf *counter*) and the push share the lock so
-              ;; concurrent starts get distinct ids and no lost entries.
-              (let ((ev (%make-evaluation :form form :thunk thunk :package package
-                                          :on-done on-done :on-error on-error)))
-                (push ev *evaluations*)
-                ev))))
+  (let ((ev (%ran (%make-evaluation :form form :thunk thunk :package package
+                                    :on-done on-done :on-error on-error))))
     (setf (evaluation-thread ev)
           (bordeaux-threads:make-thread
            (lambda () (run-evaluation ev bindings))

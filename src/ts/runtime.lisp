@@ -3,7 +3,7 @@
   (:export
    ;; the runtime and its per-language entries
    #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
-   #:languages #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
+   #:grammars #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
    ;; grammars
    #:*grammars* #:grammar-library-candidates #:load-grammar-library
    #:grammar-language-pointer #:load-language-entry
@@ -31,6 +31,7 @@
    #:ts-node-child-by-field-name #:ts-node-named-descendant-for-byte-range))
 
 (in-package #:pine.ts.runtime)
+(named-readtables:in-readtable pine.data:syntax)
 
 ;;;; CFFI bindings to libtree-sitter. tree-sitter passes TSNode by value;
 ;;;; cffi-libffi handles the by-value struct, so no C wrapper is needed. The
@@ -236,12 +237,21 @@ or nil when tree-sitter reports no changed ranges."
 
 ;;;; Runtime + per-language entries
 
+;;;; A grammar is loaded once, by whichever buffer asks first, and every buffer
+;;;; after that finds it. The table is one agent's state as a map:
+;;;;
+;;;;   {:loaded {LANGUAGE TS-ENTRY} :missing #{LANGUAGE}}
+;;;;
+;;;; A hit is a slot read of that map, so a parse costs no message. A miss is
+;;;; the one ask, so exactly one thread runs the dlopen and the second finds it
+;;;; already there. Nothing on the agent's thread asks anything.
+
 (defclass ts-runtime ()
   ((libs-loaded :accessor libs-loaded :initform nil)
-   (languages   :accessor languages   :initform (make-hash-table :test 'eq))
-   ;; a language whose grammar is not here, so it is said once rather than by
-   ;; every buffer that asks for it
-   (missing     :accessor missing     :initform (make-hash-table :test 'eq))))
+   (grammars    :reader grammars
+                :initform (sento.agent:make-agent
+                           (lambda () {:loaded (fset:empty-map)
+                                       :missing (fset:empty-set)})))))
 
 (defclass ts-entry ()
   ((parser       :initarg :parser       :accessor entry-parser)
@@ -296,23 +306,42 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
           (ts-parser-set-language parser lang)
           (make-instance 'ts-entry :parser parser :language-ptr lang))))))
 
+(defun %grammars (runtime)
+  "The table as it stands: one slot read, no message."
+  (let ((state (sento.agent:agent-get-quick (grammars runtime) #'identity)))
+    (if (fset:map? state) state {:loaded (fset:empty-map)
+                                 :missing (fset:empty-set)})))
+
+(defun %load-once (state language)
+  "STATE with LANGUAGE loaded, if it can be. Runs on the agent's thread, so the
+second asker for a grammar finds what the first loaded."
+  (cond
+    ((fset:lookup (fset:lookup state :loaded) language) state)
+    ((fset:contains? (fset:lookup state :missing) language) state)
+    (t (let ((entry (load-language-entry language)))
+         (cond
+           (entry (fset:with state :loaded
+                             (fset:with (fset:lookup state :loaded) language entry)))
+           (t (pine.err:report-failure
+               (make-condition 'simple-error
+                               :format-control "no ~(~a~) grammar to load"
+                               :format-arguments (list language))
+               "loading a grammar")
+              (fset:with state :missing
+                         (fset:with (fset:lookup state :missing) language))))))))
+
 (defun ensure-language (runtime language)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
 grammar is not here. A grammar that will not load is said once, because
 silence leaves a buffer with no colour and no reason."
   (unless (libs-loaded runtime) (ensure-ts runtime))
   (when (libs-loaded runtime)
-    (or (gethash language (languages runtime))
-        (let ((entry (load-language-entry language)))
-          (cond (entry (setf (gethash language (languages runtime)) entry))
-                ((gethash language (missing runtime)) nil)
-                (t (setf (gethash language (missing runtime)) t)
-                   (pine.err:report-failure
-                    (make-condition 'simple-error
-                                    :format-control "no ~(~a~) grammar to load"
-                                    :format-arguments (list language))
-                    "loading a grammar")
-                   nil))))))
+    (or (fset:lookup (fset:lookup (%grammars runtime) :loaded) language)
+        (let ((state (sento.agent:agent-update-and-get
+                      (grammars runtime)
+                      (lambda (state) (%load-once state language)))))
+          (when (fset:map? state)
+            (fset:lookup (fset:lookup state :loaded) language))))))
 
 
 
