@@ -35,6 +35,8 @@
                                        (:file "hooks") (:file "attach")))
                  ;; another pine, over the remoting the frontends already use
                  (:file "host")
+                 ;; modes are maps at /mode; this is the lookup over them
+                 (:file "mode")
                  ;; the drivers: one file per system, the only impure code here
                  (:module "provider"
                           :serial t
@@ -50,7 +52,9 @@
                  (:module "echo"
                           :serial t :pathname "editor/"
                           :components ((:file "echo")))
-                 (:module "mode"
+                 ;; the CLOS mode registry, until the dispatch-message methods
+                 ;; move to :on handlers under /mode
+                 (:module "editor-mode"
                           :serial t :pathname "editor/"
                           :components ((:file "mode")))
                  (:module "ts"
@@ -119,7 +123,8 @@
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
                              (:file "store") (:file "self") (:file "err")
-                             (:file "proc") (:file "host") (:file "provider")
+                             (:file "proc") (:file "host") (:file "mode")
+                             (:file "provider")
                              (:file "buffer") (:file "buf")
                              (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
