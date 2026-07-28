@@ -260,7 +260,7 @@ disappears into a mailbox nobody is reading."
     (setf (pine.state.var:var :debug-on-error) new)
     (pine.editor.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
 (defcmd "jobs" ()
-  (pine.editor.layout:show-layout "*jobs*" (pine.editor.debugger:jobs-builder)))
+  (pine.editor.view:show "*jobs*" (pine.editor.debugger:jobs-builder)))
 (defcmd "eval-last-sexp" () (pine.editor.evaluate:eval-last-sexp))
 (defcmd "eval-defun" ()     (pine.editor.evaluate:eval-defun))
 (defcmd "eval-buffer" ()    (pine.editor.evaluate:eval-buffer))
@@ -312,11 +312,11 @@ disappears into a mailbox nobody is reading."
    (pine.editor.frame:current-client)
    (lambda (key) (pine.editor.echo:message (pine.editor.help:describe-key-text key)))))
 (defcmd "describe-bindings" ()
-  (pine.editor.layout:show-layout "*bindings*" (pine.editor.debugger:text-layout (pine.editor.help:bindings-text))))
+  (pine.editor.view:show "*bindings*" (pine.editor.debugger:text-layout (pine.editor.help:bindings-text))))
 (defcmd "describe-mode" ()
-  (pine.editor.layout:show-layout "*mode*" (pine.editor.debugger:text-layout (pine.editor.help:mode-text))))
+  (pine.editor.view:show "*mode*" (pine.editor.debugger:text-layout (pine.editor.help:mode-text))))
 (defcmd "describe-variables" ()
-  (pine.editor.layout:show-layout "*variables*" (pine.editor.debugger:text-layout (pine.editor.help:variables-text))))
+  (pine.editor.view:show "*variables*" (pine.editor.debugger:text-layout (pine.editor.help:variables-text))))
 (defcmd "insert-tab" ()
   (let* ((c (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer c))
@@ -344,10 +344,10 @@ disappears into a mailbox nobody is reading."
     (when snap
       (pine.buf:indent (pine.text.buffer:name-of buf) 0
                        (1- (pine.text.buffer:line-count snap))))))
-;; layout buffers: selection nav + activation on the node tree
-(defcmd "layout-next" () (pine.editor.layout:layout-select 1))
-(defcmd "layout-prev" () (pine.editor.layout:layout-select -1))
-(defcmd "layout-activate" () (pine.editor.layout:layout-activate))
+;; tool buffers: the selection moves and the row acts, as verbs on the buffer
+(defcmd "view-next" () (pine.ns:write (pine.buf:at "current") (fset:seq :select 1)))
+(defcmd "view-prev" () (pine.ns:write (pine.buf:at "current") (fset:seq :select -1)))
+(defcmd "view-activate" () (pine.ns:write (pine.buf:at "current") (fset:seq :activate)))
 ;; minibuffer-mode: the only keys the prompt binds; everything else is the
 ;; ordinary buffer editing commands, so the prompt edits like any buffer.
 (defcmd "minibuffer-accept" () (pine.editor.minibuffer:minibuffer-accept))
@@ -448,20 +448,20 @@ disappears into a mailbox nobody is reading."
   "C-M-i"    "complete-symbol"
   "M-Tab"    "complete-symbol")
 
-;;;; debugger-mode: the restart rows answer to layout-mode's Return/C-n/C-p;
+;;;; the debugger: the restart rows answer to a tool buffer's Return/C-n/C-p;
 ;;;; these are the extras.
 (pine.editor.keymap:define-keys :debugger
   "a"    "debugger-abort"
   "q"    "debugger-quit"
   "Tab"  "debugger-next-session")
 
-;;;; layout-mode: selection nav and activation on a layout buffer.
-(pine.editor.keymap:define-keys :layout
-  "Down"    "layout-next"
-  "C-n"     "layout-next"
-  "Up"      "layout-prev"
-  "C-p"     "layout-prev"
-  "Return"  "layout-activate")
+;;;; a tool buffer: the selection moves and the row acts.
+(pine.editor.keymap:define-keys :view
+  "Down"    "view-next"
+  "C-n"     "view-next"
+  "Up"      "view-prev"
+  "C-p"     "view-prev"
+  "Return"  "view-activate")
 
 ;;;; minibuffer-mode: accept, abort, complete, candidate motion. Every other
 ;;;; key falls through to text-mode, so the prompt has full editing.

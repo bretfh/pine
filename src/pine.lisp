@@ -37,6 +37,7 @@
     (pine.term:mount-mode)
     (pine.editor.overwrite:mount-mode)
     (pine.editor.repl:mount-mode)
+    (pine.editor.view:install)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
                     :runtime (pine.core.server:ts-runtime srv))
     (pine.core.attach:start-attach-listener srv)

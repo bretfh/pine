@@ -420,6 +420,10 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
 (defvar *preview* nil "When bound, writes collect here instead of being made.")
 (defvar *propagating* nil)
 
+(defvar *cascade* nil
+  "Where a write made while a cascade is running on this thread collects, so it
+joins that wave instead of being lost.")
+
 (defun on-commit ()
   "What this space tells each commit to, or NIL."
   (space-on-commit (current)))
@@ -680,32 +684,63 @@ is what makes a map a transaction."
                       :append (%write-one path value))
                 (%commit staged)))))
 
+(defun %expand (moved)
+  "MOVED, with what landed under each map in it.
+
+Writing a directory is writing every leaf in it, so a watch or an expression
+over one leaf hears about it whether it was written on its own or as part of
+the map its parent took: (write /buf/notes {:mode :lisp}) and
+(write /buf/notes/mode :lisp) are the same change."
+  (let ((out nil))
+    (labels ((walk (change)
+               (destructuring-bind (path old new) change
+                 (push change out)
+                 (when (fset:map? new)
+                   (fset:do-map (key value new)
+                     (let ((was (and (fset:map? old) (fset:lookup old key))))
+                       (unless (fset:equal? was value)
+                         (walk (list (p:child path (p:name key)) was value)))))))))
+      (mapc #'walk moved))
+    (nreverse out)))
+
 (defun %propagate (moved)
   "Compute again everything that read a path that moved, then run the watches
 over it, until nothing more moves.
 
 Runs on the caller's thread, after the swap and never inside one, because both
-a reaction and a watch may write. *PROPAGATING* is per thread on purpose: it
-guards this thread's own cascade, and two threads each carrying their own
-change through the graph is the normal case rather than a collision."
-  (when (and moved (not *preview*) (not *propagating*))
-    (let ((*propagating* t)
-          (seen (fset:empty-set))
-          (wave moved)
-          (passes 0))
-      (loop :while wave
-            :do (when (> (incf passes) 100)
-                  (error 'cycle :at (mapcar #'first wave)))
-                (let ((next nil)
-                      (space (current)))
-                  (dolist (reaction (%dependents space wave))
-                    (let ((at (reaction-path reaction)))
-                      (when (fset:contains? seen at)
-                        (error 'cycle :at (list at)))
-                      (setf seen (fset:with seen at))
-                      (setf next (append next (%recompute reaction)))))
-                  (setf next (append next (%run-watches space wave)))
-                  (setf wave next))))))
+a reaction and a watch may write. A write made while this is running joins the
+wave rather than starting a cascade of its own, so a watch that writes -- a
+mode installing a view, a parser landing its answer -- carries on to whatever
+was watching what it wrote.
+
+*PROPAGATING* is per thread on purpose: it says this thread is already carrying
+a change through the graph, and two threads each carrying their own is the
+normal case rather than a collision."
+  (cond ((or (null moved) *preview*) nil)
+        (*propagating*
+         (when *cascade*
+           (setf (cdr *cascade*) (append (cdr *cascade*) moved))))
+        (t
+         (let* ((*propagating* t)
+                (*cascade* (cons :cascade nil))
+                (seen (fset:empty-set))
+                (wave (%expand moved))
+                (passes 0))
+           (loop :while wave
+                 :do (when (> (incf passes) 100)
+                       (error 'cycle :at (mapcar #'first wave)))
+                     (let ((next nil)
+                           (space (current)))
+                       (dolist (reaction (%dependents space wave))
+                         (let ((at (reaction-path reaction)))
+                           (when (fset:contains? seen at)
+                             (error 'cycle :at (list at)))
+                           (setf seen (fset:with seen at))
+                           (setf next (append next (%recompute reaction)))))
+                       (setf next (append next (%run-watches space wave)))
+                       (setf next (append next (cdr *cascade*)))
+                       (setf (cdr *cascade*) nil)
+                       (setf wave (%expand next))))))))
 
 (defun %changes (moved)
   (let ((out (fset:empty-map)))

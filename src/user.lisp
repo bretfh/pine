@@ -28,8 +28,6 @@
                 #:completing-read #:read-file-name #:prompt)
   (:import-from :pine.editor.echo #:message)
   (:import-from :pine.editor.evaluate #:eval-last-sexp #:eval-buffer)
-  (:import-from :pine.editor.layout #:show-layout #:layout-node-at-point
-                #:layout-select #:layout-activate)
   (:import-from :pine #:*frontends*)
   (:export
    ;; the frontends the daemon owns
@@ -69,8 +67,6 @@
    #:defonce #:var
    ;; prompts + echo
    #:completing-read #:read-file-name #:prompt #:message
-   ;; layout buffers (authorable tool buffers)
-   #:show-layout #:layout-node-at-point #:layout-select #:layout-activate
    ;; processes
    #:defagent #:spawn #:kill
    ;; buffers / editor

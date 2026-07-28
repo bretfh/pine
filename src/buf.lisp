@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text.buffer))
   (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop #:motion
-           #:indent #:showing #:asked #:forget #:band-of))
+           #:indent #:showing #:asked #:forget #:band-of #:*verbs*))
 
 (in-package #:pine.buf)
 (named-readtables:in-readtable pine.path:syntax)
@@ -364,6 +364,37 @@ handler for a verb is running, that verb on that buffer is the built-in."
             nil))
         (funcall fallback))))
 
+;;;; A tool buffer is a mode with a :view: a function of the buffer answering a
+;;;; widget tree. The tree is written here as an expression, so what it read is
+;;;; recorded and it is computed again when any of it moves. That is the whole
+;;;; of a tool buffer: nothing polls, nothing subscribes, and the buffer holds
+;;;; no copy of what it is showing.
+
+(defvar *verbs* (fset:empty-map)
+  "The built-in verbs of a buffer that need what is layered above /buf: what a
+row activates, and moving between rows. The layer that has the widgets
+installs them, the way the buffer actor's messages are installed.")
+
+(defun %builtin (name verb args)
+  (let ((fn (fset:lookup *verbs* verb)))
+    (when fn (apply fn name args))))
+
+(defun %view (name)
+  "Write NAME's view, if its mode has one. Written as an expression, so what
+the view read is what wakes it.
+
+A buffer showing a view takes the minor mode that moves between its rows, so
+Return and the arrows mean what they mean in a tool buffer whatever its major
+mode is."
+  (let* ((mode (ns:read (at name :mode)))
+         (fn (and mode (pine.mode:setting mode :view))))
+    (cond (fn
+           (ns:write (at name :view) (funcall fn name) :keep nil)
+           (ns:write (at name :minor) (fset:seq :conj :view)))
+          (t
+           (ns:write (at name :view) nil)
+           (ns:write (at name :minor) (fset:seq :disj :view))))))
+
 ;;;; The buffer that is current, which is a place like any other. Nothing holds
 ;;;; a pointer to it: /buf/current names a buffer, and a leaf under it is that
 ;;;; buffer's leaf, so a command that acts on "the current buffer" writes a
@@ -443,8 +474,14 @@ handler for a verb is running, that verb on that buffer is the built-in."
      :doc "[line col]; [:move :word 1] to step by something"})
    (/buf/?name
     {:verbs {:visit (pine.data:fn [file] (%visit name file))
-             :indent-line (pine.data:fn [] (indent name))}
-     :doc "the buffer; [:visit FILE] to read another one into it"})
+             :indent-line (pine.data:fn [] (indent name))
+             :activate (pine.data:fn []
+                         (%verb name :activate nil
+                                (lambda () (%builtin name :activate nil))))
+             :select (pine.data:fn [delta]
+                       (%verb name :select (list delta)
+                              (lambda () (%builtin name :select (list delta)))))}
+     :doc "the buffer; [:visit FILE], [:activate] what is selected"})
    (/buf
     {:ls (pine.data:fn [] (names))
      :doc "every buffer"})))
@@ -605,11 +642,19 @@ whenever its text or its mode moves."
                 (%parse (p:leaf (p:parent (ns:here))) system runtime)
                 {})
               :as :buf-mode))
+  ;; a mode with a :view makes the buffer a tool buffer
+  (ns:watch /buf/*/mode
+            (pine.data:fn [v]
+              (declare (ignore v))
+              (%view (p:leaf (p:parent (ns:here))))
+              {})
+            :as :buf-view)
   nil)
 
 (defun unmount ()
   (ns:watch /buf/*/text nil :as :buf-parse)
   (ns:watch /buf/*/mode nil :as :buf-mode)
+  (ns:watch /buf/*/mode nil :as :buf-view)
   (fset:do-map (name link (sento.atomic:atomic-get *parsers*))
     (declare (ignore name))
     (sento.actor:tell (pine.ts.parser:link-actor link) '(:stop)))

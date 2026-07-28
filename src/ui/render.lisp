@@ -101,16 +101,8 @@ attached frontend -- the editor session's sink refreshes the live tree
                                   (pine.editor.frame:cell-h client) cell-h))
                           (relayout)
                           (pine.term:resize-active-terminal cols rows)
-                          ;; a layout buffer laid out for an old width
-                          ;; reprojects at its window's new one
-                          (dolist (w (pine.editor.frame:windows client))
-                            (let ((s (pine.text.window:snap w)))
-                              (when (and s (pine.text.buffer:buffer-local s :layout-builder)
-                                         (/= (pine.text.window:win-width w)
-                                             (pine.text.buffer:buffer-local s :layout-width 0)))
-                                (sento.actor:tell (pine.text.window:buffer-ref w)
-                                                  (list :reproject
-                                                        :width (pine.text.window:win-width w))))))
+                          ;; a view renders at the width its window has when it
+                          ;; paints, so a resize has nothing to reproject
                           (paint-frame client)))
                        (:switch-buffer
                         (destructuring-bind (&key buffer name) (rest msg)
@@ -540,11 +532,12 @@ Returns (values rows crow ccol), the point position within the rows or -1 -1."
                            (when sl (list sl sc el ec)))))
          (off 0))
     (cond
-      ;; a layout buffer: blit its rendered rows (the render carries the
-      ;; styling; no face-name table)
-      ((and s (pine.text.buffer:buffer-local s :layout-rows))
+      ;; a tool buffer: render its view here, at the width this window has, and
+      ;; blit the rows (the render carries the styling; no face-name table)
+      ((and s (pine.ns:read (pine.buf:at (pine.text.window:window-name w) :view)))
        (loop for row-cells in (nthcdr (pine.text.window:scroll-top w)
-                                      (pine.text.buffer:buffer-local s :layout-rows))
+                                      (pine.editor.view:rendered
+                                       (pine.text.window:window-name w)))
              for row from 0 below (pine.text.window:win-height w)
              do (setf off (emit-row f off row (car row-cells) (cdr row-cells) wid))))
       (s

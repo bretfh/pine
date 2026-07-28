@@ -53,13 +53,21 @@
 (defrules (:tool-title :color (color :accent) :font-weight "bold")
           ((:tool-row :sel) :background-color (color :bg-active)))
 
+;; a mode with a :view is a tool buffer, and that is the whole of one: the
+;; view is an expression, so it re-renders when anything it read moves
+(write /mode/scratchpad
+  {:indicator "Scratch"
+   :view (lambda (buf)
+           (declare (ignore buf))
+           (column :align :stretch
+             (label "scratchpad" :class :tool-title)
+             (choice :class :tool-row :data (lambda () (call-command 'greet))
+               (label "greet"))
+             (choice :class :tool-row :data (lambda () (call-command 'open-repl))
+               (label "open a repl"))))})
+
 (defcommand scratchpad ()
-  (show-layout "*scratchpad*"
-    (lambda (state) (declare (ignore state))
-      (column :align :stretch
-        (label "scratchpad" :class :tool-title)
-        (choice :class :tool-row :data (lambda () (call-command 'greet))
-          (label "greet"))
-        (choice :class :tool-row :data (lambda () (call-command 'open-repl))
-          (label "open a repl"))))))
+  (buffer "*scratchpad*")
+  (write /buf/*scratchpad* {:mode :scratchpad})
+  (switch-buffer "*scratchpad*"))
 (global-set-key (kbd "C-c s") 'scratchpad)

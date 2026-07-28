@@ -134,9 +134,9 @@
     (is (string= "alpha" (pine.editor.debugger::dbg-session-agent
                           pine.editor.debugger:*attended-session*)))
     (is (equal "alpha" pine.editor.target:*eval-target*))
-    (pine.editor.command::call-command "layout-next")
+    (pine.editor.command::call-command "view-next")
     (sleep 0.1)
-    (pine.editor.command::call-command "layout-activate")
+    (pine.editor.command::call-command "view-activate")
     (sleep 0.05)
     (is (= 1 (length pine.editor.debugger:*debugger-sessions*)))
     (pine.editor.debugger:invoke-pending-restart "ABORT")
@@ -154,35 +154,31 @@
       (sleep 0.3)
       (is (= 3 done)))))
 
-(test a-layout-buffer-renders-selects-activates-and-reprojects
+(test a-tool-buffer-renders-selects-and-activates
+  "A tool buffer is a view: the widget tree is at /buf/?name/view, the buffer
+reads as its rows, and the selection moves and acts as verbs on the buffer."
   (with-fixture substrate ()
     (let ((fired nil)
-          (buf (pine.editor.frame::make-buffer "layout-probe")))
-      (sento.actor:tell buf
-                        (list :set-layout :width 12 :builder
-                              (lambda (state)
-                                (declare (ignore state))
-                                (pine.ui.build:column
-                                 :align :stretch
-                                 (pine.ui.build:label "hd" :face :keyword)
-                                 (pine.ui.build:choice :data (lambda () (setf fired :one))
-                                                       (pine.ui.build:label "one"))
-                                 (pine.ui.build:choice :data (lambda () (setf fired :two))
-                                                       (pine.ui.build:label "two"))))))
+          (buf (pine.editor.frame::make-buffer "view-probe")))
+      (pine.editor.view:show
+       "view-probe"
+       (lambda (name)
+         (declare (ignore name))
+         (pine.ui.build:column
+          :align :stretch
+          (pine.ui.build:label "hd" :face :keyword)
+          (pine.ui.build:choice :data (lambda () (setf fired :one))
+                                (pine.ui.build:label "one"))
+          (pine.ui.build:choice :data (lambda () (setf fired :two))
+                                (pine.ui.build:label "two")))))
       (sleep 0.15)
       (is (string= (format nil "hd~%> one~%  two") (btext buf)))
       (setf (pine.editor.frame::current-buffer *client*) buf)
-      (pine.editor.command::call-command "layout-next")
+      (pine.editor.command::call-command "view-next")
       (sleep 0.1)
       (is (string= (format nil "hd~%  one~%> two") (btext buf)))
-      (multiple-value-bind (l c) (pine.editor.ask:ask buf :point)
-        (declare (ignore c))
-        (is (= 2 l)))
-      (pine.editor.command::call-command "layout-activate")
-      (is (eq :two fired))
-      (sento.actor:tell buf '(:reproject :width 20))
-      (sleep 0.1)
-      (is (= 20 (pine.text.buffer:buffer-local (bsnap buf) :layout-width))))))
+      (pine.editor.command::call-command "view-activate")
+      (is (eq :two fired)))))
 
 (test the-user-language-drives-the-real-dispatch
   (with-fixture substrate ()
@@ -226,16 +222,19 @@
 (test a-user-tool-buffer-selects-and-activates
   (with-fixture substrate ()
     (in-user "(defvar *tool* nil)")
-    (in-user "(show-layout \"*user-tool*\"
-        (lambda (state) (declare (ignore state))
-          (column :align :stretch
-            (label \"tool\" :class \"help-head\")
-            (choice :data (lambda () (setf *tool* :a)) (label \"a\"))
-            (choice :data (lambda () (setf *tool* :b)) (label \"b\")))))")
+    (in-user "(write /mode/user-tool
+        {:view (lambda (buf) (declare (ignore buf))
+                 (column :align :stretch
+                   (label \"tool\" :class \"help-head\")
+                   (choice :data (lambda () (setf *tool* :a)) (label \"a\"))
+                   (choice :data (lambda () (setf *tool* :b)) (label \"b\"))))})")
+    (in-user "(buffer \"*user-tool*\")")
+    (in-user "(write /buf/*user-tool* {:mode :user-tool})")
+    (in-user "(switch-buffer \"*user-tool*\")")
     (sleep 0.15)
     (is (string= (format nil "tool~%> a~%  b") (btext "*user-tool*")))
-    (pine.editor.command::call-command "layout-next")
-    (pine.editor.command::call-command "layout-activate")
+    (pine.editor.command::call-command "view-next")
+    (pine.editor.command::call-command "view-activate")
     (sleep 0.05)
     (is (eq :b (user-value "*TOOL*")))))
 

@@ -127,7 +127,7 @@ the state it was projected from, so it does not persist."
     (cond
       (path (list :path path :mode mode))
       ((tool-buffer-p name) nil)
-      ((pine.text.buffer:buffer-local state :layout-builder) nil)
+      ((pine.ns:read (pine.buf:at name :view)) nil)   ; a tool buffer is its view
       (t (let ((content (pine.text.buffer:state->string state)))
            (when (plusp (length content))
              (list :name name :mode mode :content content)))))))

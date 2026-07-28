@@ -1,6 +1,6 @@
 (defpackage #:pine.editor.edit
   (:use #:cl)
-  (:export #:layout-state #:message)
+  (:export #:message)
   (:documentation "What a buffer actor does with a message."))
 
 (in-package #:pine.editor.edit)
@@ -9,35 +9,6 @@
 ;;;; under them. A mode does not reach here at all -- what a mode changes about
 ;;;; a verb is an :on handler under /mode, which /buf consults before it gets
 ;;;; this far.
-
-(defun layout-state (state builder width &optional selection)
-  "A fresh buffer state whose content is BUILDER's node tree rendered at WIDTH:
-lines are the row texts, meta carries :layout-builder, :layout-rows,
-:layout-tree, :layout-width, and :layout-selection. Name/mode/pathname/vars
-carry over like :replace-content; point is clamped into the new content."
-  (let* ((sel (or selection (pine.text.buffer:buffer-local state :layout-selection 0)))
-         (tree0 (funcall builder state)))
-    (multiple-value-bind (rows tree) (pine.ui.cells:render tree0 width :selection sel)
-      (let* ((texts (mapcar (lambda (r) (string-right-trim " " (car r))) rows))
-             (old-meta (pine.text.buffer:meta state))
-             (carried (reduce (lambda (st key)
-                                (multiple-value-bind (val present)
-                                    (fset:lookup old-meta key)
-                                  (if present (pine.text.buffer:set-meta st key val) st)))
-                              '(:id :name :mode :pathname :vars)
-                              :initial-value
-                              (pine.text.buffer:load-content
-                               (format nil "~{~a~^~%~}" texts))))
-             (new (reduce (lambda (st kv) (pine.text.buffer:set-meta st (car kv) (cdr kv)))
-                          (list (cons :layout-builder builder)
-                              (cons :layout-rows rows)
-                              (cons :layout-tree tree)
-                              (cons :layout-width width)
-                              (cons :layout-selection sel))
-                          :initial-value carried))
-             (snap (pine.text.buffer:state->snapshot state))
-             (pl (min (pine.text.buffer:point-line snap) (max 0 (1- (length texts))))))
-        (pine.text.buffer:move-mark new :point pl 0)))))
 
 (defun %base (self tag plist)
   "What every buffer does with a verb."
@@ -143,27 +114,6 @@ carry over like :replace-content; point is clamped into the new content."
        (let ((new (pine.text.buffer:set-meta state :overlays nil)))
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
          nil))
-      ;; the buffer as a layout buffer: BUILDER (state -> node tree) is
-      ;; stored and run; lines become the row texts; the rows and the arranged
-      ;; tree ride the meta for the renderer and point->node lookup. History
-      ;; resets like :replace-content. :reproject re-runs the stored builder
-      ;; (selection change, data change, resize) and preserves history.
-      (:set-layout
-       (let ((new (layout-state state (getf plist :builder)
-                                    (or (getf plist :width)
-                                        (pine.text.buffer:buffer-local state :layout-width 80))
-                                    (getf plist :selection))))
-         (setf sento.actor:*state* (list new nil nil subs nil pstate))
-         nil))
-      (:reproject
-       (let ((builder (pine.text.buffer:buffer-local state :layout-builder)))
-         (when builder
-           (let ((new (layout-state state builder
-                                        (or (getf plist :width)
-                                            (pine.text.buffer:buffer-local state :layout-width 80))
-                                        (getf plist :selection))))
-             (setf sento.actor:*state* (list new undo redo subs nil pstate))
-             nil))))
       (:replace-content
        ;; fresh content clears history, but the buffer keeps its identity: name,
        ;; mode, pathname, and buffer-locals carry over so highlighting and the

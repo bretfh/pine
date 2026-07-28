@@ -87,13 +87,17 @@
                           :serial t :pathname "editor/"
                           :components ((:file "edit")))
                  (:file "term")
+                 ;; a tool buffer is a view, and the window paints one
+                 (:module "view"
+                          :serial t :pathname "editor/"
+                          :components ((:file "view")))
                  (:module "ui-render"
                           :serial t :pathname "ui/"
                           :components ((:file "render")))
                  (:module "editor"
                           :serial t
                           :components ((:file "ask") (:file "motion") (:file "kill-ring")
-                                       (:file "layout") (:file "completion")
+                                       (:file "completion")
                                        (:file "minibuffer") (:file "isearch") (:file "file")
                                        (:file "target") (:file "repl") (:file "overwrite")
                                        (:file "window") (:file "help") (:file "debugger")

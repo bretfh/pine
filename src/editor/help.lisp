@@ -5,7 +5,7 @@
 (in-package #:pine.editor.help)
 
 ;;;; Help / self-documentation. Help buffers are read-only layout buffers
-;;;; (pine.editor.debugger:text-layout via pine.editor.layout:show-layout); describe-key echoes.
+;;;; (pine.editor.debugger:text-layout via pine.editor.view:show); describe-key echoes.
 
 (defun describe-key-text (key)
   (let ((entry (pine.editor.command:key-binding (pine.editor.frame:current-client) key))

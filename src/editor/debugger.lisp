@@ -107,9 +107,9 @@ in the image that broke -- fix the defun there, then pick retry."
         pine.editor.target:*eval-target* (ecase (dbg-session-kind session)
                         (:agent (dbg-session-agent session))
                         (:local :local)))
-  (pine.editor.layout:show-layout "*debugger*"
-                (%debugger-builder session (reverse *debugger-sessions*))
-                :mode :debugger :selection 0))
+  (pine.editor.view:show "*debugger*"
+                         (%debugger-builder session (reverse *debugger-sessions*))
+                         :mode :debugger))
 
 (defun %push-session (session)
   "Register SESSION and attend it. The return-to buffer is captured the first
