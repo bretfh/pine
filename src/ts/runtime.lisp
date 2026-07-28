@@ -238,20 +238,21 @@ or nil when tree-sitter reports no changed ranges."
 ;;;; Runtime + per-language entries
 
 ;;;; A grammar is loaded once, by whichever buffer asks first, and every buffer
-;;;; after that finds it. The table is one agent's state as a map:
+;;;; after that finds it. The table is a value in an atomic reference:
 ;;;;
 ;;;;   {:loaded {LANGUAGE TS-ENTRY} :missing #{LANGUAGE}}
 ;;;;
-;;;; A hit is a slot read of that map, so a parse costs no message. A miss is
-;;;; the one ask, so exactly one thread runs the dlopen and the second finds it
-;;;; already there. Nothing on the agent's thread asks anything.
+;;;; No owner and no thread, because there is nothing to serialize: dlopen is
+;;;; idempotent, so two buffers reaching for the same grammar at the same moment
+;;;; load it twice at worst and one of the two entries is dropped. A hit is a
+;;;; slot read, so a parse costs nothing at all.
 
 (defclass ts-runtime ()
   ((libs-loaded :accessor libs-loaded :initform nil)
    (grammars    :reader grammars
-                :initform (sento.agent:make-agent
-                           (lambda () {:loaded (fset:empty-map)
-                                       :missing (fset:empty-set)})))))
+                :initform (sento.atomic:make-atomic-reference
+                           :value {:loaded (fset:empty-map)
+                                   :missing (fset:empty-set)}))))
 
 (defclass ts-entry ()
   ((parser       :initarg :parser       :accessor entry-parser)
@@ -307,28 +308,22 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
           (make-instance 'ts-entry :parser parser :language-ptr lang))))))
 
 (defun %grammars (runtime)
-  "The table as it stands: one slot read, no message."
-  (let ((state (sento.agent:agent-get-quick (grammars runtime) #'identity)))
-    (if (fset:map? state) state {:loaded (fset:empty-map)
-                                 :missing (fset:empty-set)})))
+  "The table as it stands: one slot read."
+  (sento.atomic:atomic-get (grammars runtime)))
 
-(defun %load-once (state language)
-  "STATE with LANGUAGE loaded, if it can be. Runs on the agent's thread, so the
-second asker for a grammar finds what the first loaded."
-  (cond
-    ((fset:lookup (fset:lookup state :loaded) language) state)
-    ((fset:contains? (fset:lookup state :missing) language) state)
-    (t (let ((entry (load-language-entry language)))
-         (cond
-           (entry (fset:with state :loaded
-                             (fset:with (fset:lookup state :loaded) language entry)))
-           (t (pine.err:report-failure
-               (make-condition 'simple-error
-                               :format-control "no ~(~a~) grammar to load"
-                               :format-arguments (list language))
-               "loading a grammar")
-              (fset:with state :missing
-                         (fset:with (fset:lookup state :missing) language))))))))
+(defun %note-loaded (runtime language entry)
+  (sento.atomic:atomic-swap
+   (grammars runtime)
+   (lambda (state)
+     (fset:with state :loaded
+                (fset:with (fset:lookup state :loaded) language entry)))))
+
+(defun %note-missing (runtime language)
+  (sento.atomic:atomic-swap
+   (grammars runtime)
+   (lambda (state)
+     (fset:with state :missing
+                (fset:with (fset:lookup state :missing) language)))))
 
 (defun ensure-language (runtime language)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
@@ -336,12 +331,22 @@ grammar is not here. A grammar that will not load is said once, because
 silence leaves a buffer with no colour and no reason."
   (unless (libs-loaded runtime) (ensure-ts runtime))
   (when (libs-loaded runtime)
-    (or (fset:lookup (fset:lookup (%grammars runtime) :loaded) language)
-        (let ((state (sento.agent:agent-update-and-get
-                      (grammars runtime)
-                      (lambda (state) (%load-once state language)))))
-          (when (fset:map? state)
-            (fset:lookup (fset:lookup state :loaded) language))))))
+    (let ((state (%grammars runtime)))
+      (or (fset:lookup (fset:lookup state :loaded) language)
+          (unless (fset:contains? (fset:lookup state :missing) language)
+            (let ((entry (load-language-entry language)))
+              (cond
+                (entry (%note-loaded runtime language entry)
+                       ;; whoever landed first is the one every buffer uses
+                       (fset:lookup (fset:lookup (%grammars runtime) :loaded)
+                                    language))
+                (t (%note-missing runtime language)
+                   (pine.err:report-failure
+                    (make-condition 'simple-error
+                                    :format-control "no ~(~a~) grammar to load"
+                                    :format-arguments (list language))
+                    "loading a grammar")
+                   nil))))))))
 
 
 
