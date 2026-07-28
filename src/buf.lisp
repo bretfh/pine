@@ -37,9 +37,12 @@
   (apply #'p:path /buf name leaf))
 
 (defun names ()
-  "Every buffer there is."
-  (sort (mapcar (lambda (path) (p:leaf (p:parent path)))
-                (pine.data:keys (ns:read /buf/*/text {})))
+  "Every buffer there is. /buf/current is the one that is current and not a
+buffer of its own, so it is not one of them."
+  (sort (remove "current"
+                (mapcar (lambda (path) (p:leaf (p:parent path)))
+                        (pine.data:keys (ns:read /buf/*/text {})))
+                :test #'string=)
         #'string<))
 
 ;;;; The leaves as one value, so the pure functions in pine.text.buffer apply
@@ -71,6 +74,7 @@ change does not move, so this is the whole of applying an edit."
     (fset:map ((at name :text) (b:lines state))
               ((at name :point) (fset:seq (or (fset:lookup marks :point-line) 0)
                                           (or (fset:lookup marks :point-charpos) 0)))
+              ((at name :modified) t)
               ((at name :tick) (b:tick state)))))
 
 (defun %edit (name fn &optional descriptor)
@@ -267,9 +271,9 @@ write and a read of one."
   "Read FILE into NAME. Its text is derived from the file, so it is not stored
 and comes back by being read again."
   (ns:write (fset:map ((at name :file) file)
-                      ((at name :text)
-                       (or (ns:read (%file-path file)) ""))
-                      ((at name :point) (fset:seq 0 0)))))
+                      ((at name :text) (or (ns:read (%file-path file)) ""))
+                      ((at name :point) (fset:seq 0 0))
+                      ((at name :modified) nil))))
 
 (defun %revert (name)
   "Read the file again, throwing away what was typed. There is no revert
@@ -286,6 +290,19 @@ function and nothing to invalidate: the file is a path, so this is a read."
       (let ((from (parse-integer segment :end dots :junk-allowed t))
             (to (parse-integer segment :start (+ dots 2) :junk-allowed t)))
         (when (and from to) (cons from to))))))
+
+(defun %put-line (name n text)
+  "Replace line N. One line for one line, so the parser shifts by the bytes
+that changed."
+  (let* ((s (state name))
+         (was (b:line-at s n)))
+    (unless (equal was text)
+      (%edit name
+             (lambda (s) (b:copy-state s :lines (fset:with (b:lines s) n text)
+                                         :tick (1+ (b:tick s))))
+             {:at n :old 1 :new 1
+              :bytes (- (pine.ts.index:string-bytes text)
+                        (pine.ts.index:string-bytes (or was "")))}))))
 
 (defun %range (name from to)
   (let* ((lines (ns:held (at name :text)))
@@ -317,11 +334,45 @@ function and nothing to invalidate: the file is a path, so this is a read."
           nil)
         (funcall fallback))))
 
+;;;; The buffer that is current, which is a place like any other. Nothing holds
+;;;; a pointer to it: /buf/current names a buffer, and a leaf under it is that
+;;;; buffer's leaf, so a command that acts on "the current buffer" writes a
+;;;; path and needs no client.
+
+(defun %current ()
+  "The buffer /buf/current names, as a path, or NIL."
+  (let ((value (ns:held /buf/current)))
+    (cond ((p:pathp value) value)
+          ((stringp value) (at value)))))
+
+(defun %there (&rest leaf)
+  "LEAF under the current buffer, or NIL when there is none."
+  (let ((current (%current)))
+    (when current (apply #'p:path current leaf))))
+
 ;;;; The paths
 
 (defun provider ()
   (ns:provider
    {:scope (p:root)}
+   (/buf/current/?leaf/?which
+    {:read (pine.data:fn [] (let ((there (%there leaf which)))
+                              (and there (ns:read there))))
+     :write (pine.data:fn [v] (let ((there (%there leaf which)))
+                                (when there (ns:write there v))))
+     :doc "the current buffer's leaf"})
+   (/buf/current/?leaf
+    {:read (pine.data:fn [] (let ((there (%there leaf)))
+                              (and there (ns:read there))))
+     :write (pine.data:fn [v] (let ((there (%there leaf)))
+                                (when there (ns:write there v))))
+     :verbs {t (pine.data:fn [verb] (let ((there (%there leaf)))
+                                      (when there (ns:write there verb))))}
+     :doc "the current buffer's leaf"})
+   (/buf/current
+    {:verbs {t (pine.data:fn [verb] (let ((there (%current)))
+                                      (when there (ns:write there verb))))}
+     :doc "the buffer that is current; write a buffer path to switch"})
    (/buf/?name/line/?which
     {:read (pine.data:fn []
              (let ((span (%span which)))
@@ -330,6 +381,9 @@ function and nothing to invalidate: the file is a path, so this is a read."
                    (let ((n (parse-integer which :junk-allowed t))
                          (lines (ns:held (at name :text))))
                      (and n (fset:seq? lines) (fset:lookup lines n))))))
+     :write (pine.data:fn [v]
+              (let ((n (parse-integer which :junk-allowed t)))
+                (when n (%put-line name n v))))
      :doc "one line, or the range FROM..TO a window is showing"})
    (/buf/?name/face/?which
     {:read (pine.data:fn []

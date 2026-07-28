@@ -154,6 +154,45 @@ are no undo stacks anywhere."
              (is (text-is "scratch" "one")))
         (pine.store:close store)))))
 
+(test writing-a-line-replaces-it
+  (with-buf
+    (pine.ns:write /buf/scratch/text ["one" "two" "three"])
+    (pine.ns:write /buf/scratch/line/1 "TWO")
+    (is (fset:equal? ["one" "TWO" "three"] (pine.ns:held /buf/scratch/text)))))
+
+(test modified-follows-the-file
+  (with-buf
+    (pine.provider.file:mount)
+    (let ((path "/tmp/pine-modified-probe.txt"))
+      (with-open-file (s path :direction :output :if-exists :supersede)
+        (format s "on disk~%"))
+      (pine.ns:write /buf/scratch [:visit path])
+      (is (null (pine.ns:read /buf/scratch/modified)))
+      (pine.ns:write /buf/scratch/text [:insert "x"])
+      (is (pine.ns:read /buf/scratch/modified))
+      (pine.ns:write /buf/scratch/text [:save])
+      (is (null (pine.ns:read /buf/scratch/modified))))))
+
+;;;; the buffer that is current
+
+(test a-leaf-of-the-current-buffer-is-that-buffers-leaf
+  "Nothing holds the current buffer. /buf/current names one, and a leaf under
+it is that buffer's leaf."
+  (with-buf
+    (pine.ns:write /buf/notes/text ["hello"])
+    (pine.ns:write /buf/current /buf/notes)
+    (is (string= "hello" (pine.ns:read /buf/current/text)))
+    (is (string= "hello" (pine.ns:read /buf/current/line/0)))
+    (pine.ns:write /buf/current/text [:insert "oh "])
+    (is (string= "oh hello" (pine.ns:read /buf/notes/text)))
+    (pine.ns:write /buf/current /buf/scratch)
+    (is (string= "" (pine.ns:read /buf/current/text)))))
+
+(test the-current-buffer-is-not-a-buffer-of-its-own
+  (with-buf
+    (pine.ns:write /buf/current /buf/scratch)
+    (is (equal '("scratch") (pine.buf:names)))))
+
 ;;;; locals, and the scope rule
 
 (test a-buffer-local-is-a-place

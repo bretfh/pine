@@ -243,6 +243,11 @@ still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
                        (apply (fset:lookup verbs (%verb-name value))
                               (%verb-args value))
                        (return :done))
+                      ;; a clause that takes any verb is given the whole of it,
+                      ;; which is what a path standing for another one does
+                      ((and (%verbp value) verbs (fset:lookup verbs t))
+                       (funcall (fset:lookup verbs t) value)
+                       (return :done))
                       ((%verbp value)
                        (error 'no-verb :at path :why (%verb-name value)))
                       (in (return (values :store (funcall in value))))
