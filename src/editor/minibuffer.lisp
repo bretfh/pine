@@ -238,7 +238,7 @@ beside the old session's."
   "The current input, read synchronously from the buffer (accept path)."
   (let* ((c (pine.editor.frame:current-client))
          (mb (pine.editor.frame:minibuffer-buffer c)))
-    (if mb (or (ignore-errors (pine.core.actor:ask mb '(:get-text) :timeout 5)) "") "")))
+    (if mb (or (ignore-errors (pine.text.buffer:text-of mb)) "") "")))
 
 (defun minibuffer-set-text (text)
   "Replace the input with TEXT and put point at its end. Used by Tab completion

@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:at #:band #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:at #:band #:name-of #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -452,6 +452,37 @@ else under a buffer is a local and rides the meta.")
           (setf out (fset:with out key value)))))
     out))
 
+(defparameter +actor-prefix+ "buffer:"
+  "What a buffer actor's own name begins with, so the buffer it serves can be
+read off it without a table.")
+
+(defun name-of (x)
+  "X's buffer name: a string is one, an actor carries its own.
+
+Off the actor rather than out of the table, because a buffer that no table
+holds -- the minibuffer, a detached view -- is still a buffer."
+  (cond ((stringp x) x)
+        ((null x) nil)
+        (t (let ((actor-name (ignore-errors (sento.actor-cell:name x))))
+             (when (and actor-name
+                        (uiop:string-prefix-p +actor-prefix+ actor-name))
+               (subseq actor-name (length +actor-prefix+)))))))
+
+(defun snapshot-of (x)
+  "X's buffer as a snapshot, read from its leaves. No actor is asked."
+  (let ((name (name-of x)))
+    (when name (state->snapshot (from-paths name)))))
+
+(defun state-of (x)
+  "X's buffer as a state, read from its leaves."
+  (let ((name (name-of x)))
+    (when name (from-paths name))))
+
+(defun text-of (x)
+  "X's buffer as one string, read from its leaves."
+  (let ((name (name-of x)))
+    (when name (state->string (from-paths name)))))
+
 (defun from-paths (name)
   "NAME's leaves as one buffer-state."
   (let ((point (pine.ns:read (at name :point))))
@@ -508,7 +539,7 @@ persistence and does not."
     ;; the buffer is its leaves, so it exists once they do
     (pine.ns:write (to-paths name initial))
     (sento.actor-context:actor-of system
-                                  :name (format nil "buffer:~a" name)
+                                  :name (concatenate (quote string) +actor-prefix+ name)
                                   ;; A buffer runs on its own thread, not a worker
                                   ;; of the shared dispatcher. A receive that
                                   ;; parks in the debugger then costs this buffer

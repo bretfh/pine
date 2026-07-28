@@ -1,7 +1,7 @@
 (defpackage #:pine.buf
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text.buffer))
-  (:export #:mount #:unmount #:state #:at #:names))
+  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop))
 
 (in-package #:pine.buf)
 (named-readtables:in-readtable pine.path:syntax)
@@ -267,6 +267,19 @@ of the check: the same object means it is that very edit."
   (let ((asked (ns:read (at name key))))
     (when (and asked (eq (fset:lookup asked :lines) lines))
       asked)))
+
+(defun parser-of (name)
+  "The actor parsing NAME, or NIL. /buf owns the parsers, so this is where
+anything that has business with one asks."
+  (let ((link (fset:lookup (sento.atomic:atomic-get *parsers*) name)))
+    (and link (pine.ts.parser:link-actor link))))
+
+(defun drop (name)
+  "Stop parsing NAME and forget it. What a buffer going away does."
+  (let ((actor (parser-of name)))
+    (when actor (sento.actor:tell actor '(:stop)))
+    (sento.atomic:atomic-swap *parsers* (lambda (m) (fset:less m name)))
+    actor))
 
 (defun %parse (name system runtime)
   "Tell NAME's parser the lines as they stand, over the range a window said it

@@ -1,8 +1,8 @@
 (defpackage #:pine.editor.edit
   (:use #:cl)
+  (:export #:layout-state)
   (:documentation "The dispatch-message methods for base-mode and text-mode:
-what every buffer does with a verb, and what a text buffer layers on top. Adds
-methods only; it exports nothing."))
+what every buffer does with a verb, and what a text buffer layers on top."))
 
 (in-package #:pine.editor.edit)
 
@@ -12,7 +12,7 @@ methods only; it exports nothing."))
 ;;;; where that subsystem lives: repl-mode in pine.editor.repl, terminal-mode in
 ;;;; pine.term.
 
-(defun %layout-state (state builder width &optional selection)
+(defun layout-state (state builder width &optional selection)
   "A fresh buffer state whose content is BUILDER's node tree rendered at WIDTH:
 lines are the row texts, meta carries :layout-builder, :layout-rows,
 :layout-tree, :layout-width, and :layout-selection. Name/mode/pathname/vars
@@ -157,8 +157,6 @@ itself, and by the parser's :indent-region answer."
                          :line (pine.text.buffer:point-line snap)
                          :col (pine.text.buffer:point-col snap))))))
       ;; the buffer's parser, so KILL-BUFFER can stop it with the buffer
-      (:get-parser
-       (sento.actor:reply (and pstate (pine.ts.parser:link-actor pstate))))
       ;; Undo and redo swap whole states, so there is no edit to describe: the
       ;; parser rebuilds. It does that on its own thread like any other parse,
       ;; and the old highlights stay on screen until it answers.
@@ -230,7 +228,7 @@ itself, and by the parser's :indent-region answer."
       ;; resets like :replace-content. :reproject re-runs the stored builder
       ;; (selection change, data change, resize) and preserves history.
       (:set-layout
-       (let ((new (%layout-state state (getf plist :builder)
+       (let ((new (layout-state state (getf plist :builder)
                                     (or (getf plist :width)
                                         (pine.text.buffer:buffer-local state :layout-width 80))
                                     (getf plist :selection))))
@@ -239,7 +237,7 @@ itself, and by the parser's :indent-region answer."
       (:reproject
        (let ((builder (pine.text.buffer:buffer-local state :layout-builder)))
          (when builder
-           (let ((new (%layout-state state builder
+           (let ((new (layout-state state builder
                                         (or (getf plist :width)
                                             (pine.text.buffer:buffer-local state :layout-width 80))
                                         (getf plist :selection))))

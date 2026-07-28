@@ -52,10 +52,8 @@ disappears into a mailbox nobody is reading."
       ;; second actor with the same one, so the corpse is stopped before its
       ;; replacement is made. Its parser goes with it, as in kill-buffer.
       (let ((sys (pine.core.server:actor-system srv)))
-        (let ((parser (ignore-errors
-                       (pine.core.actor:ask dead '(:get-parser) :timeout 1))))
-          (when (and parser (typep parser 'sento.actor:actor))
-            (ignore-errors (sento.actor-context:stop sys parser))))
+        (let ((parser (pine.buf:drop name)))
+          (when parser (ignore-errors (sento.actor-context:stop sys parser))))
         (ignore-errors (sento.actor-context:stop sys dead)))
       (let ((actor (or (pine.editor.file:restore-buffer name)
                        (pine.editor.frame:make-buffer name))))
@@ -198,7 +196,7 @@ disappears into a mailbox nobody is reading."
         ;; and save's :get-state queues behind it in the actor mailbox, so the
         ;; write sees the formatted text
         (when (and buf (pine.state.var:var :format-on-save buf))
-          (let ((snap (pine.core.actor:ask buf '(:get-snapshot) :timeout 5)))
+          (let ((snap (pine.text.buffer:snapshot-of buf)))
             (pine.editor.ask:tell buf :indent-lines
                               :from 0 :to (1- (pine.text.buffer:line-count snap)))))
         (pine.editor.file:save-current-buffer))
@@ -228,7 +226,7 @@ disappears into a mailbox nobody is reading."
     (lambda (text)
       (let ((pkg (let ((buf (pine.editor.motion:cur-buffer)))
                    (if buf
-                       (pine.editor.motion:buffer-package (pine.core.actor:ask buf '(:get-state) :timeout 5))
+                       (pine.editor.motion:buffer-package (pine.text.buffer:state-of buf))
                        (find-package :cl-user)))))
         (pine.editor.evaluate:eval-form-string text pkg)))
     :history :eval))
@@ -332,7 +330,7 @@ disappears into a mailbox nobody is reading."
 (defcmd "indent-region" ()
   "Reindent every line spanned by the region."
   (let* ((buf (pine.editor.motion:cur-buffer))
-         (state (and buf (pine.core.actor:ask buf '(:get-state) :timeout 5))))
+         (state (and buf (pine.text.buffer:state-of buf))))
     (when state
       (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds state)
         (declare (ignore sc ec))
@@ -342,7 +340,7 @@ disappears into a mailbox nobody is reading."
 (defcmd "format-buffer" ()
   "Reindent the whole buffer off the parse tree, point preserved (in-image)."
   (let* ((buf (pine.editor.motion:cur-buffer))
-         (snap (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
+         (snap (and buf (pine.text.buffer:snapshot-of buf))))
     (when snap
       (pine.editor.ask:tell buf :indent-lines
                         :from 0 :to (1- (pine.text.buffer:line-count snap))))))

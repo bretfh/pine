@@ -20,7 +20,7 @@
   "Evaluate the top-level form point is inside (C-M-x), via the buffer's tree."
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
              (lang (pine.editor.motion:buffer-ts-language)))
@@ -60,7 +60,7 @@
          (let ((nbuf (pine.editor.motion:cur-buffer)))
            (when nbuf
              (let ((ntext (pine.text.buffer:state->string
-                           (pine.core.actor:ask nbuf '(:get-state) :timeout 5))))
+                           (pine.text.buffer:state-of nbuf))))
                (multiple-value-bind (l c) (%offset->lc ntext coff)
                  (sento.actor:tell nbuf (list :move-point :line l :col c)))))))
        (pine.editor.echo:message (format nil "~a" (file-namestring path))))
@@ -70,7 +70,7 @@
   "Jump to the source of the symbol at point (M-.), via sb-introspect."
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
              (off (min (pine.editor.motion:point->offset snap) (length text)))
@@ -107,7 +107,7 @@
 no symbol to complete."
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
              (off (min (pine.editor.motion:point->offset snap) (length text)))
@@ -131,7 +131,7 @@ no symbol to complete."
   "Echo the lambda list of the function named at point (M-x arglist)."
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
              (off (min (pine.editor.motion:point->offset snap) (length text)))
@@ -147,7 +147,7 @@ no symbol to complete."
 (defun load-file ()
   "Compile and load the current buffer's file into the eval target's image."
   (let* ((buf (pine.editor.motion:cur-buffer))
-         (state (and buf (pine.core.actor:ask buf '(:get-state) :timeout 5)))
+         (state (and buf (pine.text.buffer:state-of buf)))
          (path (and state (pine.text.buffer:buffer-local state :pathname nil))))
     (if path
         (eval-form-string (format nil "(load (compile-file ~s))" (namestring path))
@@ -157,7 +157,7 @@ no symbol to complete."
 (defun eval-last-sexp ()
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (text (pine.text.buffer:state->string state))
              (snap (pine.text.buffer:state->snapshot state))
              (offset (min (pine.editor.motion:point->offset snap) (length text))))
@@ -174,7 +174,7 @@ no symbol to complete."
   ;; surface like every other eval path.
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (text (pine.text.buffer:state->string state))
              (package (pine.editor.motion:buffer-package state))
              (c (pine.editor.frame:current-client))

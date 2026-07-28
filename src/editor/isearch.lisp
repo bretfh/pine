@@ -171,7 +171,7 @@ at or after FROM; backward the last match ending at or before FROM."
   (let* ((client (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer client)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (snap (pine.text.buffer:state->snapshot state)))
         (setf *isearch*
               (make-isearch :direction direction

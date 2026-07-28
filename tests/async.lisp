@@ -28,7 +28,7 @@ snapshot only carries highlights when one is built for a subscriber."
 (defun why-no-highlights (name)
   "What to say when none arrived: which of the three things was missing."
   (let* ((buf (pine.editor.frame::buffer name))
-         (parser (and buf (pine.core.actor:ask buf '(:get-parser) :timeout 5)))
+         (parser (and buf (pine.buf:parser-of (pine.text.buffer:name-of buf))))
          (snap (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
     (format nil "buffer=~a parser=~a mode=~s viewport=~s grammar=~a"
             (if buf "yes" "no") (if parser "yes" "no")
@@ -156,7 +156,7 @@ insertion: whole-line shifts cannot express a split."
         (sento.actor:tell buf (list :insert :text "plain"))
         (is (wait-for (lambda () (equal "plain" (btext "async-plain"))))
             "a text buffer stopped editing")
-        (is (null (pine.core.actor:ask buf '(:get-parser) :timeout 5))
+        (is (null (pine.buf:parser-of (pine.text.buffer:name-of buf)))
             "a buffer with no language should have no parser")))))
 
 (test a-wedged-parser-leaves-the-buffer-editable
@@ -166,7 +166,7 @@ on taking edits, keeping the colours it already had."
     (within-seconds 90
       (with-surface (faults :attended (lambda (ev) (declare (ignore ev)) t))
         (let* ((buf (lisp-buffer "async-wedge" "(defun f (x) x)"))
-               (parser (pine.core.actor:ask buf '(:get-parser) :timeout 5)))
+               (parser (pine.buf:parser-of (pine.text.buffer:name-of buf))))
           (is (not (null parser)) "a lisp buffer should have a parser")
           ;; a verb its receive does not know faults it, and the fault is held
           (sento.actor:tell parser '(:no-such-verb))
@@ -241,7 +241,7 @@ second process."
   (with-fixture substrate ()
     (within-seconds 60
       (let* ((buf (lisp-buffer "async-kill" "(defun f (x) x)"))
-             (parser (pine.core.actor:ask buf '(:get-parser) :timeout 5))
+             (parser (pine.buf:parser-of (pine.text.buffer:name-of buf)))
              (before (length (sb-thread:list-all-threads))))
         (is (not (null parser)))
         (pine.editor.frame::kill-buffer "async-kill")

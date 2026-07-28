@@ -314,7 +314,7 @@ shutdown sweep can save it."
          (buf (and srv (pine.core.server:buffer-table srv)
                    (gethash "scratch" (pine.core.server:buffer-table srv))))
          (text (and buf (ignore-errors
-                         (pine.core.actor:ask buf '(:get-text) :timeout 2)))))
+                         (pine.text.buffer:text-of buf)))))
     (and (stringp text) (plusp (length text)) text)))
 
 (defmethod world:snapshot ((name (eql :scratch))) (%scratch-text))

@@ -213,10 +213,12 @@ a layout buffer."
 
 (defun set-buffer-mode (buffer-actor mode-name)
   (unless (pine.editor.mode:find-mode mode-name) (error "No mode named ~s" mode-name))
-  ;; the buffer's own :mode meta drives highlighting, so set it first and
-  ;; unconditionally; recording it on the client (for the modeline) is
-  ;; best-effort and must not stop the buffer from learning its mode.
-  (sento.actor:tell buffer-actor (list :set-local :key :mode :value mode-name))
+  ;; the mode is a place, so setting it is a write and it has landed when this
+  ;; answers; recording it on the client (for the modeline) is best-effort and
+  ;; must not stop the buffer from learning its mode.
+  (let ((name (pine.text.buffer:name-of buffer-actor)))
+    (when name
+      (pine.ns:write (pine.text.buffer:at name :mode) mode-name)))
   (let ((c *client*))
     (when c
       (setf (gethash buffer-actor (buffer-modes c)) mode-name)))
@@ -308,7 +310,7 @@ the buffer."
       (loop :for actor :being :the :hash-values :of table
             :when (equal id (ignore-errors
                              (pine.text.buffer:buffer-local
-                              (pine.core.actor:ask actor '(:get-state) :timeout 2) :id)))
+                              (pine.text.buffer:state-of actor) :id)))
               :return actor))))
 
 (defun kill-buffer (name)
@@ -320,13 +322,11 @@ the buffer."
       (when (eq actor (current-buffer c))
         (setf (current-buffer c) nil))
       (remhash name table)
-      ;; the buffer's parser is its own actor and its own thread, so it goes
-      ;; with the buffer rather than outliving it. Asked before the stop, from
-      ;; this thread, which is not a receive.
-      (let ((parser (ignore-errors (pine.core.actor:ask actor '(:get-parser) :timeout 2))))
-        (when (and parser (typep parser 'sento.actor:actor))
+      ;; the buffer's parser is its own actor and its own thread, and /buf owns
+      ;; it, so it goes with the buffer rather than outliving it
+      (let ((parser (pine.buf:drop name)))
+        (when parser
           (ignore-errors
-           (sento.actor:tell parser '(:stop))
            (sento.actor-context:stop (pine.core.server:actor-system srv) parser))))
       (sento.actor-context:stop (pine.core.server:actor-system srv) actor)
       (sento.actor:tell (pine.core.server:buffer-registry srv)
@@ -353,13 +353,13 @@ the buffer."
   (let* ((c (current-client))
          (buf (current-buffer c)))
     (when buf
-      (pine.core.actor:ask buf '(:get-text) :timeout 5))))
+      (pine.text.buffer:text-of buf))))
 
 (defun current-buffer-snapshot ()
   (let* ((c (current-client))
          (buf (current-buffer c)))
     (when buf
-      (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
+      (pine.text.buffer:snapshot-of buf))))
 
 
 (defun buffer (x)

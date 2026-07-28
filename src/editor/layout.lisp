@@ -15,7 +15,7 @@
   (pine.editor.frame:current-buffer (pine.editor.frame:current-client)))
 
 (defun %layout-snap (&optional (buf (%layout-buffer)))
-  (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5)))
+  (and buf (pine.text.buffer:snapshot-of buf)))
 
 (defun layout-tree (&optional (snap (%layout-snap)))
   (and snap (pine.text.buffer:buffer-local snap :layout-tree)))
@@ -30,23 +30,31 @@
 
 (defun layout-select (delta)
   "Move the layout selection by DELTA (wrapping), reproject, and land point on
-the selected row. The reproject and the snapshot read serialize in the buffer's
-mailbox, so the tree we read is the reprojected one."
+the selected row.
+
+The reprojection is computed here and written, so the tree read below is the
+reprojected one: a command answers writes, and a write has landed when it
+answers."
   (let* ((buf (%layout-buffer))
-         (snap (%layout-snap buf))
-         (tree (layout-tree snap)))
+         (name (pine.text.buffer:name-of buf))
+         (state (and name (pine.text.buffer:state-of buf)))
+         (tree (and state (pine.text.buffer:buffer-local state :layout-tree))))
     (when tree
       (let* ((n (length (pine.ui.layout:collect-selectables tree)))
-             (cur (pine.text.buffer:buffer-local snap :layout-selection 0))
-             (new (if (plusp n) (mod (+ cur delta) n) 0)))
-        (sento.actor:tell buf (list :reproject :selection new))
-        (let* ((snap2 (%layout-snap buf))
-               (tree2 (layout-tree snap2))
-               (sel (and tree2 (nth new (pine.ui.layout:collect-selectables tree2)))))
-          (when sel
-            (sento.actor:tell buf (list :move-point
-                                        :line (pine.ui.node:start-line sel)
-                                        :col 0))))))))
+             (cur (pine.text.buffer:buffer-local state :layout-selection 0))
+             (new (if (plusp n) (mod (+ cur delta) n) 0))
+             (builder (pine.text.buffer:buffer-local state :layout-builder))
+             (width (pine.text.buffer:buffer-local state :layout-width 80)))
+        (when builder
+          (let* ((next (pine.editor.edit:layout-state state builder width new))
+                 (tree2 (pine.text.buffer:buffer-local next :layout-tree))
+                 (sel (and tree2 (nth new (pine.ui.layout:collect-selectables tree2)))))
+            (pine.ns:write
+             (pine.text.buffer:to-paths
+              name (if sel
+                       (pine.text.buffer:move-mark
+                        next :point (pine.ui.node:start-line sel) 0)
+                       next)))))))))
 
 (defun %node-activation (node)
   "The thunk NODE activates to: an action's callback, a selectable whose data is

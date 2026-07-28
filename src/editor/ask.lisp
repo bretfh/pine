@@ -54,36 +54,29 @@ Silently no-ops on nil target."
       (t (error "unknown :client query ~s; known: ~s" query +client-verbs+)))))
 
 (defun %ask-buffer (buf spec)
+  "What BUF says. Every one of these is a read of the buffer's leaves, so
+nothing waits on the actor and this answers just as well with no actor at all."
   (when buf
     (let ((query (first spec))
-          (args  (rest spec))
-          (timeout 5))
+          (args  (rest spec)))
       (case query
-        (:state    (pine.core.actor:ask buf '(:get-state) :timeout timeout))
-        (:snapshot (pine.core.actor:ask buf '(:get-snapshot) :timeout timeout))
-        (:text     (pine.core.actor:ask buf '(:get-text) :timeout timeout))
-        (:meta     (pine.text.buffer:meta (pine.core.actor:ask buf '(:get-state)
-                                            :timeout timeout)))
-        (:name     (pine.text.buffer:name (pine.core.actor:ask buf '(:get-snapshot)
-                                            :timeout timeout)))
+        (:state    (pine.text.buffer:state-of buf))
+        (:snapshot (pine.text.buffer:snapshot-of buf))
+        (:text     (pine.text.buffer:text-of buf))
+        (:meta     (pine.text.buffer:meta (pine.text.buffer:state-of buf)))
+        (:name     (pine.text.buffer:name-of buf))
         (:mode     (pine.text.buffer:buffer-local
-                    (pine.core.actor:ask buf '(:get-state) :timeout timeout)
-                    :mode))
+                    (pine.text.buffer:state-of buf) :mode))
         (:pathname (pine.text.buffer:buffer-local
-                    (pine.core.actor:ask buf '(:get-state) :timeout timeout)
-                    :pathname))
-        (:point    (let ((s (pine.core.actor:ask buf '(:get-snapshot)
-                                               :timeout timeout)))
-                     (values (pine.text.buffer:point-line s) (pine.text.buffer:point-col s))))
-        (:line     (let* ((n (first args))
-                          (s (pine.core.actor:ask buf '(:get-snapshot)
-                                                :timeout timeout)))
-                     (fset:@ (pine.text.buffer:lines s) n)))
-        (:local    (let ((key (first args))
-                         (default (getf (rest args) :default)))
-                     (pine.text.buffer:buffer-local
-                      (pine.core.actor:ask buf '(:get-state) :timeout timeout)
-                      key default)))
+                    (pine.text.buffer:state-of buf) :pathname))
+        (:point    (let ((s (pine.text.buffer:snapshot-of buf)))
+                     (values (pine.text.buffer:point-line s)
+                             (pine.text.buffer:point-col s))))
+        (:line     (fset:@ (pine.text.buffer:lines (pine.text.buffer:snapshot-of buf))
+                           (first args)))
+        (:local    (pine.text.buffer:buffer-local
+                    (pine.text.buffer:state-of buf)
+                    (first args) (getf (rest args) :default)))
         (:describe +buffer-verbs+)
         (t (error "unknown buffer query ~s; known: ~s" query +buffer-verbs+))))))
 

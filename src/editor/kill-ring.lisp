@@ -49,7 +49,7 @@
   (let* ((client (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer client)))
     (when buf
-      (let ((state (pine.core.actor:ask buf '(:get-state) :timeout 5)))
+      (let ((state (pine.text.buffer:state-of buf)))
         (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds state)
           (when sl
             (let ((text (pine.text.buffer:region-string state sl sc el ec)))
@@ -85,7 +85,7 @@ point-after-move :word lands, into the kill ring."
   (let* ((client (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer client)))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (snap (pine.text.buffer:state->snapshot state))
              (pl (pine.text.buffer:point-line snap))
              (pc (pine.text.buffer:point-col snap)))
@@ -142,7 +142,7 @@ point-after-move :word lands, into the kill ring."
   (let* ((client (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer client)))
     (when buf
-      (let ((state (pine.core.actor:ask buf '(:get-state) :timeout 5)))
+      (let ((state (pine.text.buffer:state-of buf)))
         (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds state)
           (when sl
             (let ((text (pine.text.buffer:region-string state sl sc el ec)))

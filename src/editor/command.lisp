@@ -80,7 +80,7 @@ normalized so start precedes end. nil if no mark."
     (when buf
       (multiple-value-bind (sl sc el ec)
           (pine.text.buffer:region-bounds
-           (pine.core.actor:ask buf '(:get-state) :timeout 5))
+           (pine.text.buffer:state-of buf))
         (and sl (list sl sc el ec))))))
 
 (defun gather-arguments (command client argument)

@@ -75,7 +75,7 @@ restore can reopen buffers in bulk."
 (defun save-current-buffer ()
   (let ((buf (pine.editor.frame:current-buffer (pine.editor.frame:current-client))))
     (when buf
-      (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 5))
+      (let* ((state (pine.text.buffer:state-of buf))
              (path (pine.text.buffer:buffer-local state :pathname))
              (text (pine.text.buffer:state->string state)))
         (if path
@@ -100,7 +100,7 @@ restore can reopen buffers in bulk."
       (loop for buf being the hash-values of (or (pine.core.server:buffer-table srv)
                                                  (make-hash-table))
             do (ignore-errors
-                (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 2))
+                (let* ((state (pine.text.buffer:state-of buf))
                        (path (pine.text.buffer:buffer-local state :pathname)))
                   (when path (record-place buf path))))))))
 
@@ -120,7 +120,7 @@ the state it was projected from, so it does not persist."
 (defun %buffer-entry (buf)
   "BUF as a readable plist: (:path P :mode M) with a file, else
 (:name N :mode M :content C). NIL for a buffer with nothing worth keeping."
-  (let* ((state (pine.core.actor:ask buf '(:get-state) :timeout 2))
+  (let* ((state (pine.text.buffer:state-of buf))
          (mode (pine.text.buffer:buffer-local state :mode))
          (name (pine.text.buffer:buffer-local state :name ""))
          (path (pine.text.buffer:buffer-local state :pathname)))
