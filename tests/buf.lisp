@@ -140,6 +140,32 @@ are no undo stacks anywhere."
     (pine.ns:write /buf/scratch/tab-width 4)
     (is (= 4 (pine.ns:read /buf/scratch/tab-width)))))
 
+(test a-leaf-a-buffer-does-not-have-falls-back-to-the-root
+  "Buffer-local is not a mechanism. It is where the value is."
+  (with-buf
+    (pine.ns:write /tab-width 8)
+    (is (= 8 (pine.ns:read /buf/scratch/tab-width)))
+    (pine.ns:write /buf/scratch/tab-width 4)
+    (is (= 4 (pine.ns:read /buf/scratch/tab-width)))
+    (is (= 8 (pine.ns:read /tab-width))
+        "setting it here did not set it everywhere")))
+
+(test the-fallback-is-a-leaf-and-not-a-directory
+  "/mode holds every mode there is, and a buffer with no mode has no mode."
+  (with-buf
+    (pine.ns:write /mode/lisp {:grammar :commonlisp})
+    (is (null (pine.ns:read /buf/scratch/mode)))))
+
+(test something-computed-from-a-local-follows-the-root
+  "The fallback is a read like any other, so an expression over it is recomputed
+when the root moves."
+  (with-buf
+    (pine.ns:write /tab-width 8)
+    (pine.ns:write /width (pine.ns:read /buf/scratch/tab-width))
+    (is (= 8 (pine.ns:read /width)))
+    (pine.ns:write /tab-width 2)
+    (is (= 2 (pine.ns:read /width)))))
+
 ;;;; what it is
 
 (test text-is-live-because-it-is-computed-from-the-lines

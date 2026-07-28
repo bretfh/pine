@@ -193,9 +193,13 @@ the segment it matched. HERE answers the path being served."
         :finally (return (values nil nil))))
 
 (defun %servedp (space path)
-  "True when some mounted provider has a clause for PATH."
+  "True when a mounted provider reads PATH: the world behind it is the storage.
+
+A clause that only says what a path does -- its verbs, or how a written value
+is normalized -- leaves the value in the tree, so the path is still held."
   (loop :for backing :in (%backings space path)
-        :thereis (and (%handlers backing path) t)))
+        :for handlers = (%handlers backing path)
+        :thereis (and handlers (fset:lookup handlers :read) t)))
 
 (defun %served-write (space path value)
   "Give VALUE to the provider serving PATH. True when one took it.
@@ -242,6 +246,30 @@ verb and still be a place: /buf/NAME/point is [line col] and also takes
   (multiple-value-bind (n used) (parse-integer text :junk-allowed t)
     (and n (= used (length text)) n)))
 
+;;;; Scope. A provider may say that the subtree under each name it holds falls
+;;;; back to somewhere else: a leaf with no value here reads the same leaf
+;;;; there. Buffer-local is not a mechanism, it is where the value is.
+
+(defun %scoped (space path)
+  "Where PATH falls back to, or NIL. A provider mounted at /buf declaring
+{:scope /} makes /buf/foo.py/tab-width fall back to /tab-width."
+  (loop :for (at . backing) :in (space-mounts space)
+        :for scope = (fset:lookup (backing-options backing) :scope)
+        :when (and scope
+                   (p:prefixp at path)
+                   (= (p:segment-count path) (+ 2 (p:segment-count at))))
+          :do (return (p:child scope (p:leaf path)))))
+
+(defun %fallback (space path default)
+  "What PATH reads when nothing is there. Only a leaf falls back: a directory
+at the scope's root is that directory, not this path's value."
+  (let ((up (%scoped space path)))
+    (if (null up)
+        default
+        (let ((value (%get (space-root space) (p:keys up))))
+          (when *reads* (push up (cdr *reads*)))
+          (if (or (null value) (fset:map? value)) default value)))))
+
 (defun %read-one (path &optional default)
   (let ((space (current)))
     (when *reads* (push path (cdr *reads*)))
@@ -258,7 +286,7 @@ verb and still be a place: /buf/NAME/point is [line col] and also takes
                (or (fset:lookup seq (%index (p:leaf path))) default)
                default)))
         (t (let ((value (%get (space-root space) (p:keys path))))
-             (if (null value) default value)))))))
+             (if (null value) (%fallback space path default) value)))))))
 
 (defun %children (space path)
   "PATH's children: the tree's, or the provider's."

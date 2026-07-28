@@ -299,6 +299,7 @@ and comes back by being read again."
 
 (defun provider ()
   (ns:provider
+   {:scope (p:root)}
    (/buf/?name/line/?which
     {:read (pine.data:fn []
              (let ((span (%span which)))
