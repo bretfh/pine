@@ -220,7 +220,16 @@ beside the old session's."
                                      (minibuffer-changed
                                       client (getf (rest msg) :snapshot))))
                                   nil)))))
-        (sento.actor:tell buf (list :subscribe :renderer ctrl))
+        ;; the controller re-filters and repaints on each edit, so it watches
+        ;; the buffer it is the controller of rather than being sent it
+        (pine.ns:watch (pine.text.buffer:at (pine.text.buffer:name-of buf))
+                       (lambda (value)
+                         (declare (ignore value))
+                         (sento.actor:tell
+                          ctrl (list :snapshot
+                                     :snapshot (pine.text.buffer:snapshot-of buf)))
+                         (fset:empty-map))
+                       :as (list :minibuffer client))
         (setf (pine.editor.frame:minibuffer-buffer client) buf
               (pine.editor.frame:minibuffer-controller client) ctrl)
         buf)))

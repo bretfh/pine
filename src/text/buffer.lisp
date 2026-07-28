@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:at #:band #:name-of #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:at #:band #:name-of #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -612,17 +612,6 @@ persistence and does not."
                                             (pine.ns:write (to-paths name after))))
                                         answer))))))
 
-(defun notify-subscribers (subscribers state &optional hl)
-  "Send SNAPSHOT to every subscriber. One that cannot be reached does not stop
-the others, and does not pass unnoticed either: a renderer that stopped taking
-snapshots is a window that has quietly stopped painting."
-  (let ((snap (state->snapshot-with-hl state hl)))
-    (dolist (ref subscribers)
-      (handler-case (sento.actor:tell ref (list :snapshot :snapshot snap))
-        (error (c)
-          (pine.err:report-failure
-           c (format nil "notifying a subscriber of ~a"
-                     (buffer-local state :name "a buffer"))))))))
 
 
 ;;;; Buffer Registry

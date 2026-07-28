@@ -82,7 +82,7 @@ itself, and by the parser's :indent-region answer."
                                              (:bytes bytes)
                                              (:lines (pine.text.buffer:lines final))))
                       (cons state undo) nil subs hl link))
-          (pine.text.buffer:notify-subscribers subs final hl)))))
+          nil))))
 
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:base-mode) self tag plist)
   (declare (ignore self))
@@ -97,14 +97,6 @@ itself, and by the parser's :indent-region answer."
       (:get-local
        (sento.actor:reply
         (pine.text.buffer:buffer-local state (getf plist :key) (getf plist :default))))
-      (:subscribe
-       (let ((r (getf plist :renderer)))
-         (setf sento.actor:*state* (list state undo redo (adjoin r subs :test #'eq) hl pstate))
-         (sento.actor:tell r
-           (list :snapshot :snapshot (pine.text.buffer:state->snapshot-with-hl state hl)))))
-      (:unsubscribe
-       (let ((r (getf plist :renderer)))
-         (setf sento.actor:*state* (list state undo redo (remove r subs :test #'eq) hl pstate))))
       ;; The parser's answers. Both carry the tick they were computed for and are
       ;; dropped when the buffer has moved on, because a late answer describes
       ;; text that no longer exists.
@@ -116,7 +108,7 @@ itself, and by the parser's :indent-region answer."
          (setf sento.actor:*state* (list state undo redo subs new-hl pstate))
          ;; a repaint only earns itself when the colours actually moved
          (unless (equal new-hl hl)
-           (pine.text.buffer:notify-subscribers subs state new-hl))))
+           nil)))
       (:indent-region
        (apply-indent-targets state undo subs hl pstate (getf plist :targets)))
       ;; explicit highlights for tool buffers (debugger, help): the buffer's
@@ -124,14 +116,14 @@ itself, and by the parser's :indent-region answer."
       (:set-highlights
        (let ((new-hl (getf plist :highlights)))
          (setf sento.actor:*state* (list state undo redo subs new-hl pstate))
-         (pine.text.buffer:notify-subscribers subs state new-hl)))
+         nil))
       ;; point motion is navigation, not editing: it belongs to every buffer
       ;; (structured surfaces included), so it lives on base-mode.
       (:move-point
        (let ((new (pine.text.buffer:move-mark state :point
                                          (getf plist :line) (getf plist :col))))
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
-         (pine.text.buffer:notify-subscribers subs new hl)))
+         nil))
       ;; char/line motion computed from the buffer's own state, so the editor
       ;; never blocks on a round-trip just to move point.
       (:move-by
@@ -140,7 +132,7 @@ itself, and by the parser's :indent-region answer."
                                          (getf plist :unit) (getf plist :n))
          (let ((new (pine.text.buffer:move-mark state :point l c)))
            (setf sento.actor:*state* (list new undo redo subs hl pstate))
-           (pine.text.buffer:notify-subscribers subs new hl))))
+           nil)))
       ;; structural motion off the persistent tree; no reparse, no whole-buffer
       ;; string, computed from the buffer's own point.
       ;; the parser answers with :move-point, so a structural jump in a large
@@ -166,14 +158,14 @@ itself, and by the parser's :indent-region answer."
                (link (pine.text.buffer:ensure-parser
                       state pstate (pine.text.buffer:buffer-local state :name ""))))
            (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl link))
-           (pine.text.buffer:notify-subscribers subs prev hl))))
+           nil)))
       (:redo
        (when redo
          (let ((next (first redo))
                (link (pine.text.buffer:ensure-parser
                       state pstate (pine.text.buffer:buffer-local state :name ""))))
            (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl link))
-           (pine.text.buffer:notify-subscribers subs next hl))))
+           nil)))
       ((:set-local :set-meta)
        (let ((new (pine.text.buffer:set-meta state (getf plist :key) (getf plist :value))))
          ;; a mode change (re)builds the parse-state and highlights immediately,
@@ -182,10 +174,10 @@ itself, and by the parser's :indent-region answer."
              (let ((link (pine.text.buffer:ensure-parser
                           new nil (pine.text.buffer:buffer-local new :name ""))))
                (setf sento.actor:*state* (list new undo redo subs hl link))
-               (pine.text.buffer:notify-subscribers subs new hl))
+               nil)
              (progn
                (setf sento.actor:*state* (list new undo redo subs hl pstate))
-               (pine.text.buffer:notify-subscribers subs new hl)))
+               nil))
 ))
       ;; The lines some window is showing, as (FROM . TO). Highlighting walks
       ;; this range instead of the file. Sent by the renderer, which is the only
@@ -205,7 +197,7 @@ itself, and by the parser's :indent-region answer."
               (new (pine.text.buffer:set-meta
                     state :vars (fset:with vars (getf plist :key) (getf plist :value)))))
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
-         (pine.text.buffer:notify-subscribers subs new hl)))
+         nil))
       ;; overlays: transient per-line annotations riding the meta (and so
       ;; every snapshot); the renderer draws them after the line's text.
       ;; Any text edit clears them.
@@ -217,11 +209,11 @@ itself, and by the parser's :indent-region answer."
                                (list (getf plist :text)
                                      (or (getf plist :class) :eval-result))))))
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
-         (pine.text.buffer:notify-subscribers subs new hl)))
+         nil))
       (:clear-overlays
        (let ((new (pine.text.buffer:set-meta state :overlays nil)))
          (setf sento.actor:*state* (list new undo redo subs hl pstate))
-         (pine.text.buffer:notify-subscribers subs new hl)))
+         nil))
       ;; the buffer as a layout buffer: BUILDER (state -> node tree) is
       ;; stored and run; lines become the row texts; the rows and the arranged
       ;; tree ride the meta for the renderer and point->node lookup. History
@@ -233,7 +225,7 @@ itself, and by the parser's :indent-region answer."
                                         (pine.text.buffer:buffer-local state :layout-width 80))
                                     (getf plist :selection))))
          (setf sento.actor:*state* (list new nil nil subs nil pstate))
-         (pine.text.buffer:notify-subscribers subs new nil)))
+         nil))
       (:reproject
        (let ((builder (pine.text.buffer:buffer-local state :layout-builder)))
          (when builder
@@ -242,7 +234,7 @@ itself, and by the parser's :indent-region answer."
                                             (pine.text.buffer:buffer-local state :layout-width 80))
                                         (getf plist :selection))))
              (setf sento.actor:*state* (list new undo redo subs nil pstate))
-             (pine.text.buffer:notify-subscribers subs new nil)))))
+             nil))))
       (:replace-content
        ;; fresh content clears history, but the buffer keeps its identity: name,
        ;; mode, pathname, and buffer-locals carry over so highlighting and the
@@ -258,7 +250,7 @@ itself, and by the parser's :indent-region answer."
          (let ((link (pine.text.buffer:ensure-parser
                       new pstate (pine.text.buffer:buffer-local new :name ""))))
            (setf sento.actor:*state* (list new nil nil subs nil link))
-           (pine.text.buffer:notify-subscribers subs new nil))))
+           nil)))
       ;; The end of the mode chain. A verb nobody claimed is a caller's mistake,
       ;; and dropping it silently is how a wrong message looks exactly like a
       ;; message that did nothing. A mode that means to ignore a verb says so,
@@ -304,7 +296,7 @@ itself, and by the parser's :indent-region answer."
                                 new pstate (pine.text.buffer:buffer-local new :name ""))))
                     (declare (ignorable link))
                     (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 link))
-                    (pine.text.buffer:notify-subscribers subs new hl2))))
+                    nil)))
       (case tag
         (:insert
          (let* ((snap (pine.text.buffer:state->snapshot state))

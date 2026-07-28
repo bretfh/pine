@@ -281,7 +281,7 @@ disappears into a mailbox nobody is reading."
 (defcmd "new-buffer" ()
   (pine.editor.minibuffer:prompt "New buffer: "
     (lambda (name)
-      (let ((buf (pine.editor.frame:make-buffer name))) ))))
+      (pine.editor.frame:make-buffer name))))
 (defcmd "open-repl" ()
   (let* ((client (pine.editor.frame:current-client))
          (name pine.editor.repl:+buffer-name+)
