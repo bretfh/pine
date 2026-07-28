@@ -1,6 +1,6 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:actor-dead-p #:at #:band #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:make-empty-state #:marks #:meta #:move-mark #:name #:notify-subscribers #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -213,9 +213,9 @@ holes that only fault later, on the next read."
 (defun region-bounds (state)
   "The region between mark and point as (values start-line start-col end-line
 end-col), normalized so start precedes end. Nil when there is no mark."
-  (let* ((m (meta state))
-         (ml (fset:@ m :mark-line))
-         (mc (fset:@ m :mark-col))
+  (let* ((mark (fset:@ (meta state) :mark))
+         (ml (and (fset:seq? mark) (fset:lookup mark 0)))
+         (mc (and (fset:seq? mark) (fset:lookup mark 1)))
          (snap (state->snapshot state))
          (pl (point-line snap))
          (pc (point-col snap)))
@@ -348,7 +348,7 @@ buffer, a buffer being restored -- has no viewport and gets the whole file."
         (let ((ps (or pstate (pine.ts.runtime:make-parse-state rt lang))))
           (if (null ps)
               (values nil nil)
-              (let ((viewport (buffer-local new-state :viewport)))
+              (let ((viewport (band (buffer-local new-state :viewport))))
                 (pine.ts.runtime:parse-lines! ps (lines new-state)
                                               :edit edit :viewport viewport)
                 (values (if viewport
@@ -422,6 +422,64 @@ inside the old indentation, otherwise shifts by (TARGET - CUR-INDENT)."
          (new-col (if (<= point-col cur-indent) target (+ point-col (- target cur-indent)))))
     (values s2 (max 0 new-col))))
 
+;;;; The bridge between a buffer's leaves and the value the pure functions
+;;;; above take. The tree is what a buffer is; this is only how one message's
+;;;; worth of work reads it and lands it again.
+
+(defun at (name &rest leaf)
+  (apply #'pine.path:path (pine.path:parse "/buf") name leaf))
+
+(defun band (viewport)
+  "VIEWPORT as the (FROM . TO) the parser and the highlight walk take.
+
+A window's range is [from to] at its path, because that is what a seq is for;
+the walks below take a cons. This is the one place the two meet."
+  (cond ((null viewport) nil)
+        ((fset:seq? viewport) (cons (fset:lookup viewport 0) (fset:lookup viewport 1)))
+        (t viewport)))
+
+(defparameter +structural+ (quote (:lines :point :tick :face :indent))
+  "The leaves this bridge carries itself, or that the parser owns. Everything
+else under a buffer is a local and rides the meta.")
+
+(defun %locals (name)
+  "NAME's buffer-locals, which is every leaf that is not part of its shape."
+  (let ((out (fset:empty-map)))
+    (fset:do-map (path value (pine.ns:read (pine.path:path (at name) (pine.path:any))
+                                           (fset:empty-map)))
+      (let ((key (pine.path:key (pine.path:leaf path))))
+        (unless (member key +structural+)
+          (setf out (fset:with out key value)))))
+    out))
+
+(defun from-paths (name)
+  "NAME's leaves as one buffer-state."
+  (let ((point (pine.ns:read (at name :point))))
+    (flet ((part (seq n) (and (fset:seq? seq) (fset:lookup seq n))))
+      (copy-state
+       (make-empty-state name)
+       :lines (or (pine.ns:read (at name :lines)) (fset:seq ""))
+       :marks (fset:map (:point-line (or (part point 0) 0))
+                        (:point-charpos (or (part point 1) 0)))
+       :meta (fset:with (%locals name) :name name)
+       :tick (or (pine.ns:read (at name :tick)) 0)))))
+
+(defun to-paths (name state)
+  "The write-map taking NAME's leaves to what STATE says. One transaction, so
+nothing sees the buffer half edited."
+  (let ((marks (marks state))
+        (meta (meta state))
+        (out (fset:empty-map)))
+    (setf out (fset:with out (at name :lines) (lines state)))
+    (setf out (fset:with out (at name :point)
+                         (fset:seq (or (fset:lookup marks :point-line) 0)
+                                   (or (fset:lookup marks :point-charpos) 0))))
+    (setf out (fset:with out (at name :tick) (tick state)))
+    (fset:do-map (key value meta)
+      (unless (eq key :name)
+        (setf out (fset:with out (at name key) value))))
+    out))
+
 (defun actor-dead-p (actor)
   "True when ACTOR will never take another message: stopped, or its own thread
 gone.
@@ -447,6 +505,8 @@ persistence and does not."
   (let ((initial (move-mark (set-meta (set-meta (load-content content) :name name)
                                       :id id)
                             :point 0 0)))
+    ;; the buffer is its leaves, so it exists once they do
+    (pine.ns:write (to-paths name initial))
     (sento.actor-context:actor-of system
                                   :name (format nil "buffer:~a" name)
                                   ;; A buffer runs on its own thread, not a worker
@@ -461,7 +521,19 @@ persistence and does not."
                                   :state (list initial nil nil nil nil nil)
                                   :receive
                                   (lambda (msg)
+                                    ;; the tree is what the buffer is: this
+                                    ;; message's work reads it here and lands it
+                                    ;; again below, so nothing else has to ask
+                                    ;; the actor what the buffer says
+                                    (setf sento.actor:*state*
+                                          (list* (from-paths name)
+                                                 (second sento.actor:*state*)
+                                                 (third sento.actor:*state*)
+                                                 (fourth sento.actor:*state*)
+                                                 (pine.ns:read (at name :face))
+                                                 (list (sixth sento.actor:*state*))))
                                     (let* ((state (first sento.actor:*state*))
+                                           (before state)
                                            (mode-name (buffer-local state :mode :base-mode))
                                            (mode (or (pine.editor.mode:find-mode mode-name)
                                                      (pine.editor.mode:find-mode :base-mode))))
@@ -473,19 +545,31 @@ persistence and does not."
                                       ;; step, so an error before the commit leaves
                                       ;; the prior buffer intact; `abort' drops the
                                       ;; edit and the actor keeps receiving.
-                                      (pine.err:with-debugger
-                                          (:label (format nil "buffer ~a <- ~a" name (first msg)))
-                                        ;; RETRY re-runs the edit after a live fix
-                                        ;; (fix the failing defun in this image,
-                                        ;; then pick retry); ABORT (from
-                                        ;; with-debugger) drops it and keeps the
-                                        ;; prior buffer.
-                                        (loop
-                                          (with-simple-restart (retry "Retry this edit")
-                                            (return
-                                              (pine.editor.mode:dispatch-message
-                                               mode sento.actor:*self*
-                                               (first msg) (rest msg)))))))))))
+                                      (let ((answer
+                                              (pine.err:with-debugger
+                                                  (:label (format nil "buffer ~a <- ~a"
+                                                                  name (first msg)))
+                                                ;; RETRY re-runs the edit after a
+                                                ;; live fix (fix the failing defun
+                                                ;; in this image, then pick retry);
+                                                ;; ABORT drops it and keeps the
+                                                ;; prior buffer.
+                                                (loop
+                                                  (with-simple-restart
+                                                      (retry "Retry this edit")
+                                                    (return
+                                                      (pine.editor.mode:dispatch-message
+                                                       mode sento.actor:*self*
+                                                       (first msg) (rest msg))))))))
+                                        ;; landed only on a normal return, so an
+                                        ;; edit that aborted in the debugger
+                                        ;; leaves the buffer as it was. The
+                                        ;; receive's own value is the answer to
+                                        ;; an ask, so it is what comes back.
+                                        (let ((after (first sento.actor:*state*)))
+                                          (unless (eq before after)
+                                            (pine.ns:write (to-paths name after))))
+                                        answer))))))
 
 (defun notify-subscribers (subscribers state &optional hl)
   "Send SNAPSHOT to every subscriber. One that cannot be reached does not stop

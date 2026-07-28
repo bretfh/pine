@@ -31,6 +31,10 @@
     ;; before anything is declared under it
     (setf (pine.core.server:proc srv)
           (pine.proc:mount :system (pine.core.server:actor-system srv)))
+    ;; /buf serves the buffers and drives their parsers: a buffer is parsed
+    ;; because its lines, its window's range or its mode moved
+    (pine.buf:mount :system (pine.core.server:actor-system srv)
+                    :runtime (pine.core.server:ts-runtime srv))
     (pine.core.attach:start-attach-listener srv)
     (start-control srv)
     (world:open)

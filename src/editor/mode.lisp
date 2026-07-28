@@ -37,7 +37,17 @@
 
 (defvar *modes* (make-hash-table :test 'eq))
 
-(defun register-mode (m) (setf (gethash (mode-name m) *modes*) m))
+(defun register-mode (m)
+  ;; A mode is a map at /mode/?name; the class is what is left of the old
+  ;; registry, and writing the map is what anything reading modes now sees.
+  (pine.ns:write (pine.path:path (pine.path:parse "/mode") (mode-name m))
+                 (fset:map (:indicator (mode-indicator m))
+                           (:parent (when (typep m 'major-mode)
+                                      (let ((p (parent-mode m)))
+                                        (and p (mode-name p)))))
+                           (:grammar (when (typep m 'major-mode) (ts-language m)))
+                           (:precedence (when (typep m 'minor-mode) (precedence m)))))
+  (setf (gethash (mode-name m) *modes*) m))
 (defun find-mode (name) (gethash name *modes*))
 
 (defun all-mode-names ()

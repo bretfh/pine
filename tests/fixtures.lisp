@@ -32,6 +32,8 @@ minibuffer. Returns the server."
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.text.buffer:start-buffer-registry srv)
+    (pine.buf:mount :system (pine.core.server:actor-system srv)
+                    :runtime (pine.core.server:ts-runtime srv))
     (setf pine.state.world:*enabled* nil)
     (let ((client (pine.editor.frame::start-client srv)))
       ;; *client* is NOT set globally. The daemon binds it per thread -- the

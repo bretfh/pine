@@ -258,24 +258,44 @@ and comes back by being read again."
                  *parsers* (lambda (m) (fset:with m name link)))
                 link)))))))
 
+(defun %for (name key lines)
+  "What NAME's KEY says about LINES, or NIL when it describes some other lines.
+
+An edit descriptor and an indent request are written in the same transaction as
+the lines they belong to, and they carry those lines, so identity is the whole
+of the check: the same object means it is that very edit."
+  (let ((asked (ns:read (at name key))))
+    (when (and asked (eq (fset:lookup asked :lines) lines))
+      asked)))
+
 (defun %parse (name system runtime)
   "Tell NAME's parser the lines as they stand, over the range a window said it
 is showing.
 
-Its mailbox is the queue and its one thread drains it in order, so a burst of
-typing arrives as a burst and the newest lines are the last thing parsed."
+This is the only thing that drives a parse. Whoever edited wrote what it did at
+/buf/?name/edit in the same transaction as the lines, so the parser can shift
+its tree instead of rebuilding it, and an indent someone asked for goes into the
+same mailbox behind the parse it needs."
   (let ((link (%link name system runtime)))
     (when link
-      (let ((viewport (ns:read (at name :viewport))))
+      (let* ((actor (pine.ts.parser:link-actor link))
+             (lines (or (ns:read (at name :lines)) (fset:seq "")))
+             (band (pine.text.buffer:band (ns:read (at name :viewport))))
+             (edit (%for name :edit lines))
+             (indent (%for name :indent-request lines)))
         (sento.actor:tell
-         (pine.ts.parser:link-actor link)
-         (list :parse
-               :name name
-               :lines (or (ns:read (at name :lines)) (fset:seq ""))
+         actor
+         (list :parse :name name :lines lines :viewport band
                :tick (or (ns:read (at name :tick)) 0)
-               :viewport (when (fset:seq? viewport)
-                           (cons (fset:lookup viewport 0)
-                                 (fset:lookup viewport 1)))))))))
+               :edit (when edit
+                       (list (fset:lookup edit :at) (fset:lookup edit :old)
+                             (fset:lookup edit :new) (fset:lookup edit :bytes)))))
+        (when indent
+          (sento.actor:tell
+           actor
+           (list :indent :name name :lines lines :viewport band
+                 :from (fset:lookup indent :from)
+                 :to (fset:lookup indent :to))))))))
 
 (defun mount (&key system runtime)
   "Serve /buf. With SYSTEM and RUNTIME a buffer that names a grammar is parsed
@@ -293,12 +313,19 @@ whenever its lines or its window's range move."
                 (declare (ignore v))
                 (%parse (p:leaf (p:parent (ns:here))) system runtime)
                 {})
-              :as :buf-band))
+              :as :buf-band)
+    (ns:watch /buf/*/mode
+              (pine.data:fn [v]
+                (declare (ignore v))
+                (%parse (p:leaf (p:parent (ns:here))) system runtime)
+                {})
+              :as :buf-mode))
   nil)
 
 (defun unmount ()
   (ns:watch /buf/*/lines nil :as :buf-parse)
   (ns:watch /buf/*/viewport nil :as :buf-band)
+  (ns:watch /buf/*/mode nil :as :buf-mode)
   (fset:do-map (name link (sento.atomic:atomic-get *parsers*))
     (declare (ignore name))
     (sento.actor:tell (pine.ts.parser:link-actor link) '(:stop)))

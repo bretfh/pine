@@ -35,10 +35,12 @@
     (when buf
       (let ((snap (pine.editor.frame:current-buffer-snapshot)))
         (when snap
+          ;; the mark is one place, so it is set in one write; two halves
+          ;; landing separately is a mark that is briefly nowhere
           (sento.actor:tell buf
-            (list :set-meta :key :mark-line :value (pine.text.buffer:point-line snap)))
-          (sento.actor:tell buf
-            (list :set-meta :key :mark-col :value (pine.text.buffer:point-col snap)))
+            (list :set-meta :key :mark
+                  :value (fset:seq (pine.text.buffer:point-line snap)
+                                   (pine.text.buffer:point-col snap))))
           (pine.editor.echo:message "mark set"))))))
 
 ;;;; Kill commands

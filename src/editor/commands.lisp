@@ -85,8 +85,7 @@ disappears into a mailbox nobody is reading."
       (pine.editor.debugger:resolve-session s)))
   (let ((buf (pine.editor.motion:cur-buffer)))
     (when buf
-      (sento.actor:tell buf (list :set-meta :key :mark-line :value nil))
-      (sento.actor:tell buf (list :set-meta :key :mark-col :value nil))))
+      (sento.actor:tell buf (list :set-meta :key :mark :value nil))))
   (pine.editor.minibuffer:cancel-prompt))
 (defcmd "backspace" ()
   (let ((buf (pine.editor.motion:cur-buffer))) (when buf (sento.actor:tell buf '(:backspace)))))

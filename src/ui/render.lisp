@@ -482,8 +482,9 @@ Returns (values rows crow ccol)."
 (defun %snapshot-region (s)
   "Normalized region (values start-line start-col end-line end-col) from the
 mark (buffer meta) and point, or nil when no mark is set."
-  (let ((ml (fset:@ (pine.text.buffer:meta s) :mark-line))
-        (mc (fset:@ (pine.text.buffer:meta s) :mark-col)))
+  (let* ((mark (fset:@ (pine.text.buffer:meta s) :mark))
+         (ml (and (fset:seq? mark) (fset:lookup mark 0)))
+         (mc (and (fset:seq? mark) (fset:lookup mark 1))))
     (when (and ml mc)
       (let ((pl (pine.text.buffer:point-line s)) (pc (pine.text.buffer:point-col s)))
         (if (or (< ml pl) (and (= ml pl) (<= mc pc)))

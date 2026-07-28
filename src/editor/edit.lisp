@@ -76,10 +76,13 @@ itself, and by the parser's :indent-region answer."
                        (pine.text.buffer:move-mark st :point pl (+ new-indent p-tail))
                        :overlays nil))
                (span (1+ (- hi lo))))
-          (setf sento.actor:*state* (list final (cons state undo) nil subs hl link))
-          (pine.text.buffer:notify-subscribers subs final hl)
-          (pine.text.buffer:request-parse link final
-                                          :extra (list :edit (list lo span span bytes)))))))
+          (setf sento.actor:*state*
+                (list (pine.text.buffer:set-meta
+                       final :edit (fset:map (:at lo) (:old span) (:new span)
+                                             (:bytes bytes)
+                                             (:lines (pine.text.buffer:lines final))))
+                      (cons state undo) nil subs hl link))
+          (pine.text.buffer:notify-subscribers subs final hl)))))
 
 (defmethod pine.editor.mode:dispatch-message ((mode pine.editor.mode:base-mode) self tag plist)
   (declare (ignore self))
@@ -165,16 +168,14 @@ itself, and by the parser's :indent-region answer."
                (link (pine.text.buffer:ensure-parser
                       state pstate (pine.text.buffer:buffer-local state :name ""))))
            (setf sento.actor:*state* (list prev (rest undo) (cons state redo) subs hl link))
-           (pine.text.buffer:notify-subscribers subs prev hl)
-           (pine.text.buffer:request-parse link prev))))
+           (pine.text.buffer:notify-subscribers subs prev hl))))
       (:redo
        (when redo
          (let ((next (first redo))
                (link (pine.text.buffer:ensure-parser
                       state pstate (pine.text.buffer:buffer-local state :name ""))))
            (setf sento.actor:*state* (list next (cons state undo) (rest redo) subs hl link))
-           (pine.text.buffer:notify-subscribers subs next hl)
-           (pine.text.buffer:request-parse link next))))
+           (pine.text.buffer:notify-subscribers subs next hl))))
       ((:set-local :set-meta)
        (let ((new (pine.text.buffer:set-meta state (getf plist :key) (getf plist :value))))
          ;; a mode change (re)builds the parse-state and highlights immediately,
@@ -183,8 +184,7 @@ itself, and by the parser's :indent-region answer."
              (let ((link (pine.text.buffer:ensure-parser
                           new nil (pine.text.buffer:buffer-local new :name ""))))
                (setf sento.actor:*state* (list new undo redo subs hl link))
-               (pine.text.buffer:notify-subscribers subs new hl)
-               (pine.text.buffer:request-parse link new))
+               (pine.text.buffer:notify-subscribers subs new hl))
              (progn
                (setf sento.actor:*state* (list new undo redo subs hl pstate))
                (pine.text.buffer:notify-subscribers subs new hl)))
@@ -201,8 +201,7 @@ itself, and by the parser's :indent-region answer."
            ;; scrolling asks for the new window's colours; what is on screen
            ;; stays until they arrive
            (let ((new (pine.text.buffer:set-meta state :viewport new-range)))
-             (setf sento.actor:*state* (list new undo redo subs hl pstate))
-             (pine.text.buffer:request-parse pstate new)))))
+             (setf sento.actor:*state* (list new undo redo subs hl pstate))))))
       (:set-var
        (let* ((vars (or (fset:@ (pine.text.buffer:meta state) :vars) (fset:empty-map)))
               (new (pine.text.buffer:set-meta
@@ -261,8 +260,7 @@ itself, and by the parser's :indent-region answer."
          (let ((link (pine.text.buffer:ensure-parser
                       new pstate (pine.text.buffer:buffer-local new :name ""))))
            (setf sento.actor:*state* (list new nil nil subs nil link))
-           (pine.text.buffer:notify-subscribers subs new nil)
-           (pine.text.buffer:request-parse link new))))
+           (pine.text.buffer:notify-subscribers subs new nil))))
       ;; The end of the mode chain. A verb nobody claimed is a caller's mistake,
       ;; and dropping it silently is how a wrong message looks exactly like a
       ;; message that did nothing. A mode that means to ignore a verb says so,
@@ -280,9 +278,25 @@ itself, and by the parser's :indent-region answer."
     ;; tree instead of rebuilding it; LINE and DELTA carry the same change to the
     ;; highlights already on screen so the lines below an inserted one do not
     ;; briefly wear the colours of their old neighbours.
+    ;; What the edit did is written beside the lines it did it to, and the parse
+    ;; happens because they moved. Nothing here drives the parser: two things
+    ;; driving one shifts a tree that has already moved.
     (macrolet ((commit (new-state &key edit)
-                 `(let* ((new (pine.text.buffer:set-meta ,new-state :overlays nil))
-                         (descriptor ,edit)
+                 `(let* ((descriptor ,edit)
+                         (with-edit (pine.text.buffer:set-meta
+                                     (pine.text.buffer:set-meta ,new-state
+                                                                :overlays nil)
+                                     :edit nil))
+                         (new (if descriptor
+                                  (pine.text.buffer:set-meta
+                                   with-edit :edit
+                                   (fset:map (:at (first descriptor))
+                                             (:old (second descriptor))
+                                             (:new (third descriptor))
+                                             (:bytes (fourth descriptor))
+                                             (:lines (pine.text.buffer:lines
+                                                      with-edit))))
+                                  with-edit))
                          (hl2 (if descriptor
                                   (pine.text.buffer:shift-highlights
                                    hl (first descriptor)
@@ -290,10 +304,9 @@ itself, and by the parser's :indent-region answer."
                                   hl))
                          (link (pine.text.buffer:ensure-parser
                                 new pstate (pine.text.buffer:buffer-local new :name ""))))
+                    (declare (ignorable link))
                     (setf sento.actor:*state* (list new (cons state undo) nil subs hl2 link))
-                    (pine.text.buffer:notify-subscribers subs new hl2)
-                    (pine.text.buffer:request-parse
-                     link new :extra (list :edit descriptor)))))
+                    (pine.text.buffer:notify-subscribers subs new hl2))))
       (case tag
         (:insert
          (let* ((snap (pine.text.buffer:state->snapshot state))
@@ -315,11 +328,16 @@ itself, and by the parser's :indent-region answer."
            (commit (pine.text.buffer:move-mark
                     (pine.text.buffer:insert-newline state l c) :point (1+ l) 0)
                    :edit (list l 1 2 1))
+           ;; the indent is asked for beside the lines it is about, so it
+           ;; reaches the parser behind the parse it needs
            (destructuring-bind (new undo2 redo2 subs2 hl2 link)
                sento.actor:*state*
-             (declare (ignore undo2 redo2 subs2 hl2))
-             (pine.text.buffer:request-parse link new :verb :indent
-                                             :extra (list :from (1+ l) :to (1+ l))))))
+             (setf sento.actor:*state*
+                   (list (pine.text.buffer:set-meta
+                          new :indent-request
+                          (fset:map (:from (1+ l)) (:to (1+ l))
+                                    (:lines (pine.text.buffer:lines new))))
+                         undo2 redo2 subs2 hl2 link)))))
         ;; Reindent lines [:from .. :to] (default: the point line). Each line is
         ;; reindented from the parse tree and the tree reparsed before the next,
         ;; so column alignment sees the shifted text. Point rides its character:

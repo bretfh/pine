@@ -143,8 +143,8 @@ Returns (values state model)."
 
 (test region-bounds-normalize-and-region-string-reads-them
   (let* ((state (pine.text.buffer:load-content (format nil "alpha~%beta~%gamma")))
-         (marked (pine.text.buffer:set-meta
-                  (pine.text.buffer:set-meta state :mark-line 2) :mark-col 3))
+         ;; the mark is one place, set in one write
+         (marked (pine.text.buffer:set-meta state :mark (fset:seq 2 3)))
          (pointed (pine.text.buffer:move-mark marked :point 0 1)))
     (multiple-value-bind (sl sc el ec) (pine.text.buffer:region-bounds pointed)
       (is (equal '(0 1 2 3) (list sl sc el ec)))
