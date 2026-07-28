@@ -121,9 +121,12 @@
     (is (not (null (pine.ns:read (pine.cmd:at (cdr entry)))))
         "~a is bound to ~a, which is not a command" (car entry) (cdr entry))))
 
-(test the-window-manager-keymap-has-no-parent-to-fall-through-to
-  (is (null (pine.editor.keymap:keymap-parent (pine.wm:wm-keymap))))
-  (is (= 1 (length (pine.editor.keymap:keymap-tables (pine.wm:wm-keymap))))))
+(test the-window-manager-keys-are-exactly-what-is-under-key-wm
+  "There is no second list of chords, and nothing falls through: a window
+manager has no buffer and no mode."
+  (is (eq :wm (pine.wm:wm-keymap)))
+  (is (null (pine.editor.keymap:lookup :wm "C-x")))
+  (is (not (null (pine.editor.keymap:lookup :wm "s-Return")))))
 
 (test an-unbound-chord-is-reported-rather-than-run
   (with-fixture wm-session ()

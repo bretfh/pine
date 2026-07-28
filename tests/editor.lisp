@@ -194,8 +194,9 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
     (is (null (pine.editor.command::key-binding
                *client* (pine.editor.key::parse-key "z"))))
     (in-user "(enable-minor-mode :user-probe)")
-    (is (equal "user-min-cmd" (pine.editor.command::key-binding
-                               *client* (pine.editor.key::parse-key "z"))))
+    (is (fset:equal? (pine.cmd:at "user-min-cmd")
+                     (pine.editor.command::key-binding
+                      *client* (pine.editor.key::parse-key "z"))))
     (in-user "(disable-minor-mode :user-probe)")
     (is (null (pine.editor.command::key-binding
                *client* (pine.editor.key::parse-key "z"))))

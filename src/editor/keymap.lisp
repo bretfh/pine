@@ -1,100 +1,121 @@
 (defpackage #:pine.editor.keymap
   (:use #:cl)
-  (:export #:keymap #:keymap-p #:make-keymap #:keymap-name #:keymap-parent
-           #:mode-keymap #:global-keymap
-           #:define-key #:define-keys #:keymap-lookup #:prefix-p
-           #:keymap-tables #:keymap-bindings))
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
+  (:export #:at #:bind #:define-key #:define-keys #:lookup #:bindings
+           #:prefix-p #:roots #:mount))
 
 (in-package #:pine.editor.keymap)
+(named-readtables:in-readtable pine.path:syntax)
 
-(defstruct (keymap (:constructor %make-keymap) (:copier nil))
-  (name nil)
-  (parent nil)
-  (table (make-hash-table :test 'eq) :read-only t))
+;;;; A key sequence is a path, because a prefix map is a directory:
+;;;;
+;;;;   (write /key/global/C-x/C-f /cmd/find-file)
+;;;;   (write /key/global/C-c/s   {/win/focused/buf /buf/scratch})
+;;;;   (read  /key/global/C-x/*)          ; the prefix map
+;;;;
+;;;; A binding's value is a command path, a write-map or a handler, which is
+;;;; exactly what pine.cmd:run takes. A map at a path is a prefix, because a
+;;;; map is what a directory is.
 
-(defun make-keymap (&key name parent) (%make-keymap :name name :parent parent))
+(defun %chord (segment)
+  "SEGMENT as the one spelling of that chord, so C-M-x and M-C-x are one path
+and there is no aliasing to remember."
+  (let ((key (ignore-errors (pine.editor.key:parse-key segment))))
+    (if key (pine.editor.key:key->string key) segment)))
 
-(declaim (inline prefix-p))
-(defun prefix-p (entry) (hash-table-p entry))
+(defun %map (map)
+  "Where MAP's bindings live. A mode's are under /key/mode, so /key/global and
+/key/wm are the two a mode cannot shadow by being named the same."
+  (case map
+    ((:global :wm) (p:path /key map))
+    (t (p:path /key :mode map))))
 
-(defun define-key (keymap keys command)
-  "KEYS is a pine.editor.key:key or a list of them (a chord). COMMAND is a command
-name string. A keymap stores names and never resolves them, so it knows
-nothing about the command registry and a binding may name a command that does
-not exist yet."
-  (let ((table (keymap-table keymap))
-        (keys (if (listp keys) keys (list keys))))
-    (loop for (k . rest) on keys do
-      (if rest
-          (let ((next (gethash k table)))
-            (unless (hash-table-p next)
-              (setf next (make-hash-table :test 'eq)
-                    (gethash k table) next))
-            (setf table next))
-          (setf (gethash k table) command)))
-    command))
+(defun %chords (chord)
+  "CHORD as the segments it names: keys, key strings, a space-joined sequence,
+or a list of any of those -- whatever KBD answers."
+  (loop :for x :in (alexandria:flatten (list chord))
+        :append (if (stringp x)
+                    (remove "" (uiop:split-string x :separator '(#\space))
+                            :test #'string=)
+                    (list (pine.editor.key:key->string x)))
+          :into parts
+        :finally (return (mapcar #'%chord parts))))
 
-;;;; A keymap per mode, and one no mode owns. Keyed by the mode's name, since a
-;;;; mode is a map at /mode and has no object to hang this on.
+(defun at (map &rest chord)
+  "The path binding CHORD in MAP."
+  (apply #'p:path (%map map) (%chords chord)))
 
-(defvar *keymaps* (make-hash-table :test 'eq))
+(defun provider ()
+  "Serve /key. A chord normalizes on the way in, so what is written and what is
+read are the same path."
+  (ns:provider
+   (/key/?map/?@chord
+    {:at (pine.data:fn []
+           (apply #'p:path /key map (mapcar #'%chord chord)))
+     :doc "a command path, a write-map or a handler"})))
 
-(defun mode-keymap (name)
-  "The keymap for the mode NAME, made on first use.
+;;;; Binding and looking up
 
-It stands alone. What a mode falls back to is its :parent, and that is read
-when a key is looked up rather than wired in here, so a config that gives a
-mode a parent after binding a key to it still gets the fallback."
-  (or (gethash name *keymaps*)
-      (setf (gethash name *keymaps*) (make-keymap :name name))))
+(defvar *bound* nil
+  "What has been bound, newest first, so MOUNT can put it into a namespace
+that has not seen it: a fresh pine, or the one a test holds.")
 
-(defun global-keymap ()
-  (mode-keymap :global))
+(defun bind (map chord command)
+  "Bind CHORD in MAP to COMMAND, which is a command path, a name, a write-map
+or a handler. NIL unbinds."
+  (let ((value (cond ((null command) nil)
+                     ((or (p:pathp command) (fset:map? command)
+                          (functionp command))
+                      command)
+                     (t (pine.cmd:at command)))))
+    (push (list map chord value) *bound*)
+    (ns:write (at map chord) value)))
 
-(defgeneric keymap (object)
-  (:documentation "OBJECT's keymap.")
-  (:method ((k keymap)) k)
-  (:method ((name symbol)) (mode-keymap name)))
+(defun mount ()
+  (ns:write /key (provider))
+  (dolist (binding (reverse *bound*))
+    (destructuring-bind (map chord value) binding
+      (ns:write (at map chord) value)))
+  nil)
 
-(defmacro define-keys (designator &body pairs)
-  "Bind CHORD COMMAND pairs in the keymap DESIGNATOR names."
-  (let ((map (gensym "MAP")))
-    `(let ((,map (keymap ,designator)))
-       ,@(loop :for (chord command) :on pairs :by #'cddr
-               :collect `(define-key ,map (pine.editor.key:parse-chord ,chord) ,command))
-       ,map)))
+(defun define-key (map chord command)
+  (bind map chord command))
 
-(defun keymap-lookup (keymap key)
-  "Command name, prefix sub-table, or nil. Local bindings shadow the parent."
-  (or (gethash key (keymap-table keymap))
-      (let ((p (keymap-parent keymap)))
-        (and p (keymap-lookup p key)))))
+(defmacro define-keys (map &body pairs)
+  "Bind CHORD COMMAND pairs in MAP."
+  `(progn
+     ,@(loop :for (chord command) :on pairs :by #'cddr
+             :collect `(bind ,map ,chord ,command))
+     ,map))
 
-(defun keymap-tables (keymap)
-  "The keymap's table and every ancestor's table, nearest first. Dispatch
-resolves against tables, not keymaps, so a chord can continue in a parent
-map that the child's own prefix table would otherwise shadow."
-  (loop for m = keymap then (keymap-parent m)
-        while m collect (keymap-table m)))
+(defun prefix-p (value)
+  "True when what is bound is a prefix: a directory, which is a map."
+  (fset:map? value))
 
-(defun keymap-bindings (keymap &optional include-parent)
-  "List of (KEY-STRING . COMMAND) in KEYMAP. Chords render space-joined. With
-INCLUDE-PARENT, unshadowed parent bindings are appended."
-  (let ((acc '()))
-    (labels ((walk (table prefix)
-               (maphash
-                (lambda (k v)
-                  (let ((seq (if prefix
-                                 (concatenate 'string prefix " " (pine.editor.key:key->string k))
-                                 (pine.editor.key:key->string k))))
-                    (if (hash-table-p v)
-                        (walk v seq)
-                        (push (cons seq v) acc))))
-                table)))
-      (walk (keymap-table keymap) nil))
-    (when (and include-parent (keymap-parent keymap))
-      (let ((local (mapcar #'car acc)))
-        (dolist (pb (keymap-bindings (keymap-parent keymap) t))
-          (unless (member (car pb) local :test #'string=)
-            (push pb acc)))))
-    acc))
+(defun lookup (map chord)
+  "What CHORD is bound to in MAP: a value, a map when it is a prefix, or NIL."
+  (ns:read (at map chord)))
+
+(defun roots (mode minors)
+  "Where a key is looked up, in the order it is looked up: each minor mode's
+map, then the major mode's and every mode it falls back to, then global."
+  (append (mapcar #'%map minors)
+          (mapcar #'%map (pine.mode:chain mode))
+          (list (%map :global))))
+
+(defun bindings (map &optional (prefix nil))
+  "Every (CHORD-STRING . BINDING) under MAP, chords space-joined."
+  (let ((acc nil))
+    (labels ((walk (path so-far)
+               (let ((value (ns:read path)))
+                 (cond ((prefix-p value)
+                        (fset:do-map (key inner value)
+                          (declare (ignore inner))
+                          (let ((name (p:name key)))
+                            (walk (p:child path name)
+                                  (if so-far
+                                      (concatenate 'string so-far " " name)
+                                      name)))))
+                       (value (push (cons so-far value) acc))))))
+      (walk (if prefix (at map prefix) (%map map)) nil))
+    (nreverse acc)))

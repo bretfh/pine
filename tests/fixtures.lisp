@@ -34,6 +34,7 @@ minibuffer. Returns the server."
     (pine.text.buffer:start-buffer-registry srv)
     (pine.mode:mount)
     (pine.cmd:mount)
+    (pine.editor.keymap:mount)
     (pine.term:mount-mode)
     (pine.editor.overwrite:mount-mode)
     (pine.editor.repl:mount-mode)

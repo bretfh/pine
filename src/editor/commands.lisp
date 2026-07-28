@@ -386,10 +386,8 @@ disappears into a mailbox nobody is reading."
   "C-h m"    "describe-mode"
   "C-h v"    "describe-variables")
 
-(let ((map (pine.editor.keymap:keymap :global)))
-  (dotimes (d 10)
-    (pine.editor.keymap:define-key map (pine.editor.key:parse-chord (format nil "M-~d" d))
-                            "digit-argument")))
+(dotimes (d 10)
+  (pine.editor.keymap:bind :global (format nil "M-~d" d) "digit-argument"))
 
 (pine.editor.keymap:define-keys :text
   "BackSpace"   "backspace"

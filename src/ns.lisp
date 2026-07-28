@@ -250,7 +250,11 @@ still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
                        (return :done))
                       ((%verbp value)
                        (error 'no-verb :at path :why (%verb-name value)))
-                      (in (return (values :store (funcall in value))))
+                      ((or in (fset:lookup handlers :at))
+                       (let ((where (fset:lookup handlers :at)))
+                         (return (values :store
+                                         (if in (funcall in value) value)
+                                         (when where (funcall where))))))
                       (write (funcall write value) (return :done))
                       ((fset:lookup handlers :read)
                        (error 'refused :at path
@@ -575,11 +579,13 @@ has no business inside a compare-and-swap."
   (let ((space (current)))
     ;; a provider decides what a write to its subtree means, and its IO cannot
     ;; run inside a swap that may be retried
-    (multiple-value-bind (served normalized) (%served-write space path value)
+    (multiple-value-bind (served normalized where)
+        (%served-write space path value)
       (case served
         (:done (return-from %write-one
                  (list (list path (%read-one path) value))))
-        (:store (setf value normalized))))
+        (:store (setf value normalized)
+                (when where (setf path where)))))
     (when *preview*
       (let* ((was (%get (space-root space) (p:keys path)))
              (stored (%stored path was value max)))
@@ -669,13 +675,13 @@ is what makes a map a transaction."
         (moved nil)
         (staged nil))
     (loop :for (path . value) :in (%ordered map)
-          :do (multiple-value-bind (served normalized)
+          :do (multiple-value-bind (served normalized where)
                   (unless *preview* (%served-write space path value))
                 (case served
                   (:done (setf moved
                                (append moved
                                        (list (list path (%read-one path) value)))))
-                  (:store (push (cons path normalized) staged))
+                  (:store (push (cons (or where path) normalized) staged))
                   (t (push (cons path value) staged)))))
     (setf staged (nreverse staged))
     (append moved

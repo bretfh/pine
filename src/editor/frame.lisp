@@ -267,10 +267,7 @@ it has landed when this answers."
   "Minor-mode maps most specific first, then the major mode's and every mode it
 falls back to, then global. The keymap chain is the mode chain, read now, so a
 mode that gained a parent since its map was made still falls back through it."
-  (append (mapcar #'pine.editor.keymap:mode-keymap (active-minor-modes client))
-          (mapcar #'pine.editor.keymap:mode-keymap
-                  (pine.mode:chain (current-buffer-mode)))
-          (list (pine.editor.keymap:global-keymap))))
+  (pine.editor.keymap:roots (current-buffer-mode) (active-minor-modes client)))
 
 (defun make-buffer (name &key (content "") id (message pine.text.buffer:*message*))
   (let* ((c (current-client))

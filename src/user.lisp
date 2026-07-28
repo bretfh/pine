@@ -140,25 +140,19 @@ chord) or a list of keys (a sequence), exactly what DEFINE-KEY takes."
     (if (= 1 (length keys)) (first keys) keys)))
 
 (defun keymap (designator)
-  "The keymap named DESIGNATOR: :global for the global map, :wm for the window
-manager's (whose chords the compositor delivers instead of the focused
-window), or a mode keyword for that mode's map."
-  (case designator
-    (:global (pine.editor.keymap:global-keymap))
-    (:wm (pine.wm:wm-keymap))
-    (t (pine.editor.keymap:mode-keymap designator))))
+  "The map DESIGNATOR names, which is a segment under /key: :global for the
+map no mode owns, :wm for the window manager's (whose chords the compositor
+delivers instead of the focused window), or a mode keyword."
+  designator)
 
 (defun define-key (where keys command)
-  "Bind KEYS (from KBD) to COMMAND (a command designator) in WHERE -- a keymap,
-:global, :wm, or a mode keyword."
-  (pine.editor.keymap:define-key
-   (if (pine.editor.keymap:keymap-p where) where (keymap where))
-   keys (pine.path:leaf (pine.cmd:at command))))
+  "Bind KEYS (from KBD) to COMMAND in WHERE -- :global, :wm, or a mode
+keyword. COMMAND is a command designator, a write-map or a function."
+  (pine.editor.keymap:bind (keymap where) keys command))
 
 (defun global-set-key (keys command)
-  "Bind KEYS to COMMAND in the global keymap."
-  (pine.editor.keymap:define-key (pine.editor.keymap:global-keymap) keys
-                          (pine.path:leaf (pine.cmd:at command))))
+  "Bind KEYS to COMMAND in the map no mode owns."
+  (pine.editor.keymap:bind :global keys command))
 
 ;;;; Modes. A mode is a map at /mode, so defining one is writing it:
 ;;;;

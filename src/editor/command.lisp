@@ -66,29 +66,31 @@ that they wrote the prefix rather than used it."
 (pine.cmd:defcmd "self-insert-command" ()
   (self-insert (pine.editor.frame:current-client) (pine.cmd:key)))
 
-(defun %active-tables (client)
-  "Every active keymap's tables in priority order: minor modes first, then
-the major mode with its parent chain, then the global map."
-  (loop for km in (pine.editor.frame:active-keymaps client)
-        append (pine.editor.keymap:keymap-tables km)))
+(defun %roots (client)
+  "Where a key is looked up, in the order it is looked up."
+  (pine.editor.keymap:roots (pine.editor.frame:current-buffer-mode)
+                            (pine.editor.frame:active-minor-modes client)))
 
-(defun %step (tables key)
-  "One dispatch step: KEY against TABLES in priority order. The first entry
-found decides -- a command fires, a prefix keeps reading -- and every
-table's continuation for KEY stays live, so a mode's C-c prefix never
-hides a global C-c chord. Returns (values command continuation-tables)."
-  (let ((entries (loop for tbl in tables
-                       for e = (gethash key tbl)
-                       when e collect e)))
-    (if (stringp (first entries))
-        (values (first entries) nil)
-        (values nil (remove-if-not #'hash-table-p entries)))))
+(defun %step (roots chord key)
+  "One dispatch step: KEY after the chord so far, against ROOTS in order.
+
+The first entry found decides -- a binding fires, a directory keeps reading --
+and every root is asked at every step, so a mode's C-c prefix never hides a
+global C-c chord. Answers (values binding prefix-p)."
+  (let* ((so-far (append chord (list (pine.editor.key:key->string key))))
+         (found (loop :for root :in roots
+                      :for value = (pine.ns:read (apply #'pine.path:path root so-far))
+                      :when value :collect value)))
+    (let ((binding (find-if-not #'pine.editor.keymap:prefix-p found)))
+      (if binding
+          (values binding nil)
+          (values nil (and found t))))))
 
 (defun key-binding (client key)
-  "KEY's binding in CLIENT's active keymaps: a command name string, a list
-of prefix continuation tables, or nil."
-  (multiple-value-bind (cmd conts) (%step (%active-tables client) key)
-    (or cmd conts)))
+  "KEY's binding in the maps this buffer is under: what it runs, T when it is
+a prefix, or NIL."
+  (multiple-value-bind (binding prefix) (%step (%roots client) nil key)
+    (or binding prefix)))
 
 (defun read-next-key (client fn)
   "Capture the next dispatched key and hand it to FN instead of running its
@@ -96,16 +98,21 @@ binding. One-shot. The basis for describe-key, quoted-insert, etc."
   (declare (ignore client))
   (setf (pine.cmd:said :reader) fn))
 
-(defun %seq-string (pending key)
-  "The chord typed so far as a string: PENDING's prefix (if any) plus KEY."
-  (let ((s (pine.editor.key:key->string key)))
-    (if pending (concatenate 'string (car pending) " " s) s)))
+(defun %run (binding)
+  "Do what a key is bound to, and keep the command bookkeeping a command loop
+needs: what ran last, and clearing a prefix argument the command did not set."
+  (if (pine.path:pathp binding)
+      (call-command binding)
+      (let ((before (pine.cmd:prefix)))
+        (%guarding-errors (pine.cmd:run binding))
+        (when (eq before (pine.cmd:prefix))
+          (setf (pine.cmd:prefix) nil)))))
 
 (defun dispatch (client key)
-  "Feed one pine.editor.key:key. Pending state is (SEQ-STRING . TABLES): the chord
-typed so far and the live continuation tables from every active keymap.
-A key that dead-ends a chord echoes \"SEQ is undefined\" -- unless it is
-bound to keyboard-quit at top level, which always escapes a chord."
+  "Feed one pine.editor.key:key. What is pending is the chord typed so far, as
+the segments of the path a binding would be at. A key that dead-ends a chord
+echoes \"SEQ is undefined\" -- unless it is bound to keyboard-quit at top
+level, which always escapes a chord."
   (setf (pine.cmd:key) key)
   (let ((reader (pine.cmd:said :reader)))
     (when reader
@@ -119,23 +126,26 @@ bound to keyboard-quit at top level, which always escapes a chord."
     (handler-bind ((error (lambda (c) (declare (ignore c))
                             (setf (pine.cmd:said :pending) nil))))
       (let* ((pending (pine.cmd:said :pending))
-             (tables (if pending (cdr pending) (%active-tables client))))
-        (multiple-value-bind (cmd conts) (%step tables key)
+             (roots (%roots client)))
+        (multiple-value-bind (binding prefix) (%step roots pending key)
           (cond
-            (cmd
+            (binding
              (setf (pine.cmd:said :pending) nil)
-             (call-command cmd))
-            (conts
+             (%run binding))
+            (prefix
              (setf (pine.cmd:said :pending)
-                   (cons (%seq-string pending key) conts)))
+                   (append pending (list (pine.editor.key:key->string key)))))
             (pending
              (setf (pine.cmd:said :pending) nil
                    (pine.cmd:prefix) nil)
-             (let ((top (%step (%active-tables client) key)))
-               (if (equal top "keyboard-quit")
-                   (call-command top)
+             (let ((top (%step roots nil key)))
+               (if (and (pine.path:pathp top)
+                        (equal "keyboard-quit" (pine.path:leaf top)))
+                   (%run top)
                    (pine.editor.echo:message
-                    (format nil "~a is undefined" (%seq-string pending key))))))
+                    (format nil "~{~a~^ ~} is undefined"
+                            (append pending
+                                    (list (pine.editor.key:key->string key))))))))
             (t
              (if (self-insert-key-p key)
                  (call-command "self-insert-command")

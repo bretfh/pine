@@ -31,52 +31,52 @@
     (is (= 2 (length seq)))
     (is (eq (pine.editor.key:parse-key "C-f") (second seq)))))
 
-(test a-keymap-stores-a-name-and-answers-it
-  (let ((map (pine.editor.keymap:make-keymap :name :probe)))
-    (pine.editor.keymap:define-key map (pine.editor.key:parse-key "a") "cmd-a")
-    (is (string= "cmd-a" (pine.editor.keymap:keymap-lookup
-                          map (pine.editor.key:parse-key "a"))))
-    (is (null (pine.editor.keymap:keymap-lookup
-               map (pine.editor.key:parse-key "b"))))))
+;;;; A key sequence is a path, because a prefix map is a directory.
 
-(test a-chord-makes-a-prefix-table
-  (let ((map (pine.editor.keymap:make-keymap :name :probe-chord)))
-    (pine.editor.keymap:define-key map (pine.editor.key:parse-chord "C-c p") "deep")
-    (let ((entry (pine.editor.keymap:keymap-lookup
-                  map (pine.editor.key:parse-key "C-c"))))
-      (is-true (pine.editor.keymap:prefix-p entry))
-      (is (string= "deep" (gethash (pine.editor.key:parse-key "p") entry))))))
+(test a-binding-is-a-path-and-a-prefix-is-a-directory
+  (pine.ns:with-space ()
+    (pine.editor.keymap:mount)
+    (pine.editor.keymap:bind :probe "a" "cmd-a")
+    (pine.editor.keymap:bind :probe "C-c p" "deep")
+    (is (fset:equal? (pine.cmd:at "cmd-a") (pine.editor.keymap:lookup :probe "a")))
+    (is (null (pine.editor.keymap:lookup :probe "b")))
+    (is-true (pine.editor.keymap:prefix-p (pine.editor.keymap:lookup :probe "C-c")))
+    (is (fset:equal? (pine.cmd:at "deep")
+                     (pine.ns:read (pine.editor.keymap:at :probe "C-c p"))))))
 
-(test a-local-binding-shadows-the-parent
-  (let* ((parent (pine.editor.keymap:make-keymap :name :probe-parent))
-         (child (pine.editor.keymap:make-keymap :name :probe-child :parent parent)))
-    (pine.editor.keymap:define-key parent (pine.editor.key:parse-key "a") "from-parent")
-    (pine.editor.keymap:define-key parent (pine.editor.key:parse-key "b") "only-parent")
-    (pine.editor.keymap:define-key child (pine.editor.key:parse-key "a") "from-child")
-    (is (string= "from-child" (pine.editor.keymap:keymap-lookup
-                               child (pine.editor.key:parse-key "a"))))
-    (is (string= "only-parent" (pine.editor.keymap:keymap-lookup
-                                child (pine.editor.key:parse-key "b"))))
-    (is (= 2 (length (pine.editor.keymap:keymap-tables child))))))
+(test a-chord-normalizes-on-write
+  "C-M-x and M-C-x are one path, so there is no aliasing to remember."
+  (pine.ns:with-space ()
+    (pine.editor.keymap:mount)
+    (pine.ns:write (pine.path:parse "/key/mode/probe/M-C-x") (pine.cmd:at "aliased"))
+    (is (fset:equal? (pine.cmd:at "aliased")
+                     (pine.ns:read (pine.path:parse "/key/mode/probe/C-M-x"))))))
 
-(test keymap-bindings-render-chords-space-joined
-  (let ((map (pine.editor.keymap:make-keymap :name :probe-bindings)))
-    (pine.editor.keymap:define-keys map
+(test bindings-render-chords-space-joined
+  (pine.ns:with-space ()
+    (pine.editor.keymap:mount)
+    (pine.editor.keymap:define-keys :probe-bindings
       "C-x C-f" "find-file"
       "M-x"     "execute-command")
-    (let ((bindings (pine.editor.keymap:keymap-bindings map)))
-      (is (equal "find-file" (cdr (assoc "C-x C-f" bindings :test #'string=))))
-      (is (equal "execute-command" (cdr (assoc "M-x" bindings :test #'string=)))))))
+    (let ((bindings (pine.editor.keymap:bindings :probe-bindings)))
+      (is (fset:equal? (pine.cmd:at "find-file")
+                       (cdr (assoc "C-x C-f" bindings :test #'string=))))
+      (is (fset:equal? (pine.cmd:at "execute-command")
+                       (cdr (assoc "M-x" bindings :test #'string=)))))))
 
-(test keymap-bindings-append-unshadowed-parent-entries
-  (let* ((parent (pine.editor.keymap:make-keymap :name :probe-bp))
-         (child (pine.editor.keymap:make-keymap :name :probe-bc :parent parent)))
-    (pine.editor.keymap:define-keys parent "a" "parent-a" "b" "parent-b")
-    (pine.editor.keymap:define-keys child "a" "child-a")
-    (let ((bindings (pine.editor.keymap:keymap-bindings child t)))
-      (is (equal "child-a" (cdr (assoc "a" bindings :test #'string=))))
-      (is (equal "parent-b" (cdr (assoc "b" bindings :test #'string=)))))))
-
+(test a-mode-falls-back-through-its-parents-for-a-key
+  "The keymap chain is the mode chain, read now."
+  (pine.ns:with-space ()
+    (pine.mode:mount)
+    (pine.editor.keymap:mount)
+    (pine.editor.keymap:bind :text "a" "from-text")
+    (pine.editor.keymap:bind :lisp "b" "from-lisp")
+    (let ((roots (pine.editor.keymap:roots :lisp nil)))
+      (is (member "/key/global" (mapcar #'pine.path:text roots) :test #'string=))
+      (is (fset:equal? (pine.cmd:at "from-text")
+                       (loop :for root :in roots
+                             :for v = (pine.ns:read (pine.path:path root "a"))
+                             :when v :do (return v)))))))
 (test a-command-answers-to-a-symbol-and-a-string-alike
   "A command is a path, and 'greet and \"greet\" name the same one."
   (is (fset:equal? (pine.cmd:at 'greet) (pine.cmd:at "greet")))
@@ -170,10 +170,10 @@
 
 (test key-binding-reports-a-command-a-prefix-or-nothing
   (with-fixture substrate ()
-    (is (equal "execute-command"
-               (pine.editor.command:key-binding
-                *client* (pine.editor.key:parse-key "M-x"))))
-    (is (listp (pine.editor.command:key-binding
-                *client* (pine.editor.key:parse-key "C-x"))))
+    (is (fset:equal? (pine.cmd:at "execute-command")
+                     (pine.editor.command:key-binding
+                      *client* (pine.editor.key:parse-key "M-x"))))
+    (is (eq t (pine.editor.command:key-binding
+               *client* (pine.editor.key:parse-key "C-x"))))
     (is (null (pine.editor.command:key-binding
                *client* (pine.editor.key:parse-key "s-F12"))))))

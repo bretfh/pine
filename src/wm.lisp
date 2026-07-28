@@ -36,13 +36,11 @@ commands run in the same context every command does, and the live tree with
 its focused leaf."
   app client tree focus (output nil) (split :row))
 
-(defvar *keymap* (pine.editor.keymap:make-keymap :name :wm)
-  "The window manager's keymap. Chords here are registered with the
-compositor, which delivers them to the window manager rather than to the
-focused window. It has no parent: there is no buffer and no mode to fall back
-through.")
+;;;; The window manager's keys are /key/wm. The compositor delivers exactly
+;;;; what is under it to the window manager rather than to the focused window,
+;;;; and there is no second list of chords anywhere.
 
-(defun wm-keymap () *keymap*)
+(defun wm-keymap () :wm)
 
 (defvar *session* nil
   "The running window manager session, or nil when none is attached.")
@@ -244,7 +242,7 @@ where the next one lands rather than dividing the current one immediately."
   "End the Wayland session."
   (exit-session))
 
-(pine.editor.keymap:define-keys *keymap*
+(pine.editor.keymap:define-keys :wm
   "s-Return"  "wm-terminal"
   "s-q"       "wm-close-window"
   "s-j"       "wm-focus-next"
@@ -258,7 +256,12 @@ where the next one lands rather than dividing the current one immediately."
 ;;;; turns each chord into a keysym plus modifiers and registers it.
 
 (defun binding-table ()
-  (pine.editor.keymap:keymap-bindings (wm-keymap)))
+  (mapcar (lambda (entry)
+            (cons (car entry)
+                  (if (pine.path:pathp (cdr entry))
+                      (pine.path:leaf (cdr entry))
+                      (princ-to-string (cdr entry)))))
+          (pine.editor.keymap:bindings :wm)))
 
 (defun push-bindings ()
   "Send the current binding table to the frontend, which re-registers."
@@ -268,13 +271,13 @@ where the next one lands rather than dividing the current one immediately."
   "Run the command CHORD is bound to. Chord lookup is direct rather than
 through the mode stack: a window manager has no current buffer, and these
 chords were registered with the compositor from this keymap alone."
-  (let ((command (cdr (assoc chord (binding-table) :test #'string=))))
+  (let ((command (pine.editor.keymap:lookup :wm chord)))
     (cond
       ((null command)
        (format *error-output* "pine wm: no command bound to ~a~%" chord))
       (t
        (let ((pine.editor.frame:*client* (session-client *session*)))
-         (pine.editor.command:call-command command))))))
+         (pine.cmd:run command))))))
 
 ;;;; The session: one attached frontend, told the bindings on arrival, and
 ;;;; kept current with what the compositor reports.

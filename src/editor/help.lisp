@@ -18,8 +18,9 @@
 
 (defun bindings-text ()
   (let* ((client (pine.editor.frame:current-client))
-         (rows (loop for km in (pine.editor.frame:active-keymaps client)
-                     append (pine.editor.keymap:keymap-bindings km t))))
+         (rows (loop for root in (pine.editor.frame:active-keymaps client)
+                     append (pine.editor.keymap:bindings
+                             (pine.path:leaf root)))))
     (with-output-to-string (out)
       (format out "Active bindings~%~%")
       (loop for (keys . cmd) in (sort (remove-duplicates rows :test #'equal

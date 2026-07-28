@@ -35,6 +35,7 @@
     ;; because its lines, its window's range or its mode moved
     (pine.mode:mount)
     (pine.cmd:mount)
+    (pine.editor.keymap:mount)
     (pine.term:mount-mode)
     (pine.editor.overwrite:mount-mode)
     (pine.editor.repl:mount-mode)
