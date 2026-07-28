@@ -25,6 +25,19 @@ live session.")
 snapshot only carries highlights when one is built for a subscriber."
   (pine.core.actor:ask (pine.editor.frame::buffer name) '(:get-highlights) :timeout 5))
 
+(defun why-no-highlights (name)
+  "What to say when none arrived: which of the three things was missing."
+  (let* ((buf (pine.editor.frame::buffer name))
+         (parser (and buf (pine.core.actor:ask buf '(:get-parser) :timeout 5)))
+         (snap (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
+    (format nil "buffer=~a parser=~a mode=~s viewport=~s grammar=~a"
+            (if buf "yes" "no") (if parser "yes" "no")
+            (and snap (pine.text.buffer:buffer-local snap :mode))
+            (and snap (pine.text.buffer:buffer-local snap :viewport))
+            (if (pine.ts.runtime:ensure-language
+                 (pine.core.server:ts-runtime *server*) :commonlisp)
+                "loaded" "MISSING"))))
+
 (defun full-walk-of (content &key (viewport +test-viewport+))
   "The highlights a synchronous walk gives for CONTENT over the same window."
   (let ((state (pine.text.buffer:set-meta
@@ -50,7 +63,7 @@ caught up."
       (let ((content (format nil "(defun f (x)~%  \"doc\"~%  (+ x 1))")))
         (lisp-buffer "async-hl" content)
         (is (wait-for (lambda () (highlights-of "async-hl")) :seconds 30)
-            "no highlights ever arrived")
+            "no highlights ever arrived: ~a" (why-no-highlights "async-hl"))
         (is (equal (sort (copy-list (full-walk-of content)) #'< :key #'first)
                    (sort (copy-list (highlights-of "async-hl")) #'< :key #'first))
             "the highlights that landed differ from a full walk")))))

@@ -258,6 +258,8 @@ to come back as the same object."
     (let ((would (pine.ns:preview
                    (pine.ns:write /buf/*{:modified t}/modified nil))))
       (is (= 1 (fset:size would)))
+      (is (fset:equal? [t nil] (fset:lookup would /buf/a/modified))
+          "the same map a write answers: path to [old new]")
       (is (eq t (pine.ns:read /buf/a/modified))
           "and it really did not do it"))))
 

@@ -500,7 +500,7 @@ has no business inside a compare-and-swap."
     (when *preview*
       (let* ((was (%get (space-root space) (p:keys path)))
              (stored (%stored path was value max)))
-        (push (cons path stored) (cdr *preview*))
+        (push (list path was stored) (cdr *preview*))
         (return-from %write-one (list (list path was stored)))))
     (%told (space-moved (%swap (lambda (old)
                                  (%committing old path value options)))))))
@@ -703,9 +703,8 @@ it and re-loading a config is safe. A NIL function removes it."
     name))
 
 (defmacro preview (&body body)
-  "The changes BODY would make, without making them."
+  "The changes BODY would make, without making them: the map WRITE would have
+answered, path to [old new]."
   `(let ((*preview* (cons :preview nil)))
      ,@body
-     (let ((out (fset:empty-map)))
-       (dolist (change (reverse (cdr *preview*)) out)
-         (setf out (fset:with out (car change) (cdr change)))))))
+     (%changes (reverse (cdr *preview*)))))

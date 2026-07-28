@@ -81,6 +81,8 @@ makes that impossible rather than unlikely.")
   on-done
   on-error
   (attended nil)                    ; someone has this fault open
+  (at nil)                          ; when it faulted
+  (root nil)                        ; the namespace root it faulted under
   (lock (bordeaux-threads:make-lock))
   (cvar (bordeaux-threads:make-condition-variable))
   (chosen nil))
@@ -106,6 +108,14 @@ makes that impossible rather than unlikely.")
            (fset:with r :parked
                       (fset:less (fset:lookup r :parked) (evaluation-id ev))))))
 
+(defun %root ()
+  "The newest change the file has, which is the root the namespace stands at.
+NIL where nothing is keeping one, and that is not an error: the fault is still
+a fault, it just cannot be read back through /was."
+  (let ((log (ns:read /history)))
+    (when (and (fset:seq? log) (plusp (fset:size log)))
+      (fset:lookup (fset:lookup log 0) :n))))
+
 (defun %describe (ev)
   (fset:map (:id (evaluation-id ev))
             (:form (princ-to-string (or (evaluation-form ev) "")))
@@ -114,6 +124,8 @@ makes that impossible rather than unlikely.")
             (:restarts (fset:convert 'fset:seq
                                      (mapcar #'first (evaluation-restarts ev))))
             (:backtrace (or (evaluation-backtrace ev) ""))
+            (:at (or (evaluation-at ev) 0))
+            (:root (evaluation-root ev))
             (:attended (and (evaluation-attended ev) t))))
 
 (defun %id-of (segment)
@@ -286,7 +298,9 @@ when the wait went unattended past *park-seconds*."
                                     (error () "<unprintable condition>"))
         (evaluation-condition-type ev) (string (type-of condition))
         (evaluation-restarts ev) (%restart-descriptions condition)
-        (evaluation-backtrace ev) (%capture-backtrace))
+        (evaluation-backtrace ev) (%capture-backtrace)
+        (evaluation-at ev) (get-universal-time)
+        (evaluation-root ev) (%root))
   (%park ev)
   (let ((surface (or (evaluation-on-error ev) *on-debug*)))
     ;; Nothing can drive a restart choice unless someone is in a position to

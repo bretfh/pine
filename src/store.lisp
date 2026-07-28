@@ -20,8 +20,14 @@
 ;;;; connection belongs to the store OPEN answers and not to the image.
 
 (defvar *restoring* nil "True while reading the file back, so it is not rewritten.")
+
 (defparameter *changes-kept* 5000
-  "How many changes the file remembers, which is how far back a revert reaches.")
+  "How many changes the file remembers when /history/kept says nothing. How far
+back a revert reaches is a decision about this pine, so it is a held path and
+the default is only what it starts at.")
+
+(defun %kept ()
+  (or (ns:read /history/kept) *changes-kept*))
 
 (defun storablep (value)
   "Whether VALUE is data the file can hold.
@@ -137,14 +143,15 @@ paths it served come back off."
 
 (defun %now () (get-universal-time))
 
-(defun %trim (state)
-  "STATE after one more change, trimming the log when enough have gone by."
+(defun %trim (state kept)
+  "STATE after one more change, trimming the log to KEPT when enough have gone
+by."
   (let ((since (1+ (or (fset:lookup state :since-trim) 0))))
     (cond ((<= since 100) (fset:with state :since-trim since))
           (t (sqlite:execute-non-query
               (%db state) "DELETE FROM changes WHERE n NOT IN
                            (SELECT n FROM changes ORDER BY n DESC LIMIT ?)"
-              *changes-kept*)
+              kept)
              (fset:with state :since-trim 0)))))
 
 (defun %rows (moved)
@@ -157,8 +164,8 @@ landed on rather than whenever the store reaches them."
                    (storablep old))
           :collect (list (p:text path) old new (ns:setting path :max))))
 
-(defun %write (state rows)
-  "STATE after ROWS have gone in."
+(defun %write (state rows kept)
+  "STATE after ROWS have gone in, keeping KEPT changes in the log."
   (let ((db (%db state)))
     (if (null db)
         state
@@ -173,15 +180,19 @@ landed on rather than whenever the store reaches them."
             (sqlite:execute-non-query
              db "INSERT INTO changes (path, old, new, at) VALUES (?, ?, ?, ?)"
              text (and old (%out old)) (and new (%out new)) (%now))
-            (setf state (%trim state)))))))
+            (setf state (%trim state kept)))))))
 
 (defun record (store moved)
-  "Put every held change in the file. The space tells this each commit."
+  "Put every held change in the file. The space tells this each commit.
+
+What to write and how much log to keep are both decided here, on the thread the
+write landed on, so the agent's own thread reads nothing but sqlite."
   (unless *restoring*
-    (let ((rows (%rows moved)))
+    (let ((rows (%rows moved))
+          (kept (%kept)))
       (when rows
         (sento.agent:agent-update (store-agent store)
-                                  (lambda (state) (%write state rows)))))))
+                                  (lambda (state) (%write state rows kept)))))))
 
 (defun restore (store)
   "Write every held path in the file back into the current space. A stored value
