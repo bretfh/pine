@@ -81,7 +81,11 @@ this layer is below any client, so it never guesses which one is current."
 (defun (setf var) (value name &optional buffer)
   (find-variable name)
   (if buffer
-      (sento.actor:tell buffer (list :set-var :key name :value value))
+      (pine.text.buffer:put buffer :vars
+                        (fset:with (or (pine.text.buffer:buffer-local
+                                        (pine.text.buffer:state-of buffer) :vars)
+                                       (fset:empty-map))
+                                   name value))
       (let ((v (find-variable name)))
         (setf (evar-global v) value (evar-global-set v) t)
         (when (evar-persist v)

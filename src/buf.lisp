@@ -1,7 +1,7 @@
 (defpackage #:pine.buf
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text.buffer))
-  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop))
+  (:export #:mount #:unmount #:state #:at #:names #:parser-of #:drop #:motion))
 
 (in-package #:pine.buf)
 (named-readtables:in-readtable pine.path:syntax)
@@ -98,10 +98,21 @@ edit that produced them. Overlays describe the text as it was, so they go."
             :bytes (pine.ts.index:string-bytes text)})))
 
 (defun %newline (name)
+  "Split the line at point, and ask for the new line's indent in the same
+transaction.
+
+The line lands now and the column follows when the parse says what it is, so a
+newline is never waiting on tree-sitter."
   (multiple-value-bind (line col) (%point name)
-    (%edit name
-           (lambda (s) (b:insert-newline s line col))
-           {:at line :old 1 :new 2 :bytes 1})))
+    (let* ((next (b:insert-newline (state name) line col))
+           (lines (b:lines next)))
+      (ns:write
+       (fset:with
+        (fset:with (fset:with (%landing name next) (at name :overlays) nil)
+                   (at name :edit)
+                   {:at line :old 1 :new 2 :bytes 1 :lines lines})
+        (at name :indent-request)
+        {:from (1+ line) :to (1+ line) :lines lines})))))
 
 (defun %backspace (name)
   (multiple-value-bind (line col) (%point name)
@@ -332,6 +343,20 @@ anything that has business with one asks."
     (when actor (sento.actor:tell actor '(:stop)))
     (sento.atomic:atomic-swap *parsers* (lambda (m) (fset:less m name)))
     actor))
+
+(defun motion (name kind)
+  "Ask NAME's parser for a structural target of KIND from where point is.
+
+It answers by writing /buf/?name/point, so nothing waits here and the jump
+lands the way any other move does."
+  (let ((actor (parser-of name)))
+    (when actor
+      (multiple-value-bind (line col) (%point name)
+        (sento.actor:tell actor
+                          (list :motion :name name :kind kind :line line :col col
+                                :lines (or (ns:read (at name :lines)) (fset:seq ""))
+                                :viewport (pine.text.buffer:band
+                                           (ns:read (at name :viewport)))))))))
 
 (defun %parse (name system runtime)
   "Tell NAME's parser the lines as they stand, over the range a window said it

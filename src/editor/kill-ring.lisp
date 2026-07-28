@@ -37,10 +37,9 @@
         (when snap
           ;; the mark is one place, so it is set in one write; two halves
           ;; landing separately is a mark that is briefly nowhere
-          (sento.actor:tell buf
-            (list :set-meta :key :mark
-                  :value (fset:seq (pine.text.buffer:point-line snap)
-                                   (pine.text.buffer:point-col snap))))
+          (pine.text.buffer:put buf :mark
+                                (fset:seq (pine.text.buffer:point-line snap)
+                                          (pine.text.buffer:point-col snap)))
           (pine.editor.echo:message "mark set"))))))
 
 ;;;; Kill commands
@@ -71,9 +70,8 @@
               (pine.text.buffer:edit buf (fset:seq :delete (fset:seq pl pc) (fset:seq pl len))))
             (when (< (1+ pl) (pine.text.buffer:line-count snap))
               (kill-ring-push (string #\Newline))
-              (sento.actor:tell buf
-                (list :delete-region :start-line pl :start-col pc
-                      :end-line (1+ pl) :end-col 0))))))))
+              (pine.text.buffer:edit buf (fset:seq :delete (fset:seq pl pc)
+                                                  (fset:seq (1+ pl) 0)))))))))
 
 (defun kill-words-cmd (n)
   "Kill N words forward (negative = backward): the region from point to where

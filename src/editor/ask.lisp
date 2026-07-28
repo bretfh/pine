@@ -8,11 +8,30 @@ modes and commands, so it can read the registries that hold them."))
 (in-package #:pine.editor.ask)
 
 (defun tell (target tag &rest plist)
-  "Send (tag . plist) to TARGET (coerced via BUFFER). Returns TARGET.
-Silently no-ops on nil target."
+  "Do TAG to TARGET's buffer. Returns the buffer, or nil when there is none.
+
+A local is a place, so setting one is a write; everything else is a verb on the
+buffer's text. Both have landed when this answers."
   (let ((buf (pine.editor.frame:buffer target)))
     (when buf
-      (sento.actor:tell buf (list* tag plist)))
+      (case tag
+        ((:set-local :set-meta)
+         (pine.text.buffer:put buf (getf plist :key) (getf plist :value)))
+        (:move-point
+         (pine.text.buffer:put-point buf (getf plist :line) (getf plist :col)))
+        (:insert (pine.text.buffer:edit buf (fset:seq :insert (getf plist :text))))
+        ((:newline :backspace :undo :redo) (pine.text.buffer:edit buf (fset:seq tag)))
+        (:delete-region
+         (pine.text.buffer:edit
+          buf (fset:seq :delete
+                        (fset:seq (getf plist :start-line) (getf plist :start-col))
+                        (fset:seq (getf plist :end-line) (getf plist :end-col)))))
+        (:replace-content
+         (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of buf) :text)
+                        (getf plist :content)))
+        ;; the verbs /buf does not serve yet -- indenting a region, projecting a
+        ;; layout -- are still the buffer's own
+        (t (sento.actor:tell buf (list* tag plist)))))
     buf))
 
 (defparameter +server-verbs+

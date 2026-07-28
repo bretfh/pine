@@ -120,10 +120,8 @@ left with one child, and dropping its backing window."
             (setf (pine.text.window:scroll-top w) new-scroll)
             (cond
               ((< pl new-scroll)
-               (sento.actor:tell buf (list :move-point :line new-scroll
-                 :col (min pc (length (fset:@ (pine.text.buffer:lines snap) new-scroll))))))
+               (pine.text.buffer:put-point buf new-scroll (min pc (length (fset:@ (pine.text.buffer:lines snap) new-scroll)))))
               ((>= pl (+ new-scroll h))
                (let ((target (+ new-scroll h -1)))
-                 (sento.actor:tell buf (list :move-point :line target
-                   :col (min pc (length (fset:@ (pine.text.buffer:lines snap) target))))))))
+                 (pine.text.buffer:put-point buf target (min pc (length (fset:@ (pine.text.buffer:lines snap) target)))))))
             (sento.actor:tell (pine.editor.frame:renderer client) '(:force-render))))))))

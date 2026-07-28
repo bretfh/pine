@@ -211,8 +211,8 @@ ignorant of windows."
                           (cons (min (car held) top) (max (cdr held) bottom))
                           (cons top bottom)))))))))
     (maphash (lambda (buffer range)
-               (sento.actor:tell buffer (list :set-viewport
-                                              :from (car range) :to (cdr range))))
+               (pine.text.buffer:put buffer :viewport
+                                     (fset:seq (car range) (cdr range))))
              ranges)))
 
 (defun arrange-editor-tree (client)

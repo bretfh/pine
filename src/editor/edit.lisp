@@ -137,17 +137,6 @@ itself, and by the parser's :indent-region answer."
       ;; string, computed from the buffer's own point.
       ;; the parser answers with :move-point, so a structural jump in a large
       ;; buffer waits on nothing here
-      (:ts-motion
-       (let ((link (pine.text.buffer:ensure-parser
-                    state pstate (pine.text.buffer:buffer-local state :name "")))
-             (snap (pine.text.buffer:state->snapshot state)))
-         (when link
-           (setf sento.actor:*state* (list state undo redo subs hl link))
-           (pine.text.buffer:request-parse
-            link state :verb :motion
-            :extra (list :kind (getf plist :kind)
-                         :line (pine.text.buffer:point-line snap)
-                         :col (pine.text.buffer:point-col snap))))))
       ;; the buffer's parser, so KILL-BUFFER can stop it with the buffer
       ;; Undo and redo swap whole states, so there is no edit to describe: the
       ;; parser rebuilds. It does that on its own thread like any other parse,

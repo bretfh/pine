@@ -32,23 +32,26 @@ command like beginning-of-line must see its input, not the window behind it."
   "Move point structurally via the buffer's persistent tree (no reparse). The
 buffer walks its own tree from its own point and moves; nothing blocks here."
   (let ((buf (cur-buffer)))
-    (when buf (sento.actor:tell buf (list :ts-motion :kind kind)))))
+    (when buf (pine.buf:motion (pine.text.buffer:name-of buf) kind))))
 
 (defun move-chars (n)
   "Move point N characters (negative = left) across line boundaries. The buffer
 computes the target from its own state, so this never blocks on a round-trip."
   (let ((buf (cur-buffer)))
-    (when buf (sento.actor:tell buf (list :move-by :unit :char :n n)))))
+    (when buf (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of buf) :point)
+                                  (fset:seq :move :char n)))))
 
 (defun move-lines (n)
   "Move point N lines (negative = up), keeping the column where possible."
   (let ((buf (cur-buffer)))
-    (when buf (sento.actor:tell buf (list :move-by :unit :line :n n)))))
+    (when buf (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of buf) :point)
+                                  (fset:seq :move :line n)))))
 
 (defun move-words (n)
   "Move point N words (negative = backward) across line boundaries."
   (let ((buf (cur-buffer)))
-    (when buf (sento.actor:tell buf (list :move-by :unit :word :n n)))))
+    (when buf (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of buf) :point)
+                                  (fset:seq :move :word n)))))
 
 (defun point->offset (snap)
   (let ((pl (pine.text.buffer:point-line snap))
