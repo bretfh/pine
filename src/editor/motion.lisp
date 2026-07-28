@@ -11,8 +11,9 @@
 this is the minibuffer's snapshot -- the minibuffer is the current buffer, so a
 command like beginning-of-line must see its input, not the window behind it."
   (let ((c (pine.editor.frame:current-client)))
-    (if (pine.editor.frame:prompt-active c)
-        (pine.editor.frame:minibuffer-snap c)
+    (declare (ignorable c))
+    (if (pine.editor.echo:prompt-active-p)
+        (pine.editor.echo:input-snap)
         (let ((w (pine.editor.frame:focused-window c)))
           (when w (pine.text.window:snap w))))))
 

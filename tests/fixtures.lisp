@@ -39,6 +39,7 @@ minibuffer. Returns the server."
     (pine.editor.overwrite:mount-mode)
     (pine.editor.repl:mount-mode)
     (pine.editor.view:install)
+    (pine.editor.minibuffer:mount)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
                     :runtime (pine.core.server:ts-runtime srv))
     (setf pine.state.world:*enabled* nil)
@@ -74,8 +75,7 @@ argument, the debugger sessions and the world gate."
       (pine.editor.minibuffer:minibuffer-abort)
       (setf (pine.cmd:said :pending) nil
             (pine.cmd:prefix) nil
-            (pine.cmd:said :reader) nil
-            (pine.editor.frame::prompt-callback c) nil)
+            (pine.cmd:said :reader) nil)
       (setf pine.editor.debugger:*debugger-sessions* nil
             pine.editor.debugger:*attended-session* nil
             pine.editor.target:*eval-target* :local

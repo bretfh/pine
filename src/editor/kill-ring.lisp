@@ -106,10 +106,8 @@ point-after-move :word lands, into the kill ring."
 (defun yank-pop-cmd ()
   "Replace what the last yank inserted with the next entry back in the ring.
 The ring does not move: which entry this is walks back through it."
-  (let ((client (pine.editor.frame:current-client)))
-    (when (and (member (pine.cmd:last) (list "yank" "yank-pop")
-                       :test #'equal)
-               *last-yank*)
+  (when (and (member (pine.cmd:last) (list "yank" "yank-pop") :test #'equal)
+             *last-yank*)
       (destructuring-bind (buf sl sc old-text back) *last-yank*
         (let ((new-text (or (kill-ring-entry (1+ back)) (kill-ring-entry 0))))
           (when new-text
@@ -118,7 +116,7 @@ The ring does not move: which entry this is walks back through it."
             (pine.text.buffer:edit buf (fset:seq :insert new-text))
             (setf *last-yank*
                   (list buf sl sc new-text
-                        (if (kill-ring-entry (1+ back)) (1+ back) 0)))))))))
+                        (if (kill-ring-entry (1+ back)) (1+ back) 0))))))))
 
 (defun copy-region-cmd ()
   (let* ((client (pine.editor.frame:current-client))

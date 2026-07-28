@@ -1,12 +1,44 @@
 (defpackage #:pine.editor.minibuffer
   (:use #:cl)
-  (:local-nicknames (#:world #:pine.state.world))
-  (:export #:cancel-prompt #:completing-read #:completing-read-active-p #:completion #:completion-next #:completion-prev #:completion-update-input #:ensure-minibuffer #:file-completion-active-p #:file-name-accept #:file-name-complete #:minibuffer-abort #:minibuffer-accept #:minibuffer-active-p #:minibuffer-changed #:minibuffer-complete #:minibuffer-history-next #:minibuffer-history-prev #:minibuffer-set-text #:minibuffer-text #:prompt #:read-file-name))
+  (:local-nicknames (#:world #:pine.state.world) (#:ns #:pine.ns))
+  (:export #:cancel-prompt #:completing-read #:completing-read-active-p
+           #:completion-next #:completion-prev #:completion-update-input
+           #:ensure-minibuffer #:file-completion-active-p #:file-name-accept
+           #:file-name-complete #:minibuffer-abort #:minibuffer-accept
+           #:minibuffer-active-p #:minibuffer-changed #:minibuffer-complete
+           #:minibuffer-history-next #:minibuffer-history-prev
+           #:minibuffer-set-text #:minibuffer-text #:prompt #:read-file-name
+           #:mount #:said #:popup-rows #:input-snap))
 
 (in-package #:pine.editor.minibuffer)
+(named-readtables:in-readtable pine.path:syntax)
 
-(defun completion ()
-  (pine.editor.frame:completion-state (pine.editor.frame:current-client)))
+;;;; The prompt is /echo: a map saying what to prompt with, what completes it,
+;;;; which history it feeds, and what to do when it is accepted. A command that
+;;;; prompts holds no callback and is re-entrant, because it wrote a place
+;;;; rather than parking a closure on a client.
+;;;;
+;;;; What the prompt and its completion UI say to each other -- the filtered
+;;;; candidates, which one is selected, the rendered popup, where the history
+;;;; cycle is -- is one side of a conversation, so it lives here.
+
+;;;; What the prompt says about itself
+
+(defun %prompt () (pine.editor.echo:prompt))
+
+(defun %complete ()
+  "What completes this prompt: a candidate list, :FILE, or nothing."
+  (let ((p (%prompt)))
+    (and p (fset:lookup p :complete))))
+
+(defun completing-read-active-p ()
+  (and (%complete) t))
+
+(defun file-completion-active-p ()
+  (eq :file (%complete)))
+
+(defun popup-rows () (pine.editor.echo:popup-rows))
+(defun input-snap () (pine.editor.echo:input-snap))
 
 (defun filter-candidates (input candidates)
   "Match and rank CANDIDATES against INPUT through the completion engine
@@ -14,83 +46,58 @@
 candidate OBJECTS; consumers read candidate-string / candidate-value."
   (pine.editor.completion:complete input candidates))
 
-(defun completing-read (prompt-text candidates cb &key history)
-  (let ((c (completion)))
-    (setf (pine.editor.frame:active-p c) t
-          (pine.editor.frame:candidates c) candidates
-          (pine.editor.frame:input c) ""
-          (pine.editor.frame:index c) (if candidates 0 -1)
-          (pine.editor.frame:callback c) cb
-          (pine.editor.frame:filtered c) (filter-candidates "" candidates)
-          (pine.editor.frame:prompt c) prompt-text)
-    (show-completions)
-    (setf (pine.editor.frame:prompt-history (pine.editor.frame:current-client)) history)
-    (activate-minibuffer (pine.editor.frame:current-client) prompt-text)))
+(defun said (key &optional default) (pine.editor.echo:said key default))
+(defun (setf said) (value key) (setf (pine.editor.echo:said key) value))
 
-(defun completion-cleanup ()
-  "Reset the completion state. The minibuffer buffer + focus are restored
-separately by DEACTIVATE-MINIBUFFER."
-  (let ((c (completion)))
-    (setf (pine.editor.frame:active-p c) nil
-          (pine.editor.frame:candidates c) nil
-          (pine.editor.frame:filtered c) nil
-          (pine.editor.frame:index c) -1
-          (pine.editor.frame:input c) ""
-          (pine.editor.frame:callback c) nil
-          (pine.editor.frame:dynamic-fn c) nil
-          (pine.editor.frame:popup-rows c) nil
-          (pine.editor.frame:popup-tree c) nil)))
+(defun %filtered () (said :filtered))
+(defun %index () (said :index -1))
+
+(defun completing-read (prompt-text candidates then &key history)
+  "Prompt with PROMPT-TEXT over CANDIDATES. THEN is what happens when it is
+accepted: a write-map, a command path, or a function of what was chosen."
+  (ns:write /echo (fset:map (:prompt prompt-text)
+                            (:complete candidates)
+                            (:history history)
+                            (:then then))))
 
 (defun completion-next ()
-  (let ((c (completion)))
-    (when (pine.editor.frame:filtered c)
-      (setf (pine.editor.frame:index c)
-            (min (1+ (pine.editor.frame:index c)) (1- (length (pine.editor.frame:filtered c)))))
-      (show-completions))))
+  (when (%filtered)
+    (setf (said :index) (min (1+ (%index)) (1- (length (%filtered)))))
+    (show-completions)))
 
 (defun completion-prev ()
-  (let ((c (completion)))
-    (when (pine.editor.frame:filtered c)
-      (setf (pine.editor.frame:index c) (max 0 (1- (pine.editor.frame:index c))))
-      (show-completions))))
+  (when (%filtered)
+    (setf (said :index) (max 0 (1- (%index))))
+    (show-completions)))
 
 (defun completion-update-input (text)
-  (let* ((c (completion))
-         (cands (if (pine.editor.frame:dynamic-fn c)
-                    (mapcar #'pine.editor.completion:to-candidate (funcall (pine.editor.frame:dynamic-fn c) text))
-                    (filter-candidates text (pine.editor.frame:candidates c)))))
-    (setf (pine.editor.frame:input c) text
-          (pine.editor.frame:filtered c) cands
-          (pine.editor.frame:index c) (if cands 0 -1))
+  (let ((cands (if (file-completion-active-p)
+                   (mapcar #'pine.editor.completion:to-candidate
+                           (file-name-completions text))
+                   (filter-candidates text (%complete)))))
+    (setf (said :input) text
+          (said :filtered) cands
+          (said :index) (if cands 0 -1))
     (show-completions)))
 
 (defun show-completions ()
   "Render the candidate popup: a visible window of the ranked set around the
-selection, as styled rows + the arranged tree, stashed on the completion state
-for render-chrome to blit above the echo row."
-  (let* ((c (completion))
-         (max-visible 12)
-         (filtered (pine.editor.frame:filtered c))
+selection, as styled rows + the arranged tree, for render-chrome to blit above
+the echo row."
+  (let* ((max-visible 12)
+         (filtered (%filtered))
          (n (length filtered))
-         (idx (max 0 (pine.editor.frame:index c)))
+         (idx (max 0 (%index)))
          (off (pine.ui.wire:scroll-to-selection idx 0 max-visible))
          (visible (subseq filtered (min off n) (min (+ off max-visible) n)))
          (cols (pine.text.window:frame-cols
                 (pine.editor.frame:frame (pine.editor.frame:current-client)))))
     (multiple-value-bind (rows tree)
-        (pine.ui.cells:render (pine.editor.completion:completion-popup visible) (max 10 cols)
-                            :selection (and visible (- idx off)))
-      (setf (pine.editor.frame:popup-rows c) rows
-            (pine.editor.frame:popup-tree c) tree))))
-
-(defun completing-read-active-p ()
-  (let ((c pine.editor.frame:*client*))
-    (and c (pine.editor.frame:active-p (pine.editor.frame:completion-state c)))))
-
-(defun file-completion-active-p ()
-  (and (completing-read-active-p)
-       (pine.editor.frame:dynamic-fn (completion))))
-
+        (pine.ui.cells:render (pine.editor.completion:completion-popup visible)
+                              (max 10 cols)
+                              :selection (and visible (- idx off)))
+      (setf (said :popup-rows) rows
+            (said :popup-tree) tree))))
 
 ;;;; Filesystem path completion (find-file)
 
@@ -146,35 +153,35 @@ cannot be read."
                            (pine.editor.ask:ask buf :state) :pathname nil)))))
     (if path (directory-namestring path) (namestring (uiop:getcwd)))))
 
-(defun read-file-name (prompt-text cb &key history)
-  (let ((c (completion)) (initial (default-directory)))
-    (setf (pine.editor.frame:active-p c) t
-          (pine.editor.frame:candidates c) nil
-          (pine.editor.frame:dynamic-fn c) #'file-name-completions
-          (pine.editor.frame:callback c) cb
-          (pine.editor.frame:prompt c) prompt-text)
-    (completion-update-input initial)
-    (setf (pine.editor.frame:prompt-history (pine.editor.frame:current-client)) history)
-    (activate-minibuffer (pine.editor.frame:current-client) prompt-text :initial initial)))
+
+(defun read-file-name (prompt-text then &key history)
+  (ns:write /echo (fset:map (:prompt prompt-text)
+                            (:complete :file)
+                            (:history history)
+                            (:initial (default-directory))
+                            (:then then))))
 
 (defun file-name-complete ()
   "Tab: extend the path by the entries' common prefix; a lone match completes
 fully (directories keep their trailing slash so the next Tab descends)."
-  (let ((cands (mapcar #'pine.editor.completion:candidate-string (pine.editor.frame:filtered (completion)))))
-    (multiple-value-bind (dir base) (split-path (expand-tilde (pine.editor.frame:input (completion))))
+  (let ((cands (mapcar #'pine.editor.completion:candidate-string (%filtered))))
+    (multiple-value-bind (dir base) (split-path (expand-tilde (said :input "")))
       (declare (ignore base))
       (when cands
         (let ((add (if (= 1 (length cands)) (first cands) (longest-common-prefix cands))))
           (minibuffer-set-text (concatenate 'string dir add)))))))
 
+(defun %selected ()
+  "The candidate string the selection names, or NIL."
+  (let ((i (%index)) (f (%filtered)))
+    (when (and (>= i 0) (< i (length f)))
+      (pine.editor.completion:candidate-string (nth i f)))))
+
 (defun file-name-accept ()
   "Return: a highlighted entry (when the typed path is not itself a file) is
 taken; a directory is descended into, a file is opened."
-  (let* ((c (completion))
-         (typed (expand-tilde (pine.editor.frame:input c)))
-         (sel (let ((i (pine.editor.frame:index c)) (f (pine.editor.frame:filtered c)))
-                (when (and (>= i 0) (< i (length f)))
-                  (pine.editor.completion:candidate-string (nth i f)))))
+  (let* ((typed (expand-tilde (said :input "")))
+         (sel (%selected))
          (target (multiple-value-bind (dir base) (split-path typed)
                    (declare (ignore base))
                    (if (and sel (not (uiop:file-exists-p typed))
@@ -186,12 +193,7 @@ taken; a directory is descended into, a file is opened."
                                       (char= (char target (1- (length target))) #\/))
                                  target
                                  (concatenate 'string target "/")))
-        (let ((cb (pine.editor.frame:callback c)))
-          (%push-prompt-history (pine.editor.frame:current-client) target)
-          (completion-cleanup)
-          (deactivate-minibuffer (pine.editor.frame:current-client))
-          (when cb (%safe-call cb target))))))
-
+        (%finish target))))
 
 ;;;; The minibuffer as a real buffer. While a prompt is active, *minibuffer* is
 ;;;; the current buffer, so every editing command -- motion, kill, yank, word
@@ -234,15 +236,6 @@ beside the old session's."
               (pine.editor.frame:minibuffer-controller client) ctrl)
         buf)))
 
-(defun minibuffer-active-p ()
-  (let ((c (pine.editor.frame:current-client)))
-    (and c (pine.editor.frame:prompt-active c))))
-
-(defun %snap-line0 (snap)
-  (if (and snap (plusp (pine.text.buffer:line-count snap)))
-      (fset:@ (pine.text.buffer:lines snap) 0)
-      ""))
-
 (defun minibuffer-text ()
   "The current input, read synchronously from the buffer (accept path)."
   (let* ((c (pine.editor.frame:current-client))
@@ -258,155 +251,150 @@ and file-name descent."
       (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of mb) :text) text)
       (pine.text.buffer:put-point mb 0 (length text)))))
 
+
 (defun minibuffer-changed (client snap)
-  "Controller callback: on each input edit, cache the snapshot, re-filter the
-candidate list, and repaint."
-  (setf (pine.editor.frame:minibuffer-snap client) snap)
-  (when (pine.editor.frame:prompt-active client)
+  "The input moved: cache the snapshot, re-filter, repaint."
+  (setf (said :snap) snap)
+  (when (pine.editor.echo:prompt-active-p)
     (when (completing-read-active-p)
       (completion-update-input (%snap-line0 snap)))
     (let ((r (pine.editor.frame:renderer client)))
       (when r (sento.actor:tell r '(:force-render))))))
 
-(defun activate-minibuffer (client prompt-text &key (initial ""))
-  "Enter the minibuffer: make it the current buffer, enable minibuffer-mode, set
-the initial input. The previous buffer is saved for restore. A prompt fired
-while one is already active REPLACES it: the original saved-buffer is kept --
-saving the minibuffer as its own return target would make the next accept/abort
-\"restore\" current-buffer to the hidden minibuffer, where every keystroke then
-vanishes (the frozen-buffer wedge)."
-  (let ((mb (ensure-minibuffer client)))
-    ;; current-buffer must be the minibuffer BEFORE enabling minibuffer-mode:
-    ;; minor-mode enablement is keyed on the current buffer.
-    (unless (pine.editor.frame:prompt-active client)
-      (setf (pine.editor.frame:saved-buffer client) (pine.editor.frame:current-buffer client)))
-    (setf (pine.editor.frame:current-buffer client) mb
-          (pine.editor.frame:prompt-active client) t)
+;;;; Opening and closing, off the path. Writing a prompt map to /echo opens it
+;;;; and writing nothing closes it, so a config, a command and another image
+;;;; all prompt the same way.
+
+(defun %open (client)
+  (let* ((p (%prompt))
+         (initial (or (fset:lookup p :initial) ""))
+         (mb (ensure-minibuffer client)))
+    ;; current-buffer must be the minibuffer BEFORE the minor mode goes on:
+    ;; which minor modes are on is keyed on the buffer that is current. A
+    ;; prompt opened over a prompt keeps the first one's return buffer, or the
+    ;; next accept would "restore" to the hidden minibuffer.
+    (unless (said :back)
+      (setf (said :back) (pine.editor.frame:current-buffer client)))
+    (setf (pine.editor.frame:current-buffer client) mb)
     (pine.editor.frame:set-buffer-mode mb :text)
     (ignore-errors (pine.editor.frame:enable-minor-mode client :minibuffer))
-    (pine.editor.echo:show-prompt prompt-text)
-    (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of mb) :text) initial)
+    (pine.editor.echo:message "")
+    (ns:write (pine.text.buffer:at (pine.text.buffer:name-of mb) :text) initial)
     (pine.text.buffer:put-point mb 0 (length initial))
+    (when (completing-read-active-p) (completion-update-input initial))
     mb))
 
-(defun deactivate-minibuffer (client)
-  "Leave the minibuffer: restore the previous buffer and clear the prompt. Never
-restore to the minibuffer itself -- fall back to the focused window's buffer."
+(defun %close (client)
+  "Leave the minibuffer: back to the buffer that was current. Never back to the
+minibuffer itself -- fall back to the focused window's buffer."
   (ignore-errors (pine.editor.frame:disable-minor-mode client :minibuffer))
   (let* ((mb (pine.editor.frame:minibuffer-buffer client))
-         (back (pine.editor.frame:saved-buffer client)))
+         (back (said :back)))
     (when (or (null back) (eq back mb))
       (let ((w (pine.editor.frame:focused-window client)))
         (setf back (and w (pine.text.window:buffer-ref w)))))
-    (setf (pine.editor.frame:current-buffer client) back
-          (pine.editor.frame:saved-buffer client) nil
-          (pine.editor.frame:prompt-active client) nil
-          (pine.editor.frame:minibuffer-snap client) nil
-          (pine.editor.frame:prompt-history client) nil
-          (pine.editor.frame:prompt-history-pos client) nil
-          (pine.editor.frame:prompt-history-items client) nil))
-  (pine.editor.echo:hide-prompt)
+    (pine.editor.echo:forget)
+    (setf (pine.editor.frame:current-buffer client) back))
   (let ((r (pine.editor.frame:renderer client)))
     (when r (sento.actor:tell r '(:force-render)))))
 
-(defun %safe-call (fn arg)
-  (when fn
-    (handler-case (funcall fn arg)
-      (error (e) (pine.editor.echo:message (format nil "error: ~a" e))))))
+(defun mount ()
+  "Open and close the minibuffer as /echo says. The prompt is the place; this
+is what watches it."
+  (ns:watch /echo
+            (pine.data:fn [v]
+              (declare (ignore v))
+              (when (and (fset:equal? (ns:here) /echo) pine.editor.frame:*client*)
+                (if (pine.editor.echo:prompt-active-p)
+                    (%open pine.editor.frame:*client*)
+                    (%close pine.editor.frame:*client*)))
+              {})
+            :as :echo))
+
+(defun minibuffer-active-p ()
+  (pine.editor.echo:prompt-active-p))
+
+(defun %snap-line0 (snap)
+  (if (and snap (plusp (pine.text.buffer:line-count snap)))
+      (fset:@ (pine.text.buffer:lines snap) 0)
+      ""))
 
 ;;;; Prompt history. A prompt opened with :history NAME reads and feeds the
-;;;; store list NAME: accept pushes the input, M-p / M-n cycle it (the cycle
-;;;; position and fetched items live on the client for the prompt's duration).
+;;;; store list NAME: accept pushes the input, M-p / M-n cycle it.
 
-(defun %push-prompt-history (client input)
-  (let ((h (pine.editor.frame:prompt-history client)))
+(defun %history ()
+  (let ((p (%prompt)))
+    (and p (fset:lookup p :history))))
+
+(defun %push-history (input)
+  (let ((h (%history)))
     (when (and h (stringp input) (plusp (length input)))
       (world:push h input :max 200))))
 
 (defun minibuffer-history-prev ()
   "M-p: replace the input with the previous (older) history entry."
-  (let* ((client (pine.editor.frame:current-client))
-         (h (pine.editor.frame:prompt-history client)))
+  (let ((h (%history)))
     (when h
-      (unless (pine.editor.frame:prompt-history-items client)
-        (setf (pine.editor.frame:prompt-history-items client)
-              (world:items h :limit 200)))
-      (let* ((items (pine.editor.frame:prompt-history-items client))
-             (pos (pine.editor.frame:prompt-history-pos client))
+      (unless (said :history-items)
+        (setf (said :history-items) (world:items h :limit 200)))
+      (let* ((items (said :history-items))
+             (pos (said :history-pos))
              (next (if pos (1+ pos) 0)))
         (when (< next (length items))
-          (setf (pine.editor.frame:prompt-history-pos client) next)
+          (setf (said :history-pos) next)
           (minibuffer-set-text (nth next items)))))))
 
 (defun minibuffer-history-next ()
   "M-n: replace the input with the next (newer) entry; past the newest, an
 empty input leaves cycling."
-  (let* ((client (pine.editor.frame:current-client))
-         (items (pine.editor.frame:prompt-history-items client))
-         (pos (pine.editor.frame:prompt-history-pos client)))
+  (let ((items (said :history-items))
+        (pos (said :history-pos)))
     (when (and items pos)
       (if (plusp pos)
-          (progn
-            (setf (pine.editor.frame:prompt-history-pos client) (1- pos))
-            (minibuffer-set-text (nth (1- pos) items)))
-          (progn
-            (setf (pine.editor.frame:prompt-history-pos client) nil)
-            (minibuffer-set-text ""))))))
+          (progn (setf (said :history-pos) (1- pos))
+                 (minibuffer-set-text (nth (1- pos) items)))
+          (progn (setf (said :history-pos) nil)
+                 (minibuffer-set-text ""))))))
 
-;;;; Accept / abort / complete / candidate motion -- the minibuffer-mode command
-;;;; bodies (the defcmd wrappers live in editor.lisp).
+;;;; Accept, abort, complete
+
+(defun %finish (result)
+  "Take RESULT as the answer: it lands at /echo/result, the prompt's :then is
+done, and the prompt goes. The result is written first, so a :then that reads
+${(read /echo/result)} sees it."
+  (let ((then (let ((p (%prompt))) (and p (fset:lookup p :then)))))
+    (%push-history result)
+    (ns:write /echo/result result)
+    (ns:write /echo nil)
+    (handler-case (cond ((null then) nil)
+                        ((functionp then) (funcall then result))
+                        (t (pine.cmd:run then)))
+      (error (e) (pine.editor.echo:message (format nil "error: ~a" e))))))
 
 (defun minibuffer-accept ()
-  (let* ((client (pine.editor.frame:current-client))
-         (text (minibuffer-text)))
-    (cond
-      ((file-completion-active-p) (file-name-accept))
-      ((completing-read-active-p)
-       (let* ((c (completion))
-              (result (if (and (>= (pine.editor.frame:index c) 0)
-                               (< (pine.editor.frame:index c) (length (pine.editor.frame:filtered c))))
-                          (pine.editor.completion:candidate-string (nth (pine.editor.frame:index c)
-                                                 (pine.editor.frame:filtered c)))
-                          text))
-              (cb (pine.editor.frame:callback c)))
-         (%push-prompt-history client result)
-         (completion-cleanup)
-         (deactivate-minibuffer client)
-         (%safe-call cb result)))
-      ((pine.editor.frame:prompt-callback client)
-       (let ((cb (pine.editor.frame:prompt-callback client)))
-         (setf (pine.editor.frame:prompt-callback client) nil)
-         (%push-prompt-history client text)
-         (deactivate-minibuffer client)
-         (%safe-call cb text)))
-      (t (deactivate-minibuffer client)))))
+  (cond
+    ((file-completion-active-p) (file-name-accept))
+    ((completing-read-active-p) (%finish (or (%selected) (minibuffer-text))))
+    ((%prompt) (%finish (minibuffer-text)))
+    (t (ns:write /echo nil))))
 
 (defun minibuffer-abort ()
-  (let ((client (pine.editor.frame:current-client)))
-    (when (completing-read-active-p) (completion-cleanup))
-    (setf (pine.editor.frame:prompt-callback client) nil)
-    (deactivate-minibuffer client)
+  (when (%prompt)
+    (ns:write /echo nil)
     (pine.editor.echo:message "quit")))
 
 (defun minibuffer-complete ()
   (cond ((file-completion-active-p) (file-name-complete))
         ((completing-read-active-p)
-         ;; insert the selected candidate as the input
-         (let* ((c (completion))
-                (i (pine.editor.frame:index c))
-                (f (pine.editor.frame:filtered c)))
-           (when (and (>= i 0) (< i (length f)))
-             (minibuffer-set-text (pine.editor.completion:candidate-string (nth i f))))))))
+         (let ((sel (%selected)))
+           (when sel (minibuffer-set-text sel))))))
 
+;;;; A prompt with no completion: eval-expression, new-buffer.
 
-;;;; Raw-text prompt (no completion): eval-expression, new-buffer. It activates
-;;;; the minibuffer with a callback; Return -> minibuffer-accept fires it.
-
-(defun prompt (prompt-text cb &key history)
-  (let ((client (pine.editor.frame:current-client)))
-    (setf (pine.editor.frame:prompt-callback client) cb
-          (pine.editor.frame:prompt-history client) history)
-    (activate-minibuffer client prompt-text)))
+(defun prompt (prompt-text then &key history)
+  (ns:write /echo (fset:map (:prompt prompt-text)
+                            (:history history)
+                            (:then then))))
 
 (defun cancel-prompt ()
   (minibuffer-abort))

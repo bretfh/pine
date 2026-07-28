@@ -3,7 +3,6 @@
   (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:client
-   #:completion
    #:actor
    #:renderer
    #:paint-sink
@@ -18,28 +17,12 @@
    #:arrangement
    #:focused-window
    #:mode-stack
-   #:completion-state
    #:current-buffer
    #:server-of
    #:terminals
    #:terminal-map
    #:terminal-wake
-   #:prompt-callback
-   #:prompt-active
-   #:prompt-history
-   #:prompt-history-pos
-   #:prompt-history-items
-   #:minibuffer-buffer #:saved-buffer #:minibuffer-snap #:minibuffer-controller
-   #:active-p
-   #:candidates
-   #:filtered
-   #:index
-   #:input
-   #:callback
-   #:prompt
-   #:dynamic-fn
-   #:popup-rows
-   #:popup-tree
+   #:minibuffer-buffer #:minibuffer-controller
    #:*client*
    #:current-client
    #:buffer-in-scope
@@ -55,23 +38,6 @@
    #:stop-client))
 
 (in-package #:pine.editor.frame)
-
-(defclass completion ()
-  ((active-p   :initarg :active-p   :accessor active-p   :initform nil)
-   (candidates :initarg :candidates :accessor candidates :initform nil)
-   (filtered   :initarg :filtered   :accessor filtered   :initform nil)
-   (index      :initarg :index      :accessor index      :initform -1)
-   (input      :initarg :input      :accessor input      :initform "")
-   (callback   :initarg :callback   :accessor callback   :initform nil)
-   (prompt     :initarg :prompt     :accessor prompt     :initform "")
-   ;; when set, a function of the current input returning fresh candidates
-   ;; (filesystem path completion), instead of filtering a fixed list.
-   (dynamic-fn :initarg :dynamic-fn :accessor dynamic-fn :initform nil)
-   ;; the candidate list rendered to styled rows + its arranged tree
-   ;; (render output); render-chrome blits the rows above the
-   ;; echo row while the prompt is active.
-   (popup-rows :initarg :popup-rows :accessor popup-rows :initform nil)
-   (popup-tree :initarg :popup-tree :accessor popup-tree :initform nil)))
 
 (defclass client ()
   ((server-of       :initarg :server-of       :accessor server-of       :initform nil)
@@ -97,26 +63,13 @@
    (arrangement     :initarg :arrangement     :accessor arrangement     :initform nil)
    (focused-window  :initarg :focused-window  :accessor focused-window  :initform nil)
    (mode-stack      :initarg :mode-stack      :accessor mode-stack      :initform nil)
-   (completion-state
-     :initarg :completion-state :accessor completion-state
-     :initform (make-instance 'completion))
    (terminals       :initarg :terminals       :accessor terminals       :initform nil)
    (terminal-map    :initarg :terminal-map    :accessor terminal-map    :initform nil)
    (terminal-wake   :accessor terminal-wake   :initform (sb-thread:make-semaphore))
-   (prompt-callback :initarg :prompt-callback :accessor prompt-callback :initform nil)
-   (prompt-active   :initarg :prompt-active   :accessor prompt-active   :initform nil)
-   ;; the active prompt's history: the store list it reads/pushes, the cycle
-   ;; position (nil = not cycling, 0 = newest), and the items fetched once at
-   ;; the first M-p.
-   (prompt-history  :accessor prompt-history  :initform nil)
-   (prompt-history-pos :accessor prompt-history-pos :initform nil)
-   (prompt-history-items :accessor prompt-history-items :initform nil)
-   ;; the minibuffer as a real buffer: the input buffer, the buffer that was
-   ;; current before the prompt (restored on exit), its latest snapshot (for the
-   ;; renderer), and the controller that re-filters + repaints on each edit.
+   ;; the minibuffer as a real buffer: what a prompt is typed into, and the
+   ;; controller that re-filters and repaints on each edit. The prompt itself
+   ;; is /echo.
    (minibuffer-buffer     :accessor minibuffer-buffer     :initform nil)
-   (saved-buffer          :accessor saved-buffer          :initform nil)
-   (minibuffer-snap       :accessor minibuffer-snap       :initform nil)
    (minibuffer-controller :accessor minibuffer-controller :initform nil)))
 
 (defvar *client* nil)

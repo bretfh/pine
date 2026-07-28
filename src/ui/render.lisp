@@ -412,8 +412,8 @@ above the echo/minibuffer line. Returns (values rows crow ccol) with the
 minibuffer caret within the block, or -1 -1 when no prompt is active."
   (let* ((prompt (pine.editor.echo:prompt-text))
          (prows (and (pine.editor.echo:prompt-active-p)
-                     (pine.editor.frame:popup-rows (pine.editor.frame:completion-state client))))
-         (mb-snap (and prompt (pine.editor.frame:minibuffer-snap client)))
+                     (pine.editor.echo:popup-rows)))
+         (mb-snap (and prompt (pine.editor.echo:input-snap)))
          (input (if (and mb-snap (plusp (pine.text.buffer:line-count mb-snap)))
                     (fset:@ (pine.text.buffer:lines mb-snap) 0)
                     ""))

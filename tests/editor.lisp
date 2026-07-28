@@ -28,8 +28,7 @@
       (sleep 0.15)
       (is (equal '("forward-word")
                  (mapcar #'pine.editor.completion:candidate-string
-                         (pine.editor.frame::filtered
-                          (pine.editor.minibuffer:completion)))))
+                         (pine.editor.echo:said :filtered))))
       (press "Return")
       (sleep 0.15)
       (is (string= "forward-word" chosen))
@@ -40,7 +39,7 @@
   (with-fixture substrate ()
     (pine.editor.minibuffer:completing-read "M-x " '("aaa" "bbb") (lambda (r) r))
     (sleep 0.15)
-    (let ((rows (pine.editor.frame::popup-rows (pine.editor.minibuffer:completion))))
+    (let ((rows (pine.editor.echo:popup-rows)))
       (is (not (null rows)))
       (is (search "aaa" (car (first rows))))
       (is (equal (multiple-value-list
@@ -55,7 +54,7 @@
       (sleep 0.1)
       (pine.editor.minibuffer:completing-read "M-x " '("three") (lambda (r) r))
       (sleep 0.1)
-      (is (eq file-buf (pine.editor.frame::saved-buffer *client*)))
+      (is (eq file-buf (pine.editor.echo:said :back)))
       (pine.editor.minibuffer:minibuffer-abort)
       (sleep 0.1)
       (is (eq file-buf (pine.editor.frame::current-buffer *client*)))
@@ -75,8 +74,7 @@
       (is (eq :none chosen))
       (is (not (eq (pine.editor.frame::current-buffer *client*)
                    (pine.editor.frame::minibuffer-buffer *client*))))
-      (is (null (pine.editor.frame::popup-rows
-                 (pine.editor.minibuffer:completion)))))))
+      (is (null (pine.editor.echo:popup-rows))))))
 
 (test a-failing-edit-surfaces-with-a-retry-and-the-buffer-survives
   (with-fixture substrate ()
