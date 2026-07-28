@@ -238,7 +238,14 @@ or nil when tree-sitter reports no changed ranges."
 
 (defclass ts-runtime ()
   ((libs-loaded :accessor libs-loaded :initform nil)
-   (languages   :accessor languages   :initform (make-hash-table :test 'eq))))
+   (languages   :accessor languages   :initform (make-hash-table :test 'eq))
+   ;; every buffer that names a language reaches for it from its own thread, so
+   ;; the load and the table it lands in are held one at a time
+   (lock        :reader   runtime-lock
+                :initform (bordeaux-threads:make-recursive-lock "pine-ts"))
+   ;; a language whose grammar is not here, so it is said once rather than on
+   ;; every buffer that asks
+   (missing     :accessor missing     :initform (make-hash-table :test 'eq))))
 
 (defclass ts-entry ()
   ((parser       :initarg :parser       :accessor entry-parser)
@@ -294,12 +301,27 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
           (make-instance 'ts-entry :parser parser :language-ptr lang))))))
 
 (defun ensure-language (runtime language)
-  "Return LANGUAGE's ts-entry, loading it once, or nil if unsupported."
-  (unless (libs-loaded runtime) (ensure-ts runtime))
-  (unless (libs-loaded runtime) (return-from ensure-language nil))
-  (or (gethash language (languages runtime))
-      (let ((entry (load-language-entry language)))
-        (when entry (setf (gethash language (languages runtime)) entry)))))
+  "LANGUAGE's ts-entry, loaded once, or NIL when its grammar is not here.
+
+Serialised, because several buffers reach for the same grammar on their own
+threads and neither the load nor the table is safe to share otherwise. A
+grammar that cannot be loaded is said once: silence here is a buffer that
+never gets a colour and never says why."
+  (bordeaux-threads:with-recursive-lock-held ((runtime-lock runtime))
+    (unless (libs-loaded runtime) (ensure-ts runtime))
+    (when (libs-loaded runtime)
+      (or (gethash language (languages runtime))
+          (let ((entry (load-language-entry language)))
+            (cond (entry (setf (gethash language (languages runtime)) entry))
+                  ((gethash language (missing runtime)) nil)
+                  (t (setf (gethash language (missing runtime)) t)
+                     (pine.err:report-failure
+                      (make-condition
+                       'simple-error
+                       :format-control "no ~(~a~) grammar could be loaded"
+                       :format-arguments (list language))
+                      "loading a grammar")
+                     nil)))))))
 
 
 

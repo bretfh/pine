@@ -258,7 +258,20 @@ typing stays a cons."
             (build-index lines)
             (progn (setf (byte-index-lines index) lines
                          (byte-index-pending index) pending)
+                   ;; the memoised line text describes the lines this index
+                   ;; described a moment ago, and one of them just changed. A
+                   ;; walk that only asks about the edited line would otherwise
+                   ;; count its columns against the text it used to have.
+                   (forget-line index)
                    index)))))
+
+(defun forget-line (index)
+  "Drop the memoised line, so the next question about one reads it afresh."
+  (setf (byte-index-memo-line index) -1
+        (byte-index-memo-text index) ""
+        (byte-index-memo-offset index) 0
+        (byte-index-memo-col index) 0)
+  index)
 
 (defun compact-index (index)
   "Rebuild INDEX's base from the lines it now describes."

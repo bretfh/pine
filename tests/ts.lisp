@@ -329,3 +329,38 @@ fraction of what the full walk does."
                (is (eq tree (pine.ts.runtime:ps-tree ps))
                    "the same lines at the same viewport should keep the tree")))
         (pine.ts.runtime:free-parse-state ps)))))
+
+(test an-edit-to-a-line-forgets-the-text-that-line-used-to-have
+  "The index memoises the last line asked about. An edit carried as a pending
+shift changes that line's text in place, and a walk restricted to it -- which is
+exactly what the incremental window does -- would otherwise count columns
+against the text it used to have. The last span on the line collapses to zero
+width and is never emitted."
+  (let* ((rt (pine.ts.runtime:make-ts-runtime))
+         (before (fset:seq "(g 1)z(defun f (x)  (+ x 1))" "(f 2)"))
+         (after (fset:seq "(g 1)z(defun f (x)  (+ x 1))" "z(f 2)"))
+         (viewport '(0 . 200))
+         (ps (progn (pine.ts.runtime:ensure-ts rt)
+                    (pine.ts.runtime:make-parse-state rt :commonlisp)))
+         (fresh-ps (pine.ts.runtime:make-parse-state rt :commonlisp)))
+    (when (and ps fresh-ps)
+      (unwind-protect
+           (progn
+             (pine.ts.runtime:parse-lines! ps before :viewport viewport)
+             (pine.ts.highlight:parse-highlights ps :from-line 0 :to-line 200)
+             ;; one character at the head of the second line
+             (pine.ts.runtime:parse-lines! ps after :edit (list 1 1 1 1)
+                                                    :viewport viewport)
+             (pine.ts.runtime:parse-lines! fresh-ps after :viewport viewport)
+             (let ((incremental (pine.ts.highlight:parse-highlights
+                                 ps :from-line 0 :to-line 200))
+                   (whole (pine.ts.highlight:parse-highlights
+                           fresh-ps :from-line 0 :to-line 200)))
+               (is (null (set-difference whole incremental :test #'equal))
+                   "the incremental walk lost ~s"
+                   (set-difference whole incremental :test #'equal))
+               (is (null (set-difference incremental whole :test #'equal))
+                   "the incremental walk invented ~s"
+                   (set-difference incremental whole :test #'equal))))
+        (pine.ts.runtime:free-parse-state ps)
+        (pine.ts.runtime:free-parse-state fresh-ps)))))
