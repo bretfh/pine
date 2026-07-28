@@ -59,7 +59,7 @@ at or after FROM; backward the last match ending at or before FROM."
 (defun %isearch-goto (line col)
   (let ((buf (pine.editor.frame:current-buffer (pine.editor.frame:current-client))))
     (when buf
-      (sento.actor:tell buf (list :move-point :line line :col col)))))
+      (pine.text.buffer:put-point buf line col))))
 
 (defun %isearch-echo (st &optional failing)
   (pine.editor.echo:message

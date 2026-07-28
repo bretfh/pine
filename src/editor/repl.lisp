@@ -34,10 +34,10 @@ from then on, so a second repl or an agent's can prompt differently.")
   "Open the repl buffer with a prompt on its last line, and answer it."
   (let ((buf (pine.editor.frame:make-buffer +buffer-name+ :content +prompt+)))
     (pine.editor.frame:set-buffer-mode buf :repl-mode)
-    (sento.actor:tell buf (list :set-meta :key :prompt :value +prompt+))
+    (pine.text.buffer:put buf :prompt +prompt+)
     (let* ((snap (pine.text.buffer:snapshot-of buf))
            (line (pine.text.buffer:line-count snap)))
-      (sento.actor:tell buf (list :move-point :line (1- line) :col (length +prompt+))))
+      (pine.text.buffer:put-point buf (1- line) (length +prompt+)))
     buf))
 
 (defun prompt-of (state)

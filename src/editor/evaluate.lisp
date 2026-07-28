@@ -62,7 +62,7 @@
              (let ((ntext (pine.text.buffer:state->string
                            (pine.text.buffer:state-of nbuf))))
                (multiple-value-bind (l c) (%offset->lc ntext coff)
-                 (sento.actor:tell nbuf (list :move-point :line l :col c)))))))
+                 (pine.text.buffer:put-point nbuf l c))))))
        (pine.editor.echo:message (format nil "~a" (file-namestring path))))
       (t (pine.editor.echo:message (format nil "no source for ~a" label))))))
 

@@ -247,7 +247,7 @@ and file-name descent."
          (mb (pine.editor.frame:minibuffer-buffer c)))
     (when mb
       (sento.actor:tell mb (list :replace-content :content text))
-      (sento.actor:tell mb (list :move-point :line 0 :col (length text))))))
+      (pine.text.buffer:put-point mb 0 (length text)))))
 
 (defun minibuffer-changed (client snap)
   "Controller callback: on each input edit, cache the snapshot, re-filter the
@@ -277,7 +277,7 @@ vanishes (the frozen-buffer wedge)."
     (ignore-errors (pine.editor.frame:enable-minor-mode client :minibuffer-mode))
     (pine.editor.echo:show-prompt prompt-text)
     (sento.actor:tell mb (list :replace-content :content initial))
-    (sento.actor:tell mb (list :move-point :line 0 :col (length initial)))
+    (pine.text.buffer:put-point mb 0 (length initial))
     mb))
 
 (defun deactivate-minibuffer (client)
