@@ -19,18 +19,42 @@
 ;;;; A directory and a map are the same thing seen from two sides: every
 ;;;; non-map at a path is a leaf, and a map is the children under it.
 
-(defstruct (space (:constructor fresh ()) (:copier nil))
+;;;; The whole namespace is one value, and it lives in an atomic reference.
+;;;;
+;;;; Reading is a slot read: no message, no wait, safe from inside an actor's
+;;;; receive, because what comes back is an immutable fset structure -- a whole
+;;;; consistent tree, never a torn one. Writing is a compare-and-swap over a
+;;;; pure function of the old space to the new one, so the read, the verb and
+;;;; the write are one step rather than three that can be interleaved.
+;;;;
+;;;; The function handed to a swap may be run again against a space another
+;;;; thread committed in the meantime. Nothing inside one may do IO: a
+;;;; provider's write, the store's write-through and every watch run outside.
+
+(defstruct (space (:constructor %space) (:copier copy-space))
   (root (fset:empty-map))
   (mounts nil)                        ; (path . backing), newest first
   (reactions (fset:empty-map))        ; path -> reaction
   (watches nil)                       ; (name pattern function)
   (settings (fset:empty-map))         ; path -> the write options that outlive it
-  (lock (bordeaux-threads:make-recursive-lock "pine-ns")))
+  (moved nil))                        ; what the swap that made this space did
+
+(defun fresh ()
+  "A namespace of its own."
+  (sento.atomic:make-atomic-reference :value (%space)))
 
 (defvar *space* (fresh)
   "The namespace this image serves. One per image, and every thread sees the
 same one: a buffer's actor, an evaluation's own thread and a provider's poll
 are all looking at the tree the daemon is serving.")
+
+(defun current ()
+  "The namespace as it stands. One slot read."
+  (sento.atomic:atomic-get *space*))
+
+(defun %swap (fn)
+  "Replace the space with FN's answer, retrying until it lands. FN is pure."
+  (sento.atomic:atomic-swap *space* fn))
 
 (defmacro with-space ((&optional (space '(fresh))) &body body)
   "Run BODY against SPACE, so a test or a tool can hold one of its own.
@@ -212,7 +236,7 @@ the segment it matched. HERE answers the path being served."
     (and n (= used (length text)) n)))
 
 (defun %read-one (path &optional default)
-  (let ((space *space*))
+  (let ((space (current)))
     (when *reads* (push path (cdr *reads*)))
     (multiple-value-bind (value served) (%served-read space path)
       (cond
@@ -276,7 +300,7 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
 
 (defun %matches (pattern)
   "Every path that exists now and matches PATTERN."
-  (let ((space *space*)
+  (let ((space (current))
         (found nil))
     (labels ((walk (prefix depth)
                (when (< depth 64)
@@ -341,7 +365,7 @@ not something anyone should have to remember to ask for.")
 :LIVE   a provider reads it; the world it came from is the storage
 :DERIVED an expression computed it from other paths, so it is computed again
 :HELD   someone wrote it, and nothing else determines it"
-  (let ((space *space*))
+  (let ((space (current)))
     (cond ((%servedp space path) :live)
           ((let ((r (fset:lookup (space-reactions space) path)))
              (and r (not (fset:empty? (reaction-deps r)))))
@@ -350,33 +374,39 @@ not something anyone should have to remember to ask for.")
 
 (defun setting (path key &optional default)
   "The write option KEY that PATH was given, or DEFAULT."
-  (let ((options (fset:lookup (space-settings *space*) path)))
+  (let ((options (fset:lookup (space-settings (current)) path)))
     (if (and options (fset:domain-contains? options key))
         (fset:lookup options key)
         default)))
 
+(defun %settings-with (settings path key value)
+  "SETTINGS with PATH's option KEY set. Pure."
+  (fset:with settings path
+             (fset:with (or (fset:lookup settings path) (fset:empty-map))
+                        key value)))
+
+(defun %remembering (space path options)
+  "SPACE with the write options from OPTIONS that outlive the write. Pure."
+  (let ((settings (space-settings space)))
+    (loop :for (key value) :on options :by #'cddr
+          :when (member key '(:keep :max))
+            :do (setf settings (%settings-with settings path key value)))
+    (if (eq settings (space-settings space))
+        space
+        (let ((next (copy-space space)))
+          (setf (space-settings next) settings)
+          next))))
+
 (defun (setf setting) (value path key)
   "Say that PATH carries the write option KEY, without writing the path. The
 store uses it to give a restored ring back its bound."
-  (let ((space *space*))
-    (setf (space-settings space)
-          (fset:with (space-settings space) path
-                     (fset:with (or (fset:lookup (space-settings space) path)
-                                    (fset:empty-map))
-                                key value))))
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-settings next)
+                   (%settings-with (space-settings old) path key value)
+                   (space-moved next) nil)
+             next)))
   value)
-
-(defun %remember (path options)
-  "Keep the write options that outlive the write itself."
-  (let ((space *space*))
-    (loop :for (key value) :on options :by #'cddr
-          :when (member key '(:keep :max))
-            :do (setf (space-settings space)
-                      (fset:with (space-settings space) path
-                                 (fset:with (or (fset:lookup (space-settings space)
-                                                             path)
-                                                (fset:empty-map))
-                                            key value))))))
 
 (defun %ring-push (current value limit)
   (let ((seq (fset:with-first (if (fset:seq? current) current (fset:empty-seq))
@@ -387,22 +417,54 @@ store uses it to give a restored ring back its bound."
   (let ((text (p:text path)))
     (or (string= text "/**") (uiop:string-prefix-p "/**/" text))))
 
-(defun %commit (space changes)
-  "Put CHANGES, a list of (path . value), into one new root. Answers the list
-of (path old new) that moved."
-  (bordeaux-threads:with-recursive-lock-held ((space-lock space))
-    (let ((root (space-root space))
-          (moved nil))
-      (dolist (change changes)
-        (destructuring-bind (path . value) change
-          (let ((old (%get root (p:keys path))))
-            (unless (fset:equal? old value)
-              (setf root (%put root (p:keys path) value))
-              (push (list path old value) moved)))))
-      (setf (space-root space) root)
-      (setf moved (nreverse moved))
-      (when (and moved *after-commit*) (funcall *after-commit* moved))
-      moved)))
+(defun %stored (path was value max)
+  "What lands at PATH, given WAS is what is there. Pure."
+  (cond (max (%ring-push was value max))
+        ((%verbp value) (%inward (%apply-verb path was value)))
+        (t (%inward value))))
+
+(defun %committing (old path value options)
+  "OLD with VALUE at PATH. Pure, so a swap may run it again: nothing here does
+IO, and everything it decides -- the guard, the verb, the ring -- is decided
+against the space it is handed rather than one read a moment ago."
+  (destructuring-bind (&key when max &allow-other-keys) options
+    (let* ((space (if options (%remembering old path options) old))
+           (root (space-root space))
+           (was (%get root (p:keys path))))
+      (if (and when (not (fset:equal? was when)))
+          (let ((next (copy-space space)))
+            (setf (space-moved next) nil)
+            next)
+          (let ((stored (%stored path was value max))
+                (next (copy-space space)))
+            (cond ((fset:equal? was stored)
+                   (setf (space-moved next) nil))
+                  (t (setf (space-root next) (%put root (p:keys path) stored)
+                           (space-moved next) (list (list path was stored)))))
+            next)))))
+
+(defun %commit (changes)
+  "Put CHANGES, a list of (path . value), in as one step. Answers what moved."
+  (let ((new (%swap (lambda (old)
+                      (let ((root (space-root old))
+                            (moved nil))
+                        (dolist (change changes)
+                          (destructuring-bind (path . value) change
+                            (let ((was (%get root (p:keys path))))
+                              (unless (fset:equal? was value)
+                                (setf root (%put root (p:keys path) value))
+                                (push (list path was value) moved)))))
+                        (let ((next (copy-space old)))
+                          (setf (space-root next) root
+                                (space-moved next) (nreverse moved))
+                          next))))))
+    (%told (space-moved new))))
+
+(defun %told (moved)
+  "Tell whoever is keeping the file what moved, outside the swap: a disk write
+has no business inside a compare-and-swap."
+  (when (and moved *after-commit*) (funcall *after-commit* moved))
+  moved)
 
 (defun %evaluate (thunk)
   "Run THUNK, answering (values value paths-it-read)."
@@ -412,26 +474,21 @@ of (path old new) that moved."
 
 (defun %write-one (path value &rest options &key when max force keep)
   "Put VALUE at PATH. Answers the (path old new) it moved, as a list."
-  (declare (ignore keep))
-  (let* ((space *space*)
-         (current (%read-one path)))
-    (when options (%remember path options))
-    (when (and (not force) (%whole-tree-p path))
-      (error 'refused :at path :why "** at the root would take the whole tree"))
-    (when (and when (not (fset:equal? current when)))
-      (return-from %write-one nil))
-    (if (%served-write space path value)
-        (list (list path current value))
-        (let ((stored (cond (max (%ring-push (%get (space-root space)
-                                                   (p:keys path))
-                                             value max))
-                            ((%verbp value)
-                             (%inward (%apply-verb path current value)))
-                            (t (%inward value)))))
-          (if *preview*
-              (progn (push (cons path stored) (cdr *preview*))
-                     (list (list path current stored)))
-              (%commit space (list (cons path stored))))))))
+  (declare (ignore when keep))
+  (when (and (not force) (%whole-tree-p path))
+    (error 'refused :at path :why "** at the root would take the whole tree"))
+  (let ((space (current)))
+    ;; a provider decides what a write to its subtree means, and its IO cannot
+    ;; run inside a swap that may be retried
+    (when (%served-write space path value)
+      (return-from %write-one (list (list path (%read-one path) value))))
+    (when *preview*
+      (let* ((was (%get (space-root space) (p:keys path)))
+             (stored (%stored path was value max)))
+        (push (cons path stored) (cdr *preview*))
+        (return-from %write-one (list (list path was stored)))))
+    (%told (space-moved (%swap (lambda (old)
+                                 (%committing old path value options)))))))
 
 ;;;; Propagation: everything that read a path that moved is computed again, and
 ;;;; every watch over it runs, until nothing more moves.
@@ -447,7 +504,9 @@ of (path old new) that moved."
 
 (defun %recompute (reaction)
   (multiple-value-bind (value deps) (%evaluate (reaction-thunk reaction))
-    (setf (reaction-deps reaction) deps)
+    ;; what it read may have changed with the value, so the reaction is put
+    ;; back rather than edited where it sits
+    (%remember-reaction (reaction-path reaction) (reaction-thunk reaction) deps)
     (%write-one (reaction-path reaction) value)))
 
 (defun %watching-p (pattern path)
@@ -460,7 +519,7 @@ anything under it: watching a directory watches the subtree."
   "True when some watch would hear about a change at PATH: whether anyone is
 listening, which is the difference between a fault someone can attend to and
 one nobody will ever look at."
-  (loop :for watch :in (space-watches *space*)
+  (loop :for watch :in (space-watches (current))
         :thereis (%watching-p (second watch) path)))
 
 (defun %run-watches (space moved)
@@ -483,7 +542,14 @@ one nobody will ever look at."
       (setf moved (append moved (%write-one path value))))
     moved))
 
-(defun %propagate (space moved)
+(defun %propagate (moved)
+  "Compute again everything that read a path that moved, then run the watches
+over it, until nothing more moves.
+
+Runs on the caller's thread, after the swap and never inside one, because both
+a reaction and a watch may write. *PROPAGATING* is per thread on purpose: it
+guards this thread's own cascade, and two threads each carrying their own
+change through the graph is the normal case rather than a collision."
   (when (and moved (not *preview*) (not *propagating*))
     (let ((*propagating* t)
           (seen (fset:empty-set))
@@ -492,7 +558,8 @@ one nobody will ever look at."
       (loop :while wave
             :do (when (> (incf passes) 100)
                   (error 'cycle :at (mapcar #'first wave)))
-                (let ((next nil))
+                (let ((next nil)
+                      (space (current)))
                   (dolist (reaction (%dependents space wave))
                     (let ((at (reaction-path reaction)))
                       (when (fset:contains? seen at)
@@ -513,7 +580,7 @@ one nobody will ever look at."
   (let ((moved (%apply map)))
     (if *propagating*
         (%changes moved)
-        (progn (%propagate *space* moved) (%changes moved)))))
+        (progn (%propagate moved) (%changes moved)))))
 
 (defun %write-pattern (pattern maker &rest options)
   "Write every path PATTERN matches, with its binders bound around the value."
@@ -529,45 +596,59 @@ one nobody will ever look at."
                                             variables))))
             (setf moved (append moved
                                 (apply #'%write-one found value options)))))))
-    (%propagate *space* moved)
+    (%propagate moved)
     (%changes moved)))
 
 (defun %mount (path backing)
   "Bind BACKING under PATH. Writing one over another stacks it: a read falls
 through to the one underneath for what the top does not answer, so a machine
 overrides a single leaf of a shipped provider without forking it."
-  (let ((space *space*))
-    (push (cons path backing) (space-mounts space))
-    (fset:empty-map)))
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-mounts next) (cons (cons path backing)
+                                             (space-mounts old))
+                   (space-moved next) nil)
+             next)))
+  (fset:empty-map))
 
 (defun %unmount (path)
-  (let ((space *space*))
-    (setf (space-mounts space)
-          (remove-if (lambda (m) (fset:equal? (car m) path))
-                     (space-mounts space)))))
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-mounts next)
+                   (remove-if (lambda (m) (fset:equal? (car m) path))
+                              (space-mounts old))
+                   (space-moved next) nil)
+             next))))
+
+(defun %remember-reaction (path thunk deps)
+  "Note how PATH is computed, or that it no longer is."
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-reactions next)
+                   (if (fset:empty? deps)
+                       (fset:less (space-reactions old) path)
+                       (fset:with (space-reactions old) path
+                                  (make-reaction :path path :thunk thunk
+                                                 :deps deps)))
+                   (space-moved next) nil)
+             next))))
 
 (defun %write-reactive (path thunk &rest options)
   "Put THUNK's value at PATH and remember what it read, so it is computed again
 whenever one of those paths moves. A provider written here mounts instead."
-  (let ((space *space*))
-    (multiple-value-bind (value deps) (%evaluate thunk)
-      (when (and (null value) (%backings space path))
-        (%unmount path))
-      (if (backing-p value)
-          (%mount path value)
-          ;; the reaction is registered before the value lands, so whatever
-          ;; watches the commit already knows this path is computed rather than
-          ;; held, and does not store it
-          (progn
-            (setf (space-reactions space)
-                  (if (fset:empty? deps)
-                      (fset:less (space-reactions space) path)
-                      (fset:with (space-reactions space) path
-                                 (make-reaction :path path :thunk thunk
-                                                :deps deps))))
-            (let ((moved (apply #'%write-one path value options)))
-              (%propagate space moved)
-              (%changes moved)))))))
+  (multiple-value-bind (value deps) (%evaluate thunk)
+    (when (and (null value) (%backings (current) path))
+      (%unmount path))
+    (if (backing-p value)
+        (%mount path value)
+        ;; the reaction is registered before the value lands, so whatever
+        ;; watches the commit already knows this path is computed rather than
+        ;; held, and does not store it
+        (progn
+          (%remember-reaction path thunk deps)
+          (let ((moved (apply #'%write-one path value options)))
+            (%propagate moved)
+            (%changes moved))))))
 
 (defmacro write (place &optional (value nil value-p) &rest options)
   "Put VALUE at the path PLACE, or apply PLACE as a transaction when it is a
@@ -595,13 +676,15 @@ changes. A pattern writes every path it matches, with its binders bound."
   "Call FN with the new value whenever a path at or under PATH changes, and
 apply the map it answers. AS names the watch, so registering it again replaces
 it and re-loading a config is safe. A NIL function removes it."
-  (let* ((space *space*)
-         (name (or as (gensym "WATCH"))))
-    (setf (space-watches space)
-          (remove name (space-watches space) :key #'first :test #'equal))
-    (when fn
-      (setf (space-watches space)
-            (append (space-watches space) (list (list name path fn)))))
+  (let ((name (or as (gensym "WATCH"))))
+    (%swap (lambda (old)
+             (let ((next (copy-space old))
+                   (rest (remove name (space-watches old)
+                                 :key #'first :test #'equal)))
+               (setf (space-watches next)
+                     (if fn (append rest (list (list name path fn))) rest)
+                     (space-moved next) nil)
+               next)))
     name))
 
 (defmacro preview (&body body)

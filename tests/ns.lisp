@@ -335,6 +335,61 @@ to come back as the same object."
       (pine.ns:write /audio/volume 70)
       (is (string= "volume 70" (pine.ns:read /surface/bar))))))
 
+;;;; several threads at once
+
+(test concurrent-writes-do-not-lose-each-other
+  "The read, the verb and the write are one compare-and-swap. Read the value
+first and write it after, and most of these disappear."
+  (with-ns
+    (pine.ns:write /marks #{})
+    (let ((workers (loop :for i :below 8
+                         :collect (let ((n i))
+                                    (bordeaux-threads:make-thread
+                                     (lambda ()
+                                       (dotimes (k 50)
+                                         (pine.ns:write /marks
+                                                        [:conj (+ (* n 50) k)])))
+                                     :name "ns-probe")))))
+      (mapc #'bordeaux-threads:join-thread workers)
+      (is (= 400 (fset:size (pine.ns:read /marks)))
+          "8 threads x 50 marks; ~d landed" (fset:size (pine.ns:read /marks))))))
+
+(test a-guard-is-tested-against-the-value-the-write-lands-on
+  "Two threads racing a compare-and-set: exactly one may win."
+  (with-ns
+    (pine.ns:write /slot :start)
+    (let ((won 0)
+          (lock (bordeaux-threads:make-lock)))
+      (let ((workers (loop :for i :below 8
+                           :collect (bordeaux-threads:make-thread
+                                     (lambda ()
+                                       (let ((moved (pine.ns:write /slot :taken
+                                                                   :when :start)))
+                                         (unless (fset:empty? moved)
+                                           (bordeaux-threads:with-lock-held (lock)
+                                             (incf won)))))
+                                     :name "ns-guard"))))
+        (mapc #'bordeaux-threads:join-thread workers))
+      (is (= 1 won) "~d threads thought they took it" won)
+      (is (eq :taken (pine.ns:read /slot))))))
+
+(test a-reader-never-sees-a-half-written-tree
+  (with-ns
+    (pine.ns:write /tree {:a 1 :b 2 :c 3})
+    (let ((bad 0)
+          (stop nil))
+      (let ((reader (bordeaux-threads:make-thread
+                     (lambda ()
+                       (loop :until stop
+                             :do (let ((m (pine.ns:read /tree)))
+                                   (unless (or (null m) (= 3 (fset:size m)))
+                                     (incf bad)))))
+                     :name "ns-reader")))
+        (dotimes (i 200) (pine.ns:write /tree {:a i :b i :c i}))
+        (setf stop t)
+        (bordeaux-threads:join-thread reader))
+      (is (zerop bad) "saw a torn tree ~d times" bad))))
+
 ;;;; isolation
 
 (test a-space-is-its-own
