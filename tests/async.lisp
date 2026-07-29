@@ -35,7 +35,8 @@ of them was not."
                        (slot-value box 'sento.messageb::queue-thread)))))
          (faults (pine.ns:read (pine.path:parse "/err/*") (fset:empty-map))))
     (format nil "buffer=~a parser=~a alive=~a running=~a mode=~s viewport=~s ~
-                 watched=~a text=~a grammar=~a parked=~d told=~s space=~a~@[ last-fault=~s~]"
+                 watched=~a text=~a grammar=~a parked=~d told=~s space=~a did=~s ~
+                 log=~s~@[ last-fault=~s~]"
             (if buf "yes" "no") (if parser "yes" "no")
             (if (and thread (bordeaux-threads-2:thread-alive-p thread)) "yes" "no")
             (if (and parser (sento.actor-cell:running-p parser)) "yes" "no")
@@ -47,9 +48,16 @@ of them was not."
                  (pine.core.server:ts-runtime *server*) :commonlisp)
                 "loaded" "MISSING")
             (fset:size faults)
-            (pine.buf:asked name :told)
+            ;; the space it was told about is compared, not printed: a whole
+            ;; namespace in a failure message buries the failure
+            (let ((told (pine.buf:asked name :told)))
+              (and told (subseq told 0 (min 3 (length told)))))
             (if (eq (fourth (pine.buf:asked name :told)) pine.ns:*space*)
                 "same" "DIFFERENT")
+            (pine.ts.parser:did name)
+            ;; a parse that produced nothing says so at /log, so the reason is
+            ;; already written down by the time this is asked
+            (pine.ns:read (pine.path:parse "/log"))
             (let ((last nil))
               (fset:do-map (p v faults) (declare (ignore p))
                 (setf last (and (fset:map? v) (fset:lookup v :condition))))
@@ -163,6 +171,27 @@ insertion: whole-line shifts cannot express a split."
                   "seed ~d: the colours that settled disagree with a fresh parse of~% ~s"
                   seed settled))
             (pine.editor.frame::kill-buffer name)))))))
+
+(test every-parser-started-at-once-produces-a-tree
+  "Starting a parser is grammar loading, a TSParser and a language claim, and
+each of those happens on whichever thread asked. A parser whose language did not
+take answers every parse with no tree at all, quietly, so a buffer opened at the
+same moment as ten others is the case that has to hold."
+  (with-fixture substrate ()
+    (within-seconds 90
+      (let ((names (loop :for i :from 0 :below 10
+                         :collect (format nil "async-many-~d" i))))
+        (dolist (name names)
+          (pine.editor.frame::make-buffer name :content "(defun f (x) x)")
+          (pine.editor.frame::set-buffer-mode name :lisp))
+        ;; every window claims its buffer at once, so ten parsers start together
+        (dolist (name names)
+          (pine.buf:showing name (fset:seq (car +test-viewport+)
+                                           (cdr +test-viewport+))))
+        (dolist (name names)
+          (is (wait-for (lambda () (highlights-of name)) :seconds 30)
+              "~a never got colours: ~a" name (why-no-highlights name)))
+        (dolist (name names) (pine.editor.frame::kill-buffer name))))))
 
 (test a-buffer-with-no-language-needs-no-parser
   (with-fixture substrate ()

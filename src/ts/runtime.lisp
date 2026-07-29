@@ -48,7 +48,7 @@
 
 (cffi:defcfun ("ts_parser_new" ts-parser-new) :pointer)
 (cffi:defcfun ("ts_parser_delete" ts-parser-delete) :void (parser :pointer))
-(cffi:defcfun ("ts_parser_set_language" ts-parser-set-language) :bool
+(cffi:defcfun ("ts_parser_set_language" ts-parser-set-language) (:boolean :char)
   (parser :pointer) (language :pointer))
 (cffi:defcfun ("ts_parser_parse_string" ts-parser-parse-string) :pointer
   (parser :pointer) (old-tree :pointer) (string :pointer) (length :uint32))
@@ -83,8 +83,17 @@
   (node (:struct ts-node)))
 (cffi:defcfun ("ts_node_type" %ts-node-type) :pointer
   (node (:struct ts-node)))
-(cffi:defcfun ("ts_node_is_null" ts-node-is-null) :bool
+;; the C is a one-byte bool, and the bytes above it in the return register are
+;; undefined. Read as an int, a live node came back null often enough to lose a
+;; file's colour and never the same way twice, so it is read as the byte it is.
+;; Declared here rather than as (:boolean :char) because the by-value struct
+;; argument goes through libffi, which will not narrow a return
+(cffi:defcfun ("ts_node_is_null" %ts-node-is-null) :uint8
   (node (:struct ts-node)))
+
+(defun ts-node-is-null (node)
+  "True when NODE is tree-sitter's null node."
+  (logbitp 0 (%ts-node-is-null node)))
 (cffi:defcfun ("ts_node_named_child_count" ts-node-named-child-count) :uint32
   (node (:struct ts-node)))
 (cffi:defcfun ("ts_node_named_child" ts-node-named-child) (:struct ts-node)
@@ -204,7 +213,7 @@ many were written, which is zero at the end of the buffer."
 ;;;; A parser given ranges parses only those ranges, so the root's children
 ;;;; follow the window and not the file.
 
-(cffi:defcfun ("ts_parser_set_included_ranges" ts-parser-set-included-ranges) :bool
+(cffi:defcfun ("ts_parser_set_included_ranges" ts-parser-set-included-ranges) (:boolean :char)
   (parser :pointer) (ranges :pointer) (count :uint32))
 
 (defun %changed-row-span (old-tree new-tree)
@@ -298,14 +307,31 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
       (pine.err:report-failure
        c (format nil "loading the ~a grammar" library-name)))))
 
+(defun claim-language (parser lang language)
+  "Give PARSER the grammar LANG, and say so when it will not take it.
+
+tree-sitter refuses a grammar built against an ABI it does not speak, and a
+parser with no language answers every parse with a null tree. Unchecked, that
+is a buffer with no colour and no reason, which is the one thing this file is
+not allowed to produce."
+  (or (ts-parser-set-language parser lang)
+      (progn
+        (pine.err:report-failure
+         (make-condition 'simple-error
+                         :format-control "the ~(~a~) grammar is built against ~
+                                          an abi this tree-sitter does not speak"
+                         :format-arguments (list language))
+         "setting a grammar")
+        nil)))
+
 (defun load-language-entry (language)
   (destructuring-bind (&optional library fn-name) (cdr (assoc language *grammars*))
     (unless library (return-from load-language-entry nil))
     (let ((lang (grammar-language-pointer library fn-name)))
       (when (and lang (not (cffi:null-pointer-p lang)))
         (let ((parser (ts-parser-new)))
-          (ts-parser-set-language parser lang)
-          (make-instance 'ts-entry :parser parser :language-ptr lang))))))
+          (when (claim-language parser lang language)
+            (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
 
 (defun %grammars (runtime)
   "The table as it stands: one slot read."
@@ -533,8 +559,8 @@ end-line end-col), or nil."
   (let ((entry (ensure-language runtime language)))
     (when entry
       (let ((parser (ts-parser-new)))
-        (ts-parser-set-language parser (entry-language-ptr entry))
-        (make-instance 'parse-state :language language :parser parser)))))
+        (when (claim-language parser (entry-language-ptr entry) language)
+          (make-instance 'parse-state :language language :parser parser))))))
 
 (defun free-parse-state (ps)
   (when ps
@@ -638,7 +664,19 @@ PS-OFFSET is that line."
                                      (if incremental old-tree (cffi:null-pointer))
                                      input)))))
         (cond
-          ((or (null new) (cffi:null-pointer-p new)) nil)
+          ;; tree-sitter answers a null tree when the parser has no language,
+          ;; or when the parse was cancelled. Either way the buffer keeps
+          ;; whatever colour it had and nothing here would say why, so it says
+          ;; it: a parse that produced nothing is a fault, not a quiet nil
+          ((or (null new) (cffi:null-pointer-p new))
+           (pine.err:report-failure
+            (make-condition 'simple-error
+                            :format-control "the ~(~a~) parser answered no tree ~
+                                             for ~d line~:p"
+                            :format-arguments (list (ps-language ps)
+                                                    (fset:size band-lines)))
+            "parsing")
+           nil)
           (t (if incremental
                  (destructuring-bind (line old-lines new-lines byte-delta) edit
                    (declare (ignore byte-delta))

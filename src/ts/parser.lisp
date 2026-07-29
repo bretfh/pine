@@ -5,7 +5,8 @@
    #:parse-link
    #:make-parse-link
    #:parse-link-p
-   #:link-actor)
+   #:link-actor
+   #:did)
   (:documentation "Parsing as an actor, off whatever asked for it.
 
 Nothing can afford to wait for tree-sitter: at a million lines one edit costs
@@ -45,6 +46,21 @@ parse."
 (defun %at (name &rest leaf)
   (apply #'pine.path:path (pine.path:parse "/buf") name leaf))
 
+;;;; What a parser last did, so a buffer with no colour can say which step did
+;;;; not happen: whether the message arrived, whether a tree was built, and what
+;;;; the walk answered. Not a place anyone addresses -- one side of the
+;;;; conversation between a buffer and its parser, like the tick.
+
+(defvar *did* (sento.atomic:make-atomic-reference :value (fset:empty-map)))
+
+(defun did (name)
+  "The last thing NAME's parser did, as (tag lines tree index runs)."
+  (fset:lookup (sento.atomic:atomic-get *did*) name))
+
+(defun %noting (name what)
+  (sento.atomic:atomic-swap *did* (lambda (m) (fset:with m name what)))
+  what)
+
 (defun %receive (ps msg)
   "Handle one request against PS.
 
@@ -61,7 +77,12 @@ message one caller receives."
      (case tag
       (:parse
        (%ensure-tree ps lines edit from-lines viewport)
-       (pine.ns:write (%at name "face") (%highlights ps viewport) :keep nil))
+       (let ((runs (%highlights ps viewport)))
+         (%noting name (list :parse (fset:size lines)
+                             (and (pine.ts.runtime:ps-tree ps) t)
+                             (and (pine.ts.runtime:ps-byte-index ps) t)
+                             (length runs)))
+         (pine.ns:write (%at name "face") runs :keep nil)))
       (:indent
        ;; where a line should sit is not a place, so it goes back to whoever
        ;; asked rather than through a path of its own
