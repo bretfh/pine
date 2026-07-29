@@ -218,14 +218,15 @@ replaces it. Reload-safe; the rules reach every attached frontend."
 
 (defmacro defsurface (name (&rest opts) &body body)
   "Define surface NAME (a symbol). OPTS declare placement (:as :bar / :panel /
-:echo / :window). BODY returns the widget tree, with the desktop client in
-scope. The :as role travels to the client, which maps it to the wayland surface."
-  (let ((client (gensym "CLIENT"))
-        (key (string-downcase (string name))))
+:echo / :toplevel). BODY is the widget tree.
+
+A surface is a path: the tree is written to /surface/NAME as an expression, so
+it is built again whenever anything it read moves, and :as is the leaf under it
+that says where wayland puts it."
+  (let ((key (string-downcase (string name))))
     `(progn
-       (pine.desktop:defsurface ,key
-         (lambda (,client) (declare (ignorable ,client)) ,@body))
-       (pine.desktop:set-surface-role ,key ,(getf opts :as)))))
+       (write ,(pine.path:path (pine.path:parse "/surface") key "as") ',(getf opts :as))
+       (write ,(pine.path:path (pine.path:parse "/surface") key) (progn ,@body)))))
 
 ;;;; SHOW / HIDE / TOGGLE take a bare surface symbol and produce a thunk (like
 ;;;; LAUNCH), so :on-click (show audio) does the right thing: shows on click, on

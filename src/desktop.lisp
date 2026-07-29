@@ -1,6 +1,7 @@
 (defpackage #:pine.desktop
   (:use #:cl)
-  (:export #:defsurface #:set-surface-role #:push-surface #:show-panel #:hide-panel
+  (:export #:surface-at #:surface-tree #:surface-role #:shownp #:names
+           #:push-surface #:show-panel #:hide-panel
            #:refresh-all #:*surface-client*))
 
 (in-package #:pine.desktop)
@@ -19,91 +20,115 @@ firing for. Bound so show / hide / toggle need no explicit client argument.")
 ;;;; data; the closures and the refs stay here. The surfaces themselves live in
 ;;;; init.lisp, not here.
 
-;;;; Surface registry: name -> builder (aclient -> node tree).
+;;;; A surface is what wayland shows, and it is a path:
+;;;;
+;;;;   /surface/?name        the widget tree
+;;;;   /surface/?name/as     the placement: :bar :panel :overlay :toplevel :echo
+;;;;   /surface/?name/shown  whether it is up; [:toggle] flips it
+;;;;
+;;;; The tree is written as an expression, so it is computed again whenever
+;;;; anything it read moves and the client is pushed the new one. Nothing polls
+;;;; and nothing subscribes.
 
-(defvar *surfaces* (make-hash-table :test 'equal))
-(defun defsurface (name builder) (setf (gethash name *surfaces*) builder))
+(defun surface-at (name) (pine.path:path (pine.path:parse "/surface") name))
 
-(defvar *surface-roles* (make-hash-table :test 'equal)
-  "surface name -> placement role (:bar :echo :panel :window ...), pushed to the
-client so it maps the role to the wayland surface.")
-(defun set-surface-role (name role) (setf (gethash name *surface-roles*) role))
-(defun surface-role (name) (gethash name *surface-roles*))
+(defun surface-role (name)
+  (pine.ns:read (pine.path:child (surface-at name) "as")))
+
+(defun shownp (name)
+  (pine.ns:read (pine.path:child (surface-at name) "shown")))
+
+(defun surface-tree (name)
+  "NAME's widget tree, or NIL. The tree is the value at the path; what is under
+it says where it goes."
+  (let ((value (pine.ns:held (surface-at name))))
+    (if (fset:map? value) (fset:lookup value :tree) value)))
+
+(defun names ()
+  "Every surface there is."
+  (sort (mapcar (lambda (path) (pine.path:leaf path))
+                (pine.data:keys (pine.ns:read (pine.path:parse "/surface/*")
+                                              (fset:empty-map))))
+        #'string<))
+
 
 (defstruct dsession
   (actions (make-hash-table))                     ; id -> closure
   (surface-ids (make-hash-table :test 'equal))    ; surface -> ids, to drop stale
   (counter 0)
-  (open nil)                                       ; currently open panel, or nil
-  (views (make-hash-table :test 'equal)))          ; surface -> reactive view
+  )
 
 (defun push-surface (aclient name)
-  "Build surface NAME's tree, serialize it (fresh ids, dropping this surface's
-old ones), and push it to the app."
+  "Serialize surface NAME's tree (fresh ids, dropping this surface's old ones)
+and push it to the app."
   (let ((s (pine.core.attach:attached-client-session aclient))
-        (builder (gethash name *surfaces*)))
-    (when (and s builder)
+        (tree (surface-tree name)))
+    (when (and s tree)
       (dolist (id (gethash name (dsession-surface-ids s)))
         (remhash id (dsession-actions s)))
       (setf (gethash name (dsession-surface-ids s)) nil)
       (let ((data (pine.ui.wire:node->wire
-                   (let ((*surface-client* aclient)) (funcall builder aclient))
+                   tree
                    :on-action (lambda (cb)
                                 (let ((id (incf (dsession-counter s))))
                                   (setf (gethash id (dsession-actions s)) cb)
                                   (push id (gethash name (dsession-surface-ids s)))
                                   id)))))
         (pine.core.attach:push-to-app aclient :widgets :surface name :tree data
-                                 :as (surface-role name))))))
+                                      :as (surface-role name))))))
 
-(defun surface-view (aclient name)
-  "A reactive view that re-pushes surface NAME when a ref it reads changes."
-  (let (view)
-    (setf view (pine.state.ref:make-view
-                (lambda () (push-surface aclient name))
-                (lambda ()
-                  (pine.err:attempt (lambda () (pine.state.ref:render-view view))
-                                     (format nil "surface ~a" name)))))
-    view))
+(defun mount (aclient)
+  "Push a surface whenever its tree moves, and show or hide it when its shown
+moves. The tree is an expression at a path, so what re-renders it is the same
+rule that recomputes anything else."
+  (pine.ns:watch (pine.path:parse "/surface")
+                 (lambda (value)
+                   (declare (ignore value))
+                   (let* ((path (pine.ns:here))
+                          (leaf (pine.path:leaf path))
+                          (name (if (member leaf '("shown" "as") :test #'string=)
+                                    (pine.path:leaf (pine.path:parent path))
+                                    leaf)))
+                     (pine.err:attempt
+                      (lambda ()
+                        (let ((*surface-client* aclient))
+                          (if (string= leaf "shown")
+                              (progn
+                                (when (shownp name) (push-surface aclient name))
+                                (pine.core.attach:push-to-app
+                                 aclient :panel :name name :show (shownp name)))
+                              (push-surface aclient name))))
+                      (format nil "surface ~a" name)))
+                   (fset:empty-map))
+                 :as (list :surface aclient)))
 
 (defun make-desktop-session (aclient)
   (let ((s (make-dsession)))
     (setf (pine.core.attach:attached-client-session aclient) s)
     (when pine.ui.rules:*user-rules*
       (pine.core.attach:push-to-app aclient :rules :rules pine.ui.rules:*user-rules*))
-    (dolist (name '("bar" "echo"))
-      (let ((v (surface-view aclient name)))
-        (setf (gethash name (dsession-views s)) v)
-        (pine.state.ref:render-view v)))))
+    (mount aclient)
+    (let ((*surface-client* aclient))
+      (dolist (name (names))
+        (unless (eq :panel (surface-role name))
+          (pine.err:attempt (lambda () (push-surface aclient name))
+                            (format nil "surface ~a" name)))))))
 
 (defun show-panel (aclient name)
-  "Toggle panel NAME: open it (closing any other) and keep it live while open, or
-close it if it is already the open one."
-  (let ((s (pine.core.attach:attached-client-session aclient)))
-    (when s
-      (let ((cur (dsession-open s)))
-        (cond
-          ((equal cur name)
-           (setf (dsession-open s) nil)
-           (remhash name (dsession-views s))
-           (pine.core.attach:push-to-app aclient :panel :name name :show nil))
-          (t
-           (when cur
-             (remhash cur (dsession-views s))
-             (pine.core.attach:push-to-app aclient :panel :name cur :show nil))
-           (setf (dsession-open s) name)
-           (let ((v (surface-view aclient name)))
-             (setf (gethash name (dsession-views s)) v)
-             (pine.state.ref:render-view v))
-           (pine.core.attach:push-to-app aclient :panel :name name :show t)))))))
+  "Toggle panel NAME: open it, closing any other, or close it if it is the one
+that is open. Which panel is up is /surface/?name/shown."
+  (declare (ignore aclient))
+  (let ((up (shownp name)))
+    (dolist (other (names))
+      (when (and (not (equal other name)) (shownp other))
+        (pine.ns:write (pine.path:child (surface-at other) "shown") nil)))
+    (pine.ns:write (pine.path:child (surface-at name) "shown") (not up))))
 
 (defun hide-panel (aclient name)
-  "Close panel NAME if it is the open one."
-  (let ((s (pine.core.attach:attached-client-session aclient)))
-    (when (and (dsession-p s) (equal (dsession-open s) name))
-      (setf (dsession-open s) nil)
-      (remhash name (dsession-views s))
-      (pine.core.attach:push-to-app aclient :panel :name name :show nil))))
+  "Close panel NAME if it is up."
+  (declare (ignore aclient))
+  (when (shownp name)
+    (pine.ns:write (pine.path:child (surface-at name) "shown") nil)))
 
 (defun desktop-input (aclient msg)
   (let ((s (pine.core.attach:attached-client-session aclient)))
@@ -121,9 +146,10 @@ close it if it is already the open one."
       ;; attach can arrive before the windows are up). Re-push the bar and any
       ;; open panel.
       (:refresh
-       (push-surface aclient "bar")
-       (push-surface aclient "echo")
-       (when (and s (dsession-open s)) (push-surface aclient (dsession-open s))))
+       (let ((*surface-client* aclient))
+         (dolist (name (names))
+           (when (or (not (eq :panel (surface-role name))) (shownp name))
+             (push-surface aclient name)))))
       (:hint
        (destructuring-bind (&key text) (rest msg)
          (pine.state.ref:set-ref (pine.state.ref:defref :hint "") (or text "")))))))
@@ -140,15 +166,9 @@ close it if it is already the open one."
   (desktop-input client message))
 
 (defmethod pine.core.attach:detached ((app desktop-app) client)
-  "Drop the surfaces' reactive views, so a dead frontend stops being rendered
-for."
-  (let ((s (pine.core.attach:attached-client-session client)))
-    (when (dsession-p s)
-      (maphash (lambda (name view)
-                 (declare (ignore name))
-                 (pine.state.ref:dispose-view view))
-               (dsession-views s))
-      (clrhash (dsession-views s)))))
+  "Stop pushing to a frontend that is gone: the watch over /surface goes with
+it, and nothing else was holding anything for it."
+  (pine.ns:watch (pine.path:parse "/surface") nil :as (list :surface client)))
 
 (pine.core.attach:register-app (make-instance 'desktop-app))
 
@@ -158,11 +178,13 @@ for."
 
 (defun refresh-all ()
   "Re-push every surface for every attached desktop client. Call it (M-x
-reload-desktop) after redefining a builder so the change shows at once."
+reload-desktop) after re-loading a config, so what it wrote shows at once."
   (dolist (c pine.core.attach:*clients*)
     (when (eq (pine.core.attach:attached-client-kind c) :desktop)
       (let ((s (pine.core.attach:attached-client-session c)))
         (when (dsession-p s)
-          (push-surface c "bar")
-          (push-surface c "echo")
-          (when (dsession-open s) (push-surface c (dsession-open s))))))))
+          (let ((*surface-client* c))
+            (dolist (name (names))
+              (when (or (not (eq :panel (surface-role name))) (shownp name))
+                (pine.err:attempt (lambda () (push-surface c name))
+                                  (format nil "surface ~a" name))))))))))

@@ -35,7 +35,7 @@ of them was not."
                        (slot-value box 'sento.messageb::queue-thread)))))
          (faults (pine.ns:read (pine.path:parse "/err/*") (fset:empty-map))))
     (format nil "buffer=~a parser=~a alive=~a running=~a mode=~s viewport=~s ~
-                 watched=~a text=~a grammar=~a parked=~d~@[ last-fault=~s~]"
+                 watched=~a text=~a grammar=~a parked=~d told=~s space=~a~@[ last-fault=~s~]"
             (if buf "yes" "no") (if parser "yes" "no")
             (if (and thread (bordeaux-threads-2:thread-alive-p thread)) "yes" "no")
             (if (and parser (sento.actor-cell:running-p parser)) "yes" "no")
@@ -47,6 +47,9 @@ of them was not."
                  (pine.core.server:ts-runtime *server*) :commonlisp)
                 "loaded" "MISSING")
             (fset:size faults)
+            (pine.buf:asked name :told)
+            (if (eq (fourth (pine.buf:asked name :told)) pine.ns:*space*)
+                "same" "DIFFERENT")
             (let ((last nil))
               (fset:do-map (p v faults) (declare (ignore p))
                 (setf last (and (fset:map? v) (fset:lookup v :condition))))

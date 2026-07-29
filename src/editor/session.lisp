@@ -158,10 +158,9 @@ divider between them."
   "CLIENT's live editor tree: the registered `editor' surface builder from
 init.lisp, else the engine default. The arrangement inside it comes from /win,
 which is where it survives a restart, so there is nothing to restore."
-  (let ((pine.editor.frame:*client* client)
-        (builder (gethash "editor"
-                          (symbol-value (find-symbol "*SURFACES*" :pine.desktop)))))
-    (if builder (funcall builder nil) (%default-editor-tree))))
+  (let ((pine.editor.frame:*client* client))
+    (or (pine.ns:held (pine.path:parse "/surface/editor"))
+        (%default-editor-tree))))
 
 (defun %seed-editor-tree (client &key (world t))
   "Build CLIENT's tree and land the focus."

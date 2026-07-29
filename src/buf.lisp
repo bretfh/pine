@@ -618,6 +618,10 @@ into the same mailbox behind the parse it needs."
          (band (band-of name))
          (edit (%for name :edit lines))
          (indent (%for name :indent-request lines)))
+    ;; what was last asked of the parser, so a buffer with no colours can say
+    ;; whether the question was ever put
+    (setf (asked name :told)
+          (list (fset:size lines) band (and edit t) ns:*space*))
     (sento.actor:tell
      actor
      (list :parse :name name :lines lines :viewport band :space ns:*space*
