@@ -22,20 +22,35 @@ live session.")
 (defun highlights-of (name)
   "NAME's highlights as the buffer currently holds them. Asked for directly: a
 snapshot only carries highlights when one is built for a subscriber."
-  (pine.core.actor:ask (pine.editor.frame::buffer name) '(:get-highlights) :timeout 5))
+  (pine.ns:read (pine.buf:at name :face)))
 
 (defun why-no-highlights (name)
-  "What to say when none arrived: which of the three things was missing."
+  "Everything that has to be true for colours to land, so a failure says which
+of them was not."
   (let* ((buf (pine.editor.frame::buffer name))
-         (parser (and buf (pine.buf:parser-of (pine.text.buffer:name-of buf))))
-         (snap (and buf (pine.core.actor:ask buf '(:get-snapshot) :timeout 5))))
-    (format nil "buffer=~a parser=~a mode=~s viewport=~s grammar=~a"
+         (parser (pine.buf:parser-of name))
+         (thread (when parser
+                   (let ((box (sento.actor-cell:msgbox parser)))
+                     (when (typep box 'sento.messageb:message-box/bt)
+                       (slot-value box 'sento.messageb::queue-thread)))))
+         (faults (pine.ns:read (pine.path:parse "/err/*") (fset:empty-map))))
+    (format nil "buffer=~a parser=~a alive=~a running=~a mode=~s viewport=~s ~
+                 watched=~a text=~a grammar=~a parked=~d~@[ last-fault=~s~]"
             (if buf "yes" "no") (if parser "yes" "no")
-            (and snap (pine.text.buffer:buffer-local snap :mode))
-            (pine.buf:asked (pine.text.buffer:name-of buf) :viewport)
+            (if (and thread (bordeaux-threads-2:thread-alive-p thread)) "yes" "no")
+            (if (and parser (sento.actor-cell:running-p parser)) "yes" "no")
+            (pine.ns:read (pine.buf:at name :mode))
+            (pine.buf:asked name :viewport)
+            (if (pine.ns:watched (pine.buf:at name :text)) "yes" "no")
+            (fset:size (or (pine.ns:held (pine.buf:at name :text)) (fset:empty-seq)))
             (if (pine.ts.runtime:ensure-language
                  (pine.core.server:ts-runtime *server*) :commonlisp)
-                "loaded" "MISSING"))))
+                "loaded" "MISSING")
+            (fset:size faults)
+            (let ((last nil))
+              (fset:do-map (p v faults) (declare (ignore p))
+                (setf last (and (fset:map? v) (fset:lookup v :condition))))
+              last))))
 
 (defun full-walk-of (content &key (viewport +test-viewport+))
   "The highlights a synchronous walk gives for CONTENT over the same window."
@@ -52,7 +67,7 @@ caught up."
   (with-fixture substrate ()
     (within-seconds 30
       (let ((buf (lisp-buffer "async-edit" "(defun f (x) x)")))
-        (sento.actor:tell buf (list :insert :text "y"))
+        (pine.text.buffer:edit buf (fset:seq :insert "y"))
         (is (wait-for (lambda () (search "y" (btext "async-edit"))) :seconds 5)
             "the edit did not land promptly")))))
 
@@ -74,7 +89,7 @@ final text."
   (with-fixture substrate ()
     (within-seconds 90
       (let ((buf (lisp-buffer "async-burst" "(defun f (x) x)")))
-        (dotimes (i 20) (sento.actor:tell buf (list :insert :text "z")))
+        (dotimes (i 20) (pine.text.buffer:edit buf (fset:seq :insert "z")))
         (is (wait-for (lambda () (= 20 (count #\z (btext "async-burst")))) :seconds 30)
             "the edits did not all land")
         (let ((settled (btext "async-burst")))
@@ -92,9 +107,9 @@ and takes its column when the parse says what it is."
     (within-seconds 60
       ;; balanced source, so the body column is not a matter of opinion
       (let ((buf (lisp-buffer "async-indent" (format nil "(defun f ()~%(bar))"))))
-        (sento.actor:tell buf (list :move-point :line 0 :col 11))
+        (pine.text.buffer:put-point buf 0 11)
         (sleep 0.2)
-        (sento.actor:tell buf '(:newline))
+        (pine.text.buffer:edit buf (fset:seq :newline))
         (is (wait-for (lambda () (= 3 (length (pine.text.buffer:split-lines
                                                (btext "async-indent")))))
                       :seconds 10)
@@ -128,14 +143,13 @@ insertion: whole-line shifts cannot express a split."
               (dotimes (i 12)
                 (let ((snap (bsnap name)))
                   (case (next 5)
-                    (0 (sento.actor:tell buf (list :insert :text "z")))
-                    (1 (sento.actor:tell buf '(:newline)))
-                    (2 (sento.actor:tell buf '(:backspace)))
-                    (3 (sento.actor:tell
-                        buf (list :move-point
-                                  :line (next (max 1 (pine.text.buffer:line-count snap)))
-                                  :col (next 4))))
-                    (t (sento.actor:tell buf (list :insert :text "(g 1)")))))
+                    (0 (pine.text.buffer:edit buf (fset:seq :insert "z")))
+                    (1 (pine.text.buffer:edit buf (fset:seq :newline)))
+                    (2 (pine.text.buffer:delete-back buf))
+                    (3 (pine.text.buffer:put-point
+                        buf (next (max 1 (pine.text.buffer:line-count snap)))
+                        (next 4)))
+                    (t (pine.text.buffer:edit buf (fset:seq :insert "(g 1)")))))
                 (sleep 0.05)))
             (sleep 1.5)
             (let ((settled (btext name)))
@@ -152,7 +166,7 @@ insertion: whole-line shifts cannot express a split."
     (within-seconds 20
       (let ((buf (pine.editor.frame::make-buffer "async-plain")))
         (pine.editor.frame::set-buffer-mode buf :text)
-        (sento.actor:tell buf (list :insert :text "plain"))
+        (pine.text.buffer:edit buf (fset:seq :insert "plain"))
         (is (wait-for (lambda () (equal "plain" (btext "async-plain"))))
             "a text buffer stopped editing")
         (is (null (pine.buf:parser-of (pine.text.buffer:name-of buf)))
@@ -171,7 +185,7 @@ on taking edits, keeping the colours it already had."
           (sento.actor:tell parser '(:no-such-verb))
           (is (wait-for (lambda () faults) :seconds 30)
               "the parser never faulted")
-          (dotimes (i 5) (sento.actor:tell buf (list :insert :text "q")))
+          (dotimes (i 5) (pine.text.buffer:edit buf (fset:seq :insert "q")))
           (is (wait-for (lambda () (= 5 (count #\q (btext "async-wedge")))) :seconds 20)
               "the buffer stopped editing while its parser was wedged")
           (is (stringp (btext "scratch"))

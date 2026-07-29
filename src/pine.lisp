@@ -26,7 +26,6 @@
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.core.actor:start-agent-debug srv)
-    (pine.text.buffer:start-buffer-registry srv)
     ;; /proc is what attends everything this daemon runs, so it is mounted
     ;; before anything is declared under it
     (setf (pine.core.server:proc srv)
@@ -47,6 +46,9 @@
     (pine.core.attach:start-attach-listener srv)
     (start-control srv)
     (world:open)
+    ;; the path store: every held path writes through as it changes, which is
+    ;; what makes /history real and undo something the file remembers
+    (setf (pine.core.server:store srv) (pine.store:open))
     (pine.core.hooks:add-shutdown-hook :store
       (lambda ()
         (world:save)

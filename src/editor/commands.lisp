@@ -3,7 +3,6 @@
   (:local-nicknames (#:world #:pine.state.world))
   (:export
    #:start-editor
-   #:revive-buffer
    ;; the kill ring, which this package uses and the editor's commands drive
    #:kill-ring-push
    #:kill-ring-top
@@ -19,7 +18,6 @@
 (defun start-editor ()
   (let* ((client (pine.editor.frame:current-client))
          (server (pine.editor.frame:server-of client)))
-    (pine.text.buffer:start-buffer-registry server)
     (handler-case (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime server))
       (error () nil))
     (pine.ui.render:start-renderer client)
@@ -34,39 +32,6 @@
       (pine.editor.frame:set-buffer-mode buf :text)
       (pine.editor.ask:tell buf :set-local :key :package :value :pine-user))
     (pine.ui.render:relayout)))
-
-(defun revive-buffer (name)
-  "Replace the buffer NAME, whose thread is gone, with a fresh actor carrying
-what the world last knew of it.
-
-An actor that parked in the debugger recovers on its own; one whose thread died
-cannot, and leaving it in the table means every message to that buffer
-disappears into a mailbox nobody is reading."
-  (let* ((c (pine.editor.frame:current-client))
-         (srv (pine.editor.frame:server-of c))
-         (table (pine.text.buffer:buffer-table srv))
-         (dead (gethash name table)))
-    (when dead
-      (remhash name table)
-      ;; the actor context still holds the dead actor's name, and it refuses a
-      ;; second actor with the same one, so the corpse is stopped before its
-      ;; replacement is made. Its parser goes with it, as in kill-buffer.
-      (let ((sys (pine.core.server:actor-system srv)))
-        (let ((parser (pine.buf:drop name)))
-          (when parser (ignore-errors (sento.actor-context:stop sys parser))))
-        (ignore-errors (sento.actor-context:stop sys dead)))
-      (let ((actor (or (pine.editor.file:restore-buffer name)
-                       (pine.editor.frame:make-buffer name))))
-        ;; whoever was painting it holds a ref to a corpse, so the windows on
-        ;; this buffer are pointed at the new actor and resubscribed
-        (dolist (w (pine.editor.frame:windows c))
-          (when (equal name (pine.text.window:window-name w))
-            (setf (pine.text.window:buffer-ref w) actor)))
-        (when (eq dead (pine.editor.frame:current-buffer c))
-          (setf (pine.editor.frame:current-buffer c) actor))
-        
-        actor))))
-
 
 ;;;; Commands
 

@@ -95,14 +95,11 @@ restore can reopen buffers in bulk."
 
 (defun record-places ()
   "Store the point of every file-backed buffer. The shutdown sweep."
-  (let ((srv pine.core.server:*server*))
-    (when srv
-      (loop for buf being the hash-values of (or (pine.core.server:buffer-table srv)
-                                                 (make-hash-table))
-            do (ignore-errors
-                (let* ((state (pine.text.buffer:state-of buf))
-                       (path (pine.text.buffer:buffer-local state :pathname)))
-                  (when path (record-place buf path))))))))
+  (dolist (buf (pine.buf:names))
+    (ignore-errors
+      (let* ((state (pine.text.buffer:state-of buf))
+             (path (pine.text.buffer:buffer-local state :pathname)))
+        (when path (record-place buf path))))))
 
 ;;;; World: the buffers. Computed from the live table at save time. A buffer
 ;;;; with a file is its path, reopened from disk; one without is its text,
@@ -133,13 +130,12 @@ the state it was projected from, so it does not persist."
              (list :name name :mode mode :content content)))))))
 
 (defun %buffers ()
-  (let ((srv pine.core.server:*server*) (acc nil))
-    (when (and srv (pine.core.server:buffer-table srv))
-      (loop :for buf :being :the :hash-values :of (pine.core.server:buffer-table srv)
-            :do (pine.err:attempt
-                 (lambda () (let ((entry (%buffer-entry buf)))
-                              (when entry (push entry acc))))
-                 "saving a buffer to the world")))
+  (let ((acc nil))
+    (dolist (buf (pine.buf:names))
+      (pine.err:attempt
+       (lambda () (let ((entry (%buffer-entry buf)))
+                    (when entry (push entry acc))))
+       "saving a buffer to the world"))
     acc))
 
 (defun %restore-entry (entry)

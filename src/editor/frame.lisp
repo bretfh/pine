@@ -80,26 +80,17 @@
 ;;;; on it writes a path, so it works from another image and from a script that
 ;;;; never heard of a client.
 
-(defun %actor-named (name)
-  "The actor serving the buffer NAME. The minibuffer is a buffer no table
-holds, so it answers for its own name."
-  (let* ((c *client*)
-         (mb (and c (minibuffer-buffer c))))
-    (cond ((null name) nil)
-          ((and mb (equal name (pine.text.buffer:name-of mb))) mb)
-          (c (gethash name (pine.text.buffer:buffer-table (server-of c)))))))
-
 (defun current-buffer (&optional client)
   "The buffer /buf/current names."
   (declare (ignore client))
   (let ((value (pine.ns:held (pine.buf:at "current"))))
-    (when value (%actor-named (pine.path:leaf value)))))
+    (when value (pine.path:leaf value))))
 
-(defun (setf current-buffer) (actor &optional client)
+(defun (setf current-buffer) (name &optional client)
   (declare (ignore client))
-  (let ((name (pine.text.buffer:name-of actor)))
+  (let ((name (pine.text.buffer:name-of name)))
     (pine.ns:write (pine.buf:at "current") (and name (pine.buf:at name))))
-  actor)
+  name)
 
 (defun start-client (server)
   (let* ((c (make-instance 'client
@@ -260,109 +251,71 @@ falls back to, then global. The keymap chain is the mode chain, read now, so a
 mode that gained a parent since its map was made still falls back through it."
   (pine.editor.keymap:roots (current-buffer-mode) (active-minor-modes client)))
 
-(defun make-buffer (name &key (content "") id (message pine.text.buffer:*message*))
-  (let* ((c (current-client))
-         (srv (server-of c))
-         (table (pine.text.buffer:buffer-table srv))
-         (existing (gethash name table)))
-    (when existing (return-from make-buffer existing))
-    (let ((actor (pine.text.buffer:make-buffer-actor
-                  (pine.core.server:actor-system srv) name :content content
-                  :message message :id (or id (world:id)))))
-      (setf (gethash name table) actor)
-      (sento.actor:tell (pine.core.server:buffer-registry srv)
-                        (list :register :name name :actor actor))
-      (when (null (current-buffer c))
-        (setf (current-buffer c) actor))
-      actor)))
+;;;; A buffer is its name and its leaves. Nothing holds an object for one, so
+;;;; every one of these is a read or a write of /buf.
+
+(defun make-buffer (name &key (content "") id)
+  "The buffer NAME, made if it is not there. Answers the name."
+  (let ((c *client*))
+    (unless (pine.ns:held (pine.buf:at name :text))
+      (pine.text.buffer:make-buffer name :content content :id (or id (world:id))))
+    (when (and c (null (current-buffer)))
+      (setf (current-buffer) name)))
+  name)
 
 (defun buffer-of-id (id)
-  "The live buffer carrying ID, or nil. How an image holding only the id reaches
-the buffer."
-  (let* ((c (current-client))
-         (srv (and c (server-of c)))
-         (table (and srv (pine.text.buffer:buffer-table srv))))
-    (when table
-      (loop :for actor :being :the :hash-values :of table
-            :when (equal id (ignore-errors
-                             (pine.text.buffer:buffer-local
-                              (pine.text.buffer:state-of actor) :id)))
-              :return actor))))
+  "The buffer carrying ID, or NIL. How an image holding only the id reaches it."
+  (loop :for name :in (pine.buf:names)
+        :when (equal id (pine.ns:read (pine.buf:at name :id)))
+          :return name))
 
 (defun kill-buffer (name)
+  "Drop NAME: its leaves go, and its parser with them."
   (let* ((c (current-client))
          (srv (server-of c))
-         (table (pine.text.buffer:buffer-table srv))
-         (actor (gethash name table)))
-    (when actor
-      (when (eq actor (current-buffer c))
-        (setf (current-buffer c) nil))
-      (remhash name table)
-      ;; the buffer's parser is its own actor and its own thread, and /buf owns
-      ;; it, so it goes with the buffer rather than outliving it
-      (let ((parser (pine.buf:drop name)))
-        (when parser
-          (ignore-errors
-           (sento.actor-context:stop (pine.core.server:actor-system srv) parser))))
-      (sento.actor-context:stop (pine.core.server:actor-system srv) actor)
-      (sento.actor:tell (pine.core.server:buffer-registry srv)
-                        (list :unregister :name name)))))
+         (parser (pine.buf:drop name)))
+    (when parser
+      (ignore-errors
+       (sento.actor-context:stop (pine.core.server:actor-system srv) parser)))
+    (when (equal name (current-buffer))
+      (setf (current-buffer) nil))
+    (pine.ns:write (pine.buf:at name) nil)
+    name))
 
 (defun switch-buffer (name)
   "Show NAME in the focused window. What a window shows is /win/?n/buf, so this
 is a write and the window follows it."
-  (let* ((c (current-client))
-         (srv (server-of c))
-         (actor (gethash name (pine.text.buffer:buffer-table srv)))
-         (at (pine.win:focused)))
-    (when actor
+  (let ((at (pine.win:focused)))
+    (when (pine.ns:held (pine.buf:at name :text))
       (when at
         (pine.ns:write (fset:map ((pine.path:child at "buf") (pine.buf:at name))
                                  ((pine.path:child at "scroll") 0))))
-      (setf (current-buffer c) actor)
-      actor)))
+      (setf (current-buffer) name)
+      name)))
 
+(defun list-buffers () (pine.buf:names))
 
-(defun list-buffers ()
-  (let ((srv (server-of (current-client))))
-    (loop for k being the hash-keys of (pine.text.buffer:buffer-table srv) collect k)))
-
-(defun buffer-count ()
-  (let ((srv (server-of (current-client))))
-    (hash-table-count (pine.text.buffer:buffer-table srv))))
+(defun buffer-count () (length (pine.buf:names)))
 
 (defun current-buffer-text ()
-  (let* ((c (current-client))
-         (buf (current-buffer c)))
-    (when buf
-      (pine.text.buffer:text-of buf))))
+  (let ((buf (current-buffer))) (when buf (pine.text.buffer:text-of buf))))
 
 (defun current-buffer-snapshot ()
-  (let* ((c (current-client))
-         (buf (current-buffer c)))
-    (when buf
-      (pine.text.buffer:snapshot-of buf))))
+  (let ((buf (current-buffer))) (when buf (pine.text.buffer:snapshot-of buf))))
 
 
 (defun buffer (x)
-  "Coerce X to a buffer actor.
-- nil            -> nil
-- string         -> lookup by name in current server's buffer-table
-- :current       -> current client's current-buffer
-- :focused       -> focused window's buffer-ref
-- actor ref      -> passthrough
-Unknown keywords error; nothing silently falls through."
+  "X as a buffer name: NIL, a name, :CURRENT, or :FOCUSED.
+
+A buffer is its name -- there is no object to coerce to -- so this is only
+which buffer is meant."
   (cond
     ((null x) nil)
-    ((stringp x)
-     (let ((srv (server-of (current-client))))
-       (gethash x (pine.text.buffer:buffer-table srv))))
-    ((eq x :current)
-     (current-buffer (current-client)))
+    ((stringp x) (when (pine.ns:held (pine.buf:at x :text)) x))
+    ((eq x :current) (current-buffer))
     ((eq x :focused)
-     (let ((w (focused-window (current-client))))
+     (let ((w (focused-window)))
        (when w (pine.text.window:buffer-ref w))))
     ((keywordp x)
-     (error "unknown buffer target ~s; use :current, :focused, or a string name"
-            x))
+     (error "unknown buffer target ~s; use :current, :focused, or a name" x))
     (t x)))

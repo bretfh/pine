@@ -36,7 +36,7 @@ comes back down."
             (names (loop :for i :below +stress-buffers+
                          :collect (format nil "stress-~d" i))))
         (dolist (name names)
-          (sento.actor:tell (stress-buffer name) (list :replace-content :content name)))
+          (pine.ns:write (pine.buf:at (stress-buffer name) :text) name))
         (sleep 1.0)
         (let ((wrong (remove-if (lambda (name) (equal name (btext name))) names)))
           (is (null wrong)
@@ -61,7 +61,7 @@ tally."
     (within-seconds 120
       (let ((buf (stress-buffer "stress-flood")))
         (dotimes (i +stress-messages+)
-          (sento.actor:tell buf (list :insert :text "x")))
+          (pine.text.buffer:edit buf (fset:seq :insert "x")))
         (is (wait-for (lambda () (let ((text (btext "stress-flood")))
                                    (and (stringp text)
                                         (= +stress-messages+ (char-count text)))))
@@ -82,7 +82,7 @@ the serialization point, so no edit is interleaved or lost."
                             :collect (bordeaux-threads:make-thread
                                       (lambda ()
                                         (dotimes (i per)
-                                          (sento.actor:tell buf (list :insert :text "x"))))
+                                          (pine.text.buffer:edit buf (fset:seq :insert "x"))))
                                       :name (format nil "stress-writer-~d" w)))))
         (mapc #'bordeaux-threads:join-thread threads)
         (let ((want (* per +stress-writers+)))
@@ -105,7 +105,7 @@ none times out, and the line count never goes backwards."
              (writer (bordeaux-threads:make-thread
                       (lambda ()
                         (loop :until stop
-                              :do (sento.actor:tell buf '(:newline))
+                              :do (pine.text.buffer:edit buf (fset:seq :newline))
                                   (sleep 0.002)))
                       :name "stress-readwrite-writer"))
              (bad 0)
@@ -139,7 +139,7 @@ producing frames rather than queueing behind the edits that caused them."
                                         b))))
           (dotimes (round 50)
             (dolist (b buffers)
-              (sento.actor:tell b (list :insert :text "x"))))
+              (pine.text.buffer:edit b (fset:seq :insert "x"))))
           (is (wait-for (lambda () (> painted 100)) :seconds 60)
               "1000 edits across 20 subscribed buffers produced only ~d frames" painted))))))
 
@@ -155,7 +155,7 @@ back on the deadline while the rest of the daemon keeps working."
                            :collect (format nil "stress-fault-~d" i))))
           (dolist (name names)
             (let ((buf (probe-buffer name)))
-              (sento.actor:tell buf (list :replace-content :content name))
+              (pine.ns:write (pine.buf:at buf :text) name)
               (sento.actor:tell buf '(:probe-fault))))
           (is (wait-for (lambda () (= 20 (length faults))) :seconds 30)
               "only ~d of 20 faults reached the surface" (length faults))
@@ -176,7 +176,7 @@ handled. A fault must cost one message, not the actor."
           (dotimes (i 5) (sento.actor:tell buf '(:probe-fault)))
           (is (wait-for (lambda () (= 5 (length faults))) :seconds 60)
               "only ~d of 5 repeated faults were handled" (length faults))
-          (sento.actor:tell buf (list :replace-content :content "alive"))
+          (pine.ns:write (pine.buf:at buf :text) "alive")
           (is (wait-for (lambda () (equal "alive" (btext "stress-always-faults"))))
               "the buffer stopped taking work after five faults"))))))
 
@@ -189,7 +189,7 @@ dropped."
         (let ((buf (probe-buffer "stress-parked-queue")))
           (sento.actor:tell buf '(:probe-fault))
           (is (wait-for (lambda () faults)) "the fault never reached the surface")
-          (dotimes (i 200) (sento.actor:tell buf (list :insert :text "x")))
+          (dotimes (i 200) (pine.text.buffer:edit buf (fset:seq :insert "x")))
           (sleep 0.5)
           (pine.err:pick-restart (first faults) "ABORT")
           (is (wait-for (lambda () (let ((text (btext "stress-parked-queue")))
@@ -208,7 +208,7 @@ come back, so the session thread can report and carry on."
         (let ((buf (probe-buffer "stress-parked-ask")))
           (sento.actor:tell buf '(:probe-fault))
           (is (wait-for (lambda () faults)) "the fault never reached the surface")
-          (let ((answer (handler-case (pine.core.actor:ask buf '(:get-text) :timeout 1)
+          (let ((answer (handler-case (pine.text.buffer:text-of buf)
                           (error (c) c))))
             (is (not (stringp answer))
                 "a parked buffer answered text, so it was not parked"))
@@ -247,7 +247,7 @@ fault aborts and the buffer keeps working."
                (dotimes (i 5) (sento.actor:tell buf '(:probe-fault)))
                (is (wait-for (lambda () (= 5 calls)) :seconds 30)
                    "the broken surface was called ~d times, not 5" calls)
-               (sento.actor:tell buf (list :replace-content :content "alive"))
+               (pine.ns:write (pine.buf:at buf :text) "alive")
                (is (wait-for (lambda () (equal "alive" (btext "stress-broken-surface"))))
                    "the buffer stopped working when the surface was broken"))
           (setf pine.err:*on-debug* saved))))))
@@ -261,7 +261,7 @@ permanent."
                             :attended (lambda (ev) (declare (ignore ev))
                                         (error "attended check is broken")))
         (let ((buf (probe-buffer "stress-broken-attended")))
-          (sento.actor:tell buf (list :replace-content :content "before"))
+          (pine.ns:write (pine.buf:at buf :text) "before")
           (sleep 0.2)
           (sento.actor:tell buf '(:probe-fault))
           (is (wait-for (lambda () faults)) "the fault never reached the surface")
@@ -276,7 +276,7 @@ the thread waiting for one that will never be found."
     (within-seconds 60
       (with-surface (faults :attended (lambda (ev) (declare (ignore ev)) t))
         (let ((buf (probe-buffer "stress-bad-restart")))
-          (sento.actor:tell buf (list :replace-content :content "before"))
+          (pine.ns:write (pine.buf:at buf :text) "before")
           (sleep 0.2)
           (sento.actor:tell buf '(:probe-fault))
           (is (wait-for (lambda () faults)) "the fault never reached the surface")
@@ -294,8 +294,7 @@ region command does when the buffer shrank under it. No fault, no leftovers."
     (within-seconds 90
       (with-surface (faults :park-seconds 1)
         (let ((buf (stress-buffer "stress-clamp" (format nil "one~%two"))))
-          (sento.actor:tell buf (list :delete-region :start-line 0 :start-col 0
-                                                     :end-line 900 :end-col 4))
+          (pine.editor.ask:tell buf :delete-region :start-line 0 :start-col 0 :end-line 900 :end-col 4)
           (is (wait-for (lambda () (equal "" (btext "stress-clamp"))))
               "a region past the end left ~s" (btext "stress-clamp"))
           (is (null faults) "clamping to the end should not fault"))))))
@@ -315,13 +314,13 @@ buffer that quietly drops it makes the caller's bug look like a no-op."
     (within-seconds 90
       (with-surface (faults :park-seconds 1)
         (let ((buf (stress-buffer "stress-unknown-verb" "one")))
-          (sento.actor:tell buf (list :no-such-verb :line 700))
+          (ignore-errors (pine.editor.ask:tell buf :no-such-verb :line 700))
           (is (wait-for (lambda () faults) :seconds 30)
               "an unhandled verb was dropped without a word")
           (is (wait-for (lambda () (equal "one" (btext "stress-unknown-verb"))) :seconds 30)
               "the buffer did not keep its content, it answered ~s"
               (btext "stress-unknown-verb"))
-          (sento.actor:tell buf (list :insert :text "!"))
+          (pine.text.buffer:edit buf (fset:seq :insert "!"))
           (is (wait-for (lambda () (equal "!one" (btext "stress-unknown-verb"))))
               "the buffer stopped taking edits after an unhandled verb"))))))
 
@@ -330,8 +329,8 @@ buffer that quietly drops it makes the caller's bug look like a no-op."
     (within-seconds 90
       (with-surface (faults :park-seconds 1)
         (let ((buf (stress-buffer "stress-point" "one")))
-          (sento.actor:tell buf (list :move-point :line 500 :col 400))
-          (sento.actor:tell buf (list :indent-lines :from 40 :to 90))
+          (pine.text.buffer:put-point buf 500 400)
+          (pine.editor.ask:tell buf :indent-lines :from 40 :to 90)
           (sleep 1.0)
           (let ((text (btext "stress-point")))
             (is (stringp text) "the buffer stopped answering after point ran off")
@@ -343,8 +342,8 @@ buffer that quietly drops it makes the caller's bug look like a no-op."
     (within-seconds 60
       (with-surface (faults :park-seconds 1)
         (let ((buf (stress-buffer "stress-empty")))
-          (dotimes (i 10) (sento.actor:tell buf '(:backspace)))
-          (sento.actor:tell buf (list :insert :text "x"))
+          (dotimes (i 10) (pine.text.buffer:delete-back buf))
+          (pine.text.buffer:edit buf (fset:seq :insert "x"))
           (is (wait-for (lambda () (equal "x" (btext "stress-empty"))))
               "backspacing an empty buffer left it unusable"))))))
 
@@ -380,7 +379,7 @@ and the threads do not accumulate."
       (let ((before (length (sb-thread:list-all-threads))))
         (dotimes (i 200)
           (let ((buf (stress-buffer "stress-churn")))
-            (sento.actor:tell buf (list :insert :text "x"))
+            (pine.text.buffer:edit buf (fset:seq :insert "x"))
             (pine.editor.frame::kill-buffer "stress-churn")))
         (is (null (pine.editor.frame::buffer "stress-churn"))
             "the churned name is still registered")
@@ -389,7 +388,7 @@ and the threads do not accumulate."
             "200 create/kill rounds left ~d threads behind"
             (- (length (sb-thread:list-all-threads)) before))
         (let ((buf (stress-buffer "stress-churn")))
-          (sento.actor:tell buf (list :insert :text "y"))
+          (pine.text.buffer:edit buf (fset:seq :insert "y"))
           (is (wait-for (lambda () (equal "y" (btext "stress-churn"))))
               "the name could not be used again after the churn"))))))
 
@@ -403,15 +402,15 @@ dead actor have to be survivable: the daemon keeps painting and editing."
               (lambda (&rest args) (declare (ignore args)) (incf painted)))
         (let ((buf (stress-buffer "stress-dead")))
           
-          (sento.actor:tell buf (list :insert :text "x"))
+          (pine.text.buffer:edit buf (fset:seq :insert "x"))
           (sleep 0.2)
           (pine.editor.frame::kill-buffer "stress-dead")
-          (dotimes (i 50) (ignore-errors (sento.actor:tell buf (list :insert :text "x"))))
+          (dotimes (i 50) (ignore-errors (pine.text.buffer:edit buf (fset:seq :insert "x"))))
           (sleep 0.5)
           (let ((live (stress-buffer "stress-dead-live")))
             
             (setf painted 0)
-            (sento.actor:tell live (list :insert :text "z"))
+            (pine.text.buffer:edit live (fset:seq :insert "z"))
             (is (wait-for (lambda () (equal "z" (btext "stress-dead-live"))))
                 "editing stopped working after sends to a dead buffer")
             (is (wait-for (lambda () (plusp painted)))
@@ -424,15 +423,15 @@ history has to bottom out rather than fault or lose the text."
     (within-seconds 180
       (with-surface (faults :park-seconds 1)
         (let ((buf (stress-buffer "stress-undo")))
-          (dotimes (i 500) (sento.actor:tell buf (list :insert :text "x")))
+          (dotimes (i 500) (pine.text.buffer:edit buf (fset:seq :insert "x")))
           (is (wait-for (lambda () (let ((text (btext "stress-undo")))
                                      (and (stringp text) (= 500 (char-count text)))))
                         :seconds 90)
               "the edits did not all land before the undos")
-          (dotimes (i 600) (sento.actor:tell buf '(:undo)))
+          (dotimes (i 600) (pine.text.buffer:edit buf (fset:seq :undo)))
           (is (wait-for (lambda () (equal "" (btext "stress-undo"))) :seconds 90)
               "600 undos over 500 edits left ~s" (btext "stress-undo"))
-          (dotimes (i 600) (sento.actor:tell buf '(:redo)))
+          (dotimes (i 600) (pine.text.buffer:edit buf (fset:seq :redo)))
           (is (wait-for (lambda () (let ((text (btext "stress-undo")))
                                      (and (stringp text) (= 500 (char-count text)))))
                         :seconds 90)
@@ -447,7 +446,7 @@ the keymaps, the buffer and the renderer all keep up and the text is exact."
     (within-seconds 180
       (let ((buf (pine.editor.frame::buffer "scratch"))
             (key (pine.editor.key::parse-key "x")))
-        (sento.actor:tell buf (list :replace-content :content ""))
+        (pine.ns:write (pine.buf:at buf :text) "")
         (sleep 0.2)
         (dotimes (i 1000)
           (pine.editor.command::dispatch *client* key))
@@ -497,7 +496,7 @@ happens while parses are in flight, and each one has to come back promptly."
                         (dotimes (i 1000000) (write-line line s))))
              (buf (pine.editor.frame::make-buffer "stress-million")))
         (pine.editor.frame::set-buffer-mode buf :lisp)
-        (sento.actor:tell buf (list :replace-content :content content))
+        (pine.ns:write (pine.buf:at buf :text) content)
         ;; An ask that lands while the buffer is in the middle of loading 22 MB
         ;; comes back NO-RESULT rather than waiting, so the load is waited out on
         ;; the answer being a snapshot at all. The latency this test is about is
@@ -511,7 +510,7 @@ happens while parses are in flight, and each one has to come back promptly."
         ;; type into it while the parser is busy behind us
         (let ((worst 0) (unanswered 0))
           (dotimes (i 25)
-            (sento.actor:tell buf (list :insert :text "z"))
+            (pine.text.buffer:edit buf (fset:seq :insert "z"))
             (let ((t0 (get-internal-real-time)))
               (unless (typep (bsnap "stress-million") 'pine.text.buffer:snapshot)
                 (incf unanswered))

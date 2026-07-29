@@ -256,7 +256,7 @@ without touching the daemon or any app. Returns the agent-info once it connects.
 Apps ask the registry for a tool rather than reinventing it."
   (ecase capability
     (:agent  (let ((info (find-agent server name))) (and info (agent-info-actor info))))
-    (:buffer (gethash name (pine.core.server:buffer-table server)))))
+    (:buffer name)))
 
 (defun kill-agent (server name)
   (let ((info (find-agent server name)))

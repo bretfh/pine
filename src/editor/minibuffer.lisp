@@ -210,8 +210,8 @@ beside the old session's."
   (or (pine.editor.frame:minibuffer-buffer client)
       (let* ((srv (pine.editor.frame:server-of client))
              (sys (pine.core.server:actor-system srv))
-             (buf (pine.text.buffer:make-buffer-actor
-                   sys (format nil "*minibuffer*-~a" (gensym "MB"))))
+             (buf (pine.text.buffer:make-buffer
+                   (format nil "*minibuffer*-~a" (gensym "MB"))))
              (ctrl (sento.actor-context:actor-of sys
                      :name (format nil "mb-ctrl-~a" (gensym))
                      :dispatcher :pinned
@@ -224,7 +224,7 @@ beside the old session's."
                                   nil)))))
         ;; the controller re-filters and repaints on each edit, so it watches
         ;; the buffer it is the controller of rather than being sent it
-        (pine.ns:watch (pine.text.buffer:at (pine.text.buffer:name-of buf))
+        (pine.ns:watch (pine.buf:at buf)
                        (lambda (value)
                          (declare (ignore value))
                          (sento.actor:tell

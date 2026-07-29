@@ -12,14 +12,22 @@
   "The suite's store. Never OPEN-STORE's default, which is under XDG data home
 and holds the user's own recents, places and kill ring.")
 
+(defvar *store* nil "The path store the suite writes through.")
+
 (defun open-fresh-store (&optional (path +store-path+))
-  "Delete the database at PATH and open it."
+  "Delete the database at PATH and open it, both stores."
   (pine.state.world:close)
-  (dolist (f (list path
+  (when *store* (ignore-errors (pine.store:close *store*)) (setf *store* nil))
+  (dolist (f (list path (concatenate 'string path "-paths")
                    (concatenate 'string path "-wal")
-                   (concatenate 'string path "-shm")))
+                   (concatenate 'string path "-shm")
+                   (concatenate 'string path "-paths-wal")
+                   (concatenate 'string path "-paths-shm")))
     (uiop:delete-file-if-exists f))
-  (pine.state.world:open path))
+  (pine.state.world:open path)
+  ;; the path store: held paths write through, so /history is real and undo is
+  ;; what the file remembers
+  (setf *store* (pine.store:open (concatenate 'string path "-paths"))))
 
 (defun build-substrate ()
   "Start the daemon's actors, a client with a renderer, scratch and the
@@ -31,7 +39,6 @@ minibuffer. Returns the server."
           (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
-    (pine.text.buffer:start-buffer-registry srv)
     (pine.win:mount)
     (pine.mode:mount)
     (pine.cmd:mount)

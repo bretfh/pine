@@ -116,19 +116,28 @@ edit that produced them. Overlays describe the text as it was, so they go."
     ;; said before the lines move, because the lines moving is what wakes the
     ;; parse, and it happens on this thread before the write answers
     (setf (asked name :edit)
-          (when descriptor (fset:with descriptor :lines (b:lines next))))
+          (when descriptor
+            (fset:with (fset:with descriptor :lines (b:lines next))
+                       :from (b:lines (state name)))))
     (ns:write (fset:with landing (at name :overlays) nil))))
 
 ;;;; The verbs
 
 (defun %insert (name text)
   (multiple-value-bind (line col) (%point name)
-    (%edit name
-           (lambda (s) (b:insert-string s line col text))
-           ;; pasted text carries its own newlines, so one line can become
-           ;; several
-           {:at line :old 1 :new (1+ (count #\Newline text))
-            :bytes (pine.ts.index:string-bytes text)})))
+    (let* ((s (state name))
+           (at-line (b:line-at s line))
+           ;; point past the end of its line inserts at the end, and a shift
+           ;; that says the wrong column moves the tree to the wrong place, so
+           ;; a clamped insert rebuilds instead
+           (exact (and at-line (<= col (length at-line)))))
+      (%edit name
+             (lambda (s) (b:insert-string s line col text))
+             ;; pasted text carries its own newlines, so one line can become
+             ;; several
+             (when exact
+               {:at line :old 1 :new (1+ (count #\Newline text))
+                :bytes (pine.ts.index:string-bytes text)})))))
 
 (defun %newline (name)
   "Split the line at point.
@@ -139,7 +148,9 @@ what it is."
   (multiple-value-bind (line col) (%point name)
     (let* ((next (b:insert-newline (state name) line col))
            (lines (b:lines next)))
-      (setf (asked name :edit) {:at line :old 1 :new 2 :bytes 1 :lines lines})
+      (setf (asked name :edit)
+            {:at line :old 1 :new 2 :bytes 1 :lines lines
+             :from (b:lines (state name))})
       (ns:write (fset:with (%landing name next) (at name :overlays) nil)))))
 
 (defun %delete (name from to)
@@ -155,8 +166,13 @@ moves its tree by the bytes that went rather than rebuilding it."
          (gone (b:region-string s from-line from-col to-line to-col)))
     (%edit name
            (lambda (s) (b:delete-region s from-line from-col to-line to-col))
-           {:at from-line :old (1+ (- to-line from-line)) :new 1
-            :bytes (- (pine.ts.index:string-bytes gone))})))
+           ;; a shift describes lines, so it can say a backspace and a line
+           ;; join and no more: a region spanning three lines leaves the middle
+           ;; one nowhere in the description, and a tree shifted by a
+           ;; description that does not fit is worse than one rebuilt
+           (when (<= (- to-line from-line) 1)
+             {:at from-line :old (1+ (- to-line from-line)) :new 1
+              :bytes (- (pine.ts.index:string-bytes gone))}))))
 
 (defun %kill (name)
   "Cut the region to /kill, the ring a yank reads."
@@ -499,6 +515,13 @@ mode is."
 (defvar *parsers* (sento.atomic:make-atomic-reference :value (fset:empty-map))
   "Name to parse-link, for the buffers that have a language.")
 
+(defvar *where* nil
+  "The actor system and tree-sitter runtime a parser is started on, as
+(SYSTEM . RUNTIME). What MOUNT was given, so that anything which needs a parse
+can have one started rather than only the two watches that drive it: a buffer
+whose text and mode both landed before /buf was watching still parses the
+moment a window asks to see it.")
+
 (defun %link (name system runtime)
   (or (fset:lookup (sento.atomic:atomic-get *parsers*) name)
       (let* ((mode (ns:read (at name :mode)))
@@ -545,13 +568,15 @@ anything that has business with one asks."
 
 It answers by writing /buf/?name/point, so nothing waits here and the jump
 lands the way any other move does."
+  (%parse name)
   (let ((actor (parser-of name)))
     (when actor
       (multiple-value-bind (line col) (%point name)
         (sento.actor:tell actor
                           (list :motion :name name :kind kind :line line :col col
                                 :lines (or (ns:held (at name :text)) (fset:seq ""))
-                                :viewport (band-of name)))))))
+                                :viewport (band-of name)
+                                :space ns:*space*))))))
 
 (defun %reindent (name)
   "How the parser answers an indent: with the lines it says should move, which
@@ -568,12 +593,13 @@ when it answers; without one, each line takes its previous line's indent."
          (count (b:line-count snap))
          (first-line (max 0 (or from (b:point-line snap))))
          (last-line (min (or to (b:point-line snap)) (1- count)))
-         (actor (parser-of name)))
+         (actor (progn (%parse name) (parser-of name))))
     (if actor
         (sento.actor:tell actor
                           (list :indent :name name :from first-line :to last-line
                                 :lines (b:lines current)
                                 :viewport (band-of name)
+                                :space ns:*space*
                                 :answer (%reindent name)))
         (ns:write
          (%indented name
@@ -594,22 +620,27 @@ into the same mailbox behind the parse it needs."
          (indent (%for name :indent-request lines)))
     (sento.actor:tell
      actor
-     (list :parse :name name :lines lines :viewport band
+     (list :parse :name name :lines lines :viewport band :space ns:*space*
            :tick (or (ns:read (at name :tick)) 0)
            :edit (when edit
                    (list (fset:lookup edit :at) (fset:lookup edit :old)
-                         (fset:lookup edit :new) (fset:lookup edit :bytes)))))
+                         (fset:lookup edit :new) (fset:lookup edit :bytes)))
+           :from-lines (and edit (fset:lookup edit :from))))
     (when indent
       (sento.actor:tell
        actor
-       (list :indent :name name :lines lines :viewport band
+       (list :indent :name name :lines lines :viewport band :space ns:*space*
              :from (fset:lookup indent :from)
              :to (fset:lookup indent :to)
              :answer (%reindent name))))))
 
-(defun %parse (name system runtime)
-  "Parse NAME, starting its parser when it names a grammar and has none. This
-is the only thing that drives a parse."
+(defun %parse (name &optional (system (car *where*)) (runtime (cdr *where*)))
+  "Parse NAME, starting its parser when it names a grammar and has none.
+
+Everything that wants a parse comes through here, so a parser is made when one
+is needed rather than only when a watch happened to fire. A buffer whose text
+and mode landed together -- or landed again unchanged, which moves nothing --
+still parses the moment anything asks."
   (let ((link (%link name system runtime)))
     (when link (%tell-parse name (pine.ts.parser:link-actor link)))))
 
@@ -621,8 +652,7 @@ That is why a background buffer of a million lines costs nothing: nobody read
 its faces, so nobody computed them."
   (unless (fset:equal? band (asked name :viewport))
     (setf (asked name :viewport) band)
-    (let ((actor (parser-of name)))
-      (when actor (%tell-parse name actor))))
+    (%parse name))
   band)
 
 (defun mount (&key system runtime)
@@ -630,6 +660,7 @@ its faces, so nobody computed them."
 whenever its text or its mode moves."
   (ns:write /buf (provider))
   (when (and system runtime)
+    (setf *where* (cons system runtime))
     (ns:watch /buf/*/text
               (pine.data:fn [v]
                 (declare (ignore v))

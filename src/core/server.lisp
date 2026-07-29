@@ -6,8 +6,7 @@
    #:*app-actor-config*
    #:actor-system
    #:agent-registry
-   #:buffer-registry
-   #:buffer-table
+   #:store
    #:ts-runtime
    #:proc
    #:clients
@@ -60,8 +59,8 @@ frontend would attach to whichever daemon holds the default port.")
 (defclass server ()
   ((actor-system    :initarg :actor-system    :accessor actor-system    :initform nil)
    (agent-registry  :initarg :agent-registry  :accessor agent-registry  :initform nil)
-   (buffer-registry :initarg :buffer-registry :accessor buffer-registry :initform nil)
-   (buffer-table    :initarg :buffer-table    :accessor buffer-table    :initform nil)
+   ;; the path store: what every held path writes through to
+   (store           :initarg :store           :accessor store           :initform nil)
    (ts-runtime      :initarg :ts-runtime      :accessor ts-runtime      :initform nil)
    ;; what /proc is mounted as, so shutdown can take it back off
    (proc            :initarg :proc            :accessor proc            :initform nil)
@@ -74,9 +73,7 @@ frontend would attach to whichever daemon holds the default port.")
                  (:shared (:workers ,workers :strategy :random))
                  :timeout-timer (:resolution 500 :max-size 500)
                  :scheduler (:enabled :true))))
-         (srv (make-instance 'server
-                :actor-system sys
-                :buffer-table (make-hash-table :test 'equal))))
+         (srv (make-instance 'server :actor-system sys)))
     (when remoting-port
       (sento.remoting:enable-remoting sys :host "127.0.0.1" :port remoting-port)
       (setf (remoting-port srv) (sento.remoting:remoting-port sys)))

@@ -584,13 +584,18 @@ scrolling within one moves it not at all.")
   "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
   (if band (fset:subseq lines (car band) (1+ (cdr band))) lines))
 
-(defun parse-lines! (ps lines &key edit viewport)
+(defun parse-lines! (ps lines &key edit from viewport)
   "Parse LINES into PS's tree, reading the bytes straight from the seq.
 
 EDIT is (LINE OLD-LINES NEW-LINES BYTE-DELTA): at LINE, OLD-LINES lines became
 NEW-LINES lines and the buffer grew by BYTE-DELTA bytes. Given one, the tree is
 shifted and reused and the byte index is carried forward; without one, both are
 built from scratch.
+
+FROM is the lines the edit was computed against. A shift only means anything
+from that state, and more than one thread writes a buffer -- an edit from the
+keyboard, an indent from this parser -- so an edit that describes a step the
+tree did not take is dropped rather than applied to the wrong tree.
 
 VIEWPORT is the (FROM-LINE . TO-LINE) some window shows. Past
 +WHOLE-FILE-LINES+ only a band around it is given to tree-sitter at all, so
@@ -603,7 +608,8 @@ PS-OFFSET is that line."
          (old-tree (ps-tree ps)))
     (when (and old-tree same-band (eq lines (ps-lines ps)) (null edit))
       (return-from parse-lines! ps))
-    (%parse-band ps lines band band-lines same-band edit)))
+    (%parse-band ps lines band band-lines same-band
+                 (when (or (null from) (eq from (ps-lines ps))) edit))))
 
 (defun %parse-band (ps lines band band-lines same-band edit)
   (let* ((old-tree (ps-tree ps))

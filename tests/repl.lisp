@@ -95,8 +95,7 @@ shared dispatcher, because every actor in the daemon draws from it."
       (is (equal '("a" "b")
                  (let ((probe (pine.editor.frame::make-buffer "post-repl-probe")))
                    (pine.editor.frame::set-buffer-mode probe :text)
-                   (sento.actor:tell probe (list :replace-content
-                                                 :content (format nil "a~%b")))
+                   (pine.ns:write (pine.buf:at probe :text) (format nil "a~%b"))
                    (sleep 0.2)
                    (pine.text.buffer:split-lines (btext probe))))
           "a buffer actor stopped answering after the repl submitted"))))

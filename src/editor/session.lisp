@@ -45,21 +45,14 @@ through the server's buffer table."
   (etypecase x
     (string (if pine.editor.frame:*client*
                 (pine.editor.frame:make-buffer x)
-                (let ((srv pine.core.server:*server*))
-                  (and srv (pine.core.server:buffer-table srv)
-                       (gethash x (pine.core.server:buffer-table srv))))))
+                (and (pine.ns:held (pine.buf:at x :text)) x)))
     (t x)))
 
 (defun %buffer-name (x buf)
   "BUF's registered name, without asking the actor: the designator string
 itself, or a reverse lookup in the server's buffer table."
-  (if (stringp x)
-      x
-      (let ((srv pine.core.server:*server*) (name ""))
-        (when (and srv (pine.core.server:buffer-table srv))
-          (maphash (lambda (k v) (when (eq v buf) (setf name k)))
-                   (pine.core.server:buffer-table srv)))
-        name)))
+  (declare (ignore buf))
+  (if (stringp x) x ""))
 
 (defun %backing-window (buf name)
   ;; a detached view: a panel, or a tool buffer rendered once
@@ -231,13 +224,9 @@ those rows, and a keystroke moves one of them."
     (bordeaux-threads:condition-notify (sess-cvar s))))
 
 (defun %scratch-text ()
-  "Scratch's text straight off the server table -- no client needed, so the
-shutdown sweep can save it."
-  (let* ((srv pine.core.server:*server*)
-         (buf (and srv (pine.core.server:buffer-table srv)
-                   (gethash "scratch" (pine.core.server:buffer-table srv))))
-         (text (and buf (ignore-errors
-                         (pine.text.buffer:text-of buf)))))
+  "Scratch's text, read from its leaves -- no client needed, so the shutdown
+sweep can save it."
+  (let ((text (ignore-errors (pine.text.buffer:text-of "scratch"))))
     (and (stringp text) (plusp (length text)) text)))
 
 (defmethod world:snapshot ((name (eql :scratch))) (%scratch-text))

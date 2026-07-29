@@ -43,8 +43,7 @@ on the form's line when AT is (BUFFER . LINE)."
     (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.err:evaluation-values ev))))
            (when at
              (ignore-errors
-              (sento.actor:tell (car at)
-                                (list :overlay :line (cdr at) :text txt))))
+              (pine.editor.ask:tell (car at) :overlay :line (cdr at) :text txt)))
            (eval-notify txt)))
     (:aborted (eval-notify "aborted"))))
 

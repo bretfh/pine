@@ -262,3 +262,30 @@ anything called the parser. The colours land at /buf/?name/face."
                       "no colours ever landed")
              (is (plusp (length (pine.ns:read /buf/probe/face)))))
         (pine.buf:unmount)))))
+
+(test a-parse-starts-when-one-is-asked-for-and-not-only-when-something-moved
+  "The parse is not driven by a change alone. A buffer whose parser is gone --
+because the text and the mode landed before anything watched them, or landed
+again unchanged, which moves nothing -- still parses the moment a window says
+what it is showing."
+  (with-fixture substrate ()
+    (within-seconds 40
+      (let ((name "asked-probe"))
+        (pine.editor.frame::make-buffer name :content "(defun f (x) x)")
+        (pine.editor.frame::set-buffer-mode
+         (pine.editor.frame::buffer name) :lisp)
+        ;; highlights exist to be painted, so a window has to be showing it
+        (pine.buf:showing name (fset:seq 0 200))
+        (is (wait-for (lambda () (pine.ns:read (pine.buf:at name :face)))
+                      :seconds 20)
+            "the first parse never landed")
+        ;; the parser goes and nothing about the buffer moves after it
+        (pine.buf:drop name)
+        (pine.ns:write (pine.buf:at name :face) nil)
+        (sleep 0.1)
+        (is (null (pine.buf:parser-of name)))
+        (pine.buf:showing name (fset:seq 0 200))
+        (is (wait-for (lambda () (pine.ns:read (pine.buf:at name :face)))
+                      :seconds 20)
+            "asking to see it did not start a parse")
+        (pine.editor.frame::kill-buffer name)))))

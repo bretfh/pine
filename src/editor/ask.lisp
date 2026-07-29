@@ -9,32 +9,54 @@ modes and commands, so it can read the registries that hold them."))
 (named-readtables:in-readtable pine.path:syntax)
 
 (defun tell (target tag &rest plist)
-  "Do TAG to TARGET's buffer. Returns the buffer, or nil when there is none.
+  "Do TAG to TARGET's buffer. Answers the buffer, or NIL when there is none.
 
-A local is a place, so setting one is a write; everything else is a verb on the
-buffer's text. Both have landed when this answers."
+Every one of these is a write. A buffer has no mailbox: a local is a place, an
+edit is a verb on the text, and both have landed when this answers."
   (let ((buf (pine.editor.frame:buffer target)))
     (when buf
-      (case tag
-        ((:set-local :set-meta)
-         (pine.text.buffer:put buf (getf plist :key) (getf plist :value)))
-        (:move-point
-         (pine.text.buffer:put-point buf (getf plist :line) (getf plist :col)))
-        (:insert (pine.text.buffer:edit buf (fset:seq :insert (getf plist :text))))
-        (:backspace (pine.text.buffer:delete-back buf))
-        ((:newline :undo :redo) (pine.text.buffer:edit buf (fset:seq tag)))
-        (:delete-region
-         (pine.text.buffer:edit
-          buf (fset:seq :delete
-                        (fset:seq (getf plist :start-line) (getf plist :start-col))
-                        (fset:seq (getf plist :end-line) (getf plist :end-col)))))
-        (:replace-content
-         (pine.ns:write (pine.text.buffer:at (pine.text.buffer:name-of buf) :text)
-                        (getf plist :content)))
-        ;; the verbs /buf does not serve yet -- indenting a region, projecting a
-        ;; layout -- are still the buffer's own
-        (t (sento.actor:tell buf (list* tag plist)))))
+      (let ((at (pine.buf:at buf)))
+        (case tag
+          ((:set-local :set-meta)
+           (pine.text.buffer:put buf (getf plist :key) (getf plist :value)))
+          (:set-var
+           (pine.text.buffer:put buf (getf plist :key) (getf plist :value)))
+          (:move-point
+           (pine.text.buffer:put-point buf (getf plist :line) (getf plist :col)))
+          (:move-by
+           (pine.ns:write (pine.path:child at "point")
+                          (fset:seq :move (getf plist :unit) (getf plist :n))))
+          (:insert (pine.text.buffer:edit buf (fset:seq :insert (getf plist :text))))
+          (:backspace (pine.text.buffer:delete-back buf))
+          ((:newline :undo :redo) (pine.text.buffer:edit buf (fset:seq tag)))
+          (:delete-region
+           (pine.text.buffer:edit
+            buf (fset:seq :delete
+                          (fset:seq (getf plist :start-line) (getf plist :start-col))
+                          (fset:seq (getf plist :end-line) (getf plist :end-col)))))
+          (:indent-lines
+           (pine.ns:write (pine.path:child at "text")
+                          (fset:seq :indent (getf plist :from) (getf plist :to))))
+          (:replace-content
+           (pine.ns:write (pine.path:child at "text") (getf plist :content)))
+          (:set-highlights
+           (pine.ns:write (pine.path:child at "face") (getf plist :highlights)
+                          :keep nil))
+          ;; an overlay is a transient annotation on a line, cleared by the next
+          ;; edit; the renderer draws it after that line's text
+          (:overlay
+           (let ((was (or (pine.ns:read (pine.path:child at "overlays"))
+                          (fset:empty-map))))
+             (pine.ns:write (pine.path:child at "overlays")
+                            (fset:with was (getf plist :line)
+                                       (list (getf plist :text)
+                                             (or (getf plist :class) :eval-result)))
+                            :keep nil)))
+          (:clear-overlays
+           (pine.ns:write (pine.path:child at "overlays") nil))
+          (t (error "A buffer has no verb ~s." tag)))))
     buf))
+
 
 (defparameter +server-verbs+
   '(:buffers :clients :modes :commands :faces :actor-system :describe))
@@ -51,8 +73,7 @@ buffer's text. Both have landed when this answers."
   (let ((srv (pine.editor.frame:server-of (pine.editor.frame:current-client)))
         (query (first spec)))
     (case query
-      (:buffers     (loop for k being the hash-keys of (pine.text.buffer:buffer-table srv)
-                          collect k))
+      (:buffers     (pine.buf:names))
       (:clients     (pine.core.server:clients srv))
       (:modes       (pine.mode:names))
       (:commands    (pine.cmd:names))

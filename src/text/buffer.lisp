@@ -1,6 +1,16 @@
 (defpackage #:pine.text.buffer
   (:use :cl)
-  (:export #:actor-dead-p #:at #:band #:name-of #:edit #:delete-back #:put #:put-point #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths #:buffer-local #:buffer-state #:buffer-table #:copy-state #:delete-char #:delete-region #:ensure-parser #:highlights #:insert-char #:insert-newline #:insert-string #:line-at #:line-count #:line-count-of #:line-indent-width #:lines #:load-content #:make-buffer-actor #:*message* #:make-empty-state #:marks #:meta #:move-mark #:name #:point-after-move #:point-col #:point-line #:previous-line-indent #:refresh-highlights #:region-bounds #:region-string #:reindent-line #:request-parse #:set-meta #:shift-highlights #:snapshot #:split-lines #:start-buffer-registry #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
+  (:export #:at #:band #:name-of #:edit #:delete-back #:put #:put-point
+           #:snapshot-of #:state-of #:text-of #:from-paths #:to-paths
+           #:buffer-local #:buffer-state #:copy-state #:delete-char
+           #:delete-region #:highlights #:insert-char #:insert-newline
+           #:insert-string #:line-at #:line-count #:line-count-of
+           #:line-indent-width #:lines #:load-content #:make-buffer
+           #:make-empty-state #:marks #:meta #:move-mark #:name
+           #:point-after-move #:point-col #:point-line #:previous-line-indent
+           #:refresh-highlights #:region-bounds #:region-string #:reindent-line
+           #:set-meta #:shift-highlights #:snapshot #:split-lines
+           #:state->snapshot #:state->snapshot-with-hl #:state->string #:tick))
 
 (in-package #:pine.text.buffer)
 
@@ -276,48 +286,6 @@ is what keeps a big file from flickering while its parse catches up."
                                (third tuple) (fourth tuple))
                          tuple))))
 
-(defun %hear-the-parser (name self)
-  "Bring what the parser writes back to the buffer actor SELF.
-
-The parser answers by writing /buf/NAME/face and /buf/NAME/indent rather than
-replying, so the buffer reads those places like anything else would. This is
-the whole of the buffer's side of the parse, and it goes when the actor does."
-  (pine.ns:watch (pine.path:path (pine.path:parse "/buf") name "face")
-                 (lambda (hl) (sento.actor:tell self (list :highlights :hl hl))
-                   (fset:empty-map))
-                 :as (list :buffer-face name))
-  nil)
-
-(defun ensure-parser (state link name)
-  "LINK, starting the buffer's parser actor the first time its mode names a
-language. NIL when the buffer has no language or the grammar is unavailable."
-  (or link
-      (let ((lang (%state-language state))
-            (rt (%ts-runtime))
-            (srv pine.core.server:*server*))
-        (when (and lang rt srv)
-          (let ((actor (pine.ts.parser:start-parser
-                        (pine.core.server:actor-system srv) rt lang name)))
-            (when actor
-              (%hear-the-parser name sento.actor:*self*)
-              (pine.ts.parser:make-parse-link actor)))))))
-
-(defun request-parse (link state &key (verb :parse) extra)
-  "Tell LINK's parser about STATE.
-
-Its mailbox is the queue and its one thread drains it in order, so a burst of
-typing arrives as a burst and the newest lines are the last thing parsed. The
-answer is a write, not a reply, so nothing here waits and nothing has to
-remember that a request is out."
-  (when link
-    (sento.actor:tell (pine.ts.parser:link-actor link)
-                      (list* verb
-                             :lines (lines state)
-                             :tick (tick state)
-                             :viewport (buffer-local state :viewport)
-                             :name (buffer-local state :name "")
-                             extra)))
-  link)
 
 (defun refresh-highlights (pstate new-state &key edit)
   "Parse and walk NEW-STATE's lines here and now, answering (values highlights
@@ -447,21 +415,12 @@ else under a buffer is a local and rides the meta.")
           (setf out (fset:with out key value)))))
     out))
 
-(defparameter +actor-prefix+ "buffer:"
-  "What a buffer actor's own name begins with, so the buffer it serves can be
-read off it without a table.")
-
 (defun name-of (x)
-  "X's buffer name: a string is one, an actor carries its own.
-
-Off the actor rather than out of the table, because a buffer that no table
-holds -- the minibuffer, a detached view -- is still a buffer."
-  (cond ((stringp x) x)
-        ((null x) nil)
-        (t (let ((actor-name (ignore-errors (sento.actor-cell:name x))))
-             (when (and actor-name
-                        (uiop:string-prefix-p +actor-prefix+ actor-name))
-               (subseq actor-name (length +actor-prefix+)))))))
+  "X's buffer name. A buffer is its name: nothing holds an object for one, so
+a string is a buffer and there is nothing else to coerce."
+  (etypecase x
+    (null nil)
+    (string x)))
 
 (defun put (x key value)
   "Put VALUE at X's KEY. A buffer-local is a place, so this is a write and it
@@ -540,138 +499,17 @@ nothing sees the buffer half edited."
         (setf out (fset:with out (at name key) value))))
     out))
 
-(defun actor-dead-p (actor)
-  "True when ACTOR will never take another message: stopped, or its own thread
-gone.
+;;;; A buffer is its leaves. Making one is writing them.
 
-A buffer parked in the debugger is not dead. Its thread is alive and waiting for
-a restart, and mistaking that for death would throw away the fault someone is
-looking at, so this asks about the thread rather than about whether it answers."
-  (or (not (sento.actor-cell:running-p actor))
-      (let ((box (sento.actor-cell:msgbox actor)))
-        (and (typep box 'sento.messageb:message-box/bt)
-             (let ((thread (slot-value box 'sento.messageb::queue-thread)))
-               ;; sento's mailbox threads are bordeaux-threads-2 objects, which
-               ;; the v1 predicates this codebase otherwise uses will not take
-               (and thread (not (bordeaux-threads-2:thread-alive-p thread))))))))
+(defun make-buffer (name &key (content "") id)
+  "The buffer NAME, holding CONTENT. It exists once its leaves do.
 
-(defvar *message* nil
-  "What a buffer actor does with a message, as a function of (SELF TAG PLIST).
-
-The layer that has the verbs installs it, so this one owns the thread and the
-tree and knows nothing about editing. Nothing here dispatches on a mode: what a
-mode changes about a verb is an :on handler under /mode, and /buf consults that
-before a message ever reaches an actor.")
-
-(defun make-buffer-actor (system name &key (content "") id (message *message*))
-  "A buffer as an actor on SYSTEM: NAME holding CONTENT, on a thread of its own.
-
-ID names the buffer across images: another pine, or an agent, addresses this
-buffer by it. The layer that creates buffers mints it; this one is below
-persistence and does not."
-  (let ((initial (move-mark (set-meta (set-meta (load-content content) :name name)
-                                      :id id)
-                            :point 0 0)))
-    ;; the buffer is its leaves, so it exists once they do
-    (pine.ns:write (to-paths name initial))
-    (sento.actor-context:actor-of system
-                                  :name (concatenate (quote string) +actor-prefix+ name)
-                                  ;; A buffer runs on its own thread, not a worker
-                                  ;; of the shared dispatcher. A receive that
-                                  ;; parks in the debugger then costs this buffer
-                                  ;; and nothing else: the renderer, the attach
-                                  ;; actors carrying input, the registries and
-                                  ;; every other buffer keep running. KILL-BUFFER
-                                  ;; stops the actor, which ends the thread.
-                                  :dispatcher :pinned
-                                  ;; state tuple: (STATE UNDO REDO SUBSCRIBERS HIGHLIGHTS PARSE-STATE)
-                                  :state (list initial nil nil nil nil nil)
-                                  :receive
-                                  (lambda (msg)
-                                    ;; the tree is what the buffer is: this
-                                    ;; message's work reads it here and lands it
-                                    ;; again below, so nothing else has to ask
-                                    ;; the actor what the buffer says
-                                    (setf sento.actor:*state*
-                                          (list* (from-paths name)
-                                                 (second sento.actor:*state*)
-                                                 (third sento.actor:*state*)
-                                                 (fourth sento.actor:*state*)
-                                                 (pine.ns:read (at name :face))
-                                                 (list (sixth sento.actor:*state*))))
-                                    (let* ((state (first sento.actor:*state*))
-                                           (before state))
-                                      ;; The buffer runs off the session thread, so
-                                      ;; an edit error opens the *debugger* restart
-                                      ;; menu and parks THIS thread while the fault
-                                      ;; is attended, aborting if it is not.
-                                      ;; *state* is committed as each handler's last
-                                      ;; step, so an error before the commit leaves
-                                      ;; the prior buffer intact; `abort' drops the
-                                      ;; edit and the actor keeps receiving.
-                                      (let ((answer
-                                              (pine.err:with-debugger
-                                                  (:label (format nil "buffer ~a <- ~a"
-                                                                  name (first msg)))
-                                                ;; RETRY re-runs the edit after a
-                                                ;; live fix (fix the failing defun
-                                                ;; in this image, then pick retry);
-                                                ;; ABORT drops it and keeps the
-                                                ;; prior buffer.
-                                                (loop
-                                                  (with-simple-restart
-                                                      (retry "Retry this edit")
-                                                    (return
-                                                      (when message
-                                                        (funcall message
-                                                                 sento.actor:*self*
-                                                                 (first msg)
-                                                                 (rest msg)))))))))
-                                        ;; landed only on a normal return, so an
-                                        ;; edit that aborted in the debugger
-                                        ;; leaves the buffer as it was. The
-                                        ;; receive's own value is the answer to
-                                        ;; an ask, so it is what comes back.
-                                        (let ((after (first sento.actor:*state*)))
-                                          (unless (eq before after)
-                                            (pine.ns:write (to-paths name after))))
-                                        answer))))))
-
-
-
-;;;; Buffer Registry
-
-(defun buffer-table (srv)
-  (or (pine.core.server:buffer-table srv)
-      (setf (pine.core.server:buffer-table srv) (make-hash-table :test 'equal))))
-
-(defun start-buffer-registry (server)
-  (let ((sys (pine.core.server:actor-system server)))
-    (setf (pine.core.server:buffer-registry server)
-          (sento.actor-context:actor-of sys
-                                        :name "buffer-registry"
-                                        :dispatcher :pinned
-                                        :state (fset:empty-map)
-                                        :receive
-                                        (lambda (msg)
-                                          (case (first msg)
-                                            (:register
-                                             (destructuring-bind (&key name actor) (rest msg)
-                                               (setf sento.actor:*state* (fset:with sento.actor:*state* name actor))
-                                               (sento.actor:reply actor)))
-                                            (:unregister
-                                             (destructuring-bind (&key name) (rest msg)
-                                               (setf sento.actor:*state* (fset:less sento.actor:*state* name))
-                                               (sento.actor:reply t)))
-                                            (:lookup
-                                             (destructuring-bind (&key name) (rest msg)
-                                               (sento.actor:reply (fset:@ sento.actor:*state* name))))
-                                            (:list
-                                             (let ((names nil))
-                                               (fset:do-map (k v sento.actor:*state*)
-                                                 (declare (ignore v))
-                                                 (push k names))
-                                               (sento.actor:reply (nreverse names))))
-                                            (:count
-                                             (sento.actor:reply (fset:size sento.actor:*state*)))))))))
+ID names it across images: another pine, or an agent, addresses this buffer by
+it. The layer that creates buffers mints it; this one is below persistence and
+does not."
+  (pine.ns:write (to-paths name (move-mark (set-meta (set-meta (load-content content)
+                                                               :name name)
+                                                     :id id)
+                                           :point 0 0)))
+  name)
 

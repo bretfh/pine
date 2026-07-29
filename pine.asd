@@ -86,10 +86,6 @@
                           :components ((:file "style") (:file "node") (:file "build") (:file "raster")
                                        (:file "layout") (:file "cells") (:file "wire")))
                  (:file "source")
-                 ;; the base/text verb methods, once everything they reach for exists
-                 (:module "edit"
-                          :serial t :pathname "editor/"
-                          :components ((:file "edit")))
                  (:file "term")
                  ;; a tool buffer is a view, and the window paints one
                  (:module "view"

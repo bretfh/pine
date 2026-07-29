@@ -24,10 +24,10 @@ nothing is ever waiting on it and the answer is a place rather than a message.")
 
 (defun link-actor (link) (parse-link-actor link))
 
-(defun %ensure-tree (ps lines edit viewport)
+(defun %ensure-tree (ps lines edit from viewport)
   "Bring PS's tree up to LINES over the band VIEWPORT needs, using EDIT when it
-describes the difference."
-  (pine.ts.runtime:parse-lines! ps lines :edit edit :viewport viewport)
+describes the difference from FROM, which is the state it was computed against."
+  (pine.ts.runtime:parse-lines! ps lines :edit edit :from from :viewport viewport)
   ps)
 
 (defun %highlights (ps viewport)
@@ -52,29 +52,32 @@ Every answer is a write. The parser never replies to an ask, so nothing can be
 waiting on it, and what it computed is a place anyone can read rather than a
 message one caller receives."
   (destructuring-bind (tag &key lines edit tick viewport name from to kind line col
-                       answer &allow-other-keys)
+                       answer space from-lines &allow-other-keys)
       msg
     (declare (ignorable tick))
-    (case tag
+    ;; the answer goes back into the namespace that asked, not into whichever
+    ;; one is current when this thread gets around to it
+    (let ((pine.ns:*space* (or space pine.ns:*space*)))
+     (case tag
       (:parse
-       (%ensure-tree ps lines edit viewport)
+       (%ensure-tree ps lines edit from-lines viewport)
        (pine.ns:write (%at name "face") (%highlights ps viewport) :keep nil))
       (:indent
        ;; where a line should sit is not a place, so it goes back to whoever
        ;; asked rather than through a path of its own
-       (%ensure-tree ps lines edit viewport)
+       (%ensure-tree ps lines edit from-lines viewport)
        (let ((targets (loop :for l :from from :to to
                             :for target = (pine.ts.highlight:parse-indent ps l)
                             :when target :collect (cons l target))))
          (when answer (funcall answer targets))))
       (:motion
-       (%ensure-tree ps lines edit viewport)
+       (%ensure-tree ps lines edit from-lines viewport)
        (multiple-value-bind (l c) (pine.ts.runtime:parse-motion ps kind line col)
          (when l
            (pine.ns:write (%at name "point") (fset:seq l c)))))
       (:stop
        (pine.ts.runtime:free-parse-state ps))
-      (t (error "The parser has no handler for ~s." msg)))))
+      (t (error "The parser has no handler for ~s." msg))))))
 
 (defun start-parser (system runtime language name)
   "An actor parsing NAME's buffer in LANGUAGE, or nil when the grammar is

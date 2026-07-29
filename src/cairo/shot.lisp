@@ -14,7 +14,6 @@
     (ignore-errors (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv)))
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
-    (pine.text.buffer:start-buffer-registry srv)
     srv))
 
 (defun frame-shot (&key (path "/tmp/pine-shot.png")
