@@ -396,7 +396,11 @@ like any other path, so no tree is ever turned into a form."
       (load (merge-pathnames "../examples/init.lisp"
                              #.(or *compile-file-truename* *load-truename*))))
     (is (eq :todo (pine.mode:for-file "/x.todo")))
-    (is (string= "hi" (in-user "(var :greeting)")))))
+    (is (string= "hi" (pine.ns:read (pine.path:parse "/buf/scratch/greeting")))
+        "a leaf a buffer does not have reads the root")
+    (is (string= "hello there"
+                 (pine.ns:read (pine.path:parse "/buf/*scratchpad*/greeting")))
+        "and one it does have reads its own")))
 
 (test the-live-tree-seeds-splits-focuses-and-follows-the-modeline
   (with-fixture substrate ()

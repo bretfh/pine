@@ -1,7 +1,7 @@
 (defpackage #:pine.editor.echo
   (:use :cl)
   (:local-nicknames (#:ns #:pine.ns))
-  (:export #:message #:current-message
+  (:export #:message #:current-message #:mount
            #:prompt #:prompt-active-p #:prompt-text #:result
            #:said #:forget #:popup-rows #:input-snap))
 
@@ -16,6 +16,15 @@
 ;;;;
 ;;;; so a command that prompts holds no callback and is re-entrant, and what
 ;;;; happens when the prompt is accepted is the prompt's own :then.
+
+(defun provider ()
+  (ns:provider
+   (/echo/hint {:doc "the line pine is saying"})
+   (/echo/result {:doc "what was typed"})
+   (/echo {:doc "the prompt that is up: :prompt :complete :history :then"})))
+
+(defun mount ()
+  (ns:write /echo (provider)))
 
 (defun message (text)
   (ns:write /echo/hint (or text ""))

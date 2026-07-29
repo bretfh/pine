@@ -52,7 +52,8 @@ read are the same path."
    (/key/?map/?@chord
     {:at (pine.data:fn []
            (apply #'p:path /key map (mapcar #'%chord chord)))
-     :doc "a command path, a write-map or a handler"})))
+     :doc "a command path, a write-map or a handler"})
+   (/key {:doc "the keymaps: :global, :wm, and one per mode"})))
 
 ;;;; Binding and looking up
 

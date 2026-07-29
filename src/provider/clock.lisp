@@ -25,9 +25,16 @@
                                (:year year)
                                (:weekday weekday)))))
 
+(defun provider ()
+  "What /clock is. A clause that says only what a path is for leaves the value
+in the tree, so the time is still written, watched and read like anything else."
+  (ns:provider
+   (/clock {:doc "the time: :at :second :minute :hour :day :month :year :weekday"})))
+
 (defun mount (&key system (every 1))
   "Keep /clock current on SYSTEM's wheel timer."
   (unmount)
+  (ns:write /clock (provider))
   (tick)
   (when system
     (let ((timer (sento.actor-system:scheduler system)))

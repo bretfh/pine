@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.procfs
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns))
-  (:export #:mount))
+  (:export #:mount #:procfs))
 
 (in-package #:pine.provider.procfs)
 (named-readtables:in-readtable pine.path:syntax)
@@ -86,7 +86,8 @@
                   (mapcar (lambda (w) (or (ignore-errors (read-from-string w)) 0))
                           (subseq words 0 (min 3 (length words)))))))
 
-(defun provider ()
+(defun procfs ()
+  "The machine, out of /proc and sysfs."
   (ns:provider
    (/sys/disk/?@mount {:read (pine.data:fn [] (disk (format nil "/~{~a~^/~}" mount)))
                        :doc "percent used of the filesystem holding it"})
@@ -103,4 +104,4 @@
           :doc "the machine"})))
 
 (defun mount ()
-  (ns:write /sys (provider)))
+  (ns:write /sys (procfs)))

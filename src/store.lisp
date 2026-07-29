@@ -212,11 +212,18 @@ wins over the one a config seeded, which is what makes it durable."
     (let ((*restoring* t))
       (dolist (row rows)
         (destructuring-bind (text value bound) row
-          (let ((path (p:parse text)))
-            ;; the whole ring comes back as it stood, so it is set rather than
-            ;; pushed; the bound is put back beside it
-            (ns:write path (%in value))
-            (when bound (setf (ns:setting path :max) bound))))))
+          (let ((path (p:parse text))
+                (held (%in value)))
+            (cond
+              ;; a ring comes back the way it was made: the bound first, then
+              ;; each entry pushed oldest to newest, so what is there after is
+              ;; a ring and not a seq that happens to look like one
+              ((and bound (fset:seq? held))
+               (setf (ns:setting path :max) bound)
+               (loop :for i :from (1- (fset:size held)) :downto 0
+                     :do (ns:write path (fset:lookup held i))))
+              (t (ns:write path held)
+                 (when bound (setf (ns:setting path :max) bound))))))))
     (length rows)))
 
 ;;;; History, as paths
@@ -287,6 +294,31 @@ An ask answers one value, so the row and whether there was one travel together."
               :verbs {:revert (pine.data:fn [n] (revert store n))}
               :doc "every change the file remembers, newest first"})))
 
+(defun %under (store text)
+  "The next segment of every path the file remembers a change to under TEXT."
+  (let ((prefix (if (string= text "/") "/" (concatenate 'string text "/"))))
+    (remove-duplicates
+     (loop :for row :in (or (%ask store
+                                  (lambda (state)
+                                    (let ((db (%db state)))
+                                      (when db
+                                        (sqlite:execute-to-list
+                                         db "SELECT DISTINCT path FROM changes
+                                             WHERE path LIKE ?"
+                                         (concatenate 'string prefix "%"))))))
+                            nil)
+           :for tail = (subseq (first row) (length prefix))
+           :for cut = (position #\/ tail)
+           :when (plusp (length tail))
+             :collect (subseq tail 0 (or cut (length tail))))
+     :test #'string=)))
+
+(defun %live-names (at)
+  (let ((value (ns:read at)))
+    (when (fset:map? value)
+      (loop :for key :in (fset:convert 'list (fset:domain value))
+            :collect (p:name key)))))
+
 (defun was-provider (store)
   (ns:provider
    (/was/?n/?@rest
@@ -295,4 +327,13 @@ An ask answers one value, so the row and whether there was one travel together."
                  (%at-change store (p:text (apply #'p:path rest))
                              (parse-integer n :junk-allowed t))
                (if known value (ns:read (apply #'p:path rest)))))
-     :doc "what a path held as of a change"})))
+     ;; the past is walked over the names that are there now and the names the
+     ;; file remembers a change to, so a path that has since gone is still one
+     ;; a diff can descend into
+     :ls (pine.data:fn []
+           (let ((at (apply #'p:path rest)))
+             (remove-duplicates (append (%live-names at)
+                                        (%under store (p:text at)))
+                                :test #'string=)))
+     :doc "what a path held as of a change"})
+   (/was {:doc "the tree as of a change: /was/${n}/any/path"})))

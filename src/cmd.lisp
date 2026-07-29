@@ -90,7 +90,15 @@ one a test holds."
      (setf *builtin* (fset:with *builtin* (p:leaf (at ',name)) handler))
      (ns:write (at ',name) handler)))
 
+(defun provider ()
+  "What /cmd is. The clause says only what the path is for, so a command is
+still an ordinary value someone wrote."
+  (ns:provider
+   (/cmd/?name {:doc "a handler, a write-map or a path to run"})
+   (/cmd {:doc "every command there is, which is what M-x reads"})))
+
 (defun mount ()
+  (ns:write /cmd (provider))
   (fset:do-map (name handler *builtin*)
     (ns:write (at name) handler))
   nil)

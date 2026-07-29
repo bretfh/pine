@@ -1,27 +1,54 @@
-;;;; Sample ~/.config/pine/init.lisp -- the desktop defined in the pine.user
-;;;; language. The daemon loads this at boot; nothing about the bar is in the
-;;;; engine. Copy to ~/.config/pine/init.lisp and edit.
+;;;; Sample ~/.config/pine/init.lisp -- what this machine runs and what it
+;;;; shows, said with read, write and watch. The daemon loads this at boot;
+;;;; nothing about the bar is in the engine. Copy to ~/.config/pine/init.lisp
+;;;; and edit.
 
 (in-package :pine.user)
 (named-readtables:in-readtable pine.path:syntax)
 
+;;;; What this machine has. A driver is a provider written to a path, and
+;;;; nothing above one learns that there is a subprocess, a poll or a socket
+;;;; behind it.
+
+(write /sys    (procfs))
+(write /audio  (pipewire))
+(write /screen (backlight))
+(write /power  (logind))
+(write /net    (networkmanager))
+(write /media  (mpris))
+(write /wm     (niri))
+
 (load-theme :ef-dream)
+
+;;;; The bar. A click is a write, so a launcher holds no closure.
+
+(defun launch (&rest argv)
+  (fset:map (/sh (fset:convert 'fset:seq (cons :run argv)))))
+
+(defun panel (name)
+  (fset:map ((pine.path:path /surface name "shown") (fset:seq :toggle))))
 
 (defsurface bar (:as :bar)
   (centerbox :orient :v :class "bar"
     :start (column :class "bgroup" :align :center
-             (icon #xF02C1 :class "viewer"
-                   :on-click (launch "niri msg action toggle-overview") :hint "Overview"))
+             (icon #xF02C1 :class "viewer" :hint "Overview"
+                   :on-click {/wm [:overview]}))
     :center (column :class "bgroup grp-apps" :align :center :spacing 8
-              (icon #x0F120 :class "app" :on-click (launch "alacritty") :hint "Terminal")
-              (icon #x0F268 :class "app" :on-click (launch "google-chrome") :hint "Browser")
-              (icon #x0F07B :class "app" :on-click (launch "nautilus") :hint "Files")
-              (icon #x0F121 :class "app" :on-click (launch "emacsclient -c") :hint "Editor"))
+              (icon #x0F120 :class "app" :hint "Terminal"
+                    :on-click (launch "alacritty"))
+              (icon #x0F268 :class "app" :hint "Browser"
+                    :on-click (launch "google-chrome"))
+              (icon #x0F07B :class "app" :hint "Files"
+                    :on-click (launch "nautilus"))
+              (icon #x0F121 :class "app" :hint "Editor"
+                    :on-click (launch "emacsclient" "-c")))
     :end (column :align :center :spacing 12
-           (icon #x0F028 :class "icon" :on-click (show audio) :hint "Volume")
-           (icon #x0F1EB :class "net"  :on-click (show network) :hint "Network")
-           (icon #x0F007 :class "corner-sq" :on-click (show ctl) :hint "System"))))
-
+           (icon #x0F028 :class "icon" :hint "Volume"
+                 :on-click (panel "audio"))
+           (icon #x0F1EB :class "net" :hint "Network"
+                 :on-click (panel "network"))
+           (icon #x0F007 :class "corner-sq" :hint "System"
+                 :on-click (panel "ctl")))))
 
 ;;;; ------------------------------------------------------------------
 ;;;; Editor authorship: keys, a mode, a variable, a styled tool buffer.
@@ -34,9 +61,12 @@
   (message "init reloaded"))
 (global-set-key (kbd "C-c r") 'reload-init)
 
-;; an editor variable, read by a command
-(defonce :greeting :default "hi" :documentation "what greet echoes")
-(defcommand greet () (message (var :greeting)))
+;; an editor variable is a path. Buffer-local is not a mechanism: a leaf under
+;; a buffer with no value there reads the same leaf at the root
+(write /greeting "hi")                              ; everywhere
+(write /buf/*scratchpad*/greeting "hello there")    ; here
+(defcommand greet ()
+  (message (read (pine.path:path /buf (current-buffer) "greeting"))))
 (global-set-key (kbd "C-c g") 'greet)
 
 ;; a minor mode with its own key, toggled by a command. A mode is a map, so

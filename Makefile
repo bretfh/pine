@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress hl vm
+.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe hl vm
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -67,6 +67,11 @@ bench:
 # agents. Exits nonzero on failure.
 test:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:test-system :pine)"'
+
+# run one suite over and over in a single image, to read an intermittent
+# failure: make probe SUITE=pine.async TIMES=10
+probe:
+	$(GUIX) sh -c '$(ENV) SUITE="$(SUITE)" TIMES="$(TIMES)" $(SBCL) --non-interactive --load bench/probe.lisp'
 
 # load and faults under volume: hundreds of buffers, thousands of messages,
 # concurrent writers, fault storms, edits off the end of a buffer: make stress

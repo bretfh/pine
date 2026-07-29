@@ -173,6 +173,54 @@ to come back as the same object."
     (is (string= "three" (pine.ns:read /kill/0)))
     (is (string= "two" (pine.ns:read /kill/1)))))
 
+(test a-path-that-is-a-ring-stays-one
+  "The bound belongs to the path, not to the write that first said it, so
+whoever pushes next does not have to know."
+  (with-ns
+    (pine.ns:write /kill "one" :max 3)
+    (pine.ns:write /kill "two")
+    (pine.ns:write /kill "three")
+    (pine.ns:write /kill "four")
+    (is (string= "four" (pine.ns:read /kill)))
+    (is (= 3 (fset:size (pine.ns:read /kill/*)))
+        "a later write pushed onto the ring instead of replacing it")))
+
+(test a-bound-set-without-a-write-makes-the-path-a-ring
+  (with-ns
+    (setf (pine.ns:setting /log :max) 2)
+    (pine.ns:write /log "first")
+    (pine.ns:write /log "second")
+    (pine.ns:write /log "third")
+    (is (string= "third" (pine.ns:read /log)))
+    (is (= 2 (fset:size (pine.ns:read /log/*))))))
+
+;;;; diff
+
+(test a-diff-answers-only-the-leaves-that-differ
+  (with-ns
+    (pine.ns:write /a {:volume 40 :sink "hdmi" :muted nil})
+    (pine.ns:write /b {:volume 70 :sink "hdmi"})
+    (let ((moved (pine.ns:diff /a /b)))
+      (is (= 1 (fset:size moved)) "only volume moved")
+      (is (fset:equal? (fset:seq 40 70) (fset:lookup moved /b/volume))
+          "a diff says what it was and what it is"))))
+
+(test a-diff-descends-and-reports-what-is-gone-and-what-is-new
+  (with-ns
+    (pine.ns:write /a {:win {:0 "scratch" :1 "notes"}})
+    (pine.ns:write /b {:win {:0 "scratch" :2 "repl"}})
+    (let ((moved (pine.ns:diff /a /b)))
+      (is (= 2 (fset:size moved)))
+      (is (fset:equal? (fset:seq "notes" nil) (fset:lookup moved /b/win/1))
+          "a path that is gone reads as nil on the side it is gone from")
+      (is (fset:equal? (fset:seq nil "repl") (fset:lookup moved /b/win/2))))))
+
+(test two-subtrees-that-hold-the-same-thing-differ-in-nothing
+  (with-ns
+    (pine.ns:write /a {:x 1 :y {:z "same"}})
+    (pine.ns:write /b {:x 1 :y {:z "same"}})
+    (is (zerop (fset:size (pine.ns:diff /a /b))))))
+
 ;;;; re-evaluation
 
 (test an-expression-is-computed-again-when-what-it-read-moves

@@ -116,7 +116,14 @@ Lookup, not method combination, so the whole of the dispatch reads back:
 ;;;; them: no class, no defmode, no registration step. What a machine or a
 ;;;; config adds is another write.
 
+(defun provider ()
+  (ns:provider
+   (/mode/?name
+    {:doc "a mode: :parent :grammar :indicator :files :comment :indent :on"})
+   (/mode {:doc "every mode there is"})))
+
 (defun mount ()
+  (ns:write /mode (provider))
   (ns:write /mode/text {:indicator "Text"})
   (ns:write /mode/prog {:parent :text
                         :indent {:width 2}

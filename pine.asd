@@ -25,6 +25,9 @@
                  (:file "path")
                  (:file "ns")
                  (:file "store")
+                 ;; what pine says, and what a path is
+                 (:file "log")
+                 (:file "doc")
                  (:file "self")
                  (:file "err")
                  (:file "proc")
@@ -41,11 +44,16 @@
                  (:file "win")
                  ;; a command is a path holding a handler or a write-map
                  (:file "cmd")
-                 ;; the drivers: one file per system, the only impure code here
+                 ;; the drivers: the doors onto unix pine always has, then one
+                 ;; file per system a config declares
                  (:module "provider"
                           :serial t
-                          :components ((:file "file") (:file "sh") (:file "env")
-                                       (:file "clock") (:file "procfs")))
+                          :components ((:file "out")
+                                       (:file "file") (:file "sh") (:file "env")
+                                       (:file "clock") (:file "procfs")
+                                       (:file "pipewire") (:file "backlight")
+                                       (:file "logind") (:file "networkmanager")
+                                       (:file "mpris") (:file "niri")))
                  ;; keys and modes are the bottom of the editing stack: the buffer actor
                  ;; dispatches a message through its mode, so modes load before buffers.
                  (:module "input"
@@ -85,7 +93,6 @@
                           :serial t
                           :components ((:file "style") (:file "node") (:file "build") (:file "raster")
                                        (:file "layout") (:file "cells") (:file "wire")))
-                 (:file "source")
                  (:file "term")
                  ;; a tool buffer is a view, and the window paints one
                  (:module "view"
@@ -120,6 +127,7 @@
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
                              (:file "store") (:file "self") (:file "err")
+                             (:file "doc")
                              (:file "proc") (:file "host") (:file "mode")
                              (:file "win")
                              (:file "provider")
@@ -129,7 +137,6 @@
                              (:file "state") (:file "keys") (:file "completion")
                              (:file "isearch") (:file "repl") (:file "liveness") (:file "async")
                              (:file "term") (:file "wm")
-                             (:file "source")
                              (:file "packages") (:file "editor") (:file "agent")
                              (:file "frontend")
                              ;; the :pine.stress suite, run by `make stress', not by test-op

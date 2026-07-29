@@ -26,6 +26,15 @@
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.core.actor:start-agent-debug srv)
+    ;; what pine says, and what any path is: both are places to read
+    (pine.log:mount)
+    (pine.doc:mount)
+    ;; the doors onto unix. A machine's devices are the config's to declare,
+    ;; but a file, a command, the environment and the time are pine's own
+    (pine.provider.file:mount)
+    (pine.provider.sh:mount)
+    (pine.provider.env:mount)
+    (pine.provider.clock:mount :system (pine.core.server:actor-system srv))
     ;; /proc is what attends everything this daemon runs, so it is mounted
     ;; before anything is declared under it
     (setf (pine.core.server:proc srv)
@@ -40,7 +49,9 @@
     (pine.editor.overwrite:mount-mode)
     (pine.editor.repl:mount-mode)
     (pine.editor.view:install)
+    (pine.editor.echo:mount)
     (pine.editor.minibuffer:mount)
+    (pine.desktop:mount-surfaces)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
                     :runtime (pine.core.server:ts-runtime srv))
     (pine.core.attach:start-attach-listener srv)
@@ -55,8 +66,7 @@
         (pine.editor.file:record-places)
         (world:close)))
     (load-init)
-    (ignore-errors (pine.source:start-sources srv))   ; sources feed refs the desktop reads
-    (format t "pine daemon ready [remoting ~a]~%" (pine.core.server:remoting-port srv))
+    (pine.log:note "daemon ready [remoting ~a]" (pine.core.server:remoting-port srv))
     srv))
 
 (defun %setenv (name value)
@@ -136,9 +146,8 @@ the daemon, the editor, and the desktop are three separate images."
   (start-daemon :remoting-port port)
   (handle-termination)
   (start-frontends)
-  (format t "pine daemon up on ~a:~d, frontends supervised~%"
-          pine.core.server:*host* port)
-  (finish-output)
+  (pine.log:note "daemon up on ~a:~d, frontends supervised"
+                 pine.core.server:*host* port)
   (loop (sleep 3600)))
 
 ;;;; The user's init.lisp: the config that defines their surfaces, sources,
@@ -170,9 +179,9 @@ An error is reported and the daemon keeps whatever loaded before it."
       (handler-case
           (let ((*package* (find-package :pine.user)))
             (load path)
-            (format t "pine: loaded ~a~%" path))
+            (pine.log:note "loaded ~a" path))
         (error (e)
-          (format *error-output* "~&pine: init.lisp error: ~a~%" e))))))
+          (pine.log:note "init.lisp error: ~a" e))))))
 
 ;;;; The control endpoint. The CLI connects, asks one message, prints, exits.
 

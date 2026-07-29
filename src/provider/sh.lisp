@@ -37,11 +37,61 @@ because every path under /sh is a command to run.")
     (setf *ran* (subseq *ran* 0 *ran-kept*)))
   command)
 
+;;;; Watching a command runs it and writes each line it says. A command that
+;;;; nobody is listening to is not running: the stream starts when the first
+;;;; watch appears and stops when the last one goes, so `pactl subscribe' costs
+;;;; a process only while something is asking about audio.
+
+(defvar *streams* (sento.atomic:make-atomic-reference :value (fset:empty-map))
+  "Command to the process saying its lines.")
+
+(defun %stream (command)
+  "Run COMMAND and write each line it says to its own path."
+  (let ((at (p:child /sh command))
+        (process (uiop:launch-program (list "sh" "-c" command)
+                                      :output :stream :error-output nil)))
+    (sento.atomic:atomic-swap *streams*
+                              (lambda (m) (fset:with m command process)))
+    (bordeaux-threads:make-thread
+     (lambda ()
+       (unwind-protect
+            (loop :with out = (uiop:process-info-output process)
+                  :for line = (read-line out nil nil)
+                  :while line
+                  :do (ns:write at line))
+         (sento.atomic:atomic-swap *streams*
+                                   (lambda (m) (fset:less m command)))))
+     :name (format nil "pine-sh ~a" command))
+    process))
+
+(defun %streamingp (command)
+  (and (fset:lookup (sento.atomic:atomic-get *streams*) command) t))
+
+(defun %quiet (command)
+  (let ((process (fset:lookup (sento.atomic:atomic-get *streams*) command)))
+    (when process
+      (sento.atomic:atomic-swap *streams* (lambda (m) (fset:less m command)))
+      (ignore-errors (uiop:terminate-process process :urgent t)))
+    nil))
+
+(defun %listen (command listening)
+  (cond ((and listening (not (fset:lookup (sento.atomic:atomic-get *streams*)
+                                          command)))
+         (%stream command))
+        ((not listening) (%quiet command))))
+
 (defun provider ()
   (ns:provider
    (/sh/?command
-    {:read (pine.data:fn [] (%output (list "sh" "-c" command)))
-     :doc "what the command says on its output"})
+    {:read (pine.data:fn []
+             ;; a command that is streaming is not run again to be read: what
+             ;; it last said is what it says
+             (if (%streamingp command)
+                 (ns:held (p:child /sh command))
+                 (%output (list "sh" "-c" command))))
+     :in (pine.data:fn [line] line)
+     :watch (pine.data:fn [listening] (%listen command listening))
+     :doc "what the command says on its output; watch it for each line"})
    (/sh
     {:read (pine.data:fn [] (fset:convert 'fset:seq *ran*))
      :verbs {:run (pine.data:fn [&rest argv]

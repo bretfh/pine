@@ -1,10 +1,11 @@
 (defpackage #:pine.desktop
   (:use #:cl)
   (:export #:surface-at #:surface-tree #:surface-role #:shownp #:names
-           #:push-surface #:show-panel #:hide-panel
+           #:push-surface #:show-panel #:hide-panel #:mount-surfaces
            #:refresh-all #:*surface-client*))
 
 (in-package #:pine.desktop)
+(named-readtables:in-readtable pine.path:syntax)
 
 (defvar *surface-client* nil
   "The desktop client a surface builder is building for, or a click handler is
@@ -51,6 +52,19 @@ it says where it goes."
                                               (fset:empty-map))))
         #'string<))
 
+
+(defun provider ()
+  "What a surface is. The clauses say only what the paths are for, so a surface
+is still the expression someone wrote there."
+  (pine.ns:provider
+   (/surface/?name/as
+    {:doc "where wayland puts it: :bar :panel :overlay :toplevel :background :echo"})
+   (/surface/?name/shown {:doc "whether it is up; [:toggle] flips it"})
+   (/surface/?name {:doc "the widget tree, as an expression"})
+   (/surface {:doc "what pine draws on wayland"})))
+
+(defun mount-surfaces ()
+  (pine.ns:write /surface (provider)))
 
 (defstruct dsession
   (actions (make-hash-table))                     ; id -> closure
@@ -139,8 +153,14 @@ that is open. Which panel is up is /surface/?name/shown."
        (destructuring-bind (&key id args) (rest msg)
          (let ((cb (and s (gethash id (dsession-actions s)))))
            (when cb
+             ;; what a click is, is what anything else that runs is: a command
+             ;; path, a write-map, or a function
              (pine.err:evaluate-thunk
-              (lambda () (let ((*surface-client* aclient)) (apply cb args)))
+              (lambda ()
+                (let ((*surface-client* aclient))
+                  (if (and (functionp cb) args)
+                      (apply cb args)
+                      (pine.cmd:run cb))))
               :package (find-package :pine-user))))))
       ;; the app asks for a fresh push once its surfaces exist (its first push on
       ;; attach can arrive before the windows are up). Re-push the bar and any

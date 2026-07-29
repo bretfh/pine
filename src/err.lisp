@@ -183,9 +183,7 @@ by the time this is called, so the surface only has to display it."
               (format *error-output* "pine: the error surface failed on ~a: ~a~%"
                       context c)
               (finish-output *error-output*)))
-          (progn
-            (format *error-output* "pine: ~a: ~a~%" context condition)
-            (finish-output *error-output*))))
+          (pine.log:note "~a: ~a" context condition)))
     ev))
 
 (defun attempt (thunk context)

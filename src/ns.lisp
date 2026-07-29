@@ -4,7 +4,7 @@
   (:local-nicknames (#:p #:pine.path))
   (:export #:space #:fresh #:*space* #:with-space
            #:read #:write #:watch #:preview #:toggle #:held
-           #:provider #:here
+           #:provider #:here #:doc #:diff #:mounts #:stir
            #:kind #:setting #:watched #:on-commit
            #:refused #:no-verb #:cycle #:at #:why))
 
@@ -266,6 +266,36 @@ still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
                               :why "no provider writes it"))))
         :finally (return nil)))
 
+(defun mounts ()
+  "Where a provider is bound, newest first. What the tree is made of, as
+opposed to what someone put in it."
+  (mapcar #'car (space-mounts (current))))
+
+(defun doc (path)
+  "What PATH is, and what it takes: the :DOC of the clause serving it, or of
+the provider holding that clause.
+
+Documentation is a handler like any other, so it sits beside the code that
+answers and there is no second place for it to be wrong in."
+  (let ((backings (%backings (current) path)))
+    (or (loop :for backing :in backings
+              :for handlers = (%handlers backing path)
+              :thereis (and handlers (fset:lookup handlers :doc)))
+        (loop :for backing :in backings
+              :thereis (fset:lookup (backing-options backing) :doc)))))
+
+(defun %served-watch (space path listening)
+  "Tell the provider serving PATH that someone started or stopped listening.
+
+A value pine reads on demand needs nothing: whoever asks, asks. One the world
+pushes -- a subprocess's output -- has to be started, and stopped when the last
+listener goes, so the clause that answers it is told."
+  (loop :for backing :in (%backings space path)
+        :for handlers = (%handlers backing path)
+        :for fn = (and handlers (fset:lookup handlers :watch))
+        :when fn
+          :do (return (funcall fn listening))))
+
 (defun %served-children (space path)
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
@@ -386,6 +416,32 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
                    (walk child (1+ depth))))))
       (walk (%literal-prefix pattern) 0))
     (nreverse found)))
+
+(defun diff (was now)
+  "Every leaf under WAS and NOW that does not hold the same value, as a map
+from the path under NOW to [what WAS had, what NOW has].
+
+Both sides are ordinary paths, so this compares a subtree with its own past --
+(diff /was/${n} /) is everything that moved since -- or with another host's,
+with nothing here knowing which it was given."
+  (let ((space (current))
+        (out (fset:empty-map)))
+    (labels ((names (root)
+               (mapcar #'p:leaf (%children space root)))
+             (walk (a b depth)
+               (when (< depth 64)
+                 (let ((children (remove-duplicates (append (names a) (names b))
+                                                    :test #'equal)))
+                   (if children
+                       (dolist (name children)
+                         (walk (p:child a name) (p:child b name) (1+ depth)))
+                       (let ((before (%read-one a))
+                             (after (%read-one b)))
+                         (unless (fset:equal? before after)
+                           (setf out (fset:with out b
+                                                (fset:seq before after))))))))))
+      (walk was now 0))
+    out))
 
 (defun read (path &optional default)
   "The value at PATH, or a map from path to value when PATH is a pattern."
@@ -527,12 +583,15 @@ against the space it is handed rather than one read a moment ago."
   (destructuring-bind (&key when max &allow-other-keys) options
     (let* ((space (if options (%remembering old path options) old))
            (root (space-root space))
-           (was (%get root (p:keys path))))
+           (was (%get root (p:keys path)))
+           ;; a ring is a property of the path, not of the write that made it
+           ;; one, so every later write pushes without saying :max again
+           (bound (or max (%setting-in space path :max))))
       (if (and when (not (fset:equal? was when)))
           (let ((next (copy-space space)))
             (setf (space-moved next) nil)
             next)
-          (let ((stored (%stored path was value max))
+          (let ((stored (%stored path was value bound))
                 (next (copy-space space)))
             (cond ((fset:equal? was stored)
                    (setf (space-moved next) nil))
@@ -593,7 +652,8 @@ has no business inside a compare-and-swap."
                 (when where (setf path where)))))
     (when *preview*
       (let* ((was (%get (space-root space) (p:keys path)))
-             (stored (%stored path was value max)))
+             (stored (%stored path was value
+                              (or max (%setting-in space path :max)))))
         (push (list path was stored) (cdr *preview*))
         (return-from %write-one (list (list path was stored)))))
     (%told (space-moved (%swap (lambda (old)
@@ -753,6 +813,31 @@ normal case rather than a collision."
                        (setf (cdr *cascade*) nil)
                        (setf wave (%expand next))))))))
 
+(defun %stirred (space at)
+  "What to announce when the world under AT has moved: AT, and every path under
+it that something read."
+  (let ((paths (list at)))
+    (fset:do-map (path reaction (space-reactions space))
+      (declare (ignore path))
+      (fset:do-set (dep (reaction-deps reaction))
+        (when (and (p:prefixp at dep)
+                   (notany (lambda (p) (fset:equal? p dep)) paths))
+          (push dep paths))))
+    paths))
+
+(defun stir (at)
+  "Say that what a provider under AT reads has moved.
+
+A live path holds no value, so nothing swapped and nothing here would otherwise
+notice. This is what a provider's :ON does when the world behind it speaks:
+everything that read a path under AT is computed again, and every watch over one
+runs, exactly as though the value had been written."
+  (let* ((space (current))
+         (moved (mapcar (lambda (path) (list path nil (%read-one path)))
+                        (%stirred space at))))
+    (%propagate moved)
+    moved))
+
 (defun %changes (moved)
   (let ((out (fset:empty-map)))
     (dolist (change moved out)
@@ -783,19 +868,31 @@ normal case rather than a collision."
     (%propagate moved)
     (%changes moved)))
 
+(defun %told-by (path)
+  "The name of the watch that carries a provider's :ON to PATH."
+  (list :on (p:text path)))
+
 (defun %mount (path backing)
   "Bind BACKING under PATH. Writing one over another stacks it: a read falls
 through to the one underneath for what the top does not answer, so a machine
-overrides a single leaf of a shipped provider without forking it."
+overrides a single leaf of a shipped provider without forking it.
+
+A backing with an :ON is told by the world instead of polled: the path it names
+is watched, and anything that moves there stirs everything read under here."
   (%swap (lambda (old)
            (let ((next (copy-space old)))
              (setf (space-mounts next) (cons (cons path backing)
                                              (space-mounts old))
                    (space-moved next) nil)
              next)))
+  (let ((on (fset:lookup (backing-options backing) :on)))
+    (when on
+      (watch on (lambda (value) (declare (ignore value)) (stir path) nil)
+             :as (%told-by path))))
   (fset:empty-map))
 
 (defun %unmount (path)
+  (watch path nil :as (%told-by path))
   (%swap (lambda (old)
            (let ((next (copy-space old)))
              (setf (space-mounts next)
@@ -872,6 +969,9 @@ it and re-loading a config is safe. A NIL function removes it."
                      (if fn (append rest (list (list name path fn))) rest)
                      (space-moved next) nil)
                next)))
+    ;; some paths have to be made to speak, and stop speaking when the last
+    ;; listener goes
+    (%served-watch (current) path (and (watched path) t))
     name))
 
 (defmacro preview (&body body)

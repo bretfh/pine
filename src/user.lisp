@@ -20,9 +20,16 @@
   (:import-from :pine.editor.ask #:ask #:tell)
   (:import-from :pine.state.ref #:defref #:ref)
   (:import-from :pine.state.var #:defonce)
-  (:import-from :pine.source #:defsource #:defpoll #:start-stream #:start-poll
-                #:split #:lines #:starts-with #:first-number #:read-int-file
-                #:json)
+  ;; the drivers a machine declares: one constructor per system, and what it
+  ;; answers is the paths the doc says it does
+  (:import-from :pine.provider.procfs #:procfs)
+  (:import-from :pine.provider.pipewire #:pipewire)
+  (:import-from :pine.provider.backlight #:backlight)
+  (:import-from :pine.provider.logind #:logind)
+  (:import-from :pine.provider.networkmanager #:networkmanager)
+  (:import-from :pine.provider.mpris #:mpris)
+  (:import-from :pine.provider.niri #:niri)
+  (:import-from :pine.ns #:provider #:stir)
   (:import-from :pine.editor.command #:call-command)
   (:import-from :pine.editor.minibuffer
                 #:completing-read #:read-file-name #:prompt)
@@ -33,7 +40,7 @@
    ;; the frontends the daemon owns
    #:*frontends*
    ;; surfaces
-   #:defsurface #:show #:hide #:toggle
+   #:defsurface
    ;; widgets: containers
    #:column #:row #:centerbox #:center #:box #:scroll
    ;; widgets: content
@@ -46,14 +53,13 @@
    #:candidate #:register-source #:register-actions #:candidate-actions
    #:completion-widget
    ;; the namespace
-   #:read #:write #:watch
+   #:read #:write #:watch #:provider #:stir
+   ;; the drivers a machine declares
+   #:procfs #:pipewire #:backlight #:logind #:networkmanager #:mpris #:niri
    ;; style
    #:deftheme #:defface #:load-theme #:color #:metric #:face-fg
    ;; data
-   #:defref #:ref #:defpoll #:defsource #:sh #:launch
-   ;; writing a source: the stream/poll primitives and their helpers
-   #:start-stream #:start-poll
-   #:split #:lines #:starts-with #:first-number #:read-int-file #:json
+   #:defref #:ref
    ;; style rules
    #:defrules
    ;; behavior
@@ -109,19 +115,10 @@ tree arranges it into. Props are node style: :opacity :font-px :class :expand."
 (defun echo () (pine.editor.session:editor-echo-node))
 (defun minibuffer () (echo))
 
-;;;; Data. SH captures a command's output for a poll or source body; LAUNCH runs
-;;;; one detached, returning a thunk for :on-click. REF reads a ref, and the
-;;;; read is tracked, so a surface re-renders when a ref it read changes.
-
-(defun sh (command)
-  (or (ignore-errors
-        (string-trim '(#\newline #\space)
-                     (uiop:run-program (list "sh" "-c" command)
-                                       :output :string :ignore-error-status t)))
-      ""))
-
-(defun launch (command)
-  (lambda () (ignore-errors (uiop:launch-program (list "sh" "-c" command)))))
+;;;; Data. A command's output is (read /sh/${"..."}), and running one detached
+;;;; is (write /sh [:run ...]); there is nothing else to learn. REF reads a
+;;;; ref, and the read is tracked, so a surface re-renders when one it read
+;;;; changes.
 
 ;;;; Behavior.
 
@@ -228,13 +225,9 @@ that says where wayland puts it."
        (write ,(pine.path:path (pine.path:parse "/surface") key "as") ',(getf opts :as))
        (write ,(pine.path:path (pine.path:parse "/surface") key) (progn ,@body)))))
 
-;;;; SHOW / HIDE / TOGGLE take a bare surface symbol and produce a thunk (like
-;;;; LAUNCH), so :on-click (show audio) does the right thing: shows on click, on
-;;;; the client in scope. Call the thunk directly to act now.
-
-(defmacro show (name)
-  `(lambda () (pine.desktop:show-panel pine.desktop:*surface-client* ,(string-downcase (string name)))))
-(defmacro hide (name)
-  `(lambda () (pine.desktop:hide-panel pine.desktop:*surface-client* ,(string-downcase (string name)))))
-(defmacro toggle (name)
-  `(lambda () (pine.desktop:show-panel pine.desktop:*surface-client* ,(string-downcase (string name)))))
+;;;; Showing one is a write, so there is nothing to import: a click is
+;;;;
+;;;;   :on-click {/surface/audio/shown [:toggle]}
+;;;;
+;;;; and what shows a panel from a command, a key or another machine is the
+;;;; same write.

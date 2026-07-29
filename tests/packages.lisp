@@ -14,7 +14,7 @@ here and is not this suite's to judge.")
   (sort (remove-if (lambda (p) (member (package-name p) +generated-packages+
                                        :test #'string=))
                    (remove-if-not (lambda (p)
-                                    (pine.source:starts-with (package-name p) "PINE"))
+                                    (pine.provider.out:starts-with (package-name p) "PINE"))
                                   (list-all-packages)))
         #'string< :key #'package-name))
 
@@ -123,7 +123,7 @@ here and is not this suite's to judge.")
 the interface and the convention disagree."
   (dolist (package (pine-packages))
     (let ((internal (sort (remove-if-not
-                           (lambda (s) (pine.source:starts-with (symbol-name s) "%"))
+                           (lambda (s) (pine.provider.out:starts-with (symbol-name s) "%"))
                            (external-symbols package))
                           #'string< :key #'symbol-name)))
       (is (null internal)

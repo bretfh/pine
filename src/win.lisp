@@ -138,7 +138,9 @@ focus lands on whatever is still there."
                       (let ((at (focused))) (when at (%split at side))))
              :close (pine.data:fn [] (let ((at (focused))) (when at (%close at))))
              :only (pine.data:fn [] (let ((at (focused))) (when at (%only at))))}
-     :doc "the window with the keyboard; [:split :below] [:close] [:only]"})))
+     :doc "the window with the keyboard; [:split :below] [:close] [:only]"})
+   (/win/?@at
+    {:doc "a window's buf, scroll and weight, or the two halves of a stack"})))
 
 (defun mount ()
   (ns:write /win (provider)))
