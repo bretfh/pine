@@ -19,7 +19,6 @@
                 #:current-buffer-mode #:set-buffer-mode)
   (:import-from :pine.editor.ask #:ask #:tell)
   (:import-from :pine.state.ref #:defref #:ref)
-  (:import-from :pine.state.var #:defonce)
   ;; the drivers a machine declares: one constructor per system, and what it
   ;; answers is the paths the doc says it does
   (:import-from :pine.provider.procfs #:procfs)
@@ -68,8 +67,6 @@
    #:kbd #:keymap #:define-key #:global-set-key
    ;; modes: a mode is a map at /mode, so a config writes one
    #:enable-minor-mode #:disable-minor-mode #:toggle-minor-mode
-   ;; editor variables
-   #:defonce #:var
    ;; prompts + echo
    #:completing-read #:read-file-name #:prompt #:message
    ;; processes
@@ -165,17 +162,9 @@ keyword. COMMAND is a command designator, a write-map or a function."
 (defun disable-minor-mode (name) (pine.editor.frame:disable-minor-mode (current-client) name))
 (defun toggle-minor-mode  (name) (pine.editor.frame:toggle-minor-mode  (current-client) name))
 
-;;;; Editor variables. The buffer is implicit here and explicit below: which
-;;;; buffer is current is a client's business, and pine.state.var sits under every
-;;;; client, so it never guesses.
-
-(defun var (name &optional (buffer (pine.editor.frame:buffer-in-scope)))
-  "Editor variable NAME: buffer-local in BUFFER (the current buffer by
-default), else global, else the declared default."
-  (pine.state.var:var name buffer))
-
-(defun (setf var) (value name &optional buffer)
-  (setf (pine.state.var:var name buffer) value))
+;;;; A setting is a path. (write /tab-width 8) is everywhere and
+;;;; (write /buf/foo.py/tab-width 4) is there, because a leaf a buffer does not
+;;;; have reads the same leaf at the root. There is nothing to declare.
 
 ;;;; Style rules. Add to the one stylesheet the cairo painter and the cell
 ;;;; render both read; user rules win the cascade. VALUES are evaluated, so

@@ -5,7 +5,12 @@
    #:main
    #:start-daemon
    #:run-daemon
+   #:run-all
+   #:run-app
    #:stop
+   ;; what the daemon cannot do to itself, so the CLI does it
+   #:port-free-p
+   #:kill-port
    ;; which frontends the daemon spawns and keeps alive; a config sets it
    #:*frontends*
    #:+frontend-unavailable+))
@@ -50,6 +55,7 @@
     (pine.editor.repl:mount-mode)
     (pine.editor.view:install)
     (pine.editor.echo:mount)
+    (pine.editor.help:mount)
     (pine.editor.minibuffer:mount)
     (pine.desktop:mount-surfaces)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
@@ -184,6 +190,43 @@ An error is reported and the daemon keeps whatever loaded before it."
           (pine.log:note "init.lisp error: ~a" e))))))
 
 ;;;; The control endpoint. The CLI connects, asks one message, prints, exits.
+;;;;
+;;;; What crosses is text: a path is text, and a value goes over as readable
+;;;; lisp, so the CLI needs nothing of this image but the socket.
+
+(defun %said (value)
+  "VALUE as the CLI will print it."
+  (pine.data:serialize value))
+
+(defun %heard (text)
+  "The value TEXT says."
+  (pine.data:deserialize text 'pine.path:data))
+
+(defun %watcher (uri)
+  "The remote the CLI is listening on, or NIL when it has gone."
+  (ignore-errors
+    (sento.remoting:make-remote-ref
+     (pine.core.server:actor-system pine.core.server:*server*) uri)))
+
+(defun %watch-for (server text uri)
+  "Watch what TEXT names and tell URI each change, until the telling fails.
+
+The watch is named by the uri, so a CLI that asks twice replaces its own rather
+than doubling it, and a `pine watch' that goes away takes its watch with it."
+  (declare (ignore server))
+  (let ((at (pine.path:parse text))
+        (ref (%watcher uri)))
+    (when ref
+      (pine.ns:watch
+       at
+       (lambda (value)
+         (handler-case (sento.actor:tell ref (list :moved
+                                                   (pine.path:text (pine.ns:here))
+                                                   (%said value)))
+           (error () (pine.ns:watch at nil :as uri)))
+         nil)
+       :as uri)
+      "watching")))
 
 (defun start-control (server)
   (sento.actor-context:actor-of (pine.core.server:actor-system server) :name "control"
@@ -193,6 +236,15 @@ An error is reported and the daemon keeps whatever loaded before it."
       (flet ((r (x) (sento.actor:reply x)))
         (handler-case
             (case (first msg)
+              ;; the three verbs, against the running daemon
+              (:read (r (%said (pine.ns:read (pine.path:parse (second msg))))))
+              (:write (pine.ns:write (pine.path:parse (second msg))
+                                     (%heard (third msg)))
+                      (r "ok"))
+              (:watch (r (or (%watch-for server (second msg) (third msg))
+                             "nowhere to send it")))
+              (:diff (r (%said (pine.ns:diff (pine.path:parse (second msg))
+                                             (pine.path:parse (third msg))))))
               (:status
                (r (format nil "pine up  port ~a  agents ~d"
                           (pine.core.server:remoting-port server)
@@ -220,37 +272,8 @@ An error is reported and the daemon keeps whatever loaded before it."
               (:agents (r (mapcar #'pine.core.actor:agent-info-name (pine.core.actor:list-agents server))))
               (:spawn (pine.core.actor:spawn-agent server (second msg)) (r "spawned"))
               (:kill  (pine.core.actor:kill-agent server (second msg)) (r "killed"))
-              (:surface
-               (destructuring-bind (&key op name) (rest msg)
-                 (dolist (c pine.core.attach:*clients*)
-                   (when (eq (pine.core.attach:attached-client-kind c) :desktop)
-                     (ecase op
-                       (:show   (pine.desktop:show-panel c name))
-                       (:hide   (pine.desktop:hide-panel c name))
-                       (:toggle (pine.desktop:show-panel c name)))))
-                 (r "ok")))
               (t (r (list :unknown (first msg)))))
           (error (e) (r (format nil "error: ~a" e))))))))
-
-;;;; The CLI: pine VERB ARGS. Control verbs ask the running daemon and print;
-;;;; start boots it. Not a REPL.
-
-(defparameter *cli-usage*
-  "usage: pine {start | stop | restart | daemon | editor | desktop | wm |
-             session [DISPLAY] | status | eval FORM | reload | agents |
-             spawn NAME | kill NAME | show|hide|toggle NAME}")
-
-(defun cli-request (msg &key (host pine.core.server:*host*) (port pine.core.server:*port*))
-  "Connect, ask the daemon's control actor, print, return. The process
-exits after, so the ephemeral actor system needs no teardown."
-  (let ((sys (sento.actor-system:make-actor-system
-              '(:dispatchers (:shared (:workers 1 :strategy :random))))))
-    (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
-    (handler-case
-        (let ((ref (sento.remoting:make-remote-ref
-                    sys (pine.core.server:daemon-uri "control" :host host :port port))))
-          (format t "~a~%" (pine.core.actor:ask ref msg :timeout 5)))
-      (error () (format t "pine: no daemon at ~a:~d~%" host port)))))
 
 ;;;; Frontends. The editor and the desktop are not part of this process: each
 ;;;; is its own OS image -- `pine editor' / `pine desktop', the same binary
@@ -281,7 +304,7 @@ environment that made this image loadable, so it can load what this one did."
             "--no-userinit" "--non-interactive"
             "--eval" "(require :asdf)"
             "--eval" "(asdf:load-system :pine/wayland)"
-            "--eval" (format nil "(pine::run-app ~s)" verb))))
+            "--eval" (format nil "(pine:run-app ~s)" verb))))
 
 (defun frontend-environment ()
   "This daemon's environment, with PINE_PORT naming the port it listens on."
@@ -372,53 +395,6 @@ even on an old or wedged daemon that has no clean :stop."
                                        :ignore-error-status t :output nil :error-output nil))
     (declare (ignore o e))
     (not (eql code 0))))                     ; fuser: 0 = held, nonzero = free
-
-(defun cli-stop (&key (port pine.core.server:*port*))
-  "Stop the daemon: ask it to shut down (taking its frontends with it), then make
-sure the port is free even if it was an old or wedged daemon."
-  (ignore-errors
-    (let ((sys (sento.actor-system:make-actor-system
-                '(:dispatchers (:shared (:workers 1 :strategy :random))))))
-      (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
-      (ignore-errors
-        (pine.core.actor:ask
-         (sento.remoting:make-remote-ref sys (pine.core.server:daemon-uri "control" :port port))
-         '(:stop) :timeout 3))))
-  (sleep 0.4)
-  (unless (port-free-p port) (kill-port port))
-  (format t "pine: stopped~%"))
-
-(defun cli-restart (&key (port pine.core.server:*port*))
-  "Stop the daemon, wait for the port to free, then start it fresh."
-  (cli-stop :port port)
-  (loop repeat 40 until (port-free-p port) do (sleep 0.25))
-  (run-all))
-
-(defun cli (&optional (args (rest sb-ext:*posix-argv*)))
-  ;; a CLI prints its answer, nothing else: quiet sento/log4cl's INFO chatter
-  ;; (actor-system config, "Remoting enabled on ...") that otherwise buries it.
-  (log:config :error)
-  (let ((verb (first args)) (more (rest args)))
-    (cond
-      ((null verb) (format t "~a~%" *cli-usage*))
-      ((string= verb "start")  (run-all))
-      ((string= verb "stop")    (cli-stop))
-      ((string= verb "restart") (cli-restart))
-      ((string= verb "daemon") (run-daemon))
-      ((member verb '("editor" "desktop" "wm") :test #'string=) (run-app verb))
-      ((string= verb "status") (cli-request '(:status)))
-      ((string= verb "eval")   (cli-request (list :eval (format nil "~{~a~^ ~}" more))))
-      ((string= verb "session")
-       (cli-request (list :session (or (first more)
-                                       (uiop:getenv "WAYLAND_DISPLAY")))))
-      ((string= verb "reload") (cli-request '(:reload)))
-      ((string= verb "agents") (cli-request '(:agents)))
-      ((string= verb "spawn")  (cli-request (list :spawn (first more))))
-      ((string= verb "kill")   (cli-request (list :kill (first more))))
-      ((member verb '("show" "hide" "toggle") :test #'string=)
-       (cli-request (list :surface :op (intern (string-upcase verb) :keyword)
-                          :name (string-downcase (first more)))))
-      (t (format t "pine: unknown verb ~a~%~a~%" verb *cli-usage*)))))
 
 (defun stop ()
   (pine.core.hooks:run-shutdown-hooks))

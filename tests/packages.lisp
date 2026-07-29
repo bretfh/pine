@@ -155,13 +155,13 @@ the interface and the convention disagree."
 
 ;;;; The tree against the doc
 ;;;;
-;;;; doc/new-api.org says what a buffer is. A leaf the code keeps under one and
+;;;; doc/api.org says what a buffer is. A leaf the code keeps under one and
 ;;;; the doc does not name is drift, and drift is how an API becomes a port of
 ;;;; whatever was there before.
 
 (defun %doc-text ()
   (uiop:read-file-string
-   (merge-pathnames "doc/new-api.org" (asdf:system-source-directory :pine))))
+   (merge-pathnames "doc/api.org" (asdf:system-source-directory :pine))))
 
 (defun %doc-paths (under)
   "Every path the doc names under UNDER, as text. A path is written =/like/this=."

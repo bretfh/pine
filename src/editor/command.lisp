@@ -20,7 +20,7 @@ non-nil, route it through the same debugger surface evaluations use (*on-debug*
 -> the *debugger* restart menu); otherwise show it in the echo area. Either way
 the command loop lives on -- this never blocks the session thread. Call from a
 handler-bind so the backtrace is captured while the stack is still live."
-  (if (and (ignore-errors (pine.state.var:var :debug-on-error))
+  (if (and (pine.ns:read (pine.path:parse "/debug-on-error"))
            pine.err:*on-debug*)
       (ignore-errors
        (funcall pine.err:*on-debug* (pine.err:make-error-evaluation condition)))

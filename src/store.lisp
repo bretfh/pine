@@ -2,7 +2,7 @@
   (:use #:cl)
   (:shadow #:open #:close)
   (:local-nicknames (#:p #:pine.path) (#:ns #:pine.ns))
-  (:export #:store #:open #:close #:restore #:revert #:storablep
+  (:export #:store #:open #:close #:restore #:revert #:storablep #:as-of
            #:*changes-kept*))
 
 (in-package #:pine.store)
@@ -270,6 +270,40 @@ An ask answers one value, so the row and whether there was one travel together."
         (values (and (first found) (%in (first found))) t)
         (values nil nil))))
 
+(defun %ago (text)
+  "The seconds back a relative time names -- -30s -5m -1h -2d -- or NIL when
+TEXT is not one."
+  (when (and (> (length text) 1) (char= #\- (char text 0)))
+    (let* ((body (subseq text 1))
+           (unit (char body (1- (length body))))
+           (n (ignore-errors (parse-integer body :end (1- (length body))))))
+      (when n
+        (case unit
+          (#\s n)
+          (#\m (* 60 n))
+          (#\h (* 3600 n))
+          (#\d (* 86400 n)))))))
+
+(defun as-of (store text)
+  "The change number TEXT names: a number is itself, and -1h is the newest
+change the file made an hour ago or longer.
+
+A person says when, and the file remembers what: /was/-1h is a path anybody can
+type and /was/2891 is the same place said exactly."
+  (let ((ago (%ago text)))
+    (if (null ago)
+        (parse-integer text :junk-allowed t)
+        (or (%ask store
+                  (lambda (state)
+                    (let ((db (%db state)))
+                      (when db
+                        (let ((row (sqlite:execute-to-list
+                                    db "SELECT n FROM changes WHERE at <= ?
+                                        ORDER BY n DESC LIMIT 1"
+                                    (- (%now) ago))))
+                          (and row (first (first row))))))))
+            0))))
+
 (defun revert (store n)
   "Undo every change after N, newest first, so the space reads as it did."
   (let ((rows (%ask store
@@ -324,8 +358,7 @@ An ask answers one value, so the row and whether there was one travel together."
    (/was/?n/?@rest
     {:read (pine.data:fn []
              (multiple-value-bind (value known)
-                 (%at-change store (p:text (apply #'p:path rest))
-                             (parse-integer n :junk-allowed t))
+                 (%at-change store (p:text (apply #'p:path rest)) (as-of store n))
                (if known value (ns:read (apply #'p:path rest)))))
      ;; the past is walked over the names that are there now and the names the
      ;; file remembers a change to, so a path that has since gone is still one

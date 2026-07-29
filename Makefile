@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe hl vm
+.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe ts-probe hl vm
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -67,6 +67,11 @@ bench:
 # agents. Exits nonzero on failure.
 test:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:test-system :pine)"'
+
+# ask the tree-sitter binding what it answers, many times over and from several
+# threads at once: make ts-probe
+ts-probe:
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --load bench/ts-probe.lisp'
 
 # run one suite over and over in a single image, to read an intermittent
 # failure: make probe SUITE=pine.async TIMES=10

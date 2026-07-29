@@ -102,7 +102,7 @@
                     "--eval" "(require :asdf)"
                     "--eval" "(asdf:load-system :pine/wayland)"
                     "--eval" "(sb-ext:save-lisp-and-die \".pine.bin\"
-                                :toplevel (function pine::cli)
+                                :toplevel (function pine.cli:main)
                                 :executable t)"))
           (mkdir-p #$output)
           (union-build (string-append #$output "/env")

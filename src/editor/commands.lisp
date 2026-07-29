@@ -158,7 +158,7 @@
         ;; opt-in apheleia-style reformat before write; the reindent is a tell
         ;; and save's :get-state queues behind it in the actor mailbox, so the
         ;; write sees the formatted text
-        (when (and buf (pine.state.var:var :format-on-save buf))
+        (when (and buf (pine.editor.help:setting :format-on-save))
           (let ((snap (pine.text.buffer:snapshot-of buf)))
             (pine.buf:indent (pine.text.buffer:name-of buf) 0
                        (1- (pine.text.buffer:line-count snap)))))
@@ -219,8 +219,8 @@
       (pine.editor.debugger:attend-session pine.editor.debugger:*attended-session*)
       (pine.editor.echo:message "no debugger session")))
 (defcmd "toggle-debug-on-error" ()
-  (let ((new (not (pine.state.var:var :debug-on-error))))
-    (setf (pine.state.var:var :debug-on-error) new)
+  (let ((new (not (pine.ns:read (pine.path:parse "/debug-on-error")))))
+    (pine.ns:write (pine.path:parse "/debug-on-error") new)
     (pine.editor.echo:message (format nil "debug-on-error ~:[disabled~;enabled~]" new))))
 (defcmd "jobs" ()
   (pine.editor.view:show "*jobs*" (pine.editor.debugger:jobs-builder)))
@@ -283,7 +283,7 @@
 (defcmd "insert-tab" ()
   (let* ((c (pine.editor.frame:current-client))
          (buf (pine.editor.frame:current-buffer c))
-         (n (max 0 (pine.state.var:var :tab-width buf))))
+         (n (max 0 (or (pine.editor.help:setting :tab-width) 8))))
     (when buf
       (pine.editor.ask:tell buf :insert :text (make-string n :initial-element #\Space)))))
 (defcmd "indent-for-tab-command" ()

@@ -95,11 +95,11 @@ new value or it did not."
     (let ((seen nil))
       (pine.ns:write (pine.cmd:at "probe-boom") (lambda () (error "boom")))
       (setf pine.err:*on-debug* (lambda (ev) (setf seen ev)))
-      (setf (pine.state.var:var :debug-on-error) t)
+      (pine.ns:write (pine.path:parse "/debug-on-error") t)
       (pine.editor.command::call-command "probe-boom")
       (is (not (null seen)))
       (setf seen nil)
-      (setf (pine.state.var:var :debug-on-error) nil)
+      (pine.ns:write (pine.path:parse "/debug-on-error") nil)
       (pine.editor.command::call-command "probe-boom")
       (is (null seen))
       (is (search "boom" (pine.editor.echo:current-message))))))
@@ -197,11 +197,9 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
     (in-user "(set-buffer-mode (buffer \"scratch\") :user-probe)")
     (is (eq :user-probe (pine.editor.ask:ask "scratch" :mode)))
     (in-user "(set-buffer-mode (buffer \"scratch\") :text)")
-    (in-user "(defonce :user-probe-var :default 1 :documentation \"probe\")")
-    (in-user "(setf (var :user-probe-var) 42)")
-    (is (= 42 (in-user "(var :user-probe-var)")))
-    (in-user "(defonce :user-probe-var :default 99)")
-    (is (= 42 (in-user "(var :user-probe-var)")))))
+    (in-user "(write /user-probe-setting 42)")
+    (is (= 42 (in-user "(read /buf/scratch/user-probe-setting)"))
+        "a leaf a buffer does not have reads the root")))
 
 (test a-user-rule-styles-a-rendered-label
   (with-fixture substrate ()
@@ -283,14 +281,8 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
         (setf pine.core.attach:*clients*
               (remove client pine.core.attach:*clients*))))))
 
-(test persisted-variables-and-refs-reseed-after-a-restart
+(test a-persisted-ref-reseeds-after-a-restart
   (with-fixture substrate ()
-    (in-user "(defonce :persist-probe :default 1 :persist t)")
-    (in-user "(setf (var :persist-probe) 5)")
-    (is (= 5 (pine.state.world:value '(:var :persist-probe))))
-    (remhash :persist-probe pine.state.var::*variables*)
-    (in-user "(defonce :persist-probe :default 1 :persist t)")
-    (is (= 5 (in-user "(var :persist-probe)")))
     (in-user "(defref :persist-ref-probe 0 :persist t)")
     (in-user "(setf (ref :persist-ref-probe) 9)")
     (is (= 9 (pine.state.world:value '(:ref :persist-ref-probe))))

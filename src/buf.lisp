@@ -515,24 +515,42 @@ mode is."
 (defvar *parsers* (sento.atomic:make-atomic-reference :value (fset:empty-map))
   "Name to parse-link, for the buffers that have a language.")
 
-(defvar *where* nil
-  "The actor system and tree-sitter runtime a parser is started on, as
-(SYSTEM . RUNTIME). What MOUNT was given, so that anything which needs a parse
-can have one started rather than only the two watches that drive it: a buffer
-whose text and mode both landed before /buf was watching still parses the
-moment a window asks to see it.")
+(defun %where ()
+  "The actor system and tree-sitter runtime a parser starts on, as
+(SYSTEM . RUNTIME).
+
+Asked of this image's server every time rather than kept from whenever /buf was
+mounted: a grammar is loaded into the runtime that asked for it, and a parser
+started against a runtime that is no longer the server's would be looking for a
+grammar in a table nothing else ever writes."
+  (let ((server pine.core.server:*server*))
+    (when server
+      (cons (pine.core.server:actor-system server)
+            (pine.core.server:ts-runtime server)))))
 
 (defun %link (name system runtime)
+  "NAME's parser, started if it names a grammar and has none.
+
+Two threads can ask at once -- a window claiming the buffer and the watch on
+its text -- so whichever link lands first is the one every later ask answers
+with, and the other's actor is stopped rather than left holding a thread
+nobody will ever send to."
   (or (fset:lookup (sento.atomic:atomic-get *parsers*) name)
       (let* ((mode (ns:read (at name :mode)))
              (grammar (and mode (pine.mode:setting mode :grammar))))
         (when (and grammar system runtime)
           (let ((actor (pine.ts.parser:start-parser system runtime grammar name)))
             (when actor
-              (let ((link (pine.ts.parser:make-parse-link actor)))
-                (sento.atomic:atomic-swap
-                 *parsers* (lambda (m) (fset:with m name link)))
-                link)))))))
+              (let* ((mine (pine.ts.parser:make-parse-link actor))
+                     (landed (fset:lookup
+                              (sento.atomic:atomic-swap
+                               *parsers*
+                               (lambda (m) (if (fset:lookup m name)
+                                               m
+                                               (fset:with m name mine))))
+                              name)))
+                (unless (eq landed mine) (sento.actor:tell actor '(:stop)))
+                landed)))))))
 
 (defun %for (name key lines)
   "What was asked about NAME under KEY, or NIL when it describes some other
@@ -638,43 +656,50 @@ into the same mailbox behind the parse it needs."
              :to (fset:lookup indent :to)
              :answer (%reindent name))))))
 
-(defun %parse (name &optional (system (car *where*)) (runtime (cdr *where*)))
+(defun %parse (name &optional system runtime)
   "Parse NAME, starting its parser when it names a grammar and has none.
 
 Everything that wants a parse comes through here, so a parser is made when one
 is needed rather than only when a watch happened to fire. A buffer whose text
 and mode landed together -- or landed again unchanged, which moves nothing --
 still parses the moment anything asks."
-  (let ((link (%link name system runtime)))
-    (when link (%tell-parse name (pine.ts.parser:link-actor link)))))
+  (let ((where (%where)))
+    (let ((link (%link name (or system (car where)) (or runtime (cdr where)))))
+      (when link (%tell-parse name (pine.ts.parser:link-actor link))))))
 
 (defun showing (name band)
   "Say which lines a window is showing NAME over, as [from to].
 
 Highlights exist to be painted, so what is painted is what bounds the parse.
 That is why a background buffer of a million lines costs nothing: nobody read
-its faces, so nobody computed them."
-  (unless (fset:equal? band (asked name :viewport))
-    (setf (asked name :viewport) band)
-    (%parse name))
+its faces, so nobody computed them.
+
+A window saying what it shows always asks for a parse, whether or not the range
+moved: the range is remembered here rather than under the buffer, so a name
+used again would otherwise inherit the last window's range and never ask. What
+a parse costs when there is nothing to do is one identity comparison."
+  (setf (asked name :viewport) band)
+  (%parse name)
   band)
 
 (defun mount (&key system runtime)
   "Serve /buf. With SYSTEM and RUNTIME a buffer that names a grammar is parsed
-whenever its text or its mode moves."
+whenever its text or its mode moves.
+
+The watches take neither: where a parser starts is this image's server, asked
+when the parse is wanted rather than remembered from here."
   (ns:write /buf (provider))
   (when (and system runtime)
-    (setf *where* (cons system runtime))
     (ns:watch /buf/*/text
               (pine.data:fn [v]
                 (declare (ignore v))
-                (%parse (p:leaf (p:parent (ns:here))) system runtime)
+                (%parse (p:leaf (p:parent (ns:here))))
                 {})
               :as :buf-parse)
     (ns:watch /buf/*/mode
               (pine.data:fn [v]
                 (declare (ignore v))
-                (%parse (p:leaf (p:parent (ns:here))) system runtime)
+                (%parse (p:leaf (p:parent (ns:here))))
                 {})
               :as :buf-mode))
   ;; a mode with a :view makes the buffer a tool buffer

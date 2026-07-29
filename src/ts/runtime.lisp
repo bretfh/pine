@@ -53,6 +53,17 @@
 (cffi:defcfun ("ts_parser_parse_string" ts-parser-parse-string) :pointer
   (parser :pointer) (old-tree :pointer) (string :pointer) (length :uint32))
 
+;; what a refusal is about: a grammar's ABI against the range this library
+;; speaks. Read here so the message names numbers rather than a guess
+(cffi:defcfun ("ts_language_version" ts-language-version) :uint32
+  (language :pointer))
+;; the range is a compile-time constant in tree-sitter's header, not a symbol
+;; the library exports, so it is written down here and nowhere else
+(defconstant +min-compatible-language-version+ 13)
+(defconstant +language-version+ 15)
+(defun ts-min-compatible-version () +min-compatible-language-version+)
+(defun ts-language-version-max () +language-version+)
+
 ;;;; Parsing from the lines themselves. ts_parser_parse takes a TSInput by value
 ;;;; and calls its read callback for the byte ranges it actually needs, which
 ;;;; after an edit is a small neighbourhood rather than the file. Serving those
@@ -258,6 +269,13 @@ or nil when tree-sitter reports no changed ranges."
 
 (defclass ts-runtime ()
   ((libs-loaded :accessor libs-loaded :initform nil)
+   ;; loading a grammar is a dlopen and a symbol lookup through cffi's own
+   ;; registry, and that registry is one table shared by every thread. Ten
+   ;; buffers opening at once would otherwise each start the same load, and a
+   ;; symbol looked up while another thread is registering the library it lives
+   ;; in comes back pointing at nothing a parser will take. One at a time.
+   (loading     :reader loading
+                :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
                 :initform (sento.atomic:make-atomic-reference
                            :value {:loaded (fset:empty-map)
@@ -310,17 +328,23 @@ puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
 (defun claim-language (parser lang language)
   "Give PARSER the grammar LANG, and say so when it will not take it.
 
-tree-sitter refuses a grammar built against an ABI it does not speak, and a
-parser with no language answers every parse with a null tree. Unchecked, that
-is a buffer with no colour and no reason, which is the one thing this file is
-not allowed to produce."
+A parser with no language answers every parse with a null tree, which is a
+buffer with no colour and no reason. The refusal says what it was handed --
+the two pointers and the grammar's own ABI version against the range this
+tree-sitter speaks -- because every reason it can refuse for is one of those."
   (or (ts-parser-set-language parser lang)
       (progn
         (pine.err:report-failure
-         (make-condition 'simple-error
-                         :format-control "the ~(~a~) grammar is built against ~
-                                          an abi this tree-sitter does not speak"
-                         :format-arguments (list language))
+         (make-condition
+          'simple-error
+          :format-control "~(~a~) refused: parser ~a, language ~a, abi ~a, ~
+                           this tree-sitter speaks ~a..~a, set-language at ~a"
+          :format-arguments (list language parser lang
+                                  (ignore-errors (ts-language-version lang))
+                                  (ts-min-compatible-version)
+                                  (ts-language-version-max)
+                                  (cffi:foreign-symbol-pointer
+                                   "ts_parser_set_language")))
          "setting a grammar")
         nil)))
 
@@ -329,6 +353,10 @@ not allowed to produce."
     (unless library (return-from load-language-entry nil))
     (let ((lang (grammar-language-pointer library fn-name)))
       (when (and lang (not (cffi:null-pointer-p lang)))
+        (pine.log:note "loaded ~(~a~): language ~a abi ~a, set-language at ~a"
+                       language lang
+                       (ignore-errors (ts-language-version lang))
+                       (cffi:foreign-symbol-pointer "ts_parser_set_language"))
         (let ((parser (ts-parser-new)))
           (when (claim-language parser lang language)
             (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
@@ -354,25 +382,32 @@ not allowed to produce."
 (defun ensure-language (runtime language)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
 grammar is not here. A grammar that will not load is said once, because
-silence leaves a buffer with no colour and no reason."
-  (unless (libs-loaded runtime) (ensure-ts runtime))
-  (when (libs-loaded runtime)
-    (let ((state (%grammars runtime)))
-      (or (fset:lookup (fset:lookup state :loaded) language)
-          (unless (fset:contains? (fset:lookup state :missing) language)
-            (let ((entry (load-language-entry language)))
-              (cond
-                (entry (%note-loaded runtime language entry)
-                       ;; whoever landed first is the one every buffer uses
-                       (fset:lookup (fset:lookup (%grammars runtime) :loaded)
-                                    language))
-                (t (%note-missing runtime language)
-                   (pine.err:report-failure
-                    (make-condition 'simple-error
-                                    :format-control "no ~(~a~) grammar to load"
-                                    :format-arguments (list language))
-                    "loading a grammar")
-                   nil))))))))
+silence leaves a buffer with no colour and no reason.
+
+A grammar already loaded is a slot read and answers without waiting; only the
+loading itself is one thread at a time, because the loader's table is one
+table."
+  (or (fset:lookup (fset:lookup (%grammars runtime) :loaded) language)
+      (bordeaux-threads:with-recursive-lock-held ((loading runtime))
+        (unless (libs-loaded runtime) (ensure-ts runtime))
+        (when (libs-loaded runtime)
+          (let ((state (%grammars runtime)))
+            ;; asked again under the lock: whoever held it before may have
+            ;; loaded this very grammar while this thread waited
+            (or (fset:lookup (fset:lookup state :loaded) language)
+                (unless (fset:contains? (fset:lookup state :missing) language)
+                  (let ((entry (load-language-entry language)))
+                    (cond
+                      (entry (%note-loaded runtime language entry)
+                             (fset:lookup (fset:lookup (%grammars runtime) :loaded)
+                                          language))
+                      (t (%note-missing runtime language)
+                         (pine.err:report-failure
+                          (make-condition 'simple-error
+                                          :format-control "no ~(~a~) grammar to load"
+                                          :format-arguments (list language))
+                          "loading a grammar")
+                         nil))))))))))
 
 
 

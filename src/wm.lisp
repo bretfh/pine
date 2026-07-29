@@ -211,12 +211,9 @@ way. A window manager cannot show the same window twice, so a split states
 where the next one lands rather than dividing the current one immediately."
   (setf (session-split *session*) orient))
 
-(pine.state.var:defonce :wm-terminal :default "foot"
-  :documentation "The program wm-terminal launches.")
-
 (pine.cmd:defcmd wm-terminal ()
-  "Launch the terminal named by the :wm-terminal variable."
-  (spawn (pine.state.var:var :wm-terminal)))
+  "Launch the terminal /wm-terminal names."
+  (spawn (or (pine.ns:read (pine.path:parse "/wm-terminal")) "foot")))
 
 (pine.cmd:defcmd wm-close-window ()
   "Ask the focused window to close."

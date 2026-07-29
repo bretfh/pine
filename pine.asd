@@ -82,7 +82,7 @@
                  (:module "state"
                           :serial t
                           :components ((:file "store") (:file "world")
-                                       (:file "ref") (:file "var")))
+                                       (:file "ref")))
                  (:module "frame"
                           :serial t :pathname "editor/"
                           :components ((:file "frame")))
@@ -113,8 +113,12 @@
                  (:file "desktop")
                  (:file "wm")
                  (:file "frontend")
-                 ;; main declares :pine, and the user vocabulary imports from it
-                 (:file "pine")
+                 ;; the daemon: what it starts, what keeps running, and the
+                 ;; endpoint the CLI asks
+                 (:file "boot")
+                 ;; the three verbs against the running daemon, and the
+                 ;; lifecycle it cannot express from inside itself
+                 (:file "cli")
                  (:file "user")))
 
 (asdf:defsystem #:pine/test

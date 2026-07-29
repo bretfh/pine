@@ -1,8 +1,10 @@
 (defpackage #:pine.editor.help
   (:use #:cl)
-  (:export #:bindings-text #:describe-key-text #:mode-text #:variables-text))
+  (:export #:bindings-text #:describe-key-text #:mode-text #:variables-text
+           #:mount #:setting))
 
 (in-package #:pine.editor.help)
+(named-readtables:in-readtable pine.path:syntax)
 
 ;;;; Help / self-documentation. Help buffers are read-only layout buffers
 ;;;; (pine.editor.debugger:text-layout via pine.editor.view:show); describe-key echoes.
@@ -28,28 +30,41 @@
                                       #'string< :key #'car)
             do (format out "~16a  ~a~%" keys cmd)))))
 
-(pine.state.var:defonce :tab-width :default 8
-  :documentation "Tab stop width for the plain-text indent fallback.")
+;;;; A setting is a path at the root, and a buffer that wants its own writes
+;;;; the same leaf under itself: (write /tab-width 8) everywhere,
+;;;; (write /buf/foo.py/tab-width 4) here. There is no declaration, no scope
+;;;; table and no default slot, because the fallback is where the value is.
 
-(pine.state.var:defonce :format-on-save :default nil
-  :documentation "When non-nil, save-file reindents the whole buffer first.")
+(defun mount ()
+  "The settings pine ships. Written at mount so a fresh namespace has them and
+a config that wrote its own keeps it."
+  (dolist (setting '((/tab-width 8) (/format-on-save nil) (/debug-on-error nil)))
+    (destructuring-bind (path value) setting
+      (when (and value (null (pine.ns:read path)))
+        (pine.ns:write path value)))))
 
-(pine.state.var:defonce :debug-on-error :default nil
-  :documentation "When non-nil, an error in a command opens the *debugger*
-restart menu instead of only echoing the message. Same knob as Emacs's
-debug-on-error; edit-actor and eval errors always reach the debugger.")
+(defun setting (name)
+  "NAME's value for the buffer in scope, falling back to the root."
+  (let ((buf (pine.editor.frame:buffer-in-scope)))
+    (pine.ns:read (if buf (pine.buf:at buf name) (pine.path:path name)))))
 
 (defun variables-text ()
+  "Every setting there is: the leaves at the root that are not directories, and
+what the buffer in scope reads for each."
   (with-output-to-string (out)
-    (format out "Editor variables~%~%")
-    (dolist (name (pine.state.var:all-variable-names))
-      (let ((v (pine.state.var:find-variable name))
-            (buf (pine.editor.frame:buffer-in-scope)))
-        (format out "~a = ~s [~(~a~)]~%    default ~s~a~%"
-                name (pine.state.var:var name buf) (pine.state.var:variable-scope name buf)
-                (pine.state.var:evar-default v)
-                (let ((d (pine.state.var:evar-documentation v)))
-                  (if (plusp (length d)) (format nil "~%    ~a" d) "")))))))
+    (format out "Settings~%~%")
+    (let ((root (pine.ns:read (pine.path:root) (fset:empty-map)))
+          (buf (pine.editor.frame:buffer-in-scope)))
+      (dolist (name (sort (let ((acc nil))
+                            (fset:do-map (key value root)
+                              (unless (fset:map? value)
+                                (push (pine.path:name key) acc)))
+                            acc)
+                          #'string<))
+        (let ((here (and buf (pine.ns:held (pine.buf:at buf name)))))
+          (format out "~a = ~s [~a]~%" name
+                  (if here here (pine.ns:read (pine.path:path name)))
+                  (if here "this buffer" "everywhere")))))))
 
 (defun mode-text ()
   (let* ((client (pine.editor.frame:current-client))

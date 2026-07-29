@@ -54,6 +54,7 @@ minibuffer. Returns the server."
     (pine.editor.repl:mount-mode)
     (pine.editor.view:install)
     (pine.editor.echo:mount)
+    (pine.editor.help:mount)
     (pine.editor.minibuffer:mount)
     (pine.desktop:mount-surfaces)
     (pine.buf:mount :system (pine.core.server:actor-system srv)
@@ -98,8 +99,8 @@ argument, the debugger sessions and the world gate."
             pine.err:*on-debug* nil
             pine.editor.isearch:*isearch* nil)
       (pine.editor.echo:message "")
-      (setf pine.state.world:*enabled* nil
-            (pine.state.var:var :debug-on-error) nil)
+      (setf pine.state.world:*enabled* nil)
+      (pine.ns:write (pine.path:parse "/debug-on-error") nil)
       (let ((scratch (pine.editor.frame::buffer "scratch")))
         (when scratch
           (pine.win:reset (pine.buf:at "scratch"))

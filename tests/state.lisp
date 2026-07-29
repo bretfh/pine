@@ -127,52 +127,28 @@
     (is (= 9 (pine.state.ref:deref
               (pine.state.ref:make-ref :name :probe-persist :value 0 :persist t))))))
 
-;;;; variables
+;;;; Settings. A setting is a path at the root, and a buffer that wants its own
+;;;; writes the same leaf under itself. Buffer-local is not a mechanism, it is
+;;;; where the value is, so there is nothing to declare and no scope to ask
+;;;; about.
 
-(test an-undeclared-variable-is-an-error-not-a-nil
-  (signals error (pine.state.var:var :never-declared)))
-
-(test a-variable-falls-back-to-its-default
-  (pine.state.var:defonce :probe-default :default 7)
-  (is (= 7 (pine.state.var:var :probe-default)))
-  (is (eq :default (pine.state.var:variable-scope :probe-default))))
-
-(test setting-the-global-shadows-the-default
-  (pine.state.var:defonce :probe-global :default 1)
-  (setf (pine.state.var:var :probe-global) 2)
-  (is (= 2 (pine.state.var:var :probe-global)))
-  (is (eq :global (pine.state.var:variable-scope :probe-global))))
-
-(test redeclaring-updates-the-default-and-keeps-the-value
-  (pine.state.var:defonce :probe-redeclare :default 1)
-  (setf (pine.state.var:var :probe-redeclare) 5)
-  (pine.state.var:defonce :probe-redeclare :default 99 :documentation "second")
-  (is (= 5 (pine.state.var:var :probe-redeclare)))
-  (is (= 99 (pine.state.var:evar-default
-             (pine.state.var:find-variable :probe-redeclare))))
-  (is (string= "second" (pine.state.var:evar-documentation
-                         (pine.state.var:find-variable :probe-redeclare)))))
-
-(test a-buffer-local-value-outranks-the-global
+(test a-leaf-a-buffer-does-not-have-reads-the-root
   (with-fixture substrate ()
-    (pine.state.var:defonce :probe-local :default 1)
-    (setf (pine.state.var:var :probe-local) 2)
-    (let ((buf (pine.editor.frame::make-buffer "var-probe")))
-      (setf (pine.state.var:var :probe-local buf) 3)
-      (sleep 0.1)
-      (is (= 3 (pine.state.var:var :probe-local buf)))
-      (is (= 2 (pine.state.var:var :probe-local)))
-      (is (eq :buffer (pine.state.var:variable-scope :probe-local buf)))
-      (is (eq :global (pine.state.var:variable-scope :probe-local))))))
+    (pine.ns:write (pine.path:parse "/tab-width") 8)
+    (is (= 8 (pine.ns:read (pine.path:parse "/buf/scratch/tab-width"))))))
 
-(test a-persistent-variable-reseeds-from-the-store
-  (with-fixture memory-store ()
-    (pine.state.var:defonce :probe-var-persist :default 1 :persist t)
-    (setf (pine.state.var:var :probe-var-persist) 5)
-    (is (= 5 (pine.state.world:value '(:var :probe-var-persist))))
-    (remhash :probe-var-persist pine.state.var::*variables*)
-    (pine.state.var:defonce :probe-var-persist :default 1 :persist t)
-    (is (= 5 (pine.state.var:var :probe-var-persist)))))
+(test a-leaf-a-buffer-does-have-outranks-the-root
+  (with-fixture substrate ()
+    (pine.ns:write (pine.path:parse "/tab-width") 8)
+    (pine.ns:write (pine.path:parse "/buf/scratch/tab-width") 4)
+    (is (= 4 (pine.ns:read (pine.path:parse "/buf/scratch/tab-width"))))
+    (is (= 8 (pine.ns:read (pine.path:parse "/tab-width")))
+        "one buffer's own does not move everyone else's")))
+
+(test a-setting-nobody-wrote-is-nothing
+  (with-fixture substrate ()
+    (is (null (pine.ns:read (pine.path:parse "/buf/scratch/never-written"))))))
+
 
 ;;;; the world
 ;;;;
