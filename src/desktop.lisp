@@ -1,25 +1,11 @@
 (defpackage #:pine.desktop
   (:use #:cl)
   (:export #:surface-at #:surface-tree #:surface-role #:shownp #:names
-           #:push-surface #:show-panel #:hide-panel #:mount-surfaces
+           #:push-surface #:show-panel #:hide-panel #:server
            #:refresh-all #:*surface-client*))
 
 (in-package #:pine.desktop)
 (named-readtables:in-readtable pine.path:syntax)
-
-(defvar *surface-client* nil
-  "The desktop client a surface builder is building for, or a click handler is
-firing for. Bound so show / hide / toggle need no explicit client argument.")
-
-;;;; The daemon-side desktop machinery. It hosts NAMED surfaces -- the bar and
-;;;; each toggled panel, all declared in the user's init.lisp -- as declarative
-;;;; trees built from refs. A surface's tree is serialized (node->wire) with its
-;;;; click handlers registered under ids, and pushed to the desktop app as
-;;;; (:widgets :surface NAME :tree DATA :as ROLE). The app renders each surface;
-;;;; interacting sends (:widget-action :id N ...) back and the daemon runs the
-;;;; closure. Panels toggle via (:panel :name NAME :show B). The tree crosses as
-;;;; data; the closures and the refs stay here. The surfaces themselves live in
-;;;; init.lisp, not here.
 
 ;;;; A surface is what wayland shows, and it is a path:
 ;;;;
@@ -28,10 +14,24 @@ firing for. Bound so show / hide / toggle need no explicit client argument.")
 ;;;;   /surface/?name/shown  whether it is up; [:toggle] flips it
 ;;;;
 ;;;; The tree is written as an expression, so it is computed again whenever
-;;;; anything it read moves and the client is pushed the new one. Nothing polls
+;;;; anything it read moves, and the client is pushed the new one. Nothing polls
 ;;;; and nothing subscribes.
+;;;;
+;;;; What crosses to the desktop app is the tree as data, with each click handler
+;;;; registered under an id: (:widgets :surface NAME :tree DATA :as ROLE) out,
+;;;; (:widget-action :id N) back. The closures stay here. The surfaces
+;;;; themselves live in a config, not in this file.
 
-(defun surface-at (name) (pine.path:path (pine.path:parse "/surface") name))
+(defstruct dsession
+  (actions (make-hash-table))                     ; id -> closure
+  (surface-ids (make-hash-table :test 'equal))    ; surface -> ids, to drop stale
+  (counter 0))
+
+(defvar *surface-client* nil
+  "The desktop client a surface builder is building for, or a click handler is
+firing for. Bound so show / hide / toggle need no explicit client argument.")
+
+(defun surface-at (name) (pine.path:path /surface name))
 
 (defun surface-role (name)
   (pine.ns:read (pine.path:child (surface-at name) "as")))
@@ -48,10 +48,8 @@ it says where it goes."
 (defun names ()
   "Every surface there is."
   (sort (mapcar (lambda (path) (pine.path:leaf path))
-                (pine.data:keys (pine.ns:read (pine.path:parse "/surface/*")
-                                              (fset:empty-map))))
+                (pine.data:keys (pine.ns:read /surface/* (fset:empty-map))))
         #'string<))
-
 
 (defun provider ()
   "What a surface is. The clauses say only what the paths are for, so a surface
@@ -60,21 +58,15 @@ is still the expression someone wrote there."
    (/surface/?name/as
     {:doc "where wayland puts it: :bar :panel :overlay :toplevel :background :echo"})
    (/surface/?name/shown {:doc "whether it is up; [:toggle] flips it"})
-   (/surface/?name {:doc "the widget tree, as an expression"})
+   (/surface/?name/anchor {:doc "raw placement, when :as is not enough"})
+   (/surface/?name
+    {:in (pine.data:fn [v] (if (fset:map? v) v (fset:map (:tree v))))
+     :doc "the widget tree, as an expression"})
    (/surface {:doc "what pine draws on wayland"})))
 
-(defun mount-surfaces ()
-  (pine.ns:write /surface (provider)))
-
-(defstruct dsession
-  (actions (make-hash-table))                     ; id -> closure
-  (surface-ids (make-hash-table :test 'equal))    ; surface -> ids, to drop stale
-  (counter 0)
-  )
-
 (defun push-surface (aclient name)
-  "Serialize surface NAME's tree (fresh ids, dropping this surface's old ones)
-and push it to the app."
+  "Serialize surface NAME's tree, with fresh ids and this surface's old ones
+dropped, and push it to the app."
   (let ((s (pine.core.attach:attached-client-session aclient))
         (tree (surface-tree name)))
     (when (and s tree)
@@ -95,7 +87,7 @@ and push it to the app."
   "Push a surface whenever its tree moves, and show or hide it when its shown
 moves. The tree is an expression at a path, so what re-renders it is the same
 rule that recomputes anything else."
-  (pine.ns:watch (pine.path:parse "/surface")
+  (pine.ns:watch /surface
                  (lambda (value)
                    (declare (ignore value))
                    (let* ((path (pine.ns:here))
@@ -119,8 +111,9 @@ rule that recomputes anything else."
 (defun make-desktop-session (aclient)
   (let ((s (make-dsession)))
     (setf (pine.core.attach:attached-client-session aclient) s)
-    (when pine.ui.rules:*user-rules*
-      (pine.core.attach:push-to-app aclient :rules :rules pine.ui.rules:*user-rules*))
+    (let ((rules (pine.ui.rules:user-rules)))
+      (when rules
+        (pine.core.attach:push-to-app aclient :rules :rules rules)))
     (mount aclient)
     (let ((*surface-client* aclient))
       (dolist (name (names))
@@ -144,17 +137,28 @@ that is open. Which panel is up is /surface/?name/shown."
   (when (shownp name)
     (pine.ns:write (pine.path:child (surface-at name) "shown") nil)))
 
+(defun refresh-all ()
+  "Re-push every surface for every attached desktop client, which is what
+M-x reload-desktop does after a config is loaded again."
+  (dolist (c pine.core.attach:*clients*)
+    (when (eq (pine.core.attach:attached-client-kind c) :desktop)
+      (let ((s (pine.core.attach:attached-client-session c)))
+        (when (dsession-p s)
+          (let ((*surface-client* c))
+            (dolist (name (names))
+              (when (or (not (eq :panel (surface-role name))) (shownp name))
+                (pine.err:attempt (lambda () (push-surface c name))
+                                  (format nil "surface ~a" name))))))))))
+
 (defun desktop-input (aclient msg)
   (let ((s (pine.core.attach:attached-client-session aclient)))
     (case (first msg)
       (:widget-action
-       ;; run the handler through pine.err (its own thread), never inline on the
-       ;; pool -- a handler that blocks on IO or errors cannot stall the daemon.
+       ;; the handler runs through pine.err, on its own thread, so one that
+       ;; blocks on IO or errors cannot stall the daemon
        (destructuring-bind (&key id args) (rest msg)
          (let ((cb (and s (gethash id (dsession-actions s)))))
            (when cb
-             ;; what a click is, is what anything else that runs is: a command
-             ;; path, a write-map, or a function
              (pine.err:evaluate-thunk
               (lambda ()
                 (let ((*surface-client* aclient))
@@ -162,9 +166,8 @@ that is open. Which panel is up is /surface/?name/shown."
                       (apply cb args)
                       (pine.cmd:run cb))))
               :package (find-package :pine-user))))))
-      ;; the app asks for a fresh push once its surfaces exist (its first push on
-      ;; attach can arrive before the windows are up). Re-push the bar and any
-      ;; open panel.
+      ;; the app asks for a fresh push once its surfaces exist: its first push on
+      ;; attach can arrive before the windows are up
       (:refresh
        (let ((*surface-client* aclient))
          (dolist (name (names))
@@ -172,10 +175,16 @@ that is open. Which panel is up is /surface/?name/shown."
              (push-surface aclient name)))))
       (:hint
        (destructuring-bind (&key text) (rest msg)
-         (pine.state.ref:set-ref (pine.state.ref:defref :hint "") (or text "")))))))
+         (pine.ns:write /hint (or text "")))))))
 
-(defclass desktop-app (pine.core.attach:app)
-  ()
+(defclass server (pine.ns:server) ()
+  (:default-initargs :name :surface :serves (list /surface))
+  (:documentation "What pine draws on wayland, as expressions at paths."))
+
+(defmethod pine.ns:raise ((s server) &key &allow-other-keys)
+  (pine.ns:write /surface (provider)))
+
+(defclass desktop-app (pine.core.attach:app) ()
   (:default-initargs :kind :desktop)
   (:documentation "The bar, the echo strip, and the panels."))
 
@@ -188,23 +197,11 @@ that is open. Which panel is up is /surface/?name/shown."
 (defmethod pine.core.attach:detached ((app desktop-app) client)
   "Stop pushing to a frontend that is gone: the watch over /surface goes with
 it, and nothing else was holding anything for it."
-  (pine.ns:watch (pine.path:parse "/surface") nil :as (list :surface client)))
-
-(pine.core.attach:register-app (make-instance 'desktop-app))
+  (pine.ns:watch /surface nil :as (list :surface client)))
 
 (pine.cmd:defcmd "reload-desktop" ()
   "Re-push every surface for every attached desktop client."
   (refresh-all))
 
-(defun refresh-all ()
-  "Re-push every surface for every attached desktop client. Call it (M-x
-reload-desktop) after re-loading a config, so what it wrote shows at once."
-  (dolist (c pine.core.attach:*clients*)
-    (when (eq (pine.core.attach:attached-client-kind c) :desktop)
-      (let ((s (pine.core.attach:attached-client-session c)))
-        (when (dsession-p s)
-          (let ((*surface-client* c))
-            (dolist (name (names))
-              (when (or (not (eq :panel (surface-role name))) (shownp name))
-                (pine.err:attempt (lambda () (push-surface c name))
-                                  (format nil "surface ~a" name))))))))))
+(pine.ns:register (make-instance 'server))
+(pine.core.attach:register-app (make-instance 'desktop-app))

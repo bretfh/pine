@@ -16,14 +16,14 @@
   (pine.core.event:make-event-bus srv)
   (pine.core.actor:start-agent-registry srv)
   (pine.core.actor:start-local-agent srv)
-  (pine.text.buffer:start-buffer-registry srv)
+  (pine.text:start-buffer-registry srv)
   (let* ((sess (pine.editor.session:make-editor-session
                 nil :sink (lambda (&rest _) (declare (ignore _)) nil)))
          (client (pine.editor.session:sess-client sess))
          (w (* *cols* *cw*))
          (h (* *rows* *ch*)))
     (let ((buf (pine.editor.frame:current-buffer client)))
-      (pine.editor.ask:tell buf :replace-content
+      (pine.buf:tell buf :replace-content
                         :content (format nil "(defun alpha (x)~%  (list x :a))~%~%(defun beta (y)~%  (* y 2))~%")))
     (pine.editor.session:session-feed sess (list :resize :cols *cols* :rows *rows*
                                          :width w :height h
@@ -42,7 +42,7 @@
                (dolist (c (pine.ui.layout:nodes-of n)) (dump c (1+ depth))))
              (shot (name)
              (let* ((pine.editor.frame:*client* client)
-                    (tree (pine.ui.render:refresh-editor-tree client))
+                    (tree (pine.editor.render:refresh-editor-tree client))
                     (node (pine.ui.wire:wire->node (pine.ui.wire:node->wire tree))))
                (format t "~&== ~a~%" name)
                (dump tree 0)

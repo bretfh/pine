@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.env
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns))
-  (:export #:mount))
+  (:export #:server))
 
 (in-package #:pine.provider.env)
 (named-readtables:in-readtable pine.path:syntax)
@@ -31,5 +31,11 @@
    (/env {:ls (pine.data:fn [] (%names))
           :doc "every name in the environment"})))
 
-(defun mount ()
+(defclass server (ns:server) ()
+  (:default-initargs :name :env :serves (list /env))
+  (:documentation "The environment this image was started in."))
+
+(defmethod ns:raise ((s server) &key &allow-other-keys)
   (ns:write /env (provider)))
+
+(ns:register (make-instance 'server))

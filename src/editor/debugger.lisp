@@ -1,256 +1,322 @@
 (defpackage #:pine.editor.debugger
   (:use #:cl)
-  (:export #:agent-debug-surface #:attend-session #:note-attendance #:debugger-quit #:eval-done #:eval-error #:eval-notify #:jobs-builder #:resolve-session #:text-layout #:*attended-session* #:*debugger-sessions* #:dbg-session #:dbg-session-ev #:dbg-session-kind #:dbg-session-restarts #:invoke-pending-restart))
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:err #:pine.err))
+  (:shadow #:fault)
+  (:export #:install #:ids #:fault #:at #:attended #:attend #:take #:next
+           #:quit #:abort-attended #:restarts #:jobs #:jobs-builder #:text-layout))
 
 (in-package #:pine.editor.debugger)
+(named-readtables:in-readtable pine.path:syntax)
 
-;;;; Evaluation runs through pine.err on its own thread, never on the UI
-;;;; thread, so a slow/looping/erroring form can't hang or crash the editor.
 
-;;;; Debugger sessions. A fault -- a local evaluation, or an error shipped home
-;;;; from a :process agent -- becomes a session and joins a registry, because a
-;;;; multi-image substrate faults in more than one place at once (two agents, an
-;;;; agent and a buffer). The *debugger* buffer shows the ATTENDED session; Tab
-;;;; pages to the next; picking a restart resolves the attended one and advances
-;;;; to the next, or dismisses the buffer when none remain. Resolving drives the
-;;;; decision back to where the restart is live: pick-restart on the blocked
-;;;; local eval, or :resume to the agent.
+;;;; The debugger is a view over /err.
+;;;;
+;;;; Not a callback per fault and not a registry of its own: whatever put one
+;;;; there -- an eval on its own thread, a parser actor that unwound, an agent
+;;;; in another image -- reads the same, and a fault someone else decided
+;;;; simply stops being in the list. Picking a restart is a write to the path,
+;;;; so the same keystroke works on a fault in this image and one three hosts
+;;;; away.
+;;;;
+;;;; What it holds is at /buf/*debugger*/..., because it is what that buffer is
+;;;; showing and a buffer's own leaves are where a buffer's own state goes. Two
+;;;; frontends attached to one daemon each look at their own space, and neither
+;;;; is writing over the other's idea of which fault is up.
+;;;;
+;;;; The rows are an expression over /err. Nothing here renders: a fault
+;;;; arriving moves a path, and what read that path is computed again, which is
+;;;; the same rule as everything else in the tree. What the watch decides is
+;;;; only which fault is attended and whether the buffer is in front, and both
+;;;; of those are writes.
 
-(defstruct dbg-session
-  id                 ; small integer, for the switcher header
-  kind               ; :local or :agent
-  ev                 ; the pine.err:evaluation (kind :local), resumed by pick-restart
-  agent eval-id      ; agent name + eval-id (kind :agent), resumed by :resume
-  header             ; one-line title
-  condition          ; condition text
-  restarts           ; list of (name report)
-  backtrace)         ; text, or nil
+(defparameter +buffer+ "*debugger*")
 
-(defvar *debugger-sessions* nil "Live debugger sessions, most-recent first.")
-(defvar *attended-session* nil "The session the *debugger* buffer currently shows.")
-(defvar *debugger-session-counter* 0)
+(defun at (leaf)
+  "Where the debugger keeps LEAF: a leaf of the buffer it is."
+  (pine.buf:at +buffer+ leaf))
+
+(defun ids ()
+  "Every fault at /err, oldest first.
+
+Reading /err itself first is what makes this a dependency: an expression built
+from these is computed again when a fault arrives or is decided, because it
+read the path that moved."
+  (ns:read /err)
+  (sort (loop :for path :in (ns:matches /err/*)
+              :for id := (parse-integer (p:leaf path) :junk-allowed t)
+              :when id :collect id)
+        #'<))
+
+(defun fault (id)
+  "The map at /err/?id, or NIL when nothing is there any more."
+  (let ((m (ns:read /err/${id})))
+    (and (fset:map? m) m)))
+
+(defun attended ()
+  "The fault the *debugger* buffer is showing, or NIL."
+  (ns:read (at :attended)))
+
+(defun restarts (&optional (id (attended)))
+  "The restart names ID can still be decided by."
+  (let ((m (and id (fault id))))
+    (when m
+      (let ((names (fset:lookup m :restarts)))
+        (and (fset:seq? names) (fset:convert 'list names))))))
+
+(defun take (name)
+  "Decide the attended fault: write the restart it should take.
+
+Where that lands is the fault's business. A local evaluation is standing in it
+and wakes up; an agent's fault goes back over remoting; one whose stack is
+already gone simply stops being a fault."
+  (let ((id (attended)))
+    (cond ((null id) (pine.echo:message "no fault in the debugger") nil)
+          (t (ns:write /err/${id} (fset:seq :restart name))
+             (pine.echo:message (format nil "invoked ~a" name))
+             t))))
+
+;;;; What it looks like. The restart rows are selectable nodes whose activation
+;;;; writes that restart to the fault's path, so Return / C-n / C-p are the
+;;;; ordinary surface interaction and point->node needs no side table.
+
+(defun %header (id m)
+  (format nil "~a~@[: ~a~]" (or (fset:lookup m :label) (format nil "fault ~d" id))
+          (let ((type (fset:lookup m :type)))
+            (and (plusp (length (or type ""))) type))))
+
+(defun %switcher (id live)
+  "The row that says which of several faults is up, when there are several."
+  (when (> (length live) 1)
+    (list (pine.ui.build:label
+           (format nil "fault ~d/~d  (Tab: next)   ~{~a~^  |  ~}"
+                   (1+ (or (position id live) 0)) (length live)
+                   (mapcar (lambda (other)
+                             (let ((om (fault other)))
+                               (if om (%header other om) (format nil "fault ~d" other))))
+                           live))
+           :class "dbg-switch")
+          (pine.ui.build:label ""))))
+
+(defun %backtrace (m)
+  (let ((bt (fset:lookup m :backtrace)))
+    (when (and bt (plusp (length bt)))
+      (list* (pine.ui.build:label "")
+             (pine.ui.build:label "Backtrace:" :class "dbg-note")
+             (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-bt"))
+                     (pine.text:split-lines bt))))))
+
+(defun %tree (name)
+  "The *debugger* buffer's widget tree, as an expression over /err."
+  (declare (ignore name))
+  (let* ((live (ids))
+         (id (attended))
+         (m (and id (fault id))))
+    (if (null m)
+        (pine.ui.build:column :align :stretch
+          (pine.ui.build:label "nothing has faulted" :class "dbg-note"))
+        (apply #'pine.ui.build:column :align :stretch
+               (append
+                (%switcher id live)
+                (list (pine.ui.build:label (%header id m) :class "dbg-header")
+                      (pine.ui.build:label ""))
+                (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-cond"))
+                        (pine.text:split-lines (or (fset:lookup m :condition) "")))
+                (list (pine.ui.build:label "")
+                      (pine.ui.build:label "Restarts (Return on a line):"
+                                           :class "dbg-note"))
+                (loop :for what :in (restarts id) :collect
+                  (pine.ui.build:choice
+                   :class "restart" :prefix-selected "" :prefix-unselected ""
+                   :data (let ((nm what)) (lambda () (take nm)))
+                   (pine.ui.build:label (format nil "  [~a]" (or what ""))
+                                        :class "restart-lbl")))
+                (%backtrace m))))))
+
+;;;; Which one is up
 
 (defun eval-notify (text)
-  "Show TEXT in the echo area and repaint, safely from the eval thread."
-  (pine.editor.echo:message text)
+  "Show TEXT in the echo area and repaint, safely from whatever thread faulted."
+  (pine.echo:message text)
   (let ((r (ignore-errors (pine.editor.frame:renderer (pine.editor.frame:current-client)))))
     (when r (sento.actor:tell r '(:force-render)))))
 
-(defun eval-done (ev &optional at)
-  "Surface a finished eval: the result echoes, and lands inline as an overlay
-on the form's line when AT is (BUFFER . LINE)."
-  (case (pine.err:evaluation-status ev)
-    (:ok (let ((txt (format nil "=> ~{~s~^, ~}" (pine.err:evaluation-values ev))))
-           (when at
-             (ignore-errors
-              (pine.editor.ask:tell (car at) :overlay :line (cdr at) :text txt)))
-           (eval-notify txt)))
-    (:aborted (eval-notify "aborted"))))
-
-;;;; The debugger buffer is a layout buffer: restart rows are selectable
-;;;; nodes whose activation invokes that restart, so Return / C-n / C-p are the
-;;;; ordinary surface interaction and point->node needs no side table. The
-;;;; restart stays live on its blocked thread (or in its agent); only the
-;;;; decision moves.
-
-(defvar *debugger-return-to* nil
-  "Buffer name to return to when the last session is resolved or dismissed.")
-
-(defun %switch-to-buffer (name)
+(defun %switch-to (name)
   (let ((client (pine.editor.frame:current-client))
-        (buf (pine.editor.frame:buffer name)))
+        (buf (pine.buf:live name)))
     (when buf
       (pine.editor.frame:switch-buffer name)
       (let ((r (ignore-errors (pine.editor.frame:renderer client))))
         (when r
           (sento.actor:tell r (list :switch-buffer :buffer buf :name name)))))))
 
-(defun %debugger-builder (session ordered)
-  "The *debugger* layout for SESSION: switcher row (when several sessions are
-live), header, condition, one selectable restart row per restart -- activation
-invokes that restart -- and the backtrace."
-  (lambda (state)
-    (declare (ignore state))
-    (apply #'pine.ui.build:column :align :stretch
-           (append
-            (when (> (length ordered) 1)
-              (list (pine.ui.build:label
-                     (format nil "session ~d/~d  (Tab: next)   ~{~a~^  |  ~}"
-                             (1+ (or (position session ordered) 0)) (length ordered)
-                             (mapcar #'dbg-session-header ordered))
-                     :class "dbg-switch")
-                    (pine.ui.build:label "")))
-            (list (pine.ui.build:label (dbg-session-header session) :class "dbg-header")
-                  (pine.ui.build:label ""))
-            (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-cond"))
-                    (pine.text.buffer:split-lines (dbg-session-condition session)))
-            (list (pine.ui.build:label "")
-                  (pine.ui.build:label "Restarts (Return on a line):" :class "dbg-note"))
-            (loop for (name report) in (dbg-session-restarts session) collect
-              (pine.ui.build:choice
-               :class "restart" :prefix-selected "" :prefix-unselected ""
-               :data (let ((nm name)) (lambda () (invoke-pending-restart nm)))
-               (pine.ui.build:label (format nil "  [~a]  ~a" (or name "") (or report ""))
-                                  :class "restart-lbl")))
-            (when (dbg-session-backtrace session)
-              (list* (pine.ui.build:label "")
-                     (pine.ui.build:label "Backtrace:" :class "dbg-note")
-                     (mapcar (lambda (l) (pine.ui.build:label l :class "dbg-bt"))
-                             (pine.text.buffer:split-lines (dbg-session-backtrace session)))))))))
+(defun %say-attended (id open)
+  "Say whether someone has ID open, so a thread standing in it knows whether a
+decision is still coming. Written only when it is not already so: this runs
+from a watch on /err, and a write that changed nothing would run it again."
+  (when (and id (fault id)
+             (not (eq (and open t) (and (ns:read /err/${id}/attended) t))))
+    (ns:write /err/${id}/attended (and open t))))
 
-(defun attend-session (session)
-  "Open SESSION in the *debugger* buffer, make it the attended one, and switch
-to it. The eval target follows the attended fault, so C-x C-e / recompile land
-in the image that broke -- fix the defun there, then pick retry."
-  (setf *attended-session* session
-        pine.editor.target:*eval-target* (ecase (dbg-session-kind session)
-                        (:agent (dbg-session-agent session))
-                        (:local :local)))
-  (pine.editor.view:show "*debugger*"
-                         (%debugger-builder session (reverse *debugger-sessions*))
-                         :mode :debugger))
+(defun %target-of (m)
+  "Where an eval should land while this fault is up: the image that broke, so
+C-x C-e and recompile fix the defun where it is."
+  (or (fset:lookup m :agent) :local))
 
-(defun %push-session (session)
-  "Register SESSION and attend it. The return-to buffer is captured the first
-time the debugger opens, so resolving the last session lands you back where you
-were before any fault."
-  (unless *debugger-sessions*
-    (setf *debugger-return-to* (ignore-errors (pine.editor.ask:ask :current :name))
-          pine.editor.target:*eval-target-saved* pine.editor.target:*eval-target*))
-  (push session *debugger-sessions*)
-  (note-attendance session t)
-  (attend-session session))
+(defun attend (id)
+  "Show fault ID. The rows follow on their own; what this writes is which one."
+  (let ((m (fault id)))
+    (when m
+      (unless (ns:read (at :return-to))
+        (ns:write (at :return-to)
+                  (or (ignore-errors (pine.buf:name-of
+                                      (pine.editor.frame:current-buffer)))
+                      "scratch"))
+        (setf (pine.eval:target-was) (pine.eval:target)))
+      (let ((was (attended)))
+        (unless (eql id was) (%say-attended was nil)))
+      (ns:write (at :attended) id)
+      (setf (pine.eval:target) (%target-of m))
+      (%say-attended id t)
+      (%switch-to +buffer+)
+      id)))
 
-(defun %dismiss-debugger ()
-  "Hide the *debugger* buffer and return to the pre-debugger buffer. Does not
-resolve anything -- any sessions still in the registry stay parked."
-  (when *debugger-return-to*
-    (%switch-to-buffer *debugger-return-to*))
-  (ignore-errors (pine.editor.frame:kill-buffer "*debugger*")))
+(defun quit ()
+  "Hide the *debugger* without deciding anything. The faults stay at /err and
+M-x debugger reopens the attended one."
+  (let ((back (ns:read (at :return-to))))
+    (when back (%switch-to back))))
 
-(defun resolve-session (session)
-  "Drop SESSION from the registry (its thread was just resumed); attend the next
-live session, or dismiss the buffer and clear the return-to when none remain."
-  (setf *debugger-sessions* (remove session *debugger-sessions*))
-  (note-attendance session nil)
-  (let ((next (first *debugger-sessions*)))
-    (cond (next (attend-session next))
-          (t (setf *attended-session* nil
-                   pine.editor.target:*eval-target* pine.editor.target:*eval-target-saved*)   ; back to the pre-fault target
-             (%dismiss-debugger)
-             (setf *debugger-return-to* nil)))))
+(defun %dismiss ()
+  "Nothing is faulted any more: put the eval target and the buffer back where
+they were before the first one."
+  (%say-attended (attended) nil)
+  (ns:write (at :attended) nil)
+  (ns:write (at :seen) 0)
+  (setf (pine.eval:target) (pine.eval:target-was))
+  (quit)
+  (ns:write (at :return-to) nil))
 
-(defun note-attendance (session open)
-  "Say whether SESSION's evaluation is being looked at, so the thread parked in
-it knows whether a decision is still coming."
-  (let ((ev (dbg-session-ev session)))
-    (when ev (setf (pine.err:attended-p ev) open))))
+(defun next ()
+  "Page to the next live fault without deciding this one."
+  (let ((live (ids)))
+    (if (> (length live) 1)
+        (let ((pos (or (position (attended) live) 0)))
+          (attend (nth (mod (1+ pos) (length live)) live)))
+        (pine.echo:message "only one fault"))))
 
-(defun eval-error (ev)
-  (%push-session
-   (make-dbg-session
-    :id (incf *debugger-session-counter*) :kind :local :ev ev
-    :header (format nil "Evaluation error: ~a" (pine.err:evaluation-condition-type ev))
-    :condition (pine.err:evaluation-condition ev)
-    :restarts (pine.err:evaluation-restarts ev)
-    :backtrace (pine.err:evaluation-backtrace ev)))
-  (eval-notify (format nil "eval error: ~a  (0-9/Return picks a restart, q quits)"
-                        (pine.err:evaluation-condition-type ev))))
+(defun abort-attended ()
+  "C-g while a fault is up: take its abort, and interrupt a runaway evaluation
+into it rather than only asking."
+  (let* ((id (attended))
+         (ev (and id (err:find-evaluation id))))
+    (when id
+      (if ev (err:abort-evaluation ev) (take "ABORT"))
+      t)))
 
-(defun agent-debug-surface (msg)
-  "A process agent's error, surfaced in the editor: show its restarts and drive
-the resume back to that agent. Move the decision, not the handler."
-  (when (eq (first msg) :agent-debug)
-    (destructuring-bind (&key agent eval-id condition restarts &allow-other-keys)
-        (rest msg)
-      (%push-session
-       (make-dbg-session
-        :id (incf *debugger-session-counter*) :kind :agent :agent agent :eval-id eval-id
-        :header (format nil "Error in agent ~a" agent)
-        :condition (or condition "")
-        :restarts (mapcar (lambda (r) (list r nil)) (remove nil restarts))
-        :backtrace nil))
-      (eval-notify (format nil "agent ~a error (0-9/Return picks a restart)" agent)))))
+;;;; The watch
 
-(defun %session-resume (session name)
-  "Send NAME to where SESSION's restart is live: pick-restart on the blocked
-local eval, or :resume to the agent that shipped its restarts home."
-  (ecase (dbg-session-kind session)
-    (:local
-     (when (and (dbg-session-ev session)
-                (eq (pine.err:evaluation-status (dbg-session-ev session)) :error))
-       (pine.err:pick-restart (dbg-session-ev session) name)))
-    (:agent
-     (let ((info (pine.core.actor:find-agent
-                  (pine.editor.frame:server-of (pine.editor.frame:current-client))
-                  (dbg-session-agent session))))
-       (when info
-         (sento.actor:tell (pine.core.actor:agent-info-actor info)
-                           (list :resume :eval-id (dbg-session-eval-id session)
-                                 :restart name)))))))
+(defun settle ()
+  "Bring the surface to what /err holds, as writes and nothing else.
 
-(defun invoke-pending-restart (name)
-  "Invoke restart NAME on the attended session, then resolve it (advance to the
-next live session, or dismiss the debugger)."
-  (let ((session *attended-session*))
-    (cond
-      ((null session) (pine.editor.echo:message "no evaluation in the debugger") nil)
-      (t (%session-resume session name)
-         (resolve-session session)
-         (pine.editor.echo:message (format nil "invoked ~a" name))
-         t))))
+A new fault takes the buffer, a decided one gives it up, and nothing faulted
+puts the editor back where it was. What the buffer shows is not settled here:
+its rows read /err, so they follow whatever this decides."
+  (let* ((live (ids))
+         (newest (first (last live)))
+         (seen (or (ns:read (at :seen)) 0)))
+    (cond ((null live) (when (attended) (%dismiss)))
+          ((> newest seen)
+           ;; written first, so the write that says a fault is attended -- which
+           ;; is a write under /err, and runs this again -- finds nothing to do
+           (ns:write (at :seen) newest)
+           (attend newest)
+           (let ((m (fault newest)))
+             (when m
+               (eval-notify
+                (format nil "~a  (0-9/Return picks a restart, q quits)"
+                        (%header newest m))))))
+          ((not (member (attended) live)) (attend newest)))))
 
-(defun debugger-quit ()
-  "Dismiss the *debugger* view without resolving; parked sessions stay in the
-registry (M-x debugger reopens the attended one)."
-  (%dismiss-debugger))
+(defun install ()
+  "Make the editor the thing that looks at /err.
+
+The buffer is opened once, and its rows are an expression over /err: a fault
+arriving redraws it the way any other path does, so nothing renders inside the
+watch that heard about it. pine.err also asks whether anything is watching
+before it holds a thread on a decision, so this is what makes a fault in this
+image stand with its restarts live instead of taking its abort for want of
+anyone to ask."
+  (pine.view:show +buffer+ #'%tree :mode :debugger :switch nil)
+  (ns:watch /err (lambda (value) (declare (ignore value)) (settle))
+            :as :debugger))
+
+;;;; Other listings
 
 (defun text-layout (text)
   "A read-only layout from TEXT: the first line styled as the heading, the
 rest as entries."
   (lambda (state)
     (declare (ignore state))
-    (let ((lines (pine.text.buffer:split-lines text)))
+    (let ((lines (pine.text:split-lines text)))
       (apply #'pine.ui.build:column :align :stretch
              (cons (pine.ui.build:label (or (first lines) "") :class "help-head")
                    (mapcar (lambda (l) (pine.ui.build:label l :class "help-entry"))
                            (rest lines)))))))
 
-(defun %attend-job (j)
-  "Open the debugger on job J's session when one is parked, else echo its
-status."
-  (let ((s (find-if
-            (lambda (s)
-              (ecase (dbg-session-kind s)
-                (:agent (and (equal (dbg-session-agent s) (getf j :agent))
-                             (eql (dbg-session-eval-id s) (getf j :id))))
-                (:local (and (equal (getf j :agent) "local")
-                             (dbg-session-ev s)
-                             (eql (pine.err:evaluation-id (dbg-session-ev s))
-                                  (getf j :id))))))
-            *debugger-sessions*)))
-    (if s
-        (attend-session s)
-        (pine.editor.echo:message (format nil "job ~a: ~a" (getf j :id) (getf j :status))))))
+;;;; What is running, across every image.
+;;;;
+;;;; Read rather than reported: an evaluation is one this image started, and a
+;;;; fault is at /err whichever image it happened in. There is no third list to
+;;;; keep in step with those two.
+
+(defun jobs ()
+  "Every evaluation and every fault, as (ID WHERE STATE WHAT)."
+  (let ((seen (fset:empty-set))
+        (acc nil))
+    (dolist (ev (err:list-evaluations))
+      (setf seen (fset:with seen (err:evaluation-id ev)))
+      (push (list (err:evaluation-id ev) "local"
+                  (err:evaluation-status ev)
+                  (princ-to-string (or (err:evaluation-form ev) "")))
+            acc))
+    (dolist (id (ids))
+      (let ((m (fault id)))
+        (when (and m (not (fset:contains? seen id)))
+          (push (list (or (fset:lookup m :eval-id) id)
+                      (or (fset:lookup m :agent) "local")
+                      :error
+                      (or (fset:lookup m :condition) ""))
+                acc))))
+    (sort acc #'< :key #'first)))
+
+(defun %attend-job (where id)
+  "Open the debugger on the fault this job is stopped at, if it is stopped."
+  (let ((at (if (equal where "local")
+                (and (fault id) id)
+                (find-if (lambda (other)
+                           (let ((m (fault other)))
+                             (and m (equal where (fset:lookup m :agent))
+                                  (eql id (fset:lookup m :eval-id)))))
+                         (ids)))))
+    (if at
+        (attend at)
+        (pine.echo:message (format nil "job ~a is not stopped" id)))))
 
 (defun jobs-builder ()
-  "The *jobs* layout: every live evaluation across the daemon and the agents,
-one selectable row each; Return attends an errored one's debugger session."
+  "The *jobs* layout: one selectable row each; Return attends a faulted one."
   (lambda (state)
     (declare (ignore state))
     (apply #'pine.ui.build:column :align :stretch
-           (list* (pine.ui.build:label "Jobs  (Return attends an errored one)"
-                                     :class "help-head")
-                  (pine.ui.build:label (format nil "~4@a  ~10a ~9a ~a"
-                                             "id" "agent" "status" "form / condition")
-                                     :class "dbg-note")
-                  (loop for j in (pine.core.jobs:list-jobs) collect
-                    (let ((j j))
-                      (pine.ui.build:choice
-                       :class "job-row" :prefix-selected "" :prefix-unselected ""
-                       :data (lambda () (%attend-job j))
-                       (pine.ui.build:label
-                        (format nil "~4@a  ~10a ~9a ~a"
-                                (getf j :id) (getf j :agent) (getf j :status)
-                                (or (getf j :form) (getf j :condition) ""))
-                        :class "help-entry"))))))))
+           (pine.ui.build:label "Jobs  (Return attends a faulted one)"
+                                :class "help-head")
+           (pine.ui.build:label (format nil "~4@a  ~10a ~9a ~a"
+                                        "id" "where" "state" "form / condition")
+                                :class "dbg-note")
+           (loop :for (id where state what) :in (jobs) :collect
+             (let ((id id) (where where))
+               (pine.ui.build:choice
+                :class "job-row" :prefix-selected "" :prefix-unselected ""
+                :data (lambda () (%attend-job where id))
+                (pine.ui.build:label
+                 (format nil "~4@a  ~10a ~9a ~a" id where state what)
+                 :class "help-entry")))))))

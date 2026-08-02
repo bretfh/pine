@@ -32,7 +32,6 @@ installs it. Nil means keyboard events are ignored (render-only).")
 also use -- so the frontend measures its :resize cell grid at the same size the
 buffer rows were laid out for."
   (float (pine.ui.face:metric :font-px 15) 1d0))
-(defparameter *x0* 6d0)
 
 (defclass editor ()
   ((sys        :initarg :sys :accessor ed-sys :initform nil)
@@ -278,8 +277,8 @@ for a whole one instead of applying."
    :deadline (lambda () (repeat-deadline ed))))
 
 (defun run-editor (&key (host pine.core.server:*host*) (port pine.core.server:*port*))
-  "Attach an editor window to the daemon at HOST:PORT and paint the frames
-it pushes. Opens a window; run it yourself. The daemon (make daemon) must be up."
+  "Attach an editor window to the daemon at HOST:PORT and paint the frames it
+pushes. The daemon must be up."
   (let* ((backing (connect-display))
          (ed (make-instance 'editor :backing backing :display (display backing)
                                     :pump (pine.frontend:make-pump))))

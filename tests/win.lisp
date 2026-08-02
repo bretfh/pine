@@ -9,7 +9,7 @@
 
 (defmacro with-win (&body body)
   `(pine.ns:with-space ()
-     (pine.win:mount)
+     (pine.ns:raise :win)
      (pine.win:seed /buf/scratch)
      ,@body))
 

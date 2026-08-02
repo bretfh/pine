@@ -2,78 +2,62 @@
   (:use #:cl)
   (:shadow #:open #:close)
   (:local-nicknames (#:p #:pine.path) (#:ns #:pine.ns))
-  (:export #:store #:open #:close #:restore #:revert #:storablep #:as-of
-           #:*changes-kept*))
+  (:export #:store #:server #:open #:close #:restore #:storablep))
 
 (in-package #:pine.store)
 (named-readtables:in-readtable pine.path:syntax)
 
-;;;; What outlives the daemon, and the one file it lives in.
+;;;; What outlives the daemon, and the one file it lives in. Only a held path
+;;;; is stored, which is why a buffer visiting a file keeps its point and its
+;;;; mode and not its text: the text came from the file.
 ;;;;
-;;;; Nothing here is asked for. A path is live when a provider reads it, derived
-;;;; when an expression computes it from other paths, and held when someone
-;;;; wrote it and nothing else determines it. Only held is stored, which is why
-;;;; a buffer visiting a file keeps its point and its mode and not its text:
-;;;; the text came from the file.
-;;;;
-;;;; One file per pine. A pine is a space, an image may hold several, so the
-;;;; connection belongs to the store OPEN answers and not to the image.
+;;;; The connection is an agent's state, so every statement runs on its one
+;;;; thread and nothing here holds a lock. Nothing on that thread asks anything,
+;;;; so the wait graph stays acyclic.
 
 (defvar *restoring* nil "True while reading the file back, so it is not rewritten.")
-
-(defparameter *changes-kept* 5000
-  "How many changes the file remembers when /history/kept says nothing. How far
-back a revert reaches is a decision about this pine, so it is a held path and
-the default is only what it starts at.")
-
-(defun %kept ()
-  (or (ns:read /history/kept) *changes-kept*))
-
-(defun storablep (value)
-  "Whether VALUE is data the file can hold.
-
-Code is not: a command, a provider and a view are functions, and whatever
-declared them declares them again at boot. Refusing quietly would lose state
-without saying so, so this decides before the write rather than after."
-  (typecase value
-    ((or number string character symbol) t)
-    (p:path t)
-    (cons (and (storablep (car value)) (storablep (cdr value))))
-    (t (cond ((fset:map? value)
-              (let ((ok t))
-                (fset:do-map (k v value)
-                  (unless (and (storablep k) (storablep v)) (setf ok nil)))
-                ok))
-             ((fset:seq? value)
-              (let ((ok t))
-                (fset:do-seq (x value) (unless (storablep x) (setf ok nil)))
-                ok))
-             ((fset:set? value)
-              (let ((ok t))
-                (fset:do-set (x value) (unless (storablep x) (setf ok nil)))
-                ok))
-             (t nil)))))
-
-(defun %out (value) (pine.data:serialize value))
-(defun %in (text) (pine.data:deserialize text 'p:data))
-
-;;;; The connection is an agent's state, so every statement runs on its one
-;;;; thread and nothing here holds a lock.
-;;;;
-;;;; RECORD tells, so a namespace write answers as soon as the value has moved
-;;;; and the file catches up behind it. Everything that needs an answer asks,
-;;;; and the one mailbox orders those behind the records already told, so a read
-;;;; of the log never misses a write that preceded it.
-;;;;
-;;;; Nothing that runs on that thread asks anything, which is what makes the
-;;;; wait graph acyclic: a statement here touches sqlite and nothing else.
 
 (defstruct (store (:constructor %store (agent)) (:copier nil) (:predicate nil))
   agent)
 
+(defgeneric storablep (value)
+  (:documentation "Whether VALUE is data the file can hold. Code is not: a
+command, a provider and a view are functions, and whatever declared them
+declares them again at boot.")
+  (:method (value) (declare (ignore value)) nil))
+
+(defmethod storablep ((value number)) t)
+(defmethod storablep ((value string)) t)
+(defmethod storablep ((value character)) t)
+(defmethod storablep ((value symbol)) t)
+(defmethod storablep ((value p:path)) t)
+
+(defmethod storablep ((value cons))
+  (and (storablep (car value)) (storablep (cdr value))))
+
+(defmethod storablep ((value fset:map))
+  (let ((ok t))
+    (fset:do-map (k v value)
+      (unless (and (storablep k) (storablep v)) (setf ok nil)))
+    ok))
+
+(defmethod storablep ((value fset:seq))
+  (let ((ok t))
+    (fset:do-seq (x value) (unless (storablep x) (setf ok nil)))
+    ok))
+
+(defmethod storablep ((value fset:set))
+  (let ((ok t))
+    (fset:do-set (x value) (unless (storablep x) (setf ok nil)))
+    ok))
+
+(defun %out (value) (pine.data:serialize value))
+(defun %in (text) (pine.data:deserialize text 'p:data))
+(defun %now () (get-universal-time))
+
 (defun %answer (answer)
   "ANSWER as the caller's value. A condition raised on the agent's thread comes
-back as a value; it is signalled here instead, where the call was made."
+back as a value; it is signalled here, where the call was made."
   (if (and (consp answer) (eq :handler-error (car answer)))
       (error (cdr answer))
       answer))
@@ -86,123 +70,52 @@ back as a value; it is signalled here instead, where the call was made."
 
 (defun %db (state) (fset:lookup state :db))
 
-;;;; The file
-
 (defun %connect (target)
   (let ((db (sqlite:connect target)))
     (sqlite:execute-single db "PRAGMA journal_mode=WAL")
     (sqlite:execute-non-query db "PRAGMA busy_timeout=2000")
     (sqlite:execute-non-query db "
 CREATE TABLE IF NOT EXISTS held (
-  path TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0,
-  value TEXT NOT NULL, at INTEGER NOT NULL, bound INTEGER,
-  PRIMARY KEY (path, seq))")
-    ;; COMMIT groups the rows one write moved. A transaction is one new root, so
-    ;; going back to before it means putting all of its rows back, and without
-    ;; the group that has to be guessed at from the order.
-    (sqlite:execute-non-query db "
-CREATE TABLE IF NOT EXISTS changes (
-  n INTEGER PRIMARY KEY, commits INTEGER NOT NULL DEFAULT 0,
-  path TEXT NOT NULL, old TEXT, new TEXT, at INTEGER NOT NULL)")
-    (sqlite:execute-non-query db "
-CREATE INDEX IF NOT EXISTS changes_path ON changes (path)")
+  path TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL, at INTEGER NOT NULL, bound INTEGER)")
     db))
 
-(defun open (&optional path)
-  "Open the file at PATH, by default XDG data home pine/pine.db, read every held
-path back into the current space, and keep it written through from here on.
-Answers the store, which is what closes it.
-
-\":memory:\" opens one that lives as long as the image."
-  (let ((target (if path
-                    (if (pathnamep path) (namestring path) path)
-                    (namestring (uiop:xdg-data-home "pine/pine.db"))))
-        (store (%store (sento.agent:make-agent (lambda () (fset:empty-map))))))
-    (unless (string= target ":memory:")
-      (ensure-directories-exist target))
-    (%change store (lambda (state)
-                     (declare (ignore state))
-                     {:db (%connect target) :since-trim 0}))
-    (restore store)
-    (setf (ns:on-commit) (lambda (moved) (record store moved)))
-    (ns:write /history (history-provider store))
-    (ns:write /was (was-provider store))
-    store))
-
-(defun close (store)
-  "Close STORE and let its thread go. The space stops writing through, and the
-paths it served come back off."
-  (setf (ns:on-commit) nil)
-  (ns:write /history nil)
-  (ns:write /was nil)
-  (%change store (lambda (state)
-                   (let ((db (%db state)))
-                     (when db (sqlite:disconnect db)))
-                   (fset:empty-map)))
-  (sento.agent:agent-stop (store-agent store))
-  nil)
-
-;;;; Write through
-
-(defun %now () (get-universal-time))
-
-(defun %trim (state kept)
-  "STATE after one more change, trimming the log to KEPT when enough have gone
-by."
-  (let ((since (1+ (or (fset:lookup state :since-trim) 0))))
-    (cond ((<= since 100) (fset:with state :since-trim since))
-          (t (sqlite:execute-non-query
-              (%db state) "DELETE FROM changes WHERE n NOT IN
-                           (SELECT n FROM changes ORDER BY n DESC LIMIT ?)"
-              kept)
-             (fset:with state :since-trim 0)))))
-
 (defun %rows (moved)
-  "The rows MOVED asks the file to write, decided against the space the write
-landed on rather than whenever the store reaches them."
+  "The rows MOVED asks the file to write. :KEEP is opt-in."
   (loop :for (path old new) :in moved
-        :when (and (eq :held (ns:kind path))
-                   (ns:setting path :keep t)
+        :when (and (ns:setting path :keep)
                    (storablep new)
                    (storablep old))
-          :collect (list (p:text path) old new (ns:setting path :max))))
+          :collect (list (p:text path) new (ns:setting path :max))))
 
-(defun %write (state rows kept)
-  "STATE after ROWS -- one commit's worth -- have gone in, keeping KEPT changes
-in the log."
+(defun %write (state rows)
+  "STATE after ROWS have gone in."
   (let ((db (%db state)))
     (if (null db)
         state
-        (let ((commit (1+ (or (fset:lookup state :commit) 0))))
-          (dolist (row rows (fset:with state :commit commit))
-            (destructuring-bind (text old new bound) row
+        (progn
+          (dolist (row rows)
+            (destructuring-bind (text new bound) row
               (if (null new)
                   (sqlite:execute-non-query db "DELETE FROM held WHERE path = ?" text)
                   (sqlite:execute-non-query
-                   db "INSERT OR REPLACE INTO held (path, seq, value, at, bound)
-                       VALUES (?, 0, ?, ?, ?)"
-                   text (%out new) (%now) bound))
-              (sqlite:execute-non-query
-               db "INSERT INTO changes (commits, path, old, new, at)
-                   VALUES (?, ?, ?, ?, ?)"
-               commit text (and old (%out old)) (and new (%out new)) (%now))
-              (setf state (%trim state kept))))))))
+                   db "INSERT OR REPLACE INTO held (path, value, at, bound)
+                       VALUES (?, ?, ?, ?)"
+                   text (%out new) (%now) bound))))
+          state))))
 
 (defun record (store moved)
-  "Put every held change in the file. The space tells this each commit.
-
-What to write and how much log to keep are both decided here, on the thread the
-write landed on, so the agent's own thread reads nothing but sqlite."
+  "Put every kept change in the file. The space tells this each commit, and it
+tells rather than asks, so a write answers as soon as the value has moved."
   (unless *restoring*
-    (let ((rows (%rows moved))
-          (kept (%kept)))
+    (let ((rows (%rows moved)))
       (when rows
         (sento.agent:agent-update (store-agent store)
-                                  (lambda (state) (%write state rows kept)))))))
+                                  (lambda (state) (%write state rows)))))))
 
 (defun restore (store)
-  "Write every held path in the file back into the current space. A stored value
-wins over the one a config seeded, which is what makes it durable."
+  "Write every held path in the file back into the current space. A stored
+value wins over the one a config seeded."
   (let ((rows (%ask store
                     (lambda (state)
                       (let ((db (%db state)))
@@ -215,9 +128,8 @@ wins over the one a config seeded, which is what makes it durable."
           (let ((path (p:parse text))
                 (held (%in value)))
             (cond
-              ;; a ring comes back the way it was made: the bound first, then
-              ;; each entry pushed oldest to newest, so what is there after is
-              ;; a ring and not a seq that happens to look like one
+              ;; a ring comes back the way it was made: the bound, then each
+              ;; entry pushed oldest to newest
               ((and bound (fset:seq? held))
                (setf (ns:setting path :max) bound)
                (loop :for i :from (1- (fset:size held)) :downto 0
@@ -226,147 +138,52 @@ wins over the one a config seeded, which is what makes it durable."
                  (when bound (setf (ns:setting path :max) bound))))))))
     (length rows)))
 
-;;;; History, as paths
+(defun open (&optional path)
+  "Open the file at PATH, by default XDG data home pine/pine.db, read every held
+path back into the current space, and keep it written through from here on.
+Answers the store, which is what closes it. \":memory:\" opens one that lives
+as long as the image."
+  (let ((target (if path
+                    (if (pathnamep path) (namestring path) path)
+                    (namestring (uiop:xdg-data-home "pine/pine.db"))))
+        (store (%store (sento.agent:make-agent (lambda () (fset:empty-map))))))
+    (unless (string= target ":memory:")
+      (ensure-directories-exist target))
+    (%change store (lambda (state)
+                     (declare (ignore state))
+                     {:db (%connect target)}))
+    (restore store)
+    (setf (ns:on-commit :store) (lambda (moved) (record store moved)))
+    store))
 
-(defun %changes (store &optional limit)
-  (%ask store
-        (lambda (state)
-          (let ((db (%db state)))
-            (when db
-              (if limit
-                  (sqlite:execute-to-list
-                   db "SELECT n, commits, path, old, new, at FROM changes ORDER BY n DESC LIMIT ?"
-                   limit)
-                  (sqlite:execute-to-list
-                   db "SELECT n, commits, path, old, new, at FROM changes ORDER BY n DESC")))))))
+(defun close (store)
+  "Close STORE and let its thread go. The space stops writing through."
+  (setf (ns:on-commit :store) nil)
+  (%change store (lambda (state)
+                   (let ((db (%db state)))
+                     (when db (sqlite:disconnect db)))
+                   (fset:empty-map)))
+  (sento.agent:agent-stop (store-agent store))
+  nil)
 
-(defun %row (row)
-  (destructuring-bind (n commit text old new at) row
-    (fset:map (:n n) (:commit commit) (:path (p:parse text)) (:at at)
-              (:old (and old (%in old))) (:new (and new (%in new))))))
+(defclass server (ns:server) ()
+  (:default-initargs
+   :name :store
+   ;; last, because restoring writes into every subtree that keeps a path, and
+   ;; a stored value has to win over the one a config seeded
+   :after (list :mode :win :cmd :key :buf :echo :theme))
+  (:documentation "What outlives the daemon, and the one file it lives in. A
+sqlite handle is a thing and not a value, so the space keeps it: one pine is
+one file."))
 
-(defun %at-change (store text n)
-  "The value TEXT's path held as of change N.
+(defmethod ns:raise ((s server) &key store-path &allow-other-keys)
+  "Open the file, read every held path back, and keep it written through."
+  (declare (ignore s))
+  (open store-path))
 
-The newest change to it at or before N, or the oldest one after N read
-backwards, or -- when the file remembers no change to it -- what it holds now.
-An ask answers one value, so the row and whether there was one travel together."
-  (let ((found (%ask store
-                     (lambda (state)
-                       (let ((db (%db state)))
-                         (when db
-                           (let ((newer (sqlite:execute-to-list
-                                         db "SELECT new FROM changes
-                                             WHERE path = ? AND n <= ?
-                                             ORDER BY n DESC LIMIT 1" text n)))
-                             (if newer
-                                 (list (first (first newer)))
-                                 (let ((older (sqlite:execute-to-list
-                                               db "SELECT old FROM changes
-                                                   WHERE path = ? AND n > ?
-                                                   ORDER BY n ASC LIMIT 1" text n)))
-                                   (and older (list (first (first older)))))))))))))
-    (if found
-        (values (and (first found) (%in (first found))) t)
-        (values nil nil))))
+(defmethod ns:lower ((s server))
+  (let ((store (ns:kept (ns:name s))))
+    (when store (close store)))
+  (call-next-method))
 
-(defun %ago (text)
-  "The seconds back a relative time names -- -30s -5m -1h -2d -- or NIL when
-TEXT is not one."
-  (when (and (> (length text) 1) (char= #\- (char text 0)))
-    (let* ((body (subseq text 1))
-           (unit (char body (1- (length body))))
-           (n (ignore-errors (parse-integer body :end (1- (length body))))))
-      (when n
-        (case unit
-          (#\s n)
-          (#\m (* 60 n))
-          (#\h (* 3600 n))
-          (#\d (* 86400 n)))))))
-
-(defun as-of (store text)
-  "The change number TEXT names: a number is itself, and -1h is the newest
-change the file made an hour ago or longer.
-
-A person says when, and the file remembers what: /was/-1h is a path anybody can
-type and /was/2891 is the same place said exactly."
-  (let ((ago (%ago text)))
-    (if (null ago)
-        (parse-integer text :junk-allowed t)
-        (or (%ask store
-                  (lambda (state)
-                    (let ((db (%db state)))
-                      (when db
-                        (let ((row (sqlite:execute-to-list
-                                    db "SELECT n FROM changes WHERE at <= ?
-                                        ORDER BY n DESC LIMIT 1"
-                                    (- (%now) ago))))
-                          (and row (first (first row))))))))
-            0))))
-
-(defun revert (store n)
-  "Undo every change after N, newest first, so the space reads as it did."
-  (let ((rows (%ask store
-                    (lambda (state)
-                      (let ((db (%db state)))
-                        (when db
-                          (sqlite:execute-to-list
-                           db "SELECT path, old FROM changes WHERE n > ?
-                               ORDER BY n DESC" n)))))))
-    (dolist (row rows (length rows))
-      (destructuring-bind (text old) row
-        (ns:write (p:parse text) (and old (%in old)))))))
-
-;;;; A provider only ever answers under where it is mounted, so the log and the
-;;;; view back through it are two.
-
-(defun history-provider (store)
-  (ns:provider
-   (/history {:read (pine.data:fn []
-                      (fset:convert 'fset:seq
-                                    (mapcar #'%row (%changes store 200))))
-              :verbs {:revert (pine.data:fn [n] (revert store n))}
-              :doc "every change the file remembers, newest first"})))
-
-(defun %under (store text)
-  "The next segment of every path the file remembers a change to under TEXT."
-  (let ((prefix (if (string= text "/") "/" (concatenate 'string text "/"))))
-    (remove-duplicates
-     (loop :for row :in (or (%ask store
-                                  (lambda (state)
-                                    (let ((db (%db state)))
-                                      (when db
-                                        (sqlite:execute-to-list
-                                         db "SELECT DISTINCT path FROM changes
-                                             WHERE path LIKE ?"
-                                         (concatenate 'string prefix "%"))))))
-                            nil)
-           :for tail = (subseq (first row) (length prefix))
-           :for cut = (position #\/ tail)
-           :when (plusp (length tail))
-             :collect (subseq tail 0 (or cut (length tail))))
-     :test #'string=)))
-
-(defun %live-names (at)
-  (let ((value (ns:read at)))
-    (when (fset:map? value)
-      (loop :for key :in (fset:convert 'list (fset:domain value))
-            :collect (p:name key)))))
-
-(defun was-provider (store)
-  (ns:provider
-   (/was/?n/?@rest
-    {:read (pine.data:fn []
-             (multiple-value-bind (value known)
-                 (%at-change store (p:text (apply #'p:path rest)) (as-of store n))
-               (if known value (ns:read (apply #'p:path rest)))))
-     ;; the past is walked over the names that are there now and the names the
-     ;; file remembers a change to, so a path that has since gone is still one
-     ;; a diff can descend into
-     :ls (pine.data:fn []
-           (let ((at (apply #'p:path rest)))
-             (remove-duplicates (append (%live-names at)
-                                        (%under store (p:text at)))
-                                :test #'string=)))
-     :doc "what a path held as of a change"})
-   (/was {:doc "the tree as of a change: /was/${n}/any/path"})))
+(ns:register (make-instance 'server))

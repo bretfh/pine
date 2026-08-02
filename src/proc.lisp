@@ -1,72 +1,78 @@
 (defpackage #:pine.proc
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:proc #:mount #:unmount #:tick
-           #:*interval* #:*backoff-cap* #:*out-kept*))
+  (:export #:proc #:server #:tick #:emit
+           #:runnable #:kinds #:kind-of #:start #:halt #:alive-p #:took
+           #:interval #:*backoff-cap* #:*out-kept*))
 
 (in-package #:pine.proc)
 (named-readtables:in-readtable pine.path:syntax)
 
-;;;; Everything running, whatever its blast radius, in one table.
-;;;;
-;;;; A declaration says what to run and where. Writing it is what keeps it
-;;;; alive: pine starts what it was told to run, backs off when it keeps dying,
-;;;; and stops it when the path is written nil. There is no supervisor to
-;;;; declare, because a declared process is one that is kept running.
-;;;;
-;;;; The interval belongs to sento's wheel timer. A thread that sleeps in a
-;;;; loop is a supervisor nobody asked for.
-;;;;
-;;;; The table is a value in an atomic reference, like the namespace itself, so
-;;;; a read is a slot read and nothing here waits on anything. Launching and
-;;;; terminating are not pure, so they happen on the caller's thread outside the
-;;;; swap; two callers racing to start the same entry are settled by claiming
-;;;; :starting with a compare-and-swap, and only the winner launches.
-
-(defparameter *interval* 1
-  "Seconds between passes over the table.")
-
-(defparameter *backoff-cap* 60
-  "The longest pine waits before trying something that keeps dying again.")
-
-(defparameter *out-kept* 200
-  "Lines of a process's output the table remembers.")
-
-;;;; An entry is {:name :declaration :state :process :thread :attempts :due
-;;;; :exit :error :wanted}. STATE is :running, :starting, :stopped or :failed;
-;;;; DUE is the universal time before which nothing is tried again; WANTED is
-;;;; whether it is meant to be up.
+;;;; Everything running, whatever its blast radius, in one table at /proc. An
+;;;; entry is {:name :declaration :state :took :attempts :due :exit :error
+;;;; :wanted}; :took is what the kind is holding and :state is one of :running
+;;;; :starting :stopping :stopped :failed.
 
 (defstruct (proc (:constructor %proc (cell timer argv)) (:copier nil)
                  (:predicate nil))
-  cell
-  timer
-  argv)
+  cell timer argv)
+
+(defstruct (spawned (:constructor %spawned (process reader)) (:copier nil))
+  process reader)
+
+(defparameter *backoff-cap* 60)
+
+(defparameter *out-kept* 200)
+
+(defvar *kinds* (sento.atomic:make-atomic-reference :value (fset:empty-seq))
+  "The declaration keys /proc can run, in the order one is asked about them.")
+
+(defvar *saying* nil "The entry whose thread is running, for EMIT.")
+
+(defgeneric start (kind entry &key image-argv &allow-other-keys)
+  (:documentation "ENTRY with what it declares running, under :TOOK."))
+
+(defgeneric halt (kind entry)
+  (:documentation "ENTRY with what it took given back."))
+
+(defgeneric alive-p (kind entry)
+  (:documentation "Whether what ENTRY took is still going."))
+
+(defun runnable (key)
+  "Say a declaration key /proc can run. START, HALT and ALIVE-P on it are the
+rest of a kind."
+  (sento.atomic:atomic-swap
+   *kinds*
+   (lambda (seq)
+     (if (find key (fset:convert 'list seq)) seq (fset:with-last seq key))))
+  key)
+
+(defun kinds () (fset:convert 'list (sento.atomic:atomic-get *kinds*)))
+
+(defun kind-of (declaration)
+  (loop :for key :in (kinds) :thereis (and (fset:lookup declaration key) key)))
+
+(defun took (entry) (fset:lookup entry :took))
+
+(defun interval ()
+  (or (ns:read /proc-interval) 1))
 
 (defun %fresh (name)
   {:name name :state :stopped :attempts 0 :due 0 :wanted nil})
 
-(defun %set (map changes)
-  "MAP with every key in CHANGES replacing what was there."
-  (fset:map-union map changes))
+(defun %set (map changes) (fset:map-union map changes))
 
-(defun %now (proc)
-  "The table as it stands: one slot read, no message, no wait."
-  (sento.atomic:atomic-get (proc-cell proc)))
+(defun %now (proc) (sento.atomic:atomic-get (proc-cell proc)))
 
 (defun %entry (proc name) (fset:lookup (%now proc) name))
 
 (defun %field (proc name key)
-  "What NAME's entry says under KEY, or NIL when nothing is declared there."
   (let ((entry (%entry proc name)))
     (and entry (fset:lookup entry key))))
 
 (defun %claim (proc name fn)
   "Put FN's answer at NAME and say this caller did it, retrying until it lands.
-
-FN sees the entry as it stands and answers NIL to decline, which is how two
-threads racing over the same process end with one of them doing the work: the
-loser's FN sees what the winner wrote and declines."
+FN answers NIL to decline, which is how two threads racing end with one."
   (loop
     (let* ((table (%now proc))
            (answer (funcall fn (fset:lookup table name))))
@@ -76,7 +82,6 @@ loser's FN sees what the winner wrote and declines."
         (return answer)))))
 
 (defun %put (proc name entry)
-  "Put ENTRY at NAME. For the caller that has already claimed it."
   (sento.atomic:atomic-swap (proc-cell proc)
                             (lambda (table) (fset:with table name entry)))
   entry)
@@ -86,20 +91,31 @@ loser's FN sees what the winner wrote and declines."
                             (lambda (table) (fset:less table name)))
   nil)
 
-;;;; Is it up
-
 (defun %alive-p (entry)
-  (let ((process (fset:lookup entry :process))
-        (thread (fset:lookup entry :thread)))
-    (cond (process (uiop:process-alive-p process))
-          (thread (bordeaux-threads:thread-alive-p thread))
-          (t nil))))
+  (and entry
+       (alive-p (kind-of (fset:lookup entry :declaration)) entry)))
 
-(defun %pid (entry)
-  (let ((process (fset:lookup entry :process)))
-    (and process (uiop:process-info-pid process))))
+(defun say (name line)
+  (ns:write (p:path /proc name "out") line :max *out-kept* :keep nil))
 
-;;;; Starting and stopping. Neither is pure, so neither runs inside a swap.
+(defun emit (&rest arguments)
+  "Say a line at this process's /proc/?name/out. A :thread has no stdout."
+  (let ((name *saying*))
+    (when name
+      (let ((line (if (and arguments (stringp (first arguments)) (rest arguments))
+                      (apply #'format nil arguments)
+                      (princ-to-string (or (first arguments) "")))))
+        (say name line)
+        line))))
+
+(defun %reader (name stream)
+  (bordeaux-threads:make-thread
+   (lambda ()
+     (loop :for line = (handler-case (read-line stream nil nil)
+                         (stream-error () nil))
+           :while line
+           :do (say name line)))
+   :name (format nil "pine-proc-out-~a" name)))
 
 (defun %paths (value)
   (cond ((null value) nil)
@@ -108,8 +124,6 @@ loser's FN sees what the winner wrote and declines."
         (t value)))
 
 (defun %needs-met-p (declaration)
-  "Whether what the declaration waits for is there, and what it waits to be
-gone is gone."
   (and (every (lambda (path) (ns:read path))
               (%paths (fset:lookup declaration :needs)))
        (notany (lambda (path) (ns:read path))
@@ -121,72 +135,103 @@ gone is gone."
         ((listp value) value)
         (t (error "~s is not a command." value))))
 
-(defun %reader (name stream)
-  "Push STREAM's lines into the entry's output ring, on a thread of its own,
-because a process that says nothing must not block one that does.
-
-The ring is what a process is saying rather than something anyone wrote, so it
-is not kept in the file."
-  (let ((where (p:path /proc name "out")))
-    (bordeaux-threads:make-thread
-     (lambda ()
-       ;; a closed stream is how this thread is told to stop, not a fault
-       (loop :for line = (handler-case (read-line stream nil nil)
-                           (stream-error () nil))
-             :while line
-             :do (ns:write where line :max *out-kept* :keep nil)))
-     :name (format nil "pine-proc-out-~a" name))))
-
 (defun %launch (entry argv)
-  "ENTRY with the process ARGV names running under it."
   (let* ((env (fset:lookup (fset:lookup entry :declaration) :env))
          (process (if env
                       (uiop:launch-program argv :output :stream
                                                 :error-output :output
                                                 :environment (%argv env))
                       (uiop:launch-program argv :output :stream
-                                                :error-output :output))))
-    (%reader (fset:lookup entry :name) (uiop:process-info-output process))
-    (%set entry {:process process :state :running})))
+                                                :error-output :output)))
+         (name (fset:lookup entry :name)))
+    (%set entry {:took (%spawned process
+                                 (%reader name (uiop:process-info-output process)))
+                 :state :running})))
+
+(defun %reap (entry)
+  (let ((it (took entry)))
+    (when (spawned-p it)
+      (let ((process (spawned-process it)))
+        (when (uiop:process-alive-p process)
+          (uiop:terminate-process process :urgent t))
+        ;; the pipe ends when the process is reaped, which is what tells the
+        ;; reader to stop. Closing it under a blocked read is a race.
+        (uiop:wait-process process))))
+  (%set entry {:took nil :state :stopped}))
+
+(defun %running-p (entry)
+  (let ((it (took entry)))
+    (and (spawned-p it) (uiop:process-alive-p (spawned-process it)))))
+
+(defun %pid (entry)
+  (let ((it (took entry)))
+    (and (spawned-p it) (uiop:process-info-pid (spawned-process it)))))
+
+(defun %exit-of (entry)
+  (let ((it (took entry)))
+    (and (spawned-p it)
+         (not (uiop:process-alive-p (spawned-process it)))
+         (uiop:wait-process (spawned-process it)))))
+
+(defmethod start ((kind (eql :run)) entry &key &allow-other-keys)
+  (%launch entry (%argv (fset:lookup (fset:lookup entry :declaration) :run))))
+
+(defmethod halt ((kind (eql :run)) entry) (%reap entry))
+
+(defmethod alive-p ((kind (eql :run)) entry) (%running-p entry))
+
+(defmethod start ((kind (eql :image)) entry &key image-argv &allow-other-keys)
+  (let ((image (fset:lookup (fset:lookup entry :declaration) :image)))
+    (unless image-argv
+      (error "~a declares an image, and nothing here knows how to start one."
+             (fset:lookup entry :name)))
+    (%launch entry (funcall image-argv image))))
+
+(defmethod halt ((kind (eql :image)) entry) (%reap entry))
+
+(defmethod alive-p ((kind (eql :image)) entry) (%running-p entry))
+
+(defmethod start ((kind (eql :thread)) entry &key &allow-other-keys)
+  (let ((name (fset:lookup entry :name))
+        (thunk (fset:lookup (fset:lookup entry :declaration) :thread)))
+    (%set entry
+          {:took (bordeaux-threads:make-thread
+                  (lambda ()
+                    (let ((*saying* name))
+                      (pine.err:attempt thunk (format nil "~a" name))))
+                  :name (format nil "pine-proc-~a" name))
+           :state :running})))
+
+(defmethod halt ((kind (eql :thread)) entry)
+  (let ((it (took entry)))
+    (when (and it (bordeaux-threads:thread-alive-p it))
+      (bordeaux-threads:destroy-thread it)))
+  (%set entry {:took nil :state :stopped}))
+
+(defmethod alive-p ((kind (eql :thread)) entry)
+  (let ((it (took entry)))
+    (and it (bordeaux-threads:thread-alive-p it))))
+
+(defmethod start ((kind null) entry &key &allow-other-keys)
+  (error "~a declares nothing to run." (fset:lookup entry :name)))
+
+(defmethod halt ((kind null) entry) (%set entry {:took nil :state :stopped}))
+
+(defmethod alive-p ((kind null) entry) (declare (ignore entry)) nil)
+
+(runnable :image)
+(runnable :run)
+(runnable :thread)
 
 (defun %start (entry image-argv)
-  "ENTRY with what it declares started, or as it stands when nothing could be."
-  (let* ((declaration (fset:lookup entry :declaration))
-         (image (fset:lookup declaration :image))
-         (run (fset:lookup declaration :run))
-         (thread (fset:lookup declaration :thread))
-         (name (fset:lookup entry :name))
-         (down (%set entry {:state :stopped :process nil :thread nil})))
-    (cond
-      ((not (%needs-met-p declaration)) down)
-      (image
-       (unless image-argv
-         (error "~a declares an image, and nothing here knows how to start one."
-                name))
-       (%launch down (funcall image-argv image)))
-      (run (%launch down (%argv run)))
-      (thread
-       (%set down {:thread (bordeaux-threads:make-thread
-                            (lambda ()
-                              (pine.err:attempt thread (format nil "~a" name)))
-                            :name (format nil "pine-proc-~a" name))
-                   :state :running}))
-      (t (error "~a declares nothing to run." name)))))
+  (let ((declaration (fset:lookup entry :declaration))
+        (down (%set entry {:state :stopped :took nil})))
+    (if (%needs-met-p declaration)
+        (start (kind-of declaration) down :image-argv image-argv)
+        down)))
 
 (defun %halt (entry)
-  "ENTRY with whatever it was running gone."
-  (let ((process (fset:lookup entry :process))
-        (thread (fset:lookup entry :thread)))
-    (when process
-      (when (uiop:process-alive-p process)
-        (uiop:terminate-process process :urgent t))
-      ;; reaped rather than left: the pipe then reaches its end on its own,
-      ;; which is how the reader is told to stop. Closing the stream under a
-      ;; thread that is blocked reading it is a race, not a signal.
-      (uiop:wait-process process))
-    (when (and thread (bordeaux-threads:thread-alive-p thread))
-      (bordeaux-threads:destroy-thread thread))
-    (%set entry {:process nil :thread nil :state :stopped})))
+  (halt (kind-of (fset:lookup entry :declaration)) entry))
 
 (defun %backoff (entry)
   (%set entry {:due (+ (get-universal-time)
@@ -194,19 +239,10 @@ is not kept in the file."
                             (expt 2 (min 6 (fset:lookup entry :attempts)))))}))
 
 (defun %try (entry image-argv)
-  "ENTRY started, or carrying why it could not be.
-
-A start that does not take is something about the process -- a command that is
-not there, a permission -- so it is recorded where the process is read rather
-than raised as a fault in pine."
   (handler-case (%start (%set entry {:error nil}) image-argv)
     (error (c) (%set entry {:error (princ-to-string c) :state :failed}))))
 
-;;;; The pass. Each of these claims before it acts, so a wheel-timer pass and a
-;;;; write arriving at once cannot both start the same process.
-
 (defun %claim-start (proc name)
-  "Claim NAME for starting. Answers the claimed entry, or NIL to leave it be."
   (%claim proc name
           (lambda (entry)
             (and entry
@@ -220,35 +256,26 @@ than raised as a fault in pine."
           (lambda (entry)
             (and entry
                  (not (eq :stopping (fset:lookup entry :state)))
-                 (or (%alive-p entry) (fset:lookup entry :process))
+                 (or (%alive-p entry) (took entry))
                  (%set entry {:state :stopping})))))
 
 (defun %note-exit (proc name)
-  "Record what a process that has stopped said on its way out, so a policy
-above can act on it rather than pine guessing."
   (%claim proc name
           (lambda (entry)
-            (let ((process (and entry (fset:lookup entry :process))))
-              (and process
-                   (not (uiop:process-alive-p process))
-                   (%set entry {:exit (uiop:wait-process process)}))))))
+            (let ((exit (and entry (%exit-of entry))))
+              (and exit (%set entry {:exit exit}))))))
 
 (defun %halt-now (proc name)
-  "Stop what NAME is running, if this caller is the one that claims it."
   (let ((claimed (%claim-halt proc name)))
     (when claimed (%put proc name (%halt claimed)))))
 
 (defun %start-now (proc name)
-  "Start what NAME declares, if this caller is the one that claims it."
   (let ((claimed (%claim-start proc name)))
     (when claimed (%put proc name (%try claimed (proc-argv proc))))))
 
 (defun %attend (proc name)
-  "Bring NAME to what its declaration asks for.
-
-Every step here claims rather than writing a value it read a moment ago, so a
-pass and a write arriving at once cannot undo each other: the loser's claim
-sees what the winner left."
+  "Bring NAME to what its declaration asks for. Every step claims rather than
+writing a value it read a moment ago."
   (let ((first (%entry proc name)))
     (when (and first (not (%alive-p first))) (%note-exit proc name)))
   (let ((entry (%entry proc name)))
@@ -281,16 +308,14 @@ sees what the winner left."
                      (lambda (e) (and e (%set e {:state :failed}))))))))))
 
 (defun tick (proc)
-  "One pass over the table."
   (fset:do-map (name entry (%now proc))
     (declare (ignore entry))
     (%attend proc name))
   nil)
 
-;;;; Declaring
-
 (defun %declare (proc name declaration)
-  "Take DECLARATION for NAME. Writing nil stops it and drops it."
+  "Take DECLARATION for NAME. Writing nil stops it and drops it; the same
+declaration again leaves it running."
   (cond
     ((null declaration)
      (when (%entry proc name)
@@ -302,7 +327,6 @@ sees what the winner left."
              (lambda (entry)
                (%set (or entry (%fresh name))
                      {:declaration declaration :wanted t :attempts 0 :due 0})))
-     ;; idempotent: writing the same declaration again leaves it running
      (%attend proc name)))
   nil)
 
@@ -320,8 +344,6 @@ sees what the winner left."
                 (%attend proc name))))
   nil)
 
-;;;; The paths
-
 (defun provider (proc)
   (ns:provider
    ;; the leaves come first: a clause matches in the order it is written
@@ -331,6 +353,8 @@ sees what the winner left."
    (/proc/?name/pid
     {:read (pine.data:fn [] (let ((e (%entry proc name))) (and e (%pid e))))
      :doc "the pid, where it has one"})
+   (/proc/?name/out
+    {:doc "a ring of what it has said"})
    (/proc/?name/exit
     {:read (pine.data:fn [] (%field proc name :exit))
      :doc "what it said on its way out, last time it stopped"})
@@ -348,14 +372,7 @@ sees what the winner left."
     {:ls (pine.data:fn [] (sort (pine.data:keys (%now proc)) #'string<))
      :doc "everything running, whatever its blast radius"})))
 
-;;;; Mounting. What /proc holds is made here and let go in UNMOUNT.
-
-(defun mount (&key system image-argv)
-  "Serve /proc in the current space, and attend it on SYSTEM's wheel timer.
-Answers the table, which is what unmounts it.
-
-IMAGE-ARGV answers the argv that starts an image of pine which joins this
-daemon; without one, a declaration that asks for an image says so."
+(defun %raise (&key system image-argv)
   (let* ((timer (when system
                   (or (sento.actor-system:scheduler system)
                       (error "This actor system has no scheduler, so nothing ~
@@ -365,21 +382,35 @@ daemon; without one, a declaration that asks for an image says so."
     (ns:write /proc (provider proc))
     (when timer
       (sento.wheel-timer:schedule-recurring
-       timer *interval* *interval*
+       timer (interval) (interval)
        (lambda () (pine.err:attempt (lambda () (tick proc)) "attending /proc"))
        :pine-proc))
     proc))
 
-(defun unmount (proc)
-  "Stop attending, and stop everything declared."
+(defun %lower (proc)
   (when (proc-timer proc)
     (sento.wheel-timer:cancel (proc-timer proc) :pine-proc))
   (fset:do-map (name entry (%now proc))
     (declare (ignore entry))
     (%put proc name (%set (%entry proc name) {:wanted nil}))
     (%halt-now proc name))
-  (sento.atomic:atomic-swap (proc-cell proc) (lambda (old)
-                                               (declare (ignore old))
-                                               (fset:empty-map)))
+  (sento.atomic:atomic-swap (proc-cell proc)
+                            (lambda (old) (declare (ignore old)) (fset:empty-map)))
   (ns:write /proc nil)
   nil)
+
+(defclass server (ns:server) ()
+  (:default-initargs :name :proc :serves (list /proc))
+  (:documentation "Everything running, in one table. The table holds processes
+and threads, which cannot be values, so the space keeps it."))
+
+(defmethod ns:raise ((s server) &key system image-argv &allow-other-keys)
+  (declare (ignore s))
+  (%raise :system system :image-argv image-argv))
+
+(defmethod ns:lower ((s server))
+  (let ((proc (ns:kept (ns:name s))))
+    (when proc (%lower proc)))
+  (call-next-method))
+
+(ns:register (make-instance 'server))

@@ -99,7 +99,7 @@
 
 (test a-viewport-clips-to-its-height-and-scrolls-its-content
   (let ((rows (rendered-rows
-               (pine.ui.build:viewport
+               (pine.ui.build:scroll
                 :height 2 :offset 1
                 (pine.ui.build:column (pine.ui.build:label "one")
                                       (pine.ui.build:label "two")
@@ -114,12 +114,12 @@
     (is (equal '("ab" "----------") (rendered-rows column 10)))))
 
 (test a-window-node-measures-its-rows
-  (let ((node (pine.ui.build:window (list (cons "abcd" nil) (cons "ef" nil)))))
+  (let ((node (pine.ui.build:cells (list (cons "abcd" nil) (cons "ef" nil)))))
     (multiple-value-bind (w h) (pine.ui.layout:measure node 40 40)
       (is (equal '(4 2) (list w h))))))
 
 (test overlay-rows-sit-outside-the-measured-height
-  (let ((node (pine.ui.build:window (list (cons "pop" nil) (cons "line" nil))
+  (let ((node (pine.ui.build:cells (list (cons "pop" nil) (cons "line" nil))
                                     :base 1)))
     (is (= 1 (pine.ui.layout:window-overlay-count node)))
     (is (= 1 (nth-value 1 (pine.ui.layout:measure node 40 40))))))
@@ -170,7 +170,7 @@
 
 (test a-click-on-a-slider-yields-its-value
   (let* ((got nil)
-         (meter (pine.ui.build:meter :value 0 :min 0 :max 100 :track 10
+         (meter (pine.ui.build:slider :value 0 :min 0 :max 100 :track 10
                                      :on-change (lambda (v) (setf got v)))))
     (laid-out meter 10 1)
     (is (= 0 (pine.ui.layout:slider-value-at meter 0)))
@@ -246,3 +246,65 @@
   (is (equal '("nm-row" "sel") (pine.ui.cells:class-names '(:nm-row :sel))))
   (is (equal '("nm-row" "sel") (pine.ui.cells:class-names "nm-row sel")))
   (is (null (pine.ui.cells:class-names nil))))
+
+;;;; Content: the three rules a config is written under, and the vocabulary
+;;;; the doc names. A widget slot and the place it shows are one thing, so a
+;;;; config that reads a path into a widget has nothing to keep in step.
+
+(test a-slot-takes-a-path-in-place-of-a-value
+  (pine.ns:with-space ()
+    (pine.ns:write (pine.path:parse "/media/title") "Ligeia")
+    (is (string= "Ligeia"
+                 (pine.ui.node:content
+                  (pine.ui.build:label (pine.path:parse "/media/title")))))
+    (is (string= "" (pine.ui.node:content
+                     (pine.ui.build:label (pine.path:parse "/media/nothing"))))
+        "a path with nothing there shows nothing, not the word NIL")))
+
+(test a-control-takes-the-path-it-edits-as-its-subject
+  "No :value and no :on-change: the display and the edit are one path."
+  (pine.ns:with-space ()
+    (pine.ns:write (pine.path:parse "/audio/volume") 40)
+    (let ((slider (pine.ui.build:slider (pine.path:parse "/audio/volume")
+                                       :min 0 :max 100)))
+      (is (= 40 (pine.ui.node:value slider)))
+      (funcall (pine.ui.node:on-change slider) 75)
+      (is (= 75 (pine.ns:read (pine.path:parse "/audio/volume")))
+          "dragging it did not write the path it shows"))))
+
+(test a-field-shows-a-path-and-writes-it-back
+  (pine.ns:with-space ()
+    (pine.ns:write (pine.path:parse "/echo/input") "hel")
+    (let ((f (pine.ui.build:field (pine.path:parse "/echo/input"))))
+      (is (string= "hel" (pine.ui.node:content f)))
+      (funcall (pine.ui.node:on-change f) "hello")
+      (is (string= "hello" (pine.ns:read (pine.path:parse "/echo/input")))))))
+
+(test something-that-acts-takes-writes
+  "A click is a command path, a write-map or a fn, and nothing else."
+  (pine.ns:with-space ()
+    (pine.ns:write (pine.path:parse "/audio/muted") nil)
+    (let ((b (pine.ui.build:button
+              :click (fset:map ((pine.path:parse "/audio/muted")
+                                (fset:seq :toggle)))
+              (pine.ui.build:label "mute"))))
+      (funcall (pine.ui.node:callback b))
+      (is (eq t (pine.ns:read (pine.path:parse "/audio/muted")))))
+    (pine.ns:raise :cmd)
+    (let ((ran nil))
+      (pine.ns:write (pine.path:parse "/cmd/probe-click")
+                     (lambda () (setf ran t) (fset:empty-map)))
+      (funcall (pine.ui.node:callback
+                (pine.ui.build:button :click (pine.path:parse "/cmd/probe-click")
+                                      (pine.ui.build:label "go"))))
+      (is (eq t ran) "a command path did not run"))))
+
+(test grid-stack-and-field-are-there-and-build
+  (let ((g (pine.ui.build:grid :columns 2
+                               (pine.ui.build:label "a") (pine.ui.build:label "b")
+                               (pine.ui.build:label "c")))
+        (s (pine.ui.build:stack (pine.ui.build:label "under")
+                                (pine.ui.build:label "over"))))
+    (is (= 2 (length (pine.ui.node:nodes g))) "three cells two wide are two rows")
+    (is (= 2 (length (pine.ui.node:nodes (first (pine.ui.node:nodes g))))))
+    (is (= 2 (length (pine.ui.node:nodes s))))))

@@ -4,64 +4,99 @@
   (:export #:path #:pathp #:segments #:segment-count #:root #:rootp
            #:parent #:leaf #:child #:under #:prefixp #:subpath
            #:text #:parse #:name #:spliced
-           #:patternp #:binders #:match #:literal-at #:key #:keys #:any
+           #:patternp #:binders #:match #:named-at #:expansions #:literal-tail
+           #:key #:keys #:any
+           #:seg #:seg-value #:seg-constraint #:many-seg #:binding-seg
+           #:literal-seg #:any-seg #:deep-seg #:one-of-seg #:bind-seg
+           #:bind-rest-seg
+           #:segment-text #:segment-admits #:segment-took
+           #:*here* #:here #:up #:transactionp
            #:syntax #:data))
 
 (in-package #:pine.path)
 
-;;;; A path is a place in the namespace: a vector of segments, immutable,
-;;;; self evaluating, printable and readable back. A literal segment is a
-;;;; string; anything that names more than one place, or binds, is a SEG.
-;;;;
-;;;; The reader owns everything between the leading / and the next terminator,
-;;;; so the syntax inside a path is its own and never meets the syntax around
-;;;; it: {a b} is a constraint here and a map literal everywhere else.
+(defclass seg ()
+  ((value      :initarg :value      :accessor seg-value      :initform nil)
+   (constraint :initarg :constraint :accessor seg-constraint :initform nil)
+   (binder     :initarg :binder     :accessor seg-binder     :initform nil)
+   (pieces     :initarg :pieces     :accessor seg-pieces     :initform nil)
+   (tests      :initarg :tests      :accessor seg-tests      :initform nil))
+  (:documentation "A segment that names more than one place, or binds."))
 
-(defstruct (seg (:constructor %seg (kind value &optional constraint))
-                (:copier nil))
-  (kind :any :type keyword)   ; :literal :any :deep :one-of :bind :bind-rest
-  value                       ; string, set of names, or a binder symbol
-  constraint                  ; nil, or a map of child name to pattern
-  (tests nil))                ; constraint key -> compiled test, filled on use
+(defclass many-seg (seg) ()
+  (:documentation "A segment that takes any number of segments, including none."))
+
+(defclass binding-seg (seg) ()
+  (:documentation "A segment whose value is the variable it binds."))
+
+(defclass literal-seg (seg) ())
+(defclass any-seg (seg) ())
+(defclass deep-seg (many-seg) ())
+(defclass one-of-seg (seg) ())
+(defclass bind-seg (binding-seg) ())
+(defclass bind-rest-seg (binding-seg many-seg) ())
 
 (defstruct (path (:constructor %make-path (segments))
                  (:predicate pathp)
                  (:copier nil))
   (segments #() :type simple-vector)
-  ;; the tree's key for each segment, computed once: a path is immutable and
-  ;; usually a constant, so a lookup never pays to make one
   (cached-keys nil))
 
-;;;; Dumped through their constructors rather than slot by slot: a compiled
-;;;; test is built on use and belongs to the image that built it, so a segment
-;;;; loaded from a fasl starts without one.
+(defparameter +seg-classes+
+  '((:literal . literal-seg) (:any . any-seg) (:deep . deep-seg)
+    (:one-of . one-of-seg) (:bind . bind-seg) (:bind-rest . bind-rest-seg))
+  "The class each segment the reader can write makes.")
+
+(defparameter +terminators+
+  '(#\Space #\Tab #\Newline #\Return #\Page
+    #\( #\) #\" #\; #\' #\` #\, #\])
+  "Characters that end a path literal.")
+
+(defvar *root* (%make-path #()))
+
+(defvar *here* nil
+  "The path a relative path is read against: the one a provider clause is
+answering for, or the row a ROWS body is building.")
+
+(defun seg-p (x) (typep x 'seg))
+
+(defun %seg (kind value &optional constraint)
+  (make-instance (or (cdr (assoc kind +seg-classes+))
+                     (error "no segment kind ~s" kind))
+                 :value value :constraint constraint))
 
 (defmethod make-load-form ((s seg) &optional environment)
   (declare (ignore environment))
-  `(%seg ,(seg-kind s) ',(seg-value s) ',(seg-constraint s)))
+  `(%loaded-seg (make-instance ',(class-name (class-of s))
+                               :value ',(seg-value s)
+                               :constraint ',(seg-constraint s))
+                ',(seg-binder s) ',(seg-pieces s)))
+
+(defun %loaded-seg (s binder pieces)
+  "S with what the constructor does not take."
+  (setf (seg-binder s) binder
+        (seg-pieces s) pieces)
+  s)
 
 (defmethod make-load-form ((p path) &optional environment)
   (declare (ignore environment))
   `(%make-path ',(path-segments p)))
 
-(defvar *root* (%make-path #()))
 (defun root () "The path naming the whole namespace." *root*)
 
 (defun segment-count (p) (length (path-segments p)))
 (defun rootp (p) (zerop (segment-count p)))
 (defun segments (p) (coerce (path-segments p) 'list))
 
-;;;; Building
+(defgeneric name (x)
+  (:documentation "X as one segment string."))
 
-(defun name (x)
-  "X as one segment string. An integer is written in decimal, so an
-interpolated index and a written one name the same place."
-  (etypecase x
-    (string x)
-    (symbol (if (keywordp x) (string-downcase (symbol-name x)) (string x)))
-    (integer (format nil "~d" x))
-    (character (string x))
-    (pathname (namestring x))))
+(defmethod name ((x string)) x)
+(defmethod name ((x symbol))
+  (if (keywordp x) (string-downcase (symbol-name x)) (string x)))
+(defmethod name ((x integer)) (format nil "~d" x))
+(defmethod name ((x character)) (string x))
+(defmethod name ((x pathname)) (namestring x))
 
 (defun key (segment)
   "The name a segment is stored under: a keyword where the name survives the
@@ -78,13 +113,16 @@ trip back, and the string itself where it would not."
             (map 'list (lambda (s) (if (stringp s) (key s) s))
                  (path-segments p)))))
 
-(defun spliced (x)
-  "X as a list of segments: a path's own, a string split on /, or a list."
-  (etypecase x
-    (path (coerce (path-segments x) 'list))
-    (string (remove "" (uiop:split-string x :separator "/") :test #'string=))
-    (pathname (spliced (namestring x)))
-    (list (mapcar #'name x))))
+(defgeneric spliced (x)
+  (:documentation "X as a list of segments, for a $@ splice: a path's own, a
+string cut at every slash, or a list of anything NAME takes."))
+
+(defmethod spliced ((x path)) (coerce (path-segments x) 'list))
+(defmethod spliced ((x string))
+  (pine.data:split x :on #\/ :empties nil))
+(defmethod spliced ((x pathname)) (spliced (namestring x)))
+(defmethod spliced ((x list)) (mapcar #'name x))
+(defmethod spliced ((x null)) nil)
 
 (defun path (&rest pieces)
   "A path from PIECES. A path or a list splices its segments; anything else is
@@ -99,27 +137,48 @@ one segment."
            'simple-vector)))
 
 (defun parse (string)
-  "The path STRING names. Every segment is a literal: a pattern is written, not
-parsed out of text someone else supplied."
-  (%make-path (coerce (spliced string) 'simple-vector)))
+  "The path STRING names. A segment that is exactly * is a wildcard and one
+that is exactly ** is a deep one; nothing else in the text is a pattern."
+  (%make-path
+   (coerce (mapcar (lambda (segment)
+                     (cond ((string= segment "*") (%seg :any nil))
+                           ((string= segment "**") (%seg :deep nil))
+                           (t segment)))
+                   (spliced string))
+           'simple-vector)))
 
 (defun any ()
   "A wildcard segment, for building a pattern where the shape is computed."
   (%seg :any nil))
 
+(defgeneric segment-text (s out)
+  (:documentation "Write S to OUT, as it reads."))
+
+(defmethod segment-text ((s literal-seg) out)
+  (write-string (seg-value s) out))
+
+(defmethod segment-text ((s any-seg) out)
+  (declare (ignore s))
+  (write-char #\* out))
+
+(defmethod segment-text ((s deep-seg) out)
+  (declare (ignore s))
+  (write-string "**" out))
+
+(defmethod segment-text ((s one-of-seg) out)
+  (write-string "#{" out)
+  (let ((first t))
+    (fset:do-set (m (seg-value s))
+      (if first (setf first nil) (write-char #\Space out))
+      (write-string m out)))
+  (write-char #\} out))
+
+(defmethod segment-text ((s binding-seg) out)
+  (format out "~(~a~)" (symbol-name (seg-value s))))
+
 (defun %seg-text (s)
   (with-output-to-string (out)
-    (ecase (seg-kind s)
-      (:literal (write-string (seg-value s) out))
-      (:any (write-char #\* out))
-      (:deep (write-string "**" out))
-      (:one-of (write-string "#{" out)
-               (let ((first t))
-                 (fset:do-set (m (seg-value s))
-                   (if first (setf first nil) (write-char #\Space out))
-                   (write-string m out)))
-               (write-char #\} out))
-      ((:bind :bind-rest) (format out "~(~a~)" (symbol-name (seg-value s)))))
+    (segment-text s out)
     (when (seg-constraint s)
       (write-string (pine.data:serialize (seg-constraint s)) out))))
 
@@ -135,13 +194,23 @@ parsed out of text someone else supplied."
 (defmethod print-object ((p path) stream)
   (write-string (text p) stream))
 
+(defun %same-segment-p (a b)
+  "Whether two segments name the same thing."
+  (if (and (stringp a) (stringp b))
+      (string= a b)
+      (and (seg-p a) (seg-p b)
+           (eq (class-of a) (class-of b))
+           (fset:equal? (seg-value a) (seg-value b))
+           (fset:equal? (seg-constraint a) (seg-constraint b)))))
+
 (defmethod fset:compare ((a path) (b path))
   (let ((x (path-segments a)) (y (path-segments b)))
     (loop :for i :from 0 :below (min (length x) (length y))
           :for xi = (aref x i)
           :for yi = (aref y i)
           :do (unless (and (stringp xi) (stringp yi))
-                (return-from fset:compare (if (equalp xi yi) :equal :unequal)))
+                (return-from fset:compare
+                  (if (%same-segment-p xi yi) :equal :unequal)))
               (cond ((string< xi yi) (return-from fset:compare :less))
                     ((string> xi yi) (return-from fset:compare :greater))))
     (cond ((< (length x) (length y)) :less)
@@ -153,6 +222,24 @@ parsed out of text someone else supplied."
   (if (rootp p)
       (root)
       (%make-path (subseq (path-segments p) 0 (1- (segment-count p))))))
+
+(defun transactionp (map)
+  "Whether MAP is a transaction rather than a directory: its keys are paths."
+  (and (fset:map? map)
+       (let ((yes nil))
+         (fset:do-map (key value map)
+           (declare (ignore value))
+           (when (pathp key) (setf yes t)))
+         yes)))
+
+(defun here ()
+  "The path a relative path is relative to."
+  *here*)
+
+(defun up (&optional (levels 1))
+  "LEVELS above the path a relative path is relative to."
+  (let ((p (or *here* (root))))
+    (dotimes (i levels p) (setf p (parent p)))))
 
 (defun leaf (p)
   "P's last segment, as a string."
@@ -182,10 +269,6 @@ parsed out of text someone else supplied."
   "True when P names more than one place, or binds."
   (some (lambda (s) (not (stringp s))) (path-segments p)))
 
-;;;; Matching. A constraint's value is a pattern in its own right: a literal is
-;;;; equality, a set is membership, ?name binds, and a list is a Lisp form with
-;;;; % bound to the value, so nothing about a constraint is capped.
-
 (defun %variable (sym)
   "The variable a ?name or ?@name binder names."
   (let ((text (symbol-name sym)))
@@ -208,30 +291,59 @@ parsed out of text someone else supplied."
         (when (%binderp pattern) (push (%variable pattern) acc))))
     (nreverse acc)))
 
-(defun literal-at (p n)
-  "P's Nth segment when it is a literal that nothing before it can shift, so a
-walk can try that child without being told the child exists. NIL otherwise."
+(defun named-at (p n)
+  "The names P's Nth segment can be, when nothing before it can shift them."
   (let ((segments (path-segments p)))
     (when (< n (length segments))
       (loop :for i :from 0 :below n
             :for s = (aref segments i)
-            :when (and (seg-p s) (member (seg-kind s) '(:deep :bind-rest)))
-              :do (return-from literal-at nil))
+            :when (typep s 'many-seg)
+              :do (return-from named-at nil))
       (let ((s (aref segments n)))
-        (when (stringp s) s)))))
+        (cond ((stringp s) (list s))
+              ((typep s 'one-of-seg) (fset:convert 'list (seg-value s))))))))
+
+(defun expansions (p)
+  "Every concrete path P names, when it names concrete ones: literal segments
+and {a,b} groups. NIL when a segment has to be looked up."
+  (let ((acc (list nil)))
+    (loop :for s :across (path-segments p)
+          :do (cond
+                ((stringp s) (setf acc (mapcar (lambda (names) (cons s names)) acc)))
+                ((and (typep s 'one-of-seg) (null (seg-constraint s)))
+                 (setf acc (loop :for names :in acc
+                                 :append (loop :for name :in (fset:convert
+                                                              'list (seg-value s))
+                                               :collect (cons name names)))))
+                (t (return-from expansions nil))))
+    (mapcar (lambda (names)
+              (%make-path (coerce (reverse names) 'simple-vector)))
+            acc)))
+
+(defun literal-tail (p)
+  "(values head tail): the run of literal segments at the end of P as names,
+and the pattern before them. NIL tail when P does not end in one."
+  (let* ((segments (path-segments p))
+         (n (length segments))
+         (start n))
+    (loop :while (and (plusp start) (stringp (aref segments (1- start))))
+          :do (decf start))
+    (if (or (zerop start) (= start n))
+        (values p nil)
+        (values (%make-path (subseq segments 0 start))
+                (coerce (subseq segments start) 'list)))))
 
 (defun binders (p)
-  "The variables P's binders name, in the order they appear. A fan-out write
-and a provider clause both bind these around the body they run."
+  "The variables P's binders name, in the order they appear."
   (loop :for s :across (path-segments p)
         :when (seg-p s)
-          :append (append (when (member (seg-kind s) '(:bind :bind-rest))
+          :append (append (when (typep s 'binding-seg)
                             (list (%variable (seg-value s))))
+                          (when (seg-binder s) (list (seg-binder s)))
                           (%constraint-binders s))))
 
 (defun %substitute-% (form)
-  "FORM with every symbol named % replaced by this package's, so a constraint
-written in any package compiles against one variable."
+  "FORM with every symbol named % replaced by this package's."
   (cond ((and (symbolp form) form (string= (symbol-name form) "%")) '%)
         ((consp form) (cons (%substitute-% (car form)) (%substitute-% (cdr form))))
         (t form)))
@@ -254,7 +366,9 @@ Answers (values ok bindings)."
       (return-from %constraint-ok (values t bindings)))
     (fset:do-map (key pattern constraint)
       (when ok
-        (let ((v (funcall value (child prefix (name key)))))
+        (let ((v (if (eq key :.)
+                     (funcall value prefix)
+                     (funcall value (child prefix (name key))))))
           (cond ((%binderp pattern)
                  (setf acc (fset:with acc (%variable pattern) v)))
                 ((fset:set? pattern)
@@ -264,12 +378,29 @@ Answers (values ok bindings)."
                 (t (unless (fset:equal? pattern v) (setf ok nil)))))))
     (values ok acc)))
 
-(defun %segment-ok (s segment)
-  "Whether the segment pattern S admits the literal SEGMENT."
-  (ecase (seg-kind s)
-    (:literal (string= (seg-value s) segment))
-    (:one-of (fset:contains? (seg-value s) segment))
-    ((:any :bind :deep :bind-rest) t)))
+(defgeneric segment-admits (s segment)
+  (:documentation "Whether the segment pattern S admits SEGMENT.")
+  (:method ((s seg) segment) (declare (ignore segment)) t))
+
+(defmethod segment-admits ((s literal-seg) segment)
+  (string= (seg-value s) segment))
+
+(defmethod segment-admits ((s one-of-seg) segment)
+  (fset:contains? (seg-value s) segment))
+
+(defgeneric segment-took (s bindings taken)
+  (:documentation "BINDINGS with what S bound of the TAKEN it matched.")
+  (:method ((s seg) bindings taken)
+    (if (seg-binder s)
+        (fset:with bindings (seg-binder s) (fset:lookup (seg-pieces s) taken))
+        bindings)))
+
+(defmethod segment-took ((s binding-seg) bindings taken)
+  (fset:with (call-next-method) (%variable (seg-value s)) taken))
+
+(defmethod segment-took ((s deep-seg) bindings taken)
+  (declare (ignore taken))
+  bindings)
 
 (defun match (pattern subject &key (value (constantly nil)))
   "Match the literal path SUBJECT against PATTERN.
@@ -289,53 +420,69 @@ namespace value at a path, for a constraint to test."
                     (and (< sn (length ss))
                          (equal p (aref ss sn))
                          (walk (1+ pn) (1+ sn) bindings)))
-                   ;; ** and ?@rest take any number of segments, including none
-                   ((member (seg-kind p) '(:deep :bind-rest))
+                   ((typep p 'many-seg)
                     (loop :for take :from (- (length ss) sn) :downto 0
-                          :for acc = (if (eq (seg-kind p) :bind-rest)
-                                         (fset:with bindings
-                                                    (%variable (seg-value p))
-                                                    (coerce (subseq ss sn (+ sn take))
-                                                            'list))
-                                         bindings)
+                          :for acc = (segment-took p bindings
+                                                   (coerce (subseq ss sn (+ sn take))
+                                                           'list))
                           :for found = (walk (1+ pn) (+ sn take) acc)
                           :when found :return found))
                    (t
                     (and (< sn (length ss))
-                         (%segment-ok p (aref ss sn))
+                         (segment-admits p (aref ss sn))
                          (multiple-value-bind (ok acc)
                              (%constraint-ok p (subpath subject 0 (1+ sn))
                                              value bindings)
                            (and ok
                                 (walk (1+ pn) (1+ sn)
-                                      (if (eq (seg-kind p) :bind)
-                                          (fset:with acc
-                                                     (%variable (seg-value p))
-                                                     (aref ss sn))
-                                          acc)))))))))))
+                                      (segment-took p acc (aref ss sn))))))))))))
       (let ((found (walk 0 0 (fset:empty-map))))
         (when found (values t (first found)))))))
 
-;;;; The reader
-
-(defparameter +terminators+
-  '(#\Space #\Tab #\Newline #\Return #\Page
-    #\( #\) #\" #\; #\' #\` #\, #\] #\})
-  "Characters that end a path literal. { does not: it opens a constraint.")
-
 (defun %read-token (stream)
-  "Characters up to the next /, {, or terminator."
+  "Characters up to the next /, [, or terminator. A {a,b} group or a {1..9}
+range is part of the token, and its comma and closing brace are its own."
   (with-output-to-string (out)
-    (loop :for ch = (peek-char nil stream nil nil t)
-          :until (or (null ch) (char= ch #\/) (char= ch #\{)
-                     (member ch +terminators+))
-          :do (write-char (read-char stream) out))))
+    (let ((depth 0))
+      (loop :for ch = (peek-char nil stream nil nil t)
+            :until (or (null ch)
+                       (and (zerop depth)
+                            (or (char= ch #\/) (char= ch #\[)
+                                (char= ch #\})
+                                (member ch +terminators+))))
+            :do (case ch (#\{ (incf depth)) (#\} (decf depth)))
+                (write-char (read-char stream) out)))))
 
 (defun %read-constraint (stream)
-  "A {k v} constraint, read as data: its values are patterns, not forms to run."
-  (when (eql #\{ (peek-char nil stream nil nil t))
-    (let ((*readtable* (named-readtables:find-readtable 'pine.data:data)))
-      (read stream t nil t))))
+  "A [pred] filter. PRED is a name (that child is non-nil), NAME = PATTERN, or
+= PATTERN for the segment's own value. Several may follow one another."
+  (let ((acc nil))
+    (loop :while (eql #\[ (peek-char nil stream nil nil t))
+          :do (read-char stream)
+              (let ((body (with-output-to-string (out)
+                            (loop :for ch = (read-char stream t nil t)
+                                  :until (char= ch #\])
+                                  :do (write-char ch out)))))
+                (push (%constraint-of body) acc)))
+    (when acc
+      (let ((out (fset:empty-map)))
+        (dolist (m (nreverse acc) out)
+          (fset:do-map (k v m) (setf out (fset:with out k v))))))))
+
+(defun %constraint-of (body)
+  "The map a [pred] body names."
+  (let* ((text (string-trim " " body))
+         (eq-at (search "=" text)))
+    (if (null eq-at)
+        (fset:map ((key text) (quote (not (null %)))))
+        (let ((lhs (string-trim " " (subseq text 0 eq-at)))
+              (rhs (string-trim " " (subseq text (1+ eq-at)))))
+          (let ((value (let ((*readtable* (named-readtables:find-readtable
+                                           (quote pine.data:data))))
+                         (read-from-string rhs))))
+            (if (string= lhs "")
+                (fset:map (:. value))
+                (fset:map ((key lhs) value))))))))
 
 (defun %read-alternation (stream)
   "#{a b} inside a path: one of these segment names, unevaluated."
@@ -364,17 +511,90 @@ namespace value at a path, for a constraint to test."
                (length forms)))
       (values (first forms) splice))))
 
+(defun %range (text)
+  "The names {a..b} covers, or NIL when TEXT is not a range."
+  (let ((dots (search ".." text)))
+    (when dots
+      (let ((from (parse-integer (subseq text 0 dots) :junk-allowed t))
+            (to (parse-integer (subseq text (+ dots 2)) :junk-allowed t)))
+        (when (and from to (<= from to))
+          (loop :for i :from from :to to :collect (princ-to-string i)))))))
+
+(defun %group (token)
+  "The names TOKEN spells when it holds a {a,b} group or a {1..9} range, or
+NIL when it holds neither."
+  (let ((open (position #\{ token)))
+    (when open
+      (let ((close (position #\} token :start open)))
+        (when close
+          (let* ((before (subseq token 0 open))
+                 (after (subseq token (1+ close)))
+                 (inside (subseq token (1+ open) close))
+                 (names (or (%range inside)
+                            (remove "" (uiop:split-string
+                                        inside :separator (list #\, #\Space))
+                                    :test #'string=))))
+            (loop :for name :in names
+                  :append (let ((whole (concatenate 'string before name after)))
+                            (or (%group whole) (list whole))))))))))
+
+(defun %binder-group (token)
+  "The names ?n{a,b} spells inside a segment, as (name . piece), and the
+variable each piece binds."
+  (let ((mark (position #\? token)))
+    (when mark
+      (let ((open (position #\{ token :start mark)))
+        (when open
+          (let ((close (position #\} token :start open)))
+            (when close
+              (let* ((before (subseq token 0 mark))
+                     (after  (subseq token (1+ close)))
+                     (name   (subseq token (1+ mark) open))
+                     (inside (subseq token (1+ open) close))
+                     (pieces (or (%range inside)
+                                 (remove "" (uiop:split-string
+                                             inside :separator (list #\, #\Space))
+                                         :test #'string=))))
+                (when (and (plusp (length name)) pieces)
+                  (values (loop :for piece :in pieces
+                                :collect (cons (concatenate 'string
+                                                            before piece after)
+                                               piece))
+                          (intern (string-upcase name) *package*)))))))))))
+
 (defun %token-segment (token constraint)
   "The segment TOKEN names, with CONSTRAINT attached."
-  (cond
-    ((string= token "*") (%seg :any nil constraint))
-    ((string= token "**") (%seg :deep nil constraint))
-    ((and (> (length token) 2) (string= "?@" (subseq token 0 2)))
-     (%seg :bind-rest (intern (string-upcase token) *package*) constraint))
-    ((and (> (length token) 1) (char= #\? (char token 0)))
-     (%seg :bind (intern (string-upcase token) *package*) constraint))
-    (constraint (%seg :literal token constraint))
-    (t token)))
+  (multiple-value-bind (pairs variable) (%binder-group token)
+    (when pairs
+      (let ((s (%seg :one-of (fset:convert 'fset:set (mapcar #'car pairs))
+                     constraint)))
+        (setf (seg-binder s) variable
+              (seg-pieces s) (fset:convert 'fset:map pairs))
+        (return-from %token-segment s))))
+  (let ((group (%group token)))
+    (cond
+      (group (%seg :one-of (fset:convert 'fset:set group) constraint))
+      ((string= token "*") (%seg :any nil constraint))
+      ((string= token "**") (%seg :deep nil constraint))
+      ((and (> (length token) 2) (string= "?@" (subseq token 0 2)))
+       (%seg :bind-rest (intern (string-upcase token) *package*) constraint))
+      ((and (> (length token) 1) (char= #\? (char token 0)))
+       (%seg :bind (intern (string-upcase token) *package*) constraint))
+      (constraint (%seg :literal token constraint))
+      (t token))))
+
+(defun read-unquote (stream char)
+  "${form} where a value is wanted: {/audio/sink ${(leaf /.)}}."
+  (unread-char char stream)
+  (multiple-value-bind (form splice) (%read-interpolation stream)
+    (if splice `(spliced ,form) form)))
+
+(defun %relative-base (token)
+  "The form a leading run of dots names: /. is the path being answered for and
+/.. the one above it."
+  (when (and (plusp (length token))
+             (every (lambda (ch) (char= ch #\.)) token))
+    (if (= 1 (length token)) `(here) `(up ,(1- (length token))))))
 
 (defun read-path (stream char)
   "/a/b -- a constant path. With an interpolation, the form that builds one."
@@ -396,17 +616,18 @@ namespace value at a path, for a constraint to test."
           (read-char stream)
           (return)))
     (setf parts (nreverse parts))
+    (let ((base (and (stringp (first parts)) (%relative-base (first parts)))))
+      (when base
+        (setf parts (cons base (rest parts))
+              interpolated t)))
     (if interpolated
         `(path ,@(mapcar (lambda (p) (if (or (stringp p) (seg-p p)) `',p p)) parts))
         (%make-path (coerce parts 'simple-vector)))))
 
 (named-readtables:defreadtable syntax
   (:merge pine.data:syntax)
-  (:macro-char #\/ #'read-path))
-
-;;;; The serialization readtable with paths in it: a stored value may hold one,
-;;;; and it has to read back as a path rather than as whatever /a/b would mean
-;;;; to the standard reader.
+  (:macro-char #\/ #'read-path)
+  (:macro-char #\$ #'read-unquote))
 
 (named-readtables:defreadtable data
   (:merge pine.data:data)

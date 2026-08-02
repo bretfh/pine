@@ -2,24 +2,18 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
   (:export #:chain #:setting #:for-file #:minors #:handler #:matches-p
-           #:minor-p #:names #:mount))
+           #:minor-p #:names #:server))
 
 (in-package #:pine.mode)
 (named-readtables:in-readtable pine.path:syntax)
 
-;;;; A mode is a map at /mode/?name. Everything declarative is a leaf and
+;;;; A mode is a map at /mode/?name: everything declarative is a leaf and
 ;;;; everything behavioural is a handler under :on, so writing the mode is the
-;;;; whole of registering it: there is no class, no defmode and no registry.
-;;;;
-;;;; Nothing here holds state. Each of these is a read of the tree and a
-;;;; computation over what it answered, which is the division the whole design
-;;;; rests on: the pattern selects, Lisp computes.
+;;;; whole of registering it.
 
 (defun chain (name)
-  "NAME and the modes it falls back to, most specific first.
-
-A mode names its :parent, so this walks up until one names none. A cycle
-someone wrote by hand ends the walk rather than hanging."
+  "NAME and the modes it falls back to, most specific first. A cycle someone
+wrote by hand ends the walk rather than hanging."
   (loop :with seen = nil
         :for at = name :then (ns:read (p:path /mode at :parent))
         :while (and at (not (member at seen)))
@@ -27,16 +21,11 @@ someone wrote by hand ends the walk rather than hanging."
         :collect at))
 
 (defun setting (name key &optional default)
-  "What KEY is for mode NAME, taking the first mode up the chain that says.
-
-This is what makes :parent mean anything: prog-mode says the indent width and
-lisp-mode inherits it by not saying one."
+  "What KEY is for mode NAME, taking the first mode up the chain that says."
   (loop :for mode :in (chain name)
         :for value = (ns:read (p:path /mode mode key))
         :when value :do (return value)
         :finally (return default)))
-
-;;;; Which mode a file gets
 
 (defun matches-p (pattern name)
   "Whether the glob PATTERN covers the file NAME. Only * is special, and it
@@ -59,30 +48,21 @@ covers any run of characters including none."
         (t value)))
 
 (defun %claims ()
-  "Each mode that claims file types, with the patterns it claims. The mode is
-named the way a path stores it, so it reads back the same as :parent does."
+  "Each mode that claims file types, with the patterns it claims."
   (let (acc)
     (fset:do-map (path value (ns:read /mode/*/files {}))
       (push (cons (p:key (p:leaf (p:parent path))) (%patterns value)) acc))
     (nreverse acc)))
 
 (defun for-file (path)
-  "The mode whose :files cover PATH, or NIL.
-
-Every mode that claims a file type says so in its own map, so there is no
-second table of extensions and nothing to keep in step with the modes."
+  "The mode whose :files cover PATH, or NIL."
   (let ((name (file-namestring (pathname path))))
     (loop :for (at . patterns) :in (%claims)
           :when (some (lambda (pattern) (matches-p pattern name)) patterns)
             :do (return at))))
 
-;;;; Which handler answers a verb
-
 (defun minors (buf)
-  "BUF's minor modes, most specific first.
-
-A minor mode augments whatever major mode is on, so several may claim the same
-verb; /minor/?m/precedence orders them and the highest is asked first."
+  "BUF's minor modes, highest /minor/?m/precedence first."
   (let ((names (ns:read (p:path /buf buf :minor))))
     (sort (if (fset:set? names) (fset:convert 'list names) names)
           #'>
@@ -90,10 +70,7 @@ verb; /minor/?m/precedence orders them and the highest is asked first."
 
 (defun handler (buf verb)
   "What answers VERB for BUF: a minor mode's :on entry by precedence, then the
-major mode's and its parents'. NIL means the built-in verb answers.
-
-Lookup, not method combination, so the whole of the dispatch reads back:
-(read /mode/lisp/on/*) is exactly what lisp-mode overrides."
+major mode's and its parents'. NIL means the built-in verb answers."
   (or (loop :for m :in (minors buf)
             :for fn = (ns:read (p:path /minor m :on verb))
             :when fn :do (return fn))
@@ -112,9 +89,26 @@ Lookup, not method combination, so the whole of the dispatch reads back:
           (mapcar (lambda (path) (p:key (p:leaf path)))
                   (pine.data:keys (ns:read /minor/* {})))))
 
-;;;; The modes pine ships. A mode is a map, so this is the whole of defining
-;;;; them: no class, no defmode, no registration step. What a machine or a
-;;;; config adds is another write.
+(defun %overwritten (line col text)
+  (let ((before (subseq line 0 (min col (length line))))
+        (after (subseq line (min (length line) (+ col (length text))))))
+    (concatenate 'string before text after)))
+
+(defun overwrite ()
+  (ns:write
+   /minor/overwrite
+   {:precedence 10
+    :indicator "Ovwrt"
+    :on {:insert
+         (pine.data:fn [buf text]
+           (let* ((point (ns:read (p:path /buf buf :point)))
+                  (line (or (fset:lookup point 0) 0))
+                  (col (or (fset:lookup point 1) 0))
+                  (at (p:path /buf buf :line (princ-to-string line)))
+                  (had (or (ns:read at) "")))
+             (fset:map (at (%overwritten had col text))
+                       ((p:path /buf buf :point)
+                        (fset:seq line (+ col (length text)))))))}}))
 
 (defun provider ()
   (ns:provider
@@ -122,7 +116,11 @@ Lookup, not method combination, so the whole of the dispatch reads back:
     {:doc "a mode: :parent :grammar :indicator :files :comment :indent :on"})
    (/mode {:doc "every mode there is"})))
 
-(defun mount ()
+(defclass server (ns:server) ()
+  (:default-initargs :name :mode :serves (list /mode /minor))
+  (:documentation "Modes and minor modes, and the ones pine ships."))
+
+(defmethod ns:raise ((s server) &key &allow-other-keys)
   (ns:write /mode (provider))
   (ns:write /mode/text {:indicator "Text"})
   (ns:write /mode/prog {:parent :text
@@ -142,6 +140,9 @@ Lookup, not method combination, so the whole of the dispatch reads back:
                                                   ((p:path /buf buf)
                                                    [:indent-line])))}})
   (ns:write /mode/debugger {:parent :text :indicator "Debug"})
+  (overwrite)
   (ns:write /minor/minibuffer {:precedence 20})
   (ns:write /minor/layout {:precedence 15})
   nil)
+
+(ns:register (make-instance 'server))

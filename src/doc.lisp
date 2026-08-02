@@ -1,19 +1,14 @@
 (defpackage #:pine.doc
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:mount))
+  (:export #:server))
 
 (in-package #:pine.doc)
 (named-readtables:in-readtable pine.path:syntax)
 
-;;;; What any path is, and what it takes.
-;;;;
-;;;;   (read /doc/audio/volume)   => "0..100"
-;;;;
-;;;; There is no manual and no docstring registry: a provider says what its
-;;;; clause is for beside the code that answers, and this reads it back. A path
-;;;; nobody documented answers nil, which is the difference between a system
-;;;; that is documented and one that says it is.
+;;;; What any path is, and what it takes: (read /doc/audio/volume) => "0..100".
+;;;; A provider says what its clause is for beside the code that answers, and
+;;;; this reads it back. A path nobody documented answers nil.
 
 (defun provider ()
   (ns:provider
@@ -22,5 +17,11 @@
      :doc "what that path is, and what it takes"})
    (/doc {:read (pine.data:fn [] "what any path is, and what it takes")})))
 
-(defun mount ()
+(defclass server (ns:server) ()
+  (:default-initargs :name :doc :serves (list /doc))
+  (:documentation "What any path is, read back from the clause that serves it."))
+
+(defmethod ns:raise ((s server) &key &allow-other-keys)
   (ns:write /doc (provider)))
+
+(ns:register (make-instance 'server))

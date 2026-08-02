@@ -1,69 +1,305 @@
 (defpackage #:pine.err
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:evaluation #:evaluation-id #:evaluation-form #:evaluation-status
-           #:evaluation-values #:evaluation-output #:evaluation-condition
-           #:evaluation-condition-type #:evaluation-restarts #:evaluation-backtrace
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:d #:pine.data))
+  (:export #:fault #:parked #:fault-id #:fault-label #:fault-condition
+           #:fault-type #:fault-backtrace #:fault-offered #:fault-at
+           #:fault-root #:fault-attended #:fault-taken #:attended-p
+           #:offers #:resume #:described #:note #:forget #:faults
+           #:report-failure #:attempt
+           #:evaluation #:evaluation-id #:evaluation-form #:evaluation-status
+           #:evaluation-values #:evaluation-output #:evaluation-fault
            #:evaluate #:evaluate-string #:evaluate-thunk
-           #:list-evaluations #:find-evaluation
-           #:pick-restart #:abort-evaluation #:*on-debug*
-           #:mount #:parked #:evaluation-attended
-           #:*park-seconds* #:attended-p #:await-restart
-           #:with-debugger #:call-with-debugger #:make-error-evaluation
-           #:attempt #:report-failure))
+           #:list-evaluations #:find-evaluation #:abort-evaluation
+           #:with-debugger #:call-with-debugger
+           #:park-seconds #:faults-kept #:evaluations-kept #:server))
 
 (in-package #:pine.err)
 (named-readtables:in-readtable pine.path:syntax)
 
-;;;; A fault parks at /err holding its live restarts, and whoever is looking
-;;;; chooses one by writing the path. That works across images because a fault
-;;;; on another host lands at /host/NAME/err and reads identically.
-
-(defvar *on-debug* nil
-  "Default surface for an evaluation that enters the debugger: a function of the
-evaluation, installed by the editor. Any eval path (C-x C-e, repl, widget
-onclick, remote) reaches the same debugger through it.")
-
-(defparameter *park-seconds* 300
-  "How long a faulted thread waits with nobody attending it before aborting
-itself. The wait restarts while the fault is attended, so a backtrace under
-someone's eyes is never taken away; NIL waits for as long as it stays attended.
-
-An unattended park is a thread that never comes back, and this is the bound that
-makes that impossible rather than unlikely.")
-
-;;;; Evaluation as a first-class, off-UI-thread operation. Each eval runs on its
-;;;; own thread (so it can block or run forever without touching the editor) and
-;;;; produces one uniform EVALUATION object -- form, package, status, values,
-;;;; captured output, and on error the condition/restarts/backtrace. An error
-;;;; does not drop to a console debugger: the worker captures the restarts and
-;;;; BLOCKS, and a surface picks one (invoke-restart) or aborts. Same object for
-;;;; C-x C-e, the repl, a widget onclick, or a remote agent.
-
-(defvar *current* nil)
-
-;;;; What has run and what is parked, as one value.
+;;;; What breaks and what can decide are rarely the same thread, and often not
+;;;; the same image. A condition becomes a record at /err/?id and the decision
+;;;; is a write to that path, so the debugger is one surface over (read /err/*).
 ;;;;
-;;;; Neither owns a resource, so neither gets a thread: they are a map an
-;;;; atomic swap replaces, the shape the namespace itself has. Nothing on the
-;;;; path a fault takes waits on anything, which matters because that is a
-;;;; thread already in a bad place.
+;;;; Whether the faulting thread is still standing there is the fault's own
+;;;; business, which is why RESUME is a method:
 ;;;;
-;;;;   {:n NEXT-ID :ran (EVALUATION ...) :parked {ID EVALUATION}}
+;;;;   FAULT   the stack is gone. Something on shared machinery unwound at once,
+;;;;           because a thread parked there is a dispatcher worker that never
+;;;;           comes back.
+;;;;   PARKED  the stack is live. An evaluation is a thread whose whole job is
+;;;;           that one form, so every restart CL established can still be taken.
+;;;;
+;;;; The registry is {:n NEXT-ID :ran (EVALUATION ...) :faults {ID FAULT}}, an
+;;;; atomic cell the space keeps: nothing on the path a fault takes waits.
 
-(defvar *registry*
+(defvar *noting* nil
+  "True while a fault is being announced, so a fault in whatever is looking at
+/err records itself without announcing again.")
+
+(defun fresh ()
   (sento.atomic:make-atomic-reference
-   :value {:n 0 :ran nil :parked (fset:empty-map)}))
+   :value {:n 0 :ran nil :faults (fset:empty-map)}))
 
-(defun %registry () (sento.atomic:atomic-get *registry*))
+(defun park-seconds ()
+  "How long a standing fault waits with nobody attending it before taking its
+abort. The wait restarts while it is attended; nil waits as long as it is."
+  (ns:read /park-seconds))
 
-(defun %note (fn)
+(defun faults-kept ()
+  "How many faults /err holds. One a thread is standing in is never dropped."
+  (or (ns:read /faults-kept) 50))
+
+(defun evaluations-kept ()
+  "How many finished evaluations are kept. One still running is never dropped."
+  (or (ns:read /evaluations-kept) 50))
+
+(defun %cell ()
+  "Where this space keeps what has faulted, or NIL before /err is served."
+  (ns:kept :err))
+
+(defun %registry ()
+  (let ((cell (%cell)))
+    (if cell
+        (sento.atomic:atomic-get cell)
+        {:n 0 :ran nil :faults (fset:empty-map)})))
+
+(defun %change (fn)
   "Replace the registry with FN's answer, retrying until it lands. FN is pure."
-  (sento.atomic:atomic-swap *registry* fn))
+  (let ((cell (%cell)))
+    (if cell
+        (sento.atomic:atomic-swap cell fn)
+        (funcall fn (%registry)))))
 
 (defun %next-id ()
-  "The next evaluation's id. Two threads starting one at once get two."
-  (fset:lookup (%note (lambda (r) (fset:with r :n (1+ (fset:lookup r :n))))) :n))
+  "The next id. Two threads asking at once get two."
+  (fset:lookup (%change (lambda (r) (fset:with r :n (1+ (fset:lookup r :n))))) :n))
+
+;;;; The fault
+
+(defclass fault ()
+  ((id :initarg :id :initform (%next-id) :reader fault-id)
+   (label :initarg :label :initform nil :reader fault-label)
+   (condition :initarg :condition :initform "" :reader fault-condition)
+   (type :initarg :type :initform "" :reader fault-type)
+   (offered :initarg :offered :initform nil :reader fault-offered)
+   (backtrace :initarg :backtrace :initform "" :reader fault-backtrace)
+   (at :initarg :at :initform (get-universal-time) :reader fault-at)
+   (root :initarg :root :initform nil :reader fault-root)
+   (attended :initform nil :accessor fault-attended)
+   (taken :initform nil :accessor fault-taken))
+  (:documentation "A condition that happened, as a value at /err/?id. Its
+restarts are recorded as names rather than held as objects, so what crosses to
+another image is data."))
+
+(defgeneric offers (fault)
+  (:documentation "What FAULT can still be resumed by, as (NAME REPORT). A
+fault whose stack unwound can only be dismissed.")
+  (:method ((f fault))
+    (list (list "ABORT" "dismiss this fault"))))
+
+(defgeneric resume (fault name)
+  (:documentation "Take the restart NAME on FAULT, and answer whether it took.
+Where the decision lands is the kind's business.")
+  (:method ((f fault) name)
+    (setf (fault-taken f) (string name))
+    (forget f)
+    t))
+
+(defgeneric described (fault)
+  (:documentation "FAULT as the map /err/?id answers. Everything in it is data,
+so it reads the same over remoting.")
+  (:method ((f fault))
+    (fset:map (:id (fault-id f))
+              (:label (princ-to-string (or (fault-label f) "")))
+              (:condition (fault-condition f))
+              (:type (fault-type f))
+              (:restarts (fset:convert 'fset:seq (mapcar #'first (offers f))))
+              (:backtrace (fault-backtrace f))
+              (:at (fault-at f))
+              (:root (fault-root f))
+              (:attended (and (fault-attended f) t)))))
+
+(defclass parked (fault)
+  ((lock :initform (bordeaux-threads:make-lock) :reader fault-lock)
+   (cvar :initform (bordeaux-threads:make-condition-variable) :reader fault-cvar))
+  (:documentation "A fault whose thread is still standing in it. Only something
+that owns its thread outright parks."))
+
+(defmethod offers ((f parked))
+  (fault-offered f))
+
+(defmethod resume ((f parked) name)
+  "Hand NAME to the thread standing in F, then take it off /err here rather
+than leaving that to the thread: a fault is decided the moment someone decides
+it."
+  (bordeaux-threads:with-lock-held ((fault-lock f))
+    (setf (fault-taken f) (string name))
+    (bordeaux-threads:condition-notify (fault-cvar f)))
+  (call-next-method))
+
+;;;; What is at /err
+
+(defun faults (&optional id)
+  "Every fault at /err, oldest first, or the one with ID."
+  (let ((all (fset:lookup (%registry) :faults)))
+    (if id
+        (fset:lookup all id)
+        (let (acc)
+          (fset:do-map (k f all) (declare (ignore k)) (push f acc))
+          (sort acc #'< :key #'fault-id)))))
+
+(defun %root ()
+  "The root the namespace stands at, or NIL where nothing is keeping one."
+  (let ((log (ns:read /history)))
+    (when (and (fset:seq? log) (plusp (fset:size log)))
+      (fset:lookup (fset:lookup log 0) :n))))
+
+(defun %noted (r fault kept)
+  "R with FAULT at /err, and the oldest records dropped once there are more of
+them than KEPT. Pure: it runs inside the swap."
+  (let* ((all (fset:with (fset:lookup r :faults) (fault-id fault) fault))
+         (extra (- (fset:size all) kept)))
+    (when (plusp extra)
+      (let ((records (sort (let (acc)
+                             (fset:do-map (k f all)
+                               (declare (ignore k))
+                               (unless (typep f 'parked) (push f acc)))
+                             acc)
+                           #'< :key #'fault-id)))
+        (dolist (f (subseq records 0 (min extra (length records))))
+          (setf all (fset:less all (fault-id f))))))
+    (fset:with r :faults all)))
+
+(defun note (fault)
+  "Put FAULT at /err/?id, say that /err moved, and answer it. Whoever is
+watching runs on the thread that faulted, which is doing nothing else."
+  (%change (let ((kept (faults-kept))) (lambda (r) (%noted r fault kept))))
+  (cond (*noting*
+         (pine.log:note "~a: ~a" (or (fault-label fault) "a fault")
+                        (fault-condition fault)))
+        ((ns:watched /err)
+         (let ((*noting* t))
+           (handler-case (ns:stir /err)
+             (error (c)
+               (format *error-output* "pine: what is watching /err failed on ~a: ~a~%"
+                       (fault-label fault) c)
+               (finish-output *error-output*)))))
+        (t (pine.log:note "~a: ~a" (or (fault-label fault) "a fault")
+                          (fault-condition fault))))
+  fault)
+
+(defun forget (fault)
+  "Take FAULT off /err. Forgetting one already gone says nothing, so the thread
+standing in it and the surface that decided it can both call this."
+  (when (faults (fault-id fault))
+    (%change (lambda (r)
+               (fset:with r :faults
+                          (fset:less (fset:lookup r :faults) (fault-id fault)))))
+    (unless *noting* (ignore-errors (ns:stir /err))))
+  nil)
+
+(defun attended-p (fault)
+  "Whether someone has FAULT open and is still in a position to decide, so a
+thread parked in it has a reason to keep waiting."
+  (and (fault-attended fault) (ns:watched /err) t))
+
+(defun (setf attended-p) (value fault)
+  (setf (fault-attended fault) (and value t)))
+
+(defun %at (segment)
+  "The fault SEGMENT names, or NIL."
+  (let ((id (parse-integer segment :junk-allowed t)))
+    (and id (faults id))))
+
+(defclass server (ns:server) ()
+  (:default-initargs :name :err :serves (list /err))
+  (:documentation "What has faulted, and what it is waiting to be told."))
+
+(defmethod ns:raise ((s server) &key &allow-other-keys)
+  "Serve /err from what has faulted, and answer the cell this space keeps them
+in. Live, not held: the file has no business holding a fault."
+  (declare (ignore s))
+  (ns:write /err
+    (ns:provider
+     (/err {:ls (d:fn [] (mapcar (lambda (f) (princ-to-string (fault-id f))) (faults)))
+            :doc "every fault waiting on a decision"})
+     (/err/?id
+      {:read (d:fn [] (let ((f (%at id))) (and f (described f))))
+       :verbs {:restart (d:fn [name]
+                          (let ((f (%at id))) (when f (resume f name))))}
+       :doc "a fault; write [:restart NAME] to decide it"})
+     (/err/?id/attended
+      {:read (d:fn [] (let ((f (%at id))) (and f (fault-attended f))))
+       :write (d:fn [v]
+                (let ((f (%at id))) (when f (setf (fault-attended f) (and v t)))))
+       :doc "true while someone has this fault open"})))
+  (fresh))
+
+(ns:register (make-instance 'server))
+
+;;;; Making one out of a condition
+
+(defun %capture-backtrace ()
+  (handler-case
+      (with-output-to-string (s) (sb-debug:print-backtrace :stream s :count 25))
+    (error () "")))
+
+(defun %restart-descriptions (condition)
+  (loop :for r :in (compute-restarts condition)
+        :collect (list (and (restart-name r) (string (restart-name r)))
+                       (handler-case (princ-to-string r) (error () "")))))
+
+(defun %fault (condition &key label id (as 'fault))
+  "CONDITION as a fault of class AS. The restarts and the backtrace are the
+ones live at the signal, so this is called from a handler."
+  (apply #'make-instance as
+         :label label
+         :condition (handler-case (princ-to-string condition)
+                      (error () "<unprintable condition>"))
+         :type (string (type-of condition))
+         :offered (%restart-descriptions condition)
+         :backtrace (%capture-backtrace)
+         :root (%root)
+         (when id (list :id id))))
+
+(defun %take (condition name)
+  "Invoke the restart NAME on CONDITION, or abort when there is no such restart
+and when nobody named one."
+  (let ((r (or (and name
+                    (find name (compute-restarts condition)
+                          :key (lambda (x) (and (restart-name x) (string (restart-name x))))
+                          :test (lambda (a b) (and a b (string-equal a b)))))
+               (find-restart 'abort condition))))
+    (when r (invoke-restart r))))
+
+(defun report-failure (condition context)
+  "Record CONDITION as a fault named by CONTEXT, and answer it. Nothing waits:
+the stack has already gone."
+  (note (%fault condition :label context)))
+
+(defun attempt (thunk context)
+  "Run THUNK. Answers (values result nil), or (values nil fault) when it fails,
+having recorded it under CONTEXT. For a callback pine invokes on behalf of
+something else, where the caller still has work to finish."
+  (handler-case (values (funcall thunk) nil)
+    (error (c) (values nil (report-failure c context)))))
+
+(defun call-with-debugger (thunk &key label)
+  "Run THUNK, and when it fails record the fault and unwind out of it. For a
+thread pine did not make for this one piece of work: parking one of those parks
+a dispatcher worker. Answers THUNK's values, or NIL."
+  (with-simple-restart (abort "Abort ~a" (or label "this operation"))
+    (handler-bind ((error (lambda (c)
+                            (note (%fault c :label label))
+                            (%take c nil))))
+      (funcall thunk))))
+
+(defmacro with-debugger ((&key label) &body body)
+  "Run BODY so that a failure in it becomes a fault at /err and unwinds, rather
+than stopping the thread it is on (see CALL-WITH-DEBUGGER)."
+  `(call-with-debugger (lambda () ,@body) :label ,label))
+
+;;;; Evaluation: a form on a thread of its own, which is what may park.
 
 (defstruct (evaluation (:constructor %make-evaluation))
   (id (%next-id))
@@ -73,132 +309,26 @@ makes that impossible rather than unlikely.")
   (status :running)                 ; :running :ok :error :aborted
   (values nil)
   (output "")
-  condition
-  condition-type
-  restarts                          ; list of (name-string report-string)
-  backtrace
+  fault
   thread
-  on-done
-  on-error
-  (attended nil)                    ; someone has this fault open
-  (at nil)                          ; when it faulted
-  (root nil)                        ; the namespace root it faulted under
-  (lock (bordeaux-threads:make-lock))
-  (cvar (bordeaux-threads:make-condition-variable))
-  (chosen nil))
+  on-done)
 
-;;;; What is parked, and the paths it is parked at.
-
-(defun parked (&optional id)
-  "Every parked fault, oldest first, or the one with ID."
-  (let ((parked (fset:lookup (%registry) :parked)))
-    (if id
-        (fset:lookup parked id)
-        (let (acc)
-          (fset:do-map (k ev parked) (declare (ignore k)) (push ev acc))
-          (sort acc #'< :key #'evaluation-id)))))
-
-(defun %park (ev)
-  (%note (lambda (r)
-           (fset:with r :parked
-                      (fset:with (fset:lookup r :parked) (evaluation-id ev) ev)))))
-
-(defun %unpark (ev)
-  (%note (lambda (r)
-           (fset:with r :parked
-                      (fset:less (fset:lookup r :parked) (evaluation-id ev))))))
-
-(defun %root ()
-  "The newest change the file has, which is the root the namespace stands at.
-NIL where nothing is keeping one, and that is not an error: the fault is still
-a fault, it just cannot be read back through /was."
-  (let ((log (ns:read /history)))
-    (when (and (fset:seq? log) (plusp (fset:size log)))
-      (fset:lookup (fset:lookup log 0) :n))))
-
-(defun %describe (ev)
-  (fset:map (:id (evaluation-id ev))
-            (:form (princ-to-string (or (evaluation-form ev) "")))
-            (:condition (or (evaluation-condition ev) ""))
-            (:type (or (evaluation-condition-type ev) ""))
-            (:restarts (fset:convert 'fset:seq
-                                     (mapcar #'first (evaluation-restarts ev))))
-            (:backtrace (or (evaluation-backtrace ev) ""))
-            (:at (or (evaluation-at ev) 0))
-            (:root (evaluation-root ev))
-            (:attended (and (evaluation-attended ev) t))))
-
-(defun %id-of (segment)
-  (parse-integer segment :junk-allowed t))
-
-(defun mount ()
-  "Serve /err from what is actually parked. It is live, not held: the faults
-are threads waiting in this image, and the file has no business holding them."
-  (ns:write /err
-    (ns:provider
-     (/err {:ls (pine.data:fn []
-                  (mapcar (lambda (ev) (princ-to-string (evaluation-id ev)))
-                          (parked)))
-            :doc "every fault waiting on a restart"})
-     (/err/?id
-      {:read (pine.data:fn []
-               (let ((ev (parked (%id-of id))))
-                 (and ev (%describe ev))))
-       :verbs {:restart (pine.data:fn [name]
-                          (let ((ev (parked (%id-of id))))
-                            (when ev (pick-restart ev name))))}
-       :doc "a parked fault; write [:restart NAME] to resume it"})
-     (/err/?id/attended
-      {:read (pine.data:fn []
-               (let ((ev (parked (%id-of id))))
-                 (and ev (evaluation-attended ev))))
-       :write (pine.data:fn [v]
-                (let ((ev (parked (%id-of id))))
-                  (when ev (setf (evaluation-attended ev) v))))
-       :doc "true while someone has this fault open"}))))
-
-;;;; Failures on the paths that cannot stop to ask.
-;;;;
-;;;; The debugger below runs an evaluation in its own thread and waits for a
-;;;; restart to be chosen. A ref notify, a surface build or a broadcast to
-;;;; every attached app cannot wait for that, and must not vanish either. So
-;;;; the condition becomes a value the caller decides about, and is recorded
-;;;; where the debug surface shows it.
-
-(defun report-failure (condition context)
-  "Record CONDITION as a failed evaluation named by CONTEXT, and show it.
-
-Returns the evaluation. Nothing blocks: there are no restarts to choose from
-by the time this is called, so the surface only has to display it."
-  (let ((ev (%make-evaluation :form context :status :error
-                              :condition (handler-case (princ-to-string condition)
-                                           (error () "<unprintable condition>"))
-                              :condition-type (string (type-of condition))
-                              :backtrace (%capture-backtrace))))
-    (%ran ev)
-    (let ((surface *on-debug*))
-      (if surface
-          (handler-case (funcall surface ev)
-            (error (c)
-              (format *error-output* "pine: the error surface failed on ~a: ~a~%"
-                      context c)
-              (finish-output *error-output*)))
-          (pine.log:note "~a: ~a" context condition)))
-    ev))
-
-(defun attempt (thunk context)
-  "Run THUNK. Returns (values result nil), or (values nil condition) when it
-fails, having reported it under CONTEXT.
-
-For the callbacks pine invokes on behalf of something else -- a configuration's
-builder, a subscriber, a source -- where the failure belongs to that thing and
-the caller still has work to finish."
-  (handler-case (values (funcall thunk) nil)
-    (error (c) (values nil (report-failure c context)))))
+(defun %kept-of (ran kept)
+  "RAN, newest first, with the oldest finished evaluations dropped once there
+are more than KEPT of them. One still running is never dropped."
+  (loop :with finished := 0
+        :for ev :in ran
+        :for done := (not (eq :running (evaluation-status ev)))
+        :do (when done (incf finished))
+        :unless (and done (> finished kept))
+          :collect ev))
 
 (defun %ran (ev)
   "Note EV as one this image started."
-  (%note (lambda (r) (fset:with r :ran (cons ev (fset:lookup r :ran)))))
+  (%change (let ((kept (evaluations-kept)))
+             (lambda (r)
+               (fset:with r :ran
+                          (%kept-of (cons ev (fset:lookup r :ran)) kept)))))
   ev)
 
 (defun list-evaluations ()
@@ -207,152 +337,49 @@ the caller still has work to finish."
 (defun find-evaluation (id)
   (find id (list-evaluations) :key #'evaluation-id))
 
-(defun %capture-backtrace ()
-  (handler-case
-      (with-output-to-string (s) (sb-debug:print-backtrace :stream s :count 25))
-    (error () "")))
-
-(defun %restart-descriptions (condition)
-  (loop for r in (compute-restarts condition)
-        collect (list (and (restart-name r) (string (restart-name r)))
-                      (handler-case (princ-to-string r) (error () "")))))
-
-(defun make-error-evaluation (condition &key label)
-  "Record CONDITION into a fresh EVALUATION (status :error, restarts, backtrace)
-WITHOUT blocking -- for surfacing an error on a thread that must not park, e.g.
-the session command loop. Called from a handler-bind so the restarts/backtrace
-are those live at the signal. Hand the result to *on-debug* to open the menu."
-  (let ((ev (%make-evaluation :form label)))
-    (setf (evaluation-status ev) :error
-          (evaluation-condition ev) (handler-case (princ-to-string condition)
-                                      (error () "<unprintable condition>"))
-          (evaluation-condition-type ev) (string (type-of condition))
-          (evaluation-restarts ev) (%restart-descriptions condition)
-          (evaluation-backtrace ev) (%capture-backtrace))
-    ev))
-
-(defun surfaced-p (surface ev)
-  "Show EV on SURFACE, and answer whether it is now showing.
-
-False when there is no surface or it signalled. The failure is reported rather
-than swallowed: a surface that cannot show a fault is why the thread waiting on
-it would wait forever."
-  (and surface
-       (handler-case (progn (funcall surface ev) t)
-         (error (c)
-           (format *error-output* "pine: the debug surface failed on ~a: ~a~%"
-                   (evaluation-form ev) c)
-           (finish-output *error-output*)
-           nil))))
-
-(defun attended-p (ev)
-  "Whether someone has EV open and is still in a position to decide, so the
-faulted thread has a reason to keep waiting."
-  (and (evaluation-attended ev) (%can-be-attended-p) t))
-
-(defun (setf attended-p) (value ev)
-  "Say that someone has EV open, or has stopped looking."
-  (setf (evaluation-attended ev) (and value t)))
-
-(defun %can-be-attended-p ()
-  "Whether anything in this image could take a fault: a surface is installed,
-or something is watching /err. With neither, a parked thread would wait for a
-decision nobody is in a position to make."
-  (or (and *on-debug* t)
-      (ns:watched /err)))
-
-(defun await-restart (ev)
-  "Wait for a restart to be chosen for EV and answer its name.
-
-Answers NIL when the fault went unattended for *park-seconds*, which is the
-caller's cue to abort: a thread that waits on a decision nobody is coming to
-make is a thread the daemon has lost. The deadline restarts for as long as the
-fault is attended."
-  (let* ((cap (and *park-seconds*
-                   (round (* *park-seconds* internal-time-units-per-second))))
+(defun %park (f)
+  "Wait on this thread for a restart to be chosen for F, and answer its name.
+NIL when the fault went unattended for /park-seconds, which is the caller's cue
+to abort. The deadline restarts for as long as it is attended."
+  (let* ((seconds (park-seconds))
+         (cap (and seconds
+                   (round (* seconds internal-time-units-per-second))))
          (deadline (and cap (+ (get-internal-real-time) cap))))
     (loop
-      (bordeaux-threads:with-lock-held ((evaluation-lock ev))
-        (when (evaluation-chosen ev)
-          (return (evaluation-chosen ev)))
-        (bordeaux-threads:condition-wait (evaluation-cvar ev) (evaluation-lock ev)
-                                         :timeout 0.5))
-      (cond ((attended-p ev)
+      (bordeaux-threads:with-lock-held ((fault-lock f))
+        (when (fault-taken f) (return (fault-taken f)))
+        (bordeaux-threads:condition-wait (fault-cvar f) (fault-lock f) :timeout 0.5))
+      (cond ((attended-p f)
              (when cap (setf deadline (+ (get-internal-real-time) cap))))
             ((and deadline (> (get-internal-real-time) deadline))
              (format *error-output*
-                     "pine: no restart chosen for ~a within ~d unattended second~:p; aborting it~%"
-                     (evaluation-form ev) *park-seconds*)
+                     "pine: nothing decided ~a within ~d unattended second~:p; aborting it~%"
+                     (fault-label f) seconds)
              (finish-output *error-output*)
              (return nil))))))
 
-(defun eval-debugger-hook (ev condition)
-  "Runs on the eval thread when an unhandled error propagates. Records the
-condition + restarts + backtrace, notifies the surface, then waits for a restart
-to be chosen and invokes it. Aborts instead when no surface took the fault, or
-when the wait went unattended past *park-seconds*."
-  (setf (evaluation-status ev) :error
-        (evaluation-condition ev) (handler-case (princ-to-string condition)
-                                    (error () "<unprintable condition>"))
-        (evaluation-condition-type ev) (string (type-of condition))
-        (evaluation-restarts ev) (%restart-descriptions condition)
-        (evaluation-backtrace ev) (%capture-backtrace)
-        (evaluation-at ev) (get-universal-time)
-        (evaluation-root ev) (%root))
-  (%park ev)
-  (let ((surface (or (evaluation-on-error ev) *on-debug*)))
-    ;; Nothing can drive a restart choice unless someone is in a position to
-    ;; make one, so abort rather than block this thread forever. A parked
-    ;; thread here is a worker of the shared dispatcher that never comes back,
-    ;; which is exactly the wedge we avoid.
-    (unless (or (surfaced-p surface ev) (%can-be-attended-p))
-      (%unpark ev)
-      (let ((r (find-restart 'abort condition)))
-        (when r (invoke-restart r)))
-      (return-from eval-debugger-hook)))
-  (let ((name (await-restart ev)))
-    (%unpark ev)
-    (let ((r (or (find name (compute-restarts condition)
-                       :key (lambda (x) (and (restart-name x) (string (restart-name x))))
-                       :test (lambda (a b) (and a b (string-equal a b))))
-                 (find-restart 'abort condition))))
-      (when r (invoke-restart r)))))
+(defun %faulted (ev condition)
+  "Record CONDITION as EV's fault and stand in it until someone decides. The
+fault carries EV's id, so /err/7 and job 7 name the same evaluation. With
+nothing watching /err it takes its abort at once."
+  (let ((f (%fault condition :label (or (evaluation-form ev) "an evaluation")
+                             :id (evaluation-id ev) :as 'parked)))
+    (setf (evaluation-status ev) :error
+          (evaluation-fault ev) f)
+    (note f)
+    (let ((name (and (ns:watched /err) (%park f))))
+      (forget f)
+      (%take condition name))))
 
 (defmacro with-debugger-hook ((ev) &body body)
-  "Bind SBCL's debugger hook so an unhandled error in BODY is captured into EV
-and surfaced through *on-debug*, waiting on this (off-session) thread until a
-restart is picked or the fault goes unattended. The single debugger-entry
-codepath -- eval workers, buffer actors, anything off the session input thread
-routes through here."
+  "Bind SBCL's debugger hook so an unhandled error in BODY becomes EV's fault.
+This thread is the evaluation, so it is the thread that parks in it."
   `(let ((sb-ext:*invoke-debugger-hook*
-           (lambda (c hook) (declare (ignore hook)) (eval-debugger-hook ,ev c))))
+           (lambda (c hook) (declare (ignore hook)) (%faulted ,ev c))))
      ,@body))
 
-(defun call-with-debugger (thunk &key label package)
-  "Run THUNK under the pine debugger with an always-available abort restart: an
-unhandled error opens the *debugger* restart menu (via *on-debug*) and waits on
-THIS thread for a restart; `abort' unwinds out of THUNK. For threads OTHER than
-the session input thread (eval workers, buffer actors) -- the wait parks that
-thread while the surface drives the choice, and ends in an abort if the choice
-never comes. Returns THUNK's values, NIL on abort.
-
-Uses handler-bind, not *invoke-debugger-hook*: an actor's message pump may trap
-errors around receive, so we must catch in the signal's own dynamic context
-(innermost handler wins) before anything upstream sees it. eval-debugger-hook is
-still the single shared debugger-entry."
-  (let ((ev (%make-evaluation :form label :package package)))
-    (with-simple-restart (abort "Abort ~a" (or label "this operation"))
-      (handler-bind ((error (lambda (c) (eval-debugger-hook ev c))))
-        (funcall thunk)))))
-
-(defmacro with-debugger ((&key label package) &body body)
-  "Run BODY off the session thread under the pine debugger (see
-call-with-debugger)."
-  `(call-with-debugger (lambda () ,@body) :label ,label :package ,package))
-
 (defun run-evaluation (ev bindings)
-  (let ((*current* ev)
-        (out (make-string-output-stream)))
+  (let ((out (make-string-output-stream)))
     (unwind-protect
          (progv (mapcar #'car bindings) (mapcar #'cdr bindings)
            (let ((*standard-output* out)
@@ -373,49 +400,44 @@ call-with-debugger)."
                  (when abortp (setf (evaluation-status ev) :aborted))))))
       (setf (evaluation-output ev) (get-output-stream-string out))
       (when (evaluation-on-done ev)
-        ;; under the same bindings as the eval, so a callback that reaches
-        ;; for *client* (echo + repaint) works the moment the eval finishes
+        ;; under the same bindings as the eval, so a callback reaching for
+        ;; *client* works the moment it finishes
         (attempt (lambda ()
                    (progv (mapcar #'car bindings) (mapcar #'cdr bindings)
                      (funcall (evaluation-on-done ev) ev)))
                  "evaluation completion")))))
 
-(defun evaluate (form &key thunk (package *package*) bindings on-done on-error)
-  "Evaluate FORM (or call THUNK) on a fresh thread. Returns the EVALUATION
-immediately. BINDINGS is an alist (special-symbol . value) rebound around the
-eval (e.g. *client*). ON-DONE / ON-ERROR run on the eval thread."
+(defun evaluate (form &key thunk (package *package*) bindings on-done)
+  "Evaluate FORM (or call THUNK) on a thread of its own. Answers the EVALUATION
+at once. BINDINGS is an alist (special-symbol . value) rebound around the eval,
+e.g. *client*. ON-DONE runs on the eval thread."
   (let ((ev (%ran (%make-evaluation :form form :thunk thunk :package package
-                                    :on-done on-done :on-error on-error))))
+                                    :on-done on-done))))
     (setf (evaluation-thread ev)
           (bordeaux-threads:make-thread
            (lambda () (run-evaluation ev bindings))
            :name (format nil "pine-eval-~a" (evaluation-id ev))))
     ev))
 
-(defun evaluate-thunk (thunk &key (package *package*) bindings on-done on-error)
-  "Run THUNK (a nullary function) as an evaluation -- a widget onclick handler
-can't hang or crash the UI thread."
-  (evaluate nil :thunk thunk :package package :bindings bindings
-                :on-done on-done :on-error on-error))
+(defun evaluate-thunk (thunk &key (package *package*) bindings on-done)
+  "Run THUNK as an evaluation, so a widget's click handler cannot hang or crash
+the thread that clicked it."
+  (evaluate nil :thunk thunk :package package :bindings bindings :on-done on-done))
 
-(defun evaluate-string (string &key (package *package*) bindings on-done on-error)
+(defun evaluate-string (string &key (package *package*) bindings on-done)
   (let ((form (let ((*package* (or package *package*)))
                 (read-from-string string))))
-    (evaluate form :package package :bindings bindings
-                   :on-done on-done :on-error on-error)))
-
-(defun pick-restart (ev name)
-  "Resume a debugging evaluation by invoking the restart named NAME."
-  (bordeaux-threads:with-lock-held ((evaluation-lock ev))
-    (setf (evaluation-chosen ev) (string name))
-    (bordeaux-threads:condition-notify (evaluation-cvar ev))))
+    (evaluate form :package package :bindings bindings :on-done on-done)))
 
 (defun abort-evaluation (ev)
-  "Abort EV: if it is in the debugger, invoke its abort restart; otherwise
-interrupt the worker into its abort restart (kills a runaway loop)."
-  (if (eq (evaluation-status ev) :error)
-      (pick-restart ev "ABORT")
-      (ignore-errors
-       (bordeaux-threads:interrupt-thread
-        (evaluation-thread ev)
-        (lambda () (ignore-errors (invoke-restart 'abort)))))))
+  "Abort EV: take the abort on the fault it is parked in, or interrupt the
+thread into its abort restart, which is what kills a runaway loop."
+  (let ((f (evaluation-fault ev)))
+    (if (and f (eq (evaluation-status ev) :error))
+        (resume f "ABORT")
+        (ignore-errors
+         (bordeaux-threads:interrupt-thread
+          (evaluation-thread ev)
+          (lambda () (ignore-errors (invoke-restart 'abort))))))))
+
+

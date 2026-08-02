@@ -27,7 +27,7 @@ snapshot only carries highlights when one is built for a subscriber."
 (defun why-no-highlights (name)
   "Everything that has to be true for colours to land, so a failure says which
 of them was not."
-  (let* ((buf (pine.editor.frame::buffer name))
+  (let* ((buf (pine.buf:live name))
          (parser (pine.buf:parser-of name))
          (thread (when parser
                    (let ((box (sento.actor-cell:msgbox parser)))
@@ -54,7 +54,7 @@ of them was not."
               (and told (subseq told 0 (min 3 (length told)))))
             (if (eq (fourth (pine.buf:asked name :told)) pine.ns:*space*)
                 "same" "DIFFERENT")
-            (pine.ts.parser:did name)
+            (and (pine.ts.parser:tree-of name) t)
             ;; a parse that produced nothing says so at /log, so the reason is
             ;; already written down by the time this is asked
             (pine.ns:read (pine.path:parse "/log"))
@@ -65,11 +65,11 @@ of them was not."
 
 (defun full-walk-of (content &key (viewport +test-viewport+))
   "The highlights a synchronous walk gives for CONTENT over the same window."
-  (let ((state (pine.text.buffer:set-meta
-                (pine.text.buffer:set-meta
-                 (pine.text.buffer:load-content content) :mode :lisp)
+  (let ((state (pine.text:set-meta
+                (pine.text:set-meta
+                 (pine.text:load-content content) :mode :lisp)
                 :viewport viewport)))
-    (pine.text.buffer:refresh-highlights nil state)))
+    (pine.text:refresh-highlights nil state)))
 
 (test an-edit-is-answered-before-its-parse-is
   "The buffer commits and repaints on its own thread; the parse happens
@@ -78,7 +78,7 @@ caught up."
   (with-fixture substrate ()
     (within-seconds 30
       (let ((buf (lisp-buffer "async-edit" "(defun f (x) x)")))
-        (pine.text.buffer:edit buf (fset:seq :insert "y"))
+        (pine.buf:edit buf (fset:seq :insert "y"))
         (is (wait-for (lambda () (search "y" (btext "async-edit"))) :seconds 5)
             "the edit did not land promptly")))))
 
@@ -100,7 +100,7 @@ final text."
   (with-fixture substrate ()
     (within-seconds 90
       (let ((buf (lisp-buffer "async-burst" "(defun f (x) x)")))
-        (dotimes (i 20) (pine.text.buffer:edit buf (fset:seq :insert "z")))
+        (dotimes (i 20) (pine.buf:edit buf (fset:seq :insert "z")))
         (is (wait-for (lambda () (= 20 (count #\z (btext "async-burst")))) :seconds 30)
             "the edits did not all land")
         (let ((settled (btext "async-burst")))
@@ -118,20 +118,20 @@ and takes its column when the parse says what it is."
     (within-seconds 60
       ;; balanced source, so the body column is not a matter of opinion
       (let ((buf (lisp-buffer "async-indent" (format nil "(defun f ()~%(bar))"))))
-        (pine.text.buffer:put-point buf 0 11)
+        (pine.buf:put-point buf 0 11)
         (sleep 0.2)
-        (pine.text.buffer:edit buf (fset:seq :newline))
-        (is (wait-for (lambda () (= 3 (length (pine.text.buffer:split-lines
+        (pine.buf:edit buf (fset:seq :newline))
+        (is (wait-for (lambda () (= 3 (length (pine.text:split-lines
                                                (btext "async-indent")))))
                       :seconds 10)
             "the newline did not land")
         (is (wait-for (lambda ()
-                        (let ((lines (pine.text.buffer:split-lines (btext "async-indent"))))
+                        (let ((lines (pine.text:split-lines (btext "async-indent"))))
                           (and (= 3 (length lines))
-                               (= 2 (pine.text.buffer:line-indent-width (second lines))))))
+                               (= 2 (pine.text:line-indent-width (second lines))))))
                       :seconds 30)
             "the indent never reached the defun body, the line reads ~s"
-            (second (pine.text.buffer:split-lines (btext "async-indent"))))))))
+            (second (pine.text:split-lines (btext "async-indent"))))))))
 
 (test the-highlights-that-land-match-a-fresh-parse-after-any-verb-sequence
   "The descriptors are what let the parser shift its tree instead of rebuilding
@@ -154,13 +154,13 @@ insertion: whole-line shifts cannot express a split."
               (dotimes (i 12)
                 (let ((snap (bsnap name)))
                   (case (next 5)
-                    (0 (pine.text.buffer:edit buf (fset:seq :insert "z")))
-                    (1 (pine.text.buffer:edit buf (fset:seq :newline)))
-                    (2 (pine.text.buffer:delete-back buf))
-                    (3 (pine.text.buffer:put-point
-                        buf (next (max 1 (pine.text.buffer:line-count snap)))
+                    (0 (pine.buf:edit buf (fset:seq :insert "z")))
+                    (1 (pine.buf:edit buf (fset:seq :newline)))
+                    (2 (pine.buf:delete-back buf))
+                    (3 (pine.buf:put-point
+                        buf (next (max 1 (pine.text:line-count snap)))
                         (next 4)))
-                    (t (pine.text.buffer:edit buf (fset:seq :insert "(g 1)")))))
+                    (t (pine.buf:edit buf (fset:seq :insert "(g 1)")))))
                 (sleep 0.05)))
             (sleep 1.5)
             (let ((settled (btext name)))
@@ -198,28 +198,29 @@ same moment as ten others is the case that has to hold."
     (within-seconds 20
       (let ((buf (pine.editor.frame::make-buffer "async-plain")))
         (pine.editor.frame::set-buffer-mode buf :text)
-        (pine.text.buffer:edit buf (fset:seq :insert "plain"))
+        (pine.buf:edit buf (fset:seq :insert "plain"))
         (is (wait-for (lambda () (equal "plain" (btext "async-plain"))))
             "a text buffer stopped editing")
-        (is (null (pine.buf:parser-of (pine.text.buffer:name-of buf)))
+        (is (null (pine.buf:parser-of (pine.buf:name-of buf)))
             "a buffer with no language should have no parser")))))
 
-(test a-wedged-parser-leaves-the-buffer-editable
-  "The isolation claim, tested: the parser is held in a fault and the buffer goes
-on taking edits, keeping the colours it already had."
+(test a-faulted-parser-leaves-the-buffer-editable
+  "The isolation claim, tested: the parser faults and the buffer goes on taking
+edits, keeping the colours it already had."
   (with-fixture substrate ()
     (within-seconds 90
-      (with-surface (faults :attended (lambda (ev) (declare (ignore ev)) t))
+      (with-surface (faults)
         (let* ((buf (lisp-buffer "async-wedge" "(defun f (x) x)"))
-               (parser (pine.buf:parser-of (pine.text.buffer:name-of buf))))
+               (parser (pine.buf:parser-of (pine.buf:name-of buf))))
           (is (not (null parser)) "a lisp buffer should have a parser")
-          ;; a verb its receive does not know faults it, and the fault is held
+          ;; a verb its receive does not know faults it, and the fault records
+          ;; itself at /err rather than standing on this actor's thread
           (sento.actor:tell parser '(:no-such-verb))
           (is (wait-for (lambda () faults) :seconds 30)
               "the parser never faulted")
-          (dotimes (i 5) (pine.text.buffer:edit buf (fset:seq :insert "q")))
+          (dotimes (i 5) (pine.buf:edit buf (fset:seq :insert "q")))
           (is (wait-for (lambda () (= 5 (count #\q (btext "async-wedge")))) :seconds 20)
-              "the buffer stopped editing while its parser was wedged")
+              "the buffer stopped editing after its parser faulted")
           (is (stringp (btext "scratch"))
               "the rest of the daemon stopped answering"))))))
 
@@ -227,10 +228,19 @@ on taking edits, keeping the colours it already had."
 ;;;; an image that does not speak this one should hear about it at attach rather
 ;;;; than one unknown verb at a time.
 
-(test the-protocol-version-comes-from-the-asd
-  (is (equal (asdf:component-version (asdf:find-system :pine))
-             (pine.core.attach:protocol-version))
-      "the version of record is the .asd, so there is no second place to bump")
+(test the-protocol-version-is-the-release-and-the-wire
+  "The release number is where a version is bumped, and it says nothing about
+the wire. Two trees can both call themselves 0.0.1 and encode a widget's props
+one as a map and the other as a plist, so the wire generation is part of what
+two images have to agree on."
+  (let ((release (asdf:component-version (asdf:find-system :pine))))
+    (is (search release (pine.core.attach:protocol-version))
+        "the release is still where a version is bumped")
+    (is (search pine.core.attach:+wire-generation+
+                (pine.core.attach:protocol-version))
+        "the wire generation is part of what two images agree on")
+    (is-false (pine.core.attach:version-accepted-p release)
+              "another pine of the same release, with another wire, is refused"))
   (is-true (pine.core.attach:version-accepted-p (pine.core.attach:protocol-version)))
   (is-false (pine.core.attach:version-accepted-p "0.0.0-not-this"))
   (is-false (pine.core.attach:version-accepted-p nil)
@@ -253,7 +263,7 @@ second process."
          (progn
            (sento.actor:tell listener
              (list :attach
-                   :display-uri (pine.core.server:local-uri name +agent-port+)
+                   :display-uri (pine.core.server:local-uri name (agent-port))
                    :kind :probe :version version))
            (wait-for (lambda () heard) :seconds 15)
            (first heard))
@@ -286,7 +296,7 @@ second process."
   (with-fixture substrate ()
     (within-seconds 60
       (let* ((buf (lisp-buffer "async-kill" "(defun f (x) x)"))
-             (parser (pine.buf:parser-of (pine.text.buffer:name-of buf)))
+             (parser (pine.buf:parser-of (pine.buf:name-of buf)))
              (before (length (sb-thread:list-all-threads))))
         (is (not (null parser)))
         (pine.editor.frame::kill-buffer "async-kill")

@@ -278,7 +278,7 @@ and the answers must not change."
         (pine.ts.runtime:parse-text! from-string text)
         (pine.ts.runtime:parse-lines! from-lines
                                       (fset:convert 'fset:seq
-                                                    (pine.text.buffer:split-lines text)))
+                                                    (pine.text:split-lines text)))
         (is (equal (root-span from-string) (root-span from-lines))
             "the tree read from the seq differs from the tree read from the string")
         (pine.ts.runtime:free-parse-state from-string)
@@ -294,7 +294,7 @@ and the answers must not change."
         (pine.ts.runtime:parse-text! from-string text)
         (pine.ts.runtime:parse-lines! from-lines
                                       (fset:convert 'fset:seq
-                                                    (pine.text.buffer:split-lines text)))
+                                                    (pine.text:split-lines text)))
         (is (equal (root-span from-string) (root-span from-lines))
             "multi-byte characters put the two paths out of step")
         (pine.ts.runtime:free-parse-state from-string)

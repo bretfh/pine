@@ -14,12 +14,19 @@
 
 (in-package #:pine.ui.layout)
 
+
 ;;;; Layout protocol
 
 (defvar *text-size* nil
   "When bound to a function of (text font-px) -> (values w h), text leaves
 measure through it (pixel/cairo mode); otherwise a character is one cell.")
 (defvar *default-font-px* 13)
+
+(defparameter *hover-face* nil
+  "A face designator painted as the background of the hovered node, or nil.")
+
+(defparameter +slider-filled+ (code-char #x2588)) ; full block
+(defparameter +slider-empty+  (code-char #x2500)) ; light horizontal
 
 (defun text-size (text font-px)
   (if *text-size*
@@ -97,9 +104,6 @@ the node's border-box (and everything it lays out inside) sits within its margin
 
 (defmethod paint ((n node) r) (declare (ignore r)) nil)
 
-(defparameter *hover-face* nil
-  "A face designator painted as the background of the hovered node, or nil.")
-
 (defun %fill-bg (n r)
   "Fill the node's rect background: the hover face when hovered, else its own."
   (let ((f (if (and (hovered n) *hover-face*) *hover-face* (face n))))
@@ -159,9 +163,6 @@ reporting AW/AH here would eat the whole axis as natural size."
             do (raster-put r (start-line n) col (sep-char n) (face n)))))
 
 (defmethod measure ((n spacer) aw ah) (declare (ignore aw ah)) (values 0 0))
-
-(defparameter +slider-filled+ (code-char #x2588)) ; full block
-(defparameter +slider-empty+  (code-char #x2500)) ; light horizontal
 
 (defmethod measure ((n slider) aw ah)
   (declare (ignore aw ah))
@@ -403,7 +404,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
 (defun node-parent (root node)
   "NODE's parent under ROOT, or nil for the root itself."
   (labels ((walk (n)
-             (let ((kids (pine.ui.layout:nodes-of n)))
+             (let ((kids (nodes-of n)))
                (if (member node kids :test #'eq)
                    n
                    (some #'walk kids)))))
@@ -486,52 +487,60 @@ reaches it, or nil when LEAF cannot be removed."
   (and (<= (start-line n) line) (<= line (end-line n))
        (<= (start-col n) col) (< col (end-col n))))
 
-(defmethod pine.ui.layout:node-at ((n action) line col)
+(defmethod node-at ((n action) line col)
   (when (%node-contains n line col) (or (call-next-method) n)))
 
-(defmethod pine.ui.layout:node-at ((n selectable) line col)
+(defmethod node-at ((n selectable) line col)
   (when (%node-contains n line col) (or (call-next-method) n)))
 
-(defmethod pine.ui.layout:node-at ((n slider) line col)
+(defmethod node-at ((n slider) line col)
   (when (%node-contains n line col) n))
 
-(defmethod pine.ui.layout:node-at ((n scroll) line col)
+(defmethod node-at ((n scroll) line col)
   (when (%node-contains n line col) (call-next-method)))
 
 (defun action-at (node line col)
   "The callback of the action under (LINE COL), or nil."
-  (let ((hit (pine.ui.layout:node-at node line col)))
+  (let ((hit (node-at node line col)))
     (when (typep hit 'action) (callback hit))))
 
 (defun hint-at (root line col)
   "The hover hint of the node under (LINE COL), or nil."
-  (let ((n (pine.ui.layout:node-at root line col)))
+  (let ((n (node-at root line col)))
     (and n (hint n))))
 
 ;;;; Structure: what each class contains. Every tree walk reads this.
 
-(defmethod pine.ui.layout:nodes-of ((n vstack)) (nodes n))
-(defmethod pine.ui.layout:nodes-of ((n hstack)) (nodes n))
-(defmethod pine.ui.layout:nodes-of ((n centerbox)) (pine.ui.layout:centerbox-parts n))
-(defmethod pine.ui.layout:nodes-of ((n grid)) (apply #'append (cells n)))
-(defmethod pine.ui.layout:nodes-of ((n list-node)) (rendered n))
-(defmethod pine.ui.layout:nodes-of ((n box)) (and (node n) (list (node n))))
-(defmethod pine.ui.layout:nodes-of ((n center)) (and (node n) (list (node n))))
-(defmethod pine.ui.layout:nodes-of ((n action)) (and (node n) (list (node n))))
-(defmethod pine.ui.layout:nodes-of ((n selectable)) (and (node n) (list (node n))))
-(defmethod pine.ui.layout:nodes-of ((n scroll)) (and (node n) (list (node n))))
-(defmethod pine.ui.layout:nodes-of ((n ring)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n vstack)) (nodes n))
+(defmethod nodes-of ((n hstack)) (nodes n))
+(defmethod nodes-of ((n centerbox)) (centerbox-parts n))
+(defmethod nodes-of ((n grid)) (apply #'append (cells n)))
+(defmethod nodes-of ((n list-node)) (rendered n))
+(defmethod nodes-of ((n box)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n center)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n action)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n selectable)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n scroll)) (and (node n) (list (node n))))
+(defmethod nodes-of ((n ring)) (and (node n) (list (node n))))
+
+(defgeneric clicked (node col)
+  (:documentation "The nullary thunk clicking NODE at COL means. A widget that
+does something when it is clicked answers it here.")
+  (:method (node col) (declare (ignore node col)) nil))
+
+(defmethod clicked ((node action) col)
+  (declare (ignore col))
+  (callback node))
+
+(defmethod clicked ((node slider) col)
+  (let ((fn (on-change node))
+        (v (slider-value-at node col)))
+    (when fn (lambda () (funcall fn v)))))
 
 (defun click-thunk (root line col)
-  "A nullary thunk for a click at (LINE COL) on arranged ROOT: an action's
-callback, or a slider's on-change applied to the column-mapped value. Nil if the
-point is over neither."
-  (let ((hit (pine.ui.layout:node-at root line col)))
-    (typecase hit
-      (action (callback hit))
-      (slider (let ((fn (on-change hit)) (v (pine.ui.layout:slider-value-at hit col)))
-                (when fn (lambda () (funcall fn v)))))
-      (t nil))))
+  "A nullary thunk for a click at (LINE COL) on arranged ROOT, or nil where
+nothing there does anything."
+  (clicked (node-at root line col) col))
 
 
 ;;;; Selection navigation
@@ -544,6 +553,6 @@ walk does not descend past one."
                (when x
                  (if (typep x 'selectable)
                      (push x result)
-                     (mapc #'walk (pine.ui.layout:nodes-of x))))))
+                     (mapc #'walk (nodes-of x))))))
       (walk n))
     (nreverse result)))

@@ -20,15 +20,13 @@
 
 (defun %battery ()
   (let ((dir (%battery-dir)))
-    (when dir (out:int-file (merge-pathnames "capacity" dir)))))
+    (when dir (out:int-file (namestring (merge-pathnames "capacity" dir))))))
 
 (defun %state ()
   (let ((dir (%battery-dir)))
     (when dir
-      (let ((text (ignore-errors
-                    (string-trim '(#\newline #\space)
-                                 (uiop:read-file-string
-                                  (merge-pathnames "status" dir))))))
+      (let ((text (let ((raw (out:file (namestring (merge-pathnames "status" dir)))))
+                    (and raw (string-trim '(#\newline #\space) raw)))))
         (cond ((null text) nil)
               ((string-equal text "Charging") :charging)
               ((string-equal text "Discharging") :discharging)

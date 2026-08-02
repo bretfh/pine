@@ -19,30 +19,35 @@
 
 (in-package #:pine.ts.highlight)
 
-(declaim (optimize (speed 3) (safety 1)))
-
 ;;;; Single-pass highlighter. One walk of the parse tree assigns each token a
-;;;; face from its node type and context (form head, quote state, form depth),
-;;;; replacing the query + capture-name-to-face + reclassify stack. Positions
-;;;; are converted from tree-sitter's UTF-8 bytes to character columns through
-;;;; the line index as spans are emitted, so text is never sliced by a byte
-;;;; offset. See design/treesitter.org.
+;;;; face from its node type and context: form head, quote state, form depth.
+;;;; Positions are converted from tree-sitter's UTF-8 bytes to character columns
+;;;; through the line index as spans are emitted, so text is never sliced by a
+;;;; byte offset.
 
-;;;; Common Lisp classification tables
+(declaim (optimize (speed 3) (safety 1)))
 
 (defvar *cl-special-forms* (make-hash-table :test 'equal))
 (defvar *cl-builtins* (make-hash-table :test 'equal))
 (defvar *cl-constants* (make-hash-table :test 'equal))
+;; NESTED binders hold ((var init) ...); FLAT-ALL bind every symbol in their
+;; list; FLAT-FIRST bind only the first
 (defvar *cl-nested-binders* (make-hash-table :test 'equal))
 (defvar *cl-flat-all-binders* (make-hash-table :test 'equal))
 (defvar *cl-flat-first-binders* (make-hash-table :test 'equal))
 (defvar *cl-type-definers* (make-hash-table :test 'equal))
 (defvar *cl-var-definers* (make-hash-table :test 'equal))
+;; generic def-forms, with no defun_header node: head keyword, then a name
+(defvar *cl-class-definers* (make-hash-table :test 'equal))
+(defvar *cl-struct-definers* (make-hash-table :test 'equal))
+;; the scheme grammar is not present in every environment; when it is, its node
+;; types are comment/string/number/character/boolean/symbol plus the list forms
+(defvar *scheme-keywords* (make-hash-table :test 'equal))
 
 (defun %intern-table (table names)
   (dolist (name names table) (setf (gethash name table) t)))
 
-;; Heads rendered as keywords: special operators plus the common macros.
+;; heads rendered as keywords: special operators plus the common macros
 (%intern-table *cl-special-forms*
   '("block" "catch" "eval-when" "flet" "function" "go" "if" "labels" "let"
     "let*" "load-time-value" "locally" "macrolet" "multiple-value-call"
@@ -88,8 +93,6 @@
     "most-positive-short-float" "most-negative-short-float"
     "most-positive-long-float" "most-negative-long-float"))
 
-;; Binders the grammar parses as bare lists. NESTED hold ((var init) ...);
-;; FLAT-ALL bind every symbol in their list; FLAT-FIRST bind only the first.
 (%intern-table *cl-nested-binders*
   '("let" "let*" "do" "do*" "symbol-macrolet" "prog" "prog*" "compiler-let"))
 (%intern-table *cl-flat-all-binders*
@@ -99,14 +102,15 @@
   '("dolist" "dotimes" "do-symbols" "do-external-symbols" "do-all-symbols"
     "with-open-file" "with-open-stream" "with-input-from-string"
     "with-output-to-string"))
-
-;; Generic def-forms (no defun_header node): head keyword, then a named entity.
-(defvar *cl-class-definers* (make-hash-table :test 'equal))
-(defvar *cl-struct-definers* (make-hash-table :test 'equal))
 (%intern-table *cl-class-definers* '("defclass" "define-condition"))
 (%intern-table *cl-struct-definers* '("defstruct"))
 (%intern-table *cl-type-definers* '("deftype"))
 (%intern-table *cl-var-definers* '("defvar" "defparameter" "defconstant"))
+(%intern-table *scheme-keywords*
+  '("define" "define-syntax" "define-record-type" "define-values" "lambda"
+    "let" "let*" "letrec" "letrec*" "let-values" "let*-values" "if" "cond"
+    "case" "when" "unless" "and" "or" "begin" "do" "set!" "quote" "quasiquote"
+    "unquote" "delay" "parameterize" "guard" "syntax-rules" "else"))
 
 (defun cl-head-kind (name)
   "The role of a form whose head symbol is NAME."
@@ -410,18 +414,6 @@ no enclosing context, so depth and quote state start where they would anyway."
           (walk root 0 nil))
       (nreverse acc))))
 
-
-;;;; Scheme walk. The grammar is not present in every environment; when it is,
-;;;; its node types are comment/string/number/character/boolean/symbol plus the
-;;;; list forms. Heads of forms in *scheme-keywords* read as keywords.
-
-(defvar *scheme-keywords* (make-hash-table :test 'equal))
-(%intern-table *scheme-keywords*
-  '("define" "define-syntax" "define-record-type" "define-values" "lambda"
-    "let" "let*" "letrec" "letrec*" "let-values" "let*-values" "if" "cond"
-    "case" "when" "unless" "and" "or" "begin" "do" "set!" "quote" "quasiquote"
-    "unquote" "delay" "parameterize" "guard" "syntax-rules" "else"))
-
 (defun scheme-highlights (root src &key lo-byte hi-byte forms)
   (let ((acc nil))
     (labels
@@ -603,50 +595,6 @@ the line as-is (inside a multiline string). 0 at top level. No reparse."
           nil)))))
 
 
-;;;; Development harness. Prints every highlighted token and its face; a check
-;;;; that a rule resolves as intended without launching the editor.
-
-(defun hl-dump (source &optional (language :commonlisp))
-  "Print each highlighted token of SOURCE and the face it resolves to."
-  (let* ((runtime (make-ts-runtime))
-         (ps (progn (ensure-ts runtime) (make-parse-state runtime language))))
-    (if (null ps)
-        (format t "~&no grammar loaded for ~a~%" language)
-        (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
-                             'vector)))
-          (parse-lines! ps (fset:convert 'fset:seq
-                                         (uiop:split-string source
-                                                            :separator '(#\Newline))))
-          (dolist (h (parse-highlights ps))
-            (destructuring-bind (line start-col end-col face) h
-              (let* ((text (if (< line (length lines)) (aref lines line) ""))
-                     (end (min end-col (length text))))
-                (format t "~&~2d:~2d  ~16a ~s~%" line start-col face
-                        (subseq text start-col (max start-col end))))))))))
-
-(defun hl-dump-file (path &optional (language :commonlisp))
-  (with-open-file (s path :if-does-not-exist nil)
-    (if (null s)
-        (format t "~&no such file: ~a~%" path)
-        (let ((source (make-string (file-length s))))
-          (hl-dump (subseq source 0 (read-sequence source s)) language)))))
-
-;;;; Producing highlights from a parse tree: the runtime holds the tree,
-;;;; the language walks live here, so the dispatch does too.
-
-(defun compute-highlights (runtime language text)
-  "Highlights for TEXT in one shot, with a parse state of its own. For callers
-holding a string rather than a buffer: a tool, a test, a snippet."
-  (let ((ps (make-parse-state runtime language)))
-    (when ps
-      (unwind-protect
-           (progn
-             (parse-lines! ps (fset:convert 'fset:seq
-                                            (uiop:split-string
-                                             text :separator '(#\Newline))))
-             (parse-highlights ps))
-        (free-parse-state ps)))))
-
 (defun %viewport-bytes (src from-line to-line)
   "The byte range covering lines FROM-LINE to TO-LINE inclusive."
   (let ((last (1- (index-line-count src))))
@@ -750,67 +698,6 @@ which is what makes the window's cached tuples still usable."
                       (third tuple) (fourth tuple)))
               tuples)))
 
-(defun parse-highlights (ps &key from-line to-line)
-  "Highlights (line start-col end-col face) from PS's persistent tree, in the
-buffer's own line numbers.
-
-The source is PS's own lines and byte index, the ones its tree was parsed from,
-so a caller cannot hand this a text the tree does not describe. Cache identity is
-EQ on the lines: the seq is immutable, so an unchanged buffer is one comparison
-rather than a walk over the file.
-
-With FROM-LINE and TO-LINE, walks only the tree covering those lines. The
-descent from the root still runs, so quote state, form depth and head kind stay
-exact, and every line in the range gets the tuples the full walk would emit.
-Nothing is cached: a window's slice is cheap enough to walk outright, and it
-moves whenever the window scrolls.
-
-Without a range, the whole buffer is walked and cached. Incremental: when
-exactly one edit was recorded since the last call, only the changed top-level
-forms are re-walked and the cached tuples outside them are kept (shifted by the
-line delta). Anything unexpected falls back to the full walk."
-  (let* ((tree (ps-tree ps))
-         (lines (ps-lines ps))
-         (offset (pine.ts.runtime:ps-offset ps))
-         (from-line (and from-line (- from-line offset)))
-         (to-line (and to-line (- to-line offset))))
-    (when (and tree (ps-byte-index ps))
-      (handler-case
-          (%shift-tuples
-           (if (and from-line to-line)
-               (let ((same-window (equal (ps-hl-window ps) (cons from-line to-line))))
-                 (cond
-                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
-                         (null (ps-hl-pending ps))
-                         (eq lines (ps-hl-lines ps)))
-                    (ps-hl-cache ps))
-                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
-                         (%window-edit-is-local-p ps from-line to-line))
-                    (%hl-window-incremental ps tree from-line to-line))
-                   (t (%hl-window ps tree from-line to-line))))
-               (cond
-                 ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
-                       (eq lines (ps-hl-lines ps)))
-                  (ps-hl-cache ps))
-                 ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps)))
-                  (%hl-incremental ps tree))
-                 (t (%hl-full ps tree))))
-           offset)
-        ;; The cached tuples are the likeliest thing to be wrong, so they are
-        ;; dropped and the tree walked once more from scratch. That retry is
-        ;; recovery, not concealment: the condition is reported either way, and
-        ;; a second failure is the walk's own and belongs to the caller.
-        (error (c)
-          (pine.err:report-failure
-           c (format nil "highlighting ~a, retrying without the cache"
-                     (ps-language ps)))
-          (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil
-                (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
-          (%shift-tuples
-           (walk-highlights (ps-language ps) (ts-tree-root-node tree)
-                            (ps-byte-index ps))
-           offset))))))
-
 (defun %hl-full (ps tree)
   ;; a full walk asks about every line; a window asks about thirty
   (when (byte-index-pending (ps-byte-index ps))
@@ -879,3 +766,96 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
               (ps-hl-window ps) nil
               (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
         merged))))
+
+(defun parse-highlights (ps &key from-line to-line)
+  "Highlights (line start-col end-col face) from PS's persistent tree, in the
+buffer's own line numbers.
+
+The source is PS's own lines and byte index, the ones its tree was parsed from,
+so a caller cannot hand this a text the tree does not describe. Cache identity
+is EQ on the lines: the seq is immutable, so an unchanged buffer is one
+comparison rather than a walk over the file.
+
+With FROM-LINE and TO-LINE, walks only the tree covering those lines. The
+descent from the root still runs, so quote state, form depth and head kind stay
+exact. Without a range, the whole buffer is walked and cached, and when exactly
+one edit was recorded since the last call only the changed top-level forms are
+re-walked. Anything unexpected falls back to the full walk."
+  (let* ((tree (ps-tree ps))
+         (lines (ps-lines ps))
+         (offset (ps-offset ps))
+         (from-line (and from-line (- from-line offset)))
+         (to-line (and to-line (- to-line offset))))
+    (when (and tree (ps-byte-index ps))
+      (handler-case
+          (%shift-tuples
+           (if (and from-line to-line)
+               (let ((same-window (equal (ps-hl-window ps) (cons from-line to-line))))
+                 (cond
+                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
+                         (null (ps-hl-pending ps))
+                         (eq lines (ps-hl-lines ps)))
+                    (ps-hl-cache ps))
+                   ((and (ps-hl-cache ps) same-window (not (ps-hl-stale ps))
+                         (%window-edit-is-local-p ps from-line to-line))
+                    (%hl-window-incremental ps tree from-line to-line))
+                   (t (%hl-window ps tree from-line to-line))))
+               (cond
+                 ((and (ps-hl-cache ps) (null (ps-hl-pending ps)) (not (ps-hl-stale ps))
+                       (eq lines (ps-hl-lines ps)))
+                  (ps-hl-cache ps))
+                 ((and (ps-hl-cache ps) (ps-hl-pending ps) (not (ps-hl-stale ps)))
+                  (%hl-incremental ps tree))
+                 (t (%hl-full ps tree))))
+           offset)
+        ;; the cached tuples are the likeliest thing to be wrong, so they are
+        ;; dropped and the tree walked once more; the condition is reported
+        ;; either way, and a second failure is the walk's own
+        (error (c)
+          (pine.err:report-failure
+           c (format nil "highlighting ~a, retrying without the cache"
+                     (ps-language ps)))
+          (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil
+                (ps-hl-pending ps) nil (ps-hl-stale ps) nil)
+          (%shift-tuples
+           (walk-highlights (ps-language ps) (ts-tree-root-node tree)
+                            (ps-byte-index ps))
+           offset))))))
+
+(defun compute-highlights (runtime language text)
+  "Highlights for TEXT in one shot, with a parse state of its own. For callers
+holding a string rather than a buffer: a tool, a test, a snippet."
+  (let ((ps (make-parse-state runtime language)))
+    (when ps
+      (unwind-protect
+           (progn
+             (parse-lines! ps (fset:convert 'fset:seq
+                                            (uiop:split-string
+                                             text :separator '(#\Newline))))
+             (parse-highlights ps))
+        (free-parse-state ps)))))
+
+(defun hl-dump (source &optional (language :commonlisp))
+  "Print each highlighted token of SOURCE and the face it resolves to."
+  (let* ((runtime (make-ts-runtime))
+         (ps (progn (ensure-ts runtime) (make-parse-state runtime language))))
+    (if (null ps)
+        (format t "~&no grammar loaded for ~a~%" language)
+        (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
+                             'vector)))
+          (parse-lines! ps (fset:convert 'fset:seq
+                                         (uiop:split-string source
+                                                            :separator '(#\Newline))))
+          (dolist (h (parse-highlights ps))
+            (destructuring-bind (line start-col end-col face) h
+              (let* ((text (if (< line (length lines)) (aref lines line) ""))
+                     (end (min end-col (length text))))
+                (format t "~&~2d:~2d  ~16a ~s~%" line start-col face
+                        (subseq text start-col (max start-col end))))))))))
+
+(defun hl-dump-file (path &optional (language :commonlisp))
+  (with-open-file (s path :if-does-not-exist nil)
+    (if (null s)
+        (format t "~&no such file: ~a~%" path)
+        (let ((source (make-string (file-length s))))
+          (hl-dump (subseq source 0 (read-sequence source s)) language)))))

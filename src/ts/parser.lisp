@@ -1,12 +1,8 @@
 (defpackage #:pine.ts.parser
   (:use #:cl)
-  (:export
-   #:start-parser
-   #:parse-link
-   #:make-parse-link
-   #:parse-link-p
-   #:link-actor
-   #:did)
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:proc #:pine.proc))
+  (:export #:start-parser #:parse-link #:make-parse-link #:parse-link-p
+           #:link-actor #:link-state #:tree-of)
   (:documentation "Parsing as an actor, off whatever asked for it.
 
 Nothing can afford to wait for tree-sitter: at a million lines one edit costs
@@ -19,103 +15,111 @@ nothing is ever waiting on it and the answer is a place rather than a message.")
 
 (in-package #:pine.ts.parser)
 
-(defstruct (parse-link (:constructor make-parse-link (actor)))
-  "A buffer's handle on its parser."
-  actor)
+(defstruct (parse-link (:constructor make-parse-link (actor state)))
+  "A buffer's handle on its parser: the actor to tell, and the parse state it
+owns, which is a foreign pointer and has to be freed."
+  actor state)
 
 (defun link-actor (link) (parse-link-actor link))
+(defun link-state (link) (parse-link-state link))
+
+(defun tree-of (name)
+  "The parse tree NAME's parser last built, or NIL. Live: the parser's own
+tree, not a copy, so it is never stored."
+  (let ((link (ns:read (p:path (p:parse "/proc") (format nil "parse:~a" name)))))
+    (when (fset:map? link)
+      (let ((it (fset:lookup link :parser)))
+        (and (parse-link-p it) (pine.ts.runtime:ps-tree (parse-link-state it)))))))
 
 (defun %ensure-tree (ps lines edit from viewport)
   "Bring PS's tree up to LINES over the band VIEWPORT needs, using EDIT when it
-describes the difference from FROM, which is the state it was computed against."
+describes the difference from FROM."
   (pine.ts.runtime:parse-lines! ps lines :edit edit :from from :viewport viewport)
   ps)
 
 (defun %highlights (ps viewport)
   "Face runs for the lines VIEWPORT covers.
 
-No viewport means no window is showing this buffer, and highlights exist only to
-be painted, so there is nothing to compute. Walking anyway is how a background
-buffer of a million lines produced millions of tuples nobody would ever look at.
-A window claims the buffer by saying what it is showing, and that asks for a
-parse."
+No viewport means no window is showing this buffer, and highlights exist only
+to be painted. Walking anyway is how a background buffer of a million lines
+produced millions of tuples nobody would look at."
   (when viewport
     (pine.ts.highlight:parse-highlights ps :from-line (car viewport)
                                            :to-line (cdr viewport))))
 
 (defun %at (name &rest leaf)
-  (apply #'pine.path:path (pine.path:parse "/buf") name leaf))
-
-;;;; What a parser last did, so a buffer with no colour can say which step did
-;;;; not happen: whether the message arrived, whether a tree was built, and what
-;;;; the walk answered. Not a place anyone addresses -- one side of the
-;;;; conversation between a buffer and its parser, like the tick.
-
-(defvar *did* (sento.atomic:make-atomic-reference :value (fset:empty-map)))
-
-(defun did (name)
-  "The last thing NAME's parser did, as (tag lines tree index runs)."
-  (fset:lookup (sento.atomic:atomic-get *did*) name))
-
-(defun %noting (name what)
-  (sento.atomic:atomic-swap *did* (lambda (m) (fset:with m name what)))
-  what)
+  (apply #'p:path (p:parse "/buf") name leaf))
 
 (defun %receive (ps msg)
-  "Handle one request against PS.
-
-Every answer is a write. The parser never replies to an ask, so nothing can be
-waiting on it, and what it computed is a place anyone can read rather than a
-message one caller receives."
+  "Handle one request against PS. Every answer is a write."
   (destructuring-bind (tag &key lines edit tick viewport name from to kind line col
                        answer space from-lines &allow-other-keys)
       msg
     (declare (ignorable tick))
-    ;; the answer goes back into the namespace that asked, not into whichever
-    ;; one is current when this thread gets around to it
-    (let ((pine.ns:*space* (or space pine.ns:*space*)))
-     (case tag
-      (:parse
-       (%ensure-tree ps lines edit from-lines viewport)
-       (let ((runs (%highlights ps viewport)))
-         (%noting name (list :parse (fset:size lines)
-                             (and (pine.ts.runtime:ps-tree ps) t)
-                             (and (pine.ts.runtime:ps-byte-index ps) t)
-                             (length runs)))
-         (pine.ns:write (%at name "face") runs :keep nil)))
-      (:indent
-       ;; where a line should sit is not a place, so it goes back to whoever
-       ;; asked rather than through a path of its own
-       (%ensure-tree ps lines edit from-lines viewport)
-       (let ((targets (loop :for l :from from :to to
-                            :for target = (pine.ts.highlight:parse-indent ps l)
-                            :when target :collect (cons l target))))
-         (when answer (funcall answer targets))))
-      (:motion
-       (%ensure-tree ps lines edit from-lines viewport)
-       (multiple-value-bind (l c) (pine.ts.runtime:parse-motion ps kind line col)
-         (when l
-           (pine.ns:write (%at name "point") (fset:seq l c)))))
-      (:stop
-       (pine.ts.runtime:free-parse-state ps))
-      (t (error "The parser has no handler for ~s." msg))))))
+    ;; the answer goes back into the namespace that asked, not whichever one is
+    ;; current when this thread gets around to it
+    (let ((ns:*space* (or space ns:*space*)))
+      (case tag
+        (:parse
+         (%ensure-tree ps lines edit from-lines viewport)
+         (ns:write (%at name "face") (%highlights ps viewport) :keep nil))
+        (:indent
+         ;; where a line should sit is not a place, so it goes back to whoever
+         ;; asked rather than through a path of its own
+         (%ensure-tree ps lines edit from-lines viewport)
+         (let ((targets (loop :for l :from from :to to
+                              :for target = (pine.ts.highlight:parse-indent ps l)
+                              :when target :collect (cons l target))))
+           (when answer (funcall answer targets))))
+        (:motion
+         (%ensure-tree ps lines edit from-lines viewport)
+         (multiple-value-bind (l c) (pine.ts.runtime:parse-motion ps kind line col)
+           (when l (ns:write (%at name "point") (fset:seq l c)))))
+        (:stop (pine.ts.runtime:free-parse-state ps))
+        (t (error "The parser has no handler for ~s." msg))))))
 
 (defun start-parser (system runtime language name)
-  "An actor parsing NAME's buffer in LANGUAGE, or nil when the grammar is
-unavailable. Pinned: it owns the parse state, and no other thread may touch a
-TSParser."
+  "An actor parsing NAME's buffer in LANGUAGE, or NIL when the grammar is
+unavailable.
+
+Pinned: it owns the parse state, and no other thread may touch a TSParser."
   (let ((ps (pine.ts.runtime:make-parse-state runtime language)))
     (when ps
-      (sento.actor-context:actor-of
-       system
-       :name (format nil "parser:~a-~a" name (gensym))
-       :dispatcher :pinned
-       :state ps
-       :receive
-       (lambda (msg)
-         ;; A parse fault parks this actor alone: the buffer keeps taking edits
-         ;; and keeps painting its last good highlights, so the file stays
-         ;; editable while the fault is attended.
-         (pine.err:with-debugger
-             (:label (format nil "parser ~a <- ~a" name (first msg)))
-           (%receive sento.actor:*state* msg)))))))
+      (make-parse-link
+       (sento.actor-context:actor-of
+        system
+        :name (format nil "parser:~a-~a" name (gensym))
+        :dispatcher :pinned
+        :state ps
+        :receive
+        (lambda (msg)
+          ;; a parse that fails records itself at /err and unwinds: the buffer
+          ;; keeps taking edits and keeps its last good colours
+          (pine.err:with-debugger
+              (:label (format nil "parser ~a <- ~a" name (first msg)))
+            (%receive sento.actor:*state* msg))))
+       ps))))
+
+;;;; A parser is a /proc runnable: it holds a TSParser, which is a foreign
+;;;; pointer, and /proc is where anything holding one lives.
+
+(defmethod proc:start ((kind (eql :parser)) entry &key &allow-other-keys)
+  (fset:map-union
+   entry
+   (fset:map (:took (fset:lookup (fset:lookup entry :declaration) :parser))
+             (:state :running))))
+
+(defmethod proc:halt ((kind (eql :parser)) entry)
+  "Tell it to stop, so FREE-PARSE-STATE runs on the thread that owns the
+TSParser. Freeing it from here would be freeing it under its own actor."
+  (let ((link (proc:took entry)))
+    (when (parse-link-p link)
+      (ignore-errors (sento.actor:tell (parse-link-actor link) '(:stop)))
+      (ignore-errors (sento.actor-cell:stop (parse-link-actor link)))))
+  (fset:map-union entry (fset:map (:took nil) (:state :stopped))))
+
+(defmethod proc:alive-p ((kind (eql :parser)) entry)
+  (let ((link (proc:took entry)))
+    (and (parse-link-p link) t)))
+
+(proc:runnable :parser)

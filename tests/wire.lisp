@@ -19,9 +19,9 @@
 (defun editor-form (lines &key (cols 40) (crow 0) (ccol 0))
   (pine.ui.wire:node->wire
    (pine.ui.build:column
-    (pine.ui.build:window (mapcar (lambda (l) (bench-row cols l)) lines)
-                          :kind :window :crow crow :ccol ccol)
-    (pine.ui.build:window (list (bench-row cols "")) :kind :echo))))
+    (pine.ui.build:cells (mapcar (lambda (l) (bench-row cols l)) lines)
+                          :as 'pine.ui.node:buffer-view :crow crow :ccol ccol)
+    (pine.ui.build:cells (list (bench-row cols "")) :as 'pine.ui.node:echo-view))))
 
 (test a-label-crosses-with-its-content-and-style
   (let ((wire (pine.ui.wire:node->wire
@@ -46,21 +46,21 @@
   (dolist (node (list (pine.ui.build:label "text")
                       (pine.ui.build:rule :char #\= :vertical t)
                       (pine.ui.build:gap :expand 2)
-                      (pine.ui.build:meter :value 40 :min 0 :max 80)
+                      (pine.ui.build:slider :value 40 :min 0 :max 80)
                       (pine.ui.build:ring :value 3 :thickness 2 :diameter 30
                                           (pine.ui.build:label "in"))
-                      (pine.ui.build:cal :year 2026 :month 7 :day 26)
-                      (pine.ui.build:pic "/tmp/none.png")
-                      (pine.ui.build:window (list (cons "row" nil)) :crow 1 :ccol 2)
+                      (pine.ui.build:calendar :year 2026 :month 7 :day 26)
+                      (pine.ui.build:image "/tmp/none.png")
+                      (pine.ui.build:cells (list (cons "row" nil)) :crow 1 :ccol 2)
                       (pine.ui.build:centerbox :orient :h
                                                :start (pine.ui.build:label "s")
                                                :center (pine.ui.build:label "c")
                                                :end (pine.ui.build:label "e"))
                       (pine.ui.build:choice :selected t (pine.ui.build:label "c"))
-                      (pine.ui.build:boxed :width 12 :align :right
+                      (pine.ui.build:box :width 12 :align :right
                                            (pine.ui.build:label "b"))
-                      (pine.ui.build:viewport :height 4 (pine.ui.build:label "v"))
-                      (pine.ui.build:centered (pine.ui.build:label "m"))
+                      (pine.ui.build:scroll :height 4 (pine.ui.build:label "v"))
+                      (pine.ui.build:center (pine.ui.build:label "m"))
                       (pine.ui.build:column :spacing 2 :align :stretch
                                             (pine.ui.build:label "a")
                                             (pine.ui.build:label "b"))
@@ -68,19 +68,25 @@
     (is-true (crosses-unchanged-p node)
              "~a does not survive the wire" (type-of node))))
 
-(test a-list-node-crosses-as-the-column-it-renders-to
+(test a-list-crosses-as-itself-and-comes-back-as-the-column-it-rendered
+  "A list's rows are built by a closure and a closure does not cross, so what
+goes out is the rows it built. It says so with its own tag rather than
+borrowing a column's, and what comes back is those rows."
   (let ((wire (pine.ui.wire:node->wire
                (pine.ui.build:rows '("a" "b")
                                    (lambda (item i)
                                      (declare (ignore i))
                                      (pine.ui.build:label item))))))
-    (is (eq :column (first wire)))
-    (is (= 2 (length (cddr wire))))))
+    (is (eq :list (first wire)))
+    (is (= 2 (length (cddr wire))))
+    (let ((back (pine.ui.wire:wire->node wire)))
+      (is (typep back 'pine.ui.node:vstack))
+      (is (= 2 (length (pine.ui.layout:nodes-of back)))))))
 
 (test a-handler-crosses-as-an-id-and-comes-back-as-a-function
   (let* ((ids nil)
          (wire (pine.ui.wire:node->wire
-                (pine.ui.build:meter :on-change (lambda (v) v))
+                (pine.ui.build:slider :on-change (lambda (v) v))
                 :on-action (lambda (cb) (declare (ignore cb)) (push 7 ids) 7))))
     (is (= 7 (getf (second wire) :action)))
     (let ((node (pine.ui.wire:wire->node
@@ -139,9 +145,9 @@
   (let ((old (editor-form '("a" "b")))
         (new (pine.ui.wire:node->wire
               (pine.ui.build:column
-               (pine.ui.build:window (list (bench-row 40 "a")) :kind :window)
-               (pine.ui.build:window (list (bench-row 40 "b")) :kind :window)
-               (pine.ui.build:window (list (bench-row 40 "")) :kind :echo)))))
+               (pine.ui.build:cells (list (bench-row 40 "a")) :as 'pine.ui.node:buffer-view)
+               (pine.ui.build:cells (list (bench-row 40 "b")) :as 'pine.ui.node:buffer-view)
+               (pine.ui.build:cells (list (bench-row 40 "")) :as 'pine.ui.node:echo-view)))))
     (is (null (pine.ui.wire:rows-patch old new)))))
 
 (test a-changed-line-count-refuses-to-patch

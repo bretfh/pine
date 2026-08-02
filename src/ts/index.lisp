@@ -49,16 +49,19 @@ bounded per-query cost against an amortised per-edit one.")
   (memo-offset 0 :type (unsigned-byte 62))
   (memo-col 0 :type (unsigned-byte 62)))
 
+(declaim (inline %char-bytes))
+(defun %char-bytes (ch)
+  (let ((code (char-code ch)))
+    (cond ((< code #x80) 1)
+          ((< code #x800) 2)
+          ((< code #x10000) 3)
+          (t 4))))
+
 (defun string-bytes (string)
   "STRING's length in UTF-8 bytes, counted rather than encoded."
   (let ((n 0))
     (declare (type (unsigned-byte 62) n))
-    (loop :for ch :across string
-          :do (incf n (let ((code (char-code ch)))
-                        (cond ((< code #x80) 1)
-                              ((< code #x800) 2)
-                              ((< code #x10000) 3)
-                              (t 4)))))
+    (loop :for ch :across string :do (incf n (%char-bytes ch)))
     n))
 
 (defun %line-byte-length (line) (string-bytes line))
@@ -129,16 +132,7 @@ from."
           (values lo (max 0 (- byte (line-start index lo))))))))
 
 ;;;; Reading the source through the index. Tree-sitter reports positions in
-;;;; UTF-8 bytes; the cell grid, point and the walks all speak characters. These
-;;;; are the four questions the highlight walks used to ask a flat string.
-
-(declaim (inline %char-bytes))
-(defun %char-bytes (ch)
-  (let ((code (char-code ch)))
-    (cond ((< code #x80) 1)
-          ((< code #x800) 2)
-          ((< code #x10000) 3)
-          (t 4))))
+;;;; UTF-8 bytes; the cell grid, point and the walks all speak characters.
 
 (defun %byte-offset-to-col (line offset)
   "(values COL BYTES): the character column OFFSET bytes into LINE, and the byte
@@ -155,11 +149,7 @@ and only the pair is safe to resume a count from."
   "The byte offset COL characters into LINE."
   (let ((bytes 0))
     (loop :for i :below (min col (length line))
-          :do (incf bytes (let ((code (char-code (char line i))))
-                            (cond ((< code #x80) 1)
-                                  ((< code #x800) 2)
-                                  ((< code #x10000) 3)
-                                  (t 4)))))
+          :do (incf bytes (%char-bytes (char line i))))
     bytes))
 
 (defun line-string (index line)
@@ -240,6 +230,14 @@ left to right, so counting resumes rather than starting over."
             ((< line (1- (index-line-count index))) #\Newline)
             (t nil)))))
 
+(defun forget-line (index)
+  "Drop the memoised line, so the next question about one reads it afresh."
+  (setf (byte-index-memo-line index) -1
+        (byte-index-memo-text index) ""
+        (byte-index-memo-offset index) 0
+        (byte-index-memo-col index) 0)
+  index)
+
 (defun index-edit (index lines line byte-delta line-delta)
   "INDEX over LINES after an edit at LINE that changed the buffer by BYTE-DELTA
 bytes and LINE-DELTA lines.
@@ -264,14 +262,6 @@ typing stays a cons."
                    ;; count its columns against the text it used to have.
                    (forget-line index)
                    index)))))
-
-(defun forget-line (index)
-  "Drop the memoised line, so the next question about one reads it afresh."
-  (setf (byte-index-memo-line index) -1
-        (byte-index-memo-text index) ""
-        (byte-index-memo-offset index) 0
-        (byte-index-memo-col index) 0)
-  index)
 
 (defun compact-index (index)
   "Rebuild INDEX's base from the lines it now describes."

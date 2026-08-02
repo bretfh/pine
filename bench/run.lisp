@@ -9,4 +9,7 @@
   (load (merge-pathnames "bench.lisp" here)))
 (funcall (read-from-string "pine.bench:run-all"))
 (finish-output)
-(sb-ext:exit)
+;; :ABORT skips the unwind. The benchmarks leave actor systems and a spawned
+;; agent image standing on purpose, and unwinding out of --load is what printed
+;; "compilation unit aborted" at the end of every run.
+(sb-ext:exit :code 0 :abort t)

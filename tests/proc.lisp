@@ -6,9 +6,10 @@
 (defmacro with-proc ((&key system) &body body)
   "A space of its own with /proc served, bound to PROC and torn down afterwards."
   `(pine.ns:with-space ()
-     (let ((proc (pine.proc:mount :system ,system)))
+     (let ((proc (pine.ns:raise :proc :system ,system)))
+       (declare (ignorable proc))
        (unwind-protect (progn ,@body)
-         (pine.proc:unmount proc)))))
+         (pine.ns:lower :proc)))))
 
 (defun settle (proc predicate &key (seconds 5))
   (let ((deadline (+ (get-internal-real-time)
@@ -28,6 +29,27 @@
                                             (sleep 30))})
       (is-true (settle proc (lambda () ran)))
       (is (eq :running (pine.ns:read /proc/probe/state))))))
+
+(test a-thread-says-things-where-a-subprocess-says-them
+  "A subprocess says things by writing its stdout and pine rings the lines. A
+:thread has no stdout, so EMIT puts them in the same place, and nothing reading
+/proc/?name/out has to know which kind it was."
+  (with-proc ()
+    (pine.ns:write /proc/probe
+                   {:thread (pine.data:fn []
+                              (pine.proc:emit "first")
+                              (pine.proc:emit "~a of ~d" "second" 2)
+                              (sleep 30))})
+    (is-true (settle proc (lambda ()
+                            (equal "second of 2"
+                                   (pine.ns:read /proc/probe/out)))))
+    (is (equal "first" (pine.ns:read /proc/probe/out/1))
+        "the earlier line is behind it in the ring")))
+
+(test emit-outside-a-process-is-nothing
+  "There is nowhere for it to go, so it goes nowhere rather than guessing."
+  (with-proc ()
+    (is (null (pine.proc:emit "into the void")))))
 
 (test the-table-is-the-only-list-of-what-runs
   (with-proc ()
@@ -189,12 +211,13 @@ where the process is read rather than being raised as a fault in pine."
   "The interval belongs to the wheel timer. A thread that sleeps in a loop is
 a supervisor nobody asked for."
   (let ((server (pine.core.server:start-server :workers 1))
-        (interval pine.proc:*interval*))
+        (interval (pine.ns:read (pine.path:parse "/proc-interval"))))
     (unwind-protect
          (pine.ns:with-space ()
-           (setf pine.proc:*interval* 1)
-           (let ((proc (pine.proc:mount
+           (pine.ns:write (pine.path:parse "/proc-interval") 1)
+           (let ((proc (pine.ns:raise :proc
                         :system (pine.core.server:actor-system server))))
+             (declare (ignorable proc))
              (unwind-protect
                   (progn
                     (pine.ns:write /proc/probe {:run ["sleep" "30"]})
@@ -206,8 +229,8 @@ a supervisor nobody asked for."
                                      :when (> (get-internal-real-time) deadline)
                                        :return nil
                                      :do (sleep 0.1)))))
-               (pine.proc:unmount proc))))
-      (setf pine.proc:*interval* interval)
+               (pine.ns:lower :proc))))
+      (pine.ns:write (pine.path:parse "/proc-interval") interval)
       (pine.core.server:stop-server server))))
 
 ;;;; a path under /proc is readable from the thread that owns the table

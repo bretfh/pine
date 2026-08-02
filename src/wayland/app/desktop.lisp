@@ -3,23 +3,23 @@
         #:pine.wayland.surface #:pine.wayland.input)
   (:local-nicknames (#:a #:alexandria) (#:node #:pine.ui.node)
                     (#:uiw #:pine.ui.wire))
-  (:export #:action-sender #:create-surface #:default-role #:desktop-client #:destroy-surface #:handle-desktop-message #:on-panel #:on-widgets #:run-desktop #:send-hint #:send-refresh #:send-widget-action #:spec-for-role #:surface-tree-fn))
+  (:export #:desktop-client #:run-desktop #:handle-desktop-message
+           #:create-surface #:destroy-surface #:on-widgets #:on-panel
+           #:spec-for-role #:default-role #:surface-tree-fn
+           #:action-sender #:send-widget-action #:send-hint #:send-refresh))
 
 (in-package #:pine.wayland.app.desktop)
 
-;;;; The daemon-attached desktop client. It attaches to the running daemon as
-;;;; :kind :desktop, receives (:widgets :surface NAME :tree DATA) pushes,
-;;;; rebuilds each surface's node tree with wire->node (click
-;;;; handlers become ids sent back), and paints it onto a wlr-layer-shell
-;;;; surface with cairo. Panels toggle via (:panel :name :show). Interaction
-;;;; sends (:widget-action)/(:hint) to the daemon, which runs the closures --
-;;;; the tree crosses as data, the closures and refs stay on the daemon.
+;;;; The daemon-attached desktop client. It attaches as :kind :desktop, takes
+;;;; the (:widgets :surface NAME :tree DATA) pushes, rebuilds each surface's
+;;;; node tree with wire->node -- click handlers become ids sent back -- and
+;;;; paints it onto a wlr-layer-shell surface with cairo. The tree crosses as
+;;;; data; the closures and the refs stay on the daemon.
 ;;;;
-;;;; Threading: wayland calls must all run on the loop thread, but sento delivers
-;;;; the display actor's messages on pool threads. So the actor handler only
-;;;; enqueues closures; the loop drains them between (non-blocking) wayland
-;;;; dispatches. Outgoing tells are async and thread-safe, so they need no
-;;;; marshalling.
+;;;; Every wayland call runs on the loop thread, and sento delivers the display
+;;;; actor's messages on pool threads, so the actor handler only enqueues; the
+;;;; loop drains between non-blocking dispatches. Outgoing tells are async and
+;;;; thread-safe, so they need no marshalling.
 
 (defclass desktop-client ()
   ((sys      :initarg :sys  :accessor client-sys :initform nil)
@@ -30,8 +30,6 @@
    (roles    :initform (make-hash-table :test 'equal) :reader client-roles)
    (pump     :initarg :pump :reader client-pump)
    (done     :initform nil  :accessor client-done)))
-
-;;;; Cross-thread command queue.
 
 ;;;; Outgoing: input back to the daemon.
 
@@ -71,17 +69,16 @@ client maps it to a layer, anchor, and exclusive zone.
 measured on that axis, and windows are laid out in what is left. The furniture
 that frames the session -- the bar and the echo strip -- claims its space; a
 panel or an overlay is transient and floats over the windows instead."
-  (case role
-    (:background (list :layer :background :anchor '(:top :left :bottom :right) :axis :wh
-                       :avail 3840 :exclusive 0 :margin '(0 0 0 0)))
-    (:bar     (list :layer :top :anchor '(:top :left :bottom) :axis :w :avail 160
-                    :exclusive :w :margin '(0 0 0 0)))
-    (:echo    (list :layer :top :anchor '(:bottom :left :right) :axis :h :avail 3840
-                    :exclusive :h :margin '(0 0 0 0)))
-    (:overlay (list :layer :overlay :anchor '(:top :right) :axis :wh :avail 460
-                    :exclusive 0 :margin '(8 8 0 0)))
-    (t        (list :layer :overlay :anchor '(:top :left) :axis :wh :avail 460    ; :panel
-                    :exclusive 0 :margin '(8 0 0 8)))))
+  (flet ((spec (layer anchor axis avail exclusive margin)
+           (fset:map (:layer layer) (:anchor anchor) (:axis axis) (:avail avail)
+                     (:exclusive exclusive) (:margin margin))))
+    (case role
+      (:background (spec :background '(:top :left :bottom :right) :wh 3840 0
+                         '(0 0 0 0)))
+      (:bar     (spec :top '(:top :left :bottom) :w 160 :w '(0 0 0 0)))
+      (:echo    (spec :top '(:bottom :left :right) :h 3840 :h '(0 0 0 0)))
+      (:overlay (spec :overlay '(:top :right) :wh 460 0 '(8 8 0 0)))
+      (t        (spec :overlay '(:top :left) :wh 460 0 '(8 0 0 8))))))   ; :panel
 
 (defun default-role (name)
   "Fallback role for the shipped surfaces, which register no :as."
@@ -92,16 +89,16 @@ panel or an overlay is transient and floats over the windows instead."
   (let* ((role (or (gethash name (client-roles client)) (default-role name)))
          (spec (spec-for-role role))
          (tfn  (surface-tree-fn client name)))
-    (multiple-value-bind (mw mh) (measure-panel tfn :avail-w (getf spec :avail))
-      (let* ((axis (getf spec :axis))
+    (multiple-value-bind (mw mh) (measure-panel tfn :avail-w (fset:lookup spec :avail))
+      (let* ((axis (fset:lookup spec :axis))
              (w (if (member axis '(:w :wh)) mw 0))
              (h (if (member axis '(:h :wh)) mh 0))
-             (e (getf spec :exclusive))
+             (e (fset:lookup spec :exclusive))
              (ls (open-layer-surface (conn client) tfn
-                                     :layer (getf spec :layer) :anchor (getf spec :anchor)
+                                     :layer (fset:lookup spec :layer) :anchor (fset:lookup spec :anchor)
                                      :width w :height h
                                      :exclusive (case e (:w w) (:h h) (t e))
-                                     :margin (getf spec :margin)
+                                     :margin (fset:lookup spec :margin)
                                      :on-closed (lambda () (destroy-surface client name)))))
         (setf (gethash name (client-surfaces client)) ls)))))
 

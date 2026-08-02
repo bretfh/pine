@@ -104,11 +104,11 @@
                                 (pine.ts.highlight:parse-highlights ps))))))))))
 
 (test incremental-highlighting-equals-the-full-walk-on-a-real-file
-  (let ((path (merge-pathnames "../src/text/buffer.lisp"
+  (let ((path (merge-pathnames "../src/text.lisp"
                                #.(or *compile-file-truename* *load-truename*)))
         (*num-trials* 2))
     (is (not (null (probe-file path)))
-        "src/text/buffer.lisp must exist; a moved file fails here")
+        "src/text.lisp must exist; a moved file fails here")
     (let ((source (uiop:read-file-string path)))
       (for-all ((script (gen-list :length (gen-integer :min 8 :max 16)
                                   :elements (gen-integer :min 0 :max 65535))))

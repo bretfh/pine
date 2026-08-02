@@ -21,49 +21,37 @@
                 :pathname "src/"
                 :components
                 (
+                 ;; The order is the dependency order: every file is written in
+                 ;; terms of the ones before it, and nothing names anything that
+                 ;; loads later. tests/packages.lisp holds it to that.
+                 ;;
+                 ;; the data model, then the vocabularies that are nothing but
+                 ;; places in it
                  (:file "data")
                  (:file "path")
                  (:file "ns")
+                 (:file "mode")
+                 (:file "win")
+                 (:file "cmd")
+                 ;; what the tree keeps, says, and is told
                  (:file "store")
-                 ;; what pine says, and what a path is
                  (:file "log")
                  (:file "doc")
-                 (:file "self")
                  (:file "err")
                  (:file "proc")
                  (:module "core"
                           :serial t
                           :components ((:file "server") (:file "actor") (:file "agent")
-                                       (:file "jobs")
                                        (:file "hooks") (:file "attach")))
-                 ;; another pine, over the remoting the frontends already use
                  (:file "host")
-                 ;; modes are maps at /mode; this is the lookup over them
-                 (:file "mode")
-                 ;; a window is a view onto a buffer, and the arrangement is the path
-                 (:file "win")
-                 ;; a command is a path holding a handler or a write-map
-                 (:file "cmd")
-                 ;; the drivers: the doors onto unix pine always has, then one
-                 ;; file per system a config declares
                  (:module "provider"
                           :serial t
-                          :components ((:file "out")
-                                       (:file "file") (:file "sh") (:file "env")
+                          :components ((:file "file") (:file "sh") (:file "env")
+                                       (:file "out")
                                        (:file "clock") (:file "procfs")
                                        (:file "pipewire") (:file "backlight")
                                        (:file "logind") (:file "networkmanager")
                                        (:file "mpris") (:file "niri")))
-                 ;; keys and modes are the bottom of the editing stack: the buffer actor
-                 ;; dispatches a message through its mode, so modes load before buffers.
-                 (:module "input"
-                          :serial t :pathname "editor/"
-                          :components ((:file "key") (:file "keymap")))
-                 ;; the echo line: no dependencies at all, and the command loop reports
-                 ;; through it, so it sits under everything that has something to say.
-                 (:module "echo"
-                          :serial t :pathname "editor/"
-                          :components ((:file "echo")))
                  (:module "ts"
                           :serial t
                           :components ((:file "index") (:file "runtime") (:file "highlight")
@@ -71,53 +59,33 @@
                  (:module "face"
                           :serial t :pathname "ui/"
                           :components ((:file "face") (:file "rules")))
-                 (:module "text"
-                          :serial t
-                          :components ((:file "buffer") (:file "window")))
-                 ;; /buf, once the pure text layer it reads through exists
+                 (:file "text")
                  (:file "buf")
-                 ;; store is the file, world is the API over it, and everything
-                 ;; that persists (refs, editor variables, and the contributors
-                 ;; above) goes through world, so world loads under them.
-                 (:module "state"
-                          :serial t
-                          :components ((:file "store") (:file "world")
-                                       (:file "ref")))
-                 (:module "frame"
-                          :serial t :pathname "editor/"
-                          :components ((:file "frame")))
-                 (:module "input-dispatch"
-                          :serial t :pathname "editor/"
-                          :components ((:file "command")))
+                 (:file "key")
+                 (:file "term")
+                 ;; the widget model first, then what resolves a style for one,
+                 ;; then what builds, measures, renders and ships them
                  (:module "ui"
                           :serial t
-                          :components ((:file "style") (:file "node") (:file "build") (:file "raster")
-                                       (:file "layout") (:file "cells") (:file "wire")))
-                 (:file "term")
-                 ;; a tool buffer is a view, and the window paints one
-                 (:module "view"
-                          :serial t :pathname "editor/"
-                          :components ((:file "view")))
-                 (:module "ui-render"
-                          :serial t :pathname "ui/"
-                          :components ((:file "render")))
-                 (:module "editor"
-                          :serial t
-                          :components ((:file "ask") (:file "motion") (:file "kill-ring")
-                                       (:file "completion")
-                                       (:file "minibuffer") (:file "isearch") (:file "file")
-                                       (:file "target") (:file "repl") (:file "overwrite")
-                                       (:file "help") (:file "debugger")
-                                       (:file "evaluate") (:file "session")
-                                       (:file "window") (:file "commands")))
+                          :components ((:file "node") (:file "style") (:file "build")
+                                       (:file "raster") (:file "layout") (:file "cells")
+                                       (:file "wire") (:file "paths")))
+                 (:file "view")
+                 ;; what a content type looks like as rows: every pane in pine
+                 ;; asks this, so nothing has to be an editor to show a buffer
+                 (:file "pane")
+                 (:file "echo")
+                 (:file "eval")
+                 (:file "kill")
                  (:file "desktop")
                  (:file "wm")
+                 (:module "editor"
+                          :serial t
+                          :components ((:file "view-state") (:file "frame") (:file "render")
+                                       (:file "isearch") (:file "help") (:file "debugger")
+                                       (:file "repl") (:file "session") (:file "win") (:file "commands")))
                  (:file "frontend")
-                 ;; the daemon: what it starts, what keeps running, and the
-                 ;; endpoint the CLI asks
                  (:file "boot")
-                 ;; the three verbs against the running daemon, and the
-                 ;; lifecycle it cannot express from inside itself
                  (:file "cli")
                  (:file "user")))
 
@@ -130,19 +98,19 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "fixtures")
                              (:file "data") (:file "path") (:file "ns")
-                             (:file "store") (:file "self") (:file "err")
+                             (:file "store") (:file "err")
                              (:file "doc")
                              (:file "proc") (:file "host") (:file "mode")
                              (:file "win")
                              (:file "provider")
-                             (:file "buffer") (:file "buf")
+                             (:file "buf")
                              (:file "vt") (:file "index") (:file "ts")
                              (:file "layout") (:file "style") (:file "wire")
-                             (:file "state") (:file "keys") (:file "completion")
+                             (:file "keys")
                              (:file "isearch") (:file "repl") (:file "liveness") (:file "async")
                              (:file "term") (:file "wm")
                              (:file "packages") (:file "editor") (:file "agent")
-                             (:file "frontend")
+                             (:file "frontend") (:file "cli")
                              ;; the :pine.stress suite, run by `make stress', not by test-op
                              (:file "stress"))
                 ;; run! is explain! over run: it prints the report and answers the status.

@@ -27,14 +27,14 @@ type is asserted here instead of every caller passing by accident."
 (test the-repl-opens-with-a-prompt
   (with-fixture substrate ()
     (within-seconds 20
-      (pine.editor.command::call-command "open-repl")
+      (pine.key::call-command "open-repl")
       (sleep 0.3)
       (is (search "pine> " (repl-text))))))
 
 (test submitting-an-expression-answers-with-its-value
   (with-fixture substrate ()
     (within-seconds 30
-      (pine.editor.command::call-command "open-repl")
+      (pine.key::call-command "open-repl")
       (sleep 0.3)
       (type-text "1")
       (press "Return")
@@ -42,7 +42,7 @@ type is asserted here instead of every caller passing by accident."
       ;; so matching "1" anywhere would pass on the echo alone
       (is (not (null (wait-for-repl
                       (lambda (text)
-                        (member "1" (pine.text.buffer:split-lines text)
+                        (member "1" (pine.text:split-lines text)
                                 :test #'string=)))))
           "the repl never answered 1 on a line of its own")
       (is (search "pine> " (repl-text))
@@ -51,7 +51,7 @@ type is asserted here instead of every caller passing by accident."
 (test submitting-arithmetic-answers-with-the-result
   (with-fixture substrate ()
     (within-seconds 30
-      (pine.editor.command::call-command "open-repl")
+      (pine.key::call-command "open-repl")
       (sleep 0.3)
       (type-text "(+ 2 3)")
       (press "Return")
@@ -61,7 +61,7 @@ type is asserted here instead of every caller passing by accident."
 (test an-empty-submit-is-not-an-evaluation
   (with-fixture substrate ()
     (within-seconds 20
-      (pine.editor.command::call-command "open-repl")
+      (pine.key::call-command "open-repl")
       (sleep 0.3)
       (let ((before (repl-text)))
         (press "Return")
@@ -71,7 +71,7 @@ type is asserted here instead of every caller passing by accident."
 (test a-failing-form-answers-and-leaves-the-repl-usable
   (with-fixture substrate ()
     (within-seconds 30
-      (pine.editor.command::call-command "open-repl")
+      (pine.key::call-command "open-repl")
       (sleep 0.3)
       (type-text "(error \"probe\")")
       (press "Return")
@@ -87,7 +87,7 @@ type is asserted here instead of every caller passing by accident."
 shared dispatcher, because every actor in the daemon draws from it."
   (with-fixture substrate ()
     (within-seconds 30
-      (pine.editor.command::call-command "open-repl")
+      (pine.key::call-command "open-repl")
       (sleep 0.3)
       (type-text "1")
       (press "Return")
@@ -97,5 +97,5 @@ shared dispatcher, because every actor in the daemon draws from it."
                    (pine.editor.frame::set-buffer-mode probe :text)
                    (pine.ns:write (pine.buf:at probe :text) (format nil "a~%b"))
                    (sleep 0.2)
-                   (pine.text.buffer:split-lines (btext probe))))
+                   (pine.text:split-lines (btext probe))))
           "a buffer actor stopped answering after the repl submitted"))))

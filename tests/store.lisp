@@ -12,33 +12,29 @@
 
 ;;;; what is stored
 
-(test held-is-stored-and-comes-back
+(test keep-is-stored-and-comes-back
   (with-store
-    (pine.ns:write /tab-width 8)
-    (pine.ns:write /theme :ef-dream)
-    ;; the same file, read into a namespace that knows nothing
+    (pine.ns:write /tab-width 8 :keep t)
+    (pine.ns:write /wm-terminal "alacritty" :keep t)
     (pine.store:restore store)
     (is (= 8 (pine.ns:read /tab-width)))
-    (is (eq :ef-dream (pine.ns:read /theme)))))
+    (is (string= "alacritty" (pine.ns:read /wm-terminal)))))
 
 (test a-stored-value-wins-over-the-one-a-config-seeds
   (with-store
-    (pine.ns:write /tab-width 2)
+    (pine.ns:write /tab-width 2 :keep t)
     (pine.ns:write /tab-width 8)
     (pine.ns:write /tab-width 2)
     (is (= 1 (pine.store:restore store)))
     (is (= 2 (pine.ns:read /tab-width)) "the newest write is what the file holds")))
 
-(test derived-is-not-stored-because-it-is-computed-again
+(test nothing-is-stored-unless-someone-said-keep
   (with-store
     (pine.ns:write /sys/user "bfh")
     (pine.ns:write /greeting (format nil "hello ~a" (pine.ns:read /sys/user)))
-    (is (eq :held (pine.ns:kind /sys/user)))
-    (is (eq :derived (pine.ns:kind /greeting)))
-    (pine.ns:write /greeting nil)
-    (is (= 1 (pine.store:restore store)) "only the held path was in the file")))
+    (is (zerop (pine.store:restore store)))))
 
-(test live-is-not-stored-because-the-world-is-the-storage
+(test a-provider-answers-a-write-and-nothing-is-kept
   (with-store
     (let ((state (make-hash-table)))
       (setf (gethash :volume state) 40)
@@ -51,10 +47,10 @@
       (pine.ns:write /audio/volume 70)
       (is (zerop (pine.store:restore store))))))
 
-(test keep-nil-opts-a-path-out
+(test keep-is-per-path-and-the-rest-is-not-in-the-file
   (with-store
-    (pine.ns:write /scratch "noise" :keep nil)
-    (pine.ns:write /real "kept")
+    (pine.ns:write /scratch "noise")
+    (pine.ns:write /real "kept" :keep t)
     (is (= 1 (pine.store:restore store)))
     (is (string= "kept" (pine.ns:read /real)))))
 
@@ -69,64 +65,21 @@
 
 (test a-command-is-not-stored-because-its-config-declares-it-again
   (with-store
-    (pine.ns:write /cmd/scratch (pine.data:fn [] {}))
+    (pine.ns:write /cmd/scratch (pine.data:fn [] {}) :keep t)
     (is (zerop (pine.store:restore store)))))
 
 (test a-path-round-trips-through-the-file
   (with-store
-    (pine.ns:write /win/focused/buf /buf/scratch)
+    (pine.ns:write /win/focused/buf /buf/scratch :keep t)
     (pine.store:restore store)
     (is (fset:equal? /buf/scratch (pine.ns:read /win/focused/buf)))))
-
-;;;; history
-
-(test history-lists-what-changed-newest-first
-  (with-store
-    (pine.ns:write /a 1)
-    (pine.ns:write /a 2)
-    (pine.ns:write /b 3)
-    (let ((log (pine.ns:read /history)))
-      (is (= 3 (fset:size log)))
-      (is (fset:equal? /b (fset:lookup (fset:lookup log 0) :path)))
-      (is (= 3 (fset:lookup (fset:lookup log 0) :new)))
-      (is (= 1 (fset:lookup (fset:lookup log 1) :old))))))
-
-(test was-answers-what-a-path-held-then
-  (with-store
-    (pine.ns:write /a 1)
-    (let ((n (fset:lookup (fset:lookup (pine.ns:read /history) 0) :n)))
-      (pine.ns:write /a 2)
-      (pine.ns:write /a 3)
-      (is (= 3 (pine.ns:read /a)))
-      (is (= 1 (pine.ns:read /was/${n}/a))))))
-
-(test was-answers-what-is-there-now-for-a-path-it-never-saw-change
-  (with-store
-    (pine.ns:write /a 1)
-    (let ((n (fset:lookup (fset:lookup (pine.ns:read /history) 0) :n)))
-      (is (null (pine.ns:read /was/${n}/never/written))))))
-
-(test revert-puts-the-world-back
-  (with-store
-    (pine.ns:write /theme :one)
-    (pine.ns:write /tab-width 8)
-    (let ((n (fset:lookup (fset:lookup (pine.ns:read /history) 0) :n)))
-      (pine.ns:write /theme :two)
-      (pine.ns:write /tab-width 2)
-      (pine.ns:write /extra "added")
-      (is (eq :two (pine.ns:read /theme)))
-      (pine.ns:write /history [:revert n])
-      (is (eq :one (pine.ns:read /theme)))
-      (is (= 8 (pine.ns:read /tab-width)))
-      (is (null (pine.ns:read /extra))
-          "a path that did not exist then does not exist now"))))
 
 ;;;; rings
 
 (test a-ring-survives-the-file
   (with-store
     (dolist (word '("one" "two" "three"))
-      (pine.ns:write /kill word :max 2))
+      (pine.ns:write /kill word :max 2 :keep t))
     (pine.store:restore store)
     (is (string= "three" (pine.ns:read /kill)))
     (is (= 2 (fset:size (pine.ns:read /kill/*))))))
@@ -137,18 +90,9 @@
   (pine.ns:with-space ()
     (pine.ns:write /a 1)
     (is (= 1 (pine.ns:read /a)))
-    (is (null (pine.ns:on-commit)) "nothing is being told about commits")))
+    (is (null (pine.ns:on-commit :store)) "nothing is being told about commits")))
 
 ;;;; the file is behind the write, not in it
-
-(test the-log-reads-back-every-write-that-preceded-it
-  (with-store
-    (dotimes (i 50) (pine.ns:write /n i))
-    (let ((history (pine.ns:read /history)))
-      (is (= 50 (fset:size history))
-          "recording does not wait, and the log still has all of it")
-      (is (= 49 (fset:lookup (fset:lookup history 0) :new))
-          "newest first"))))
 
 (test writers-on-many-threads-all-reach-the-file
   (with-store
@@ -157,7 +101,8 @@
                                     (bordeaux-threads:make-thread
                                      (lambda ()
                                        (dotimes (j 20)
-                                         (pine.ns:write (pine.path:path "n" n) j))))))))
+                                         (pine.ns:write (pine.path:path "n" n) j
+                                                        :keep t))))))))
       (mapc #'bordeaux-threads:join-thread threads))
     (is (= 19 (pine.ns:read /n/${0})))
     (is (= 19 (pine.ns:read /n/${7})))
@@ -176,9 +121,9 @@ lives in an image global, so two do not write through each other's file."
     (unwind-protect
          (progn
            (pine.ns:with-space (a) (setf store-a (pine.store:open ":memory:"))
-             (pine.ns:write /theme :one))
+             (pine.ns:write /theme :one :keep t))
            (pine.ns:with-space (b) (setf store-b (pine.store:open ":memory:"))
-             (pine.ns:write /theme :two))
+             (pine.ns:write /theme :two :keep t))
            (pine.ns:with-space (a)
              (is (= 1 (pine.store:restore store-a)))
              (is (eq :one (pine.ns:read /theme))))

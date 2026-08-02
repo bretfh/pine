@@ -1,33 +1,41 @@
 (defpackage #:pine.ui.style
   (:use #:cl)
-  (:export #:resolve #:st-bg #:st-bold #:st-border-color #:st-border-w #:st-fg #:st-font-px #:st-gradient #:st-inset #:st-margin #:st-min-h #:st-min-w #:st-opacity #:st-pad-x #:st-pad-y #:st-radius #:st-shadow))
+  (:export #:resolve #:style
+           #:st-bg #:st-gradient #:st-fg #:st-border-w #:st-border-color
+           #:st-radius #:st-pad-x #:st-pad-y #:st-min-w #:st-min-h
+           #:st-font-px #:st-bold #:st-inset #:st-margin #:st-shadow
+           #:st-opacity))
 
 (in-package #:pine.ui.style)
+(named-readtables:in-readtable pine.data:syntax)
 
-;;;; The style resolver: pine.ui.rules:theme-rules is CSS-as-data (selector +
-;;;; prop-plist of CSS strings). Here we match a node -- identified by its class
-;;;; chain root..node and its hover state -- against those rules the way a
-;;;; browser cascades them (source order, later wins), then interpret the
-;;;; matched CSS values into a concrete STYLE the cairo painter consumes.
-;;;; Bare element selectors (button, trough, calendar ...) never match a
-;;;; layout node -- nodes carry classes only -- so those rules drop out.
+;;;; The style resolver. pine.ui.rules:theme-rules is CSS-as-data: a selector
+;;;; and a map of CSS property to CSS string. A node is identified by its class
+;;;; chain root..node and its hover state, matched against those rules the way a
+;;;; browser cascades them (source order, later wins), and the matched values
+;;;; interpreted into a STYLE. Bare element selectors never match a layout node,
+;;;; since nodes carry classes only, so those rules drop out.
+;;;;
+;;;; A selector is comma-separated groups; a group is whitespace-separated
+;;;; segments, the descendant combinator; a segment is a run of .classes with an
+;;;; optional :pseudo, or `*', or a bare element name.
 
-;;;; Selector parsing. A selector is comma-separated groups; a group is
-;;;; whitespace-separated segments (the descendant combinator); a segment is a
-;;;; run of .classes with an optional :pseudo, or `*', or a bare element name.
+(defstruct (style (:conc-name st-))
+  bg gradient fg (border-w 0) border-color (radius 0) pad-x pad-y min-w min-h
+  font-px bold inset margin shadow opacity)
 
 (defun split-ws (s)
   (remove "" (uiop:split-string s :separator '(#\space #\tab)) :test #'string=))
 
 (defun parse-segment (s)
-  (cond ((string= s "*") (list :universal t))
+  (cond ((string= s "*") {:universal t})
         ((find #\. s)
          (let* ((colon (position #\: s))
                 (pseudo (and colon (subseq s (1+ colon))))
                 (body   (subseq s 0 (or colon (length s))))
                 (classes (remove "" (uiop:split-string body :separator ".") :test #'string=)))
-           (list :classes classes :pseudo pseudo)))
-        (t (list :element t))))                 ; button / trough / calendar ...
+           {:classes classes :pseudo pseudo}))
+        (t {:element t})))                      ; button / trough / calendar ...
 
 (defun parse-selector (s)
   (mapcar #'parse-segment (split-ws s)))
@@ -36,37 +44,36 @@
   (mapcar (lambda (g) (parse-selector (string-trim " " g)))
           (uiop:split-string sel-string :separator '(#\,))))
 
-;;;; Compiled rules, cached against the active theme (a theme swap invalidates).
-
-(defvar *compiled* nil)
-(defvar *compiled-theme* nil)
-(defvar *compiled-generation* -1)
+;;;; Compiling the stylesheet is expensive and every painted node asks for it,
+;;;; so it is worked out once and kept until the tree moves. What it is built
+;;;; from -- the theme and the rules a config wrote -- are both values in the
+;;;; tree, so EQ on the root is the whole of "is this still true", and the memo
+;;;; belongs to the space through what the :THEME server keeps.
 
 (defun compiled-rules ()
-  ;; refresh on a theme swap OR when user rules changed (add-rules bumps the
-  ;; generation), so defrules from init.lisp takes effect on reload
-  (unless (and *compiled*
-               (eq *compiled-theme* pine.ui.face:*active-theme*)
-               (eql *compiled-generation* pine.ui.rules:*rules-generation*))
-    (setf *compiled*
-          (loop for (sel props) in (pine.ui.rules:theme-rules)
-                collect (cons (parse-rule-selectors sel) props))
-          *compiled-theme* pine.ui.face:*active-theme*
-          *compiled-generation* pine.ui.rules:*rules-generation*))
-  *compiled*)
+  (pine.ui.face:remembered
+   (pine.ui.face:memo :rules)
+   (lambda ()
+     (loop :for (sel props) :in (pine.ui.rules:theme-rules)
+           :collect (cons (parse-rule-selectors sel) props)))))
 
-(defun reset-rules () (setf *compiled* nil))
+(defun reset-rules ()
+  "Forget the compiled rules, so the next paint builds them again."
+  (let ((cell (pine.ui.face:memo :rules)))
+    (when cell
+      (sento.atomic:atomic-swap cell (lambda (old) (declare (ignore old)) nil))))
+  nil)
 
 ;;;; Matching.
 
-(defun seg-match (seg classes hover)
-  (cond ((getf seg :element) nil)
-        ((getf seg :universal) (pseudo-ok (getf seg :pseudo) hover))
-        (t (and (subsetp (getf seg :classes) classes :test #'string=)
-                (pseudo-ok (getf seg :pseudo) hover)))))
-
 (defun pseudo-ok (pseudo hover)
   (or (null pseudo) (and (string= pseudo "hover") hover)))
+
+(defun seg-match (seg classes hover)
+  (cond ((fset:lookup seg :element) nil)
+        ((fset:lookup seg :universal) (pseudo-ok (fset:lookup seg :pseudo) hover))
+        (t (and (subsetp (fset:lookup seg :classes) classes :test #'string=)
+                (pseudo-ok (fset:lookup seg :pseudo) hover)))))
 
 (defun ancestors-match (segs ancestors)
   "Each seg matches some ancestor, left to right, ancestors root-first."
@@ -85,14 +92,24 @@
        (ancestors-match (butlast segments) (butlast chain))))
 
 (defun matched-props (chain hover)
-  "Merge the prop-plists of every rule matching CHAIN, source order, later wins."
-  (let ((merged nil))
+  "The props of every rule matching CHAIN, merged in source order, later wins."
+  (let ((merged (fset:empty-map)))
     (loop for (selectors . props) in (compiled-rules)
           when (some (lambda (sel) (selector-match sel chain hover)) selectors)
-            do (loop for (k v) on props by #'cddr do (setf (getf merged k) v)))
+            do (fset:do-map (k v props) (setf merged (fset:with merged k v))))
     merged))
 
 ;;;; CSS value parsing.
+
+(defun parts-nth (parts i) (string-trim " " (nth i parts)))
+
+(defun parse-rgb-func (s n)
+  (let* ((open (position #\( s)) (close (position #\) s))
+         (parts (uiop:split-string (subseq s (1+ open) close) :separator '(#\,))))
+    (when (>= (length parts) n)
+      (flet ((num (i) (read-from-string (parts-nth parts i))))
+        (values (/ (num 0) 255.0) (/ (num 1) 255.0) (/ (num 2) 255.0)
+                (if (= n 4) (float (num 3)) 1.0))))))
 
 (defun parse-color (s)
   "(values r g b a) in 0..1, or NIL for transparent/none/unparsable."
@@ -105,29 +122,23 @@
     ((eql 0 (search "rgb(" s))  (parse-rgb-func s 3))
     (t nil)))
 
-(defun parse-rgb-func (s n)
-  (let* ((open (position #\( s)) (close (position #\) s))
-         (parts (uiop:split-string (subseq s (1+ open) close) :separator '(#\,))))
-    (when (>= (length parts) n)
-      (flet ((num (i) (read-from-string (parts-nth parts i))))
-        (values (/ (num 0) 255.0) (/ (num 1) 255.0) (/ (num 2) 255.0)
-                (if (= n 4) (float (num 3)) 1.0))))))
+(defgeneric parse-lengths (s)
+  (:documentation "The px integers of a length value: a number is that many px,
+a list of numbers likewise, a string is parsed (\"10px 12px\"; rem and % are
+ignored). A value shape a back end brings of its own is a method.")
+  (:method (s) (declare (ignore s)) nil))
 
-(defun parts-nth (parts i) (string-trim " " (nth i parts)))
+(defmethod parse-lengths ((s real)) (list (round s)))
 
-(defun parse-lengths (s)
-  "The px integers of a length value: a number is that many px, a list of
-numbers likewise, a string is parsed (\"10px 12px\"; rem/% tokens ignored)."
-  (etypecase s
-    (null nil)
-    (real (list (round s)))
-    (list (mapcar #'round s))
-    (string
-     (loop for tok in (split-ws s)
-           for n = (and (digit-char-p (char tok 0))
-                        (not (search "rem" tok)) (not (find #\% tok))
-                        (parse-integer tok :junk-allowed t))
-           when n collect n))))
+(defmethod parse-lengths ((s cons)) (mapcar #'round s))
+
+(defmethod parse-lengths ((s string))
+  (loop :for tok :in (split-ws s)
+        :for n = (and (plusp (length tok))
+                      (digit-char-p (char tok 0))
+                      (not (search "rem" tok)) (not (find #\% tok))
+                      (parse-integer tok :junk-allowed t))
+        :when n :collect n))
 
 (defun box-xy (s)
   "(values pad-x pad-y) from a CSS box shorthand, averaging asymmetric sides."
@@ -197,12 +208,6 @@ expanded per CSS rules; NIL when none."
       (side :margin-bottom 2) (side :margin-left 3))
     (unless (every #'zerop m) m)))
 
-;;;; The resolved style.
-
-(defstruct (style (:conc-name st-))
-  bg gradient fg (border-w 0) border-color (radius 0) pad-x pad-y min-w min-h
-  font-px bold inset margin shadow opacity)
-
 (defun parse-opacity (s)
   "An :opacity value as a float 0..1: a real directly, or a string parsed."
   (let ((v (if (realp s)
@@ -217,7 +222,7 @@ expanded per CSS rules; NIL when none."
   "Resolve the merged style for a node given its class CHAIN (root..node)."
   (let* ((p (matched-props chain hover))
          (st (make-style)))
-    (flet ((prop (k) (getf p k)))
+    (flet ((prop (k) (fset:lookup p k)))
       (multiple-value-bind (r g b a) (parse-color (prop :background-color))
         (when r (setf (st-bg st) (list r g b a))))
       (setf (st-gradient st) (parse-gradient (prop :background-image)))

@@ -3,33 +3,23 @@
   (:shadow #:read #:write #:space)
   (:local-nicknames (#:p #:pine.path))
   (:export #:space #:fresh #:*space* #:with-space
-           #:read #:write #:watch #:preview #:toggle #:held
-           #:provider #:here #:doc #:diff #:mounts #:stir
-           #:kind #:setting #:watched #:on-commit
+           #:read #:write #:put #:watch #:preview #:toggle #:held
+           #:provider #:here #:options #:doc #:diff #:mounts #:unmount
+           #:stir #:matches #:verbs
+           #:server #:name #:serves #:after #:register #:unregister #:servers
+           #:kept #:root
+           #:raise #:lower #:raise-all #:lower-all
+           #:roots #:root-at #:root-ago #:at-root #:as-of #:revert #:*roots-kept*
+           #:kind #:setting #:watched #:on-commit #:on-interval #:again
            #:refused #:no-verb #:cycle #:at #:why))
 
 (in-package #:pine.ns)
 (named-readtables:in-readtable pine.path:syntax)
 
-;;;; The namespace is one nested persistent map, and a path is a lookup into
-;;;; it. A write produces a new root that shares everything it did not touch,
-;;;; so the question the engine asks all day -- did this value change -- is a
-;;;; pointer compare.
-;;;;
-;;;; A directory and a map are the same thing seen from two sides: every
-;;;; non-map at a path is a leaf, and a map is the children under it.
-
-;;;; The whole namespace is one value, and it lives in an atomic reference.
-;;;;
-;;;; Reading is a slot read: no message, no wait, safe from inside an actor's
-;;;; receive, because what comes back is an immutable fset structure -- a whole
-;;;; consistent tree, never a torn one. Writing is a compare-and-swap over a
-;;;; pure function of the old space to the new one, so the read, the verb and
-;;;; the write are one step rather than three that can be interleaved.
-;;;;
-;;;; The function handed to a swap may be run again against a space another
-;;;; thread committed in the meantime. Nothing inside one may do IO: a
-;;;; provider's write, the store's write-through and every watch run outside.
+;;;; The whole namespace is one value in an atomic reference. A read is a slot
+;;;; read of an immutable tree; a write is a compare-and-swap over a pure
+;;;; function of the old space to the new one. Nothing inside a swap may do IO:
+;;;; a provider's write, the store's write-through and every watch run outside.
 
 (defstruct (space (:constructor %space) (:copier copy-space))
   (root (fset:empty-map))
@@ -37,41 +27,25 @@
   (reactions (fset:empty-map))        ; path -> reaction
   (watches nil)                       ; (name pattern function)
   (settings (fset:empty-map))         ; path -> the write options that outlive it
-  (on-commit nil)                     ; told what each commit moved
+  (roots nil)                         ; the superseded roots, newest first
+  (root-times nil)                    ; when each of them was superseded
+  (on-commit (fset:empty-map))        ; name -> told what each commit moved
+  (on-interval nil)                   ; told (path seconds) when :every is asked
+  (kept (fset:empty-map))             ; server name -> what that server holds
   (moved nil))                        ; what the swap that made this space did
-
-(defun fresh ()
-  "A namespace of its own."
-  (sento.atomic:make-atomic-reference :value (%space)))
-
-(defvar *space* (fresh)
-  "The namespace this image serves. One per image, and every thread sees the
-same one: a buffer's actor, an evaluation's own thread and a provider's poll
-are all looking at the tree the daemon is serving.")
-
-(defun current ()
-  "The namespace as it stands. One slot read."
-  (sento.atomic:atomic-get *space*))
-
-(defun %swap (fn)
-  "Replace the space with FN's answer, retrying until it lands. FN is pure."
-  (sento.atomic:atomic-swap *space* fn))
-
-(defmacro with-space ((&optional (space '(fresh))) &body body)
-  "Run BODY against SPACE, so a test or a tool can hold one of its own.
-
-Sets the variable rather than binding it, because a dynamic binding reaches
-only this thread and the work pine does happens on others."
-  (let ((previous (gensym "PREVIOUS")))
-    `(let ((,previous *space*))
-       (setf *space* ,space)
-       (unwind-protect (progn ,@body)
-         (setf *space* ,previous)))))
 
 (defstruct (reaction (:copier nil))
   path                                ; where the value lands
   thunk                               ; how it is computed
   (deps (fset:empty-set)))            ; the paths it read last time
+
+(defstruct (clause (:constructor %clause (pattern handlers)) (:copier nil))
+  pattern
+  handlers)                           ; (lambda (binders...) -> a handler map)
+
+(defstruct (backing (:constructor %backing (clauses options)) (:copier nil))
+  clauses
+  options)
 
 (define-condition refused (error)
   ((at :initarg :at :reader at)
@@ -92,15 +66,92 @@ only this thread and the work pine does happens on others."
              (format stream "These paths keep recomputing each other: ~{~a~^ ~}."
                      (at c)))))
 
-;;;; The tree. A path's segments are strings, and the name each is stored under
-;;;; is computed once per path. A value goes in already keyed that way, so a
-;;;; read hands back the object that is there: an unchanged subtree comes back
-;;;; the same object, which is what a tree diff rests on.
+(defun fresh ()
+  "A namespace of its own."
+  (sento.atomic:make-atomic-reference :value (%space)))
+
+(defparameter *roots-kept* 200
+  "How many superseded roots a space keeps.")
+
+(defparameter +settles+ 100
+  "How many passes one write's wave may take before it is called a cycle.")
+
+(defparameter +built-in-verbs+ '(:set :toggle :conj :disj :merge)
+  "The verbs the tree itself knows, which a provider need not declare.")
+
+(defvar *space* (fresh)
+  "The namespace this image serves. One per image, and every thread sees the
+same one.")
+
+(defvar *servers*
+  (sento.atomic:make-atomic-reference :value (fset:empty-seq))
+  "Every server this image knows how to raise, in the order they were declared.
+Image-wide: what pine can serve is what its code says.")
+
+(defvar *reads* nil "Where the paths read while computing a value collect.")
+
+(defvar *options* nil
+  "The options the write being served asked for, bound around a provider's
+handler. HERE says which path; this says what the write wanted of it.")
+
+(defvar *preview* nil "When bound, writes collect here instead of being made.")
+
+(defvar *propagating* nil)
+
+(defvar *cascade* nil
+  "Where a write made while a cascade is running on this thread collects, so it
+joins that wave instead of being lost.")
+
+(defun current ()
+  "The namespace as it stands. One slot read."
+  (sento.atomic:atomic-get *space*))
+
+(defun %keeping (old next)
+  "NEXT with OLD's root remembered, when the root moved, and with when it was
+superseded: /was/-1h asks about an hour ago, and a count of writes is no clock."
+  (unless (eq (space-root old) (space-root next))
+    (let ((kept (cons (space-root old) (space-roots old)))
+          (times (cons (get-universal-time) (space-root-times old))))
+      (when (> (length kept) *roots-kept*)
+        (setf kept (subseq kept 0 *roots-kept*)
+              times (subseq times 0 *roots-kept*)))
+      (setf (space-roots next) kept
+            (space-root-times next) times)))
+  next)
+
+(defun %swap (fn)
+  "Replace the space with FN's answer, retrying until it lands. FN is pure."
+  (sento.atomic:atomic-swap *space* (lambda (old) (%keeping old (funcall fn old)))))
+
+(defun roots ()
+  "The superseded roots, newest first."
+  (space-roots (current)))
+
+(defun root-at (n)
+  "The root as of N supersessions ago, or NIL."
+  (nth n (space-roots (current))))
+
+(defun root-ago (seconds)
+  "How many supersessions back the newest root at least SECONDS old is, or the
+oldest still kept when nothing is that old."
+  (let ((cutoff (- (get-universal-time) seconds))
+        (times (space-root-times (current))))
+    (or (position-if (lambda (at) (<= at cutoff)) times)
+        (max 0 (1- (length times))))))
+
+(defmacro with-space ((&optional (space '(fresh))) &body body)
+  "Run BODY against SPACE, so a test or a tool can hold one of its own. Sets
+the variable rather than binding it: the work pine does happens on other
+threads, which a binding would not reach."
+  (let ((previous (gensym "PREVIOUS")))
+    `(let ((,previous *space*))
+       (setf *space* ,space)
+       (unwind-protect (progn ,@body)
+         (setf *space* ,previous)))))
 
 (defun %inward (value)
-  "VALUE with its keys as the names the tree stores, and its nothings dropped,
-since nil is nothing here as it is in Lisp. Answers VALUE itself when nothing
-had to move, so what is stored stays shared with what was written."
+  "VALUE with its keys as the names the tree stores and its nothings dropped.
+Answers VALUE itself when nothing had to move, so it stays shared."
   (if (fset:map? value)
       (let ((out value))
         (fset:do-map (k v value)
@@ -111,6 +162,10 @@ had to move, so what is stored stays shared with what was written."
                   (t (setf out (fset:with (fset:less out k) key inner))))))
         out)
       value))
+
+(defun %directory-p (map)
+  "Whether MAP names places under a path rather than being a transaction."
+  (not (p:transactionp map)))
 
 (defun %get (root keys)
   (if (null keys)
@@ -131,23 +186,9 @@ had to move, so what is stored stays shared with what was written."
                         (%put (if (fset:map? node) node (fset:empty-map))
                               (rest keys) value))))))
 
-;;;; Providers. A subtree is backed by something that knows one system; nothing
-;;;; above it learns there is a subprocess, a socket, a poll or a file behind
-;;;; it. Mounting is a write like any other.
-
-(defstruct (clause (:constructor %clause (pattern handlers)) (:copier nil))
-  pattern
-  handlers)                           ; (lambda (binders...) -> a handler map)
-
-(defstruct (backing (:constructor %backing (clauses options)) (:copier nil))
-  clauses
-  options)
-
-(defvar *here* nil "The path a provider clause is answering for.")
-
 (defun here ()
   "The path the clause running now was asked about."
-  *here*)
+  (p:here))
 
 (defmacro provider (&rest forms)
   "A provider: an optional options map, then (PATTERN HANDLERS) clauses.
@@ -184,7 +225,7 @@ the segment it matched. HERE answers the path being served."
         :do (multiple-value-bind (ok bindings)
                 (p:match (clause-pattern clause) path :value #'%read-one)
               (when ok
-                (let ((*here* path))
+                (let ((p:*here* path))
                   (return (apply (clause-handlers clause)
                                  (mapcar (lambda (v) (fset:lookup bindings v))
                                          (p:binders (clause-pattern clause))))))))))
@@ -195,11 +236,6 @@ the segment it matched. HERE answers the path being served."
 ;;;;   :write  the provider takes the write, as an effect on that world
 ;;;;   :out    the tree holds the value, and this is how it reads
 ;;;;   :in     the tree takes the write, and this is what lands
-;;;;
-;;;; The second pair is a representation and not a place: a chord written to
-;;;; /key normalizes on the way in, a buffer's text is written as a string and
-;;;; held as its lines, and both are still values in the tree, so both are
-;;;; still undone, watched and stored like anything else.
 
 (defun %served-read (space path)
   "Answer (values value t) when a mounted provider answers a read of PATH."
@@ -220,10 +256,7 @@ what a clause's :IN put there, rather than what its :OUT makes of it."
   (%get (space-root (current)) (p:keys path)))
 
 (defun %servedp (space path)
-  "True when a mounted provider reads PATH: the world behind it is the storage.
-
-A clause that only says what a path does -- its verbs, or how a written value
-is normalized -- leaves the value in the tree, so the path is still held."
+  "True when a mounted provider reads PATH."
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
         :thereis (and handlers (fset:lookup handlers :read) t)))
@@ -232,11 +265,8 @@ is normalized -- leaves the value in the tree, so the path is still held."
   "Give VALUE to the provider serving PATH.
 
 Answers :DONE when a provider took it, or (values :STORE V) when a clause says
-what a written value becomes and V is to land in the tree.
-
-A clause that declares only :VERBS says what the path does, not what it holds,
-so an ordinary value falls through. That is how a path can take a verb and
-still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
+what a written value becomes and V is to land in the tree. A clause declaring
+only :VERBS lets an ordinary value fall through."
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
         :when handlers
@@ -253,8 +283,13 @@ still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
                       ((and (%verbp value) verbs (fset:lookup verbs t))
                        (funcall (fset:lookup verbs t) value)
                        (return :done))
-                      ((%verbp value)
+                      ;; the tree answers its own verbs, so a clause that
+                      ;; says only what a path is for does not have to list
+                      ;; them again
+                      ((and (%verbp value)
+                            (not (member (%verb-name value) +built-in-verbs+)))
                        (error 'no-verb :at path :why (%verb-name value)))
+                      ((%verbp value) (return nil))
                       ((or in (fset:lookup handlers :at))
                        (let ((where (fset:lookup handlers :at)))
                          (return (values :store
@@ -262,34 +297,151 @@ still be a place: /buf/NAME/point is [line col] and also takes [:move :word 1]."
                                          (when where (funcall where))))))
                       (write (funcall write value) (return :done))
                       ((fset:lookup handlers :read)
-                       (error 'refused :at path
-                              :why "no provider writes it"))))
+                       ;; :FORCE is what the refusal tells the caller to pass,
+                       ;; so it means what it says: the value lands in the tree,
+                       ;; over the provider, and reading answers it until the
+                       ;; provider is asked again
+                       (if (getf *options* :force)
+                           (return nil)
+                           (error 'refused :at path
+                                  :why "no provider writes it")))))
         :finally (return nil)))
 
+(defun verbs (path)
+  "The verbs PATH takes, as a set of names, with T when it takes any. The
+tree's own are in it whether a provider mentioned them or not."
+  (let ((acc (fset:convert 'fset:set +built-in-verbs+)))
+    (dolist (backing (%backings (current) path) acc)
+      (let* ((handlers (%handlers backing path))
+             (declared (and handlers (fset:lookup handlers :verbs))))
+        (when declared
+          (fset:do-map (name fn declared)
+            (declare (ignore fn))
+            (setf acc (fset:with acc name))))))))
+
 (defun mounts ()
-  "Where a provider is bound, newest first. What the tree is made of, as
-opposed to what someone put in it."
+  "Where a provider is bound, newest first."
   (mapcar #'car (space-mounts (current))))
+
+(defclass server ()
+  ((name :initarg :name :reader name
+         :documentation "What it is called, as a keyword.")
+   (serves :initarg :serves :initform nil :reader serves
+           :documentation "The paths it puts at the tree, so LOWER can take
+them off and so a reader can find out what a subtree belongs to.")
+   (after :initarg :after :initform nil :reader after
+          :documentation "The servers that must be up before this one, by name.
+What says nothing is raised in the order it was declared in."))
+  (:documentation "Something that serves a subtree: a subclass, a RAISE method
+and a REGISTER."))
+
+(defun register (server)
+  "Say that SERVER is one of the things pine serves, and answer it. Registering
+a name again replaces it, so loading a file twice is safe."
+  (sento.atomic:atomic-swap
+   *servers*
+   (lambda (all)
+     (let ((at (position (name server) (fset:convert 'list all) :key #'name)))
+       (if at (fset:with all at server) (fset:with-last all server)))))
+  server)
+
+(defun unregister (name)
+  "Take the server called NAME out of the list. It is not lowered: what it put
+at the tree is the space's, and this only says pine no longer knows how to
+raise it."
+  (sento.atomic:atomic-swap
+   *servers*
+   (lambda (all)
+     (fset:convert 'fset:seq
+                   (remove name (fset:convert 'list all) :key #'name))))
+  name)
+
+(defun %in-order (all)
+  "ALL, each after everything it says it is after."
+  (let ((out nil) (doing (fset:empty-set)))
+    (labels ((visit (s)
+               (unless (member s out)
+                 (when (fset:contains? doing (name s))
+                   (error 'cycle :at (list (name s))))
+                 (setf doing (fset:with doing (name s)))
+                 (dolist (need (after s))
+                   (let ((it (find need all :key #'name)))
+                     (when it (visit it))))
+                 (setf doing (fset:less doing (name s)))
+                 (push s out))))
+      (mapc #'visit all))
+    (nreverse out)))
+
+(defun servers (&optional name)
+  "Every server, in the order they must be raised, or the one called NAME."
+  (let ((all (%in-order (fset:convert 'list (sento.atomic:atomic-get *servers*)))))
+    (if name (find name all :key #'name) all)))
+
+(defun root ()
+  "The tree as it stands, as one object. A write supersedes rather than
+mutates, so EQ on it answers whether anything anywhere moved."
+  (space-root (current)))
+
+(defun kept (&optional name)
+  "What the servers this space raised are holding: the whole map, or NAME's.
+A supervisor's table, a connection, a subscription -- what cannot be a value."
+  (let ((all (space-kept (current))))
+    (if name (fset:lookup all name) all)))
+
+(defun (setf kept) (value name)
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-kept next) (if (null value)
+                                         (fset:less (space-kept old) name)
+                                         (fset:with (space-kept old) name value))
+                   (space-moved next) nil)
+             next)))
+  value)
+
+(defgeneric raise (server &key &allow-other-keys)
+  (:documentation "Put SERVER's paths at the tree.
+
+Answers whatever the caller may have to hold on to, and NIL where there is
+nothing. A server takes the keywords it needs and ignores the rest, so one call
+raises all of them.")
+  (:method ((name symbol) &rest args &key &allow-other-keys)
+    "Raise the server called NAME, and keep what it answered."
+    (let ((it (servers name)))
+      (unless it (error 'refused :at name :why "there is no server by that name"))
+      (setf (kept name) (apply #'raise it args)))))
+
+(defgeneric lower (server)
+  (:documentation "Take SERVER off the tree.")
+  (:method ((s server))
+    (dolist (path (serves s)) (%write-one path nil))
+    nil)
+  (:method ((name symbol))
+    (let ((it (servers name)))
+      (when it (lower it)))))
+
+(defun raise-all (&rest args &key &allow-other-keys)
+  "Raise every server, in order, and answer a map of name to what each said."
+  (dolist (s (servers) (kept))
+    (apply #'raise (name s) args)))
+
+(defun lower-all ()
+  "Take every server off, in the reverse of the order they went up."
+  (dolist (s (reverse (servers))) (lower s))
+  nil)
 
 (defun doc (path)
   "What PATH is, and what it takes: the :DOC of the clause serving it, or of
-the provider holding that clause.
-
-Documentation is a handler like any other, so it sits beside the code that
-answers and there is no second place for it to be wrong in."
-  (let ((backings (%backings (current) path)))
-    (or (loop :for backing :in backings
-              :for handlers = (%handlers backing path)
-              :thereis (and handlers (fset:lookup handlers :doc)))
-        (loop :for backing :in backings
-              :thereis (fset:lookup (backing-options backing) :doc)))))
+the provider holding that clause. A :DOC that is a handler is called."
+  (flet ((said (it) (if (functionp it) (funcall it) it)))
+    (let ((backings (%backings (current) path)))
+      (or (loop :for backing :in backings
+                :for handlers = (%handlers backing path)
+                :thereis (and handlers (said (fset:lookup handlers :doc))))
+          (loop :for backing :in backings
+                :thereis (said (fset:lookup (backing-options backing) :doc)))))))
 
 (defun %served-watch (space path listening)
-  "Tell the provider serving PATH that someone started or stopped listening.
-
-A value pine reads on demand needs nothing: whoever asks, asks. One the world
-pushes -- a subprocess's output -- has to be started, and stopped when the last
-listener goes, so the clause that answers it is told."
+  "Tell the provider serving PATH that someone started or stopped listening."
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
         :for fn = (and handlers (fset:lookup handlers :watch))
@@ -306,8 +458,9 @@ listener goes, so the clause that answers it is told."
 
 ;;;; Reading. Inside a write body or a handler a read is recorded, and that
 ;;;; recording is the whole of the reactive system.
-
-(defvar *reads* nil "Where the paths read while computing a value collect.")
+;;;;
+;;;; A provider may declare {:scope /}, and then a leaf with no value under one
+;;;; of its names reads the same leaf there: buffer-local is where the value is.
 
 (defun %ringp (path)
   (and (setting path :max) t))
@@ -315,10 +468,6 @@ listener goes, so the clause that answers it is told."
 (defun %index (text)
   (multiple-value-bind (n used) (parse-integer text :junk-allowed t)
     (and n (= used (length text)) n)))
-
-;;;; Scope. A provider may say that the subtree under each name it holds falls
-;;;; back to somewhere else: a leaf with no value here reads the same leaf
-;;;; there. Buffer-local is not a mechanism, it is where the value is.
 
 (defun %scoped (space path)
   "Where PATH falls back to, or NIL. A provider mounted at /buf declaring
@@ -365,7 +514,7 @@ at the scope's root is that directory, not this path's value."
       (return-from %children
         (loop :for i :from 0 :below (fset:size node)
               :collect (p:child path i))))
-    (or (when (fset:map? node)
+    (or (when (and (fset:map? node) (%directory-p node))
           (let ((acc nil))
             (fset:do-map (k v node)
               (declare (ignore v))
@@ -380,9 +529,7 @@ at the scope's root is that directory, not this path's value."
                         :collect s)))
 
 (defun %exists (space path)
-  "True when something is there: a value, a provider that answers, or children.
-A pattern only ever matches what exists, so a walk asks this before it counts
-a candidate."
+  "True when something is there: a value, a provider that answers, or children."
   (or (p:rootp path)
       (not (null (%get (space-root space) (p:keys path))))
       (and (not (p:rootp path))
@@ -397,11 +544,10 @@ a candidate."
   "Where a walk of PATTERN can go from PREFIX: the children that exist, plus
 the literal segment the pattern asks for next, which needs nothing enumerated."
   (let* ((children (%children space prefix))
-         (wanted (p:literal-at pattern (p:segment-count prefix)))
-         (extra (and wanted (p:child prefix wanted))))
-    (if (and extra (notany (lambda (c) (fset:equal? c extra)) children))
-        (cons extra children)
-        children)))
+         (wanted (p:named-at pattern (p:segment-count prefix)))
+         (extra (remove-if (lambda (c) (some (lambda (k) (fset:equal? c k)) children))
+                           (mapcar (lambda (name) (p:child prefix name)) wanted))))
+    (append extra children)))
 
 (defun %matches (pattern)
   "Every path that exists now and matches PATTERN."
@@ -417,13 +563,13 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
       (walk (%literal-prefix pattern) 0))
     (nreverse found)))
 
+(defun at-root (root path)
+  "What PATH held in ROOT."
+  (%get root (p:keys path)))
+
 (defun diff (was now)
   "Every leaf under WAS and NOW that does not hold the same value, as a map
-from the path under NOW to [what WAS had, what NOW has].
-
-Both sides are ordinary paths, so this compares a subtree with its own past --
-(diff /was/${n} /) is everything that moved since -- or with another host's,
-with nothing here knowing which it was given."
+from the path under NOW to [what WAS had, what NOW has]."
   (let ((space (current))
         (out (fset:empty-map)))
     (labels ((names (root)
@@ -464,8 +610,16 @@ with nothing here knowing which it was given."
 (defun %verb-args (value) (fset:convert 'list (fset:subseq value 1)))
 
 (defun %merge (a b)
+  "A with B's keys in it, all the way down: a map that says one key leaves the
+rest of the directory alone, and a key written as nothing goes away."
   (let ((out (if (fset:map? a) a (fset:empty-map))))
-    (fset:do-map (k v b) (setf out (fset:with out k v)))
+    (fset:do-map (k v b)
+      (let* ((key (if (stringp k) (p:key k) k))
+             (was (fset:lookup out key)))
+        (setf out (cond ((null v) (fset:less out key))
+                        ((and (fset:map? was) (fset:map? v))
+                         (fset:with out key (%merge was v)))
+                        (t (fset:with out key (%inward v)))))))
     out))
 
 (defun %apply-verb (path current value)
@@ -482,27 +636,39 @@ with nothing here knowing which it was given."
       (:merge (%merge current (first args)))
       (t (error 'no-verb :at path :why verb)))))
 
-(defvar *preview* nil "When bound, writes collect here instead of being made.")
-(defvar *propagating* nil)
+(defun options ()
+  "What the write being served asked for: (:keep t :max 60 ...), or NIL."
+  *options*)
 
-(defvar *cascade* nil
-  "Where a write made while a cascade is running on this thread collects, so it
-joins that wave instead of being lost.")
+(defun on-interval ()
+  "What this space tells an :EVERY to, or NIL."
+  (space-on-interval (current)))
 
-(defun on-commit ()
-  "What this space tells each commit to, or NIL."
-  (space-on-commit (current)))
-
-(defun (setf on-commit) (fn)
-  "Call FN with the list of (path old new) each commit moves. The store hangs
-here, because whether a value outlives the daemon is a property of the path and
-not something anyone should have to remember to ask for.
-
-It belongs to the space rather than the image: a pine is a space, and an image
-can hold more than one."
+(defun (setf on-interval) (fn)
+  "Call FN with (path seconds) whenever a write asks to be computed again on an
+interval. The tree owns no clock: whoever has a scheduler hangs it here."
   (%swap (lambda (old)
            (let ((next (copy-space old)))
-             (setf (space-on-commit next) fn
+             (setf (space-on-interval next) fn
+                   (space-moved next) nil)
+             next)))
+  fn)
+
+(defun on-commit (&optional name)
+  "What this space tells each commit to: the whole map, or NAME's."
+  (let ((all (space-on-commit (current))))
+    (if name (fset:lookup all name) all)))
+
+(defun (setf on-commit) (fn name)
+  "Call FN with the list of (path old new) each commit moves, under NAME.
+Named the way a watch is, so registering again replaces and more than one thing
+can listen."
+  (%swap (lambda (old)
+           (let ((next (copy-space old)))
+             (setf (space-on-commit next)
+                   (if fn
+                       (fset:with (space-on-commit old) name fn)
+                       (fset:less (space-on-commit old) name))
                    (space-moved next) nil)
              next)))
   fn)
@@ -521,8 +687,7 @@ can hold more than one."
           (t :held))))
 
 (defun %setting-in (space path key &optional default)
-  "The write option KEY that PATH carries in SPACE. Inside a swap the space is
-the one being swapped, not whichever one CURRENT answers a moment later."
+  "The write option KEY that PATH carries in SPACE."
   (let ((options (fset:lookup (space-settings space) path)))
     (if (and options (fset:domain-contains? options key))
         (fset:lookup options key)
@@ -542,7 +707,7 @@ the one being swapped, not whichever one CURRENT answers a moment later."
   "SPACE with the write options from OPTIONS that outlive the write. Pure."
   (let ((settings (space-settings space)))
     (loop :for (key value) :on options :by #'cddr
-          :when (member key '(:keep :max))
+          :when (member key '(:keep :max :every :on))
             :do (setf settings (%settings-with settings path key value)))
     (if (eq settings (space-settings space))
         space
@@ -551,8 +716,7 @@ the one being swapped, not whichever one CURRENT answers a moment later."
           next))))
 
 (defun (setf setting) (value path key)
-  "Say that PATH carries the write option KEY, without writing the path. The
-store uses it to give a restored ring back its bound."
+  "Say that PATH carries the write option KEY, without writing the path."
   (%swap (lambda (old)
            (let ((next (copy-space old)))
              (setf (space-settings next)
@@ -574,18 +738,19 @@ store uses it to give a restored ring back its bound."
   "What lands at PATH, given WAS is what is there. Pure."
   (cond (max (%ring-push was value max))
         ((%verbp value) (%inward (%apply-verb path was value)))
+        ;; a map merges into a directory; a transaction replaces
+        ((and (fset:map? value) (fset:map? was)
+              (%directory-p value) (%directory-p was))
+         (%merge was value))
         (t (%inward value))))
 
 (defun %committing (old path value options)
-  "OLD with VALUE at PATH. Pure, so a swap may run it again: nothing here does
-IO, and everything it decides -- the guard, the verb, the ring -- is decided
-against the space it is handed rather than one read a moment ago."
+  "OLD with VALUE at PATH. Pure, so a swap may run it again."
   (destructuring-bind (&key when max &allow-other-keys) options
     (let* ((space (if options (%remembering old path options) old))
            (root (space-root space))
            (was (%get root (p:keys path)))
-           ;; a ring is a property of the path, not of the write that made it
-           ;; one, so every later write pushes without saying :max again
+           ;; a ring is a property of the path, so a later write needs no :max
            (bound (or max (%setting-in space path :max))))
       (if (and when (not (fset:equal? was when)))
           (let ((next (copy-space space)))
@@ -599,23 +764,33 @@ against the space it is handed rather than one read a moment ago."
                            (space-moved next) (list (list path was stored)))))
             next)))))
 
-(defun %commit (changes)
+(defun %guarded (root guard)
+  "Whether everything GUARD says a path still holds is what ROOT holds."
+  (let ((ok t))
+    (when guard
+      (fset:do-map (path value guard)
+        (unless (fset:equal? value (%get root (p:keys path)))
+          (setf ok nil))))
+    ok))
+
+(defun %commit (changes &optional guard)
   "Put CHANGES, a list of (path . value), in as one step: one new root, so
 nothing ever observes the system half changed. Answers what moved.
 
-Pure, so a swap may run it again: a verb, a ring and a de-duplication are all
-decided against the space the write lands on."
+GUARD is a map of path to the value it must still hold; nothing lands unless
+every one of them does, and the test is inside the swap."
   (let ((new (%swap (lambda (old)
                       (let ((root (space-root old))
                             (moved nil))
-                        (dolist (change changes)
-                          (destructuring-bind (path . value) change
-                            (let* ((was (%get root (p:keys path)))
-                                   (stored (%stored path was value
-                                                    (%setting-in old path :max))))
-                              (unless (fset:equal? was stored)
-                                (setf root (%put root (p:keys path) stored))
-                                (push (list path was stored) moved)))))
+                        (when (%guarded root guard)
+                          (dolist (change changes)
+                            (destructuring-bind (path . value) change
+                              (let* ((was (%get root (p:keys path)))
+                                     (stored (%stored path was value
+                                                      (%setting-in old path :max))))
+                                (unless (fset:equal? was stored)
+                                  (setf root (%put root (p:keys path) stored))
+                                  (push (list path was stored) moved))))))
                         (let ((next (copy-space old)))
                           (setf (space-root next) root
                                 (space-moved next) (nreverse moved))
@@ -623,10 +798,11 @@ decided against the space the write lands on."
     (%told (space-moved new))))
 
 (defun %told (moved)
-  "Tell whoever is keeping the file what moved, outside the swap: a disk write
-has no business inside a compare-and-swap."
-  (let ((fn (space-on-commit (current))))
-    (when (and moved fn) (funcall fn moved)))
+  "Tell every commit listener what moved, outside the swap."
+  (when moved
+    (fset:do-map (name fn (space-on-commit (current)))
+      (declare (ignore name))
+      (funcall fn moved)))
   moved)
 
 (defun %evaluate (thunk)
@@ -635,16 +811,26 @@ has no business inside a compare-and-swap."
     (let ((value (funcall thunk)))
       (values value (fset:convert 'fset:set (cdr *reads*))))))
 
-(defun %write-one (path value &rest options &key when max force keep)
+(defun %emptying-a-ring-p (space path value)
+  "Whether writing VALUE at PATH would empty a kept ring that had something in
+it."
+  (and (null value)
+       (%setting-in space path :keep)
+       (let ((was (%get (space-root space) (p:keys path))))
+         (and (fset:seq? was) (not (fset:empty? was))))))
+
+(defun %write-one (path value &rest options
+                   &key when max force keep &allow-other-keys)
   "Put VALUE at PATH. Answers the (path old new) it moved, as a list."
   (declare (ignore when keep))
   (when (and (not force) (%whole-tree-p path))
     (error 'refused :at path :why "** at the root would take the whole tree"))
   (let ((space (current)))
-    ;; a provider decides what a write to its subtree means, and its IO cannot
-    ;; run inside a swap that may be retried
+    (when (and (not force) (%emptying-a-ring-p space path value))
+      (error 'refused :at path :why "it would empty a ring the file keeps"))
+    ;; a provider's IO cannot run inside a swap that may be retried
     (multiple-value-bind (served normalized where)
-        (%served-write space path value)
+        (let ((*options* options)) (%served-write space path value))
       (case served
         (:done (return-from %write-one
                  (list (list path (%read-one path) value))))
@@ -673,10 +859,14 @@ has no business inside a compare-and-swap."
 
 (defun %recompute (reaction)
   (multiple-value-bind (value deps) (%evaluate (reaction-thunk reaction))
-    ;; what it read may have changed with the value, so the reaction is put
-    ;; back rather than edited where it sits
-    (%remember-reaction (reaction-path reaction) (reaction-thunk reaction) deps)
-    (%write-one (reaction-path reaction) value)))
+    ;; what it read may have changed with the value, so it is put back whole
+    (let* ((path (reaction-path reaction))
+           (also (setting path :on))
+           (interval (setting path :every)))
+      (%remember-reaction path (reaction-thunk reaction)
+                          (%also-on deps also)
+                          (or interval also))
+      (%write-one path value))))
 
 (defun %watching-p (pattern path)
   "A watch fires for its own path, for anything its pattern matches, and for
@@ -685,9 +875,7 @@ anything under it: watching a directory watches the subtree."
       (and (not (p:patternp pattern)) (p:prefixp pattern path))))
 
 (defun watched (path)
-  "True when some watch would hear about a change at PATH: whether anyone is
-listening, which is the difference between a fault someone can attend to and
-one nobody will ever look at."
+  "True when some watch would hear about a change at PATH."
   (loop :for watch :in (space-watches (current))
         :thereis (%watching-p (second watch) path)))
 
@@ -700,26 +888,18 @@ one nobody will ever look at."
           (destructuring-bind (name pattern fn) watch
             (declare (ignore name))
             (when (%watching-p pattern path)
-              ;; a watch over a pattern hears about several paths, so HERE
-              ;; answers which one moved, as it does inside a provider
-              (let ((answer (let ((*here* path)) (funcall fn new))))
+              ;; HERE answers which path moved, as it does inside a provider
+              (let ((answer (let ((p:*here* path)) (funcall fn new))))
                 (when (fset:map? answer)
                   (setf out (append out (%apply answer))))))))))))
 
 (defun %ordered (map)
   "MAP's entries, deepest path first and the later name of two at the same
-depth before the earlier.
-
-A map has no order and a value does not need one: every path in a transaction
-gets its value and nothing observes the half of it. A verb is an event, and two
-events in one map do need one, so pine says what it is. Deepest first is what
-makes the doc's own handlers mean what they read as:
+depth before the earlier. A value needs no order; two verbs in one map do:
 
   {/buf/${buf}/text [:newline] /buf/${buf} [:indent-line]}
-  {/buf/${buf}/text [:insert \")\"] /buf/${buf}/point [:move :char -1]}
 
-the line splits before it is indented, and the paren is typed before point
-steps back over it."
+splits the line before it indents it."
   (let ((acc nil))
     (fset:do-map (path value map) (push (cons path value) acc))
     (sort acc (lambda (a b)
@@ -729,13 +909,11 @@ steps back over it."
                       (string> (p:text (car a)) (p:text (car b)))
                       (> da db)))))))
 
-(defun %apply (map)
-  "Write every entry of MAP as one change, without propagating: the caller owns
-that.
+(defun %apply (map &optional guard)
+  "Write every entry of MAP as one change, without propagating.
 
-A path a provider serves is given to the provider, because that is an effect on
-the world and not a place in the tree; everything else lands in one swap, which
-is what makes a map a transaction."
+A path a provider serves is given to the provider; everything else lands in one
+swap. GUARD says what has to still be true for any of it to land."
   (let ((space (current))
         (moved nil)
         (staged nil))
@@ -753,20 +931,16 @@ is what makes a map a transaction."
             (if *preview*
                 (loop :for (path . value) :in staged
                       :append (%write-one path value))
-                (%commit staged)))))
+                (%commit staged guard)))))
 
 (defun %expand (moved)
-  "MOVED, with what landed under each map in it.
-
-Writing a directory is writing every leaf in it, so a watch or an expression
-over one leaf hears about it whether it was written on its own or as part of
-the map its parent took: (write /buf/notes {:mode :lisp}) and
-(write /buf/notes/mode :lisp) are the same change."
+  "MOVED, with what landed under each map in it: (write /buf/notes {:mode
+:lisp}) and (write /buf/notes/mode :lisp) are the same change."
   (let ((out nil))
     (labels ((walk (change)
                (destructuring-bind (path old new) change
                  (push change out)
-                 (when (fset:map? new)
+                 (when (and (fset:map? new) (%directory-p new))
                    (fset:do-map (key value new)
                      (let ((was (and (fset:map? old) (fset:lookup old key))))
                        (unless (fset:equal? was value)
@@ -779,14 +953,11 @@ the map its parent took: (write /buf/notes {:mode :lisp}) and
 over it, until nothing more moves.
 
 Runs on the caller's thread, after the swap and never inside one, because both
-a reaction and a watch may write. A write made while this is running joins the
-wave rather than starting a cascade of its own, so a watch that writes -- a
-mode installing a view, a parser landing its answer -- carries on to whatever
-was watching what it wrote.
+a reaction and a watch may write. A write made while this runs joins the wave
+rather than starting a cascade of its own. *PROPAGATING* is per thread: two
+threads each carrying their own change is the normal case.
 
-*PROPAGATING* is per thread on purpose: it says this thread is already carrying
-a change through the graph, and two threads each carrying their own is the
-normal case rather than a collision."
+A cycle is a wave that does not settle, and +SETTLES+ is where waiting stops."
   (cond ((or (null moved) *preview*) nil)
         (*propagating*
          (when *cascade*
@@ -794,20 +965,15 @@ normal case rather than a collision."
         (t
          (let* ((*propagating* t)
                 (*cascade* (cons :cascade nil))
-                (seen (fset:empty-set))
                 (wave (%expand moved))
                 (passes 0))
            (loop :while wave
-                 :do (when (> (incf passes) 100)
+                 :do (when (> (incf passes) +settles+)
                        (error 'cycle :at (mapcar #'first wave)))
                      (let ((next nil)
                            (space (current)))
                        (dolist (reaction (%dependents space wave))
-                         (let ((at (reaction-path reaction)))
-                           (when (fset:contains? seen at)
-                             (error 'cycle :at (list at)))
-                           (setf seen (fset:with seen at))
-                           (setf next (append next (%recompute reaction)))))
+                         (setf next (append next (%recompute reaction))))
                        (setf next (append next (%run-watches space wave)))
                        (setf next (append next (cdr *cascade*)))
                        (setf (cdr *cascade*) nil)
@@ -826,12 +992,9 @@ it that something read."
     paths))
 
 (defun stir (at)
-  "Say that what a provider under AT reads has moved.
-
-A live path holds no value, so nothing swapped and nothing here would otherwise
-notice. This is what a provider's :ON does when the world behind it speaks:
-everything that read a path under AT is computed again, and every watch over one
-runs, exactly as though the value had been written."
+  "Say that what a provider under AT reads has moved: everything that read a
+path under AT is computed again, as though the value had been written. What a
+provider's :ON does when the world behind it speaks."
   (let* ((space (current))
          (moved (mapcar (lambda (path) (list path nil (%read-one path)))
                         (%stirred space at))))
@@ -844,12 +1007,22 @@ runs, exactly as though the value had been written."
       (destructuring-bind (path old new) change
         (setf out (fset:with out path (fset:seq old new)))))))
 
-(defun %transact (map)
+(defun %transact (map &optional guard)
   "Apply a map of path to value as one change."
-  (let ((moved (%apply map)))
+  (let ((moved (%apply map guard)))
     (if *propagating*
         (%changes moved)
         (progn (%propagate moved) (%changes moved)))))
+
+(defun matches (pattern)
+  "Every path PATTERN names now: what a write to it would touch. A run of
+literal segments at the end is where the write lands rather than something it
+has to find, so (write /win/*/weight 1) reaches a window with no weight yet."
+  (or (p:expansions pattern)
+      (multiple-value-bind (head tail) (p:literal-tail pattern)
+        (if tail
+            (mapcar (lambda (found) (apply #'p:path found tail)) (matches head))
+            (%matches pattern)))))
 
 (defun %write-pattern (pattern maker &rest options)
   "Write every path PATTERN matches, with its binders bound around the value."
@@ -858,7 +1031,7 @@ runs, exactly as though the value had been written."
     (when (and (%whole-tree-p pattern) (not (getf options :force)))
       (error 'refused :at pattern
                       :why "** at the root would take the whole tree"))
-    (dolist (found (%matches pattern))
+    (dolist (found (matches pattern))
       (multiple-value-bind (ok bindings) (p:match pattern found :value #'%read-one)
         (when ok
           (let ((value (apply maker (mapcar (lambda (v) (fset:lookup bindings v))
@@ -874,11 +1047,8 @@ runs, exactly as though the value had been written."
 
 (defun %mount (path backing)
   "Bind BACKING under PATH. Writing one over another stacks it: a read falls
-through to the one underneath for what the top does not answer, so a machine
-overrides a single leaf of a shipped provider without forking it.
-
-A backing with an :ON is told by the world instead of polled: the path it names
-is watched, and anything that moves there stirs everything read under here."
+through to the one underneath for what the top does not answer. A backing with
+an :ON is told by the world instead of polled."
   (%swap (lambda (old)
            (let ((next (copy-space old)))
              (setf (space-mounts next) (cons (cons path backing)
@@ -889,7 +1059,15 @@ is watched, and anything that moves there stirs everything read under here."
     (when on
       (watch on (lambda (value) (declare (ignore value)) (stir path) nil)
              :as (%told-by path))))
+  (let ((up (fset:lookup (backing-options backing) :mounted)))
+    (when up (funcall up path)))
   (fset:empty-map))
+
+(defun unmount (path)
+  "Take the provider mounted at PATH off, and clear what it stood over."
+  (%unmount path)
+  (put path nil (list :force t))
+  nil)
 
 (defun %unmount (path)
   (watch path nil :as (%told-by path))
@@ -901,12 +1079,13 @@ is watched, and anything that moves there stirs everything read under here."
                    (space-moved next) nil)
              next))))
 
-(defun %remember-reaction (path thunk deps)
-  "Note how PATH is computed, or that it no longer is."
+(defun %remember-reaction (path thunk deps &optional triggered)
+  "Note how PATH is computed, or that it no longer is. TRIGGERED keeps the
+expression even when it read nothing: :EVERY and :ON are not value reads."
   (%swap (lambda (old)
            (let ((next (copy-space old)))
              (setf (space-reactions next)
-                   (if (fset:empty? deps)
+                   (if (and (fset:empty? deps) (not triggered))
                        (fset:less (space-reactions old) path)
                        (fset:with (space-reactions old) path
                                   (make-reaction :path path :thunk thunk
@@ -914,34 +1093,70 @@ is watched, and anything that moves there stirs everything read under here."
                    (space-moved next) nil)
              next))))
 
+(defun %also-on (deps also)
+  "DEPS with the paths ALSO names in it. :ON is how a write says it depends on
+something it did not read: a subscription's output, a poll's tick."
+  (let ((out deps))
+    (dolist (path (cond ((null also) nil)
+                        ((p:pathp also) (list also))
+                        ((fset:set? also) (fset:convert 'list also))
+                        ((fset:seq? also) (fset:convert 'list also))
+                        ((listp also) also)
+                        (t (list also)))
+                  out)
+      (when (p:pathp path) (setf out (fset:with out path))))))
+
 (defun %write-reactive (path thunk &rest options)
   "Put THUNK's value at PATH and remember what it read, so it is computed again
 whenever one of those paths moves. A provider written here mounts instead."
   (multiple-value-bind (value deps) (%evaluate thunk)
-    ;; writing nothing where a provider is mounted takes it off -- where it is
-    ;; mounted, not anywhere under it: clearing one leaf of a served subtree is
-    ;; an ordinary write
-    (when (and (null value) (%mounted-at path))
+    (setf deps (%also-on deps (getf options :on)))
+    ;; writing nothing where a provider is mounted takes it off, but only where
+    ;; the provider is what answers a read there
+    (when (and (null value) (%mounted-at path) (%servedp (current) path))
       (%unmount path))
     (if (backing-p value)
         (%mount path value)
-        ;; the reaction is registered before the value lands, so whatever
-        ;; watches the commit already knows this path is computed rather than
-        ;; held, and does not store it
+        ;; the reaction is registered before the value lands, so what watches
+        ;; the commit knows this path is computed rather than held
         (progn
-          (%remember-reaction path thunk deps)
-          (let ((moved (apply #'%write-one path value options)))
+          (%remember-reaction path thunk deps
+                              (or (getf options :every) (getf options :on)))
+          (let ((moved (apply #'%write-one path value options))
+                (seconds (getf options :every))
+                (told (on-interval)))
+            (when (and seconds told)
+              (funcall told path seconds))
             (%propagate moved)
             (%changes moved))))))
+
+(defun again (path)
+  "Compute PATH's expression again, as though something it read had moved. A
+path nobody wrote as an expression has nothing to compute."
+  (let ((reaction (fset:lookup (space-reactions (current)) path)))
+    (when reaction
+      (let ((moved (%recompute reaction)))
+        (%propagate moved)
+        (%changes moved)))))
+
+(defun put (path value &optional options)
+  "Put VALUE at PATH with OPTIONS, all three already in hand. WRITE is a macro
+over an expression; this is for a value that arrived as data."
+  (let ((moved (apply #'%write-one path value options)))
+    (%propagate moved)
+    (%changes moved)))
 
 (defmacro write (place &optional (value nil value-p) &rest options)
   "Put VALUE at the path PLACE, or apply PLACE as a transaction when it is a
 map of path to value.
 
-VALUE is an expression, and it is evaluated again whenever a path it read
-changes. A pattern writes every path it matches, with its binders bound."
-  (if (not value-p)
-      `(%transact ,place)
+VALUE is an expression, evaluated again whenever a path it read changes. A
+pattern writes every path it matches, with its binders bound. A transaction
+takes :WHEN a map of path to the value it must still hold."
+  (cond
+    ((not value-p) `(%transact ,place))
+    ((eq value :when) `(%transact ,place ,(first options)))
+    (t
       (let ((literal (and (p:pathp place) place)))
         (cond
           ((and literal (p:patternp literal))
@@ -950,7 +1165,7 @@ changes. A pattern writes every path it matches, with its binders bound."
                               (declare (ignorable ,@(p:binders literal)))
                               ,value)
                             ,@options))
-          (t `(%write-reactive ,place (lambda () ,value) ,@options))))))
+          (t `(%write-reactive ,place (lambda () ,value) ,@options)))))))
 
 (defmacro toggle (path)
   "Write PATH the opposite of what it holds."
@@ -969,8 +1184,6 @@ it and re-loading a config is safe. A NIL function removes it."
                      (if fn (append rest (list (list name path fn))) rest)
                      (space-moved next) nil)
                next)))
-    ;; some paths have to be made to speak, and stop speaking when the last
-    ;; listener goes
     (%served-watch (current) path (and (watched path) t))
     name))
 
@@ -980,3 +1193,72 @@ answered, path to [old new]."
   `(let ((*preview* (cons :preview nil)))
      ,@body
      (%changes (reverse (cdr *preview*)))))
+
+(defun %ago (text)
+  "The seconds back a relative time names -- -30s -5m -1h -2d -- or NIL."
+  (when (and (> (length text) 1) (char= #\- (char text 0)))
+    (let* ((body (subseq text 1))
+           (unit (char body (1- (length body))))
+           (n (ignore-errors (parse-integer body :end (1- (length body))))))
+      (when n
+        (case unit
+          (#\s n)
+          (#\m (* 60 n))
+          (#\h (* 3600 n))
+          (#\d (* 86400 n)))))))
+
+(defun as-of (text)
+  "Which root TEXT names: a number is how many supersessions back, and -1h is
+the newest root that old."
+  (let ((ago (%ago text)))
+    (if ago
+        (root-ago ago)
+        (or (parse-integer text :junk-allowed t) 0))))
+
+(defun revert (n)
+  "Put the root as of N back, which is one write of the whole tree."
+  (let ((root (root-at n)))
+    (when root
+      (write / (fset:seq :set root) :force t)
+      n)))
+
+(defun history-provider ()
+  (provider
+   (/history
+    (fset:map
+     (:read (lambda ()
+              (fset:convert 'fset:seq
+                            (loop :for i :from 0
+                                  :for root :in (roots)
+                                  :collect (fset:map (:n i) (:root root))))))
+     (:verbs (fset:map (:revert (lambda (n) (revert n)))))
+     (:doc "the roots, newest first")))))
+
+(defun was-provider ()
+  (provider
+   (/was/?n/?@rest
+    (fset:map
+     (:read (lambda ()
+              (let ((root (root-at (as-of n))))
+                (when root (at-root root (apply #'p:path rest))))))
+     (:ls (lambda ()
+            (let* ((root (root-at (as-of n)))
+                   (value (and root (at-root root (apply #'p:path rest)))))
+              (when (fset:map? value)
+                (loop :for key :in (fset:convert 'list (fset:domain value))
+                      :collect (p:name key))))))
+     (:doc "what a path held as of a root")))
+   (/was (fset:map (:doc "the tree as of a root: /was/${n}/any/path")))))
+
+(defclass roots-server (server) ()
+  (:default-initargs :name :roots :serves (list /history /was))
+  (:documentation "The superseded roots, at /history and /was. They are the
+space's and not a file's, so a pine with no store has its history."))
+
+(defmethod raise ((s roots-server) &key &allow-other-keys)
+  (declare (ignore s))
+  (write /history (history-provider))
+  (write /was (was-provider))
+  nil)
+
+(register (make-instance 'roots-server))

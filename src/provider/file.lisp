@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.file
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:mount))
+  (:export #:server))
 
 (in-package #:pine.provider.file)
 (named-readtables:in-readtable pine.path:syntax)
@@ -18,6 +18,11 @@
   (let ((truth (probe-file path)))
     (and truth (null (pathname-name truth)))))
 
+(defun %name (entry)
+  (if (pathname-name entry)
+      (file-namestring entry)
+      (car (last (pathname-directory entry)))))
+
 (defun %read (segments)
   (let ((native (%native segments)))
     (cond ((null segments) nil)
@@ -32,11 +37,6 @@
           ((probe-file native)
            (uiop:read-file-string native))
           (t nil))))
-
-(defun %name (entry)
-  (if (pathname-name entry)
-      (file-namestring entry)
-      (car (last (pathname-directory entry)))))
 
 (defun %write (segments value)
   (let ((native (%native segments)))
@@ -61,5 +61,11 @@
      :ls (pine.data:fn [] (mapcar #'p:name (%ls rest)))
      :doc "a file's contents, or a directory's entries; nil deletes"})))
 
-(defun mount ()
+(defclass server (ns:server) ()
+  (:default-initargs :name :file :serves (list /file))
+  (:documentation "The filesystem, as a subtree."))
+
+(defmethod ns:raise ((s server) &key &allow-other-keys)
   (ns:write /file (provider)))
+
+(ns:register (make-instance 'server))

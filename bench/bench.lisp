@@ -60,7 +60,7 @@
 (defun lines-state (nlines &optional (cols 40))
   (let ((seq (fset:empty-seq)))
     (dotimes (i nlines) (setf seq (fset:with-last seq (a-line cols i))))
-    (make-instance 'pine.text.buffer:buffer-state
+    (make-instance 'pine.text:buffer-state
                    :lines seq
                    :meta (fset:with (fset:empty-map) :name "bench"))))
 
@@ -72,8 +72,8 @@
 (defun sample-tree ()
   (apply #'pine.ui.build:row
          (append (loop repeat 8 collect (pine.ui.build:label "item"))
-                 (list (pine.ui.build:meter :value 42 :min 0 :max 100)
-                       (pine.ui.build:meter :value 70 :min 0 :max 100)))))
+                 (list (pine.ui.build:slider :value 42 :min 0 :max 100)
+                       (pine.ui.build:slider :value 70 :min 0 :max 100)))))
 
 (defparameter *plain-chunk*
   (with-output-to-string (o)
@@ -92,15 +92,15 @@
       (let* ((st (lines-state n))
              (mid (floor n 2)))
         (push (defbench (format nil "insert-char @mid, ~d lines" n)
-                (pine.text.buffer:insert-char st mid 0 #\x)) rows)
+                (pine.text:insert-char st mid 0 #\x)) rows)
         (push (defbench (format nil "insert-newline @mid, ~d lines" n)
-                (pine.text.buffer:insert-newline st mid 5)) rows)
+                (pine.text:insert-newline st mid 5)) rows)
         (push (defbench (format nil "delete-region 3ch @mid, ~d lines" n)
-                (pine.text.buffer:delete-region st mid 0 mid 3)) rows)
+                (pine.text:delete-region st mid 0 mid 3)) rows)
         (push (defbench (format nil "state->snapshot, ~d lines" n)
-                (pine.text.buffer:state->snapshot st)) rows)
+                (pine.text:state->snapshot st)) rows)
         (push (defbench (format nil "state->string, ~d lines" n)
-                (pine.text.buffer:state->string st)) rows)))
+                (pine.text:state->string st)) rows)))
     (print-table "buffer edits (fset immutable state)" (nreverse rows))))
 
 (defun bench-load-content ()
@@ -109,7 +109,7 @@
       (let ((text (with-output-to-string (o)
                     (dotimes (i n) (write-line (a-line 40 i) o)))))
         (push (defbench (format nil "load-content, ~d lines" n)
-                (pine.text.buffer:load-content text)) rows)))
+                (pine.text:load-content text)) rows)))
     (print-table "load-content (file open path)" (nreverse rows))))
 
 (defun bench-vt ()
@@ -127,7 +127,16 @@
     (error (e) (format t "~&  (bench skipped: ~a)~%" e) nil)))
 
 (defun bench-widget ()
-  (let ((pine.core.server:*server* (make-instance 'pine.core.server:server)))
+  ;; a space with style raised, the way a running pine has it: the faces and
+  ;; the compiled stylesheet are worked out once and kept until the tree moves,
+  ;; and measuring a paint without that measures a pine nobody runs
+  (pine.ns:with-space ()
+    (pine.ns:raise :theme)
+    (let ((pine.core.server:*server* (make-instance 'pine.core.server:server)))
+      (bench-widget-rows))))
+
+(defun bench-widget-rows ()
+  (progn
     (let* ((tree (sample-tree))
            (wire (pine.ui.wire:node->wire tree)) rows)
       (push (%safe (lambda () (defbench "node->wire (serialize bar)"
@@ -154,9 +163,9 @@
 carrying RUNS face runs."
   (pine.ui.wire:node->wire
    (pine.ui.build:column
-    (pine.ui.build:window (loop :repeat rows :collect (%row cols runs)) :kind :window)
-    (pine.ui.build:window (list (%row cols 1)) :kind :echo)
-    (pine.ui.build:window (list (%row cols 2)) :kind :modeline))))
+    (pine.ui.build:cells (loop :repeat rows :collect (%row cols runs)) :as 'pine.ui.node:buffer-view)
+    (pine.ui.build:cells (list (%row cols 1)) :as 'pine.ui.node:echo-view)
+    (pine.ui.build:cells (list (%row cols 2)) :as 'pine.ui.node:modeline-view))))
 
 (defun %frame-bytes (wire)
   "(values PAYLOAD FRAME) bytes: the serialized message, and the envelope the
@@ -196,13 +205,11 @@ transport actually writes, which re-encodes those bytes as decimal text."
       (print-sizes "one push on the wire (2 MB frame cap)" (nreverse sizes))
       ;; the same frame, as a patch: one line of it changed
       (let* ((before (%editor-wire 88 25 15))
-             (after (let ((f (%editor-wire 88 25 15)))
-                      (setf (getf (second (first (pine.ui.wire:wire-windows f))) :rows)
-                            (let ((rows (copy-list
-                                         (getf (second (first (pine.ui.wire:wire-windows f)))
-                                               :rows))))
-                              (setf (nth 12 rows) (%row 88 15 #\b))
-                              rows))
+             (after (let* ((f (%editor-wire 88 25 15))
+                           (window (first (pine.ui.wire:wire-windows f)))
+                           (rows (copy-list (fset:lookup (second window) :rows))))
+                      (setf (nth 12 rows) (%row 88 15 #\b))
+                      (setf (second window) (fset:with (second window) :rows rows))
                       f))
              (patch (pine.ui.wire:rows-patch before after))
              (whole nil))
@@ -286,11 +293,11 @@ transport actually writes, which re-encodes those bytes as decimal text."
 
 (defun lisp-state (nforms viewport)
   "A lisp-mode buffer state of NFORMS forms, carrying VIEWPORT when given."
-  (let ((state (pine.text.buffer:set-meta
-                (pine.text.buffer:load-content (lisp-source nforms))
+  (let ((state (pine.text:set-meta
+                (pine.text:load-content (lisp-source nforms))
                 :mode :lisp-mode)))
     (if viewport
-        (pine.text.buffer:set-meta state :viewport viewport)
+        (pine.text:set-meta state :viewport viewport)
         state)))
 
 (defun bench-refresh ()
@@ -312,15 +319,15 @@ different measurement wearing the same name."
         (dolist (nforms '(40 400))
           (dolist (viewport (list nil (cons 0 30)))
             (let* ((quiet (lisp-state nforms viewport))
-                   (typed (pine.text.buffer:insert-char quiet 3 0 #\x))
-                   (ps (nth-value 1 (pine.text.buffer:refresh-highlights nil quiet)))
+                   (typed (pine.text:insert-char quiet 3 0 #\x))
+                   (ps (nth-value 1 (pine.text:refresh-highlights nil quiet)))
                    (flip nil))
               (when ps
                 (push (defbench (format nil "refresh-highlights, ~d forms~a"
                                         nforms (if viewport ", window" ""))
                         (progn (setf flip (not flip))
                                (setf ps (nth-value
-                                         1 (pine.text.buffer:refresh-highlights
+                                         1 (pine.text:refresh-highlights
                                             ps (if flip typed quiet)
                                             ;; line 3 gained or lost one character
                                             :edit (list 3 1 1 (if flip 1 -1)))))))
@@ -332,7 +339,7 @@ different measurement wearing the same name."
 (defun bench-eval ()
   (let ((sem (sb-thread:make-semaphore)) rows)
     (push (defbench "evaluate-thunk round-trip (thread spawn)"
-            (pine.core.eval:evaluate-thunk
+            (pine.err:evaluate-thunk
              (lambda () 42)
              :on-done (lambda (ev) (declare (ignore ev)) (sb-thread:signal-semaphore sem)))
             (sb-thread:wait-on-semaphore sem)) rows)
@@ -369,34 +376,30 @@ surface, headless -- the same path the wayland clients run per frame."
 
 (defun bench-agent ()
   "The crash-boundary cost: spawn a real SBCL process agent over remoting and
-measure the eval round-trip (serialize, send, eval in the other image, result
-home). Spawn-to-connect is reported once; it is a fresh image loading :pine."
+measure a round trip to it. Spawn-to-connect is reported once; it is a fresh
+image loading :pine."
   (handler-case
       (let ((srv (pine.core.server:start-server :remoting-port 18191)))
         (setf pine.core.server:*server* srv)
         (pine.core.actor:start-agent-registry srv)
         (pine.core.actor:start-agent-debug srv)
-        (setf pine.core.actor::*agent-port* 18191)
-        (let ((sem (sb-thread:make-semaphore))
-              (t0 (get-internal-real-time)))
-          (setf pine.core.actor:*agent-debug-hook*
-                (lambda (msg)
-                  (when (eq (first msg) :agent-result)
-                    (sb-thread:signal-semaphore sem))))
+        (let ((t0 (get-internal-real-time)))
           (let ((info (pine.core.actor:spawn-agent srv "bench-agent")))
             (format t "~&agent spawn-to-connect: ~,1fs (fresh SBCL image loading :pine)~%"
                     (/ (float (- (get-internal-real-time) t0) 1d0)
                        internal-time-units-per-second))
             (unwind-protect
                  (let (rows)
-                   (push (defbench "process-agent eval round-trip (remoting)"
-                           (progn (pine.core.actor:agent-eval srv info "42")
-                                  (sb-thread:wait-on-semaphore sem :timeout 30)))
+                   ;; asked rather than told: an eval answers by writing, so a
+                   ;; told one has nothing here to wait for, and what this
+                   ;; measures is the wire
+                   (push (defbench "process-agent round trip (remoting)"
+                           (pine.core.actor:ask
+                            (pine.core.actor:agent-info-actor info)
+                            '(:ping) :timeout 30))
                          rows)
                    (print-table "process agent (the crash boundary)" (nreverse rows)))
-              (pine.core.actor:unsupervise-agent "bench-agent")
-              (ignore-errors (sento.actor:tell (pine.core.actor:agent-info-actor info) '(:crash)))
-              (ignore-errors (pine.core.actor:unregister-agent srv "bench-agent"))))))
+              (ignore-errors (pine.core.actor:kill-agent srv "bench-agent"))))))
     (error (e) (format t "~&(agent group skipped: ~a)~%" e))))
 
 (defun %rss-mb ()
@@ -466,10 +469,21 @@ that the rest of the buffer is never touched."
     (error (e) (format t "~&(huge group skipped: ~a)~%" e))))
 
 (defun bench-mailbox ()
-  "What a buffer's own thread costs. A buffer actor is pinned: its own thread and
-mailbox, so a receive that parks in the debugger cannot take a worker the
-renderer or the input path needs. These rows are the price of that isolation,
-measured against the same receive on the shared dispatcher."
+  "What a message costs, and what a keystroke costs beside it.
+
+A pinned actor has its own thread and mailbox, so a receive that parks in the
+debugger cannot take a worker the renderer or the input path needs.
+
+The rows say what that isolation is worth, and they are also the answer to
+whether pine's actors could come off their own threads. A shared-dispatcher
+ask-s WITH a timeout does not block: sento dispatches it and polls the result
+at 0.05s, so it cannot answer faster than 50ms however quick the receive is.
+Without a timeout it blocks properly and costs what a pinned one costs. Pine's
+ASK always passes a timeout -- a wedged actor must not take the caller with it
+-- so unpinning would put a 50ms floor under every synchronous ask in the tree.
+
+The last row is a keystroke: a buffer is not an actor, so an edit is a write to
+/buf/?name/text and reading it back is a slot read."
   (handler-case
       (let* ((srv (pine.core.server:start-server))
              (sys (pine.core.server:actor-system srv))
@@ -482,17 +496,22 @@ measured against the same receive on the shared dispatcher."
                                                              :state nil :receive echo))
                    (shared (sento.actor-context:actor-of sys :name "bench-shared"
                                                              :state nil :receive echo))
-                   (buffer (pine.text.buffer:make-buffer-actor sys "bench-mailbox"))
                    rows)
+               (pine.ns:raise :buf)
+               (pine.buf:make "bench-mailbox")
                (push (defbench "ask round-trip, pinned mailbox"
                        (sento.actor:ask-s pinned '(:ping) :time-out 5))
                      rows)
-               (push (defbench "ask round-trip, shared dispatcher"
+               (push (defbench "ask round-trip, shared dispatcher, timeout"
                        (sento.actor:ask-s shared '(:ping) :time-out 5))
                      rows)
+               (push (defbench "ask round-trip, shared dispatcher, no timeout"
+                       (sento.actor:ask-s shared '(:ping)))
+                     rows)
                (push (defbench "buffer insert then read back (a keystroke, end to end)"
-                       (progn (sento.actor:tell buffer '(:insert :char #\a))
-                              (sento.actor:ask-s buffer '(:get-snapshot) :time-out 5)))
+                       (progn (pine.ns:write (pine.buf:at "bench-mailbox" :text)
+                                             (fset:seq :insert "a"))
+                              (pine.ns:read (pine.buf:at "bench-mailbox" :text))))
                      rows)
                (print-table "the mailbox (what a buffer's own thread costs)"
                             (nreverse rows)))

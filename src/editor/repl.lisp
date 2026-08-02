@@ -1,6 +1,6 @@
 (defpackage #:pine.editor.repl
   (:use :cl)
-  (:local-nicknames (#:world #:pine.state.world))
+  (:local-nicknames (#:ns #:pine.ns))
   (:export
    #:+buffer-name+
    #:start-repl
@@ -12,10 +12,11 @@
    #:mount-mode))
 
 (in-package #:pine.editor.repl)
+(named-readtables:in-readtable pine.path:syntax)
 
-;;;; The repl is a mode, and nothing about it is exempt: it is found by name like
-;;;; any buffer, its prompt is its own meta, and its history is in the store. What
-;;;; the mode's dispatch needs, the receive it runs in was handed.
+;;;; The repl is a mode, and nothing about it is exempt: it is found by name
+;;;; like any buffer, its prompt is its own meta, and its history is a path.
+;;;; Return is the only key it claims, and it claims it as a mode handler.
 
 (defparameter +buffer-name+ "*repl*")
 
@@ -25,41 +26,43 @@ from then on, so a second repl or an agent's can prompt differently.")
 
 (defun repl-buffer ()
   "The repl buffer, or nil when none is open."
-  (pine.editor.frame:buffer +buffer-name+))
+  (pine.buf:live +buffer-name+))
 
 (defun repl-history ()
   "The forms submitted to a repl, most recent first."
-  (world:items :repl-history))
-
-(defun start-repl ()
-  "Open the repl buffer with a prompt on its last line, and answer it."
-  (let ((buf (pine.editor.frame:make-buffer +buffer-name+ :content +prompt+)))
-    (pine.editor.frame:set-buffer-mode buf :repl)
-    (pine.text.buffer:put buf :prompt +prompt+)
-    (let* ((snap (pine.text.buffer:snapshot-of buf))
-           (line (pine.text.buffer:line-count snap)))
-      (pine.text.buffer:put-point buf (1- line) (length +prompt+)))
-    buf))
+  (pine.data:vals (ns:read /repl/history/* (fset:empty-map))))
 
 (defun prompt-of (state)
   "STATE's prompt."
-  (pine.text.buffer:buffer-local state :prompt +prompt+))
+  (pine.buf:local state :prompt +prompt+))
 
 (defun repl-input (state)
   "The text after the prompt on STATE's last line."
   (let* ((prompt (prompt-of state))
-         (last-line (1- (pine.text.buffer:line-count-of state)))
-         (line (fset:@ (pine.text.buffer:lines state) last-line)))
+         (last-line (1- (pine.text:line-count-of state)))
+         (line (fset:@ (pine.text:lines state) last-line)))
     (if (> (length line) (length prompt))
         (subseq line (length prompt))
         "")))
 
-(defun repl-eval (buffer state input)
-  "Evaluate INPUT for BUFFER: a shell command when it starts with !, else lisp."
-  (world:push :repl-history input :unique nil :max 500)
-  (if (and (plusp (length input)) (char= (char input 0) #\!))
-      (run-shell-command buffer state (subseq input 1))
-      (eval-lisp buffer state input)))
+(defun append-output (buffer prompt text)
+  "Put TEXT at the end of BUFFER and start a fresh PROMPT line under it.
+Computed here and written, because that is what the repl does with its own
+buffer: a mode's behaviour is a function from what is there to what should be."
+  (let ((name (pine.buf:name-of buffer)))
+    (when name
+      (let* ((state (pine.buf:state name))
+             (last-line (1- (pine.text:line-count-of state)))
+             (last-col (length (pine.text:line-at state last-line)))
+             (s1 (pine.text:move-mark state :point last-line last-col))
+             (s2 (pine.text:insert-newline s1 last-line last-col))
+             (s3 (pine.text:insert-string s2 (1+ last-line) 0 text))
+             (line (1- (pine.text:line-count-of s3)))
+             (col (length (pine.text:line-at s3 line)))
+             (s4 (pine.text:insert-newline s3 line col)))
+        (pine.ns:write
+         (pine.buf:landing
+          name (pine.text:insert-string s4 (1+ line) 0 prompt)))))))
 
 (defun eval-lisp (buffer state input)
   "Evaluate INPUT through the current eval target, appending the result to BUFFER.
@@ -68,7 +71,7 @@ Off-thread, so a slow, looping or erroring form cannot hold the repl and errors
 reach the debugger surface. :local runs in the daemon image, a set target in that
 agent's."
   (let ((prompt (prompt-of state)))
-    (pine.editor.target:eval-in-target
+    (pine.eval:in-target
      input
      (find-package :cl-user)
      :on-done
@@ -81,7 +84,9 @@ agent's."
                          (and (plusp (length out)) out)
                          (pine.err:evaluation-values ev))))
           (:aborted "; aborted")
-          (t (format nil "; error: ~a" (pine.err:evaluation-condition ev)))))))))
+          (t (let ((f (pine.err:evaluation-fault ev)))
+               (format nil "; error: ~a"
+                       (if f (pine.err:fault-condition f) "an evaluation failed"))))))))))
 
 (defun run-shell-command (buffer state cmd)
   "Run CMD through the shell and append its output to BUFFER."
@@ -95,25 +100,12 @@ agent's."
       (error (c)
         (append-output buffer prompt (format nil "shell error: ~a" c))))))
 
-(defun append-output (buffer prompt text)
-  "Put TEXT at the end of BUFFER and start a fresh PROMPT line under it.
-
-Computed here and written, because that is what the repl does with its own
-buffer: a mode's behaviour is a function from what is there to what should be."
-  (let ((name (pine.text.buffer:name-of buffer)))
-    (when name
-      (let* ((state (pine.text.buffer:from-paths name))
-             (last-line (1- (pine.text.buffer:line-count-of state)))
-             (last-col (length (pine.text.buffer:line-at state last-line)))
-             (s1 (pine.text.buffer:move-mark state :point last-line last-col))
-             (s2 (pine.text.buffer:insert-newline s1 last-line last-col))
-             (s3 (pine.text.buffer:insert-string s2 (1+ last-line) 0 text))
-             (line (1- (pine.text.buffer:line-count-of s3)))
-             (col (length (pine.text.buffer:line-at s3 line)))
-             (s4 (pine.text.buffer:insert-newline s3 line col)))
-        (pine.ns:write
-         (pine.text.buffer:to-paths
-          name (pine.text.buffer:insert-string s4 (1+ line) 0 prompt)))))))
+(defun repl-eval (buffer state input)
+  "Evaluate INPUT for BUFFER: a shell command when it starts with !, else lisp."
+  (ns:write /repl/history input :max 500)
+  (if (and (plusp (length input)) (char= (char input 0) #\!))
+      (run-shell-command buffer state (subseq input 1))
+      (eval-lisp buffer state input)))
 
 (defun repl-submit (buffer state)
   "Evaluate the input on STATE's last line, appending the result to BUFFER.
@@ -126,16 +118,25 @@ buffer actor binds *client*."
     (when (plusp (length input))
       (repl-eval buffer state input))))
 
-;;;; The repl is a mode, and Return is the only thing it claims: not a newline
-;;;; here, but the submit.
-
 (defun mount-mode ()
-  (pine.ns:write (pine.path:parse "/mode/repl")
+  (pine.ns:write /mode/repl
                  (fset:map (:parent :lisp)
                            (:indicator "REPL")
                            (:on (fset:map
                                  (:newline
                                   (lambda (name)
-                                    (repl-submit (pine.editor.frame:buffer name)
-                                                 (pine.text.buffer:from-paths name))
+                                    (repl-submit (pine.buf:live name)
+                                                 (pine.buf:state name))
                                     (fset:empty-map))))))))
+
+(defun start-repl ()
+  "Open the repl buffer with a prompt on its last line, and answer it. The mode
+is written here: a repl that has never been opened is a mode nothing needs."
+  (mount-mode)
+  (let ((buf (pine.editor.frame:make-buffer +buffer-name+ :content +prompt+)))
+    (pine.editor.frame:set-buffer-mode buf :repl)
+    (pine.buf:put buf :prompt +prompt+)
+    (let* ((snap (pine.buf:snapshot-of buf))
+           (line (pine.text:line-count snap)))
+      (pine.buf:put-point buf (1- line) (length +prompt+)))
+    buf))

@@ -8,12 +8,19 @@
 ;;;; the editor frame itself (no window, no daemon).
 
 (defun %shot-substrate ()
+  "The daemon's own substrate, without the daemon: the tree raised, a runtime
+for the grammars, and the local agent. Raised, because a buffer's text is a
+string on the way in and its lines in the tree, and the clause that makes it
+lines is /buf's -- without it the renderer would walk a string a character at a
+time."
   (let ((srv (pine.core.server:start-server)))
     (setf pine.core.server:*server* srv
           (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
     (ignore-errors (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv)))
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
+    (pine.ns:raise-all :system (pine.core.server:actor-system srv)
+                       :runtime (pine.core.server:ts-runtime srv))
     srv))
 
 (defun frame-shot (&key (path "/tmp/pine-shot.png")
@@ -29,17 +36,17 @@ session, its tree refreshed and cell-rendered through pine.ui.cells:render."
   (let* ((sess (pine.editor.session:make-editor-session
                 nil :sink (lambda (&rest args) (declare (ignore args)) nil)))
          (client (pine.editor.session:sess-client sess)))
-    (let ((buf (pine.editor.frame:current-buffer client)))
-      (pine.editor.ask:tell buf :replace-content :content text))
+    (let ((buf (pine.editor.frame:current-buffer)))
+      (pine.ns:write (pine.buf:at (pine.buf:name-of buf) :text) text))
     (pine.editor.session:session-feed sess (list :resize :cols 84 :rows 30))
     (sleep 0.8)
     (let* ((pine.editor.frame:*client* client)
-           (tree (pine.ui.render:refresh-editor-tree client))
+           (tree (pine.editor.render:refresh-editor-tree client))
            (f (pine.editor.frame:frame client))
            (rows (and tree
                       (nth-value 0 (pine.ui.cells:render
-                                    tree (pine.text.window:frame-cols f)
-                                    :height (pine.text.window:frame-rows f))))))
+                                    tree (pine.editor.view-state:frame-cols f)
+                                    :height (pine.editor.view-state:frame-rows f))))))
       (cond (rows (pine.cairo.grid:render-grid-to-png rows path)
                   (format t "~&wrote ~a~%" path) path)
             (t (format t "~&shot: no frame captured~%") nil)))))
@@ -49,27 +56,27 @@ session, its tree refreshed and cell-rendered through pine.ui.cells:render."
 ;;;; the registry, and render it to a PNG. Read the PNGs to see what the wayflan
 ;;;; client will show -- no window, no daemon, no display.
 
-(defun ensure-env ()
+(defun ensure-env (&optional (init (merge-pathnames "pine/init.lisp"
+                                                    (uiop:xdg-config-home))))
+  "Raise the substrate, then load INIT, which is what declares the surfaces.
+
+The substrate is raised because a config's providers are written on it: /sys
+reads /file, /audio runs /sh. Without it every panel would render zeros and the
+shot would say the surfaces are broken when it is the tree that is missing. A
+config that will not load is reported and the shot goes on with whatever did."
   (unless pine.core.server:*server*
     (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
-  (let ((init (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home))))
-    (when (probe-file init)
-      (let ((*package* (find-package :pine.user))) (load init)))))
+  (pine.ns:raise-all)
+  (when (probe-file init)
+    (handler-case (pine:load-config init)
+      (error (e) (format *error-output* "~&shot: ~a: ~a~%" init e)))))
 
-(defun seed-refs ()
-  (flet ((c (name val) (pine.state.ref:set-ref (pine.state.ref:make-ref :name name) val)))
-    (c :sys '(:cpu 42 :ram 68 :disk 55 :temp 47))
-    (c :vol 65) (c :muted nil) (c :bri 40)
-    (c :user "bfh") (c :host "pine") (c :uptime "up 3:21")
-    (c :clock (get-universal-time))
-    (c :workspaces '((:idx 1 :focused t) (:idx 2) (:idx 3) (:idx 4)))
-    (c :net "home-5g") (c :hint "") (c :wintitle "")
-    (c :sinks '((:name "spk" :desc "Speakers" :default t)
-                (:name "hp"  :desc "Headphones")))
-    (c :netlist '((:ssid "home-5g" :in_use t :sig "hi" :secure t)
-                  (:ssid "cafe"    :sig "mid" :secure nil)
-                  (:ssid "neighbor" :sig "lo" :secure t)))
-    (c :netactions '((:label "Scan" :kind :scan) (:label "Disconnect" :kind :down :style "no")))))
+(defun seed-paths ()
+  "The paths nothing serves, so a surface reading one gets a value rather than
+nothing. Everything a provider answers is left alone: with the substrate up it
+reads this machine, which is what a shot is for."
+  (flet ((w (path value) (pine.ns:write (pine.path:parse path) value)))
+    (w "/hint" "") (w "/wintitle" "")))
 
 (defparameter *shots* '("ctl" "audio" "network" "media" "calendar" "bar"))
 
@@ -101,11 +108,11 @@ cairo pass, the same shape the live editor surface ships."
   (let* ((rows (sample-editor-rows))
          (n (length rows))
          (tree (pine.ui.build:column :align :stretch
-                 (pine.ui.build:window (subseq rows 0 (- n 2))
+                 (pine.ui.build:cells (subseq rows 0 (- n 2))
                                      :crow 3 :ccol 8 :expand 1
                                      :font-px 15 :opacity 0.9)
-                 (pine.ui.build:window (list (nth (- n 2) rows)) :font-px 15)
-                 (pine.ui.build:window (list (nth (1- n) rows)) :font-px 15)))
+                 (pine.ui.build:cells (list (nth (- n 2) rows)) :font-px 15)
+                 (pine.ui.build:cells (list (nth (1- n) rows)) :font-px 15)))
          (w 560) (h 480) (path (format nil "~a/pine-cairo-editor.png" dir)))
     (pine.cairo.paint:with-cairo-layout
       (let ((surface (cairo:create-image-surface :argb32 w h)))
@@ -116,16 +123,19 @@ cairo pass, the same shape the live editor surface ships."
         (cairo:surface-write-to-png surface path)))
     (cons "editor" (list :w w :h h :path path))))
 
-(defun shot (&key (dir "/tmp"))
-  "Render every desktop surface to DIR/pine-cairo-NAME.png; return the results."
-  (ensure-env)                                     ; loads init.lisp -> registers surfaces
-  (seed-refs)                                     ; sample data over the defrefs
-  (let ((surfaces (symbol-value (find-symbol "*SURFACES*" :pine.desktop))))
-    (append
-     (loop for name in *shots*
-           for builder = (gethash name surfaces)
-           when builder
-             collect (let ((path (format nil "~a/pine-cairo-~a.png" dir name)))
-                       (cons name (pine.cairo.paint:render-tree-to-png (funcall builder nil) path
-                                    :avail-w (if (string= name "bar") 120 440)))))
-     (list (ignore-errors (editor-shot dir))))))
+(defun shot (&key (dir "/tmp")
+                  (config (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home))))
+  "Render every surface CONFIG declares to DIR/pine-cairo-NAME.png, and answer
+what was written."
+  (ensure-env config)
+  (seed-paths)
+  (append
+   (loop :for name :in *shots*
+         :for tree = (pine.desktop:surface-tree name)
+         :when tree
+           :collect (let ((path (format nil "~a/pine-cairo-~a.png" dir name)))
+                      (cons name
+                            (pine.cairo.paint:render-tree-to-png
+                             tree path
+                             :avail-w (if (string= name "bar") 120 440)))))
+   (list (ignore-errors (editor-shot dir)))))

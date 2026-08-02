@@ -1,49 +1,59 @@
 (defpackage #:pine.core.agent
   (:use #:cl)
+  (:local-nicknames (#:ns #:pine.ns) (#:err #:pine.err) (#:d #:pine.data))
   (:export #:connect #:serve #:*agent-system* #:*name*))
 
 (in-package #:pine.core.agent)
+(named-readtables:in-readtable pine.path:syntax)
 
-;;;; A process agent's own code. A spawned SBCL image loads :pine and calls
-;;;; connect: it enables remoting, runs evals through pine.err (the same engine
-;;;; the daemon uses), and -- crucially -- routes any error's restarts HOME to
-;;;; the master by name. The eval blocks in its own thread holding the live
-;;;; restarts; the master (the editor, the helm) picks a name and sends :resume;
-;;;; the agent invokes that restart locally. Move the decision, not the handler.
+;;;; A process agent's own code. The image loads :pine and calls CONNECT: it
+;;;; enables remoting, runs evals through pine.err and reports what its /err
+;;;; holds to the master by name. The eval stands in its own thread holding the
+;;;; live restarts; the master picks a name and sends :resume. A fault and the
+;;;; job it stopped carry one id, so :eval, :agent-debug and :agent-result all
+;;;; name the same thing.
 
 (defvar *agent-system* nil)
+
 (defvar *name* nil)
-(defvar *evals* (make-hash-table) "eval-id -> evaluation, for :resume by name.")
-(defvar *ev-ids* (make-hash-table :test 'eq) "evaluation -> eval-id, for *on-debug*.")
-(defvar *counter* 0)
+
 (defvar *master-debug* nil "remote-ref to the master's agent-debug actor.")
 
+(defun %report-home (name)
+  "Tell the master every fault, then the whole set. Nothing here remembers what
+was sent, so two threads faulting at once cannot lose a report between them, and
+a fault decided over there stops being one here by being missing from the next
+set."
+  (let ((here (err:faults)))
+    (handler-case
+        (progn
+          (dolist (f here)
+            (sento.actor:tell *master-debug*
+              (list :agent-debug :agent name :eval-id (err:fault-id f)
+                    :condition (err:fault-condition f)
+                    :restarts (mapcar #'first (err:offers f)))))
+          (sento.actor:tell *master-debug*
+            (list :agent-faults :agent name
+                  :ids (mapcar #'err:fault-id here))))
+      (error (c)
+        (format *error-output*
+                "pine agent ~a: could not report a fault home: ~a~%" name c)
+        (finish-output *error-output*)))))
+
 (defun serve (sys &key name master-host master-port self-port)
-  "Make an existing remoting-enabled actor SYSTEM addressable as agent NAME:
-install the :eval/:resume agent actor and the error-home hook, and register
-with the master's agent-registry. This is the process-agent protocol for any
-image that already has its own system -- a spawned agent via CONNECT, or a
-frontend serving itself up for eval and debugging."
+  "Make a remoting-enabled SYS addressable as agent NAME: the :eval/:resume
+actor, the watch that reports faults home, and a registration with the master.
+Any image with a system of its own can take this: a spawned agent, or a frontend
+serving itself up for eval and debugging."
   (setf *name* name)
   (setf *master-debug*
         (sento.remoting:make-remote-ref
          sys (pine.core.server:daemon-uri "agent-debug" :host master-host :port master-port)))
-  ;; an error in this image ships its restart list home, by name
-  (setf pine.err:*on-debug*
-        (lambda (ev)
-          ;; Reported here rather than through ATTEMPT: attempt reports via
-          ;; *on-debug*, which is this lambda, so a failing tell would recur.
-          ;; A lost message means the eval thread waits for a restart the
-          ;; master was never told to offer, so it must be loud.
-          (handler-case
-              (sento.actor:tell *master-debug*
-                (list :agent-debug :agent name :eval-id (gethash ev *ev-ids*)
-                      :condition (princ-to-string (pine.err:evaluation-condition ev))
-                      :restarts (mapcar #'first (pine.err:evaluation-restarts ev))))
-            (error (c)
-              (format *error-output*
-                      "pine agent ~a: could not report a fault home: ~a~%" name c)
-              (finish-output *error-output*)))))
+  ;; watching /err is also what tells pine.err that something in this image is
+  ;; in a position to decide, so an eval here parks holding its restarts
+  ;; instead of taking its abort for want of anyone to ask
+  (ns:watch /err (lambda (value) (declare (ignore value)) (%report-home name))
+            :as :fault-home)
   (sento.actor-context:actor-of sys :name "agent"
     :dispatcher :pinned
     :receive
@@ -52,35 +62,28 @@ frontend serving itself up for eval and debugging."
         (:ping (sento.actor:reply :pong))
         (:eval
          (destructuring-bind (&key form package &allow-other-keys) (rest msg)
-           (let* ((id (incf *counter*))
-                  (pkg (or (and package (find-package package)) (find-package :cl-user)))
-                  (ev (pine.err:evaluate-string
+           (let* ((pkg (or (and package (find-package package)) (find-package :cl-user)))
+                  (ev (err:evaluate-string
                        form :package pkg
                        :on-done
                        (lambda (ev)
-                         (pine.err:attempt
+                         (err:attempt
                           (lambda ()
                             (sento.actor:tell *master-debug*
-                              (list :agent-result :agent name :eval-id id
-                                    :status (pine.err:evaluation-status ev)
+                              (list :agent-result :agent name
+                                    :eval-id (err:evaluation-id ev)
+                                    :status (err:evaluation-status ev)
                                     :values (mapcar #'prin1-to-string
-                                                    (pine.err:evaluation-values ev)))))
-                          "agent result home")
-                         ;; on-done runs after any debugger resolves, so the
-                         ;; eval is finished with: drop it rather than pin it
-                         ;; and everything it captured for the image's life.
-                         (remhash id *evals*)
-                         (remhash ev *ev-ids*)))))
-             (setf (gethash id *evals*) ev (gethash ev *ev-ids*) id)
-             (sento.actor:reply (list :started id)))))
+                                                    (err:evaluation-values ev)))))
+                          "agent result home")))))
+             (sento.actor:reply (list :started (err:evaluation-id ev))))))
         (:resume
          (destructuring-bind (&key eval-id restart) (rest msg)
-           (let ((ev (gethash eval-id *evals*)))
-             (when ev (pine.err:pick-restart ev restart)))
+           (let ((f (err:faults eval-id)))
+             (when f (err:resume f restart)))
            (sento.actor:reply :resumed)))
         (:shutdown
-         ;; kill-agent means the process ends, not just a reply: answer, then
-         ;; exit the image off the actor thread.
+         ;; kill-agent means the process ends, not just a reply
          (sento.actor:reply :ok)
          (bordeaux-threads:make-thread
           (lambda () (sleep 0.2) (sb-ext:exit :code 0 :abort t))

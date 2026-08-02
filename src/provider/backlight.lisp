@@ -21,8 +21,8 @@
 (defun %brightness ()
   (let ((device (%device)))
     (when device
-      (let ((now (out:int-file (merge-pathnames "brightness" device)))
-            (most (out:int-file (merge-pathnames "max_brightness" device))))
+      (let ((now (out:int-file (namestring (merge-pathnames "brightness" device))))
+            (most (out:int-file (namestring (merge-pathnames "max_brightness" device)))))
         (when (and now most (plusp most)) (round (* 100 now) most))))))
 
 (defun %set-brightness (percent)

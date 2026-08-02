@@ -1,6 +1,6 @@
 (defpackage #:pine.ui.cells
   (:use #:cl #:pine.ui.node #:pine.ui.raster)
-  (:export #:class-names #:node-classes #:render))
+  (:export #:class-names #:node-classes #:render #:rows-of))
 
 (in-package #:pine.ui.cells)
 
@@ -11,15 +11,18 @@
 ;;;; in the same (fg bg attr) run values. The arranged tree rides along so any
 ;;;; rendered (line col) maps back to its node with no side table.
 
-(defun class-names (c)
-  "Normalize a :class value to a list of class-name strings: a keyword or
-symbol is its downcased name, a list is the class set, a string splits on
-spaces."
-  (etypecase c
-    (null nil)
-    (symbol (list (string-downcase (symbol-name c))))
-    (string (remove "" (uiop:split-string c :separator '(#\space)) :test #'string=))
-    (list (mapcan #'class-names c))))
+(defgeneric class-names (c)
+  (:documentation "A :class value as a list of class-name strings.")
+  (:method ((c null)) nil))
+
+(defmethod class-names ((c symbol))
+  (list (string-downcase (symbol-name c))))
+
+(defmethod class-names ((c string))
+  (remove "" (uiop:split-string c :separator '(#\space)) :test #'string=))
+
+(defmethod class-names ((c cons))
+  (mapcan #'class-names c))
 
 (defun node-classes (n)
   (class-names (css-class n)))
@@ -64,7 +67,7 @@ at build time; the rendered tree is read-only afterwards."
     (walk root chain))
   root)
 
-(defun raster->rows (r)
+(defun rows-of (r)
   "Scan raster R into rows (TEXT . RUNS), run = (col fr fg fb br bg bb attr) --
 the same run format frame->rows ships on the wire, so one format serves the
 frame, the chrome, and layout buffer rows."
@@ -89,7 +92,8 @@ format, TREE the arranged root whose rects make node-at a position->node map.
 The returned tree is read-only: selection is an input here, never a mutation of
 a published tree. Layout buffers use static children (vstack), not list-node
 item functions, which build only at measure."
-  (let ((pine.ui.layout:*text-size* nil))
+  (pine.ui.face:with-faces
+   (let ((pine.ui.layout:*text-size* nil))
     (when selection
       (loop for s in (pine.ui.layout:collect-selectables root) for i from 0
             do (setf (selectedp s) (= i selection))))
@@ -100,13 +104,4 @@ item functions, which build only at measure."
              (r (make-raster width h)))
         (pine.ui.layout:arrange root 0 0 width h)
         (pine.ui.layout:paint root r)
-        (values (raster->rows r) root)))))
-
-
-;;;; Widgets -- a widget is a function of its arguments returning a node tree.
-;;;; Reading reactive cells (pine.state.ref:deref) in the body makes it re-render
-;;;; when those cells change, when rendered inside a reactive view. Widgets
-;;;; compose by calling one another.
-
-(defmacro defwidget (name (&rest args) &body body)
-  `(defun ,name (,@args) ,@body))
+        (values (rows-of r) root))))))

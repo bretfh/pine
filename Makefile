@@ -80,8 +80,10 @@ probe:
 
 # load and faults under volume: hundreds of buffers, thousands of messages,
 # concurrent writers, fault storms, edits off the end of a buffer: make stress
+# :abort t, because the suite raises actor systems and pty readers: an orderly
+# exit waits for those threads and the image hangs holding its remoting port.
 stress:
-	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/test)" --eval "(unless (fiveam:run! :pine.stress) (sb-ext:exit :code 1))"'
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/test)" --eval "(sb-ext:exit :code (if (fiveam:run! :pine.stress) 0 1) :abort t)"'
 
 # print each highlighted token of a source file and its face: make hl FILE=x.lisp
 hl:
@@ -111,3 +113,8 @@ wm-nested:
 # headless (no window, no daemon): make cairo-shot
 cairo-shot:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine.cairo.shot:shot))" --eval "(terpri)" --eval "(sb-ext:exit)"'
+
+# evaluate one form in an image with the test system loaded, in PINE.TEST, with
+# the debugger left on so a fault prints its backtrace: make eval FORM='(...)'
+eval:
+	FORM='$(FORM)' $(GUIX) sh -c '$(ENV) $(SBCL) --disable-debugger --eval "(asdf:load-system :pine/test)" --eval "(in-package :pine.test)" --eval "(eval (read-from-string (uiop:getenv \"FORM\")))" --quit'

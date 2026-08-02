@@ -5,12 +5,14 @@
 
 (in-package #:pine.cli)
 
+
 ;;;; pine is the three verbs against the running daemon, plus the lifecycle it
 ;;;; cannot express from inside itself.
 ;;;;
 ;;;;   pine read  /audio/volume
 ;;;;   pine read  '/proc/*/state'
 ;;;;   pine write /audio/volume 40
+;;;;   pine write -y '/buf/*/tab-width' 4
 ;;;;   pine write /buf/scratch/text '[:insert "hello"]'
 ;;;;   pine watch /media/title
 ;;;;   pine diff  /was/-1h /
@@ -23,7 +25,7 @@
 ;;;; from the shell today.
 
 (defparameter *usage*
-  "usage: pine {read PATH | write PATH VALUE | watch PATH | diff FROM TO |
+  "usage: pine {read PATH | write [-y] PATH VALUE | watch PATH | diff FROM TO |
              start | stop | restart | daemon | editor | desktop | wm |
              session [DISPLAY] | status | eval FORM | reload | agents |
              spawn NAME | kill NAME}")
@@ -34,7 +36,7 @@
   "An actor system for this one command. The process exits after, so nothing
 here is torn down."
   (let ((sys (sento.actor-system:make-actor-system
-              '(:dispatchers (:shared (:workers 1 :strategy :random))))))
+              (server:actor-config :workers 1 :scheduler nil))))
     (sento.remoting:enable-remoting sys :host server:*host* :port 0)
     sys))
 
@@ -42,12 +44,12 @@ here is torn down."
   (sento.remoting:make-remote-ref
    sys (server:daemon-uri "control" :host host :port port)))
 
-(defun ask (message &key (host server:*host*) (port server:*port*))
+(defun ask (message &key (host server:*host*) (port server:*port*) (print t))
   "Ask the daemon MESSAGE, print what it said, and answer it."
   (handler-case
       (let ((answer (pine.core.actor:ask (%control (%system) :host host :port port)
                                          message :timeout 5)))
-        (format t "~a~%" answer)
+        (when print (format t "~a~%" answer))
         answer)
     (error () (format t "pine: no daemon at ~a:~d~%" host port) nil)))
 
@@ -56,7 +58,19 @@ here is torn down."
 
 (defun read-path (text) (ask (list :read text)))
 
-(defun write-path (text value) (ask (list :write text value)))
+(defun %agreed (paths)
+  "List PATHS and ask. A write that lands in more than one place says which
+before it does, because the shell is where a pattern is easiest to mistype."
+  (format t "this writes ~d paths:~%~{  ~a~%~}proceed? [y/N] " (length paths) paths)
+  (finish-output)
+  (let ((line (read-line *standard-input* nil "")))
+    (and (plusp (length line)) (char-equal #\y (char line 0)))))
+
+(defun write-path (text value &key force)
+  (let ((matches (unless force (ask (list :matches text) :print nil))))
+    (if (and (consp matches) (rest matches) (not (%agreed matches)))
+        (format t "pine: nothing written~%")
+        (ask (list :write text value force)))))
 
 (defun diff-paths (from to) (ask (list :diff from to)))
 
@@ -98,15 +112,21 @@ the port is free even if it was an old or wedged daemon."
 
 (defun main (&optional (args (rest sb-ext:*posix-argv*)))
   ;; a CLI prints its answer, nothing else: quiet sento/log4cl's INFO chatter
-  ;; (actor-system config, "Remoting enabled on ...") that otherwise buries it.
+  ;; that otherwise buries it
   (log:config :error)
+  ;; this image may have been saved on another machine, and it answered
+  ;; PINE_PORT and the core count when it was built
+  (server:read-environment)
   (let ((verb (first args)) (more (rest args)))
     (cond
       ((null verb) (format t "~a~%" *usage*))
       ;; the three verbs
       ((string= verb "read")  (read-path (first more)))
-      ((string= verb "write") (write-path (first more)
-                                          (format nil "~{~a~^ ~}" (rest more))))
+      ((string= verb "write")
+       (let ((force (member "-y" more :test #'string=)))
+         (let ((rest (remove "-y" more :test #'string=)))
+           (write-path (first rest) (format nil "~{~a~^ ~}" (cl:rest rest))
+                       :force (and force t)))))
       ((string= verb "watch") (watch-path (first more)))
       ((string= verb "diff")  (diff-paths (first more) (second more)))
       ;; the lifecycle

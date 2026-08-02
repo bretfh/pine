@@ -1,20 +1,39 @@
 (defpackage #:pine.ui.node
   (:use #:cl)
-  (:export #:action #:align #:arc-face #:box #:cal-day #:cal-month #:cal-year #:calendar #:callback #:cb-center #:cb-end #:cb-orient #:cb-start #:cells #:center #:centerbox #:col-widths #:content #:css-class #:data #:diameter #:empty-face #:end-col #:end-line #:expand-of #:face #:fill-of #:filled-face #:font-px #:grad #:grid #:hint #:hovered #:hstack #:item-fn #:items #:key-of #:list-node #:max-of #:max-visible #:min-h #:min-of #:min-w #:node #:node-margin #:nodes #:on-change #:pad-char #:pad-x #:pad-y #:parent #:pic-path #:picture #:prefix-selected #:prefix-unselected #:radius #:rendered #:ring #:ring-fraction #:scroll #:scroll-offset #:selectable #:selectedp #:sep-char #:sep-vertical #:separator #:slider #:slider-fraction #:spacer #:spacing #:start-col #:start-line #:text-node #:thickness #:track #:track-face #:value #:vheight #:vstack #:width-of #:window-base #:window-ccol #:window-crow #:window-kind #:window-node #:window-of #:window-opacity #:window-rows))
+  (:export
+   ;; the base, and what every node carries
+   #:node #:key-of #:parent #:face #:css-class #:hint #:hovered
+   #:radius #:fill-of #:grad #:font-px #:pad-x #:pad-y #:min-w #:min-h
+   #:node-margin #:expand-of #:start-line #:start-col #:end-line #:end-col
+   ;; the widgets
+   #:text-node #:content #:on-change
+   #:separator #:sep-char #:sep-vertical
+   #:spacer #:vstack #:hstack #:nodes #:spacing #:align
+   #:box #:width-of #:pad-char #:center #:centerbox
+   #:cb-orient #:cb-start #:cb-center #:cb-end
+   #:scroll #:scroll-offset #:vheight
+   #:selectable #:data #:selectedp #:prefix-selected #:prefix-unselected
+   #:action #:callback
+   #:list-node #:items #:item-fn #:max-visible #:rendered
+   #:grid #:cells #:col-widths
+   #:slider #:slider-fraction #:filled-face #:empty-face #:track
+   #:ring #:ring-fraction #:thickness #:diameter #:arc-face #:track-face
+   #:value #:min-of #:max-of
+   #:calendar #:cal-year #:cal-month #:cal-day
+   #:picture #:pic-path
+   ;; a leaf holding rendered cell rows
+   #:window-node #:window-rows #:window-crow #:window-ccol #:window-opacity
+   #:window-base #:window-of
+   #:buffer-view #:terminal-view #:modeline-view #:echo-view #:os-window-view))
 
 (in-package #:pine.ui.node)
 
 ;;;; The widget engine. A widget tree is laid out in three passes over a cell
 ;;;; raster: MEASURE reports each node's natural size bottom-up, ARRANGE assigns
-;;;; absolute rects top-down (distributing slack to expanders), and PAINT writes
+;;;; absolute rects top-down, distributing slack to expanders, and PAINT writes
 ;;;; styled cells into each rect. Separating the passes is what gives the box
-;;;; model -- alignment, expansion, and 2D placement -- that a linear emit model
-;;;; cannot. Faces cascade as a background fill plus a foreground colour; after
-;;;; arrange every node has an absolute rect, so hit-testing is exact.
-
-
-;;;; Nodes. The base carries the arranged rect (start/end line+col), a style
-;;;; FACE, and an EXPAND weight for main-axis slack distribution.
+;;;; model: alignment, expansion and 2D placement. After arrange every node has
+;;;; an absolute rect, so hit-testing is exact.
 
 (defclass node ()
   ((key-of  :initarg :key    :accessor key-of  :initform nil)
@@ -47,15 +66,15 @@
    (end-col    :initform 0 :accessor end-col)))
 
 (defclass text-node (node)
-  ((content :initarg :content :accessor content :initform "")))
+  ((content :initarg :content :accessor content :initform "")
+   ;; a run of text that is also a place: FIELD sets this to write the path it
+   ;; shows, so the display and the edit are one path and no config carries a
+   ;; :value or an :on-change
+   (on-change :initarg :on-change :accessor on-change :initform nil)))
 
 (defclass separator (node)
   ((sep-char :initarg :char :accessor sep-char :initform (code-char #x2500))
    (vertical :initarg :vertical :accessor sep-vertical :initform nil)))
-
-(defmethod initialize-instance :after ((n separator) &key)
-  (when (and (sep-vertical n) (char= (sep-char n) (code-char #x2500)))
-    (setf (sep-char n) (code-char #x2502))))
 
 (defclass spacer (node) ())            ; flexible empty space; default expand 1
 
@@ -135,16 +154,11 @@
 (defclass picture (node)
   ((path :initarg :path :accessor pic-path :initform "")))
 
-;; A leaf holding rendered cell rows (a buffer's or a terminal's view, each row
-;; a (text . runs) pair). One node, not a tree of characters: measure and
-;; arrange are O(1), and paint blits the rows. This is how a buffer or a
-;; terminal composes into a widget tree without the layout engine ever touching
-;; the text cell by cell. The class is WINDOW-NODE (node convention); the
-;; constructor and the wire tag stay `window' -- the user language reads
-;; (window "scratch") and pine.text.buffer's window (the scroll/focus view) keeps
-;; its own name in its own package. OF backs a live view with that
-;; pine.text.window:window; KIND (:window :modeline :echo) marks what the editor's
-;; render walk refreshes; neither crosses the wire.
+;; A leaf holding rendered cell rows, each row a (text . runs) pair: measure and
+;; arrange are O(1) and paint blits the rows, so a buffer or a terminal composes
+;; into a widget tree without the layout engine touching the text cell by cell.
+;; OF backs a live view with a pine.editor.view-state:window, and does not cross
+;; the wire.
 (defclass window-node (node)
   ((rows :initarg :rows :accessor window-rows :initform nil)
    (crow :initarg :crow :accessor window-crow :initform -1)
@@ -155,8 +169,22 @@
    ;; popup floats above the echo line wherever the echo sits, without
    ;; reflowing the tree as the candidate count changes. nil = all rows flow.
    (base :initarg :base :accessor window-base :initform nil)
-   (of   :initarg :of   :accessor window-of   :initform nil)
-   (kind :initarg :kind :accessor window-kind :initform nil)))
+   (of   :initarg :of   :accessor window-of   :initform nil)))
+
+(defclass buffer-view (window-node) ()
+  (:documentation "A window onto a buffer."))
+
+(defclass terminal-view (buffer-view) ()
+  (:documentation "A window onto a terminal buffer."))
+
+(defclass modeline-view (window-node) ()
+  (:documentation "The mode line of a window."))
+
+(defclass echo-view (window-node) ()
+  (:documentation "The echo line."))
+
+(defclass os-window-view (window-node) ()
+  (:documentation "A window the compositor holds, laid out by /wm."))
 
 (defclass centerbox (node)
   ((orient    :initarg :orient :accessor cb-orient :initform :v)
@@ -166,6 +194,10 @@
 
 (defmethod initialize-instance :after ((n node) &key pad)
   (when pad (setf (pad-x n) pad (pad-y n) pad)))
+
+(defmethod initialize-instance :after ((n separator) &key)
+  (when (and (sep-vertical n) (char= (sep-char n) (code-char #x2500)))
+    (setf (sep-char n) (code-char #x2502))))
 
 (defmethod initialize-instance :after ((n spacer) &key)
   (when (zerop (expand-of n)) (setf (expand-of n) 1)))

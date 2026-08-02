@@ -10,6 +10,12 @@ owns the queue the daemon's threads hand work across."))
 
 (in-package #:pine.frontend)
 
+(defparameter *attach-attempts* 60
+  "How many times a frontend re-announces itself while the daemon is silent.")
+
+(defparameter *attach-interval* 2
+  "Seconds between those attempts.")
+
 ;;;; What every frontend is, whatever it draws on. Two things: the way it
 ;;;; joins the daemon, and the queue the daemon's threads hand work across.
 ;;;; The backing owns the loop that drains that queue, because only the
@@ -113,12 +119,6 @@ when it has none."
                 (drain-wake pump)))))
 
 ;;;; Joining the daemon.
-
-(defparameter *attach-attempts* 60
-  "How many times a frontend re-announces itself while the daemon is silent.")
-
-(defparameter *attach-interval* 2
-  "Seconds between those attempts.")
 
 (defun %keep-attaching (sys daemon self kind ready)
   (bordeaux-threads:make-thread

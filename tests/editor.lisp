@@ -1,4 +1,5 @@
 (in-package :pine.test)
+(named-readtables:in-readtable pine.data:syntax)
 
 (def-suite* :pine.editor :in :pine)
 
@@ -9,12 +10,12 @@
 (test the-minibuffer-is-a-real-buffer
   (with-fixture substrate ()
     (let ((chosen :none))
-      (pine.editor.minibuffer:completing-read
-       "M-x " '("forward-word" "backward-word" "kill-line")
-       (lambda (r) (setf chosen r)))
+      (pine.ns:write (pine.path:parse "/echo")
+                     {:prompt "M-x "
+                      :complete '("forward-word" "backward-word" "kill-line")
+                      :then (lambda (r) (setf chosen r))})
       (sleep 0.15)
-      (is (eq (pine.editor.frame::current-buffer *client*)
-              (pine.editor.frame::minibuffer-buffer *client*)))
+      (is (string= pine.echo:+buffer+ (pine.buf:current-name)))
       (type-text "abc")
       (is (string= "abc" (minibuffer-input)))
       (press* "C-a" "C-f" "X")
@@ -27,19 +28,19 @@
       (type-text "forward")
       (sleep 0.15)
       (is (equal '("forward-word")
-                 (mapcar #'pine.editor.completion:candidate-string
-                         (pine.editor.echo:said :filtered))))
+                 (mapcar #'pine.echo:candidate-string
+                         (pine.echo:said :filtered))))
       (press "Return")
       (sleep 0.15)
       (is (string= "forward-word" chosen))
-      (is (not (eq (pine.editor.frame::current-buffer *client*)
-                   (pine.editor.frame::minibuffer-buffer *client*)))))))
+      (is (not (equal pine.echo:+buffer+ (pine.buf:current-name)))))))
 
 (test the-completion-popup-styles-the-selected-row
   (with-fixture substrate ()
-    (pine.editor.minibuffer:completing-read "M-x " '("aaa" "bbb") (lambda (r) r))
+    (pine.ns:write (pine.path:parse "/echo")
+                   {:prompt "M-x " :complete '("aaa" "bbb") :then (lambda (r) r)})
     (sleep 0.15)
-    (let ((rows (pine.editor.echo:popup-rows)))
+    (let ((rows (pine.echo:popup-rows)))
       (is (not (null rows)))
       (is (search "aaa" (car (first rows))))
       (is (equal (multiple-value-list
@@ -49,15 +50,17 @@
 
 (test a-prompt-fired-over-a-prompt-keeps-the-original-return-buffer
   (with-fixture substrate ()
-    (let ((file-buf (pine.editor.frame::current-buffer *client*)))
-      (pine.editor.minibuffer:completing-read "M-x " '("one" "two") (lambda (r) r))
+    (let ((file-buf (pine.editor.frame::current-buffer)))
+      (pine.ns:write (pine.path:parse "/echo")
+                     {:prompt "M-x " :complete '("one" "two") :then (lambda (r) r)})
       (sleep 0.1)
-      (pine.editor.minibuffer:completing-read "M-x " '("three") (lambda (r) r))
+      (pine.ns:write (pine.path:parse "/echo")
+                     {:prompt "M-x " :complete '("three") :then (lambda (r) r)})
       (sleep 0.1)
-      (is (eq file-buf (pine.editor.echo:said :back)))
-      (pine.editor.minibuffer:minibuffer-abort)
+      (is (fset:equal? (pine.buf:at file-buf) (pine.echo:said :back)))
+      (pine.echo:abort)
       (sleep 0.1)
-      (is (eq file-buf (pine.editor.frame::current-buffer *client*)))
+      (is (eq file-buf (pine.editor.frame::current-buffer)))
       (press "q")
       (sleep 0.15)
       (is (search "q" (btext file-buf)))
@@ -66,15 +69,15 @@
 (test c-g-aborts-a-prompt-without-firing-its-callback
   (with-fixture substrate ()
     (let ((chosen :none))
-      (pine.editor.minibuffer:completing-read "M-x " '("aaa" "bbb")
-                                              (lambda (r) (setf chosen r)))
+      (pine.ns:write (pine.path:parse "/echo")
+                     {:prompt "M-x " :complete '("aaa" "bbb")
+                      :then (lambda (r) (setf chosen r))})
       (sleep 0.1)
       (press* "a" "C-g")
       (sleep 0.1)
       (is (eq :none chosen))
-      (is (not (eq (pine.editor.frame::current-buffer *client*)
-                   (pine.editor.frame::minibuffer-buffer *client*))))
-      (is (null (pine.editor.echo:popup-rows))))))
+      (is (not (equal pine.echo:+buffer+ (pine.buf:current-name))))
+      (is (null (pine.echo:popup-rows))))))
 
 (test a-failing-edit-leaves-the-buffer-as-it-was
   "An edit is a write, so a bad one signals where it was written and lands
@@ -83,64 +86,88 @@ new value or it did not."
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "err-scratch")))
       (pine.editor.frame::set-buffer-mode buf :text)
-      (pine.text.buffer:edit buf (fset:seq :insert "hello"))
+      (pine.buf:edit buf (fset:seq :insert "hello"))
       (sleep 0.1)
-      (signals error (pine.text.buffer:edit buf (fset:seq :insert 42)))
+      (signals error (pine.buf:edit buf (fset:seq :insert 42)))
       (is (string= "hello" (btext buf)))
-      (pine.text.buffer:edit buf (fset:seq :insert "!"))
+      (pine.buf:edit buf (fset:seq :insert "!"))
       (is (string= "hello!" (btext buf))))))
 
 (test a-failing-command-routes-by-debug-on-error
   (with-fixture substrate ()
-    (let ((seen nil))
-      (pine.ns:write (pine.cmd:at "probe-boom") (lambda () (error "boom")))
-      (setf pine.err:*on-debug* (lambda (ev) (setf seen ev)))
-      (pine.ns:write (pine.path:parse "/debug-on-error") t)
-      (pine.editor.command::call-command "probe-boom")
-      (is (not (null seen)))
-      (setf seen nil)
-      (pine.ns:write (pine.path:parse "/debug-on-error") nil)
-      (pine.editor.command::call-command "probe-boom")
-      (is (null seen))
-      (is (search "boom" (pine.editor.echo:current-message))))))
+    (pine.editor.debugger:install)
+    (pine.ns:write (pine.cmd:at "probe-boom") (lambda () (error "boom")))
+    (pine.ns:write (pine.path:parse "/debug-on-error") t)
+    (pine.key::call-command "probe-boom")
+    (is (not (null (pine.editor.debugger:attended)))
+        "a failing command left no fault at /err")
+    (reset-faults)
+    (pine.ns:write (pine.path:parse "/debug-on-error") nil)
+    (pine.key::call-command "probe-boom")
+    (is (null (pine.editor.debugger:ids)))
+    (is (search "boom" (pine.echo:current-message)))))
+
+(defun probe-agent-fault (agent id condition restarts)
+  "A fault from another image, the way the agent-debug receiver puts one at
+/err."
+  (pine.err:note
+   (make-instance 'pine.core.actor:remote
+                  :server *server* :agent agent :eval-id id
+                  :label (format nil "agent ~a" agent)
+                  :condition condition
+                  :offered (mapcar (lambda (r) (list r nil)) restarts))))
 
 (test concurrent-faults-coexist-and-tab-pages-between-them
   (with-fixture substrate ()
-    (pine.editor.debugger:agent-debug-surface
-     (list :agent-debug :agent "alpha" :eval-id 1 :condition "boom-a"
-           :restarts (list "RETRY" "ABORT")))
-    (pine.editor.debugger:agent-debug-surface
-     (list :agent-debug :agent "beta" :eval-id 2 :condition "boom-b"
-           :restarts (list "ABORT")))
+    (pine.editor.debugger:install)
+    (probe-agent-fault "alpha" 1 "boom-a" (list "RETRY" "ABORT"))
+    (probe-agent-fault "beta" 2 "boom-b" (list "ABORT"))
     (sleep 0.1)
-    (is (= 2 (length pine.editor.debugger:*debugger-sessions*)))
-    (is (string= "beta" (pine.editor.debugger::dbg-session-agent
-                         pine.editor.debugger:*attended-session*)))
-    (is (equal "beta" pine.editor.target:*eval-target*))
+    (is (= 2 (length (pine.editor.debugger:ids))))
+    (is (equal "beta" (pine.eval:target))
+        "the eval target follows the fault, so a fix lands in the image that broke")
     (let ((text (btext "*debugger*")))
       (is (search "alpha" text))
       (is (search "beta" text))
       (is (search "[ABORT]" text)))
-    (pine.editor.command::call-command "debugger-next-session")
+    (pine.key::call-command "debugger-next-session")
     (sleep 0.05)
-    (is (string= "alpha" (pine.editor.debugger::dbg-session-agent
-                          pine.editor.debugger:*attended-session*)))
-    (is (equal "alpha" pine.editor.target:*eval-target*))
-    (pine.editor.command::call-command "view-next")
+    (is (equal "alpha" (pine.eval:target)))
+    (pine.key::call-command "view-next")
     (sleep 0.1)
-    (pine.editor.command::call-command "view-activate")
+    (pine.key::call-command "view-activate")
     (sleep 0.05)
-    (is (= 1 (length pine.editor.debugger:*debugger-sessions*)))
-    (pine.editor.debugger:invoke-pending-restart "ABORT")
+    (is (= 1 (length (pine.editor.debugger:ids))))
+    (pine.editor.debugger:take "ABORT")
     (sleep 0.05)
-    (is (= 0 (length pine.editor.debugger:*debugger-sessions*)))
-    (is (null pine.editor.debugger:*attended-session*))
-    (is (eq :local pine.editor.target:*eval-target*))))
+    (is (= 0 (length (pine.editor.debugger:ids))))
+    (is (null (pine.editor.debugger:attended)))
+    (is (eq :local (pine.eval:target)))))
+
+(test a-watch-that-opens-a-view-is-not-a-cycle
+  "A view's rows are an expression over the tree the watch just wrote, so one
+expression is computed again for each of several paths moving in one wave. That
+is a wave settling, not a loop, and calling it a loop made it impossible to
+show a fault from the watch that heard about it."
+  (with-fixture substrate ()
+    (pine.ns:watch (pine.path:parse "/probe-open")
+                   (lambda (v)
+                     (when v
+                       (pine.view:show "*probe-view*"
+                                       (pine.editor.debugger:text-layout
+                                        (format nil "one~%two"))))
+                     nil)
+                   :as :probe)
+    (unwind-protect
+         (progn
+           (finishes (pine.ns:write (pine.path:parse "/probe-open") t))
+           (is (search "one" (btext "*probe-view*"))))
+      (pine.ns:watch (pine.path:parse "/probe-open") nil :as :probe))))
 
 (test eval-in-target-local-runs-through-the-one-eval-path
   (with-fixture substrate ()
     (let ((done :none))
-      (pine.editor.target:eval-in-target
+      (pine.eval:in-target
        "(+ 1 2)" (find-package :cl-user)
        :on-done (lambda (ev) (setf done (first (pine.err:evaluation-values ev)))))
       (sleep 0.3)
@@ -152,7 +179,7 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
   (with-fixture substrate ()
     (let ((fired nil)
           (buf (pine.editor.frame::make-buffer "view-probe")))
-      (pine.editor.view:show
+      (pine.view:show
        "view-probe"
        (lambda (name)
          (declare (ignore name))
@@ -165,45 +192,42 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
                                 (pine.ui.build:label "two")))))
       (sleep 0.15)
       (is (string= (format nil "hd~%> one~%  two") (btext buf)))
-      (setf (pine.editor.frame::current-buffer *client*) buf)
-      (pine.editor.command::call-command "view-next")
+      (setf (pine.editor.frame::current-buffer) buf)
+      (pine.key::call-command "view-next")
       (sleep 0.1)
       (is (string= (format nil "hd~%  one~%> two") (btext buf)))
-      (pine.editor.command::call-command "view-activate")
+      (pine.key::call-command "view-activate")
       (is (eq :two fired)))))
 
 (test the-user-language-drives-the-real-dispatch
   (with-fixture substrate ()
     (in-user "(defvar *ran* nil)")
-    (in-user "(defcommand \"user-probe-cmd\" () (setf *ran* :yes))")
-    (in-user "(global-set-key (kbd \"C-c p\") \"user-probe-cmd\")")
+    (in-user "(write /cmd/user-probe-cmd (fn () (setf *ran* :yes) {}))")
+    (in-user "(write /key/global/C-c/p /cmd/user-probe-cmd)")
     (press* "C-c" "p")
     (is (eq :yes (user-value "*RAN*")))
     (in-user "(defvar *min* nil)")
-    (in-user "(defcommand \"user-min-cmd\" () (setf *min* :hit))")
+    (in-user "(write /cmd/user-min-cmd (fn () (setf *min* :hit) {}))")
     (in-user "(write /minor/user-probe {:precedence 12})")
-    (in-user "(define-key (keymap :user-probe) (kbd \"z\") \"user-min-cmd\")")
-    (is (null (pine.editor.command::key-binding
-               *client* (pine.editor.key::parse-key "z"))))
-    (in-user "(enable-minor-mode :user-probe)")
+    (in-user "(write /key/mode/user-probe/z /cmd/user-min-cmd)")
+    (is (null (pine.key:key-binding (pine.key:parse-key "z"))))
+    (pine.ns:write (pine.buf:at "scratch" :minor) (fset:seq :conj :user-probe))
     (is (fset:equal? (pine.cmd:at "user-min-cmd")
-                     (pine.editor.command::key-binding
-                      *client* (pine.editor.key::parse-key "z"))))
-    (in-user "(disable-minor-mode :user-probe)")
-    (is (null (pine.editor.command::key-binding
-               *client* (pine.editor.key::parse-key "z"))))
+                     (pine.key:key-binding (pine.key:parse-key "z"))))
+    (pine.ns:write (pine.buf:at "scratch" :minor) (fset:seq :disj :user-probe))
+    (is (null (pine.key:key-binding (pine.key:parse-key "z"))))
     (in-user "(write /mode/user-probe {:parent :text :indicator \"UP\" :files [\"*.upx\"]})")
     (is (eq :user-probe (pine.mode:for-file "/tmp/x.upx")))
-    (in-user "(set-buffer-mode (buffer \"scratch\") :user-probe)")
-    (is (eq :user-probe (pine.editor.ask:ask "scratch" :mode)))
-    (in-user "(set-buffer-mode (buffer \"scratch\") :text)")
+    (in-user "(write /buf/scratch/mode :user-probe)")
+    (is (eq :user-probe (pine.ns:read (pine.buf:at "scratch" :mode))))
+    (in-user "(write /buf/scratch/mode :text)")
     (in-user "(write /user-probe-setting 42)")
     (is (= 42 (in-user "(read /buf/scratch/user-probe-setting)"))
         "a leaf a buffer does not have reads the root")))
 
 (test a-user-rule-styles-a-rendered-label
   (with-fixture substrate ()
-    (in-user "(defrules (\".uprobe\" :color (color :accent)))")
+    (in-user "(write /style/uprobe {:color (color :accent)})")
     (let ((rows (pine.ui.cells:render
                  (pine.ui.build:label "x" :class "uprobe") 6)))
       (is (equal (multiple-value-list
@@ -219,45 +243,52 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
                    (label \"tool\" :class \"help-head\")
                    (choice :data (lambda () (setf *tool* :a)) (label \"a\"))
                    (choice :data (lambda () (setf *tool* :b)) (label \"b\"))))})")
-    (in-user "(buffer \"*user-tool*\")")
+    (in-user "(write /buf/*user-tool*/text \"\")")
     (in-user "(write /buf/*user-tool* {:mode :user-tool})")
-    (in-user "(switch-buffer \"*user-tool*\")")
+    (in-user "(write /buf/current /buf/*user-tool*)")
     (sleep 0.15)
     (is (string= (format nil "tool~%> a~%  b") (btext "*user-tool*")))
-    (pine.editor.command::call-command "view-next")
-    (pine.editor.command::call-command "view-activate")
+    (pine.key::call-command "view-next")
+    (pine.key::call-command "view-activate")
     (sleep 0.05)
     (is (eq :b (user-value "*TOOL*")))))
 
 (test a-user-command-can-prompt-and-echo-its-answer
   (with-fixture substrate ()
     (in-user "(defvar *picked* :none)")
-    (in-user "(defcommand \"user-pick\" ()
-        (completing-read \"pick: \" (list \"xx\" \"yy\")
-          (lambda (r) (setf *picked* r) (message (format nil \"got ~a\" r)))))")
-    (pine.editor.command::call-command "user-pick")
+    (in-user "(write /cmd/user-pick
+        {/echo {:prompt \"pick: \" :complete (list \"xx\" \"yy\")
+                :then (lambda (r) (setf *picked* r)
+                        (message (format nil \"got ~a\" r)))}})")
+    (pine.key::call-command "user-pick")
     (sleep 0.1)
     (type-text "yy")
     (sleep 0.1)
     (press "Return")
     (sleep 0.1)
     (is (string= "yy" (user-value "*PICKED*")))
-    (is (string= "got yy" (pine.editor.echo:current-message)))))
+    (is (string= "got yy" (pine.echo:current-message)))))
 
 (test a-command-answers-to-a-symbol-in-definition-binding-and-call
   (with-fixture substrate ()
     (in-user "(defvar *sym-ran* nil)")
-    (in-user "(defcommand sym-probe () (setf *sym-ran* :sym))")
-    (in-user "(global-set-key (kbd \"C-c y\") 'sym-probe)")
+    (in-user "(write /cmd/sym-probe (fn () (setf *sym-ran* :sym) {}))")
+    (in-user "(write /key/global/C-c/y /cmd/sym-probe)")
     (press* "C-c" "y")
     (is (eq :sym (user-value "*SYM-RAN*")))
     (in-user "(setf *sym-ran* nil)")
-    (pine.editor.command::call-command 'sym-probe)
+    (pine.key::call-command 'sym-probe)
     (is (eq :sym (user-value "*SYM-RAN*")))))
 
-(test current-and-set-bang-are-gone-from-the-language
-  (is (null (find-symbol "CURRENT" :pine.user)))
-  (is (null (find-symbol "SET!" :pine.user))))
+(test the-language-is-the-verbs-the-widgets-and-the-drivers
+  "Everything the doc says is gone, is gone from what a config can name."
+  (dolist (name '("DEFREF" "REF" "DEFONCE" "VAR" "DEFPOLL" "DEFSOURCE"
+                  "DEFSURFACE" "SHOW" "HIDE" "TOGGLE" "DEFCOMMAND" "DEFMODE"
+                  "KBD" "KEYMAP" "DEFINE-KEY" "GLOBAL-SET-KEY" "DEFFACE"
+                  "DEFRULES" "LOAD-THEME" "ASK" "TELL" "BUFFER" "DEFAGENT"
+                  "SPAWN" "KILL" "SH" "LAUNCH" "READ-INT-FILE"))
+    (is (null (find-symbol name :pine.user))
+        "pine.user still names ~a" name)))
 
 (test add-rules-broadcasts-the-merged-set-to-every-attached-app
   (with-fixture substrate ()
@@ -275,26 +306,17 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
       (push client pine.core.attach:*clients*)
       (unwind-protect
            (progn
-             (pine.ui.rules:add-rules '((".wire-probe" (:opacity "0.5"))))
+             (pine.ui.rules:add-rules (list (list ".wire-probe" {:opacity "0.5"})))
              (sleep 0.2)
              (is (find ".wire-probe" got :key #'first :test #'string=)))
         (setf pine.core.attach:*clients*
               (remove client pine.core.attach:*clients*))))))
 
-(test a-persisted-ref-reseeds-after-a-restart
-  (with-fixture substrate ()
-    (in-user "(defref :persist-ref-probe 0 :persist t)")
-    (in-user "(setf (ref :persist-ref-probe) 9)")
-    (is (= 9 (pine.state.world:value '(:ref :persist-ref-probe))))
-    (remhash :persist-ref-probe pine.state.ref::*refs*)
-    (in-user "(defref :persist-ref-probe 0 :persist t)")
-    (is (= 9 (in-user "(ref :persist-ref-probe)")))))
-
 (test a-kill-is-a-write-to-the-ring
   "The kill ring is /kill: pushing is a write, the newest is a read, and it is
 a held path, so it is what the store keeps."
   (with-fixture substrate ()
-    (pine.editor.kill-ring::kill-ring-push "persist-kill-probe")
+    (pine.kill:push-text "persist-kill-probe")
     (is (string= "persist-kill-probe"
                  (pine.ns:read (pine.path:parse "/kill"))))
     (is (eq :held (pine.ns:kind (pine.path:parse "/kill"))))))
@@ -304,35 +326,42 @@ a held path, so it is what the store keeps."
     (let ((path "/tmp/pine-place-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "one~%two~%three~%"))
-      (pine.editor.file::find-file path)
+      (pine.buf::find-file path)
       (sleep 0.15)
-      (is (member path (pine.state.world:items :recent-files) :test #'equal))
-      (let ((buf (pine.editor.frame::buffer "pine-place-probe.txt")))
-        (pine.text.buffer:put-point buf 2 1)
+      (is (member path (pine.data:vals
+                        (pine.ns:read (pine.path:path (pine.path:parse "/recent") (pine.path:any))
+                                      (fset:empty-map)))
+                  :test #'equal))
+      (let ((buf (pine.buf:live "pine-place-probe.txt")))
+        (pine.buf:put-point buf 2 1)
         (sleep 0.1)
-        (setf (pine.editor.frame::current-buffer *client*) buf)
-        (pine.editor.file::save-current-buffer)
+        (setf (pine.editor.frame::current-buffer) buf)
+        (pine.buf:save-current)
         (sleep 0.1)
-        (is (equal '(2 1) (pine.state.world:value (list :place path)))))
+        (is (fset:equal? (fset:seq 2 1)
+                         (pine.ns:read (pine.buf:at "pine-place-probe.txt" :point)))
+            "where point was left is the buffer's own leaf, and it is kept"))
       (pine.editor.frame::kill-buffer "pine-place-probe.txt")
       (sleep 0.1)
-      (pine.editor.file::find-file path)
+      (pine.buf::find-file path)
       (sleep 0.15)
-      (multiple-value-bind (l c)
-          (pine.editor.ask:ask "pine-place-probe.txt" :point)
+      (multiple-value-bind (l c) (pine.buf:point "pine-place-probe.txt")
         (is (equal '(2 1) (list l c))))
       (pine.editor.frame::kill-buffer "pine-place-probe.txt")
       (sleep 0.1))))
 
 (test prompt-history-recalls-with-meta-p
   (with-fixture substrate ()
-    (pine.editor.command::call-command "execute-command")
+    (pine.key::call-command "execute-command")
     (sleep 0.1)
     (type-text "list-buffers")
     (press "Return")
     (sleep 0.1)
-    (is (member "list-buffers" (pine.state.world:items :commands) :test #'equal))
-    (pine.editor.command::call-command "execute-command")
+    (is (member "list-buffers"
+                (pine.data:vals (pine.ns:read (pine.path:path (pine.path:parse "/history/commands") (pine.path:any))
+                                                (fset:empty-map)))
+                :test #'equal))
+    (pine.key::call-command "execute-command")
     (sleep 0.1)
     (press "M-p")
     (sleep 0.1)
@@ -340,82 +369,78 @@ a held path, so it is what the store keeps."
     (press "Escape")
     (sleep 0.1)))
 
-(test the-world-round-trips-the-open-file-and-the-arrangement-holds-itself
-  "The buffers a session had come back through the world; the arrangement does
-not need to, because /win is held: the splits are paths and the paths are the
-store's business like any other."
+(test an-open-file-and-the-arrangement-are-both-just-held-paths
+  "A buffer comes back because its file, its point and its mode are held and
+its text follows from the file. The arrangement comes back the same way. There
+is no snapshot of either."
   (with-fixture substrate ()
-    (setf pine.state.world:*enabled* t)
     (pine.editor.session::%seed-editor-tree *client*)
-    (pine.ui.render:relayout)
+    (pine.editor.render:relayout)
     (let ((path "/tmp/pine-world-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "alpha~%beta~%"))
-      (pine.editor.command::call-command "split-window-below")
+      (pine.key::call-command "split-window-below")
       (sleep 0.1)
-      (pine.editor.file::find-file path)
+      (pine.buf::find-file path)
       (sleep 0.15)
-      (pine.editor.command::call-command "split-window-right")
+      (pine.key::call-command "split-window-right")
       (sleep 0.1)
-      (pine.state.world:save)
       (is (= 3 (length (pine.win:windows))))
       (is (equal "pine-world-probe.txt"
-                 (pine.text.window:window-name
-                  (pine.editor.frame::focused-window))))
+                 (pine.path:leaf (pine.pane:subject (pine.win:focused)))))
       (is (eq :held (pine.ns:kind (pine.path:child (pine.win:focused) "buf")))
           "the arrangement is held, so it comes back with the store")
-      (let ((buffers (pine.state.world:value :buffers)))
-        (is (find path buffers :key (lambda (e) (getf e :path)) :test #'equal)
-            "the world should hold the open file, saw ~s" buffers))
-      (pine.editor.command::call-command "delete-other-windows")
-      (pine.editor.frame::kill-buffer "pine-world-probe.txt")
-      (setf pine.state.world:*enabled* nil))))
+      (is (eq :held (pine.ns:kind (pine.buf:at "pine-world-probe.txt" :file)))
+          "and so is the file the buffer visits")
+      (pine.key::call-command "delete-other-windows")
+      (pine.editor.frame::kill-buffer "pine-world-probe.txt"))))
 
 (test the-arrangement-is-paths-so-there-is-nothing-to-serialize
   "A split is a write to /win, and /win is held: it comes back with the store
 like any other path, so no tree is ever turned into a form."
   (with-fixture substrate ()
     (pine.editor.session::%seed-editor-tree *client*)
-    (pine.editor.command::call-command "split-window-below")
+    (pine.key::call-command "split-window-below")
     (is (= 2 (length (pine.win:windows))))
     (is (eq :column (pine.ns:read (pine.path:parse "/win/0/runs"))))
     (is (eq :held (pine.ns:kind (pine.path:parse "/win/0/0/buf"))))
-    (pine.editor.command::call-command "delete-other-windows")))
+    (pine.key::call-command "delete-other-windows")))
 
 (test the-shipped-example-loads-clean-and-its-definitions-land
   (with-fixture substrate ()
     (finishes
-      (load (merge-pathnames "../examples/init.lisp"
+      (pine:load-config (merge-pathnames "../examples/init.lisp"
                              #.(or *compile-file-truename* *load-truename*))))
-    (is (eq :todo (pine.mode:for-file "/x.todo")))
-    (is (string= "hi" (pine.ns:read (pine.path:parse "/buf/scratch/greeting")))
-        "a leaf a buffer does not have reads the root")
-    (is (string= "hello there"
-                 (pine.ns:read (pine.path:parse "/buf/*scratchpad*/greeting")))
-        "and one it does have reads its own")))
+    (is (= 2 (pine.ns:read (pine.path:parse "/tab-width"))))
+    (is (eq :bar (pine.ns:read (pine.path:parse "/surface/bar/as"))))
+    (is (string= "alacritty" (pine.ns:read (pine.path:parse "/wm-terminal"))))
+    (is (not (null (pine.ns:read (pine.path:parse "/key/wm/s-2")))))
+    (is (not (null (pine.ns:read (pine.path:parse "/key/wm/s-5"))))
+        "a chord written over a range is every chord in it")))
 
 (test the-live-tree-seeds-splits-focuses-and-follows-the-modeline
   (with-fixture substrate ()
     (let* ((frame (pine.editor.frame::frame *client*))
-           (scratch (pine.editor.frame::buffer "scratch"))
+           (scratch (pine.buf:live "scratch"))
            (other (pine.editor.frame::make-buffer "editor-b2")))
-      (setf (pine.text.window:frame-cols frame) 40
-            (pine.text.window:frame-rows frame) 12)
+      (setf (pine.editor.view-state:frame-cols frame) 40
+            (pine.editor.view-state:frame-rows frame) 12)
       (pine.editor.frame::set-buffer-mode other :text)
-      (pine.text.buffer:edit other (fset:seq :insert "beta-two"))
+      (pine.buf:edit other (fset:seq :insert "beta-two"))
       (sleep 0.1)
       (pine.editor.session::%seed-editor-tree *client*)
-      (let* ((tree (pine.ui.render:refresh-editor-tree *client*))
-             (leaves (remove :window (pine.ui.render:window-leaves tree)
-                             :key #'pine.ui.node:window-kind :test-not #'eq)))
+      (let* ((tree (pine.editor.render:refresh-editor-tree *client*))
+             (leaves (remove-if-not (lambda (n)
+                                      (typep n 'pine.ui.node:buffer-view))
+                                    (pine.editor.render:window-leaves tree))))
         (is (not (null tree)))
         (is (= 1 (length (pine.win:windows))))
         (is (= 10 (length (pine.ui.node:window-rows (first leaves))))))
       (pine.editor.session::%seed-editor-tree *client*)
-      (pine.ui.render:relayout)
-      (pine.editor.command::call-command "split-window-below")
+      (pine.editor.render:relayout)
+      (pine.key::call-command "split-window-below")
       (is (= 2 (length (pine.win:windows))))
-      (pine.editor.command::call-command "other-window")
+      (pine.key::call-command "other-window")
       (let ((buf (pine.editor.frame::switch-buffer "editor-b2")))
         (sento.actor:tell (pine.editor.frame::renderer *client*)
                           (list :switch-buffer :buffer buf :name "editor-b2"))
@@ -426,70 +451,71 @@ like any other path, so no tree is ever turned into a form."
       (is (search "x" (btext other)))
       (is (not (search "x" (btext scratch))))
       (flet ((modeline-text ()
-               (pine.ui.render:refresh-editor-tree *client*)
-               (let ((n (find :modeline (pine.ui.render:window-leaves
-                                         (pine.editor.frame::arrangement *client*))
-                              :key #'pine.ui.node:window-kind)))
+               (pine.editor.render:refresh-editor-tree *client*)
+               (let ((n (find-if (lambda (x)
+                                   (typep x 'pine.ui.node:modeline-view))
+                                 (pine.editor.render:window-leaves
+                                  (pine.editor.frame::tree *client*)))))
                  (car (first (pine.ui.node:window-rows n))))))
         ;; the tree is built again from /win after every command, so the node
         ;; is looked up again rather than held
         (is (search "editor-b2" (modeline-text)))
-        (pine.editor.command::call-command "other-window")
+        (pine.key::call-command "other-window")
         (is (search "scratch" (modeline-text))))
-      (pine.editor.command::call-command "delete-other-windows")
+      (pine.key::call-command "delete-other-windows")
       (is (= 1 (length (pine.win:windows))))
-      (is (equal scratch (pine.text.window:buffer-ref
-                          (pine.editor.frame::focused-window)))))))
+      (is (equal (pine.buf:name-of scratch)
+                 (pine.path:leaf (pine.pane:subject (pine.win:focused))))))))
 
-(test a-window-node-built-with-no-client-renders-once-at-build
+(test a-pane-shows-its-content-with-no-client-at-all
+  "A pane holds content, and what content looks like is the content type's own
+answer. So a pane a config named before any frontend existed renders the moment
+anything asks -- which is the whole reason the editor is nothing special."
   (with-fixture substrate ()
     (let ((other (pine.editor.frame::make-buffer "editor-b3")))
       (pine.editor.frame::set-buffer-mode other :text)
-      (pine.text.buffer:edit other (fset:seq :insert "beta-three"))
+      (pine.buf:edit other (fset:seq :insert "beta-three"))
       (sleep 0.1)
       (let ((pine.editor.frame::*client* nil))
-        (let ((node (pine.editor.session:editor-window-node "editor-b3")))
-          (is (search "beta-three"
-                      (car (first (pine.ui.node:window-rows node))))))))))
+        (is (search "beta-three"
+                    (car (first (pine.pane:rows "editor-b3" 40 5)))))))))
 
 (test an-overlay-renders-after-the-line-and-dies-on-the-next-edit
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "overlay-probe")))
       (pine.editor.frame::set-buffer-mode buf :text)
-      (pine.text.buffer:edit buf (fset:seq :insert "abc"))
+      (pine.buf:edit buf (fset:seq :insert "abc"))
       (sleep 0.1)
-      (pine.editor.ask:tell buf :overlay :line 0 :text "=> 3")
+      (pine.buf:overlay (pine.buf:name-of buf) 0 "=> 3")
       (sleep 0.1)
-      (let* ((node (pine.editor.session:editor-window-node "overlay-probe" :expand 1))
+      (pine.ns:write (pine.path:parse "/pane/overlay/buf") (pine.buf:at "overlay-probe"))
+      (let* ((node (pine.pane:window (pine.path:parse "/pane/overlay") :expand 1))
              (tree (pine.ui.build:column :align :stretch
                                          node
-                                         (pine.editor.session:editor-echo-node)
-                                         (pine.editor.session:editor-modeline-node))))
-        (setf (pine.editor.frame::arrangement *client*) tree)
-        (pine.editor.frame::focus-window (pine.ui.node:window-of node))
-        (setf (pine.editor.frame::current-buffer *client*) buf)
+                                         (pine.pane:echo)
+                                         (pine.pane:modeline "overlay-probe"))))
+        (setf (pine.editor.frame::tree *client*) tree)
+        (setf (pine.editor.frame::current-buffer) buf)
         (sleep 0.2)
-        (pine.ui.render:refresh-editor-tree *client*)
+        (pine.editor.render:refresh-editor-tree *client*)
         (is (search "=> 3" (car (first (pine.ui.node:window-rows node)))))
-        (pine.text.buffer:edit buf (fset:seq :insert "d"))
+        (pine.buf:edit buf (fset:seq :insert "d"))
         (sleep 0.15)
-        (pine.ui.render:refresh-editor-tree *client*)
+        (pine.editor.render:refresh-editor-tree *client*)
         (is (not (search "=>" (car (first (pine.ui.node:window-rows node))))))))
-    (pine.editor.session::%seed-editor-tree *client* :world nil)
-    (pine.ui.render:relayout)))
+    (pine.editor.session::%seed-editor-tree *client*)
+    (pine.editor.render:relayout)))
 
 (test eval-last-sexp-leaves-its-result-inline
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "eval-probe")))
       (pine.editor.frame::set-buffer-mode buf :text)
-      (setf (pine.editor.frame::current-buffer *client*) buf)
-      (pine.text.buffer:edit buf (fset:seq :insert "(+ 1 2)"))
+      (setf (pine.editor.frame::current-buffer) buf)
+      (pine.buf:edit buf (fset:seq :insert "(+ 1 2)"))
       (sleep 0.1)
-      (pine.editor.evaluate:eval-last-sexp)
+      (pine.eval:last-sexp)
       (sleep 0.5)
-      (let ((overlays (pine.text.buffer:buffer-local
-                       (pine.text.buffer:state-of buf)
-                       :overlays)))
+      (let ((overlays (pine.buf:local buf :overlays)))
         (is (not (null overlays)))
         (is (search "=> 3" (first (fset:@ overlays 0))))))))
 
@@ -497,19 +523,19 @@ like any other path, so no tree is ever turned into a form."
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "yank-probe")))
       (pine.editor.frame::set-buffer-mode buf :text)
-      (setf (pine.editor.frame::current-buffer *client*) buf)
-      (pine.text.buffer:edit buf (fset:seq :insert (format nil "alpha~%beta~%gamma")))
+      (setf (pine.editor.frame::current-buffer) buf)
+      (pine.buf:edit buf (fset:seq :insert (format nil "alpha~%beta~%gamma")))
       (sleep 0.1)
       (is (string= (format nil "alpha~%beta~%gamma") (btext buf)))
-      (pine.text.buffer:put-point buf 0 0)
+      (pine.buf:put-point buf 0 0)
       (sleep 0.05)
-      (pine.editor.command::call-command "set-mark")
-      (pine.text.buffer:put-point buf 2 5)
+      (pine.key::call-command "set-mark")
+      (pine.buf:put-point buf 2 5)
       (sleep 0.05)
-      (pine.editor.command::call-command "kill-region")
+      (pine.key::call-command "kill-region")
       (sleep 0.1)
       (is (string= "" (btext buf)))
-      (pine.editor.command::call-command "yank")
+      (pine.key::call-command "yank")
       (sleep 0.1)
       (is (string= (format nil "alpha~%beta~%gamma") (btext buf))))))
 
@@ -517,15 +543,15 @@ like any other path, so no tree is ever turned into a form."
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "undo-probe")))
       (pine.editor.frame::set-buffer-mode buf :text)
-      (pine.text.buffer:edit buf (fset:seq :insert "one"))
+      (pine.buf:edit buf (fset:seq :insert "one"))
       (sleep 0.1)
-      (pine.text.buffer:edit buf (fset:seq :insert "-two"))
+      (pine.buf:edit buf (fset:seq :insert "-two"))
       (sleep 0.1)
       (is (string= "one-two" (btext buf)))
-      (pine.text.buffer:edit buf (fset:seq :undo))
+      (pine.buf:edit buf (fset:seq :undo))
       (sleep 0.1)
       (is (string= "one" (btext buf)))
-      (pine.text.buffer:edit buf (fset:seq :redo))
+      (pine.buf:edit buf (fset:seq :redo))
       (sleep 0.1)
       (is (string= "one-two" (btext buf))))))
 
@@ -533,17 +559,18 @@ like any other path, so no tree is ever turned into a form."
   (with-fixture substrate ()
     (let ((buf (pine.editor.frame::make-buffer "indent-probe")))
       (pine.editor.frame::set-buffer-mode buf :lisp)
-      (setf (pine.editor.frame::current-buffer *client*) buf)
+      (setf (pine.editor.frame::current-buffer) buf)
       (pine.ns:write (pine.buf:at buf :text) (format nil "(defun f ()~%(bar))"))
       (sleep 0.15)
-      (pine.text.buffer:put-point buf 0 11)
+      (pine.buf:put-point buf 0 11)
       (sleep 0.05)
-      (pine.editor.ask:tell buf :newline)
+      (pine.ns:write (pine.buf:at (pine.buf:name-of buf) :text)
+                     (fset:seq :newline))
       ;; the line lands at once and the parser answers with its column, so the
       ;; indent is waited for rather than assumed to have already happened
       (is (wait-for (lambda ()
-                      (multiple-value-bind (l c) (pine.editor.ask:ask buf :point)
+                      (multiple-value-bind (l c) (pine.buf:point (pine.buf:name-of buf))
                         (and (= 1 l) (= 2 c))))
                     :seconds 10)
           "the new line is indented into the defun body; point is at ~a"
-          (multiple-value-list (pine.editor.ask:ask buf :point))))))
+          (multiple-value-list (pine.buf:point (pine.buf:name-of buf)))))))

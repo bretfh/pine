@@ -92,9 +92,9 @@ hash key and a fasl constant."
   (is (not (pine.path:match /**/err /host/box/log))))
 
 (test alternation-matches-one-of-the-names
-  (is (pine.path:match /audio/#{volume muted} /audio/volume))
-  (is (pine.path:match /audio/#{volume muted} /audio/muted))
-  (is (not (pine.path:match /audio/#{volume muted} /audio/sink))))
+  (is (pine.path:match /audio/{volume,muted} /audio/volume))
+  (is (pine.path:match /audio/{volume,muted} /audio/muted))
+  (is (not (pine.path:match /audio/{volume,muted} /audio/sink))))
 
 (test a-binder-matches-and-binds
   (multiple-value-bind (ok bindings) (pine.path:match /net/wifi/?ssid/signal
@@ -123,22 +123,22 @@ hash key and a fasl constant."
 (test a-constraint-tests-the-value-at-a-child
   (let ((value (stub-value '(("/proc/editor/state" . :running)
                              ("/proc/backup/state" . :failed)))))
-    (is (pine.path:match /proc/*{:state :failed} /proc/backup :value value))
-    (is (not (pine.path:match /proc/*{:state :failed} /proc/editor :value value)))))
+    (is (pine.path:match /proc/*[state = :failed] /proc/backup :value value))
+    (is (not (pine.path:match /proc/*[state = :failed] /proc/editor :value value)))))
 
 (test a-constraint-set-is-membership
   (let ((value (stub-value '(("/proc/a/state" . :stopped)
                              ("/proc/b/state" . :running)))))
-    (is (pine.path:match /proc/*{:state #{:failed :stopped}} /proc/a :value value))
-    (is (not (pine.path:match /proc/*{:state #{:failed :stopped}} /proc/b
+    (is (pine.path:match /proc/*[state = #{:failed :stopped}] /proc/a :value value))
+    (is (not (pine.path:match /proc/*[state = #{:failed :stopped}] /proc/b
                               :value value)))))
 
 (test a-constraint-form-is-lisp-over-percent
   (let ((value (stub-value '(("/net/wifi/near/signal" . 80)
                              ("/net/wifi/far/signal" . 20)))))
-    (is (pine.path:match /net/wifi/*{:signal (> % 60)} /net/wifi/near
+    (is (pine.path:match /net/wifi/*[signal = (> % 60)] /net/wifi/near
                          :value value))
-    (is (not (pine.path:match /net/wifi/*{:signal (> % 60)} /net/wifi/far
+    (is (not (pine.path:match /net/wifi/*[signal = (> % 60)] /net/wifi/far
                               :value value)))))
 
 (test a-constraint-form-can-be-anything-lisp-can-say
@@ -146,7 +146,7 @@ hash key and a fasl constant."
                              ("/buf/b/file" . "x.py")
                              ("/buf/c/file" . nil)))))
     (flet ((lispy (n) (pine.path:match
-                       /buf/*{:file (and % (string= "lisp" (pathname-type %)))}
+                       /buf/*[file = (and % (string= "lisp" (pathname-type %)))]
                        n :value value)))
       (is (lispy /buf/a))
       (is (not (lispy /buf/b)))
@@ -155,22 +155,22 @@ hash key and a fasl constant."
 (test a-constraint-binds-too
   (let ((value (stub-value '(("/buf/notes/mode" . :lisp)))))
     (multiple-value-bind (ok bindings)
-        (pine.path:match /buf/*{:mode ?m} /buf/notes :value value)
+        (pine.path:match /buf/*[mode = ?m] /buf/notes :value value)
       (is-true ok)
       (is (eq :lisp (fset:lookup bindings 'm))))))
 
 (test several-constraints-must-all-hold
   (let ((value (stub-value '(("/buf/a/modified" . t) ("/buf/a/file" . "x")
                              ("/buf/b/modified" . t) ("/buf/b/file" . nil)))))
-    (is (pine.path:match /buf/*{:modified t :file (not (null %))} /buf/a
+    (is (pine.path:match /buf/*[modified][file] /buf/a
                          :value value))
-    (is (not (pine.path:match /buf/*{:modified t :file (not (null %))} /buf/b
+    (is (not (pine.path:match /buf/*[modified][file] /buf/b
                               :value value)))))
 
 (test a-literal-segment-can-carry-a-constraint
   (let ((value (stub-value '(("/buf/scratch/modified" . t)))))
-    (is (pine.path:match /buf/scratch{:modified t} /buf/scratch :value value))
-    (is (not (pine.path:match /buf/scratch{:modified nil} /buf/scratch
+    (is (pine.path:match /buf/scratch[modified = t] /buf/scratch :value value))
+    (is (not (pine.path:match /buf/scratch[modified = nil] /buf/scratch
                               :value value)))))
 
 ;;;; paths as data
@@ -187,3 +187,45 @@ hash key and a fasl constant."
     (is (fset:equal? /win/3/buf /win/${n}/buf))
     (is (fset:equal? /a/b (pine.path:parse "/a/b")))
     (is (not (fset:equal? /a/b /a/c)))))
+
+(test a-parsed-star-is-the-pattern-the-reader-would-have-built
+  "A path parsed out of text means what the same text means written down, so a
+provider that reads /surface/* through PARSE walks the surfaces rather than
+looking for one called star."
+  (is (pine.path:patternp (pine.path:parse "/surface/*")))
+  (is (fset:equal? /surface/* (pine.path:parse "/surface/*")))
+  (is (fset:equal? /buf/** (pine.path:parse "/buf/**"))))
+
+(test a-relative-path-hangs-off-the-one-being-answered-for
+  "A lone dot is CL's dotted pair, so the segment is written with the slash on
+the front and the path reader owns it like any other."
+  (let ((pine.path:*here* /net/wifi/home))
+    (is (fset:equal? /net/wifi/home (eval (rdp "/."))))
+    (is (fset:equal? /net/wifi/home/signal (eval (rdp "/./signal"))))
+    (is (fset:equal? /net/wifi (eval (rdp "/.."))))
+    (is (fset:equal? /net/wifi/other (eval (rdp "/../other"))))
+    (is (string= "home" (pine.path:leaf (pine.path:here))))))
+
+(test a-binder-inside-a-group-names-every-place-and-says-which
+  "/key/wm/s-?n{1..9} is nine chords and one expression that knows which."
+  (let ((p /key/wm/s-?n{1..9}))
+    (is (pine.path:patternp p))
+    (is (equal '(n) (pine.path:binders p)))
+    (is (= 9 (length (pine.path:expansions p))))
+    (is (find "/key/wm/s-5" (pine.path:expansions p)
+              :key #'pine.path:text :test #'string=))
+    (multiple-value-bind (ok bindings) (pine.path:match p /key/wm/s-5)
+      (is-true ok)
+      (is (string= "5" (fset:lookup bindings 'n))))
+    (is (not (pine.path:match p /key/wm/s-0)))))
+
+(test a-group-names-its-places-whether-or-not-they-are-there
+  (is (= 3 (length (pine.path:expansions /audio/{volume,muted,sink}))))
+  (is (null (pine.path:expansions /proc/*/state))
+      "a wildcard has to be looked up, so it names nothing on its own"))
+
+(test a-name-with-stars-in-it-is-still-a-name
+  (is (not (pine.path:patternp (pine.path:parse "/buf/*scratch*/text"))))
+  (is (string= "*scratch*"
+               (pine.path:leaf (pine.path:parent
+                                (pine.path:parse "/buf/*scratch*/text"))))))

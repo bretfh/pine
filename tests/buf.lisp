@@ -7,7 +7,7 @@
   "A space with /buf served. No daemon, no actors: a buffer is paths, so an
 edit is a write and it has landed when the write answers."
   `(pine.ns:with-space ()
-     (pine.buf:mount)
+     (pine.ns:raise :buf)
      (pine.ns:write /buf/scratch/text [""])
      (pine.ns:write /buf/scratch/point [0 0])
      ,@body))
@@ -98,7 +98,7 @@ edit is a write and it has landed when the write answers."
 
 (test reverting-reads-the-file-again
   (with-buf
-    (pine.provider.file:mount)
+    (pine.ns:raise :file)
     (let ((path "/tmp/pine-revert-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "from disk~%"))
@@ -145,7 +145,7 @@ are no undo stacks anywhere."
     (let ((store (pine.store:open ":memory:")))
       (unwind-protect
            (progn
-             (pine.buf:mount)
+             (pine.ns:raise :buf)
              (pine.ns:write /buf/scratch/text ["one"])
              (pine.ns:write /buf/scratch/point [0 3])
              (pine.ns:write /buf/scratch/text [:insert "!"])
@@ -162,7 +162,7 @@ are no undo stacks anywhere."
 
 (test modified-follows-the-file
   (with-buf
-    (pine.provider.file:mount)
+    (pine.ns:raise :file)
     (let ((path "/tmp/pine-modified-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "on disk~%"))
@@ -250,8 +250,8 @@ anything called the parser. The colours land at /buf/?name/face."
   (with-fixture substrate ()
     (pine.ns:with-space ()
       (pine.ns:write /mode/lisp {:grammar :commonlisp})
-      (pine.buf:mount :system (pine.core.server:actor-system *server*)
-                      :runtime (pine.core.server:ts-runtime *server*))
+      (pine.ns:raise :buf :system (pine.core.server:actor-system *server*)
+                    :runtime (pine.core.server:ts-runtime *server*))
       (unwind-protect
            (progn
              (pine.ns:write /buf/probe/mode :lisp)
@@ -261,7 +261,7 @@ anything called the parser. The colours land at /buf/?name/face."
                                 :seconds 15)
                       "no colours ever landed")
              (is (plusp (length (pine.ns:read /buf/probe/face)))))
-        (pine.buf:unmount)))))
+        (pine.ns:lower :buf)))))
 
 (test a-parse-starts-when-one-is-asked-for-and-not-only-when-something-moved
   "The parse is not driven by a change alone. A buffer whose parser is gone --
@@ -273,7 +273,7 @@ what it is showing."
       (let ((name "asked-probe"))
         (pine.editor.frame::make-buffer name :content "(defun f (x) x)")
         (pine.editor.frame::set-buffer-mode
-         (pine.editor.frame::buffer name) :lisp)
+         (pine.buf:live name) :lisp)
         ;; highlights exist to be painted, so a window has to be showing it
         (pine.buf:showing name (fset:seq 0 200))
         (is (wait-for (lambda () (pine.ns:read (pine.buf:at name :face)))

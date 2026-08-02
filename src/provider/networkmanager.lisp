@@ -45,6 +45,10 @@
   (loop :for row :in (%terse "NAME" "connection show")
         :thereis (equal ssid (first row))))
 
+(defun %securep (ssid)
+  (let ((row (cdr (assoc ssid (%wifi) :test #'string=))))
+    (and row (third row) (plusp (length (third row))))))
+
 (defun %ask-for-a-password (ssid)
   "The prompt that connects once it is answered. Held nowhere: what a person
 types goes straight into the command that needs it."
@@ -59,10 +63,6 @@ types goes straight into the command that needs it."
          (out:sh "nmcli device wifi connect '~a'" ssid)
          t)
         (t (%ask-for-a-password ssid))))
-
-(defun %securep (ssid)
-  (let ((row (cdr (assoc ssid (%wifi) :test #'string=))))
-    (and row (third row) (plusp (length (third row))))))
 
 (defun networkmanager ()
   "The network: what is connected, whether it reaches anything, and the wifi."

@@ -1,245 +1,198 @@
 (defpackage #:pine.wm
   (:use #:cl)
-  (:export #:wm-keymap #:binding-table #:push-bindings #:run-binding
-           #:attached-p #:leaves #:focused-leaf
-           #:spawn #:close-window #:focus-step #:split #:exit-session)
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:win #:pine.win))
+  (:export #:binding-table #:push-bindings #:run-binding
+           #:attached-p #:windows #:focused #:server
+           #:close-window #:focus-step #:split #:exit-session)
   (:documentation "Window management policy: the keymap whose chords are
-registered with the compositor, the commands they run, and the actions sent
-to the wm frontend. design/wm.org is the contract."))
+registered with the compositor, the commands they run, and the actions sent to
+the wm frontend."))
 
 (in-package #:pine.wm)
+(named-readtables:in-readtable pine.path:syntax)
 
 ;;;; Window management policy, daemon side. The compositor holds the windows
-;;;; and the backing (pine.wayland) speaks the protocol, but every decision is
-;;;; made here: which chords exist, what they run, and where each window
-;;;; goes. The frontend answers river's sequences from what it was last told
-;;;; and never decides a rect.
+;;;; and the backing speaks the protocol; every decision is made here.
 ;;;;
-;;;; The arrangement is a live tree, the way the editor surface is: os-window
-;;;; leaves under column and row with rule dividers and expand weights, in
-;;;; the same node language, mutated in place by the split and delete
-;;;; commands and arranged by the same engine. A window is a leaf in that
-;;;; tree, not an entry in a list the tree is regenerated from.
+;;;; The arrangement is /wm, the same subtree shape the editor's windows are:
+;;;; /wm/0/buf is a window's id, splitting one makes a stack, and the layout
+;;;; engine arranges what the paths say. There is no second tree and nothing to
+;;;; serialize, so a frontend that reattaches finds the arrangement where it
+;;;; left it.
 ;;;;
 ;;;; Bindings are an ordinary pine keymap. The frontend registers exactly the
-;;;; chords this keymap holds with the compositor, so `define-key' on it is
-;;;; the whole configuration story: no second list, no separate syntax.
+;;;; chords /key/wm holds, so define-key is the whole configuration story.
 
-(defstruct (os-window (:constructor %make-os-window) (:copier nil))
-  "A window the compositor manages. ID is the protocol's stable identifier,
-which names the window everywhere off this image."
-  id title app-id)
+(defun windows () (win:windows /wm))
+(defun focused () (win:focused /wm))
 
-(defstruct (session (:constructor %make-session) (:copier nil))
-  "The window manager session: the attached frontend, a pine client so its
-commands run in the same context every command does, and the live tree with
-its focused leaf."
-  app client tree focus (output nil) (split :row))
+(defun id-of (path) (win:buf-of path))
 
-;;;; The window manager's keys are /key/wm. The compositor delivers exactly
-;;;; what is under it to the window manager rather than to the focused window,
-;;;; and there is no second list of chords anywhere.
+(defun window-at (id)
+  (find id (windows) :key #'id-of :test #'equal))
 
-(defun wm-keymap () :wm)
+;;;; The attached frontend, which is this image's, not a space's.
 
-(defvar *session* nil
-  "The running window manager session, or nil when none is attached.")
+(defun app ()
+  (find :wm pine.core.attach:*clients*
+        :key #'pine.core.attach:attached-client-kind))
 
-(defun attached-p () (and *session* t))
+(defun attached-p () (and (app) t))
 
 (defun %tell-frontend (&rest message)
   "Send MESSAGE to the wm frontend. A message with nowhere to go is reported:
 dropping window state silently is how geometry goes missing."
-  (cond
-    (*session* (apply #'pine.core.attach:push-to-app (session-app *session*) message))
-    (t (format *error-output* "pine wm: no frontend attached, dropped ~s~%"
-               (first message))
-       (finish-output *error-output*))))
+  (let ((to (app)))
+    (cond (to (apply #'pine.core.attach:push-to-app to message))
+          (t (format *error-output* "pine wm: no frontend attached, dropped ~s~%"
+                     (first message))
+             (finish-output *error-output*)))))
 
-;;;; The tree.
-
-(defun leaves (&optional (session *session*))
-  "The os-window leaves of SESSION's tree, in tree order."
-  (let ((tree (and session (session-tree session)))
-        (acc nil))
-    (when tree
-      (labels ((walk (n)
-                 (when (and (typep n 'pine.ui.node:window-node)
-                            (eq (pine.ui.node:window-kind n) :os-window))
-                   (push n acc))
-                 (dolist (c (pine.ui.layout:nodes-of n)) (walk c))))
-        (walk tree)))
-    (nreverse acc)))
-
-(defun leaf-window (leaf) (pine.ui.node:window-of leaf))
-(defun leaf-id (leaf) (os-window-id (leaf-window leaf)))
-
-(defun find-leaf (id &optional (session *session*))
-  (find id (leaves session) :key #'leaf-id :test #'equal))
-
-(defun focused-leaf (&optional (session *session*))
-  (or (session-focus session) (first (leaves session))))
+;;;; The tree the compositor is told about, built from the paths.
 
 (defun %frame ()
-  "The space a window's chrome occupies, as a layout margin.
-
-The compositor draws borders outside the window's content, so the arrangement
-has to leave room for them: without it, neighbouring windows sit edge to edge
-and each one's border is drawn over the other's content."
+  "The space a window's chrome occupies, as a layout margin. The compositor
+draws borders outside the content, so the arrangement leaves room for them."
   (let ((border (pine.ui.face:metric :border 2)))
     (list border border border border)))
 
-(defun %leaf (window)
-  "A fresh os-window leaf for WINDOW, holding room for its chrome."
-  (pine.ui.build:window nil :of window :kind :os-window :expand 1
-                          :margin (%frame)))
+(defun %leaf (path)
+  (pine.ui.build:cells nil :of path :as 'pine.ui.node:os-window-view
+                            :expand (max 1 (win:weight-of path))
+                            :margin (%frame)))
 
-(defun %divider (orient)
-  (pine.ui.build:rule :vertical (eq orient :row) :face :border-inactive))
+(defun %node (path)
+  (if (win:stack-p path)
+      (let* ((row (eq :row (win:runs-of path)))
+             (parts (mapcar #'%node (win:parts path))))
+        (apply (if row #'pine.ui.build:row #'pine.ui.build:column)
+               :align :stretch :expand 1
+               (loop :for part :in parts
+                     :for first := t :then nil
+                     :append (if first
+                                 (list part)
+                                 (list (pine.ui.build:rule :vertical row
+                                                           :face :border-inactive)
+                                       part)))))
+      (%leaf path)))
 
-(defun add-window (id title app-id)
-  "Put a newly mapped window into the tree, beside the focused one."
-  (let* ((session *session*)
-         (window (%make-os-window :id id :title title :app-id app-id))
-         (leaf (%leaf window))
-         (focus (focused-leaf session)))
-    (cond
-      ((null (session-tree session))
-       (setf (session-tree session) leaf))
-      (t
-       (let* ((orient (session-split session))
-              (root (pine.ui.layout:split-node
-                     (session-tree session) focus leaf orient
-                     :divider (%divider orient))))
-         (cond (root (setf (session-tree session) root))
-               (t (format *error-output* "pine wm: cannot place window ~a~%" id)
-                  (return-from add-window))))))
-    (setf (session-focus session) leaf)
-    (push-arrangement)))
-
-(defun forget-window (id)
-  "Drop a window that the compositor closed."
-  (let* ((session *session*)
-         (leaf (find-leaf id session)))
-    (when leaf
-      (let ((root (pine.ui.layout:remove-node (session-tree session) leaf)))
-        (setf (session-tree session)
-              (cond (root root)
-                    ((eq (session-tree session) leaf) nil)
-                    (t (session-tree session)))))
-      (when (eq (session-focus session) leaf)
-        (setf (session-focus session) (first (leaves session))))
-      (push-arrangement))))
+(defun %tree ()
+  (let ((parts (win:parts /wm)))
+    (cond ((null parts) nil)
+          ((null (rest parts)) (%node (first parts)))
+          (t (apply #'pine.ui.build:column :align :stretch :expand 1
+                    (mapcar #'%node parts))))))
 
 (defun arrange ()
-  "Arrange the tree over the area the frontend reports and return the leaf rects
-as (ID X Y WIDTH HEIGHT). Pixels are cells one pixel wide, so the engine's own
-measure and arrange do the work unchanged. The area is in global coordinates
-and need not start at the origin: layer surfaces such as a bar take their strip
-of the output first."
-  (let* ((session *session*)
-         (tree (and session (session-tree session)))
-         (output (and session (session-output session))))
+  "Arrange over the area the frontend reported and answer the leaf rects as
+(ID X Y WIDTH HEIGHT). Pixels are cells one pixel wide, so the engine's own
+measure and arrange do the work unchanged."
+  (let ((tree (%tree))
+        (output (ns:read /wm/output)))
     (when (and tree output)
-      (destructuring-bind (x y width height) output
+      (let ((x (fset:lookup output :x)) (y (fset:lookup output :y))
+            (width (fset:lookup output :width))
+            (height (fset:lookup output :height)))
         (let ((pine.ui.layout:*text-size*
                 (lambda (text font-px)
                   (declare (ignore font-px))
                   (values (length text) 1))))
           (pine.ui.layout:measure tree width height)
           (pine.ui.layout:arrange tree x y width height))
-        (mapcar (lambda (leaf)
-                  (list (leaf-id leaf)
-                        (pine.ui.node:start-col leaf)
-                        (pine.ui.node:start-line leaf)
-                        (- (pine.ui.node:end-col leaf)
-                           (pine.ui.node:start-col leaf))
-                        (1+ (- (pine.ui.node:end-line leaf)
-                               (pine.ui.node:start-line leaf)))))
-                (leaves session))))))
+        (let ((acc nil))
+          (labels ((walk (n)
+                     (when (typep n 'pine.ui.node:os-window-view)
+                       (push (list (id-of (pine.ui.node:window-of n))
+                                   (pine.ui.node:start-col n)
+                                   (pine.ui.node:start-line n)
+                                   (- (pine.ui.node:end-col n)
+                                      (pine.ui.node:start-col n))
+                                   (1+ (- (pine.ui.node:end-line n)
+                                          (pine.ui.node:start-line n))))
+                             acc))
+                     (dolist (c (pine.ui.layout:nodes-of n)) (walk c))))
+            (walk tree))
+          (nreverse acc))))))
 
 (defun %border ()
-  "The border the compositor should draw: its width, and the colour for the
-focused window and for the rest.
-
-The theme lives here, with the configuration that loads it, so the frontend is
-told colours rather than resolving faces in an image that has no theme."
-  (list :width (pine.ui.face:metric :border 2)
-        :active (pine.ui.face:face-fg :border-active)
-        :inactive (pine.ui.face:face-fg :border-inactive)))
+  "The border the compositor should draw. The theme lives here, so the frontend
+is told colours rather than resolving faces in an image with no theme."
+  (fset:map (:width (pine.ui.face:metric :border 2))
+            (:active (pine.ui.face:face-fg :border-active))
+            (:inactive (pine.ui.face:face-fg :border-inactive))))
 
 (defun push-arrangement ()
-  "Send the arranged rects, the focused window, and the border to the frontend."
   (let ((rects (arrange))
-        (focus (focused-leaf)))
+        (focus (focused)))
     (when rects
       (%tell-frontend :arrangement :rects rects
-                                   :focus (and focus (leaf-id focus))
+                                   :focus (and focus (id-of focus))
                                    :border (%border)))))
 
-;;;; The actions only the frontend can take: it holds the protocol objects
-;;;; and the compositor's session environment.
+(defun add-window (id title app-id)
+  "Put a newly mapped window into the arrangement, beside the focused one."
+  (declare (ignore title app-id))
+  (let ((focus (focused)))
+    (cond
+      ((null focus)
+       (win:seed id /wm))
+      (t
+       (win:split focus (if (eq :row (ns:read /wm/split)) :beside :below) /wm)
+       (ns:write (p:child (focused) "buf") id))))
+  (push-arrangement))
 
-(defun spawn (command)
-  "Launch COMMAND as a program in the compositor's session."
-  (%tell-frontend :wm :action :spawn :command command))
+(defun forget-window (id)
+  "Drop the window the compositor closed. The last one leaves nothing: an
+editor always keeps a window, a compositor with no windows has none."
+  (let ((path (window-at id)))
+    (when path
+      (if (rest (windows))
+          (win:close path /wm)
+          (progn (ns:write path nil) (ns:write /wm/focused nil)))
+      (push-arrangement))))
+
+;;;; The actions only the frontend can take: it holds the protocol objects and
+;;;; the compositor's session environment.
 
 (defun close-window ()
-  "Ask the focused window to close."
-  (let ((leaf (focused-leaf)))
-    (when leaf
-      (%tell-frontend :wm :action :close :id (leaf-id leaf)))))
+  (let ((path (focused)))
+    (when path (%tell-frontend :wm :action :close :id (id-of path)))))
 
 (defun exit-session ()
-  "End the Wayland session: the compositor and every client in it exit."
   (%tell-frontend :wm :action :exit))
 
-;;;; Commands. Ordinary pine commands, so they are M-x reachable and can be
-;;;; rebound or redefined live like anything else.
-
 (defun focus-step (step)
-  (let* ((all (leaves))
+  (let* ((all (windows))
          (n (length all)))
     (when (plusp n)
-      (let ((i (or (position (focused-leaf) all :test #'eq) 0)))
-        (setf (session-focus *session*) (nth (mod (+ i step) n) all))
+      (let ((i (or (position (focused) all :test #'fset:equal?) 0)))
+        (win:focus (nth (mod (+ i step) n) all) /wm)
         (push-arrangement)))))
 
 (defun split (orient)
-  "Split along ORIENT: the next window to appear joins the focused one that
-way. A window manager cannot show the same window twice, so a split states
-where the next one lands rather than dividing the current one immediately."
-  (setf (session-split *session*) orient))
+  "Say where the next window lands. A window manager cannot show one window
+twice, so a split states that rather than dividing the current one now."
+  (ns:write /wm/split orient))
 
 (pine.cmd:defcmd wm-terminal ()
-  "Launch the terminal /wm-terminal names."
-  (spawn (or (pine.ns:read (pine.path:parse "/wm-terminal")) "foot")))
+  "Launch the terminal /wm-terminal names. Launching is a write to /sh, which
+is the one place a command line is run."
+  (ns:write (p:child /sh (or (ns:read /wm-terminal) "foot")) t))
 
-(pine.cmd:defcmd wm-close-window ()
-  "Ask the focused window to close."
+(pine.cmd:defcmd wm-close-window () "Ask the focused window to close."
   (close-window))
 
-(pine.cmd:defcmd wm-focus-next ()
-  "Focus the next window."
-  (focus-step 1))
+(pine.cmd:defcmd wm-focus-next () "Focus the next window." (focus-step 1))
 
-(pine.cmd:defcmd wm-focus-prev ()
-  "Focus the previous window."
-  (focus-step -1))
+(pine.cmd:defcmd wm-focus-prev () "Focus the previous window." (focus-step -1))
 
-(pine.cmd:defcmd wm-split-below ()
-  "The next window opens below the focused one."
-  (split :column))
+(pine.cmd:defcmd wm-split-below () "The next window opens below." (split :column))
 
-(pine.cmd:defcmd wm-split-beside ()
-  "The next window opens beside the focused one."
-  (split :row))
+(pine.cmd:defcmd wm-split-beside () "The next window opens beside." (split :row))
 
-(pine.cmd:defcmd wm-exit ()
-  "End the Wayland session."
-  (exit-session))
+(pine.cmd:defcmd wm-exit () "End the Wayland session." (exit-session))
 
-(pine.editor.keymap:define-keys :wm
+(pine.key:define-keys :wm
   "s-Return"  "wm-terminal"
   "s-q"       "wm-close-window"
   "s-j"       "wm-focus-next"
@@ -248,79 +201,88 @@ where the next one lands rather than dividing the current one immediately."
   "s-3"       "wm-split-beside"
   "s-S-e"     "wm-exit")
 
-;;;; The binding table crossing the wire: (CHORD-STRING . COMMAND-NAME) pairs,
-;;;; which is exactly what keymap-bindings already produces. The frontend
-;;;; turns each chord into a keysym plus modifiers and registers it.
+;;;; The binding table crossing the wire: (CHORD . COMMAND) pairs, which is
+;;;; what bindings already answers. The frontend turns each chord into a keysym
+;;;; plus modifiers and registers it.
 
 (defun binding-table ()
   (mapcar (lambda (entry)
             (cons (car entry)
-                  (if (pine.path:pathp (cdr entry))
-                      (pine.path:leaf (cdr entry))
+                  (if (p:pathp (cdr entry))
+                      (p:leaf (cdr entry))
                       (princ-to-string (cdr entry)))))
-          (pine.editor.keymap:bindings :wm)))
+          (pine.key:bindings :wm)))
 
 (defun push-bindings ()
-  "Send the current binding table to the frontend, which re-registers."
   (%tell-frontend :bindings :table (binding-table)))
 
 (defun run-binding (chord)
-  "Run the command CHORD is bound to. Chord lookup is direct rather than
-through the mode stack: a window manager has no current buffer, and these
-chords were registered with the compositor from this keymap alone."
-  (let ((command (pine.editor.keymap:lookup :wm chord)))
-    (cond
-      ((null command)
-       (format *error-output* "pine wm: no command bound to ~a~%" chord))
-      (t
-       (let ((pine.editor.frame:*client* (session-client *session*)))
-         (pine.cmd:run command))))))
+  "Run what CHORD is bound to. Looked up directly rather than through the mode
+chain: a window manager has no current buffer, and these chords were registered
+from this keymap alone."
+  (let ((command (pine.key:lookup :wm chord)))
+    (if (null command)
+        (format *error-output* "pine wm: no command bound to ~a~%" chord)
+        (pine.cmd:run command))))
 
-;;;; The session: one attached frontend, told the bindings on arrival, and
-;;;; kept current with what the compositor reports.
+;;;; The session
 
-(defclass wm-app (pine.core.attach:app)
-  ()
+(defclass wm-app (pine.core.attach:app) ()
   (:default-initargs :kind :wm)
-  (:documentation "Window management: the compositor's windows as a layout
-tree, and the chords that move them."))
+  (:documentation "The compositor's windows as an arrangement, and the chords
+that move them."))
 
 (defmethod pine.core.attach:attached ((app wm-app) client)
-  (setf *session* (%make-session
-                   :app client
-                   :client (pine.editor.frame:start-client pine.core.server:*server*)))
+  (declare (ignore client))
   (push-bindings))
 
 (defmethod pine.core.attach:detached ((app wm-app) client)
-  "Forget the session. Its windows belong to the compositor and outlive the
-frontend; the next one to attach reports them again."
+  "The windows belong to the compositor and outlive the frontend; the next one
+to attach reports them again, and /wm still says how they were arranged."
   (declare (ignore client))
-  (setf *session* nil))
+  nil)
 
 (defmethod pine.core.attach:received ((app wm-app) client message)
   (declare (ignore client))
   (case (first message)
     (:binding
-     (destructuring-bind (&key keys) (rest message)
-       (run-binding keys)))
+     (destructuring-bind (&key keys) (rest message) (run-binding keys)))
     (:output
      (destructuring-bind (&key x y width height) (rest message)
-       (setf (session-output *session*)
-             (list (or x 0) (or y 0) width height))
+       (ns:write /wm/output (fset:map (:x (or x 0)) (:y (or y 0))
+                                      (:width width) (:height height)))
        (push-arrangement)))
     (:window-added
      (destructuring-bind (&key id title app-id) (rest message)
        (add-window id title app-id)))
     (:window-closed
-     (destructuring-bind (&key id) (rest message)
-       (forget-window id)))
+     (destructuring-bind (&key id) (rest message) (forget-window id)))
     (:window-focused
      (destructuring-bind (&key id) (rest message)
-       (let ((leaf (find-leaf id)))
-         (when leaf
-           (setf (session-focus *session*) leaf)
-           (push-arrangement)))))
+       (let ((path (window-at id)))
+         (when path (win:focus path /wm) (push-arrangement)))))
     (t nil)))
 
-(pine.core.attach:register-app (make-instance 'wm-app))
+(defclass server (ns:server) ()
+  (:default-initargs :name :wm :serves (list /wm))
+  (:documentation "The compositor's arrangement, as paths."))
 
+(defmethod ns:raise ((s server) &key &allow-other-keys)
+  (ns:write /wm
+            (ns:provider
+             (/wm/focused
+              {:verbs {:split (pine.data:fn (&optional (side :below))
+                                (let ((at (focused)))
+                                  (when at (win:split at side /wm))))
+                       :close (pine.data:fn []
+                                (let ((at (focused)))
+                                  (when at (win:close at /wm))))
+                       :only (pine.data:fn []
+                               (let ((at (focused)))
+                                 (when at (win:only at /wm))))}
+               :doc "the window with the keyboard; [:split] [:close] [:only]"})
+             (/wm/?@at
+              {:doc "a window's id and weight, or the halves of a stack"}))))
+
+(ns:register (make-instance 'server))
+(pine.core.attach:register-app (make-instance 'wm-app))

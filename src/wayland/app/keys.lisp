@@ -10,10 +10,10 @@
 ;;;; name, plus the ctrl/meta/shift/super modifier flags. Per-editor xkb context,
 ;;;; keymap, and state live in *ekb* keyed by the editor.
 
-(defvar *ekb* (make-hash-table :test 'eq)
-  "editor -> (list context keymap state).")
+(defvar *ekb* (pine.data:table)
+  "Editor to (list context keymap state).")
 
-(defun ekb (ed) (gethash ed *ekb*))
+(defun ekb (ed) (pine.data:at *ekb* ed))
 
 (defun mod-active (state name)
   (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
@@ -49,8 +49,8 @@
     (:keymap (format fd size)
      (assert (eq format :xkb-v1))
      (let* ((cell (or (ekb ed)
-                      (setf (gethash ed *ekb*)
-                            (list (xkb:xkb-context-new ()) nil nil))))
+                      (pine.data:put *ekb* ed
+                                     (list (xkb:xkb-context-new ()) nil nil))))
             (context (first cell))
             (shmo (shm:make-shm fd)))
        (unwind-protect

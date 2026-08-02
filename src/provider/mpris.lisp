@@ -28,11 +28,12 @@
     (when n (round n 1000000))))
 
 (defun %status (text)
-  (cond ((null text) nil)
+  "What the transport is doing. Nothing playing and no player at all read the
+same: :STOPPED, so a surface asks one question rather than two."
+  (cond ((null text) :stopped)
         ((string-equal text "Playing") :playing)
         ((string-equal text "Paused") :paused)
-        ((string-equal text "Stopped") :stopped)
-        (t nil)))
+        (t :stopped)))
 
 (defun mpris (&key player)
   "What is playing: the track, where it is, and the transport."
@@ -49,13 +50,12 @@
    (/media
     {:read (pine.data:fn []
              (let ((row (%metadata player)))
-               (when row
-                 (fset:map (:status (%status (first row)))
-                           (:title (second row))
-                           (:artist (third row))
-                           (:art (fourth row))
-                           (:position (%seconds (fifth row)))
-                           (:length (%seconds (sixth row)))))))
+               (fset:map (:status (%status (first row)))
+                         (:title (second row))
+                         (:artist (third row))
+                         (:art (fourth row))
+                         (:position (%seconds (fifth row)))
+                         (:length (%seconds (sixth row))))))
      :verbs {:play (pine.data:fn [] (out:sh "playerctl~a play" (%player-flag player)) t)
              :pause (pine.data:fn [] (out:sh "playerctl~a pause" (%player-flag player)) t)
              :next (pine.data:fn [] (out:sh "playerctl~a next" (%player-flag player)) t)

@@ -16,7 +16,7 @@
       (values (/ (max xadv 1d0) 10d0) (cairo:font-height fe) (cairo:font-ascent fe)))))
 
 (defun render-grid-to-png (rows path &key (font-px 15d0) (x0 6d0))
-  "Paint wire ROWS (pine.ui.render:frame->rows output) to a PNG at PATH. Headless
+  "Paint wire ROWS (pine.editor.render:frame->rows output) to a PNG at PATH. Headless
 eyes for the editor frame: no window, an offscreen cairo image surface."
   (multiple-value-bind (cell-w cell-h ascent)
       (cairo:with-png-file ("/tmp/pine-metrics.png" :argb32 8 8) (%cell-metrics font-px))

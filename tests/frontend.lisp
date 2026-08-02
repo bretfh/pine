@@ -106,15 +106,15 @@ asked, so the loop can be watched without a display."))
 ;;;; returned, never swallowed: a surface that fails to build must not look
 ;;;; like a surface that had nothing to draw.
 
-(test attempt-returns-the-condition-as-a-value
+(test attempt-returns-the-fault-as-a-value
   (multiple-value-bind (result failure)
       (let ((*error-output* (make-broadcast-stream)))
         (pine.err:attempt (lambda () (error "probe")) "probe context"))
     (is (null result))
-    (is (typep failure 'pine.err:evaluation))
-    (is (eq :error (pine.err:evaluation-status failure)))
-    (is (search "probe" (pine.err:evaluation-condition failure)))
-    (is (equal "probe context" (pine.err:evaluation-form failure)))))
+    (is (typep failure 'pine.err:fault))
+    (is (search "probe" (pine.err:fault-condition failure)))
+    (is (equal "probe context" (pine.err:fault-label failure)))
+    (pine.err:forget failure)))
 
 (test attempt-passes-the-value-through-when-it-works
   (multiple-value-bind (result failure)
@@ -122,21 +122,40 @@ asked, so the loop can be watched without a display."))
     (is (eq :fine result))
     (is (null failure))))
 
-(test a-failure-reaches-the-debug-surface-once
-  (let* ((seen nil)
-         (pine.err:*on-debug* (lambda (ev) (push ev seen))))
-    (pine.err:attempt (lambda () (error "probe")) "probe context")
-    (is (= 1 (length seen)))
-    (is (search "probe" (pine.err:evaluation-condition (first seen))))))
+(defmacro watching-err ((var) &body body)
+  "Run BODY with something looking at /err that collects every fault into VAR.
 
-(test a-failure-with-no-surface-is-loud-on-the-error-stream
-  (let ((pine.err:*on-debug* nil))
-    (let ((report (with-output-to-string (*error-output*)
-                    (pine.err:report-failure
-                     (make-condition 'simple-error :format-control "probe text")
-                     "probe context"))))
-      (is (search "probe context" report))
-      (is (search "probe text" report)))))
+Set on the space rather than bound here, because the thread that faults is not
+always this one. This is also what tells pine.err that anything is in a
+position to decide."
+  `(let ((,var nil))
+     (pine.ns:watch /err
+                    (lambda (value)
+                      (declare (ignore value))
+                      (dolist (f (pine.err:faults)) (pushnew f ,var))
+                      nil)
+                    :as :probe)
+     (unwind-protect (progn ,@body)
+       (pine.ns:watch /err nil :as :probe))))
+
+(test a-failure-reaches-what-is-watching-err-once
+  (watching-err (seen)
+    (pine.err:attempt (lambda () (error "probe")) "probe context")
+    (let ((ours (remove-if-not (lambda (f)
+                                 (equal "probe context" (pine.err:fault-label f)))
+                               seen)))
+      (is (= 1 (length ours)))
+      (is (search "probe" (pine.err:fault-condition (first ours))))
+      (mapc #'pine.err:forget ours))))
+
+(test a-failure-nothing-is-watching-is-loud-on-the-error-stream
+  (let ((report (with-output-to-string (*error-output*)
+                  (pine.err:forget
+                   (pine.err:report-failure
+                    (make-condition 'simple-error :format-control "probe text")
+                    "probe context")))))
+    (is (search "probe context" report))
+    (is (search "probe text" report))))
 
 (test an-evaluation-records-its-values-its-output-and-its-status
   (let ((done nil))
@@ -148,73 +167,70 @@ asked, so the loop can be watched without a display."))
     (is (equal '(7) (pine.err:evaluation-values done)))
     (is (string= "said" (pine.err:evaluation-output done)))))
 
-(defmacro with-debug-surface ((surface) &body body)
-  "Install SURFACE globally around BODY, for the paths that surface from an
-eval's own thread, which a dynamic binding here would not reach. ATTEMPT runs
-on the caller's thread and takes an ordinary LET instead."
-  (let ((saved (gensym "SAVED")))
-    `(let ((,saved pine.err:*on-debug*))
-       (setf pine.err:*on-debug* ,surface)
-       (unwind-protect (progn ,@body)
-         (setf pine.err:*on-debug* ,saved)))))
+(defmacro with-err-watch ((fn) &body body)
+  "Run BODY with FN watching /err, for the faults that happen on an eval's own
+thread, which a dynamic binding here would not reach."
+  `(progn
+     (pine.ns:watch /err (lambda (value) (declare (ignore value)) (funcall ,fn) nil)
+                    :as :probe)
+     (unwind-protect (progn ,@body)
+       (pine.ns:watch /err nil :as :probe))))
 
-(test an-evaluation-with-no-surface-aborts-rather-than-parking-its-thread
+(test an-evaluation-nothing-is-watching-aborts-rather-than-parking-its-thread
   (let ((done nil))
-    (with-debug-surface (nil)
-      (pine.err:evaluate-thunk (lambda () (error "probe"))
-                                     :on-done (lambda (ev) (setf done ev)))
-      (sleep 0.5))
+    (pine.err:evaluate-thunk (lambda () (error "probe"))
+                             :on-done (lambda (ev) (setf done ev)))
+    (sleep 0.5)
     (is (not (null done)))
     (is (eq :aborted (pine.err:evaluation-status done))
-        "with nobody to choose a restart the worker aborts instead of parking")))
+        "with nobody in a position to choose, the thread aborts instead of parking")))
 
 (defmacro with-park-deadline ((seconds) &body body)
   "Run BODY with the unattended park bounded at SECONDS. Set globally for the
 same reason the surface is: the thread that waits is the eval's own."
   (let ((s (gensym "SECONDS")))
-    `(let ((,s pine.err:*park-seconds*))
-       (setf pine.err:*park-seconds* ,seconds)
+    `(let ((,s (pine.ns:read (pine.path:parse "/park-seconds"))))
+       (pine.ns:write (pine.path:parse "/park-seconds") ,seconds)
        (unwind-protect (progn ,@body)
-         (setf pine.err:*park-seconds* ,s)))))
+         (pine.ns:write (pine.path:parse "/park-seconds") ,s)))))
 
 (test an-unattended-park-aborts-itself-on-the-deadline
   (let ((done nil))
     (with-park-deadline (1)
-      (with-debug-surface ((lambda (ev) (declare (ignore ev)) nil))
+      (with-err-watch ((lambda () nil))
         (pine.err:evaluate-thunk (lambda () (error "probe"))
                                        :on-done (lambda (ev) (setf done ev)))
         (sleep 2.5)))
     (is (not (null done))
-        "a surface that took the fault and never answered held the thread past its deadline")
+        "something looked at the fault and never answered, holding the thread past its deadline")
     (is (eq :aborted (pine.err:evaluation-status done)))))
 
 (test an-attended-park-waits-past-the-deadline-and-resumes
-  (let ((done nil) (surfaced nil))
+  (let ((done nil) (seen nil))
     (with-park-deadline (1)
-      (with-debug-surface ((lambda (ev)
-                             (setf surfaced ev
-                                   (pine.err:attended-p ev) t)))
+      (with-err-watch ((lambda ()
+                         (dolist (f (pine.err:faults))
+                           (setf seen f (pine.err:attended-p f) t))))
         (pine.err:evaluate-thunk (lambda () (error "probe"))
                                        :on-done (lambda (ev) (setf done ev)))
         (sleep 2.0)
         (is (null done) "an attended fault must keep its restarts, deadline or not")
-        (is (eq :error (pine.err:evaluation-status surfaced)))
-        (pine.err:pick-restart surfaced "ABORT")
+        (is (typep seen 'pine.err:parked))
+        (pine.err:resume seen "ABORT")
         (sleep 0.5)))
     (is (not (null done)) "the restart chosen late must still resume the thread")))
 
-(test a-restart-picked-by-name-resumes-the-blocked-evaluation
-  (let ((done nil)
-        (surfaced nil))
-    (with-debug-surface ((lambda (ev)
-                           (setf surfaced ev)
-                           (pine.err:pick-restart ev "ABORT")))
+(test a-restart-picked-by-name-resumes-the-standing-evaluation
+  (let ((done nil) (seen nil))
+    (with-err-watch ((lambda ()
+                       (dolist (f (pine.err:faults))
+                         (setf seen f)
+                         (pine.err:resume f "ABORT"))))
       (pine.err:evaluate-thunk (lambda () (error "probe"))
                                      :on-done (lambda (ev) (setf done ev)))
       (sleep 0.5))
-    (is (not (null surfaced)))
-    (is (member "ABORT" (mapcar #'first (pine.err:evaluation-restarts surfaced))
-                :test #'string=))
+    (is (not (null seen)))
+    (is (member "ABORT" (mapcar #'first (pine.err:offers seen)) :test #'string=))
     (is (not (null done)))))
 
 (test every-evaluation-joins-the-registry-and-can-be-found-by-id

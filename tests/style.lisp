@@ -1,4 +1,5 @@
 (in-package :pine.test)
+(named-readtables:in-readtable pine.data:syntax)
 
 (def-suite* :pine.style :in :pine)
 
@@ -75,12 +76,11 @@
   (is (null (pine.ui.style::parse-gradient "none"))))
 
 (test a-keyword-selector-names-one-class
-  (pine.ui.rules:install-rules '((:st-kw (:opacity 0.25))))
+  (pine.ui.rules:install-rules (list (list :st-kw {:opacity 0.25})))
   (is (= 0.25 (pine.ui.style:st-opacity (style-for :st-kw)))))
 
 (test lisp-values-carry-through-to-px-properties
-  (pine.ui.rules:install-rules
-   '((:st-num (:opacity 0.42 :min-width 28 :border-radius 6 :padding 4))))
+  (pine.ui.rules:install-rules (list (list :st-num {:opacity 0.42 :min-width 28 :border-radius 6 :padding 4})))
   (let ((st (style-for :st-num)))
     (is (= 0.42 (pine.ui.style:st-opacity st)))
     (is (= 28 (pine.ui.style:st-min-w st)))
@@ -88,33 +88,33 @@
     (is (= 4 (pine.ui.style:st-pad-x st)))))
 
 (test css-strings-carry-through-too
-  (pine.ui.rules:install-rules '((".st-str" (:opacity "0.5" :min-height "12px"))))
+  (pine.ui.rules:install-rules (list (list ".st-str" {:opacity "0.5" :min-height "12px"})))
   (let ((st (style-for :st-str)))
     (is (= 0.5 (pine.ui.style:st-opacity st)))
     (is (= 12 (pine.ui.style:st-min-h st)))))
 
 (test a-compound-selector-needs-every-class
-  (pine.ui.rules:install-rules '(((:st-a :st-b) (:min-width 40))))
+  (pine.ui.rules:install-rules (list (list '(:st-a :st-b) {:min-width 40})))
   (is (= 40 (pine.ui.style:st-min-w (style-for '(:st-a :st-b)))))
   (is (null (pine.ui.style:st-min-w (style-for :st-a)))))
 
 (test a-descendant-selector-needs-the-ancestor
-  (pine.ui.rules:install-rules '((".st-outer .st-inner" (:min-width 33))))
+  (pine.ui.rules:install-rules (list (list ".st-outer .st-inner" {:min-width 33})))
   (is (= 33 (pine.ui.style:st-min-w (style-under :st-outer :st-inner))))
   (is (null (pine.ui.style:st-min-w (style-for :st-inner)))))
 
 (test a-hover-pseudo-matches-only-while-hovered
-  (pine.ui.rules:install-rules '((".st-hov:hover" (:min-width 21))))
+  (pine.ui.rules:install-rules (list (list ".st-hov:hover" {:min-width 21})))
   (is (= 21 (pine.ui.style:st-min-w (style-for :st-hov :hover t))))
   (is (null (pine.ui.style:st-min-w (style-for :st-hov)))))
 
 (test the-later-rule-wins-the-cascade
-  (pine.ui.rules:install-rules '((".st-cascade" (:min-width 10))))
-  (pine.ui.rules:install-rules '((".st-cascade" (:min-width 90))))
+  (pine.ui.rules:install-rules (list (list ".st-cascade" {:min-width 10})))
+  (pine.ui.rules:install-rules (list (list ".st-cascade" {:min-width 90})))
   (is (= 90 (pine.ui.style:st-min-w (style-for :st-cascade)))))
 
 (test a-user-rule-outranks-a-built-in-one
-  (pine.ui.rules:install-rules '((".cand" (:color "#010203"))))
+  (pine.ui.rules:install-rules (list (list ".cand" {:color "#010203"})))
   (is (equal '(1/255 2/255 3/255)
              (mapcar #'rationalize (pine.ui.style:st-fg (style-for :cand))))))
 
@@ -122,28 +122,28 @@
   (is (null (pine.ui.style:st-bg (style-for :button)))))
 
 (test margin-merges-the-shorthand-with-the-per-side-overrides
-  (pine.ui.rules:install-rules
-   '((".st-margin" (:margin "4px" :margin-left 9))))
+  (pine.ui.rules:install-rules (list (list ".st-margin" {:margin "4px" :margin-left 9})))
   (is (equal '(4 4 4 9) (pine.ui.style:st-margin (style-for :st-margin)))))
 
 (test a-zero-margin-resolves-to-nothing-at-all
-  (pine.ui.rules:install-rules '((".st-nomargin" (:margin "0"))))
+  (pine.ui.rules:install-rules (list (list ".st-nomargin" {:margin "0"})))
   (is (null (pine.ui.style:st-margin (style-for :st-nomargin)))))
 
 (test a-border-needs-solid-to-take-its-width
   (pine.ui.rules:install-rules
-   '((".st-bord" (:border-style "solid" :border-width "2px" :border-color "#00ff00"))
-     (".st-noborder" (:border-width "2px" :border-color "#00ff00"))))
+   (list (list ".st-bord" {:border-style "solid" :border-width "2px"
+                           :border-color "#00ff00"})
+         (list ".st-noborder" {:border-width "2px" :border-color "#00ff00"})))
   (let ((st (style-for :st-bord)))
     (is (= 2 (pine.ui.style:st-border-w st)))
     (is (equal '(0.0 1.0 0.0) (pine.ui.style:st-border-color st))))
   (is (= 0 (pine.ui.style:st-border-w (style-for :st-noborder)))))
 
 (test installing-a-selector-again-replaces-it
-  (pine.ui.rules:install-rules '((".st-once" (:min-width 5))))
-  (let ((before (length pine.ui.rules:*user-rules*)))
-    (pine.ui.rules:install-rules '((".st-once" (:min-width 6))))
-    (is (= before (length pine.ui.rules:*user-rules*)))
+  (pine.ui.rules:install-rules (list (list ".st-once" {:min-width 5})))
+  (let ((before (length (pine.ui.rules:user-rules))))
+    (pine.ui.rules:install-rules (list (list ".st-once" {:min-width 6})))
+    (is (= before (length (pine.ui.rules:user-rules))))
     (is (= 6 (pine.ui.style:st-min-w (style-for :st-once))))))
 
 (test selector-strings-canonicalize-from-symbols-and-lists

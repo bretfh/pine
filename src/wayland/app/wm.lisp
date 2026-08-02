@@ -106,12 +106,12 @@ for sequences that have nothing left to do."
 nil when xkbcommon does not know the key name. MODIFIERS is the keyword list
 river_seat_v1.modifiers is written in: pine's meta is the protocol's mod1 and
 pine's super is its mod4."
-  (let* ((key (pine.editor.key:parse-key chord))
-         (keysym (xkb:xkb-keysym-from-name (pine.editor.key:key-sym key) '(:no-flags)))
-         (modifiers (append (when (pine.editor.key:key-shift key) '(:shift))
-                            (when (pine.editor.key:key-ctrl key)  '(:ctrl))
-                            (when (pine.editor.key:key-meta key)  '(:mod1))
-                            (when (pine.editor.key:key-super key) '(:mod4)))))
+  (let* ((key (pine.key:parse-key chord))
+         (keysym (xkb:xkb-keysym-from-name (pine.key:key-sym key) '(:no-flags)))
+         (modifiers (append (when (pine.key:key-shift key) '(:shift))
+                            (when (pine.key:key-ctrl key)  '(:ctrl))
+                            (when (pine.key:key-meta key)  '(:mod1))
+                            (when (pine.key:key-super key) '(:mod4)))))
     (when (and keysym (plusp keysym))
       (values keysym modifiers))))
 
@@ -156,39 +156,12 @@ window management state, so it runs inside a manage sequence."
                (hash-table-count (wm-bindings wm)))
        (finish-output *error-output*)))))
 
-;;;; Actions the daemon asks for.
-
-(defparameter +build-environment+
-  '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
-    "LD_LIBRARY_PATH")
-  "Variables that belong to the environment pine itself was built and run in.
-A window manager started from inside one, such as a guix shell over the
-repo's manifest, would otherwise pass it to everything it launches, and a
-terminal would open in pine's build environment rather than the session.")
-
-(defun %spawn (command)
-  "Launch COMMAND as the user's own program: their login environment, their
-home directory, and the compositor's display. Only WAYLAND_DISPLAY is carried
-over from this process."
-  (let ((login (format nil "cd \"$HOME\" && exec ~a" command)))
-    (uiop:launch-program (list "sh" "-l" "-c" login)
-                         :environment
-                         (append
-                          (remove-if
-                           (lambda (entry)
-                             (some (lambda (name)
-                                     (let ((prefix (concatenate 'string name "=")))
-                                       (and (>= (length entry) (length prefix))
-                                            (string= prefix entry
-                                                     :end2 (length prefix)))))
-                                   +build-environment+))
-                           (sb-ext:posix-environ))
-                          nil))))
+;;;; Actions the daemon asks for. Running a command is not one of them: that is
+;;;; a write to /sh, which is the one place a command line is run.
 
 (defun %apply-action (wm plist)
-  (destructuring-bind (&key action command id &allow-other-keys) plist
+  (destructuring-bind (&key action id &allow-other-keys) plist
     (case action
-      (:spawn (%spawn command))
       (:close
        (%defer wm (lambda ()
                     (let ((w (or (find id (wm-windows wm)
@@ -376,9 +349,10 @@ bit and the border is opaque, so premultiplying is the identity here."
   (let ((border (wm-border wm)))
     (when border
       (multiple-value-bind (r g b a)
-          (%border-rgba (getf border (if (eq w (wm-focus wm)) :active :inactive)))
+          (%border-rgba (fset:lookup border
+                                     (if (eq w (wm-focus wm)) :active :inactive)))
         (river-window-v1.set-borders (win-proxy w) '(:top :bottom :left :right)
-                                     (getf border :width) r g b a)))))
+                                     (fset:lookup border :width) r g b a)))))
 
 (defun manage (wm)
   "One manage sequence: run whatever was deferred, propose each window the
