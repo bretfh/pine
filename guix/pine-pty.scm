@@ -21,17 +21,24 @@
           (replace 'build
             (lambda _
               (copy-file #$(local-file "../lib/pty.c") "pty.c")
-              (invoke "gcc" "-shared" "-fPIC" "pty.c" "-lutil"
-                      "-o" "libpine-pty.so")))
+              (copy-file #$(local-file "../lib/pty-helper.c") "pty-helper.c")
+              (invoke "gcc" "-O2" "pty-helper.c" "-o" "pine-pty-helper")
+              (invoke "gcc" "-shared" "-fPIC"
+                      (string-append "-DPINE_PTY_HELPER=\"" #$output
+                                     "/bin/pine-pty-helper\"")
+                      "pty.c" "-lutil" "-o" "libpine-pty.so")))
           (replace 'install
             (lambda _
-              (let ((lib (string-append #$output "/lib")))
+              (let ((lib (string-append #$output "/lib"))
+                    (bin (string-append #$output "/bin")))
                 (mkdir-p lib)
-                (install-file "libpine-pty.so" lib)))))))
+                (mkdir-p bin)
+                (install-file "libpine-pty.so" lib)
+                (install-file "pine-pty-helper" bin)))))))
     (home-page "https://example.com/pine")
     (synopsis "PTY spawn helper for pine")
     (description "A small shared library that spawns a command under a
-pseudo-terminal via forkpty, for pine's terminal buffers.")
+pseudo-terminal, for pine's terminal buffers, and the helper it spawns.")
     (license license:expat)))
 
 pine-pty

@@ -50,6 +50,9 @@
    #:pty-read-string
    #:pty-write-string
    #:pty-close
+   #:pty-wait
+   #:pty-kill
+   #:pty-reap
    #:term-render-line
    #:term-dump-row-string
    #:term-dump-to-string

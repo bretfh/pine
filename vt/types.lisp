@@ -53,15 +53,15 @@
 (defun make-osc-buf ()
   (make-array 64 :element-type 'character :adjustable t :fill-pointer 0))
 
-(defun make-grid (width height)
-  (let ((grid (make-array height :initial-element nil)))
-    (dotimes (y height grid)
-      (setf (aref grid y) (make-row width)))))
-
 (defun make-row (width)
   (let ((row (make-array width :initial-element nil)))
     (dotimes (x width row)
       (setf (aref row x) (make-cell)))))
+
+(defun make-grid (width height)
+  (let ((grid (make-array height :initial-element nil)))
+    (dotimes (y height grid)
+      (setf (aref grid y) (make-row width)))))
 
 (defstruct (term (:constructor %make-term))
   (width 80 :type fixnum)
@@ -125,21 +125,20 @@ color change."
 (defun make-term (&key (width 80) (height 24)
                        input-fn bell-fn title-fn cwd-fn
                        (max-scrollback 10000))
-  (let ((term (%make-term :width width
-                          :height height
-                          :grid (make-grid width height)
-                          :attrs (make-face-attrs)
-                          :saved-attrs (make-face-attrs)
-                          :scroll-top 0
-                          :scroll-bottom (1- height)
-                          :input-fn input-fn
-                          :bell-fn bell-fn
-                          :title-fn title-fn
-                          :cwd-fn cwd-fn
-                          :max-scrollback max-scrollback
-                          :scrollback (when (plusp max-scrollback)
-                                        (make-array 64 :initial-element nil)))))
-    term))
+  (%make-term :width width
+              :height height
+              :grid (make-grid width height)
+              :attrs (make-face-attrs)
+              :saved-attrs (make-face-attrs)
+              :scroll-top 0
+              :scroll-bottom (1- height)
+              :input-fn input-fn
+              :bell-fn bell-fn
+              :title-fn title-fn
+              :cwd-fn cwd-fn
+              :max-scrollback max-scrollback
+              :scrollback (when (plusp max-scrollback)
+                            (make-array 64 :initial-element nil))))
 
 (defun term-grid-row (term y)
   (aref (term-grid term) y))

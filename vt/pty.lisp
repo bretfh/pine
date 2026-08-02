@@ -28,6 +28,22 @@
     (let ((master (%pty-spawn command rows cols pid)))
       (values master (cffi:mem-ref pid :int)))))
 
+(defparameter +pollin+ 1)
+
+(defun pty-wait (fd milliseconds)
+  "Whether FD has something to read within MILLISECONDS.
+
+A blocking read cannot be interrupted: closing the descriptor under it does not
+wake it, and killing the thread inside a foreign call wedges the image at the
+next GC. So a reader waits with a timeout and looks at its own flag between
+waits."
+  (cffi:with-foreign-object (pfd :char 8)   ; struct pollfd
+    (setf (cffi:mem-ref pfd :int 0) fd
+          (cffi:mem-ref pfd :short 4) +pollin+
+          (cffi:mem-ref pfd :short 6) 0)
+    (plusp (cffi:foreign-funcall "poll" :pointer pfd :unsigned-long 1
+                                        :int milliseconds :int))))
+
 (defun pty-read-string (fd size)
   "Read up to SIZE bytes from FD as a string, or nil at EOF/error."
   (cffi:with-foreign-object (buf :unsigned-char size)
@@ -41,3 +57,15 @@
 
 (defun pty-close (fd)
   (cffi:foreign-funcall "close" :int fd :int))
+
+(defun pty-kill (pid &optional (signal 15))
+  (cffi:foreign-funcall "kill" :int pid :int signal :int))
+
+(defun pty-reap (pid)
+  "Signal PID and wait for it, so it is not left a zombie. Answers its status."
+  (when (and pid (plusp pid))
+    (pty-kill pid)
+    (cffi:with-foreign-object (status :int)
+      (let ((got (cffi:foreign-funcall "waitpid" :int pid :pointer status
+                                                 :int 0 :int)))
+        (when (plusp got) (cffi:mem-ref status :int))))))
