@@ -107,3 +107,53 @@
     (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] :a))
     (pine.ns:write /mode/prog/on/newline (pine.data:fn [buf] :b))
     (is (= 2 (fset:size (pine.ns:read /mode/**/on/newline))))))
+
+;;;; What a mode answers about a buffer, as against what it does to one.
+
+(test a-mode-answers-a-verb-nothing-in-src-knows-about
+  "A producer is a function at a path, so a mode written here answers for a
+buffer without one line of pine having heard of it."
+  (with-modes
+    (pine.ns:write /mode/probe {:parent :text})
+    (pine.ns:write /mode/probe/answers/definition
+                   (pine.data:fn [buf of]
+                     (list (list "/tmp/probe.lisp" 7 3 (or of buf)))))
+    (pine.ns:write /buf/probe-buf/text ["(f)"])
+    (pine.ns:write /buf/probe-buf/mode :probe)
+    (is (equal '(("/tmp/probe.lisp" 7 3 "probe-buf"))
+               (pine.mode:answer "probe-buf" :definition nil)))
+    (is (equal '(("/tmp/probe.lisp" 7 3 "thing"))
+               (pine.mode:answer "probe-buf" :definition "thing")))))
+
+(test a-verb-is-read-off-the-buffer
+  "A surface asks the buffer, not the mode: the path is the whole interface."
+  (with-modes
+    (pine.ns:raise :buf)
+    (unwind-protect
+         (progn
+           (pine.ns:write /mode/probe {:parent :text})
+           (pine.ns:write /mode/probe/answers/arglist
+                          (pine.data:fn [buf of] (declare (ignore of))
+                            (format nil "~a takes nothing" buf)))
+           (pine.ns:write /buf/probe-buf/text ["(f)"])
+           (pine.ns:write /buf/probe-buf/mode :probe)
+           (is (equal "probe-buf takes nothing"
+                      (pine.ns:read /buf/probe-buf/arglist))))
+      (pine.ns:lower :buf))))
+
+(test a-point-verb-takes-the-most-specific-answer-and-a-set-verb-merges
+  (with-modes
+    (pine.ns:write /mode/probe {:parent :text})
+    (pine.ns:write /mode/text/answers/definition
+                   (pine.data:fn [buf of] (declare (ignore buf of)) (list :from-text)))
+    (pine.ns:write /mode/probe/answers/definition
+                   (pine.data:fn [buf of] (declare (ignore buf of)) (list :from-probe)))
+    (pine.ns:write /mode/text/answers/references
+                   (pine.data:fn [buf of] (declare (ignore buf of)) (list :text-ref)))
+    (pine.ns:write /mode/probe/answers/references
+                   (pine.data:fn [buf of] (declare (ignore buf of)) (list :probe-ref)))
+    (pine.ns:write /buf/probe-buf/text ["(f)"])
+    (pine.ns:write /buf/probe-buf/mode :probe)
+    (is (equal '(:from-probe) (pine.mode:answer "probe-buf" :definition nil)))
+    (is (equal '(:probe-ref :text-ref)
+               (pine.mode:answer "probe-buf" :references nil)))))

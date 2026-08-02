@@ -2,7 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
   (:export #:chain #:setting #:for-file #:minors #:handler #:matches-p
-           #:minor-p #:names #:server))
+           #:minor-p #:names #:server
+           #:producers #:answer #:+merged+))
 
 (in-package #:pine.mode)
 (named-readtables:in-readtable pine.path:syntax)
@@ -77,6 +78,33 @@ major mode's and its parents'. NIL means the built-in verb answers."
       (loop :for mode :in (chain (ns:read (p:path /buf buf :mode)))
             :for fn = (ns:read (p:path /mode mode :on verb))
             :when fn :do (return fn))))
+
+;;;; What a mode answers about a buffer, as against what it does to one. A
+;;;; producer is a function at /mode/?name/answers/?verb, and a mode that
+;;;; registers one gives every surface asking that verb a better answer without
+;;;; any of them hearing about the mode. Nothing reaches past this: a command
+;;;; asks the buffer, the buffer asks the chain.
+
+(defparameter +merged+ '(:references :complete :diagnostics)
+  "The verbs whose answer is a set, so every producer contributes to it. The
+rest are about a point, and the most specific producer that answers wins.")
+
+(defun producers (buf verb)
+  "Every producer for VERB on BUF, most specific first: the minor modes by
+precedence, then the mode and everything it falls back to."
+  (append (loop :for m :in (minors buf)
+                :for fn = (ns:read (p:path /minor m :answers verb))
+                :when fn :collect fn)
+          (loop :for mode :in (chain (ns:read (p:path /buf buf :mode)))
+                :for fn = (ns:read (p:path /mode mode :answers verb))
+                :when fn :collect fn)))
+
+(defun answer (buf verb &optional of)
+  "What BUF's modes say about VERB, OF naming what is being asked about."
+  (let ((all (producers buf verb)))
+    (if (member verb +merged+)
+        (loop :for fn :in all :append (funcall fn buf of))
+        (loop :for fn :in all :thereis (funcall fn buf of)))))
 
 (defun minor-p (name)
   "True when NAME is a minor mode: something is written at /minor/?name."

@@ -230,6 +230,8 @@ line the person who asked for it reads."
 (defcmd "eval-defun" ()     (pine.eval:defun-at-point))
 (defcmd "eval-buffer" ()    (pine.eval:buffer))
 (defcmd "find-definition" () (pine.eval:definition))
+(defcmd "find-references" () (pine.eval:references))
+(defcmd "describe-thing" () (pine.eval:hover))
 (defcmd "arglist" ()        (pine.eval:arglist))
 (defcmd "complete-symbol" () (pine.eval:complete-symbol))
 (defcmd "load-file" ()      (pine.eval:load))
@@ -350,6 +352,7 @@ line the person who asked for it reads."
   "C-x C-e"  "eval-last-sexp"
   "C-M-x"    "eval-defun"
   "M-."      "find-definition"
+  "M-?"      "find-references"
   "M-x"      "execute-command"
   "Insert"   "overwrite-mode"
   ;; prefix argument

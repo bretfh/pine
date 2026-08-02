@@ -856,6 +856,14 @@ view is writing one."
               (let ((n (parse-integer which :junk-allowed t)))
                 (when n (%put-line name n v))))
      :doc "one line, or the range FROM..TO a window is showing"})
+   (/buf/?name/?verb{definition,references,complete,arglist,hover,diagnostics}/?of
+    {:read (pine.data:fn []
+             (pine.mode:answer name (p:key verb) of))
+     :doc "what this buffer's modes say about that subject"})
+   (/buf/?name/?verb{definition,references,complete,arglist,hover,diagnostics}
+    {:read (pine.data:fn []
+             (pine.mode:answer name (p:key verb) nil))
+     :doc "what this buffer's modes say, about where point is"})
    (/buf/?name/prop/?line
     {:read (pine.data:fn []
              (let ((n (parse-integer line :junk-allowed t)))

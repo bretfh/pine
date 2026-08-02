@@ -4,8 +4,8 @@
   (:shadow #:load)
   (:export #:target #:in-target #:form-string
            #:last-sexp #:defun-at-point #:buffer #:load
-           #:definition #:complete-symbol #:arglist #:*on-done*
-           #:target-was))
+           #:definition #:references #:hover #:complete-symbol #:arglist
+           #:*on-done* #:target-was #:visit-place #:server))
 
 (in-package #:pine.eval)
 (named-readtables:in-readtable pine.path:syntax)
@@ -165,41 +165,123 @@ beside the form when AT is the (BUFFER . LINE) it came from."
                      (find-package :cl-user))
         (pine.echo:message "buffer has no file"))))
 
-(defun %open (label srcs)
-  (let* ((src (first srcs))
-         (path (and src (sb-introspect:definition-source-pathname src)))
-         (coff (and src (sb-introspect:definition-source-character-offset src))))
-    (cond
-      ((and path (probe-file path))
-       (ns:write /buf/current (fset:seq :visit (namestring path)))
-       (when coff
-         (let ((name (%current)))
-           (when name
-             (let ((text (b:state->string (pine.buf:state name))))
-               (multiple-value-bind (l c) (%offset->lc text coff)
-                 (ns:write (pine.buf:at name :point) (fset:seq l c)))))))
-       (pine.echo:message (format nil "~a" (file-namestring path))))
-      (t (pine.echo:message (format nil "no source for ~a" label))))))
+;;;; What the image knows, as producers. For lisp the running image already
+;;;; holds what a language server would compute, and it holds it for whichever
+;;;; image /eval/target names, so a definition inside an agent resolves over the
+;;;; same remoting hop the debugger uses. Nothing outside this file asks
+;;;; sb-introspect: a surface asks the buffer and the buffer asks the chain.
+
+(defun %symbol-in (name of)
+  "The symbol OF names, or the one at point in NAME, read in the buffer's own
+package. (values SYMBOL TOKEN)."
+  (let* ((state (pine.buf:state name))
+         (pkg (b:buffer-package state))
+         (token (or of
+                    (let* ((text (b:state->string state))
+                           (snap (b:state->snapshot state))
+                           (off (min (b:point->offset snap) (length text))))
+                      (%token-at text off)))))
+    (when token
+      (values (let ((*package* pkg)) (ignore-errors (read-from-string token)))
+              token))))
+
+(defun %placed (src kind)
+  "A definition source as (FILE LINE COL KIND), or NIL when it has no file."
+  (let ((file (sb-introspect:definition-source-pathname src))
+        (off (sb-introspect:definition-source-character-offset src)))
+    (when (and file (probe-file file))
+      (let ((text (pine.buf:read-file file)))
+        (multiple-value-bind (line col)
+            (if (and text off) (%offset->lc text off) (values 0 0))
+          (list (namestring file) line col kind))))))
+
+(defun %defined-at (sym)
+  (loop :for kind :in '(:function :macro :generic-function :variable :class)
+        :append (loop :for src :in (ignore-errors
+                                    (sb-introspect:find-definition-sources-by-name
+                                     sym kind))
+                      :for placed = (%placed src kind)
+                      :when placed :collect placed)))
+
+(defun definition-producer (name of)
+  (multiple-value-bind (sym) (%symbol-in name of)
+    (when (symbolp sym) (%defined-at sym))))
+
+(defun references-producer (name of)
+  (multiple-value-bind (sym) (%symbol-in name of)
+    (when (and sym (symbolp sym))
+      (loop :for (nil . src) :in (ignore-errors (sb-introspect:who-calls sym))
+            :for placed = (%placed src :caller)
+            :when placed :collect placed))))
+
+(defun complete-producer (name of)
+  (let ((prefix (or of "")))
+    (when (plusp (length prefix))
+      (%candidates prefix (b:buffer-package (pine.buf:state name))))))
+
+(defun arglist-producer (name of)
+  (multiple-value-bind (sym token) (%symbol-in name of)
+    (when (and sym (symbolp sym) (fboundp sym))
+      (format nil "~a ~(~a~)" token (sb-introspect:function-lambda-list sym)))))
+
+(defun hover-producer (name of)
+  (multiple-value-bind (sym token) (%symbol-in name of)
+    (when (and sym (symbolp sym))
+      (let ((doc (or (documentation sym 'function) (documentation sym 'variable)))
+            (args (arglist-producer name of)))
+        (cond ((and args doc) (format nil "~a  --  ~a" args doc))
+              (args args)
+              (doc (format nil "~a: ~a" token doc)))))))
+
+(defclass server (ns:server) ()
+  (:default-initargs :name :eval :after (list :mode))
+  (:documentation "What the running image can say about a lisp buffer, as the
+producers lisp-mode answers with."))
+
+(defmethod ns:raise ((s server) &key &allow-other-keys)
+  (declare (ignore s))
+  (ns:write /mode/lisp/answers
+            {:definition (pine.data:fn [buf of] (definition-producer buf of))
+             :references (pine.data:fn [buf of] (references-producer buf of))
+             :complete   (pine.data:fn [buf of] (complete-producer buf of))
+             :arglist    (pine.data:fn [buf of] (arglist-producer buf of))
+             :hover      (pine.data:fn [buf of] (hover-producer buf of))})
+  nil)
+
+(ns:register (make-instance 'server))
+
+(defun visit-place (place)
+  "Open the (FILE LINE COL KIND) PLACE names in its own buffer and put point
+there. FIND-FILE, because a jump opens the file it names: writing [:visit] to
+the buffer that is current reads the file into that buffer instead."
+  (destructuring-bind (file line col &optional kind) place
+    (declare (ignore kind))
+    (let ((name (pine.buf:find-file file)))
+      (when name
+        (ns:write (pine.buf:at name :point) (fset:seq line col))
+        (pine.echo:message (format nil "~a:~d" (file-namestring file) (1+ line)))))))
 
 (defun definition ()
-  (let ((name (%current)))
-    (when name
-      (let* ((state (pine.buf:state name))
-             (text (b:state->string state))
-             (snap (b:state->snapshot state))
-             (off (min (b:point->offset snap) (length text)))
-             (tok (%token-at text off))
-             (pkg (b:buffer-package state)))
-        (if (null tok)
-            (pine.echo:message "no symbol at point")
-            (let* ((sym (let ((*package* pkg)) (ignore-errors (read-from-string tok))))
-                   (srcs (and (symbolp sym)
-                              (loop :for kind :in '(:function :macro :generic-function
-                                                    :variable :class)
-                                    :thereis (ignore-errors
-                                              (sb-introspect:find-definition-sources-by-name
-                                               sym kind))))))
-              (%open tok srcs)))))))
+  "Go to where what is at point is defined. What that means is the buffer's
+modes' to say; this only takes the first answer and jumps."
+  (let* ((name (%current))
+         (found (and name (ns:read (pine.buf:at name :definition)))))
+    (if found
+        (visit-place (first found))
+        (pine.echo:message "no definition"))))
+
+(defun references ()
+  "Every place that mentions what is at point, as the modes answer."
+  (let* ((name (%current))
+         (found (and name (ns:read (pine.buf:at name :references)))))
+    (cond ((null found) (pine.echo:message "no references"))
+          ((null (rest found)) (visit-place (first found)))
+          (t (pine.echo:message
+              (format nil "~d reference~:p: ~{~a~^, ~}" (length found)
+                      (remove-duplicates (mapcar (lambda (p)
+                                                   (file-namestring (first p)))
+                                                 found)
+                                         :test #'equal)))))))
 
 (defun %candidates (prefix pkg)
   (let ((up (string-upcase prefix)) (out nil))
@@ -225,10 +307,9 @@ beside the form when AT is the (BUFFER . LINE) it came from."
              (snap (b:state->snapshot state))
              (off (min (b:point->offset snap) (length text)))
              (start (%token-start text off))
-             (prefix (subseq text start off))
-             (pkg (b:buffer-package state)))
+             (prefix (subseq text start off)))
         (unless (zerop (length prefix))
-          (let ((cands (%candidates prefix pkg)))
+          (let ((cands (ns:read (pine.buf:at name :complete prefix))))
             (cond
               ((null cands) (pine.echo:message "no completions"))
               ((null (rest cands)) (%replace-prefix name prefix (first cands)))
@@ -240,17 +321,11 @@ beside the form when AT is the (BUFFER . LINE) it came from."
                                      (%replace-prefix name prefix choice)))))))))))))
 
 (defun arglist ()
-  (let ((name (%current)))
-    (when name
-      (let* ((state (pine.buf:state name))
-             (text (b:state->string state))
-             (snap (b:state->snapshot state))
-             (off (min (b:point->offset snap) (length text)))
-             (tok (%token-at text off))
-             (pkg (b:buffer-package state)))
-        (when tok
-          (let ((sym (let ((*package* pkg)) (ignore-errors (read-from-string tok)))))
-            (if (and (symbolp sym) (fboundp sym))
-                (pine.echo:message
-                 (format nil "~a ~(~a~)" tok (sb-introspect:function-lambda-list sym)))
-                (pine.echo:message (format nil "~a: not a function" tok)))))))))
+  (let* ((name (%current))
+         (said (and name (ns:read (pine.buf:at name :arglist)))))
+    (pine.echo:message (or said "nothing at point takes arguments"))))
+
+(defun hover ()
+  (let* ((name (%current))
+         (said (and name (ns:read (pine.buf:at name :hover)))))
+    (pine.echo:message (or said ""))))

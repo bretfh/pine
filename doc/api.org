@@ -807,6 +807,12 @@ restart with no serializer.
 | =/buf/?name/line/${a}..${b}= | a seq of lines            |                                   |
 | =/buf/?name/prop=            | what is attached to its regions | =[:propertize ...]= =[:clear-properties ...]= =[:replace WHO PROPS]= |
 | =/buf/?name/prop/?line=      | the properties covering one line |                            |
+| =/buf/?name/definition=      | where what is at point is defined |                          |
+| =/buf/?name/references=      | every place that mentions it |                               |
+| =/buf/?name/complete/?prefix= | what completes PREFIX     |                                   |
+| =/buf/?name/arglist=         | what it takes             |                                   |
+| =/buf/?name/hover=           | what it is, in a line     |                                   |
+| =/buf/?name/diagnostics=     | what the compiler found   |                                   |
 | =/buf/?name/point=           | =[line col]=              | move there                        |
 | =/buf/?name/mark=            | =[line col]= or nil       | set it                            |
 | =/buf/?name/file=            | the file it visits        | visit another                     |
