@@ -805,7 +805,8 @@ restart with no serializer.
 | =/buf/?name/text=            | the whole string          | replace, or a verb                |
 | =/buf/?name/line/?n=         | one line                  | replace it                        |
 | =/buf/?name/line/${a}..${b}= | a seq of lines            |                                   |
-| =/buf/?name/face/${a}..${b}= | their highlight runs      |                                   |
+| =/buf/?name/prop=            | what is attached to its regions | =[:propertize ...]= =[:clear-properties ...]= =[:replace WHO PROPS]= |
+| =/buf/?name/prop/?line=      | the properties covering one line |                            |
 | =/buf/?name/point=           | =[line col]=              | move there                        |
 | =/buf/?name/mark=            | =[line col]= or nil       | set it                            |
 | =/buf/?name/file=            | the file it visits        | visit another                     |

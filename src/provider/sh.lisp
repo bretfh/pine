@@ -107,9 +107,16 @@
              (if (%streamingp command)
                  (ns:held (p:child /sh command))
                  (%output (list "sh" "-c" command))))
-     :in (pine.data:fn [line] line)
+     :in (pine.data:fn [v]
+           (if (stringp v)
+               v
+               (progn (%note command)
+                      (uiop:launch-program (list "sh" "-c" command)
+                                           :output nil :error-output nil)
+                      (ns:held (p:child /sh command)))))
      :watch (pine.data:fn [listening] (%listen command listening))
-     :doc "what the command says on its output; watch it for each line"})
+     :doc "what the command says on its output; write it to run it, watch it
+for each line"})
    (/sh
     {:read (pine.data:fn [] (ran))
      :verbs {:run (pine.data:fn [&rest argv]

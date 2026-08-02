@@ -50,6 +50,20 @@ produced millions of tuples nobody would look at."
 (defun %at (name &rest leaf)
   (apply #'p:path (p:parse "/buf") name leaf))
 
+(defun %as-properties (runs)
+  "Face runs as the buffer's own properties. A run follows the text it colours,
+and the walker emits exactly one face per token, so nothing downstream has to
+decide between two of them."
+  (fset:convert 'fset:seq
+                (mapcar (lambda (run)
+                          (destructuring-bind (line start end face) run
+                            (fset:map (:from (fset:seq line start))
+                                      (:to (fset:seq line end))
+                                      (:class face)
+                                      (:policy :sticky)
+                                      (:by :syntax))))
+                        runs)))
+
 (defun %receive (ps msg)
   "Handle one request against PS. Every answer is a write."
   (destructuring-bind (tag &key lines edit tick viewport name from to kind line col
@@ -62,7 +76,9 @@ produced millions of tuples nobody would look at."
       (case tag
         (:parse
          (%ensure-tree ps lines edit from-lines viewport)
-         (ns:write (%at name "face") (%highlights ps viewport) :keep nil))
+         (ns:write (%at name "prop")
+                   (fset:seq :replace :syntax
+                             (%as-properties (%highlights ps viewport)))))
         (:indent
          ;; where a line should sit is not a place, so it goes back to whoever
          ;; asked rather than through a path of its own

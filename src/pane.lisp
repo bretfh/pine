@@ -97,52 +97,44 @@ left)."
 ;;;; Colour. The parser writes what it found at /buf/?name/face, so that is
 ;;;; where it is read: a run is (LINE START-COL END-COL FACE).
 
-(defun %priority (face)
-  (case face
-    (:keyword        10)
-    (:variable-param  9)
-    (:function-name   8)
-    (:function-call   8)
-    (:builtin         7)
-    (:constant        6)
-    (:number          6)
-    (:escape          6)
-    (:string          5)
-    (:comment         5)
-    (:type            4)
-    (:variable        1)
-    (t                0)))
-
-(defun %runs-by-row (runs top height)
-  "RUNS as a table of pane row to the runs on it."
+(defun %by-row (props top height)
+  "PROPS as a table of pane row to the (START END CLASS DATA) on it. A property
+spanning lines contributes its own columns to the first and last and the whole
+width to the ones between."
   (let ((table (make-hash-table)))
-    (dolist (run runs table)
-      (destructuring-bind (line start end name) run
-        (when (and (>= line top) (< line (+ top height)))
-          (push (list start end name) (gethash (- line top) table)))))))
+    (fset:do-seq (prop props)
+      (let* ((from (fset:lookup prop :from))
+             (to (fset:lookup prop :to))
+             (sl (fset:lookup from 0)) (sc (fset:lookup from 1))
+             (el (fset:lookup to 0))   (ec (fset:lookup to 1))
+             (class (fset:lookup prop :class))
+             (data (fset:lookup prop :data)))
+        (loop :for line :from (max sl top) :to (min el (1- (+ top height)))
+              :do (push (list (if (= line sl) sc 0)
+                              (if (= line el) ec most-positive-fixnum)
+                              class data)
+                        (gethash (- line top) table)))))
+    table))
 
-(defun %faces-for-line (runs width forward)
-  "A vector of WIDTH faces, the highest-priority one winning each column.
+(defun %classes-for-line (props width forward)
+  "A vector of WIDTH class names, the last property covering a column winning it.
 
-FORWARD maps a column of the line as it is held to the column it is shown at,
-which is where a run's own columns have to be read: the parser counts the tab,
-and the screen counts what the tab ran out to."
-  (let ((faces (make-array width :initial-element nil))
-        (won (make-array width :initial-element -1))
+FORWARD maps a column of the line as it is held to the column it is shown at:
+the producer counts the tab, and the screen counts what the tab ran out to.
+There is no priority table -- the walker emits one class per token, and a
+property written later is the one that meant to be on top."
+  (let ((classes (make-array width :initial-element nil))
         (last (1- (length forward))))
-    (dolist (run runs faces)
-      (destructuring-bind (start end name) run
-        (when name
-          (let ((p (%priority name))
-                (from (aref forward (max 0 (min start last))))
-                (to (aref forward (max 0 (min end last)))))
+    (dolist (prop (reverse props) classes)
+      (destructuring-bind (start end class data) prop
+        (declare (ignore data))
+        (when class
+          (let ((from (aref forward (max 0 (min start last))))
+                (to (if (= end most-positive-fixnum)
+                        width
+                        (aref forward (max 0 (min end last))))))
             (loop :for c :from from :below (min to width)
-                  :when (> p (aref won c))
-                    :do (setf (aref faces c) name (aref won c) p))))))))
-
-;;;; Tabs. A tab is one character and some number of columns, so a line is shown
-;;;; as what its tabs ran out to, and everything that counts columns -- point,
-;;;; the region, a highlight run -- is read through the same two maps.
+                  :do (setf (aref classes c) class))))))))
 
 (defun %tab-width (name)
   (max 1 (or (ns:read (pine.buf:at name :tab-width)) 8)))
@@ -216,6 +208,21 @@ the other way."
   (loop :for i :from 0 :below (length text)
         :do (%put r row (+ col i) (char text i) fg bg attr)))
 
+(defun %put-annotations (r row props text left width)
+  "Draw the text a property on ROW carries after the line's own, which is what
+an eval result beside its form is."
+  (dolist (prop props)
+    (destructuring-bind (start end class data) prop
+      (declare (ignore start end))
+      (when (stringp data)
+        (multiple-value-bind (fg attr) (%overlay-style class)
+          (let* ((col0 (+ (max 0 (- (length text) left)) 2))
+                 (room (- width col0)))
+            (when (plusp room)
+              (%put-string r row col0
+                           (subseq data 0 (min (length data) room))
+                           fg nil attr))))))))
+
 (defun %text-rows (name at width height)
   "NAME's text as the pane at AT shows it: the visible lines, coloured by what
 the parser said, the region behind them, and any overlay after its line."
@@ -225,10 +232,9 @@ the parser said, the region behind them, and any overlay after its line."
            (tab (%tab-width name))
            (caret (%shown-col (if (< line count) (fset:@ lines line) "") tab col)))
       (multiple-value-bind (top left) (%follow at line caret height width)
-        (let* ((runs (ns:read (pine.buf:at name :face)))
-               (by-row (%runs-by-row (if (listp runs) runs nil) top height))
+        (let* ((props (pine.buf:properties name))
+               (by-row (%by-row props top height))
                (region (%region name line col))
-               (overlays (ns:read (pine.buf:at name :overlays)))
                (default (face:face-fg :default))
                (selection (face:face-bg :selection))
                (r (pine.ui.raster:make-raster width height)))
@@ -237,33 +243,23 @@ the parser said, the region behind them, and any overlay after its line."
                 :while (< at-line count)
                 :do (multiple-value-bind (text forward back)
                         (%shown-line (fset:@ lines at-line) tab)
-                      (let ((faces (%faces-for-line (gethash row by-row) width
-                                                    forward)))
-                        (loop :for i :from 0 :below width
-                              :for source := (+ i left)
-                              :while (< source (length text))
-                              :for name* := (aref faces (min source (1- width)))
-                              :for fg := (if name* (face:face-fg name*) default)
-                              :for attr := (if name*
-                                               (face:face-attr-bits
-                                                (face:find-face name*))
-                                               0)
-                              :for bg := (when (and region
-                                                    (%in-region region at-line
-                                                                (aref back source)))
-                                           selection)
-                              :do (%put r row i (char text source) fg bg attr)))
-                      (let ((overlay (and (fset:map? overlays)
-                                          (fset:lookup overlays at-line))))
-                        (when overlay
-                          (destructuring-bind (text* class) overlay
-                            (multiple-value-bind (fg attr) (%overlay-style class)
-                              (let* ((col0 (+ (max 0 (- (length text) left)) 2))
-                                     (room (- width col0)))
-                                (when (plusp room)
-                                  (%put-string r row col0
-                                               (subseq text* 0 (min (length text*) room))
-                                               fg nil attr)))))))))
+                      (let ((on-row (gethash row by-row)))
+                        (let ((classes (%classes-for-line on-row width forward)))
+                          (loop :for i :from 0 :below width
+                                :for source := (+ i left)
+                                :while (< source (length text))
+                                :for class := (aref classes (min source (1- width)))
+                                :for fg := (if class (face:face-fg class) default)
+                                :for attr := (if class
+                                                 (face:face-attr-bits
+                                                  (face:find-face class))
+                                                 0)
+                                :for bg := (when (and region
+                                                      (%in-region region at-line
+                                                                  (aref back source)))
+                                             selection)
+                                :do (%put r row i (char text source) fg bg attr)))
+                        (%put-annotations r row on-row text left width))))
           (values (pine.ui.cells:rows-of r)
                   (max 0 (min (- line top) (1- height)))
                   (max 0 (- caret left))))))))

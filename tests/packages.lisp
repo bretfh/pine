@@ -464,7 +464,7 @@ reading the buffer still answers what the doc describes.")
 
 (test the-doc-names-a-buffers-leaves
   (let ((named (%doc-buffer-leaves)))
-    (dolist (leaf '("text" "line" "face" "point" "mark" "file" "mode" "minor"
+    (dolist (leaf '("text" "line" "prop" "point" "mark" "file" "mode" "minor"
                     "modified" "tree" "view"))
       (is (member leaf named :test #'string=)
           "the doc no longer names /buf/?name/~a, but the code serves it" leaf))))

@@ -3,6 +3,7 @@
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:proc #:pine.proc))
   (:export
    #:terminal #:terminal-term #:terminal-fd #:terminal-pid #:terminal-buffer
+   #:terminal-on-output
    #:open-terminal #:close-terminal
    #:terminal-for-buffer
    #:term-write
@@ -25,7 +26,7 @@
 ;;;; it gives all three back.
 
 (defstruct (terminal (:constructor %make-terminal))
-  buffer term fd pid
+  buffer term fd pid on-output
   ;; PENDING is raw output chunks (newest first) pushed by the reader under
   ;; LOCK. CARRY is what a drain deferred (oldest first, one thread). Chunks
   ;; rather than one growing string keep appends O(1) under a flood.
@@ -89,8 +90,12 @@ image at the next GC."
                                   (error () nil))))
                          (if (null s)
                              (progn (setf (terminal-alive tobj) nil) (return))
-                             (bordeaux-threads:with-lock-held ((terminal-lock tobj))
-                               (push s (terminal-pending tobj)))))))))
+                             (progn
+                               (bordeaux-threads:with-lock-held ((terminal-lock tobj))
+                                 (push s (terminal-pending tobj)))
+                               (alexandria:when-let
+                                   ((on-output (terminal-on-output tobj)))
+                                 (funcall on-output)))))))))
     (setf (terminal-reader tobj)
           (bordeaux-threads:make-thread #'reader :name "pine-pty-reader"))))
 
@@ -128,7 +133,7 @@ image at the next GC."
 
 ;;;; The runnable
 
-(defun %spawn (name rows cols command)
+(defun %spawn (name rows cols command on-output)
   (multiple-value-bind (fd pid)
       (pine.vt:spawn-pty-process command :rows rows :cols cols)
     (when (minusp fd) (error "pty spawn failed"))
@@ -139,7 +144,8 @@ image at the next GC."
                   :input-fn (lambda (term bytes)
                               (declare (ignore term))
                               (pine.vt:pty-write-string fd bytes))))
-           (tobj (%make-terminal :buffer name :term term :fd fd :pid pid)))
+           (tobj (%make-terminal :buffer name :term term :fd fd :pid pid
+                                 :on-output on-output)))
       (start-reader tobj)
       tobj)))
 
@@ -171,10 +177,13 @@ what a terminal took, so nothing else can."
 
 (proc:runnable :terminal)
 
-(defun open-terminal (buffer &key (rows 24) (cols 80) (command "/bin/sh"))
-  "Open a terminal on BUFFER and declare it at /proc, which is what keeps it."
+(defun open-terminal (buffer &key (rows 24) (cols 80) (command "/bin/sh")
+                                  on-output)
+  "Open a terminal on BUFFER and declare it at /proc, which is what keeps it.
+ON-OUTPUT is called with no arguments whenever the pty has said something, so
+whoever paces the repaint hears about it instead of polling for it."
   (let* ((name (pine.buf:name-of buffer))
-         (tobj (%spawn name rows cols command)))
+         (tobj (%spawn name rows cols command on-output)))
     (ns:write (at name) (fset:map (:terminal tobj) (:buffer name)))
     tobj))
 

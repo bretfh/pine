@@ -93,20 +93,16 @@ still moving; a range belongs here once it stops."
 (defun on-client-input (client msg)
   (let ((app (%app-of client)))
     (when app
-      (handler-case (received app client msg)
-        (error (c)
-          (format *error-output* "pine: ~a input handler failed on ~s: ~a~%"
-                  (attached-client-kind client) (first msg) c)
-          (finish-output *error-output*))))))
+      (pine.err:attempt (lambda () (received app client msg))
+                        (format nil "~(~a~) input ~s"
+                                (attached-client-kind client) (first msg))))))
 
 (defun on-client-detach (client)
   (let ((app (%app-of client)))
     (when app
-      (handler-case (detached app client)
-        (error (c)
-          (format *error-output* "pine: ~a detach handler failed: ~a~%"
-                  (attached-client-kind client) c)
-          (finish-output *error-output*))))))
+      (pine.err:attempt (lambda () (detached app client))
+                        (format nil "~(~a~) detaching"
+                                (attached-client-kind client))))))
 
 (defun uri-endpoint (uri)
   "The host and port of a sento URI, as two values, or NIL when it has neither."

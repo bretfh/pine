@@ -51,6 +51,7 @@ nothing else."
   (ns:provider
    (/echo/hint {:doc "the line pine is saying"})
    (/echo/result {:doc "what was typed"})
+   (/echo/cols {:doc "how wide the echo pane is, said by whoever arranged it"})
    (/echo {:in (pine.data:fn [v] (%prompt-in v))
            :doc "the prompt that is up: :prompt :complete :history :initial :then"})))
 
@@ -477,6 +478,12 @@ about them.")
               (when (fset:equal? (ns:here) /echo)
                 (if (prompt-p) (%open) (%close)))
               {})
-            :as :echo))
+            :as :echo)
+  (ns:watch /echo/cols
+            (pine.data:fn [v]
+              (declare (ignore v))
+              (when (and (prompt-p) (completing-p)) (%show))
+              {})
+            :as :echo-cols))
 
 (ns:register (make-instance 'server))

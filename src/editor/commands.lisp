@@ -124,9 +124,18 @@
 (defcmd "yank" ()         (pine.kill:yank))
 (defcmd "yank-pop" ()     (pine.kill:yank-pop))
 
+(defun %said (fault)
+  "Say what a fault was, in the echo line. It is at /err either way; this is the
+line the person who asked for it reads."
+  (when fault
+    (pine.echo:message (format nil "error: ~a" (pine.err:fault-condition fault))))
+  nil)
+
 (defun %visiting (path)
-  (handler-case (pine.buf:find-file path)
-    (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (multiple-value-bind (buf fault)
+      (pine.err:attempt (lambda () (pine.buf:find-file path))
+                        (format nil "visiting ~a" path))
+    (or buf (%said fault))))
 
 (defcmd "find-file" ()
   (pine.ns:write /echo (fset:map (:prompt "Find file: ")
@@ -141,17 +150,21 @@
                                        (:then #'%visiting)))
         (pine.echo:message "no recent files"))))
 (defcmd "save-file" ()
-  (handler-case
-      (let ((buf (pine.buf:current-name)))
-        ;; opt-in apheleia-style reformat before write; the reindent is a tell
-        ;; and save's :get-state queues behind it in the actor mailbox, so the
-        ;; write sees the formatted text
-        (when (and buf (pine.editor.help:setting :format-on-save))
-          (let ((snap (pine.buf:snapshot-of buf)))
-            (pine.buf:indent (pine.buf:name-of buf) 0
-                       (1- (pine.text:line-count snap)))))
-        (pine.buf:save-current))
-    (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (%said
+   (nth-value
+    1
+    (pine.err:attempt
+     (lambda ()
+       (let ((buf (pine.buf:current-name)))
+         ;; opt-in apheleia-style reformat before write; the reindent is a tell
+         ;; and save's :get-state queues behind it in the actor mailbox, so the
+         ;; write sees the formatted text
+         (when (and buf (pine.editor.help:setting :format-on-save))
+           (let ((snap (pine.buf:snapshot-of buf)))
+             (pine.buf:indent (pine.buf:name-of buf) 0
+                              (1- (pine.text:line-count snap)))))
+         (pine.buf:save-current)))
+     "saving the buffer"))))
 (defcmd "split-window-below" () (pine.editor.win:split-window :column))
 (defcmd "split-window-right" () (pine.editor.win:split-window :row))
 (defcmd "delete-window" () (pine.editor.win:delete-window-cmd))
@@ -245,18 +258,25 @@
     (sento.actor:tell (pine.editor.frame:renderer client)
                       (list :switch-buffer :buffer buf :name name))))
 (defcmd "terminal" ()
-  (handler-case
-      (let* ((client (pine.editor.frame:current-client))
-             (f (pine.editor.frame:frame client))
-             (cols (pine.editor.view-state:frame-cols f))
-             (rows (max 1 (- (pine.editor.view-state:frame-rows f) 2)))
-             (buf (pine.editor.frame:make-buffer "*terminal*")))
-        (pine.term:open-terminal buf :rows rows :cols cols)
-        (pine.editor.frame:set-buffer-mode buf :terminal)
-        (pine.editor.frame:switch-buffer "*terminal*")
-        (sento.actor:tell (pine.editor.frame:renderer client)
-                          (list :switch-buffer :buffer buf :name "*terminal*")))
-    (error (c) (pine.echo:message (format nil "error: ~a" c)))))
+  (%said
+   (nth-value
+    1
+    (pine.err:attempt
+     (lambda ()
+       (let* ((client (pine.editor.frame:current-client))
+              (f (pine.editor.frame:frame client))
+              (cols (pine.editor.view-state:frame-cols f))
+              (rows (max 1 (- (pine.editor.view-state:frame-rows f) 2)))
+              (wake (pine.editor.frame:terminal-wake client))
+              (buf (pine.editor.frame:make-buffer "*terminal*")))
+         (pine.term:open-terminal
+          buf :rows rows :cols cols
+          :on-output (lambda () (sb-thread:signal-semaphore wake)))
+         (pine.editor.frame:set-buffer-mode buf :terminal)
+         (pine.editor.frame:switch-buffer "*terminal*")
+         (sento.actor:tell (pine.editor.frame:renderer client)
+                           (list :switch-buffer :buffer buf :name "*terminal*"))))
+     "opening a terminal"))))
 (defcmd "overwrite-mode" ()
   (let ((on (pine.editor.frame:toggle-minor-mode :overwrite)))
     (pine.echo:message (if on "Overwrite mode enabled" "Overwrite mode disabled"))))

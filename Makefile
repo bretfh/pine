@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe ts-probe hl vm
+.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe ts-probe hl vm threads
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -113,6 +113,9 @@ wm-nested:
 # headless (no window, no daemon): make cairo-shot
 cairo-shot:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine.cairo.shot:shot))" --eval "(terpri)" --eval "(sb-ext:exit)"'
+
+threads:
+	@./pine eval '(with-output-to-string (s) (dolist (th (sb-thread:list-all-threads)) (unless (eq th sb-thread:*current-thread*) (format s "~&=== ~a~%" (sb-thread:thread-name th)) (let ((done (sb-thread:make-semaphore))) (ignore-errors (sb-thread:interrupt-thread th (lambda () (ignore-errors (sb-debug:print-backtrace :stream s :count 20)) (sb-thread:signal-semaphore done)))) (sb-thread:wait-on-semaphore done :timeout 2)))))'
 
 # evaluate one form in an image with the test system loaded, in PINE.TEST, with
 # the debugger left on so a fault prints its backtrace: make eval FORM='(...)'

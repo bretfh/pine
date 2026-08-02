@@ -20,9 +20,14 @@ live session.")
     buf))
 
 (defun highlights-of (name)
-  "NAME's highlights as the buffer currently holds them. Asked for directly: a
-snapshot only carries highlights when one is built for a subscriber."
-  (pine.ns:read (pine.buf:at name :face)))
+  "The syntax properties NAME currently holds, as the (line start end face)
+tuples a full walk answers, so the two can be compared."
+  (loop :for prop :in (fset:convert 'list (pine.buf:properties name))
+        :when (eql :syntax (fset:lookup prop :by))
+          :collect (list (fset:lookup (fset:lookup prop :from) 0)
+                         (fset:lookup (fset:lookup prop :from) 1)
+                         (fset:lookup (fset:lookup prop :to) 1)
+                         (fset:lookup prop :class))))
 
 (defun why-no-highlights (name)
   "Everything that has to be true for colours to land, so a failure says which

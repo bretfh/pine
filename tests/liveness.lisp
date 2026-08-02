@@ -82,7 +82,9 @@ noticed. Nobody has to choose anything for that to be true."
             (is (plusp painted)
                 "the renderer stopped painting after a parser faulted")
             (pine.ns:write (pine.buf:at "probe-faulted" :text) "(defun g () 1)")
-            (is (wait-for (lambda () (pine.ns:read (pine.buf:at "probe-faulted" :face)))
+            (is (wait-for (lambda ()
+                            (not (fset:empty?
+                                  (pine.buf:properties "probe-faulted"))))
                           :seconds 15)
                 "the parser never took another message, so its thread was held")))))))
 

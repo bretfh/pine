@@ -515,9 +515,9 @@ anything asks -- which is the whole reason the editor is nothing special."
       (sleep 0.1)
       (pine.eval:last-sexp)
       (sleep 0.5)
-      (let ((overlays (pine.buf:local buf :overlays)))
-        (is (not (null overlays)))
-        (is (search "=> 3" (first (fset:@ overlays 0))))))))
+      (let ((annotations (pine.buf:properties-at "eval-probe" 0)))
+        (is-false (fset:empty? annotations))
+        (is (search "=> 3" (fset:lookup (fset:first annotations) :data)))))))
 
 (test kill-and-yank-round-trip-multi-line-text
   (with-fixture substrate ()

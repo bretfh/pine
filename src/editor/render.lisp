@@ -30,18 +30,21 @@
 ;;;; is watching costs nothing.
 
 (defun watch-buffers (client)
-  "Repaint because a buffer moved."
-  (pine.ns:watch
-   /buf
-   (lambda (value)
-     (declare (ignore value))
-     (let ((renderer (pine.editor.frame:renderer client)))
-       (when renderer (sento.actor:tell renderer '(:force-render)))
-       (fset:empty-map)))
-   :as (list :renderer client)))
+  "Repaint because a buffer moved.
+
+Told each commit rather than each path: one edit moves the text, the point, the
+tick and the modified flag in one transaction, and a watch over /buf hears about
+each of them. A frame is what the tree says now, so a commit is one frame
+however many leaves it carried."
+  (setf (pine.ns:on-commit (list :renderer client))
+        (lambda (moved)
+          (when (some (lambda (change) (pine.path:prefixp /buf (first change)))
+                      moved)
+            (let ((renderer (pine.editor.frame:renderer client)))
+              (when renderer (sento.actor:tell renderer '(:force-render))))))))
 
 (defun unwatch-buffers (client)
-  (pine.ns:watch /buf nil :as (list :renderer client)))
+  (setf (pine.ns:on-commit (list :renderer client)) nil))
 
 (defun paint-frame (client)
   "A frame is due: fire the client's paint sink, which is the seam to the
@@ -158,6 +161,7 @@ nothing, so this settles after the first frame at a size."
                  (height (%leaf-lines client n))
                  (held (gethash name ranges)))
             (pine.ns:write (pine.path:child at "height") height)
+            (pine.ns:write (pine.path:child at "width") (%leaf-cols client n))
             (setf (gethash name ranges)
                   (if held
                       (cons (min (car held) top) (max (cdr held) (+ top height)))
@@ -225,6 +229,7 @@ named needs no object either."
 above the echo line. Answers (values rows crow ccol), the minibuffer caret
 within the block, or -1 -1 when no prompt is up."
   (declare (ignore client))
+  (pine.ns:write /echo/cols cols)
   (let* ((prompt (pine.echo:prompt-text))
          (prows (and (pine.echo:prompt-p) (pine.echo:popup-rows)))
          (mb-snap (and prompt (pine.echo:snap)))

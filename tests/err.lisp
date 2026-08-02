@@ -202,6 +202,23 @@ subclass and two methods, and /err serves it without knowing it exists."
       (is (search "nope" (pine.err:fault-condition fault)))
       (is (equal "a probe" (pine.err:fault-label fault))))))
 
+(test attempt-records-the-restarts-that-were-live-at-the-signal
+  "A restart is recovery at the signaller, chosen by outer code, so the fault
+has to be built before the stack unwinds. Nothing can be offered a restart the
+signalling frames established once those frames are gone."
+  (with-err
+    (multiple-value-bind (value fault)
+        (pine.err:attempt
+         (lambda ()
+           (with-simple-restart (use-nothing "Carry on with nothing")
+             (error "nope")))
+         "a probe")
+      (is (null value))
+      (is-true fault)
+      (is (member "USE-NOTHING" (mapcar #'first (pine.err:fault-offered fault))
+                  :test #'equal))
+      (is (plusp (length (pine.err:fault-backtrace fault)))))))
+
 (test two-spaces-fault-separately
   "A fault is at /err, and /err is the space's. Two pines in one image each
 have their own faults and their own ids, and neither can decide the other's."

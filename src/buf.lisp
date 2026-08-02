@@ -7,6 +7,7 @@
            #:state #:state-of #:snapshot-of #:text-of #:name-of #:live
            #:local #:put #:edit #:put-point #:point #:landing
            #:overlay #:clear-overlays
+           #:properties #:properties-at #:propertize #:clear-properties
            #:motion #:indent #:showing #:asked #:band-of #:parser-of #:tree-of
            #:*verbs* #:move #:delete-back
            #:find-file #:read-file #:write-file #:record-places #:tool-p #:show
@@ -142,13 +143,17 @@ waits and a buffer with nothing there is at the top."
                      (:mark (ns:read (at name :mark))))
      :tick (or (ns:read (at name :tick)) 0))))
 
-(defun landing (name state)
+(defun landing (name state &optional descriptor)
   "The write-map taking NAME's leaves to what STATE says. A value that did not
-change does not move, so this is the whole of applying an edit."
+change does not move, so this is the whole of applying an edit.
+
+The properties land with the text they annotate, so an undo puts both back
+together and nothing has to be invalidated afterwards."
   (let ((marks (b:marks state)))
     (fset:map ((at name :text) (b:lines state))
               ((at name :point) (fset:seq (or (fset:lookup marks :point-line) 0)
                                           (or (fset:lookup marks :point-charpos) 0)))
+              ((at name :prop) (fset:seq :set (%properties-after name descriptor)))
               ((at name :modified) t)
               ((at name :tick) (b:tick state)))))
 
@@ -166,13 +171,13 @@ loses the swap computes again against what landed."
   (loop :for was = (ns:held (at name :text))
         :for from = (b:lines (state name))
         :for next = (funcall fn (state name))
-        :for landing = (landing name next)
+        :for landing = (landing name next descriptor)
         :do
            ;; the descriptor lands with the lines, in one transaction: it is
            ;; what the parse reads when the lines wake it, and a write of its
            ;; own would be a second root for undo to walk onto
            (let ((moved (ns:write (fset:with
-                                   (fset:with landing (at name :overlays) nil)
+                                   landing
                                    (at name :asked "edit")
                                    (%said
                                     (when descriptor
@@ -219,17 +224,117 @@ loses the swap computes again against what landed."
   (let ((current (%current)))
     (when current (apply #'p:path current leaf))))
 
-;;;; Overlays: a transient annotation on a line, cleared by the next edit. Not
-;;;; stored, because it describes the text as it stands.
+;;;; Region properties. One mechanism: a region of the buffer, a class the
+;;;; stylesheet styles, a payload, and a behaviour under edits. Highlight runs,
+;;;; eval results, search hits and diagnostics are instances of it, and because
+;;;; they are a leaf of the buffer they ride every read and every undo with the
+;;;; text they annotate.
+;;;;
+;;;;   {:from [line col] :to [line col] :class K :data D :policy P :by WHO}
+;;;;
+;;;; :UNTIL-EDIT goes away on any edit, which is right for anything a producer
+;;;; recomputes. :STICKY follows the text: an edit before it shifts it, an edit
+;;;; after leaves it, an edit inside grows or shrinks it, and an edit over the
+;;;; whole of it takes it away. BY names the producer, so one can replace its
+;;;; own without enumerating the classes it used.
+
+(defun properties (name)
+  "Every property on NAME."
+  (let ((held (ns:held (at name :prop))))
+    (if (fset:seq? held) held (fset:empty-seq))))
+
+(defun %prop-line (prop which)
+  (fset:lookup (fset:lookup prop which) 0))
+
+(defun %covers-p (prop line col)
+  (multiple-value-bind (sl sc) (values (%prop-line prop :from)
+                                       (fset:lookup (fset:lookup prop :from) 1))
+    (multiple-value-bind (el ec) (values (%prop-line prop :to)
+                                         (fset:lookup (fset:lookup prop :to) 1))
+      (cond ((or (< line sl) (> line el)) nil)
+            ((= sl el) (and (>= col sc) (< col ec)))
+            ((= line sl) (>= col sc))
+            ((= line el) (< col ec))
+            (t t)))))
+
+(defun properties-at (name line &optional col)
+  "The properties covering LINE, or the position LINE and COL name."
+  (fset:filter (lambda (prop)
+                 (if col
+                     (%covers-p prop line col)
+                     (and (<= (%prop-line prop :from) line)
+                          (<= line (%prop-line prop :to)))))
+               (properties name)))
+
+(defun %selected-p (prop selector)
+  "Whether SELECTOR, a (:class K) or (:by WHO) plist, names PROP."
+  (destructuring-bind (&key class by) selector
+    (and (or (null class) (eql class (fset:lookup prop :class)))
+         (or (null by) (eql by (fset:lookup prop :by))))))
+
+(defun propertize (name from to class &key data (policy :until-edit) by)
+  "Attach CLASS to the region FROM..TO of NAME, END exclusive."
+  (ns:write (at name :prop)
+            (fset:with-last (properties name)
+                            (fset:map (:from from) (:to to) (:class class)
+                                      (:data data) (:policy policy) (:by by)))
+            :keep nil)
+  nil)
+
+(defun clear-properties (name &rest selector)
+  "Take NAME's properties away: all of them, or the ones SELECTOR names."
+  (ns:write (at name :prop)
+            (if selector
+                (fset:remove-if (lambda (prop) (%selected-p prop selector))
+                                (properties name))
+                (fset:empty-seq))
+            :keep nil)
+  nil)
+
+(defun %shifted (pos delta)
+  (fset:with pos 0 (+ (fset:lookup pos 0) delta)))
+
+(defun %adjusted (prop first last delta)
+  "PROP after the lines FIRST..LAST became LAST-FIRST+1+DELTA of them, or NIL
+when the edit took it away."
+  (let ((start (%prop-line prop :from))
+        (end (%prop-line prop :to)))
+    (cond ((eq :until-edit (fset:lookup prop :policy)) nil)
+          ((< end first) prop)
+          ((> start last)
+           (fset:with (fset:with prop :from (%shifted (fset:lookup prop :from) delta))
+                      :to (%shifted (fset:lookup prop :to) delta)))
+          ((and (>= start first) (<= end last) (minusp delta)) nil)
+          (t (fset:with prop :to (%shifted (fset:lookup prop :to) delta))))))
+
+(defun %properties-after (name descriptor)
+  "NAME's properties as the edit DESCRIPTOR describes leaves them. Without a
+descriptor nothing can be placed, so only what follows the text survives."
+  (let ((props (properties name)))
+    (if (fset:empty? props)
+        props
+        (let* ((at (and descriptor (fset:lookup descriptor :at)))
+               (old (and descriptor (fset:lookup descriptor :old)))
+               (new (and descriptor (fset:lookup descriptor :new))))
+          (if (null at)
+              (fset:filter (lambda (prop)
+                             (not (eq :until-edit (fset:lookup prop :policy))))
+                           props)
+              (fset:filter #'identity
+                           (fset:image (lambda (prop)
+                                         (%adjusted prop at (+ at (1- old))
+                                                    (- new old)))
+                                       props)))))))
 
 (defun overlay (name line text &optional (class :eval-result))
-  "Put TEXT beside LINE in NAME, drawn after that line's own text."
-  (let ((was (or (ns:read (at name :overlays)) (fset:empty-map))))
-    (ns:write (at name :overlays) (fset:with was line (list text class))
-              :keep nil)))
+  "Put TEXT beside LINE in NAME, drawn after that line's own text. A property
+at the line's end, carrying the text, gone on the next edit."
+  (let ((end (length (or (ns:read (at name :line (princ-to-string line))) ""))))
+    (propertize name (fset:seq line end) (fset:seq line end) class
+                :data text :policy :until-edit :by :overlay)))
 
 (defun clear-overlays (name)
-  (ns:write (at name :overlays) nil))
+  (clear-properties name :by :overlay))
 
 ;;;; The file it visits.
 
@@ -370,7 +475,7 @@ what it is."
       (setf (asked name :edit)
             {:at line :old 1 :new 2 :bytes 1 :lines lines
              :from (b:lines (state name))})
-      (ns:write (fset:with (landing name next) (at name :overlays) nil)))))
+      (ns:write (landing name next {:at line :old 1 :new 2})))))
 
 (defun %delete (name from to)
   "Delete the region FROM..TO, which is what a backspace is one character back."
@@ -490,7 +595,7 @@ and an insert and one whole-line shift cannot describe that pair."
         (let* ((indent (b:line-indent-width (b:line-at next line)))
                (final (b:move-mark next :point line (+ indent tail))))
           (setf (asked name :edit) nil)
-          (fset:with (landing name final) (at name :overlays) nil)))))
+          (landing name final)))))
 
 (defun %reindent (name)
   "How the parser answers an indent: with the lines it says should move, which
@@ -672,15 +777,6 @@ changed."
     (when size
       (fset:subseq lines (max 0 (min from size)) (max 0 (min (1+ to) size))))))
 
-(defun %runs (name from to)
-  "The highlight runs covering lines FROM through TO."
-  (let ((face (ns:read (at name :face))))
-    (when face
-      (fset:convert 'fset:seq
-                    (remove-if-not (lambda (run)
-                                     (<= from (first run) to))
-                                   (fset:convert 'list face))))))
-
 ;;;; Going away.
 
 (defun %forget-leaves (name)
@@ -760,11 +856,32 @@ view is writing one."
               (let ((n (parse-integer which :junk-allowed t)))
                 (when n (%put-line name n v))))
      :doc "one line, or the range FROM..TO a window is showing"})
-   (/buf/?name/face/?which
+   (/buf/?name/prop/?line
     {:read (pine.data:fn []
-             (let ((span (%span which)))
-               (when span (%runs name (car span) (cdr span)))))
-     :doc "the highlight runs a window's range needs"})
+             (let ((n (parse-integer line :junk-allowed t)))
+               (when n (properties-at name n))))
+     :doc "the properties covering one line"})
+   (/buf/?name/prop
+    {:verbs {:propertize
+             (pine.data:fn (from to class &key data (policy :until-edit) by)
+               (propertize name from to class :data data :policy policy :by by))
+             :clear-properties
+             (pine.data:fn (&rest selector)
+               (apply #'clear-properties name selector))
+             ;; a producer replaces its own without naming the classes it used,
+             ;; which is what a reparse does with a band of syntax runs
+             :replace
+             (pine.data:fn [by props]
+               (ns:write (at name :prop)
+                         (fset:seq :set
+                                   (fset:concat
+                                    (fset:remove-if
+                                     (lambda (prop) (eql by (fset:lookup prop :by)))
+                                     (properties name))
+                                    (or props (fset:empty-seq))))
+                         :keep nil))}
+     :doc "what is attached to a region: {:from [l c] :to [l c] :class K
+:data D :policy :until-edit|:sticky :by WHO}"})
    (/buf/?name/text
     {:in (pine.data:fn [v] (%lines v))
      :out (pine.data:fn [lines] (%joined lines))

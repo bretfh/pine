@@ -246,7 +246,7 @@ the tree, so it is what is stored."
 
 (test lines-moving-is-what-asks-for-a-parse
   "A buffer that names a grammar is parsed because its lines moved, not because
-anything called the parser. The colours land at /buf/?name/face."
+anything called the parser. The colours land as properties on the buffer."
   (with-fixture substrate ()
     (pine.ns:with-space ()
       (pine.ns:write /mode/lisp {:grammar :commonlisp})
@@ -257,10 +257,11 @@ anything called the parser. The colours land at /buf/?name/face."
              (pine.ns:write /buf/probe/mode :lisp)
              (pine.buf:showing "probe" [0 200])
              (pine.ns:write /buf/probe/text ["(defun f (x) x)"])
-             (is-true (wait-for (lambda () (pine.ns:read /buf/probe/face))
+             (is-true (wait-for (lambda ()
+                                  (not (fset:empty? (pine.buf:properties "probe"))))
                                 :seconds 15)
                       "no colours ever landed")
-             (is (plusp (length (pine.ns:read /buf/probe/face)))))
+             (is (plusp (fset:size (pine.buf:properties "probe")))))
         (pine.ns:lower :buf)))))
 
 (test a-parse-starts-when-one-is-asked-for-and-not-only-when-something-moved
@@ -276,16 +277,16 @@ what it is showing."
          (pine.buf:live name) :lisp)
         ;; highlights exist to be painted, so a window has to be showing it
         (pine.buf:showing name (fset:seq 0 200))
-        (is (wait-for (lambda () (pine.ns:read (pine.buf:at name :face)))
+        (is (wait-for (lambda () (not (fset:empty? (pine.buf:properties name))))
                       :seconds 20)
             "the first parse never landed")
         ;; the parser goes and nothing about the buffer moves after it
         (pine.buf:drop name)
-        (pine.ns:write (pine.buf:at name :face) nil)
+        (pine.buf:clear-properties name)
         (sleep 0.1)
         (is (null (pine.buf:parser-of name)))
         (pine.buf:showing name (fset:seq 0 200))
-        (is (wait-for (lambda () (pine.ns:read (pine.buf:at name :face)))
+        (is (wait-for (lambda () (not (fset:empty? (pine.buf:properties name))))
                       :seconds 20)
             "asking to see it did not start a parse")
         (pine.editor.frame::kill-buffer name)))))

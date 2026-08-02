@@ -280,9 +280,17 @@ the stack has already gone."
 (defun attempt (thunk context)
   "Run THUNK. Answers (values result nil), or (values nil fault) when it fails,
 having recorded it under CONTEXT. For a callback pine invokes on behalf of
-something else, where the caller still has work to finish."
-  (handler-case (values (funcall thunk) nil)
-    (error (c) (values nil (report-failure c context)))))
+something else, where the caller still has work to finish.
+
+The fault is built in the handler, before the stack unwinds, so the restarts
+and the backtrace it carries are the ones the signalling frames established."
+  (let ((fault nil))
+    (values (block attempted
+              (handler-bind ((error (lambda (c)
+                                      (setf fault (report-failure c context))
+                                      (return-from attempted nil))))
+                (funcall thunk)))
+            fault)))
 
 (defun call-with-debugger (thunk &key label)
   "Run THUNK, and when it fails record the fault and unwind out of it. For a
