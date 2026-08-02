@@ -1,0 +1,259 @@
+#+TITLE: pine: the architecture
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:3 num:nil
+
+This is the shape of the system. =new-api.org= is the language it speaks;
+=philosophy.org= is why it exists and still stands as written. This supersedes
+=architecture.org= for this version: that document's principles hold and its
+status describes the tree before the namespace rewrite.
+
+Between the four, this one answers: what are the parts, what does each own, what
+may it assume of the others, and what must never be true.
+
+* The one sentence
+
+The Lisp Machine you cannot crash and can distribute, with a plan 9 namespace as
+its one interface.
+
+Genera had soft isolation in one image and no hard boundary. Emacs kept the live
+world and dropped the concurrency. Plan 9 had one interface for everything and no
+live world at all. pine is all three: a live redefinable Lisp, hard boundaries
+between images, and every capability in it addressed as a path.
+
+* What the namespace rewrite changed
+
+=architecture.org= describes a registry that brokers capabilities, buffers as
+actors, reactive cells, and durability as liveness. Each of those became one
+thing.
+
+| was                                   | is                                          |
+|---------------------------------------+---------------------------------------------|
+| the registry, brokering by name        | the namespace. A capability is a path.      |
+| a buffer actor holding a snapshot      | =/buf/?name/text= and its siblings          |
+| a reactive cell you subscribe to       | an expression written at a path             |
+| twenty name-to-thing registries        | one nested map                              |
+| ask / tell / buffer, six ways to reach | =read= =write= =watch=                      |
+| durability is liveness, nothing saved  | =:keep t= per write, and every root kept    |
+
+The last row is a reversal, not a refinement. =architecture.org= says "no
+save-lisp-and-die, no event log, no snapshot to disk". =new-api.org= says a write
+supersedes rather than destroys, every superseded root is kept, and a path
+written =:keep t= outlives the daemon in one sqlite file. The doc is the
+authority; the old paragraph is history.
+
+What did not change: the daemon never draws, apps attach as processes, immutable
+values are the only thing that crosses, errors come home to one surface, and no
+shared thread ever blocks.
+
+* The parts
+
+** The kernel
+
+=pine.data= =pine.path= =pine.ns=. The three literals, the path, and the tree.
+
+Owns: the namespace, the write semantics, re-evaluation, watches, the retained
+roots. Assumes nothing above it. Contains no policy: it does not know what a
+buffer is, what a window is, or that a terminal exists.
+
+The tree is one nested =fset= map in a =sento.atomic= reference. A read is a
+pointer read and a walk of structures nothing can mutate: wait-free, safe from
+inside any receive, and what a reader holds is a whole consistent tree. A write
+is a compare-and-swap over a pure function of the old space to the new one, so
+the read, the verb and the write are one step. There is no lock in either path.
+
+** The servers
+
+Everything that serves a subtree: =/buf= =/win= =/key= =/cmd= =/mode= =/echo=
+=/proc= =/err= =/log= =/doc= =/history= =/theme= =/face= =/style= =/surface=
+=/host=, and the twelve providers under =/sys= =/audio= =/net= and the rest.
+
+Each declares what it serves. The kernel mounts them in dependency order and can
+say what is mounted. There is one list of what a running pine serves and it is
+the registry, not a hand-written sequence of calls in =boot.lisp=.
+
+** The images
+
+A daemon, an editor, a desktop, a window manager, and any number of process
+agents. Separate OS processes, attached over sento remoting. They share nothing
+but serialized immutable values.
+
+The daemon serves its namespace, so another pine mounts it at =/host/?name= and
+every path in this document works under that prefix. Distribution is a prefix,
+and a transaction across two hosts is a map whose keys have different prefixes.
+
+** The surfaces
+
+The daemon ships a widget tree; the app measures, arranges and paints it with its
+own metrics and its own backend. Fonts and cairo live only in an app. The wire
+carries nodes as data and closures as ids.
+
+* The four contracts
+
+Everything extensible in pine is one of these. A new capability is a method, not
+a branch.
+
+** server
+
+What serves a subtree. Declares its paths, its provider, what it needs mounted
+first, and how it comes down. The kernel mounts, unmounts, and answers what is
+mounted.
+
+Adding a subsystem is a declaration. It cannot be forgotten by a mount list,
+because there is no mount list.
+
+** runnable
+
+What =/proc= supervises: =start= =halt= =alive-p= =speak=. The shipped kinds are
+an image, a subprocess and a thread; a parser and a terminal are kinds too.
+
+Anything pine spawns and must later stop is a runnable, so it appears at
+=/proc/*=, its state is readable, killing it is a write, and the backoff and
+restart policy apply without being rewritten.
+
+** node
+
+A widget: =nodes-of= =measure= =arrange= =paint= =node-at= =paint-px=, plus its
+wire out and its constructor back. One declaration carries all of them, so the
+directions cannot disagree and a back end can add a method from its own file.
+
+A widget defined outside =src/= lays out, paints and crosses the wire.
+
+** fault
+
+A condition recorded at =/err/?id= as a value: the condition, its restarts by
+name, its backtrace, and the root it faulted under. Choosing a restart is a write
+to that path.
+
+Whether the thread that raised it is still standing there is the fault's own
+business, and it is the one thing the kinds differ in:
+
+- An evaluation is a thread whose whole job is that one form, so nothing shared
+  waits behind it. It holds the stack and offers every restart CL established.
+  That is the difference between a debugger and a log.
+- Anything on shared machinery -- an actor's receive, a callback, a provider's
+  poll -- unwinds at once and offers what can be taken afterwards. A thread
+  parked there is a dispatcher worker that never comes back, and every message
+  behind it costs another.
+- A fault in another image is a third kind, added by whatever knows how to reach
+  that image. It reads identically and its decision goes back over remoting,
+  which is why the cross-image debugger is the local one with a hop inserted.
+
+Adding a kind is a subclass and two methods. Everything that looks at faults is
+one surface over =(read /err/*)=, so nothing has to be told which kind it has.
+
+* Concurrency
+
+sento is the model, not a thread allocator.
+
+- **Actors on shared dispatchers.** A receive is serialized per actor by sento's
+  own mailbox lock, so state is safe without a thread each. Many actors over few
+  threads is the point of using it.
+- **A thread only where something blocks.** A blocking read on a pipe, a pty or a
+  socket owns a thread because it must. Nothing else does.
+- **Timers are timers.** A paced tick or a retry is =wt:schedule-recurring= on
+  the actor system's wheel, not a thread that sleeps.
+- **The pool is one decision**, read from a path, not a constant in three files.
+- **Nothing waits for a decision.** A fault records itself and returns. An actor
+  never blocks on an answer; =ask= refuses from inside a receive rather than
+  hanging there.
+
+The cost of getting this wrong is mechanical and worth writing down: a parked
+actor on a shared dispatcher holds a pool worker *and* its own mailbox lock, so
+every later message to it blocks another worker until the pool is gone. That is
+why =fault= comes before any of it.
+
+* Distribution
+
+- Every image runs a namespace. The daemon's is served, so others can mount it.
+- =(write /host/box (pine "box:17000"))= mounts another pine as a subtree.
+- Reads, writes, watches, patterns and transactions all work under that prefix
+  unchanged. There is no separate remote API.
+- A process agent is an image pine spawned; it is a =/proc= entry, and its faults
+  come home to =/err=.
+- What crosses is data: values through =serialize=, closures as ids the producer
+  keeps.
+
+A second pine on this machine and a second pine on another are the same code
+path. If one of those works and the other does not, the abstraction has failed.
+
+* Persistence
+
+- =:keep t= on a write makes that path outlive the daemon. Nothing else is
+  stored.
+- =:max= makes a ring. The kill ring, prompt histories, recent files and
+  save-place are rings.
+- A write supersedes rather than destroys, so the previous root is still a value.
+  =/history=, =/was/${t}=, =diff= and undo are all reads of that, and the roots
+  are in memory: history works with no file open.
+- Code is not data and is not stored. A command, a provider and a view are
+  functions, and whatever declared them declares them again at boot.
+
+One file per pine. The connection belongs to the space, not the image.
+
+* The invariants
+
+These are the properties that must hold. Each is checkable, and each is checked.
+
+1. **One namespace.** Nothing holds state that is not in the tree, except what
+   genuinely cannot be a value: a foreign pointer, a file descriptor, a thread, a
+   socket. Those are held by a runnable and appear at =/proc=.
+2. **One list of what pine serves.** The daemon and the test fixture mount the
+   same thing because there is only one thing.
+3. **Nothing stops the world.** No shared thread blocks. A fault leaves the pool
+   alive. Thread count does not grow with buffers.
+4. **Extension is a method.** A widget, a runnable kind, a provider or a storable
+   value can be added from outside the file that defines its protocol.
+5. **Two pines.** In-image and out-of-process, both mounted under =/host=, both
+   driven through the same paths.
+6. **Everything reclaims.** Open and kill a hundred times; fds, pids and threads
+   return to baseline.
+7. **The doc is the contract.** Every path a table in =new-api.org= names says
+   what it is; every verb it promises is one the path takes; nothing struck out in
+   "what this replaces" is still callable.
+8. **A file is written in terms of the ones before it.** No file names anything
+   that loads later.
+
+* Non-goals
+
+- **A database.** The store holds what someone said to keep. It is not a query
+  engine and nothing is indexed.
+- **A general RPC framework.** Distribution is a path prefix. If something needs
+  a bespoke protocol between images, it is a provider.
+- **Backward compatibility with the pre-namespace tree.** Old vocabulary is
+  deleted, not deprecated.
+- **A plugin loader.** Extension is a method on a protocol and a config that
+  writes paths. There is no registration API and no plugin manifest.
+- **Drawing in the daemon.** The core cannot reach for a font or a pixel. This is
+  discipline, and it is what keeps a tty, a cairo surface and a GPU
+  interchangeable to it.
+- **Making Unix nice.** A provider is where a Unix protocol is allowed to appear,
+  and it appears once. Nothing above it learns there was a subprocess.
+
+* Where each idea lives
+
+| idea                        | file                                        |
+|-----------------------------+---------------------------------------------|
+| the three literals, values   | =src/data.lisp=                             |
+| paths, patterns, coercion    | =src/path.lisp=                             |
+| the tree, writes, watches    | =src/ns.lisp=                               |
+| what outlives the daemon     | =src/store.lisp=                            |
+| faults and restarts          | =src/err.lisp=                              |
+| supervision                  | =src/proc.lisp=                             |
+| another pine                 | =src/host.lisp=                             |
+| the two doors                | =src/provider/{sh,file}.lisp=               |
+| the widget protocol          | =src/ui/{node,layout}.lisp=                 |
+| the wire                     | =src/ui/wire.lisp=                          |
+| buffers, windows, keys, cmds | =src/{buf,win,key,cmd,mode,echo}.lisp=      |
+| the editor built from those  | =src/editor/=                               |
+| the terminal emulator        | =vt/=                                       |
+| the config vocabulary        | =src/user.lisp=                             |
+
+* Reference
+
+- The language, sealed: =new-api.org=.
+- Why it exists: =philosophy.org=.
+- The pre-namespace architecture, for lineage: =architecture.org=.
+- Conditions and the debugger, for lineage: =errors.org=. It names the target
+  and the gap from before the rewrite, and its answer was to park everywhere.
+  The =fault= contract above is the one that holds.
+- Tree-sitter: =treesitter.org=.
