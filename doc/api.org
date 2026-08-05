@@ -462,6 +462,7 @@ underneath for paths the top does not answer. That is how one machine's
 | =/err=     | faults waiting on a restart                            |
 | =/doc=     | what any path is, and what it takes                    |
 | =/history= | the roots                                              |
+| =/syntax=  | the languages there are                                |
 | =/host=    | other pines                                            |
 
 ** /sys
@@ -667,6 +668,35 @@ A fault in any image parks at =/err= rather than unwinding, carrying the root it
 faulted under. The debugger is a surface over =(read /err/*)= that writes a
 restart name to the one you pick, and it works across images because a fault on
 another host lands at =/host/arraniz/err= and reads identically.
+
+** /syntax
+
+A language is a map, not a class and not a provider. It says what grammar to
+parse with, what each node type paints, and what a symbol in head position does
+to the form it heads.
+
+| path                       | is                                           | write                        |
+|----------------------------+----------------------------------------------+------------------------------|
+| =/syntax/?lang=            | a language, whole                            | replace it                   |
+| =/syntax/?lang/grammar=    | ={:lib :fn}=, the shared library and its C entry |                          |
+| =/syntax/?lang/indent=     | ={:width N}=, what a body indents by         |                              |
+| =/syntax/?lang/node/?type= | what the walk does at that node type         | amend one node type          |
+| =/syntax/?lang/head/?name= | what a form headed by that symbol does       | amend one macro              |
+
+Because it is data at a path, saying how your own macro is walked and indented
+is one write, and it is undoable, watchable and stored like any other:
+
+#+begin_src lisp
+(write /syntax/commonlisp/head/defroute
+       {:face :keyword :shape {1 :name} :rest :body})
+#+end_src
+
+Most of the time there is nothing to write. Whether a head is a macro, a special
+operator, a builtin or a constant is not in the map: it is asked of the running
+image, in the package the buffer reads in. =macro-function= says a head is a
+macro rather than a call, and where =&body= sits in its lambda list is how many
+arguments it distinguishes before its body. Your own macros paint and indent
+correctly the moment they are defined.
 
 ** /host
 

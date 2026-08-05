@@ -67,7 +67,7 @@
 
 The doc is the contract, so it is read rather than transcribed: a path added to
 a table there and to nothing else fails here."
-  (let ((path (merge-pathnames "../doc/new-api.org"
+  (let ((path (merge-pathnames "../doc/api.org"
                                #.(or *compile-file-truename* *load-truename*)))
         (found nil))
     (with-open-file (f path :if-does-not-exist nil)
@@ -142,7 +142,7 @@ answers but says nothing is a provider that never said what it was for."
   "Every (path . verb-name) a table in the doc promises. A verb is written in
 the doc as [:name ...], so only the name is taken: what its arguments mean is
 prose, but that the path takes it at all is a fact the tree can be asked."
-  (let ((path (merge-pathnames "../doc/new-api.org"
+  (let ((path (merge-pathnames "../doc/api.org"
                                #.(or *compile-file-truename* *load-truename*)))
         (out nil))
     (with-open-file (f path :if-does-not-exist nil)
@@ -267,7 +267,7 @@ colour written into the active one restyles at once."
 
 Read off the doc rather than transcribed, so a name added to that table is a
 name this holds the tree to without anyone remembering to come here."
-  (let ((path (merge-pathnames "../doc/new-api.org"
+  (let ((path (merge-pathnames "../doc/api.org"
                                #.(or *compile-file-truename* *load-truename*)))
         (in nil)
         (out nil))
@@ -333,7 +333,7 @@ speak and the tree says it does."
 
 (defun %doc-blocks ()
   "Every lisp source block in the doc, in the order it writes them."
-  (let ((path (merge-pathnames "../doc/new-api.org"
+  (let ((path (merge-pathnames "../doc/api.org"
                                #.(or *compile-file-truename* *load-truename*)))
         (blocks nil)
         (current nil))
@@ -368,7 +368,7 @@ They are the config's, not pine's, so they are supplied here rather than
 shipped.")
 
 (test the-config-the-doc-ships-runs-as-written
-  "new-api.org states the measure and then ships the config. This reads that
+  "api.org states the measure and then ships the config. This reads that
 config out of the doc and runs it: no readtable line, no nil guards, nothing
 edited to suit the tree. What it writes has to lay out and paint."
   (pine.ns:with-space ()
@@ -397,7 +397,7 @@ edited to suit the tree. What it writes has to lay out and paint."
 ;;;; a mode author gets beyond editing characters, run as the doc writes it.
 
 (test the-mode-the-doc-ships-acts-on-what-its-rows-stand-for
-  "new-api.org's process list, as written. A row stands for a /proc entry, the
+  "api.org's process list, as written. A row stands for a /proc entry, the
 selection is the path of the row under point, and the key the doc binds writes a
 verb to that path. Nothing anywhere remembers which line was which."
   (with-fixture substrate ()

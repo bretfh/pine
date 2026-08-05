@@ -1,43 +1,71 @@
-digraph substrate {
-  rankdir=LR; splines=true;
-  graph [fontname="sans-serif", fontsize=22, ranksep=1.0, nodesep=0.6,
-         bgcolor="#1e1e2e", labelloc=t, fontcolor="#f9e2af",
-         label="pine substrate — the one-way reactive cycle"];
-  node  [fontname="sans-serif", fontsize=15, shape=box, style="rounded,filled",
-         color="#585b70", fontcolor="#cdd6f4", fillcolor="#313244", margin="0.22,0.14"];
-  edge  [fontname="sans-serif", fontsize=13, color="#89b4fa", fontcolor="#bac2de", penwidth=1.4];
+// What a write is. One compare-and-swap onto a new root, and what the commit
+// then does. This is the whole of pine's reactivity: nothing subscribes, and
+// nothing is invalidated by hand.
+//
+// Generated with `make docs'. Colours are pine's own shipped theme, ef-dream.
 
-  // producers of messages (any thread)
-  subgraph cluster_in {
-    label="any thread"; fontsize=15; fontcolor="#9399b2"; color="#45475a"; style="rounded";
-    key   [label="key input\n(UI thread)", fillcolor="#37312a"];
-    src   [label="source threads\nniri/pactl/nmcli", fillcolor="#37312a"];
-    agent [label="remote agents\n(other images)", fillcolor="#37312a", fontcolor="#f5c2e7"];
+digraph substrate {
+  rankdir=TB; splines=spline; compound=true;
+  graph [fontname="sans-serif", fontsize=22, ranksep=0.6, nodesep=0.5,
+         bgcolor="#232025", labelloc=t, fontcolor="#efd5c5",
+         label=<<table border="0" cellborder="0" cellspacing="0" cellpadding="3">
+           <tr><td><font point-size="24" color="#efd5c5">what a write is</font></td></tr>
+           <tr><td><font color="#8f8886" point-size="13">a write carrying a whole map is one transaction: one new root, one commit, one pass.<br/>a map whose keys span two hosts is the same sentence said across two machines.<br/>nothing subscribes, and nothing sets a dirty flag.</font></td></tr>
+         </table>>];
+  node  [fontname="sans-serif", fontsize=14, shape=box, style="rounded,filled",
+         color="#635850", fontcolor="#efd5c5", fillcolor="#322f34",
+         margin="0.22,0.13"];
+  edge  [fontname="sans-serif", fontsize=12, color="#8f8886",
+         fontcolor="#8f8886", penwidth=1.3];
+
+  subgraph cluster_from {
+    label="from any thread"; labeljust=l; fontsize=14; fontcolor="#8f8886";
+    color="#3b393e"; style="rounded";
+    key  [label="a keystroke", fillcolor="#3b393e"];
+    prov [label="a provider that polled", fillcolor="#3b393e"];
+    reac [label="a watch reaction", fillcolor="#3b393e"];
+    far  [label="another node's commit", fillcolor="#3b393e"];
   }
 
-  actor [label="ACTOR\nmailbox: one message at a time\n(writes serialize — no locks)",
-         fillcolor="#28322b", color="#a6e3a1", penwidth=2];
+  swap [label="compare-and-swap\lover a pure function of the old space\l",
+        fillcolor="#675072", fontcolor="#fedeff", color="#ffaacf", penwidth=2];
+  root [label="a new root\lsharing every branch the write did not touch\l",
+        fillcolor="#3b393e"];
 
-  state [label="immutable state\nfset persistent seq/map + tick\n(old versions kept = undo/redo)",
-         fillcolor="#2a2b3d", color="#89b4fa"];
+  key  -> swap [label="  write /buf/scratch/text [:insert \"x\"]"];
+  prov -> swap;
+  reac -> swap;
+  far  -> swap [label="  :force, the far side already allowed it"];
 
-  snap  [label="SNAPSHOT\nimmutable value handed out\n(any thread reads, lock-free)",
-         fillcolor="#2a2b3d", color="#89b4fa", penwidth=2];
+  swap -> root [color="#ffaacf", penwidth=2,
+                label="  the read, the verb and the write are one step"];
 
-  subs  [label="subscribers\nrenderer actors · reactive views", fillcolor="#37312a"];
+  subgraph cluster_commit {
+    label="the commit, in order"; labeljust=l; fontsize=14;
+    fontcolor="#b0a0cf"; color="#635850"; style="rounded";
+    expr  [label="expressions settle\la value written as an expression recorded what it read,\lso one that read a moved path is computed again\l",
+           fillcolor="#322f34"];
+    watch [label="watches fire\lnamed, so declaring one again replaces it.\lthe map each answers is applied in the same wave\l",
+           fillcolor="#322f34"];
+    keep  [label="the store writes through\lonly :keep paths, on the agent's one thread\l",
+           fillcolor="#322f34"];
+    ship  [label="commit listeners ship what moved\lto every node that mounted this one\l",
+           fillcolor="#322f34"];
+    expr -> watch -> keep -> ship [color="#635850"];
+  }
 
-  surf  [label="surface projection\ncell grid → cairo\n(editor pane · desktop bar)", fillcolor="#37312a", color="#fab387"];
+  root -> expr [lhead=cluster_commit, color="#ffaacf", penwidth=2];
 
-  // the cycle
-  key   -> actor [label="tell (msg)"];
-  src   -> actor [label="set-cell"];
-  agent -> actor [label="remote msg", style=dashed, color="#f38ba8"];
+  read [label="a read, meanwhile\lone slot read and a walk of structure\lnothing can mutate: no lock, safe inside\lany receive, and what it holds is a whole\lconsistent tree\l",
+        fillcolor="#3b393e", fontcolor="#a9c99f", color="#51b04f"];
+  root -> read [color="#51b04f", dir=none, style=dashed];
 
-  actor -> state [label="compute NEW value\n(push old → undo)"];
-  state -> snap  [label="publish"];
-  snap  -> subs  [label="notify on change\n(deduped)"];
-  subs  -> surf  [label="read snapshot → paint"];
+  old [label="the roots it superseded\lstill perfectly good values\l",
+       fillcolor="#3b393e", fontcolor="#8f8886"];
+  swap -> old [color="#635850", style=dashed, dir=none];
+  was [label="undo, /history, diff, the tree as of an earlier moment\lnone of these is machinery. They are reads.\l",
+       fillcolor="#322f34", fontcolor="#caa89f", color="#635850"];
+  old -> was [color="#635850", style=dashed];
 
-  // the loop back: UI produces the next message
-  surf  -> key [label="user acts → next msg", style=dotted, constraint=false, color="#94e2d5"];
+
 }

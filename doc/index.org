@@ -10,10 +10,10 @@ progress: what is done is what the tree does.
 | doc                  | what it is                                                       |
 |----------------------+------------------------------------------------------------------|
 | [[file:philosophy.org][philosophy.org]]       | the one idea: a Lisp Machine you cannot crash and can distribute |
-| [[file:new-api.org][new-api.org]]          | the language: one namespace, three verbs, and everything written in them |
-| [[file:new-architecture.org][new-architecture.org]] | the parts, what each owns, and what must never be true           |
+| [[file:api.org][api.org]]          | the language: one namespace, three verbs, and everything written in them |
+| [[file:architecture.org][architecture.org]] | the parts, what each owns, and what must never be true           |
 
-=new-api.org= is sealed: where it and =src/= disagree, the document is what is
+=api.org= is sealed: where it and =src/= disagree, the document is what is
 right and the tree is what is wrong.
 
 * The code
@@ -38,6 +38,7 @@ in the tree now. They are the reasoning, not a description of the code: read
 |-------------------+-----------------------------------------------------------|
 | [[file:properties.org][properties.org]]    | one annotation mechanism under highlights and overlays; =src/buf.lisp= |
 | [[file:intelligence.org][intelligence.org]]  | definitions, references and completion as producers; =src/eval.lisp=, =src/mode.lisp= |
+| [[file:surfaces.org][surfaces.org]]      | a buffer as projected objects; =src/view.lisp=, =src/ui/=. Its identity scheme is the part that did not survive: a row is named by a path |
 
 * Proposed
 
@@ -45,28 +46,17 @@ Designs that are argued and not built.
 
 | doc            | what it proposes                                              |
 |----------------+---------------------------------------------------------------|
-| [[file:surfaces.org][surfaces.org]]   | a buffer as projected objects, so a UI buffer is nodes rather than text |
 | [[file:project.org][project.org]]    | the codebase a buffer belongs to                              |
 | [[file:vc.org][vc.org]]         | version control as part of the session                        |
 | [[file:help.org][help.org]]       | the system answering questions about itself                   |
 | [[file:systems.org][systems.org]]    | what to build next, and why in that order                     |
 
-* Lineage
-
-The tree before the namespace rewrite. The principles hold and
-=new-architecture.org= says which ones; the vocabulary is gone.
-
-| doc                | what it was                                                |
-|--------------------+------------------------------------------------------------|
-| [[file:architecture.org][architecture.org]]   | the registry that brokered capabilities, buffers as actors, reactive cells |
-| [[file:performance.org][performance.org]]    | what the hot paths of that tree cost, and how they were measured |
-| [[file:pine.org][pine.org]]           | the manual for that tree, by concept. It names packages the rewrite deleted, and documents no longer here |
-
-=api.org=, =pine-user.org= and =theming.org= are gone rather than kept as
-lineage: each described a vocabulary =new-api.org= replaced outright, and a
-document that reads as instructions is worse than no document when it is wrong.
-
 * Diagrams
 
-=architecture.dot= and =substrate.dot= are the sources; the =.png= and =.svg=
-beside them are generated from those.
+| diagram             | what it shows                                             |
+|---------------------+-----------------------------------------------------------|
+| =architecture.dot=  | the shape: four operating-system processes and one tree, what hangs off it and what crosses between them |
+| =substrate.dot=     | what a write is: one compare-and-swap onto a new root, and what the commit then does |
+
+The =.dot= files are the sources. =make docs= regenerates the =.png= and =.svg=
+beside them, so a diagram is never edited by hand.

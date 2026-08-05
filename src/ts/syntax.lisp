@@ -175,6 +175,10 @@ write supersedes, so EQ on it answers whether anything about the language moved.
      :doc "how a form headed by that symbol is walked and indented"})
    (/syntax/?lang/node/?type
     {:doc "what the walk does when it reaches that node type"})
+   (/syntax/?lang/grammar
+    {:doc "{:lib :fn}: the shared library to load and the C entry in it"})
+   (/syntax/?lang/indent
+    {:doc "{:width N}: what a body indents by, when the mode does not say"})
    (/syntax/?lang
     {:doc "a language: its grammar, its node rules and its head rules"})
    (/syntax {:doc "the languages there are"})))

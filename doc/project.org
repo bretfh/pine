@@ -5,7 +5,7 @@
 STATUS: nothing here is built, and it was argued before the namespace rewrite.
 The question it asks still stands; the answers it writes are in the old
 vocabulary -- =ask= targets and store keys -- and what it wants is a subtree and
-the three verbs. Read =new-api.org= for the language it would be written in.
+the three verbs. Read =api.org= for the language it would be written in.
 
 * Why this document exists
 

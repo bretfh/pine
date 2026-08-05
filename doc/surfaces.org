@@ -2,10 +2,16 @@
 #+AUTHOR: Bret Horne
 #+OPTIONS: toc:3 num:t
 
-STATUS: nothing here is built. Not =define-structured-mode=, not
-=node-at-point=, =surface-nodes=, =reproject=, =node-render= or
-=node-actions=. The debugger and the completion list still fake it the way
-this document describes. Read it as the specification it is.
+STATUS: the mechanism this argues for is built, and none of the names it
+proposes survived. A UI buffer is a mode with a =:view= answering a widget
+tree; =/minor/list= is the shared mode over any listing; =pine.view:node-at-point=
+exists. Read this for the reasoning, and =src/view.lisp= for what runs.
+
+The one thing it got wrong is worth keeping in view. This document argues for a
+stable identity per node, minted and kept in step. pine mints nothing: a row
+built over a pattern remembers the path it was built for, because a thing in
+pine is already named. =/buf/?name/selection= is that path, and it survives the
+view being rebuilt because what it stands for did not move.
 
 * Why this document exists
 

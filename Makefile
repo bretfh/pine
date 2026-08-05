@@ -1,4 +1,4 @@
-.PHONY: repl dev daemon editor desktop check shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe ts-probe hl vm threads
+.PHONY: repl dev daemon editor desktop check docs shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe ts-probe hl vm threads
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammar,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -84,6 +84,13 @@ probe:
 # exit waits for those threads and the image hangs holding its remoting port.
 stress:
 	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/test)" --eval "(sb-ext:exit :code (if (fiveam:run! :pine.stress) 0 1) :abort t)"'
+
+# the diagrams under doc/ are generated from the .dot beside them: make docs
+docs:
+	$(GUIX) sh -c 'for d in doc/*.dot; do \
+	  dot -Tpng -o "$${d%.dot}.png" "$$d"; \
+	  dot -Tsvg -o "$${d%.dot}.svg" "$$d"; \
+	  echo "wrote $${d%.dot}.png $${d%.dot}.svg"; done'
 
 # print each highlighted token of a source file and its face: make hl FILE=x.lisp
 hl:

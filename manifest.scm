@@ -18,6 +18,8 @@
               "libxkbcommon"
               "gcc-toolchain"
               "pkg-config"
+              ;; doc/*.dot -> the png and svg beside them: make docs
+              "graphviz"
               "sbcl-alexandria"
               "sbcl-atomics"
               "sbcl-babel"
