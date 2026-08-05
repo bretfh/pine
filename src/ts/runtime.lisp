@@ -3,14 +3,14 @@
   (:export
    ;; the runtime and its per-language entries
    #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
-   #:grammars #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
+   #:*grammar-of* #:grammars #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
    ;; grammars
-   #:*grammars* #:grammar-library-candidates #:load-grammar-library
+   #:grammar-library-candidates #:load-grammar-library
    #:grammar-language-pointer #:load-language-entry
    ;; the per-buffer incremental parse state
    #:parse-state #:make-parse-state #:free-parse-state
    #:parse-lines! #:parse-text! #:parse-motion
-   #:ps-language #:ps-parser #:ps-tree
+   #:ps-language #:ps-syntax #:ps-package #:ps-parser #:ps-tree
    #:ps-byte-index #:ps-lines #:ps-scratch #:ps-read-buffer
    #:ps-band #:ps-band-lines #:ps-offset
    #:call-with-input #:+read-chunk+
@@ -27,8 +27,8 @@
    #:ts-tree-get-changed-ranges
    #:ts-node-type #:ts-node-is-null #:ts-node-parent
    #:ts-node-start-byte #:ts-node-end-byte
-   #:ts-node-named-child #:ts-node-named-child-count
-   #:ts-node-child-by-field-name #:ts-node-named-descendant-for-byte-range))
+   #:ts-node-named-nth #:ts-node-named-count
+   #:ts-node-by-field-name #:ts-node-named-descendant-for-byte-range))
 
 (in-package #:pine.ts.runtime)
 (named-readtables:in-readtable pine.data:syntax)
@@ -120,26 +120,22 @@
 ;; not narrow a return
 (cffi:defcfun ("ts_node_is_null" %ts-node-is-null) :uint8
   (node (:struct ts-node)))
-(cffi:defcfun ("ts_node_named_child_count" ts-node-named-child-count) :uint32
+(cffi:defcfun ("ts_node_named_child_count" ts-node-named-count) :uint32
   (node (:struct ts-node)))
-(cffi:defcfun ("ts_node_named_child" ts-node-named-child) (:struct ts-node)
+(cffi:defcfun ("ts_node_named_child" ts-node-named-nth) (:struct ts-node)
   (node (:struct ts-node)) (index :uint32))
-(cffi:defcfun ("ts_node_child_by_field_name" ts-node-child-by-field-name)
+(cffi:defcfun ("ts_node_child_by_field_name" ts-node-by-field-name)
     (:struct ts-node)
   (node (:struct ts-node)) (name :string) (name-length :uint32))
 (cffi:defcfun ("ts_node_named_descendant_for_byte_range"
                ts-node-named-descendant-for-byte-range) (:struct ts-node)
   (node (:struct ts-node)) (start :uint32) (end :uint32))
 
-(defparameter *grammars*
-  '((:commonlisp "libtree-sitter-commonlisp" "tree_sitter_commonlisp")
-    (:scheme "libtree-sitter-scheme" "tree_sitter_scheme"))
-  "Language to its grammar shared library and the C function answering its
-TSLanguage*. Grammar libraries come from Guix, on the load path by name.")
+
 
 (defparameter +whole-file-lines+ 4096
   "Buffers this many lines or fewer are parsed entire. Above it only a band
-around the window is, since the cost of a parse follows the root's child count
+around the window is, since the cost of a parse follows how many nodes the root holds
 and the cost of a byte index follows the line count.")
 
 (defparameter +band-lines+ 512
@@ -178,6 +174,11 @@ so a per-buffer parser can set-language."))
 
 (defclass parse-state ()
   ((language :initarg :language :accessor ps-language)
+   ;; the compiled rules the walk follows, and the package a head symbol is
+   ;; resolved in. Both are the language's, not the parser's, so they are
+   ;; handed in rather than worked out here.
+   (syntax   :initarg :syntax   :accessor ps-syntax   :initform nil)
+   (package  :initarg :package  :accessor ps-package  :initform nil)
    (parser   :initarg :parser   :accessor ps-parser)
    (tree     :initform nil      :accessor ps-tree)
    ;; the last full tuple list, the lines it was computed for, and the one edit
@@ -282,8 +283,17 @@ two pointers and the grammar's ABI against the range this tree-sitter speaks."
          "setting a grammar")
         nil)))
 
-(defun load-language-entry (language)
-  (destructuring-bind (&optional library fn-name) (cdr (assoc language *grammars*))
+(defvar *grammar-of* nil
+  "How a language name answers (values LIBRARY FN-NAME). Whatever declares
+languages sets this; until something does, no grammar loads. It is here rather
+than a table in this file so that what grammars exist is written rather than
+compiled in.")
+
+(defun %grammar-of (language)
+  (if *grammar-of* (funcall *grammar-of* language) (values nil nil)))
+
+(defun load-language-entry (language library fn-name)
+  (progn
     (unless library (return-from load-language-entry nil))
     (let ((lang (grammar-language-pointer library fn-name)))
       (when (and lang (not (cffi:null-pointer-p lang)))
@@ -312,10 +322,15 @@ two pointers and the grammar's ABI against the range this tree-sitter speaks."
      (fset:with state :missing
                 (fset:with (fset:lookup state :missing) language)))))
 
-(defun ensure-language (runtime language)
+(defun ensure-language (runtime language &optional lib fn)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
 grammar is not here. A grammar already loaded is a slot read; only the loading
-itself is one thread at a time, because the loader's table is one table."
+itself is one thread at a time, because the loader's table is one table.
+
+The library and the C function come from the language's own declaration, so
+what grammars exist is something written rather than a list compiled in here."
+  (multiple-value-bind (library fn-name)
+      (if lib (values lib fn) (%grammar-of language))
   (or (fset:lookup (fset:lookup (%grammars runtime) :loaded) language)
       (bordeaux-threads:with-recursive-lock-held ((loading runtime))
         (unless (libs-loaded runtime) (ensure-ts runtime))
@@ -325,7 +340,7 @@ itself is one thread at a time, because the loader's table is one table."
             ;; loaded this very grammar while this thread waited
             (or (fset:lookup (fset:lookup state :loaded) language)
                 (unless (fset:contains? (fset:lookup state :missing) language)
-                  (let ((entry (load-language-entry language)))
+                  (let ((entry (load-language-entry language library fn-name)))
                     (cond
                       (entry (%note-loaded runtime language entry)
                              (fset:lookup (fset:lookup (%grammars runtime) :loaded)
@@ -336,15 +351,18 @@ itself is one thread at a time, because the loader's table is one table."
                                           :format-control "no ~(~a~) grammar to load"
                                           :format-arguments (list language))
                           "loading a grammar")
-                         nil))))))))))
+                         nil)))))))))))
 
-(defun make-parse-state (runtime language)
-  "A parse-state for LANGUAGE, or nil if the grammar is unavailable."
-  (let ((entry (ensure-language runtime language)))
+(defun make-parse-state (runtime language &optional lib fn &key syntax package)
+  "A parse-state for LANGUAGE, or nil if the grammar is unavailable. SYNTAX is
+the compiled rules the walk follows; PACKAGE is the one a head symbol resolves
+in, so a macro defined in the buffer's own package is found."
+  (let ((entry (ensure-language runtime language lib fn)))
     (when entry
       (let ((parser (ts-parser-new)))
         (when (claim-language parser (entry-language-ptr entry) language)
-          (make-instance 'parse-state :language language :parser parser))))))
+          (make-instance 'parse-state :language language :parser parser
+                                      :syntax syntax :package package))))))
 
 (defun free-parse-state (ps)
   (when ps
@@ -594,10 +612,10 @@ string rather than a buffer: a tool, a test, a snippet."
     (cond
       ((ts-node-is-null cur) nil)
       ((<= byte (ts-node-start-byte cur)) (ts-node-end-byte cur))
-      (t (loop for i from 0 below (ts-node-named-child-count cur)
-               for child = (ts-node-named-child cur i)
-               when (>= (ts-node-start-byte child) byte)
-                 return (ts-node-end-byte child)
+      (t (loop for i from 0 below (ts-node-named-count cur)
+               for node = (ts-node-named-nth cur i)
+               when (>= (ts-node-start-byte node) byte)
+                 return (ts-node-end-byte node)
                finally (return (ts-node-end-byte cur)))))))
 
 (defun %backward-sexp-byte (root byte)
@@ -605,10 +623,10 @@ string rather than a buffer: a tool, a test, a snippet."
     (cond
       ((ts-node-is-null cur) nil)
       ((>= byte (ts-node-end-byte cur)) (ts-node-start-byte cur))
-      (t (loop for i from (1- (ts-node-named-child-count cur)) downto 0
-               for child = (ts-node-named-child cur i)
-               when (<= (ts-node-end-byte child) byte)
-                 return (ts-node-start-byte child)
+      (t (loop for i from (1- (ts-node-named-count cur)) downto 0
+               for node = (ts-node-named-nth cur i)
+               when (<= (ts-node-end-byte node) byte)
+                 return (ts-node-start-byte node)
                finally (return (ts-node-start-byte cur)))))))
 
 (defun %defun-bytes (root byte)

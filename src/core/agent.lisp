@@ -61,10 +61,12 @@ serving itself up for eval and debugging."
       (case (first msg)
         (:ping (sento.actor:reply :pong))
         (:eval
-         (destructuring-bind (&key form package &allow-other-keys) (rest msg)
+         (destructuring-bind (&key form package readtable bindings
+                              &allow-other-keys)
+             (rest msg)
            (let* ((pkg (or (and package (find-package package)) (find-package :cl-user)))
                   (ev (err:evaluate-string
-                       form :package pkg
+                       form :package pkg :readtable readtable :bindings bindings
                        :on-done
                        (lambda (ev)
                          (err:attempt

@@ -8,9 +8,10 @@
    ;; tree surgery, shared by the editor's windows and the window manager's
    #:split-node #:remove-node
    ;; hit-testing and selection
-   #:node-at #:click-thunk #:slider-value-at #:collect-selectables
+   #:node-at #:clicked #:click-thunk #:slider-value-at #:collect-selectables
+   #:placep
    ;; what a container holds, for the walks that need it
-   #:centerbox-parts #:list-items #:window-overlay-count))
+   #:centerbox-parts #:list-items #:view-overlay-count))
 
 (in-package #:pine.ui.layout)
 
@@ -37,7 +38,7 @@ measure through it (pixel/cairo mode); otherwise a character is one cell.")
   (if *text-size* (nth-value 1 (text-size "M" font-px)) 1))
 
 (defgeneric nodes-of (node)
-  (:documentation "NODE's children, in the order they are laid out and painted.
+  (:documentation "NODE's nodes, in the order they are laid out and painted.
 
 The one place a class says what it contains. Every walk over the tree is
 written on this, so a new node kind states its structure once.")
@@ -57,10 +58,10 @@ in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
   (:documentation "The deepest node at (LINE COL) that answers interaction: an
 action, a selectable, or a slider. Nil when nothing there does.
 
-The default descends into the children, so a container needs no method and an
+The default descends into the nodes, so a container needs no method and an
 interactive node says only what it does with a hit.")
   (:method ((n node) line col)
-    (some (lambda (child) (node-at child line col)) (nodes-of n))))
+    (some (lambda (node) (node-at node line col)) (nodes-of n))))
 
 (defun %node-width (n) (- (end-col n) (start-col n)))
 
@@ -126,23 +127,23 @@ the node's border-box (and everything it lays out inside) sits within its margin
     (loop for i from 0 below (min (length s) w)
           do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
 
-(defun window-overlay-count (n)
+(defun view-overlay-count (n)
   "How many of N's leading rows are overlay (drawn above the arranged rect)."
-  (let ((base (window-base n)))
-    (if base (max 0 (- (length (window-rows n)) base)) 0)))
+  (let ((base (view-base n)))
+    (if base (max 0 (- (length (view-rows n)) base)) 0)))
 
-(defmethod measure ((n window-node) aw ah)
+(defmethod measure ((n view-node) aw ah)
   (declare (ignore aw ah))
-  (let* ((rows (window-rows n))
+  (let* ((rows (view-rows n))
          (cols (reduce #'max rows :initial-value 1 :key (lambda (row) (length (car row)))))
-         (nrows (max 1 (- (length rows) (window-overlay-count n)))))
+         (nrows (max 1 (- (length rows) (view-overlay-count n)))))
     (if *text-size*
         (multiple-value-bind (cw ch) (text-size "M" (font-px n))
           (values (* cols cw) (* nrows ch)))
         (values cols nrows))))
-(defmethod paint ((n window-node) r)
-  (let ((over (window-overlay-count n)))
-    (loop for row in (window-rows n)
+(defmethod paint ((n view-node) r)
+  (let ((over (view-overlay-count n)))
+    (loop for row in (view-rows n)
           for y from (- (start-line n) over)
           do (blit-row r y (start-col n) (car row) (cdr row)))))
 
@@ -218,7 +219,7 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
            (acc 0) (given 0)
            (cy y))
       ;; slack shares round cumulatively so the extras sum to exactly SLACK --
-      ;; independent rounding can overshoot and push tail children off the rect
+      ;; independent rounding can overshoot and push tail nodes off the rect
       (loop for c in items for (cw ch) in nats
             for extra = (if (plusp tw)
                             (progn
@@ -272,6 +273,22 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
                (setf cx (+ cx fw (spacing n)))))))
 
 (defmethod paint ((n hstack) r) (dolist (c (nodes n)) (paint c r)))
+
+;;; A stack is the one container that does not divide its space: every node is
+;;; given the whole rect, and paint order is what puts one over another.
+
+(defmethod measure ((n stack) aw ah)
+  (let ((w 0) (h 0))
+    (dolist (c (nodes n) (values w h))
+      (multiple-value-bind (cw ch) (measure c aw ah)
+        (setf w (max w cw) h (max h ch))))))
+
+(defmethod arrange ((n stack) x y w h)
+  (call-next-method)
+  (multiple-value-bind (x y w h) (%inner n x y w h)
+    (dolist (c (nodes n)) (arrange c x y w h))))
+
+(defmethod paint ((n stack) r) (dolist (c (nodes n)) (paint c r)))
 
 (defmethod measure ((n box) aw ah)
   (declare (ignore aw))
@@ -383,17 +400,6 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
         (setf cy (+ cy ch))))))
 (defmethod paint ((n list-node) r) (dolist (c (rendered n)) (paint c r)))
 
-(defmethod measure ((n grid) aw ah)
-  (declare (ignore aw ah))
-  (values (reduce #'+ (col-widths n) :initial-value 0) (length (cells n))))
-(defmethod arrange ((n grid) x y w h)
-  (call-next-method)
-  (loop for row in (cells n) for ry from y do
-    (loop with cx = x for cell in row for cwidth in (col-widths n)
-          do (arrange cell cx ry cwidth 1) (incf cx cwidth))))
-(defmethod paint ((n grid) r)
-  (dolist (row (cells n)) (dolist (cell row) (paint cell r))))
-
 ;;;; Tree surgery. Splitting a leaf, dropping one, and the divider that goes
 ;;;; with it are the same operations wherever a live tree is arranged: the
 ;;;; editor's windows and the window manager's os-windows both mutate their
@@ -404,31 +410,31 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
 (defun node-parent (root node)
   "NODE's parent under ROOT, or nil for the root itself."
   (labels ((walk (n)
-             (let ((kids (nodes-of n)))
-               (if (member node kids :test #'eq)
+             (let ((nodes (nodes-of n)))
+               (if (member node nodes :test #'eq)
                    n
-                   (some #'walk kids)))))
+                   (some #'walk nodes)))))
     (unless (eq root node) (walk root))))
 
-(defun replace-child (parent old new)
-  "Swap OLD for NEW among PARENT's stacked children. True when it happened."
+(defun replace-node (parent old new)
+  "Swap OLD for NEW among PARENT's stacked nodes. True when it happened."
   (when (typep parent '(or vstack hstack))
     (setf (nodes parent) (substitute new old (nodes parent) :test #'eq))
     t))
 
 (defun remove-with-divider (parent node)
-  "Remove NODE from PARENT's children along with its adjacent divider.
+  "Remove NODE from PARENT's nodes along with its adjacent divider.
 
 The divider taken is the one before NODE, else the one after, so a split's
 separator leaves with it."
-  (let* ((kids (nodes parent))
-         (i (position node kids :test #'eq))
-         (prev (and i (plusp i) (nth (1- i) kids)))
-         (next (and i (nth (1+ i) kids)))
+  (let* ((nodes (nodes parent))
+         (i (position node nodes :test #'eq))
+         (prev (and i (plusp i) (nth (1- i) nodes)))
+         (next (and i (nth (1+ i) nodes)))
          (divider (cond ((typep prev 'separator) prev)
                         ((typep next 'separator) next))))
     (setf (nodes parent)
-          (remove-if (lambda (k) (or (eq k node) (eq k divider))) kids))))
+          (remove-if (lambda (k) (or (eq k node) (eq k divider))) nodes))))
 
 (defun split-node (root leaf new orient &key divider)
   "Put NEW beside LEAF along ORIENT (:column below, :row beside), DIVIDER
@@ -453,31 +459,31 @@ split."
        root)
       (t
        (setf (expand-of leaf) weight)
-       (let* ((kids (if divider (list leaf divider new) (list leaf new)))
+       (let* ((nodes (if divider (list leaf divider new) (list leaf new)))
               (container (ecase orient
                            (:column (apply #'pine.ui.build:column :align :stretch
-                                                    :expand weight kids))
+                                                    :expand weight nodes))
                            (:row (apply #'pine.ui.build:row :align :stretch :spacing 0
-                                             :expand weight kids)))))
+                                             :expand weight nodes)))))
          (cond ((eq root leaf) container)
-               ((and parent (replace-child parent leaf container)) root)
+               ((and parent (replace-node parent leaf container)) root)
                (t nil)))))))
 
 (defun remove-node (root leaf)
   "Drop LEAF and its divider from the tree, splicing out a container left
-holding a single child. Returns the root, which changes when the splice
+holding a single node. Returns the root, which changes when the splice
 reaches it, or nil when LEAF cannot be removed."
   (let ((parent (node-parent root leaf)))
     (when (typep parent '(or vstack hstack))
       (remove-with-divider parent leaf)
-      (let ((kids (nodes parent)))
+      (let ((nodes (nodes parent)))
         (cond
-          ((and (null (rest kids)) (first kids))
-           (let ((child (first kids))
+          ((and (null (rest nodes)) (first nodes))
+           (let ((node (first nodes))
                  (grandparent (node-parent root parent)))
-             (setf (expand-of child) (expand-of parent))
-             (cond (grandparent (replace-child grandparent parent child) root)
-                   (t child))))
+             (setf (expand-of node) (expand-of parent))
+             (cond (grandparent (replace-node grandparent parent node) root)
+                   (t node))))
           (t root))))))
 
 
@@ -496,6 +502,12 @@ reaches it, or nil when LEAF cannot be removed."
 (defmethod node-at ((n slider) line col)
   (when (%node-contains n line col) n))
 
+(defmethod node-at ((n text-node) line col)
+  "A run of text answers a hit only when it is a place. A field is what you
+click to change; a label is not, and one that took every hit over its own text
+would swallow the clicks of whatever it sits inside."
+  (when (and (on-change n) (%node-contains n line col)) n))
+
 (defmethod node-at ((n scroll) line col)
   (when (%node-contains n line col) (call-next-method)))
 
@@ -513,8 +525,8 @@ reaches it, or nil when LEAF cannot be removed."
 
 (defmethod nodes-of ((n vstack)) (nodes n))
 (defmethod nodes-of ((n hstack)) (nodes n))
+(defmethod nodes-of ((n stack)) (nodes n))
 (defmethod nodes-of ((n centerbox)) (centerbox-parts n))
-(defmethod nodes-of ((n grid)) (apply #'append (cells n)))
 (defmethod nodes-of ((n list-node)) (rendered n))
 (defmethod nodes-of ((n box)) (and (node n) (list (node n))))
 (defmethod nodes-of ((n center)) (and (node n) (list (node n))))
@@ -532,10 +544,31 @@ does something when it is clicked answers it here.")
   (declare (ignore col))
   (callback node))
 
+(defmethod clicked ((node selectable) col)
+  "A row of a listing does what its :click says. Without one it does nothing on
+a click, and choosing it is the listing's business rather than the pointer's."
+  (declare (ignore col))
+  (click node))
+
 (defmethod clicked ((node slider) col)
   (let ((fn (on-change node))
         (v (slider-value-at node col)))
     (when fn (lambda () (funcall fn v)))))
+
+(defmethod clicked ((node text-node) col)
+  "A field: ask for the new value, seeded with the one it is showing, and hand
+what is typed to the same path it reads. The prompt is the one at /echo, so a
+field needs no editing of its own and no focus to hold."
+  (declare (ignore col))
+  (let ((write-back (on-change node))
+        (had (content node))
+        (ask (hint node)))
+    (when write-back
+      (lambda ()
+        (pine.ns:write (pine.path:parse "/echo")
+                       (fset:map (:prompt (format nil "~a " (or ask "New value:")))
+                                 (:initial had)
+                                 (:then write-back)))))))
 
 (defun click-thunk (root line col)
   "A nullary thunk for a click at (LINE COL) on arranged ROOT, or nil where
@@ -545,13 +578,20 @@ nothing there does anything."
 
 ;;;; Selection navigation
 
+(defgeneric placep (n)
+  (:documentation "Whether the selection can land on N. A row of a listing can
+be chosen; a field is a place you can put a value in; nothing else is either.")
+  (:method (n) (declare (ignore n)) nil)
+  (:method ((n selectable)) t)
+  (:method ((n text-node)) (and (on-change n) t)))
+
 (defun collect-selectables (n)
-  "Every selectable in N, in tree order. A selectable is a leaf choice, so the
-walk does not descend past one."
+  "Every place in N the selection can land on, in tree order. A row is a leaf
+choice, so the walk does not descend past one."
   (let ((result nil))
     (labels ((walk (x)
                (when x
-                 (if (typep x 'selectable)
+                 (if (placep x)
                      (push x result)
                      (mapc #'walk (nodes-of x))))))
       (walk n))

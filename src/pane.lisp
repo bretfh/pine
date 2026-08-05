@@ -47,7 +47,7 @@ A window in the arrangement names one at its own BUF leaf. A path that holds
 another path names what it holds, which is what /buf/current is. A buffer names
 itself, and a bare name is the buffer it names."
   (let* ((at (if (stringp at) (pine.buf:at at) at))
-         (named (ns:read (p:child at "buf")))
+         (named (ns:read (p:path at "buf")))
          (held (ns:held at)))
     (cond ((p:pathp named) named)
           ((stringp named) (pine.buf:at named))
@@ -57,17 +57,17 @@ itself, and a bare name is the buffer it names."
 (defun scroll (at)
   "The first line the pane at AT shows. A place, so where a pane is scrolled
 outlives the image that scrolled it and a second frontend sees the same."
-  (or (ns:read (p:child at "scroll")) 0))
+  (or (ns:read (p:path at "scroll")) 0))
 
 (defun (setf scroll) (line at)
-  (ns:write (p:child at "scroll") line)
+  (ns:write (p:path at "scroll") line)
   line)
 
 (defun hscroll (at)
-  (or (ns:read (p:child at "hscroll")) 0))
+  (or (ns:read (p:path at "hscroll")) 0))
 
 (defun (setf hscroll) (col at)
-  (ns:write (p:child at "hscroll") col)
+  (ns:write (p:path at "hscroll") col)
   col)
 
 (defun showing (at height)
@@ -94,8 +94,8 @@ left)."
     (unless (= next-left left) (setf (hscroll at) next-left))
     (values next-top next-left)))
 
-;;;; Colour. The parser writes what it found at /buf/?name/face, so that is
-;;;; where it is read: a run is (LINE START-COL END-COL FACE).
+;;;; Colour. A highlight is a region property like any other: the parser writes
+;;;; its runs to /buf/?name/prop, so that is where they are read.
 
 (defun %by-row (props top height)
   "PROPS as a table of pane row to the (START END CLASS DATA) on it. A property
@@ -334,10 +334,10 @@ laid out for N columns land in N columns."
 
 (defun %node (at &rest props)
   "The pane at AT, or the stack its parts make."
-  (if (pine.win:stack-p at)
+  (if (pine.win:split-p at)
       (let* ((row (eq :row (pine.win:runs-of at)))
              (parts (mapcar #'%node (pine.win:parts at)))
-             (kids (loop :for part :in parts
+             (nodes (loop :for part :in parts
                          :for first := t :then nil
                          :append (if first
                                      (list part)
@@ -345,7 +345,7 @@ laid out for N columns land in N columns."
                                             :vertical row :face :border-inactive)
                                            part)))))
         (apply (if row #'pine.ui.build:row #'pine.ui.build:column)
-               :align :stretch :expand 1 (append props kids)))
+               :align :stretch :expand 1 (append props nodes)))
       (apply #'%leaf at :expand (max 1 (pine.win:weight-of at)) props)))
 
 (defun arrangement (&optional on &rest props)

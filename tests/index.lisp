@@ -265,7 +265,7 @@ and the answers must not change."
   (let ((root (pine.ts.runtime:ts-tree-root-node (pine.ts.runtime:ps-tree ps))))
     (list (pine.ts.runtime:ts-node-start-byte root)
           (pine.ts.runtime:ts-node-end-byte root)
-          (pine.ts.runtime:ts-node-named-child-count root))))
+          (pine.ts.runtime:ts-node-named-count root))))
 
 (test parsing-from-the-lines-agrees-with-parsing-the-string
   "The same source through both paths has to produce the same tree."

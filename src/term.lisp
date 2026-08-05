@@ -55,7 +55,7 @@ thread.")
 
 (defun at (name)
   "Where the terminal on buffer NAME is declared."
-  (p:child /proc (format nil "term:~a" name)))
+  (p:path /proc (format nil "term:~a" name)))
 
 (defun terminal-for-buffer (buffer)
   (let ((name (pine.buf:name-of buffer)))

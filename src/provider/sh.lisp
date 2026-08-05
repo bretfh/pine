@@ -13,11 +13,49 @@
 ;;;;   (write /sh [:run "setsid" "-f" "x"]) argv, so nothing is shell quoted
 ;;;;   (write /sh [:sh "cd ~ && x | y"])    when you want the shell's own syntax
 ;;;;
+;;;; A read runs where pine runs. A write is the user's own program and gets
+;;;; their login environment and their home directory instead.
+;;;;
 ;;;; What has run and what is streaming are the space's, kept by the server:
 ;;;; every path under /sh is a command, so /sh/0 would be the command "0".
 
 (defparameter *ran-kept* 100
   "How many commands /sh remembers having run.")
+
+;;;; Running something for the person at the machine is not the same act as
+;;;; asking the machine a question. A read runs where pine runs; a launch is
+;;;; the user's own program and gets their login environment, their home
+;;;; directory, and nothing of the environment pine was built in.
+
+(defparameter +build-environment+
+  '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
+    "LD_LIBRARY_PATH")
+  "Variables that belong to the environment pine itself was built and run in. A
+daemon started inside one, such as a guix shell over the repo's manifest, would
+otherwise hand it to everything it launches, and a terminal would open in pine's
+build environment rather than the session.")
+
+(defun %session-environment ()
+  "This process's environment, less what belongs to pine's build."
+  (remove-if (lambda (entry)
+               (some (lambda (name)
+                       (let ((prefix (concatenate 'string name "=")))
+                         (and (>= (length entry) (length prefix))
+                              (string= prefix entry :end2 (length prefix)))))
+                     +build-environment+))
+             (sb-ext:posix-environ)))
+
+(defun %launch (argv)
+  "Start ARGV as the user's own program."
+  (uiop:launch-program argv
+                       :environment (%session-environment)
+                       :directory (user-homedir-pathname)
+                       :output nil :error-output nil))
+
+(defun %launch-line (line)
+  "Start LINE through a login shell, so it is run the way the person's own
+shell would run it."
+  (%launch (list "sh" "-l" "-c" (concatenate 'string "exec " line))))
 
 (defun %output (argv)
   (multiple-value-bind (out err code)
@@ -61,7 +99,7 @@
   "Run COMMAND and write each line it says to its own path."
   (let ((cell (%streams))
         (space ns:*space*)
-        (at (p:child /sh command))
+        (at (p:path /sh command))
         (process (uiop:launch-program (list "sh" "-c" command)
                                       :output :stream :error-output nil)))
     (when cell
@@ -105,15 +143,14 @@
              ;; a command that is streaming is not run again to be read: what
              ;; it last said is what it says
              (if (%streamingp command)
-                 (ns:held (p:child /sh command))
+                 (ns:held (p:path /sh command))
                  (%output (list "sh" "-c" command))))
      :in (pine.data:fn [v]
            (if (stringp v)
                v
                (progn (%note command)
-                      (uiop:launch-program (list "sh" "-c" command)
-                                           :output nil :error-output nil)
-                      (ns:held (p:child /sh command)))))
+                      (%launch-line command)
+                      (ns:held (p:path /sh command)))))
      :watch (pine.data:fn [listening] (%listen command listening))
      :doc "what the command says on its output; write it to run it, watch it
 for each line"})
@@ -121,12 +158,11 @@ for each line"})
     {:read (pine.data:fn [] (ran))
      :verbs {:run (pine.data:fn [&rest argv]
                     (%note (format nil "~{~a~^ ~}" argv))
-                    (uiop:launch-program argv :output nil :error-output nil)
+                    (%launch argv)
                     t)
              :sh (pine.data:fn [line]
                    (%note line)
-                   (uiop:launch-program (list "sh" "-c" line)
-                                        :output nil :error-output nil)
+                   (%launch-line line)
                    t)}
      :doc "what has run, newest first; [:run ARGV...] or [:sh LINE] to run one"})))
 

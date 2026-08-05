@@ -39,7 +39,7 @@ nothing is arranged."
 (defun %height (at)
   "How many lines the pane at AT is showing. Its own leaf when the renderer has
 said, which it does every frame it arranges one."
-  (or (ns:read (p:child at "height")) 24))
+  (or (ns:read (p:path at "height")) 24))
 
 (defun scroll-window (delta)
   "Scroll the pane the keyboard is in by DELTA lines, taking point with it when

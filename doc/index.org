@@ -7,42 +7,64 @@ progress: what is done is what the tree does.
 
 * Start here
 
-| doc                             | what it is                                |
-|---------------------------------+-------------------------------------------|
-| [[file:philosophy.org][philosophy.org]]                  | the one idea: a Lisp Machine you cannot crash and can distribute |
-| [[file:architecture.org][architecture.org]]                | the daemon, the apps that attach, the wire between them |
-| [[file:pine.org][pine.org]]                        | the reference manual, by concept          |
-| [[file:pine-user.org][pine-user.org]]                   | the vocabulary a config writes in init.lisp |
+| doc                  | what it is                                                       |
+|----------------------+------------------------------------------------------------------|
+| [[file:philosophy.org][philosophy.org]]       | the one idea: a Lisp Machine you cannot crash and can distribute |
+| [[file:new-api.org][new-api.org]]          | the language: one namespace, three verbs, and everything written in them |
+| [[file:new-architecture.org][new-architecture.org]] | the parts, what each owns, and what must never be true           |
+
+=new-api.org= is sealed: where it and =src/= disagree, the document is what is
+right and the tree is what is wrong.
 
 * The code
 
 Written against what the tree does.
 
-| doc                             | subsystem                                 |
-|---------------------------------+-------------------------------------------|
-| [[file:packages.org][packages.org]]                    | a package's name is its path; the map of them |
-| [[file:api.org][api.org]]                         | the words the system is built from, and what each owns |
-| [[file:errors.org][errors.org]]                      | one eval path, restarts that stay where they are live, the debugger over many images |
-| [[file:treesitter.org][treesitter.org]]                  | the bindings, the band, the parser actor, the walks |
-| [[file:theming.org][theming.org]]                     | one deftheme, and every renderer a consumer of it |
-| [[file:wm.org][wm.org]]                          | pine as the window manager, over river   |
-| [[file:hacking.org][hacking.org]]                     | editing pine with pine: recompile a defun into the running daemon |
-| [[file:performance.org][performance.org]]                 | what the hot paths cost and how they were measured |
+| doc             | subsystem                                                    |
+|-----------------+--------------------------------------------------------------|
+| [[file:packages.org][packages.org]]    | a package's name is its path; the map of them                |
+| [[file:errors.org][errors.org]]      | a fault that parks and one that unwinds, and the debugger over many images |
+| [[file:treesitter.org][treesitter.org]]  | the bindings, the band, the parser actor, the walks           |
+| [[file:wm.org][wm.org]]          | pine as the window manager, over river                        |
+| [[file:hacking.org][hacking.org]]     | editing pine with pine: recompile a defun into the running daemon |
+
+* Designed here, and since built
+
+Each of these was written as a specification and the mechanism it argues for is
+in the tree now. They are the reasoning, not a description of the code: read
+=src/= for what it does.
+
+| doc               | what it argued for                                        |
+|-------------------+-----------------------------------------------------------|
+| [[file:properties.org][properties.org]]    | one annotation mechanism under highlights and overlays; =src/buf.lisp= |
+| [[file:intelligence.org][intelligence.org]]  | definitions, references and completion as producers; =src/eval.lisp=, =src/mode.lisp= |
 
 * Proposed
 
-Designs that are argued but not built. Each says so in its first lines; read
-the top before believing the rest.
+Designs that are argued and not built.
 
-| doc                             | what it proposes                          |
-|---------------------------------+-------------------------------------------|
-| [[file:surfaces.org][surfaces.org]]                    | a buffer as projected objects, so a tool buffer is nodes rather than text |
-| [[file:properties.org][properties.org]]                  | one annotation mechanism under highlights and overlays |
-| [[file:project.org][project.org]]                     | the codebase a buffer belongs to           |
-| [[file:intelligence.org][intelligence.org]]                | definitions, references, completion, from the tree and the image |
-| [[file:vc.org][vc.org]]                          | version control as part of the session    |
-| [[file:help.org][help.org]]                        | the system answering questions about itself |
-| [[file:systems.org][systems.org]]                     | what to build next, and why in that order |
+| doc            | what it proposes                                              |
+|----------------+---------------------------------------------------------------|
+| [[file:surfaces.org][surfaces.org]]   | a buffer as projected objects, so a UI buffer is nodes rather than text |
+| [[file:project.org][project.org]]    | the codebase a buffer belongs to                              |
+| [[file:vc.org][vc.org]]         | version control as part of the session                        |
+| [[file:help.org][help.org]]       | the system answering questions about itself                   |
+| [[file:systems.org][systems.org]]    | what to build next, and why in that order                     |
+
+* Lineage
+
+The tree before the namespace rewrite. The principles hold and
+=new-architecture.org= says which ones; the vocabulary is gone.
+
+| doc                | what it was                                                |
+|--------------------+------------------------------------------------------------|
+| [[file:architecture.org][architecture.org]]   | the registry that brokered capabilities, buffers as actors, reactive cells |
+| [[file:performance.org][performance.org]]    | what the hot paths of that tree cost, and how they were measured |
+| [[file:pine.org][pine.org]]           | the manual for that tree, by concept. It names packages the rewrite deleted, and documents no longer here |
+
+=api.org=, =pine-user.org= and =theming.org= are gone rather than kept as
+lineage: each described a vocabulary =new-api.org= replaced outright, and a
+document that reads as instructions is worse than no document when it is wrong.
 
 * Diagrams
 

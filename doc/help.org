@@ -36,7 +36,7 @@ definition is answered only by the image.
 * Specified
 
 - describe-command, describe-function, describe-variable,
-  describe-mode, and describe-key as layout buffers (show-layout)
+  describe-mode, and describe-key as UI buffers (show-layout)
   rather than echo strings: name, docstring, the bindings that reach
   it, the mode that owns it, and a source jump through the
   intelligence :definition verb. Help and intelligence share that
@@ -44,7 +44,7 @@ definition is answered only by the image.
   built.
 - apropos: one prompt matching across all registries -- commands,
   variables, modes, faces, refs, buffer verbs, store keys -- with
-  results grouped by kind in a layout buffer; Return describes the
+  results grouped by kind in a UI buffer; Return describes the
   item, M-. jumps to its source. The orderless completion engine
   provides the matching; apropos is a candidates producer over the
   registries.
@@ -64,7 +64,7 @@ definition is answered only by the image.
   wrong docstring is fixed at the definition, not papered over in the
   help system.
 - A dedicated help mode with its own navigation. Help buffers are
-  layout buffers with the same selection and Return behavior as every
+  UI buffers with the same selection and Return behavior as every
   other tool.
 - Documentation coverage tooling. The docstring discipline is
   maintained in review, not enforced by machinery.

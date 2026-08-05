@@ -106,11 +106,11 @@ borrowing a column's, and what comes back is those rows."
                  (list (pine.ui.node:start-line back) (pine.ui.node:start-col back)
                        (pine.ui.node:end-line back) (pine.ui.node:end-col back)))))))
 
-(test wire-windows-finds-the-window-forms-in-tree-order
+(test wire-views-finds-the-window-forms-in-tree-order
   (let ((form (editor-form '("a" "b"))))
-    (is (= 2 (length (pine.ui.wire:wire-windows form))))
-    (is (every (lambda (w) (eq :window (first w)))
-               (pine.ui.wire:wire-windows form)))))
+    (is (= 2 (length (pine.ui.wire:wire-views form))))
+    (is (every (lambda (w) (eq :view (first w)))
+               (pine.ui.wire:wire-views form)))))
 
 (test a-patch-applied-equals-the-tree-the-daemon-built
   (let* ((old (editor-form '("alpha" "beta" "gamma")))

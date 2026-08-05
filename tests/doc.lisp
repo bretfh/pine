@@ -207,7 +207,7 @@ the first time someone reads the table and writes it."
 said what it was for. The list is read off the mounts rather than written here,
 so a provider added tomorrow is held to it too."
   (with-fixture substrate ()
-    (let ((silent (remove-if (lambda (at) (pine.ns:read (pine.path:child /doc at)))
+    (let ((silent (remove-if (lambda (at) (pine.ns:read (pine.path:path /doc at)))
                              (pine.ns:mounts))))
       (is (null silent) "these say nothing about themselves: ~{~a~^ ~}"
           (mapcar #'pine.path:text silent)))))
@@ -331,8 +331,8 @@ speak and the tree says it does."
 ;;;; providers, trees and keys, the design is wrong." It ships that config, and
 ;;;; this is it being run.
 
-(defun %doc-config ()
-  "The last source block in the doc: the whole init it ships."
+(defun %doc-blocks ()
+  "Every lisp source block in the doc, in the order it writes them."
   (let ((path (merge-pathnames "../doc/new-api.org"
                                #.(or *compile-file-truename* *load-truename*)))
         (blocks nil)
@@ -347,7 +347,16 @@ speak and the tree says it does."
                      (push (format nil "~{~a~^~%~}" (nreverse current)) blocks)
                      (setf current nil))
                     (t (push line current))))))
-    (first blocks)))
+    (nreverse blocks)))
+
+(defun %doc-block (marker)
+  "The block that names MARKER, so a test runs what the doc shows rather than a
+transcription of it that can drift."
+  (find marker (%doc-blocks) :test #'search))
+
+(defun %doc-config ()
+  "The last source block in the doc: the whole init it ships."
+  (car (last (%doc-blocks))))
 
 (defparameter +config-helpers+
   "(defun mmss (s) (declare (ignorable s)) \"0:00\")
@@ -382,3 +391,60 @@ edited to suit the tree. What it writes has to lay out and paint."
           (when tree
             (is-true (pine.ui.cells:render tree 80)
                      "~a laid out to no cells" name)))))))
+
+;;;; The one worked mode the doc ships. Its rows are /proc entries, so what the
+;;;; keys act on is a process and not a line of text: this is the whole of what
+;;;; a mode author gets beyond editing characters, run as the doc writes it.
+
+(test the-mode-the-doc-ships-acts-on-what-its-rows-stand-for
+  "new-api.org's process list, as written. A row stands for a /proc entry, the
+selection is the path of the row under point, and the key the doc binds writes a
+verb to that path. Nothing anywhere remembers which line was which."
+  (with-fixture substrate ()
+    (let ((*package* (find-package :pine.user))
+          (*readtable* (named-readtables:find-readtable 'pine.path:syntax))
+          (text (%doc-block "proc-list")))
+      (is (and text (search "selection" text))
+          "the doc's process list was not read out of the document")
+      (unwind-protect
+           (progn
+             (finishes
+               (with-input-from-string (in text)
+                 (loop :for form = (read in nil :eof)
+                       :until (eq form :eof)
+                       :do (eval form))))
+             (pine.ns:write (pine.path:parse "/proc/probe-one")
+                            (fset:map (:run "sleep 30")))
+             (pine.ns:write (pine.path:parse "/proc/probe-two")
+                            (fset:map (:run "sleep 30")))
+             (pine.key::call-command "list-processes")
+             (sleep 0.2)
+             (let ((rows (btext "*proc*")))
+               (is-true (and rows (search "probe-one" rows))
+                        "the process list showed no process"))
+             ;; the selection is a path, so it is the process and not the line
+             (let ((chosen (pine.ns:read
+                            (pine.path:parse "/buf/*proc*/selection"))))
+               (is-true (pine.path:pathp chosen)
+                        "the selected row stands for nothing addressable")
+               (when (pine.path:pathp chosen)
+                 (is (pine.path:prefixp (pine.path:parse "/proc") chosen)
+                     "the row stands for ~a, which is not a process" chosen)
+                 ;; and a verb written to what the row stands for reaches the
+                 ;; process, which is what every key such a mode binds does
+                 (let ((before (pine.ns:read (pine.path:path chosen "pid"))))
+                   (pine.ns:put chosen (fset:seq :restart))
+                   (sleep 0.3)
+                   (let ((after (pine.ns:read (pine.path:path chosen "pid"))))
+                     ;; not /=, which this readtable reads as a path
+                     (is (and before after (not (eql before after)))
+                         "the row's path did not reach ~a: pid was ~a and is ~a"
+                         chosen before after))))))
+        (pine.ns:write (pine.path:parse "/proc/probe-one") nil)
+        (pine.ns:write (pine.path:parse "/proc/probe-two") nil)
+        ;; the buffer and the mode go too: this runs against the shared
+        ;; substrate, and a listing left behind is a listing every later test
+        ;; carries
+        (pine.buf:kill "*proc*")
+        (pine.ns:write (pine.path:parse "/mode/proc-list") nil)
+        (pine.ns:write (pine.path:parse "/cmd/list-processes") nil)))))

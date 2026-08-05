@@ -9,7 +9,7 @@
 (in-package #:pine.ui.style)
 (named-readtables:in-readtable pine.data:syntax)
 
-;;;; The style resolver. pine.ui.rules:theme-rules is CSS-as-data: a selector
+;;;; The style resolver. pine.ui.css:stylesheet is CSS-as-data: a selector
 ;;;; and a map of CSS property to CSS string. A node is identified by its class
 ;;;; chain root..node and its hover state, matched against those rules the way a
 ;;;; browser cascades them (source order, later wins), and the matched values
@@ -52,14 +52,14 @@
 
 (defun compiled-rules ()
   (pine.ui.face:remembered
-   (pine.ui.face:memo :rules)
+   (pine.ui.face:memo :stylesheet)
    (lambda ()
-     (loop :for (sel props) :in (pine.ui.rules:theme-rules)
+     (loop :for (sel props) :in (pine.ui.css:stylesheet)
            :collect (cons (parse-rule-selectors sel) props)))))
 
 (defun reset-rules ()
   "Forget the compiled rules, so the next paint builds them again."
-  (let ((cell (pine.ui.face:memo :rules)))
+  (let ((cell (pine.ui.face:memo :stylesheet)))
     (when cell
       (sento.atomic:atomic-swap cell (lambda (old) (declare (ignore old)) nil))))
   nil)

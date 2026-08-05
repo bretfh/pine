@@ -62,7 +62,7 @@ draws borders outside the content, so the arrangement leaves room for them."
                             :margin (%frame)))
 
 (defun %node (path)
-  (if (win:stack-p path)
+  (if (win:split-p path)
       (let* ((row (eq :row (win:runs-of path)))
              (parts (mapcar #'%node (win:parts path))))
         (apply (if row #'pine.ui.build:row #'pine.ui.build:column)
@@ -102,7 +102,7 @@ measure and arrange do the work unchanged."
         (let ((acc nil))
           (labels ((walk (n)
                      (when (typep n 'pine.ui.node:os-window-view)
-                       (push (list (id-of (pine.ui.node:window-of n))
+                       (push (list (id-of (pine.ui.node:of n))
                                    (pine.ui.node:start-col n)
                                    (pine.ui.node:start-line n)
                                    (- (pine.ui.node:end-col n)
@@ -138,7 +138,7 @@ is told colours rather than resolving faces in an image with no theme."
        (win:seed id /wm))
       (t
        (win:split focus (if (eq :row (ns:read /wm/split)) :beside :below) /wm)
-       (ns:write (p:child (focused) "buf") id))))
+       (ns:write (p:path (focused) "buf") id))))
   (push-arrangement))
 
 (defun forget-window (id)
@@ -177,7 +177,7 @@ twice, so a split states that rather than dividing the current one now."
 (pine.cmd:defcmd wm-terminal ()
   "Launch the terminal /wm-terminal names. Launching is a write to /sh, which
 is the one place a command line is run."
-  (ns:write (p:child /sh (or (ns:read /wm-terminal) "foot")) t))
+  (ns:write (p:path /sh (or (ns:read /wm-terminal) "foot")) t))
 
 (pine.cmd:defcmd wm-close-window () "Ask the focused window to close."
   (close-window))

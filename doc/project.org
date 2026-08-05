@@ -2,6 +2,11 @@
 #+AUTHOR: Bret Horne
 #+OPTIONS: toc:2 num:t
 
+STATUS: nothing here is built, and it was argued before the namespace rewrite.
+The question it asks still stands; the answers it writes are in the old
+vocabulary -- =ask= targets and store keys -- and what it wants is a subtree and
+the three verbs. Read =new-api.org= for the language it would be written in.
+
 * Why this document exists
 
 pine has no notion of the codebase a buffer belongs to. find-file
@@ -68,7 +73,7 @@ working directory, so callers need not special-case it.
 - project-find-file: completing-read over (ask :project :files) with
   :history :files, bound beside find-file.
 - project-search: a pine.core.jobs job running rg at the root; results in a
-  layout buffer of hits (file:line and match text); Return jumps via
+  UI buffer of hits (file:line and match text); Return jumps via
   find-file and move-point, and the match region is propertized in the
   target buffer (properties.org). The hits buffer is built with
   show-layout like other tools.

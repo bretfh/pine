@@ -224,9 +224,9 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                             :width (ed-width ed) :height (ed-height ed)
                             :cell-w (round (ed-cell-w ed))
                             :cell-h (round (ed-cell-h ed))))))
-    (:rules
-     (destructuring-bind (&key rules) (rest msg)
-       (pine.ui.rules:install-rules rules)
+    (:style
+     (destructuring-bind (&key styles) (rest msg)
+       (pine.ui.css:install styles)
        (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
     ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
     ;; -- the buffer's rows ride inside the window node -- and repaint.

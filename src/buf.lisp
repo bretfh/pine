@@ -29,12 +29,12 @@
 ;;;;   /buf/?name/minor   a set
 ;;;;   /buf/?name/file    the file it visits
 ;;;;   /buf/?name/tick    moves on an edit, not on a motion
-;;;;   /buf/?name/face    what the parser last said about it
+;;;;   /buf/?name/prop    regions of it, and what each is
 ;;;;
 ;;;; and computed from those:
 ;;;;
 ;;;;   /buf/?name/line/?n         one line, or the range FROM..TO
-;;;;   /buf/?name/face/${a}..${b} the runs a window's range needs
+;;;;   /buf/?name/prop/?line      the properties covering one line
 ;;;;
 ;;;; Text is written as a string and held as a seq of lines, so an edit is a new
 ;;;; seq sharing every line it did not touch rather than a new copy of the file,
@@ -42,7 +42,8 @@
 ;;;; lines work is not a policy in the parser: it is what the window read.
 
 (defvar *dispatching* nil
-  "The (buffer . verb) pairs a mode handler is answering right now.")
+  "For each (BUFFER . VERB) a mode handler is answering right now, the handlers
+under it that have not been asked yet.")
 
 (defvar *verbs* (fset:empty-map)
   "The built-in verbs of a buffer that need what is layered above /buf: what a
@@ -68,7 +69,7 @@ type is what names them."
 (defun names ()
   "Every buffer there is. /buf/current names one and is not a buffer of its own,
 so it is not among them. Read off the held map rather than through a pattern:
-/buf answers its own children with this."
+/buf answers what is under it with this."
   (let ((held (ns:held /buf))
         (acc nil))
     (when (fset:map? held)
@@ -140,6 +141,9 @@ waits and a buffer with nothing there is at the top."
      :marks (fset:map (:point-line line) (:point-charpos col))
      :meta (fset:map (:name name)
                      (:mode (ns:read (at name :mode)))
+                     ;; the language the text is written in, so an eval of it
+                     ;; reads what the buffer reads
+                     (:readtable (ns:read (at name :readtable)))
                      (:mark (ns:read (at name :mark))))
      :tick (or (ns:read (at name :tick)) 0))))
 
@@ -214,8 +218,8 @@ loses the swap computes again against what landed."
   "Make NAME the current buffer, in the focused window when there is one."
   (let ((w (pine.win:focused)))
     (when w
-      (ns:write (fset:map ((p:child w "buf") (at name))
-                          ((p:child w "scroll") 0)))))
+      (ns:write (fset:map ((p:path w "buf") (at name))
+                          ((p:path w "scroll") 0)))))
   (ns:write /buf/current (at name))
   name)
 
@@ -369,9 +373,20 @@ write and a read of one."
 (defun %read-in (name file)
   "The write-map putting FILE's contents in NAME. Its text is derived from the
 file, so it is not stored and comes back by being read again, which is also what
-brings a buffer back at boot."
-  (fset:map ((at name :text) (or (ns:read (%file-path file)) ""))
-            ((at name :modified) nil)))
+brings a buffer back at boot.
+
+The readtable comes with it. What language a file is written in is a property of
+its text, so it is settled where the text lands rather than on every keystroke,
+and a leaf somebody wrote by hand is left alone."
+  (let* ((content (or (ns:read (%file-path file)) ""))
+         (said (b:readtable-in content))
+         (mode (ns:read (at name :mode)))
+         (readtable (or (ns:held (at name :readtable))
+                        said
+                        (and mode (pine.mode:setting mode :readtable)))))
+    (fset:map ((at name :text) content)
+              ((at name :readtable) readtable)
+              ((at name :modified) nil))))
 
 (defun %visit (name file)
   "Read FILE into NAME, and put point at the top."
@@ -436,18 +451,21 @@ function and nothing to invalidate: the file is a path, so this is a read."
 (defun %verb (name verb args fallback)
   "Answer VERB for NAME through whatever mode claims it, or the built-in.
 
-A handler writes the verb it claimed to reach the built-in one, which is what
-lisp-mode's newline does: {text [:newline] buf [:indent-line]}. So while a
-handler for a verb is running, that verb on that buffer is the built-in."
+The claimants are the minor modes by precedence, then the mode and everything it
+falls back to. A handler that writes the verb it claimed reaches the next one of
+them, and the built-in once they run out, so a mode can lay itself over another
+rather than only replacing it. That is what lisp-mode's newline does:
+{text [:newline] buf [:indent-line]}."
   (let* ((claim (cons name verb))
-         (handler (unless (member claim *dispatching* :test #'equal)
-                    (pine.mode:handler name verb))))
-    (if handler
-        (let ((*dispatching* (cons claim *dispatching*)))
-          (let ((answer (apply handler name args)))
+         (asked (assoc claim *dispatching* :test #'equal))
+         (left (if asked (cdr asked) (pine.mode:claimants name verb))))
+    (if (null left)
+        (funcall fallback)
+        (let ((*dispatching* (cons (cons claim (rest left))
+                                   (remove asked *dispatching* :test #'eq))))
+          (let ((answer (apply (first left) name args)))
             (when (fset:map? answer) (ns:write answer))
-            nil))
-        (funcall fallback))))
+            nil)))))
 
 (defun %insert (name text)
   (multiple-value-bind (line col) (%point name)
@@ -604,14 +622,22 @@ this puts in. Not a place, so it goes back to whoever asked."
 
 ;;;; The parse, off a watch. A buffer's parser owns a TSParser, which may not be
 ;;;; touched from two threads, so it stays an actor of its own. It is told and
-;;;; never asked, and it answers by writing /buf/?name/face. What starts one is
+;;;; never asked, and it answers by writing its runs to /buf/?name/prop, under
+;;;; :syntax, so they replace the last ones it put there. What starts one is
 ;;;; the lines moving, and what bounds it is the range some window said it was
 ;;;; showing.
+
+(defun %indent-width (name)
+  "How wide a body indents in NAME. Its mode says, up the parent chain, so
+/mode/prog covers every prog mode and a mode that indents by four does."
+  (let* ((mode (ns:read (at name :mode)))
+         (said (and mode (pine.mode:setting mode :indent))))
+    (or (and (fset:map? said) (fset:lookup said :width)) 2)))
 
 (defun %parser-at (name)
   "Where NAME's parser is declared. A parser holds a TSParser, so /proc is where
 it lives and stopping it is a write."
-  (p:child (p:parse "/proc") (format nil "parse:~a" name)))
+  (p:path (p:parse "/proc") (format nil "parse:~a" name)))
 
 (defun %link-of (name)
   (let ((entry (ns:read (%parser-at name))))
@@ -680,6 +706,9 @@ for goes into the same mailbox behind the parse it needs."
     (sento.actor:tell
      actor
      (list :parse :name name :lines lines :viewport band :space ns:*space*
+           ;; where this buffer's symbols live, so a macro the config defined in
+           ;; its own package is found rather than guessed at by its name
+           :package (b:buffer-package (state name))
            :tick (or (ns:read (at name :tick)) 0)
            :edit (when edit
                    (list (fset:lookup edit :at) (fset:lookup edit :old)
@@ -691,6 +720,8 @@ for goes into the same mailbox behind the parse it needs."
        (list :indent :name name :lines lines :viewport band :space ns:*space*
              :from (fset:lookup indent :from)
              :to (fset:lookup indent :to)
+             :width (%indent-width name)
+             :package (b:buffer-package (state name))
              :answer (%reindent name))))))
 
 (defun %parse (name &optional system runtime)
@@ -741,6 +772,8 @@ answers; without one, each line takes its previous line's indent."
                                 :lines (b:lines current)
                                 :viewport (band-of name)
                                 :space ns:*space*
+                                :width (%indent-width name)
+                                :package (b:buffer-package (state name))
                                 :answer (%reindent name)))
         (ns:write
          (%indented name
@@ -804,14 +837,14 @@ what makes reopening a file land where it was."
   (prog1 (drop name)
     (%forget-leaves name)))
 
-;;;; A tool buffer is a mode with a :view: a function of the buffer answering a
+;;;; A UI buffer is a mode with a :view: a function of the buffer answering a
 ;;;; widget tree. The tree is written here as an expression, so what it read is
 ;;;; recorded and it is computed again when any of it moves.
 
 (defun %view (name)
   "Write NAME's view, if its mode has one. A buffer showing a view takes the
 minor mode that moves between its rows, so Return and the arrows mean what they
-mean in a tool buffer whatever its major mode is.
+mean in a UI buffer whatever its major mode is.
 
 A mode with no view of its own says nothing about the buffer's, so what clears a
 view is writing one."
@@ -819,7 +852,7 @@ view is writing one."
          (fn (and mode (pine.mode:setting mode :view))))
     (when fn
       (ns:write (at name :view) (funcall fn name) :keep nil)
-      (ns:write (at name :minor) (fset:seq :conj :view)))))
+      (ns:write (at name :minor) (fset:seq :conj :list)))))
 
 ;;;; The paths
 
@@ -917,17 +950,19 @@ view is writing one."
     {:doc "[line col] where the region starts, or nothing"})
    (/buf/?name/mode
     {:doc "the mode it is in; write another to change it"})
+   (/buf/?name/readtable
+    {:doc "the named-readtable its text is written in; nil is the standard one"})
    (/buf/?name/minor
     {:doc "the minor modes on it, as a set; [:conj M] [:disj M]"})
    (/buf/?name/modified
     {:doc "whether it has changed since it was read or saved"})
    (/buf/?name/view
-    {:doc "a widget tree, when it is a tool buffer rather than text"})
+    {:doc "a widget tree, when it is a UI buffer rather than text"})
    (/buf/?name/tree
     {:read (pine.data:fn [] (tree-of name))
      :doc "the parse tree"})
    (/buf/?name/selection
-    {:doc "the path the selected row names, in a tool buffer"})
+    {:doc "the path the selected row names, in a UI buffer"})
    (/buf/?name
     {:verbs {:visit (pine.data:fn [file] (%visit name file))
              :indent-line (pine.data:fn [] (indent name))
@@ -1068,13 +1103,29 @@ starts is this image's server, asked when the parse is wanted."
                     (%read-in name file)
                     {})))
             :as :buf-visit)
-  ;; a mode with a :view makes the buffer a tool buffer
+  ;; a mode with a :view makes the buffer a UI buffer
   (ns:watch /buf/*/mode
             (pine.data:fn [v]
               (declare (ignore v))
               (%view (p:leaf (p:parent (ns:here))))
               {})
             :as :buf-view)
+  ;; the keyboard is on what the focused pane shows. A command that opens a
+  ;; buffer says so by writing that pane, and there is nothing else for it to
+  ;; write: which buffer is current follows, both when the pane changes what it
+  ;; shows and when the focus moves to another pane.
+  (ns:watch /win/focused
+            (pine.data:fn [pane]
+              (let ((showing (and pane (pine.win:buf-of pane))))
+                (if showing (fset:map (/buf/current showing)) {})))
+            :as :buf-follows-focus)
+  (ns:watch /win/**/buf
+            (pine.data:fn [showing]
+              (let ((pane (p:parent (ns:here))))
+                (if (and showing (fset:equal? pane (pine.win:focused)))
+                    (fset:map (/buf/current showing))
+                    {})))
+            :as :buf-follows-pane)
   nil)
 
 (defmethod ns:lower ((s server))
@@ -1082,6 +1133,8 @@ starts is this image's server, asked when the parse is wanted."
   (ns:watch /buf/*/mode nil :as :buf-mode)
   (ns:watch /buf/*/mode nil :as :buf-view)
   (ns:watch /buf/*/file nil :as :buf-visit)
+  (ns:watch /win/focused nil :as :buf-follows-focus)
+  (ns:watch /win/**/buf nil :as :buf-follows-pane)
   ;; the parsers come down with /proc, which is what declared them
   (call-next-method))
 

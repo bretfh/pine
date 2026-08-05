@@ -25,7 +25,7 @@ ask."
   (pine.data:keys (pine.ns:read /err/*)))
 
 (defun fault-path (id)
-  (pine.path:child /err (princ-to-string id)))
+  (pine.path:path /err (princ-to-string id)))
 
 (defun waiting-at (id)
   (and (pine.err:faults id) t))
@@ -38,6 +38,30 @@ ask."
           :do (sleep 0.02))))
 
 ;;;; a fault is a path
+
+(test an-eval-reads-in-the-language-the-buffer-is-written-in
+  "A buffer holding pine's own paths and maps is not read by the standard
+reader. Binding the package and not the readtable meant C-x C-e on any line of
+pine's own source signalled instead of evaluating."
+  (let ((done nil))
+    (pine.err:evaluate-string "(pine.path:text /audio/volume)"
+                              :package (find-package :pine.test)
+                              :readtable 'pine.path:syntax
+                              :on-done (lambda (ev) (setf done ev)))
+    (is-true (wait-until (lambda () done)) "the evaluation never finished")
+    (when done
+      (is (eq :ok (pine.err:evaluation-status done))
+          "reading a path under its own readtable failed: ~a"
+          (pine.err:evaluation-output done))
+      (is (equal '("/audio/volume") (pine.err:evaluation-values done))))))
+
+(test an-unknown-readtable-name-degrades-rather-than-failing
+  (let ((done nil))
+    (pine.err:evaluate-string "(+ 1 2)"
+                              :readtable :no-such-readtable-here
+                              :on-done (lambda (ev) (setf done ev)))
+    (is-true (wait-until (lambda () done)))
+    (when done (is (equal '(3) (pine.err:evaluation-values done))))))
 
 (test a-fault-stands-at-err-holding-its-restarts
   (with-err
@@ -123,8 +147,8 @@ a dispatcher worker that never comes back. It records what happened and goes."
                                           :on-done (lambda (e) (setf done e))))
              (at (fault-path (pine.err:evaluation-id ev))))
         (is-true (wait-until (lambda () (waiting-at (pine.err:evaluation-id ev)))))
-        (pine.ns:write (pine.path:child at "attended") t)
-        (is (eq t (pine.ns:read (pine.path:child at "attended"))))
+        (pine.ns:write (pine.path:path at "attended") t)
+        (is (eq t (pine.ns:read (pine.path:path at "attended"))))
         (sleep 2.5)
         (is (null done) "an attended fault keeps its restarts past the deadline")
         (pine.ns:write at [:restart "ABORT"])

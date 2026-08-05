@@ -12,7 +12,8 @@
            #:line-indent-width #:previous-line-indent
            #:reindent-line #:shift-highlights #:refresh-highlights #:band
            #:point->offset #:line-col->offset #:sexp-delimiter-p
-           #:preceding-sexp-bounds #:buffer-package))
+           #:preceding-sexp-bounds #:buffer-package
+           #:buffer-readtable #:buffer-readtable-name #:readtable-in))
 
 (in-package #:pine.text)
 
@@ -312,7 +313,11 @@ when it has one; a buffer no window has claimed gets the whole file."
         (rt (%ts-runtime)))
     (if (or (null lang) (null rt))
         (values nil pstate)
-        (let ((ps (or pstate (pine.ts.runtime:make-parse-state rt lang))))
+        (let ((ps (or pstate
+                      (multiple-value-bind (lib fn)
+                          (pine.ts.syntax:grammar-of lang)
+                        (pine.ts.runtime:make-parse-state
+                         rt lang lib fn :syntax (pine.ts.syntax:for lang))))))
           (if (null ps)
               (values nil nil)
               (let ((viewport (band (buffer-local new-state :viewport))))
@@ -491,6 +496,42 @@ from the buffer, or nil."
   (let ((inferred (%infer-package (state->string state)))
         (name (buffer-local state :package nil)))
     (or inferred (and name (find-package name)) (find-package :cl-user))))
+
+(defun readtable-in (text)
+  "The named-readtable the last (in-readtable ...) in TEXT asks for, or nil.
+
+Read under the standard readtable, not the buffer's: the declaration itself is
+ordinary lisp, which is the bootstrap that lets a file written in a language
+this reader does not know still say which language that is."
+  (let ((pos 0) (result nil))
+    (loop :for idx := (search "in-readtable" text :start2 pos)
+          :while idx
+          :do (let ((open (position #\( text :end idx :from-end t)))
+                (when open
+                  (multiple-value-bind (form new)
+                      (ignore-errors
+                       (let ((*readtable* (named-readtables:find-readtable :standard))
+                             (*package* (or (%infer-package text) *package*)))
+                         (read-from-string text nil nil :start open)))
+                    (declare (ignore new))
+                    (when (and (consp form) (symbolp (first form))
+                               (string-equal (symbol-name (first form)) "IN-READTABLE")
+                               (symbolp (second form)) (second form))
+                      (setf result (second form)))))
+                (setf pos (+ idx (length "in-readtable")))))
+    result))
+
+(defun buffer-readtable-name (state)
+  "The named-readtable STATE's text is written in, as its name: what the text
+says, else what was written at the buffer's own leaf. NIL is the standard one."
+  (or (readtable-in (state->string state))
+      (buffer-local state :readtable nil)))
+
+(defun buffer-readtable (state)
+  "STATE's readtable object, the counterpart of BUFFER-PACKAGE."
+  (let ((name (buffer-readtable-name state)))
+    (or (and name (ignore-errors (named-readtables:find-readtable name)))
+        *readtable*)))
 
 (defun line-col->offset (text line col)
   "Character offset of LINE/COL in TEXT."

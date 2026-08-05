@@ -33,7 +33,7 @@
 
 (defun %focused-window ()
   (let ((found (find-if (lambda (w) (gethash "is_focused" w)) (%windows))))
-    (when found (p:child /wm/windows (princ-to-string (gethash "id" found))))))
+    (when found (p:path /wm/windows (princ-to-string (gethash "id" found))))))
 
 (defun niri ()
   "The compositor: its workspaces, its windows, and what it can be told."

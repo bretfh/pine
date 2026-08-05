@@ -10,11 +10,11 @@
 
 (defun sh (control &rest arguments)
   (let ((command (if arguments (apply #'format nil control arguments) control)))
-    (or (ns:read (p:child /sh command)) "")))
+    (or (ns:read (p:path /sh command)) "")))
 
 (defun run (control &rest arguments)
   (let ((command (if arguments (apply #'format nil control arguments) control)))
-    (ns:write (p:child /sh command) t)))
+    (ns:write (p:path /sh command) t)))
 
 (defun file (path)
   (ns:read (p:path /file (p:spliced path))))

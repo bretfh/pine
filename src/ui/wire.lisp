@@ -1,7 +1,7 @@
 (defpackage #:pine.ui.wire
   (:use #:cl #:pine.ui.node #:pine.ui.raster)
   (:export #:apply-rows-patch #:arranged-p #:node->wire #:rows-patch
-           #:scroll-to-selection #:wire->node #:wire-windows #:wire-tag
+           #:scroll-to-selection #:wire->node #:wire-views #:wire-tag
            #:defwire))
 
 (in-package #:pine.ui.wire)
@@ -9,7 +9,7 @@
 
 ;;;; Wire codec: a widget tree <-> data, so a declarative UI can cross the
 ;;;; attach wire. CLOS nodes and closure click-handlers do not serialize, so a
-;;;; node becomes (TAG PROPS . CHILDREN) with PROPS a plist, and any handler is
+;;;; node becomes (TAG PROPS . NODES) with PROPS a plist, and any handler is
 ;;;; replaced by an :action id -- the producer keeps the closure keyed by id,
 ;;;; the renderer sends the id back on interaction.
 ;;;;
@@ -23,9 +23,14 @@
 
 ;;;; The base every node carries, read off the class itself.
 
-(defparameter +base-skip+ '(:key :parent :pad :margin)
-  "Base initargs that do not cross: the identity the producer keeps, the
-shorthand that sets two others, and the one only the style pass fills in.")
+(defparameter +base-skip+ '(:key :of :pad :margin)
+  "Base initargs that do not cross: the identity the producer keeps, what a node
+stands for, the shorthand that sets two others, and the one only the style pass
+fills in.
+
+What a node stands for stays here. A frontend paints and sends back the id of
+what was interacted with; deciding what that meant is the business of the image
+holding the thing it stands for.")
 
 (defparameter +patched+ '(:rows :crow :ccol)
   "The props a rows patch can carry. Two forms that differ only in these can be
@@ -115,7 +120,7 @@ ON-ACTION, given a handler closure, answers an id to embed. One method per
 class, written by DEFWIRE.")
   (:method ((n null) &key on-action) (declare (ignore on-action)) nil))
 
-(defmacro defwire (tag class (&rest props) &key children take build)
+(defmacro defwire (tag class (&rest props) &key nodes take build)
   "Say how CLASS crosses the wire, both ways, once.
 
 TAG is what it is called on the wire. Each prop is (KEY OUT &key INITARG
@@ -124,9 +129,9 @@ takes it coming back, a value EQUAL to DEFAULT is left out, ACTION means it is
 a closure and crosses as an id, and IN is an expression over PROPS when reading
 it back is not just looking it up.
 
-CHILDREN is an expression over N answering the child nodes; TAKE is (INITARG
+NODES is an expression over N answering the node nodes; TAKE is (INITARG
 HOW) saying how they come back, with HOW :first or :list. BUILD replaces the
-generated constructor for a class whose children are not a flat list."
+generated constructor for a class whose forms are not a flat list."
   (let ((keys (mapcar #'first props)))
     `(progn
        (pine.data:put *codec* ',class ,tag)
@@ -146,13 +151,13 @@ generated constructor for a class whose children are not a flat list."
                                  (setf p (with-prop p ,key v ,default)))))
            (list* ,tag (ordered p)
                   (mapcar (lambda (c) (node->wire c :on-action on-action))
-                          ,(or children nil)))))
+                          ,(or nodes nil)))))
        (pine.data:put *codec* ,tag
-             (lambda (props children on-action)
-               (declare (ignorable props children on-action))
-               (let ((kids (mapcar (lambda (c) (wire->node c :on-action on-action))
-                                   children)))
-                 (declare (ignorable kids))
+             (lambda (props forms on-action)
+               (declare (ignorable props forms on-action))
+               (let ((nodes (mapcar (lambda (c) (wire->node c :on-action on-action))
+                                   forms)))
+                 (declare (ignorable nodes))
                  ,(or build
                       `(apply #'make-instance ',class
                               ,@(loop :for (key nil . options) :in props
@@ -170,7 +175,7 @@ generated constructor for a class whose children are not a flat list."
                                                     (t `(prop props ,key ,default))))))
                               ,@(when take
                                   (list (first take)
-                                        (if (eq (second take) :first) '(first kids) 'kids)))
+                                        (if (eq (second take) :first) '(first nodes) 'nodes)))
                               (props-without props ,@keys))))))
        ,tag)))
 
@@ -201,14 +206,14 @@ generated constructor for a class whose children are not a flat list."
 (defwire :image picture
   ((:path (pic-path n) :initarg :path :default "")))
 
-(defwire :window window-node
-  ((:rows (window-rows n))
-   (:crow (window-crow n) :default -1)
-   (:ccol (window-ccol n) :default -1)
-   (:opacity (window-opacity n) :default 1.0)
-   (:base (window-base n))))
+(defwire :view view-node
+  ((:rows (view-rows n))
+   (:crow (view-crow n) :default -1)
+   (:ccol (view-ccol n) :default -1)
+   (:opacity (view-opacity n) :default 1.0)
+   (:base (view-base n))))
 
-;;;; One child
+;;;; One node
 
 (defwire :ring pine.ui.node:ring
   ((:value (value n) :default 0)
@@ -218,51 +223,58 @@ generated constructor for a class whose children are not a flat list."
    (:diameter (diameter n) :default 56)
    (:arc-face (arc-face n) :default :function-name)
    (:track-face (track-face n) :default :comment))
-  :children (and (node n) (list (node n)))
+  :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
 (defwire :action action
   ((:action (callback n) :initarg :callback :action t))
-  :children (and (node n) (list (node n)))
+  :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
 (defwire :choice selectable
   ((:selected (selectedp n) :initarg :selected)
+   ;; a row is clickable on a surface as well as choosable in a listing, so what
+   ;; it does crosses the way an action's does
+   (:action (click n) :initarg :click :action t)
    (:prefix-selected (prefix-selected n) :default "> ")
    (:prefix-unselected (prefix-unselected n) :default "  "))
-  :children (and (node n) (list (node n)))
+  :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
 (defwire :box box
   ((:width (width-of n) :initarg :width :default 0)
    (:align (align n) :default :left))
-  :children (and (node n) (list (node n)))
+  :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
 (defwire :scroll scroll
   ((:height (vheight n) :initarg :height :default 10))
-  :children (and (node n) (list (node n)))
+  :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
 (defwire :center center ()
-  :children (and (node n) (list (node n)))
+  :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
-;;;; Many children
+;;;; Many forms
 
 (defwire :column vstack
   ((:spacing (spacing n) :default 0)
    (:align (align n) :default :start))
-  :children (nodes n)
+  :nodes (nodes n)
   :take (:nodes :list))
 
 (defwire :row hstack
   ((:spacing (spacing n) :default 1)
    (:align (align n) :default :start))
-  :children (nodes n)
+  :nodes (nodes n)
   :take (:nodes :list))
 
-;;;; Children that are not a flat list
+(defwire :stack stack ()
+  :nodes (nodes n)
+  :take (:nodes :list))
+
+;;;; Nodes that are not a flat list
 ;;;;
 ;;;; A list's rows are built by a closure, and a closure does not cross: what
 ;;;; goes out is the rows it built, and what comes back is those rows. It keeps
@@ -270,27 +282,16 @@ generated constructor for a class whose children are not a flat list."
 ;;;; it was.
 
 (defwire :list list-node ()
-  :children (pine.ui.layout:list-items n)
-  :build (apply #'make-instance 'vstack :nodes kids :spacing 0 :align :start
+  :nodes (pine.ui.layout:list-items n)
+  :build (apply #'make-instance 'vstack :nodes nodes :spacing 0 :align :start
                 (props-without props)))
-
-(defwire :grid grid
-  ((:col-widths (col-widths n))
-   (:ncols (length (col-widths n)) :default 0))
-  :children (apply #'append (cells n))
-  :build (let ((ncols (max 1 (prop props :ncols 1))))
-           (apply #'make-instance 'grid
-                  :col-widths (prop props :col-widths)
-                  :cells (loop :for i :from 0 :below (length kids) :by ncols
-                               :collect (subseq kids i (min (+ i ncols) (length kids))))
-                  (props-without props :col-widths :ncols))))
 
 (defwire :centerbox pine.ui.node:centerbox
   ((:orient (cb-orient n) :initarg :orient :default :v))
-  :children (list (cb-start n) (cb-center n) (cb-end n))
+  :nodes (list (cb-start n) (cb-center n) (cb-end n))
   :build (apply #'make-instance 'pine.ui.node:centerbox
                 :orient (prop props :orient :v)
-                :start (first kids) :center (second kids) :end (third kids)
+                :start (first nodes) :center (second nodes) :end (third nodes)
                 (props-without props :orient)))
 
 ;;;; Back
@@ -300,11 +301,11 @@ generated constructor for a class whose children are not a flat list."
 carries one. ON-ACTION, given an id, answers a handler -- the renderer's 'send
 this id back'."
   (when form
-    (destructuring-bind (tag props &rest children) form
+    (destructuring-bind (tag props &rest forms) form
       (let ((rect (getf props :rect))
             (build (pine.data:at *codec* tag)))
         (unless build (error "No widget crosses the wire as ~s." tag))
-        (let ((n (funcall build (props-without props :rect) children on-action)))
+        (let ((n (funcall build (props-without props :rect) forms on-action)))
           (when (and n rect)
             (destructuring-bind (sl sc el ec) rect
               (setf (start-line n) sl (start-col n) sc
@@ -323,20 +324,20 @@ this id back'."
 ;;;; the screen. Everything here is plain data, the same as the wire itself.
 
 
-(defun window-tag ()
+(defun view-tag ()
   "What a window crosses as. Asked of the codec rather than written out, so a
 window that changed its tag does not leave these walks matching a keyword
 nothing uses."
-  (wire-tag 'window-node))
+  (wire-tag 'view-node))
 
-(defun wire-windows (form)
+(defun wire-views (form)
   "Every window form in FORM, in tree order."
-  (let ((tag (window-tag))
+  (let ((tag (view-tag))
         (acc nil))
     (labels ((walk (f)
                (when (and (consp f) (keywordp (first f)))
                  (when (eq (first f) tag) (push f acc))
-                 (dolist (child (cddr f)) (walk child)))))
+                 (dolist (node (cddr f)) (walk node)))))
       (walk form))
     (nreverse acc)))
 
@@ -347,7 +348,7 @@ Two forms with the same shape differ only in what a patch can express, which is
 the test for whether one may be sent."
   (if (and (consp form) (keywordp (first form)))
       (let ((props (second form)))
-        (when (eq (first form) (window-tag))
+        (when (eq (first form) (view-tag))
           (setf props (apply #'props-without props +patched+)))
         (list* (first form) props (mapcar #'wire-shape (cddr form))))
       form))
@@ -359,9 +360,9 @@ The patch is one entry per window, (INDEX CROW CCOL (LINE . ROW)...), carrying
 only the lines that differ. NIL means the caller must send FORM whole: a
 different tree, a different number of lines, or no previous form at all."
   (when (and old new (equal (wire-shape old) (wire-shape new)))
-    (let* ((tag (window-tag))
-           (olds (wire-windows old))
-           (news (wire-windows new)))
+    (let* ((tag (view-tag))
+           (olds (wire-views old))
+           (news (wire-views new)))
       (when (= (length olds) (length news))
         (loop :for o :in olds
               :for n :in news
@@ -384,7 +385,7 @@ different tree, a different number of lines, or no previous form at all."
 
 (defun apply-rows-patch (form patch)
   "FORM with PATCH applied: a fresh wire form carrying the patched lines."
-  (let ((tag (window-tag))
+  (let ((tag (view-tag))
         (index -1))
     (labels ((patched (f)
                (if (and (consp f) (keywordp (first f)))

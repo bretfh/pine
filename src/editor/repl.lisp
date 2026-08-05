@@ -74,6 +74,8 @@ agent's."
     (pine.eval:in-target
      input
      (find-package :cl-user)
+     ;; the repl reads pine's own language, the way the CLI's eval already does
+     :readtable 'pine.path:syntax
      :on-done
      (lambda (ev)
        (append-output

@@ -242,7 +242,7 @@ ones: bounding the work to a window must not cost anything on a small file, and
 it does not, because the cache is kept per window rather than discarded.
 
 Two things make it sound. The walk reaches the forms in range by binary search
-over the root's named children instead of descending through every form, since
+over the root's named nodes instead of descending through every form, since
 each node call allocates; and a top-level form has no enclosing context, so
 starting the walk at one keeps quote state, depth and head kind exact. Two
 properties in =tests/ts.lisp= hold it: a windowed walk agrees with the whole-file

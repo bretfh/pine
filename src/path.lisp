@@ -2,7 +2,7 @@
   (:use #:cl)
   (:shadow #:parse)
   (:export #:path #:pathp #:segments #:segment-count #:root #:rootp
-           #:parent #:leaf #:child #:under #:prefixp #:subpath
+           #:parent #:leaf #:under #:prefixp #:subpath
            #:text #:parse #:name #:spliced
            #:patternp #:binders #:match #:named-at #:expansions #:literal-tail
            #:key #:keys #:any
@@ -247,10 +247,6 @@ that is exactly ** is a deep one; nothing else in the text is a pattern."
     (let ((s (aref (path-segments p) (1- (segment-count p)))))
       (if (stringp s) s (%seg-text s)))))
 
-(defun child (p &rest pieces)
-  "P extended by PIECES."
-  (apply #'path p pieces))
-
 (defun subpath (p start &optional end)
   (%make-path (subseq (path-segments p) start end)))
 
@@ -357,7 +353,7 @@ and the pattern before them. NIL tail when P does not end in one."
         fn)))
 
 (defun %constraint-ok (s prefix value bindings)
-  "Test S's constraint against the value at each named child of PREFIX.
+  "Test S's constraint against the value at each named place under PREFIX.
 Answers (values ok bindings)."
   (let ((constraint (seg-constraint s))
         (acc bindings)
@@ -368,7 +364,7 @@ Answers (values ok bindings)."
       (when ok
         (let ((v (if (eq key :.)
                      (funcall value prefix)
-                     (funcall value (child prefix (name key))))))
+                     (funcall value (path prefix (name key))))))
           (cond ((%binderp pattern)
                  (setf acc (fset:with acc (%variable pattern) v)))
                 ((fset:set? pattern)
@@ -454,7 +450,7 @@ range is part of the token, and its comma and closing brace are its own."
                 (write-char (read-char stream) out)))))
 
 (defun %read-constraint (stream)
-  "A [pred] filter. PRED is a name (that child is non-nil), NAME = PATTERN, or
+  "A [pred] filter. PRED is a name (the place it names is non-nil), NAME = PATTERN, or
 = PATTERN for the segment's own value. Several may follow one another."
   (let ((acc nil))
     (loop :while (eql #\[ (peek-char nil stream nil nil t))

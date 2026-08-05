@@ -87,7 +87,7 @@ stress:
 
 # print each highlighted token of a source file and its face: make hl FILE=x.lisp
 hl:
-	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(pine.ts.highlight:hl-dump-file \"$(FILE)\")"'
+	$(GUIX) sh -c '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(pine.ts.syntax:hl-dump-file \"$(FILE)\")"'
 
 # render the editor frame for a sample buffer to a PNG, headless: make shot
 shot:

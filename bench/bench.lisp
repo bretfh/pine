@@ -206,10 +206,12 @@ transport actually writes, which re-encodes those bytes as decimal text."
       ;; the same frame, as a patch: one line of it changed
       (let* ((before (%editor-wire 88 25 15))
              (after (let* ((f (%editor-wire 88 25 15))
-                           (window (first (pine.ui.wire:wire-windows f)))
-                           (rows (copy-list (fset:lookup (second window) :rows))))
+                           (view (first (pine.ui.wire:wire-views f)))
+                           ;; a wire form's props are a plist, which is what the
+                           ;; renderer reads them as
+                           (rows (copy-list (getf (second view) :rows))))
                       (setf (nth 12 rows) (%row 88 15 #\b))
-                      (setf (second window) (fset:with (second window) :rows rows))
+                      (setf (getf (second view) :rows) rows)
                       f))
              (patch (pine.ui.wire:rows-patch before after))
              (whole nil))
@@ -292,10 +294,10 @@ transport actually writes, which re-encodes those bytes as decimal text."
     (error (e) (format t "~&(ts group skipped: ~a)~%" e))))
 
 (defun lisp-state (nforms viewport)
-  "A lisp-mode buffer state of NFORMS forms, carrying VIEWPORT when given."
+  "A lisp buffer state of NFORMS forms, carrying VIEWPORT when given."
   (let ((state (pine.text:set-meta
                 (pine.text:load-content (lisp-source nforms))
-                :mode :lisp-mode)))
+                :mode :lisp)))
     (if viewport
         (pine.text:set-meta state :viewport viewport)
         state)))
@@ -311,7 +313,12 @@ The edit descriptor is passed exactly as a buffer passes it: without one the tre
 cannot be shifted and every call would reparse the file from scratch, which is a
 different measurement wearing the same name."
   (handler-case
-      (let ((rt (pine.ts.runtime:make-ts-runtime))
+      (pine.ns:with-space ()
+       ;; the grammar a mode names is read off /mode, so the mode server has to
+       ;; be up: without it every state answers "no language" and this whole
+       ;; group measures nothing while still printing a table
+       (pine.ns:raise :mode)
+       (let ((rt (pine.ts.runtime:make-ts-runtime))
             rows)
         (unless pine.core.server:*server*
           (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
@@ -333,7 +340,7 @@ different measurement wearing the same name."
                                             :edit (list 3 1 1 (if flip 1 -1)))))))
                       rows)))))
         (print-table "the per-keystroke cycle (buffer text + reparse + highlight)"
-                     (nreverse rows)))
+                     (nreverse rows))))
     (error (e) (format t "~&(refresh group skipped: ~a)~%" e))))
 
 (defun bench-eval ()

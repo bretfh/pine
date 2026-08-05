@@ -89,7 +89,7 @@ protocol exists.
 * Surfaces
 
 - M-. sends (ask BUF :definition); one result jumps directly; several
-  open the xref layout buffer -- show-layout rows, Return jumps, the
+  open the xref UI buffer -- show-layout rows, Return jumps, the
   visited region briefly propertized. M-, pops the jump ring, which
   is a store list and so survives restarts.
 - M-? sends :references into the same buffer shape.

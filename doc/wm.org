@@ -128,9 +128,9 @@ allows a new manager to bind (hot swap is an explicit feature). The
 daemon already supervises and respawns frontends. A wm frontend crash
 therefore costs nothing: river keeps the session and every window,
 the daemon respawns the frontend, it re-binds and re-arranges from
-daemon state. A daemon restart costs no more: the world (doc/pine-user.org, The world) gains
-an os-arrangement contributor, so the window trees come back like the
-editor splits do.
+daemon state. A daemon restart costs no more: the arrangement is =/wm=,
+the same subtree shape the editor's windows are, so the window trees
+are where they were left rather than something to serialize.
 Window management policy becomes something you can crash, patch in
 the editor's debugger, and resume -- the claim philosophy.org makes
 for every other part of the system, now including the desktop itself.
@@ -180,7 +180,7 @@ the daemon (src/wm/wm.lisp) fills: os-window leaves in a live tree,
 split and focus and close as commands, chords from the =:wm= keymap
 registered with the compositor. The tree surgery those commands use
 lives with the node language (pine.ui.node: split-node, remove-node,
-node-parent, replace-child, remove-with-divider) and the editor's own
+node-parent, replace-node, remove-with-divider) and the editor's own
 window commands call the same functions.
 
 Two harnesses verify it: =make wm-shot= runs river on the wlroots

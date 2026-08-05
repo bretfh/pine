@@ -54,21 +54,23 @@ abort. The wait restarts while it is attended; nil waits as long as it is."
   (or (ns:read /evaluations-kept) 50))
 
 (defun %cell ()
-  "Where this space keeps what has faulted, or NIL before /err is served."
-  (ns:kept :err))
+  "Where this space keeps what has faulted, made the first time it is asked for.
+
+Boot is when a fault is most likely and least expected, and /err is served part
+way through it. Without a cell before then every fault built a registry of its
+own, took the id 1 and vanished. It belongs to the space rather than the image,
+so two spaces do not share what has faulted; two threads faulting in the same
+instant before the first one exists is the one race, and it costs the loser's
+fault."
+  (or (ns:kept :err)
+      (setf (ns:kept :err) (fresh))))
 
 (defun %registry ()
-  (let ((cell (%cell)))
-    (if cell
-        (sento.atomic:atomic-get cell)
-        {:n 0 :ran nil :faults (fset:empty-map)})))
+  (sento.atomic:atomic-get (%cell)))
 
 (defun %change (fn)
   "Replace the registry with FN's answer, retrying until it lands. FN is pure."
-  (let ((cell (%cell)))
-    (if cell
-        (sento.atomic:atomic-swap cell fn)
-        (funcall fn (%registry)))))
+  (sento.atomic:atomic-swap (%cell) fn))
 
 (defun %next-id ()
   "The next id. Two threads asking at once get two."
@@ -217,7 +219,10 @@ thread parked in it has a reason to keep waiting."
 
 (defmethod ns:raise ((s server) &key &allow-other-keys)
   "Serve /err from what has faulted, and answer the cell this space keeps them
-in. Live, not held: the file has no business holding a fault."
+in. Live, not held: the file has no business holding a fault.
+
+The cell is whichever one this space already has, so a fault from before /err
+was served is still there afterwards."
   (declare (ignore s))
   (ns:write /err
     (ns:provider
@@ -233,7 +238,7 @@ in. Live, not held: the file has no business holding a fault."
        :write (d:fn [v]
                 (let ((f (%at id))) (when f (setf (fault-attended f) (and v t)))))
        :doc "true while someone has this fault open"})))
-  (fresh))
+  (%cell))
 
 (ns:register (make-instance 'server))
 
@@ -314,6 +319,10 @@ than stopping the thread it is on (see CALL-WITH-DEBUGGER)."
   form
   thunk
   package
+  ;; the named-readtable this was read under, as its NAME. A readtable object
+  ;; would not survive the trip to another image; a name is a symbol, which is
+  ;; what the wire already carries.
+  readtable
   (status :running)                 ; :running :ok :error :aborted
   (values nil)
   (output "")
@@ -393,7 +402,10 @@ This thread is the evaluation, so it is the thread that parks in it."
            (let ((*standard-output* out)
                  (*error-output* out)
                  (*trace-output* out)
-                 (*package* (or (evaluation-package ev) (find-package :cl-user))))
+                 (*package* (or (evaluation-package ev) (find-package :cl-user)))
+                 ;; around the EVAL as well as the read: a macroexpansion or an
+                 ;; inner READ in a thunk is still in this buffer's language
+                 (*readtable* (%readtable (evaluation-readtable ev))))
              (with-debugger-hook (ev)
                (multiple-value-bind (ok abortp)
                    (with-simple-restart (abort "Abort this evaluation")
@@ -415,27 +427,41 @@ This thread is the evaluation, so it is the thread that parks in it."
                      (funcall (evaluation-on-done ev) ev)))
                  "evaluation completion")))))
 
-(defun evaluate (form &key thunk (package *package*) bindings on-done)
+(defun %readtable (name)
+  "The readtable NAME names, or the one in force. A name nothing answers to
+degrades rather than failing: a buffer that asks for a readtable this image has
+never heard of still evaluates, in the standard one."
+  (or (and name (ignore-errors (named-readtables:find-readtable name)))
+      *readtable*))
+
+(defun evaluate (form &key thunk (package *package*) readtable bindings on-done)
   "Evaluate FORM (or call THUNK) on a thread of its own. Answers the EVALUATION
 at once. BINDINGS is an alist (special-symbol . value) rebound around the eval,
-e.g. *client*. ON-DONE runs on the eval thread."
+e.g. *client*. ON-DONE runs on the eval thread. READTABLE is a named-readtable
+name, so the eval reads what the buffer reads."
   (let ((ev (%ran (%make-evaluation :form form :thunk thunk :package package
-                                    :on-done on-done))))
+                                    :readtable readtable :on-done on-done))))
     (setf (evaluation-thread ev)
           (bordeaux-threads:make-thread
            (lambda () (run-evaluation ev bindings))
            :name (format nil "pine-eval-~a" (evaluation-id ev))))
     ev))
 
-(defun evaluate-thunk (thunk &key (package *package*) bindings on-done)
+(defun evaluate-thunk (thunk &key (package *package*) readtable bindings on-done)
   "Run THUNK as an evaluation, so a widget's click handler cannot hang or crash
 the thread that clicked it."
-  (evaluate nil :thunk thunk :package package :bindings bindings :on-done on-done))
+  (evaluate nil :thunk thunk :package package :readtable readtable
+                :bindings bindings :on-done on-done))
 
-(defun evaluate-string (string &key (package *package*) bindings on-done)
-  (let ((form (let ((*package* (or package *package*)))
+(defun evaluate-string (string &key (package *package*) readtable bindings on-done)
+  "Read STRING and evaluate it. READTABLE names the language it is written in:
+a buffer holding pine's own paths and maps is not read by the standard reader,
+and neither is one holding a readtable a config defined."
+  (let ((form (let ((*package* (or package *package*))
+                    (*readtable* (%readtable readtable)))
                 (read-from-string string))))
-    (evaluate form :package package :bindings bindings :on-done on-done)))
+    (evaluate form :package package :readtable readtable
+                   :bindings bindings :on-done on-done)))
 
 (defun abort-evaluation (ev)
   "Abort EV: take the abort on the fault it is parked in, or interrupt the

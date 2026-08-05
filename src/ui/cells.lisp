@@ -7,7 +7,7 @@
 ;;;; The cell render: the same node tree the desktop paints in pixels,
 ;;;; rendered to styled cells for a buffer or the chrome. Styling is the ONE
 ;;;; resolution: a node's CSS classes through pine.ui.style (the desktop's
-;;;; theme-rules), else its face name through the theme faces -- both terminate
+;;;; the stylesheet), else its face name through the theme faces -- both terminate
 ;;;; in the same (fg bg attr) run values. The arranged tree rides along so any
 ;;;; rendered (line col) maps back to its node with no side table.
 
@@ -52,13 +52,12 @@ face name, if any, then resolves as usual at paint)."
   "Resolve every node's cell colours before a cell render: CSS classes win,
 the node's face name fills the gaps, and the result lands in the face slot as a
 precomputed (FG BG ATTR) tuple. Colour/weight only -- CSS box properties are
-pixel values and do not apply to cell layout. A selected selectable resolves
+pixel values and do not apply to cell layout. A selected node resolves
 with a \"sel\" class appended, so \".foo.sel\" rules style the selection. Runs
 at build time; the rendered tree is read-only afterwards."
   (labels ((walk (n chain)
              (let* ((classes (append (node-classes n)
-                                     (and (typep n 'selectable) (selectedp n)
-                                          (list "sel"))))
+                                     (and (selectedp n) (list "sel"))))
                     (full (append chain (list classes))))
                (when classes
                  (let ((tuple (%node-cell-style n full)))
@@ -70,7 +69,7 @@ at build time; the rendered tree is read-only afterwards."
 (defun rows-of (r)
   "Scan raster R into rows (TEXT . RUNS), run = (col fr fg fb br bg bb attr) --
 the same run format frame->rows ships on the wire, so one format serves the
-frame, the chrome, and layout buffer rows."
+frame, the chrome, and UI buffer rows."
   (let ((cols (raster-cols r)) (v (raster-cells r)))
     (loop for row from 0 below (raster-rows r) collect
       (let ((text (make-string cols :initial-element #\space)) (runs nil) (prev nil))
@@ -90,7 +89,7 @@ frame, the chrome, and layout buffer rows."
 lay out at WIDTH, paint, and return (values rows tree) -- rows in the wire row
 format, TREE the arranged root whose rects make node-at a position->node map.
 The returned tree is read-only: selection is an input here, never a mutation of
-a published tree. Layout buffers use static children (vstack), not list-node
+a published tree. UI buffers use static nodes (vstack), not list-node
 item functions, which build only at measure."
   (pine.ui.face:with-faces
    (let ((pine.ui.layout:*text-size* nil))

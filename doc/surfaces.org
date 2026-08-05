@@ -39,7 +39,7 @@ debugger is its first and hardest instance.
   into shape.
 - *magit-section*: a /tree/ of sections, each an object with a type and value,
   collapsible, with navigation and actions that dispatch on the type at point.
-  We take the tree (nodes can have children), the collapsibility, and
+  We take the tree (a node can hold nodes), the collapsibility, and
   action-dispatch-on-node-type.
 - *text properties carrying the object*: the simplest emacs trick is to stamp the
   object onto its line as a text property, so line-to-object is intrinsic, not a
@@ -60,8 +60,8 @@ produces a new state. No =with-silent-modifications=, no marker juggling.
   node
     value      the domain object: a restart, a file, an evaluation, a candidate
     render     value -> lines (text + faces), or -> cells / a widget subtree
-    children   nil, or nodes (the magit tree; debugger frames could nest here)
-    collapsed  for a tree node: children hidden
+    nodes      nil, or nodes (the magit tree; debugger frames could nest here)
+    collapsed  for a tree node: what it holds is hidden
     actions    what keys do to this node (an alist key->command, or a fn)
     id         stable identity so selection / point survive a reprojection
 
@@ -181,7 +181,7 @@ already resolve.
   can diff models and reproject only changed nodes. Start whole, keep the door
   open. Do not build the incremental path before a surface is large enough to
   need it, and say so when a surface is capped meanwhile.
-- *tree vs flat*. Children + collapse cover the tree case, but most surfaces are
+- *tree vs flat*. Nodes + collapse cover the tree case, but most surfaces are
   flat. The model supports the tree; instances use it only when they are one
   (dired, nested frames), and flat surfaces ignore it.
 - *where the model lives*. Buffer meta is the proposed home (rides snapshots,

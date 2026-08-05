@@ -55,10 +55,15 @@
                  (:module "ts"
                           :serial t
                           :components ((:file "index") (:file "runtime") (:file "highlight")
+                                       (:file "syntax")
+                                       (:module "lang"
+                                                :serial t
+                                                :components ((:file "commonlisp")
+                                                             (:file "scheme")))
                                        (:file "parser")))
                  (:module "face"
                           :serial t :pathname "ui/"
-                          :components ((:file "face") (:file "rules")))
+                          :components ((:file "face") (:file "css")))
                  (:file "text")
                  (:file "buf")
                  (:file "key")
@@ -81,7 +86,7 @@
                  (:file "wm")
                  (:module "editor"
                           :serial t
-                          :components ((:file "view-state") (:file "frame") (:file "render")
+                          :components ((:file "frame") (:file "render")
                                        (:file "isearch") (:file "help") (:file "debugger")
                                        (:file "repl") (:file "session") (:file "win") (:file "commands")))
                  (:file "frontend")

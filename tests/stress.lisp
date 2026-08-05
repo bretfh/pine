@@ -208,7 +208,13 @@ anything."
               "after the parser faulted, the buffer took ~a of 200 edits"
               (let ((text (btext "stress-fault-queue")))
                 (if (stringp text) (char-count text) text)))
-          (is (wait-for (lambda () (pine.ns:read (pine.buf:at buf :face)))
+          ;; what the parser answers with is properties by :syntax, which is
+          ;; where a run of colour lives now that one mechanism carries
+          ;; highlights, overlays and everything else attached to a region
+          (is (wait-for (lambda ()
+                          (some (lambda (prop)
+                                  (eq :syntax (fset:lookup prop :by)))
+                                (fset:convert 'list (pine.buf:properties buf))))
                         :seconds 60)
               "the parser never parsed again after its fault"))))))
 

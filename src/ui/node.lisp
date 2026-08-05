@@ -2,29 +2,28 @@
   (:use #:cl)
   (:export
    ;; the base, and what every node carries
-   #:node #:key-of #:parent #:face #:css-class #:hint #:hovered
+   #:node #:key-of #:of #:face #:css-class #:hint #:hovered
    #:radius #:fill-of #:grad #:font-px #:pad-x #:pad-y #:min-w #:min-h
    #:node-margin #:expand-of #:start-line #:start-col #:end-line #:end-col
    ;; the widgets
    #:text-node #:content #:on-change
    #:separator #:sep-char #:sep-vertical
-   #:spacer #:vstack #:hstack #:nodes #:spacing #:align
+   #:spacer #:vstack #:hstack #:stack #:nodes #:spacing #:align
    #:box #:width-of #:pad-char #:center #:centerbox
    #:cb-orient #:cb-start #:cb-center #:cb-end
    #:scroll #:scroll-offset #:vheight
-   #:selectable #:data #:selectedp #:prefix-selected #:prefix-unselected
+   #:selectable #:data #:click #:selectedp #:prefix-selected #:prefix-unselected
    #:action #:callback
    #:list-node #:items #:item-fn #:max-visible #:rendered
-   #:grid #:cells #:col-widths
    #:slider #:slider-fraction #:filled-face #:empty-face #:track
    #:ring #:ring-fraction #:thickness #:diameter #:arc-face #:track-face
    #:value #:min-of #:max-of
    #:calendar #:cal-year #:cal-month #:cal-day
    #:picture #:pic-path
    ;; a leaf holding rendered cell rows
-   #:window-node #:window-rows #:window-crow #:window-ccol #:window-opacity
-   #:window-base #:window-of
-   #:buffer-view #:terminal-view #:modeline-view #:echo-view #:os-window-view))
+   #:view-node #:view-rows #:view-crow #:view-ccol #:view-opacity
+   #:view-base
+   #:buffer-view #:modeline-view #:echo-view #:os-window-view))
 
 (in-package #:pine.ui.node)
 
@@ -37,7 +36,14 @@
 
 (defclass node ()
   ((key-of  :initarg :key    :accessor key-of  :initform nil)
-   (parent  :initarg :parent :accessor parent  :initform nil)
+   ;; what this node is a projection of, as a path. A row of a listing stands
+   ;; for the thing it shows, and in pine a thing is already named by a path, so
+   ;; there is no id to mint and nothing to keep in step: the row survives a
+   ;; rebuild because what it stands for does not move.
+   (of      :initarg :of     :accessor of      :initform nil)
+   ;; whether the selection is on this node. Any node the selection can reach
+   ;; carries it: a row of a listing, and a field, which is a place too
+   (selectedp :initarg :selected :accessor selectedp :initform nil)
    (face    :initarg :face   :accessor face    :initform nil)
    (css-class :initarg :class :accessor css-class :initform nil)
    (hint    :initarg :hint   :accessor hint    :initform nil)
@@ -88,6 +94,11 @@
    (spacing  :initarg :spacing  :accessor spacing  :initform 1)
    (align    :initarg :align    :accessor align    :initform :start)))
 
+(defclass stack (node)
+  ((nodes :initarg :nodes :accessor nodes :initform nil))
+  (:documentation "Nodes in one place: each is given the whole rect and they are
+painted in the order they were written, so the last one is on top."))
+
 (defclass box (node)
   ((node    :initarg :node    :accessor node    :initform nil)
    (width-of :initarg :width    :accessor width-of :initform 0)
@@ -104,8 +115,11 @@
 
 (defclass selectable (node)
   ((node             :initarg :node    :accessor node             :initform nil)
+   ;; what the author attached to this row, kept whatever else the row does:
+   ;; the click is its own slot, so a row that is clickable still knows what it
+   ;; stands for
    (data              :initarg :data     :accessor data              :initform nil)
-   (selectedp         :initarg :selected :accessor selectedp         :initform nil)
+   (click             :initarg :click    :accessor click             :initform nil)
    (prefix-selected   :initarg :prefix-selected   :accessor prefix-selected   :initform "> ")
    (prefix-unselected :initarg :prefix-unselected :accessor prefix-unselected :initform "  ")))
 
@@ -120,10 +134,6 @@
    ;; the item nodes built at the last measure, kept so arrange/paint and
    ;; hit-testing can reach them (item-fn builds them transiently otherwise).
    (rendered    :accessor rendered    :initform nil)))
-
-(defclass grid (node)
-  ((cells      :initarg :cells      :accessor cells      :initform nil)
-   (col-widths :initarg :col-widths :accessor col-widths :initform nil)))
 
 (defclass slider (node)
   ((value       :initarg :value       :accessor value       :initform 0)
@@ -157,33 +167,29 @@
 ;; A leaf holding rendered cell rows, each row a (text . runs) pair: measure and
 ;; arrange are O(1) and paint blits the rows, so a buffer or a terminal composes
 ;; into a widget tree without the layout engine touching the text cell by cell.
-;; OF backs a live view with a pine.editor.view-state:window, and does not cross
-;; the wire.
-(defclass window-node (node)
-  ((rows :initarg :rows :accessor window-rows :initform nil)
-   (crow :initarg :crow :accessor window-crow :initform -1)
-   (ccol :initarg :ccol :accessor window-ccol :initform -1)
-   (opacity :initarg :opacity :accessor window-opacity :initform 1.0)
+;; What it shows is the pane path in OF, which every node carries, and which
+;; does not cross the wire.
+(defclass view-node (node)
+  ((rows :initarg :rows :accessor view-rows :initform nil)
+   (crow :initarg :crow :accessor view-crow :initform -1)
+   (ccol :initarg :ccol :accessor view-ccol :initform -1)
+   (opacity :initarg :opacity :accessor view-opacity :initform 1.0)
    ;; BASE bounds the in-flow rows; anything before them is an overlay drawn
    ;; upward from the arranged rect, outside measure -- how the completion
    ;; popup floats above the echo line wherever the echo sits, without
    ;; reflowing the tree as the candidate count changes. nil = all rows flow.
-   (base :initarg :base :accessor window-base :initform nil)
-   (of   :initarg :of   :accessor window-of   :initform nil)))
+   (base :initarg :base :accessor view-base :initform nil)))
 
-(defclass buffer-view (window-node) ()
+(defclass buffer-view (view-node) ()
   (:documentation "A window onto a buffer."))
 
-(defclass terminal-view (buffer-view) ()
-  (:documentation "A window onto a terminal buffer."))
-
-(defclass modeline-view (window-node) ()
+(defclass modeline-view (view-node) ()
   (:documentation "The mode line of a window."))
 
-(defclass echo-view (window-node) ()
+(defclass echo-view (view-node) ()
   (:documentation "The echo line."))
 
-(defclass os-window-view (window-node) ()
+(defclass os-window-view (view-node) ()
   (:documentation "A window the compositor holds, laid out by /wm."))
 
 (defclass centerbox (node)

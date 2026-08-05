@@ -14,6 +14,7 @@
                 #:candidate #:register-source #:register-actions
                 #:candidate-actions #:message)
   (:import-from :pine.ui.face #:color #:metric #:face-fg)
+  (:import-from :pine.ui.css #:css-glass #:css-rad #:css-mono)
   (:import-from :pine.proc #:emit)
   (:import-from :pine.provider.procfs #:procfs)
   (:import-from :pine.provider.pipewire #:pipewire)
@@ -36,4 +37,7 @@
    #:message #:emit
    #:procfs #:pipewire #:backlight #:logind #:networkmanager #:mpris #:niri
    #:pine #:frontend
-   #:color #:metric #:face-fg))
+   #:color #:metric #:face-fg
+   ;; the look of what a config declared is the config's own, and it is
+   ;; said by writing /style/?selector; these are the values to say it with
+   #:css-glass #:css-rad #:css-mono))

@@ -1,7 +1,7 @@
 (defpackage #:pine.win
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:server #:windows #:focused #:focus #:stack-p #:parts #:provider
+  (:export #:server #:windows #:focused #:focus #:split-p #:parts #:provider
            #:buf-of #:scroll-of #:weight-of #:runs-of #:seed #:reset
            #:split #:close #:only)
   (:shadow #:close))
@@ -21,17 +21,17 @@
 ;;;; The root is an argument, so the editor's windows and the window manager's
 ;;;; are one arrangement over two subtrees.
 
-(defun stack-p (path)
+(defun split-p (path)
   "True when PATH is a stack rather than a window: it says which way it runs."
-  (and (ns:read (p:child path "runs")) t))
+  (and (ns:read (p:path path "runs")) t))
 
-(defun buf-of (path) (ns:read (p:child path "buf")))
-(defun scroll-of (path) (or (ns:read (p:child path "scroll")) 0))
-(defun weight-of (path) (or (ns:read (p:child path "weight")) 1))
-(defun runs-of (path) (ns:read (p:child path "runs")))
+(defun buf-of (path) (ns:read (p:path path "buf")))
+(defun scroll-of (path) (or (ns:read (p:path path "scroll")) 0))
+(defun weight-of (path) (or (ns:read (p:path path "weight")) 1))
+(defun runs-of (path) (ns:read (p:path path "runs")))
 
 (defun parts (path)
-  "PATH's children that are windows or stacks, in order. A window's own leaves
+  "The windows and stacks under PATH, in order. A window's own leaves
 are not among them: a part is named by a number."
   (let ((held (ns:held path))
         (acc nil))
@@ -40,30 +40,30 @@ are not among them: a part is named by a number."
         (declare (ignore value))
         (let ((name (p:name key)))
           (when (every #'digit-char-p name)
-            (push (cons (parse-integer name) (p:child path name)) acc)))))
+            (push (cons (parse-integer name) (p:path path name)) acc)))))
     (mapcar #'cdr (sort acc #'< :key #'car))))
 
 (defun windows (&optional (at /win))
   "Every window under AT, in tree order. A stack is not one; its parts are."
-  (if (or (stack-p at) (null (buf-of at)))
+  (if (or (split-p at) (null (buf-of at)))
       (loop :for part :in (parts at) :append (windows part))
       (list at)))
 
 (defun focused (&optional (root /win))
   "The window under ROOT with the keyboard, or the first one there is."
-  (let ((named (ns:read (p:child root "focused"))))
+  (let ((named (ns:read (p:path root "focused"))))
     (if (and named (buf-of named))
         named
         (first (windows root)))))
 
 (defun focus (path &optional (root /win))
-  (ns:write (p:child root "focused") path)
+  (ns:write (p:path root "focused") path)
   path)
 
 (defun split (path side &optional (root /win))
   "Make PATH a stack of two: what was there, and a second window on the same
 buffer. SIDE is :below or :above for a column, :beside or :right for a row.
-One write, because writing the child and clearing the parent clears both."
+One write, because writing the one below and clearing the one above clears both."
   (let* ((runs (if (member side '(:beside :right :left)) :row :column))
          (was (or (ns:held path) (fset:empty-map)))
          (fresh (fset:map ("buf" (buf-of path))
@@ -71,7 +71,7 @@ One write, because writing the child and clearing the parent clears both."
                           ("weight" (weight-of path)))))
     (ns:write path (fset:seq :set (fset:map ("0" was) ("1" fresh)
                                             ("runs" runs))))
-    (focus (p:child path (if (member side '(:above :left)) "0" "1")) root)))
+    (focus (p:path path (if (member side '(:above :left)) "0" "1")) root)))
 
 (defun %parent (path)
   (let ((up (p:parent path)))
@@ -80,9 +80,9 @@ One write, because writing the child and clearing the parent clears both."
 (defun %collapse (stack)
   "A stack with one part left is that part."
   (let ((its (parts stack)))
-    (when (and (stack-p stack) (= 1 (length its)))
+    (when (and (split-p stack) (= 1 (length its)))
       (ns:write stack (fset:seq :set (ns:held (first its))))
-      (when (stack-p stack) (%collapse stack)))))
+      (when (split-p stack) (%collapse stack)))))
 
 (defun close (path &optional (root /win))
   "Drop the window PATH. Its stack collapses when one part is left, and the
@@ -100,29 +100,41 @@ focus lands on whatever is still there."
     (when buf
       ;; each part, not the root: writing nothing at a mount takes it off
       (dolist (part (parts root)) (ns:write part nil))
-      (let ((first (p:child root "0")))
-        (ns:write (fset:map ((p:child first "buf") buf)
-                            ((p:child first "scroll") scroll)
-                            ((p:child first "weight") 1)))
+      (let ((first (p:path root "0")))
+        (ns:write (fset:map ((p:path first "buf") buf)
+                            ((p:path first "scroll") scroll)
+                            ((p:path first "weight") 1)))
         (focus first root)))))
 
 (defun seed (buf &optional (root /win))
   "One window on BUF, when there is no arrangement to come back to."
   (unless (windows root)
-    (let ((first (p:child root "0")))
-      (ns:write (fset:map ((p:child first "buf") buf)
-                          ((p:child first "weight") 1)))
+    (let ((first (p:path root "0")))
+      (ns:write (fset:map ((p:path first "buf") buf)
+                          ((p:path first "weight") 1)))
       (focus first root)))
   (focused root))
 
 (defun reset (buf &optional (root /win))
   "One window on BUF, whatever was there."
   (dolist (part (parts root)) (ns:write part nil))
-  (ns:write (p:child root "focused") nil)
+  (ns:write (p:path root "focused") nil)
   (seed buf root))
 
 (defun provider ()
   (ns:provider
+   ;; a leaf under /win/focused is that window's leaf, the way a leaf under
+   ;; /buf/current is the current buffer's. Without this a config writing
+   ;; /win/focused/buf makes a leaf nothing reads, and the window it meant goes
+   ;; on showing what it showed.
+   (/win/focused/?leaf
+    {:read (pine.data:fn [] (let ((at (focused)))
+                              (and at (ns:read (p:path at leaf)))))
+     :write (pine.data:fn [v] (let ((at (focused)))
+                                (when at (ns:write (p:path at leaf) v))))
+     :verbs {t (pine.data:fn [verb] (let ((at (focused)))
+                                      (when at (ns:write (p:path at leaf) verb))))}
+     :doc "a leaf of the window with the keyboard"})
    (/win/focused
     {:verbs {:split (pine.data:fn (&optional (side :below))
                       (let ((at (focused))) (when at (split at side))))

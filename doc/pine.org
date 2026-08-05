@@ -111,7 +111,7 @@ resizes, clicks, and hints to its input actor.
 Only plain data crosses the wire: lists, numbers, strings, keywords, vectors.
 This is deliberate and it is what makes the frontends thin and the boundary hard.
 A buffer's rendered frame crosses as rows of cells. A widget tree crosses as
-=(type props . children)= forms, its click handlers replaced by integer ids; the
+=(type props . nodes)= forms, its click handlers replaced by integer ids; the
 daemon keeps the closures and the client sends the id back when you click. No
 Lisp object, no closure, no CLOS instance crosses. A frontend never holds a piece
 of the daemon's mind, only a picture of it and a channel back. See the wire codec
@@ -196,10 +196,10 @@ holds a literal color.
 
 Beyond faces, the desktop has a stylesheet, and it is data, not code. It is a
 list of (selector, properties) pairs where the properties are CSS strings, kept
-in =pine.text.buffer:theme-rules= so a single source drives every renderer. The cairo
+in =pine.ui.css:stylesheet= so a single source drives every renderer. The cairo
 painter parses each value and paints it in pixels; the cell render resolves the
 same rules into cell colors. Both consume the same list: same rules, same
-radius, same glass. Styling as data is what lets a surface and a layout buffer
+radius, same glass. Styling as data is what lets a surface and a UI buffer
 share one look.
 
 * The Layout Engine
@@ -235,14 +235,14 @@ You do not build nodes by hand. You write a terse tree with the constructors:
 =column= and =row= for stacks, =label= for text, =icon= for a glyph, =button= and
 =meter= and =ring= for controls, =boxed= and =centered= and =viewport= for
 placement, =gap= and =rule= for space and lines. Leading keyword pairs are props
-and the rest are children; a child that is a list is spliced, so mapping over data
+and the rest are nodes; one that is a list is spliced, so mapping over data
 composes the way iteration does in markup. A tree reads like what it draws.
 
 ** The wire codec
 
 A widget tree does not cross the wire as itself. Nodes are CLOS objects and their
 click handlers are closures, and neither serializes. So =node->wire= turns a tree
-into plain data, =(type props . children)=, and replaces each handler with an
+into plain data, =(type props . nodes)=, and replaces each handler with an
 integer id, keeping the closure on the daemon under that id. On the client
 =wire->node= rebuilds the tree, and where a handler was it puts a function that
 sends the id back. Click a button on the client, the id travels to the daemon,
@@ -338,7 +338,7 @@ painter shared by the frontends. The backends are the interesting part.
 
 =pine.cairo.shot= is the pixel renderer. It binds =pine.ui.node:*text-size*= to a
 cairo text measurer so the layout engine lays out in pixels, resolves each node's
-style from =theme-rules= as data, and paints the tree: rounded backgrounds,
+style from =stylesheet= as data, and paints the tree: rounded backgrounds,
 borders, themed text, sliders, rings, a calendar grid. It renders headless to a
 PNG or live to a surface, and because it shares the layout engine and the theme
 it reproduces the widget trees the daemon builds exactly.

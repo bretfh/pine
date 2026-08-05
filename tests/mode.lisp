@@ -63,7 +63,7 @@
 
 (test the-major-mode-answers-a-verb-it-claims
   (with-modes
-    (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] :lisp-newline))
+    (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] (declare (ignore buf)) :lisp-newline))
     (pine.ns:write /buf/scratch {:mode :lisp})
     (is (eq :lisp-newline (funcall (pine.mode:handler "scratch" :newline) "scratch")))
     (is (null (pine.mode:handler "scratch" :nobody-claims-this))
@@ -71,15 +71,15 @@
 
 (test a-verb-falls-up-the-parent-chain
   (with-modes
-    (pine.ns:write /mode/prog/on/newline (pine.data:fn [buf] :prog-newline))
+    (pine.ns:write /mode/prog/on/newline (pine.data:fn [buf] (declare (ignore buf)) :prog-newline))
     (pine.ns:write /buf/scratch {:mode :lisp})
     (is (eq :prog-newline (funcall (pine.mode:handler "scratch" :newline) "scratch")))))
 
 (test a-minor-mode-is-asked-before-the-major-one
   (with-modes
     (pine.ns:write /minor/paren {:precedence 10})
-    (pine.ns:write /minor/paren/on/insert (pine.data:fn [buf] :paren))
-    (pine.ns:write /mode/lisp/on/insert (pine.data:fn [buf] :lisp))
+    (pine.ns:write /minor/paren/on/insert (pine.data:fn [buf] (declare (ignore buf)) :paren))
+    (pine.ns:write /mode/lisp/on/insert (pine.data:fn [buf] (declare (ignore buf)) :lisp))
     (pine.ns:write /buf/scratch {:mode :lisp :minor #{:paren}})
     (is (eq :paren (funcall (pine.mode:handler "scratch" :insert) "scratch")))))
 
@@ -87,25 +87,92 @@
   (with-modes
     (pine.ns:write /minor/low {:precedence 1})
     (pine.ns:write /minor/high {:precedence 20})
-    (pine.ns:write /minor/low/on/insert (pine.data:fn [buf] :low))
-    (pine.ns:write /minor/high/on/insert (pine.data:fn [buf] :high))
+    (pine.ns:write /minor/low/on/insert (pine.data:fn [buf] (declare (ignore buf)) :low))
+    (pine.ns:write /minor/high/on/insert (pine.data:fn [buf] (declare (ignore buf)) :high))
     (pine.ns:write /buf/scratch {:mode :lisp :minor #{:low :high}})
     (is (equal '(:high :low) (pine.mode:minors "scratch")))
     (is (eq :high (funcall (pine.mode:handler "scratch" :insert) "scratch")))))
+
+;;;; layering: a mode lays itself over another rather than only replacing it
+
+(test the-claimants-are-every-mode-that-answers-in-order
+  (with-modes
+    (pine.ns:write /minor/paren {:precedence 10})
+    (pine.ns:write /minor/paren/on/insert
+                   (pine.data:fn [buf] (declare (ignore buf)) :paren))
+    (pine.ns:write /mode/lisp/on/insert
+                   (pine.data:fn [buf] (declare (ignore buf)) :lisp))
+    (pine.ns:write /mode/prog/on/insert
+                   (pine.data:fn [buf] (declare (ignore buf)) :prog))
+    (pine.ns:write /buf/scratch {:mode :lisp :minor #{:paren}})
+    (is (equal '(:paren :lisp :prog)
+               (mapcar (lambda (fn) (funcall fn "scratch"))
+                       (pine.mode:claimants "scratch" :insert)))
+        "the chain the verb goes down is not the minor mode, then the mode, then
+what the mode falls back to")))
+
+(test a-handler-that-writes-its-verb-reaches-the-mode-under-it
+  "Writing the verb it claimed is how a handler says `and then the one below
+me'. Only when they run out does the built-in answer, so a mode can adjust what
+another does instead of having to do the whole job itself."
+  (with-modes
+    (pine.ts.syntax:declare-all)
+      (pine.ns:raise :buf)
+    (unwind-protect
+         (let ((seen nil))
+           (pine.ns:write /minor/shout {:precedence 10})
+           (pine.ns:write /minor/shout/on/insert
+                          (pine.data:fn [buf text]
+                            (push :shout seen)
+                            (fset:map ((pine.buf:at buf :text)
+                                       (fset:seq :insert (string-upcase text))))))
+           (pine.ns:write /mode/lisp/on/insert
+                          (pine.data:fn [buf text]
+                            (push :lisp seen)
+                            (fset:map ((pine.buf:at buf :text)
+                                       (fset:seq :insert
+                                                 (concatenate 'string text "!"))))))
+           (pine.ns:write /buf/layered/text "")
+           (pine.ns:write /buf/layered {:mode :lisp :minor #{:shout}})
+           (pine.ns:write (pine.buf:at "layered" :text) (fset:seq :insert "hi"))
+           (is (equal '(:lisp :shout) seen)
+               "the minor mode did not reach the major one under it")
+           (is (equal "HI!" (pine.ns:read (pine.buf:at "layered" :text)))
+               "each mode did not see what the one above it made of the write"))
+      (pine.ns:lower :buf))))
+
+(test overwrite-covers-what-it-types-and-lets-the-insert-through
+  "The proof of layering, in the mode pine ships for it: overwrite takes the
+characters the insert is about to cover and writes the verb again. Inserting is
+still the job of whatever claims it underneath."
+  (pine.ns:with-space ()
+    (pine.ns:raise :mode)
+    (pine.ts.syntax:declare-all)
+      (pine.ns:raise :buf)
+    (unwind-protect
+         (progn
+           (pine.ns:write /buf/over/text "abcd")
+           (pine.ns:write /buf/over/point [0 1])
+           (pine.ns:write /buf/over/minor #{:overwrite})
+           (pine.ns:write (pine.buf:at "over" :text) (fset:seq :insert "XY"))
+           (is (equal "aXYd" (pine.ns:read (pine.buf:at "over" :text)))
+               "overwrite did not cover the characters it typed over"))
+      (pine.ns:lower :buf)
+      (pine.ns:lower :mode))))
 
 ;;;; the dispatch reads back
 
 (test what-a-mode-overrides-is-one-read
   (with-modes
-    (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] :a))
-    (pine.ns:write /mode/lisp/on/indent-line (pine.data:fn [buf] :b))
+    (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] (declare (ignore buf)) :a))
+    (pine.ns:write /mode/lisp/on/indent-line (pine.data:fn [buf] (declare (ignore buf)) :b))
     (is (= 2 (fset:size (pine.ns:read /mode/lisp/on/*)))
         "exactly what lisp-mode overrides, and nothing walks a class tree")))
 
 (test every-mode-that-touches-a-verb-is-one-read
   (with-modes
-    (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] :a))
-    (pine.ns:write /mode/prog/on/newline (pine.data:fn [buf] :b))
+    (pine.ns:write /mode/lisp/on/newline (pine.data:fn [buf] (declare (ignore buf)) :a))
+    (pine.ns:write /mode/prog/on/newline (pine.data:fn [buf] (declare (ignore buf)) :b))
     (is (= 2 (fset:size (pine.ns:read /mode/**/on/newline))))))
 
 ;;;; What a mode answers about a buffer, as against what it does to one.
@@ -128,7 +195,8 @@ buffer without one line of pine having heard of it."
 (test a-verb-is-read-off-the-buffer
   "A surface asks the buffer, not the mode: the path is the whole interface."
   (with-modes
-    (pine.ns:raise :buf)
+    (pine.ts.syntax:declare-all)
+      (pine.ns:raise :buf)
     (unwind-protect
          (progn
            (pine.ns:write /mode/probe {:parent :text})

@@ -34,10 +34,10 @@ firing for. Bound so show / hide / toggle need no explicit client argument.")
 (defun surface-at (name) (pine.path:path /surface name))
 
 (defun surface-role (name)
-  (pine.ns:read (pine.path:child (surface-at name) "as")))
+  (pine.ns:read (pine.path:path (surface-at name) "as")))
 
 (defun shownp (name)
-  (pine.ns:read (pine.path:child (surface-at name) "shown")))
+  (pine.ns:read (pine.path:path (surface-at name) "shown")))
 
 (defun surface-tree (name)
   "NAME's widget tree, or NIL. The tree is the value at the path; what is under
@@ -111,9 +111,9 @@ rule that recomputes anything else."
 (defun make-desktop-session (aclient)
   (let ((s (make-dsession)))
     (setf (pine.core.attach:attached-client-session aclient) s)
-    (let ((rules (pine.ui.rules:user-rules)))
-      (when rules
-        (pine.core.attach:push-to-app aclient :rules :rules rules)))
+    (let ((styles (pine.ui.css:styles)))
+      (when styles
+        (pine.core.attach:push-to-app aclient :style :styles styles)))
     (mount aclient)
     (let ((*surface-client* aclient))
       (dolist (name (names))
@@ -128,14 +128,14 @@ that is open. Which panel is up is /surface/?name/shown."
   (let ((up (shownp name)))
     (dolist (other (names))
       (when (and (not (equal other name)) (shownp other))
-        (pine.ns:write (pine.path:child (surface-at other) "shown") nil)))
-    (pine.ns:write (pine.path:child (surface-at name) "shown") (not up))))
+        (pine.ns:write (pine.path:path (surface-at other) "shown") nil)))
+    (pine.ns:write (pine.path:path (surface-at name) "shown") (not up))))
 
 (defun hide-panel (aclient name)
   "Close panel NAME if it is up."
   (declare (ignore aclient))
   (when (shownp name)
-    (pine.ns:write (pine.path:child (surface-at name) "shown") nil)))
+    (pine.ns:write (pine.path:path (surface-at name) "shown") nil)))
 
 (defun refresh-all ()
   "Re-push every surface for every attached desktop client, which is what

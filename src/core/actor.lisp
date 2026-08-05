@@ -132,17 +132,22 @@ registered name, or a ref already.")
     (unless info (error "No agent named ~s" x))
     (agent-info-actor info)))
 
-(defun agent-eval (server agent-or-name form-string &key on-done package bindings)
+(defun agent-eval (server agent-or-name form-string &key on-done package
+                                                        readtable bindings)
   "Evaluate FORM-STRING in AGENT-OR-NAME through pine.err, off the agent's
 mailbox thread. Returns at once; the result reaches ON-DONE and a failure lands
-at /err."
+at /err.
+
+READTABLE is a named-readtable name rather than a readtable: a name is a symbol,
+so it crosses to another image the way everything else on the wire does."
   (act:tell (resolve-agent server agent-or-name)
-            (list :eval :form form-string :package package
+            (list :eval :form form-string :package package :readtable readtable
                   :bindings bindings :on-done on-done)))
 
-(defun agent-compile (server agent-or-name text &key on-done package bindings)
+(defun agent-compile (server agent-or-name text &key on-done package
+                                                     readtable bindings)
   (act:tell (resolve-agent server agent-or-name)
-            (list :compile :text text :package package
+            (list :compile :text text :package package :readtable readtable
                   :bindings bindings :on-done on-done)))
 
 (defun agent-run (server agent-or-name thunk &key on-done package)
@@ -160,7 +165,8 @@ addressable eval path: a widget click goes here like anything else."
                   (lambda (msg)
                     (case (first msg)
                       ((:eval :compile)
-                       (destructuring-bind (&key form text package bindings on-done)
+                       (destructuring-bind (&key form text package readtable
+                                            bindings on-done)
                            (rest msg)
                          (let ((source (or form text)))
                            (when source
@@ -168,6 +174,7 @@ addressable eval path: a widget click goes here like anything else."
                               source
                               :package (or (and package (find-package package))
                                            (find-package :cl-user))
+                              :readtable readtable
                               :bindings bindings
                               :on-done on-done)))
                          (reply :started)))

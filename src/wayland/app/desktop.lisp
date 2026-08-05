@@ -144,9 +144,9 @@ work for the loop thread."
     (:panel
      (destructuring-bind (&key name show) (rest msg)
        (pine.frontend:enqueue (client-pump client) (lambda () (on-panel client name show)))))
-    (:rules
-     (destructuring-bind (&key rules) (rest msg)
-       (pine.ui.rules:install-rules rules)
+    (:style
+     (destructuring-bind (&key styles) (rest msg)
+       (pine.ui.css:install styles)
        (pine.frontend:enqueue (client-pump client)
                 (lambda ()
                   (maphash (lambda (name ls) (declare (ignore name))

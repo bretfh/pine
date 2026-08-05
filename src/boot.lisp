@@ -42,7 +42,7 @@ itself with a verb. Under `make daemon' argv0 is sbcl, which cannot."
 (defun frontend-command (verb)
   "The command that starts frontend VERB as its own process. From the binary
 that is the binary and the verb. From source it is this same sbcl run again on
-the wayland system: argv0 is sbcl and takes no verb, but the child inherits the
+the wayland system: argv0 is sbcl and takes no verb, but the process it spawns inherits the
 environment that made this image loadable, so it can load what this one did."
   (if (daemon-is-binary-p)
       (list (first sb-ext:*posix-argv*) verb)
@@ -77,14 +77,14 @@ from somewhere else. A config declaring one pine does not ship writes
     (fset:map (:run (fset:convert 'fset:seq (frontend-command verb)))
               (:env (fset:convert 'fset:seq (frontend-environment)))
               (:needs (fset:seq /display))
-              (:unless (fset:seq (pine.path:child /attached kind))))))
+              (:unless (fset:seq (pine.path:path /attached kind))))))
 
 (defun declare-frontends ()
   "Declare the frontends pine ships, unless the config already said. It is
 loaded before this runs, so what it declared -- another command, another
 frontend, or nothing at all -- is what stands."
   (dolist (verb +frontends+)
-    (let ((at (pine.path:child /proc (string-downcase verb))))
+    (let ((at (pine.path:path /proc (string-downcase verb))))
       (unless (pine.ns:held at)
         (pine.ns:write at (frontend verb))))))
 
@@ -96,9 +96,9 @@ display changes."
                    (declare (ignore value))
                    (let ((stop (fset:empty-map)))
                      (dolist (verb +frontends+ stop)
-                       (let ((at (pine.path:child /proc (string-downcase verb))))
+                       (let ((at (pine.path:path /proc (string-downcase verb))))
                          (when (eql +frontend-unavailable+
-                                    (pine.ns:read (pine.path:child at "exit")))
+                                    (pine.ns:read (pine.path:path at "exit")))
                            (setf stop (fset:with stop at (fset:seq :stop))))))))
                  :as :frontend-unavailable)
   (pine.ns:watch /display
@@ -107,7 +107,7 @@ display changes."
                    (let ((start (fset:empty-map)))
                      (dolist (verb +frontends+ start)
                        (setf start (fset:with start
-                                              (pine.path:child /proc
+                                              (pine.path:path /proc
                                                                (string-downcase verb))
                                               (fset:seq :start))))))
                  :as :frontend-display))
@@ -132,7 +132,7 @@ that runs."
   "Stop every frontend this daemon declared, so a daemon shutdown takes its
 editor and desktop down with it."
   (dolist (verb +frontends+)
-    (pine.ns:write (pine.path:child /proc (string-downcase verb)) nil)))
+    (pine.ns:write (pine.path:path /proc (string-downcase verb)) nil)))
 
 (defun kill-port (port)
   "Kill whatever process holds PORT. Version-independent, so `pine stop' works

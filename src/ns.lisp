@@ -448,12 +448,12 @@ the provider holding that clause. A :DOC that is a handler is called."
         :when fn
           :do (return (funcall fn listening))))
 
-(defun %served-children (space path)
+(defun %served-under (space path)
   (loop :for backing :in (%backings space path)
         :for handlers = (%handlers backing path)
         :for fn = (and handlers (fset:lookup handlers :ls))
         :when fn
-          :do (return (mapcar (lambda (n) (p:child path n)) (funcall fn)))
+          :do (return (mapcar (lambda (n) (p:path path n)) (funcall fn)))
         :finally (return nil)))
 
 ;;;; Reading. Inside a write body or a handler a read is recorded, and that
@@ -477,7 +477,7 @@ the provider holding that clause. A :DOC that is a handler is called."
         :when (and scope
                    (p:prefixp at path)
                    (= (p:segment-count path) (+ 2 (p:segment-count at))))
-          :do (return (p:child scope (p:leaf path)))))
+          :do (return (p:path scope (p:leaf path)))))
 
 (defun %fallback (space path default)
   "What PATH reads when nothing is there. Only a leaf falls back: a directory
@@ -507,20 +507,20 @@ at the scope's root is that directory, not this path's value."
         (t (let ((value (%get (space-root space) (p:keys path))))
              (if (null value) (%fallback space path default) value)))))))
 
-(defun %children (space path)
-  "PATH's children: the tree's, or the provider's."
+(defun %under (space path)
+  "PATH's under: the tree's, or the provider's."
   (let ((node (%get (space-root space) (p:keys path))))
     (when (and (%ringp path) (fset:seq? node))
-      (return-from %children
+      (return-from %under
         (loop :for i :from 0 :below (fset:size node)
-              :collect (p:child path i))))
+              :collect (p:path path i))))
     (or (when (and (fset:map? node) (%directory-p node))
           (let ((acc nil))
             (fset:do-map (k v node)
               (declare (ignore v))
-              (push (p:child path (p:name k)) acc))
+              (push (p:path path (p:name k)) acc))
             (nreverse acc)))
-        (%served-children space path))))
+        (%served-under space path))))
 
 (defun %literal-prefix (pattern)
   "The longest run of literal segments at the front of PATTERN."
@@ -529,7 +529,7 @@ at the scope's root is that directory, not this path's value."
                         :collect s)))
 
 (defun %exists (space path)
-  "True when something is there: a value, a provider that answers, or children."
+  "True when something is there: a value, a provider that answers, or under."
   (or (p:rootp path)
       (not (null (%get (space-root space) (p:keys path))))
       (and (not (p:rootp path))
@@ -538,16 +538,16 @@ at the scope's root is that directory, not this path's value."
                  (seq (%get (space-root space) (p:keys (p:parent path)))))
              (and n (fset:seq? seq) (< n (fset:size seq)))))
       (nth-value 1 (%served-read space path))
-      (not (null (%children space path)))))
+      (not (null (%under space path)))))
 
 (defun %candidates (space pattern prefix)
-  "Where a walk of PATTERN can go from PREFIX: the children that exist, plus
+  "Where a walk of PATTERN can go from PREFIX: the under that exist, plus
 the literal segment the pattern asks for next, which needs nothing enumerated."
-  (let* ((children (%children space prefix))
+  (let* ((under (%under space prefix))
          (wanted (p:named-at pattern (p:segment-count prefix)))
-         (extra (remove-if (lambda (c) (some (lambda (k) (fset:equal? c k)) children))
-                           (mapcar (lambda (name) (p:child prefix name)) wanted))))
-    (append extra children)))
+         (extra (remove-if (lambda (c) (some (lambda (k) (fset:equal? c k)) under))
+                           (mapcar (lambda (name) (p:path prefix name)) wanted))))
+    (append extra under)))
 
 (defun %matches (pattern)
   "Every path that exists now and matches PATTERN."
@@ -558,8 +558,8 @@ the literal segment the pattern asks for next, which needs nothing enumerated."
                  (when (and (p:match pattern prefix :value #'%read-one)
                             (%exists space prefix))
                    (push prefix found))
-                 (dolist (child (%candidates space pattern prefix))
-                   (walk child (1+ depth))))))
+                 (dolist (node (%candidates space pattern prefix))
+                   (walk node (1+ depth))))))
       (walk (%literal-prefix pattern) 0))
     (nreverse found)))
 
@@ -573,14 +573,14 @@ from the path under NOW to [what WAS had, what NOW has]."
   (let ((space (current))
         (out (fset:empty-map)))
     (labels ((names (root)
-               (mapcar #'p:leaf (%children space root)))
+               (mapcar #'p:leaf (%under space root)))
              (walk (a b depth)
                (when (< depth 64)
-                 (let ((children (remove-duplicates (append (names a) (names b))
+                 (let ((under (remove-duplicates (append (names a) (names b))
                                                     :test #'equal)))
-                   (if children
-                       (dolist (name children)
-                         (walk (p:child a name) (p:child b name) (1+ depth)))
+                   (if under
+                       (dolist (name under)
+                         (walk (p:path a name) (p:path b name) (1+ depth)))
                        (let ((before (%read-one a))
                              (after (%read-one b)))
                          (unless (fset:equal? before after)
@@ -778,7 +778,10 @@ can listen."
 nothing ever observes the system half changed. Answers what moved.
 
 GUARD is a map of path to the value it must still hold; nothing lands unless
-every one of them does, and the test is inside the swap."
+every one of them does, and the test is inside the swap.
+
+Nothing is told here: the caller has the provider writes as well, and what
+moved is one thing however many ways it got there."
   (let ((new (%swap (lambda (old)
                       (let ((root (space-root old))
                             (moved nil))
@@ -795,7 +798,7 @@ every one of them does, and the test is inside the swap."
                           (setf (space-root next) root
                                 (space-moved next) (nreverse moved))
                           next))))))
-    (%told (space-moved new))))
+    (space-moved new)))
 
 (defun %told (moved)
   "Tell every commit listener what moved, outside the swap."
@@ -828,14 +831,23 @@ it."
   (let ((space (current)))
     (when (and (not force) (%emptying-a-ring-p space path value))
       (error 'refused :at path :why "it would empty a ring the file keeps"))
-    ;; a provider's IO cannot run inside a swap that may be retried
-    (multiple-value-bind (served normalized where)
-        (let ((*options* options)) (%served-write space path value))
-      (case served
-        (:done (return-from %write-one
-                 (list (list path (%read-one path) value))))
-        (:store (setf value normalized)
-                (when where (setf path where)))))
+    ;; a provider's IO cannot run inside a swap that may be retried. What the
+    ;; path held is read before the provider takes the write, because afterwards
+    ;; it is the new value and reporting it as the old one is a lie the whole
+    ;; layer above is built on
+    (let ((before (when (%servedp space path) (%read-one path))))
+      (multiple-value-bind (served normalized where)
+          (let ((*options* options)) (%served-write space path value))
+        (case served
+          (:done (return-from %write-one
+                   ;; the value says what it became, except a verb, which says
+                   ;; only what was asked; that one is read back
+                   (%told (list (list path before
+                                      (if (%verbp value)
+                                          (%read-one path)
+                                          value))))))
+          (:store (setf value normalized)
+                  (when where (setf path where))))))
     (when *preview*
       (let* ((was (%get (space-root space) (p:keys path)))
              (stored (%stored path was value
@@ -913,25 +925,35 @@ splits the line before it indents it."
   "Write every entry of MAP as one change, without propagating.
 
 A path a provider serves is given to the provider; everything else lands in one
-swap. GUARD says what has to still be true for any of it to land."
+swap. GUARD says what has to still be true for any of it to land.
+
+What the providers took and what the swap landed are told together, so a
+listener hears one account of the change rather than one per way it arrived."
   (let ((space (current))
         (moved nil)
         (staged nil))
     (loop :for (path . value) :in (%ordered map)
+          :for before := (unless *preview*
+                           (when (%servedp space path) (%read-one path)))
           :do (multiple-value-bind (served normalized where)
                   (unless *preview* (%served-write space path value))
                 (case served
                   (:done (setf moved
                                (append moved
-                                       (list (list path (%read-one path) value)))))
+                                       (list (list path before
+                                                   (if (%verbp value)
+                                                       (%read-one path)
+                                                       value))))))
                   (:store (push (cons (or where path) normalized) staged))
                   (t (push (cons path value) staged)))))
     (setf staged (nreverse staged))
-    (append moved
-            (if *preview*
-                (loop :for (path . value) :in staged
-                      :append (%write-one path value))
-                (%commit staged guard)))))
+    (let ((landed (if *preview*
+                      (loop :for (path . value) :in staged
+                            :append (%write-one path value))
+                      (%commit staged guard))))
+      (if *preview*
+          (append moved landed)
+          (%told (append moved landed))))))
 
 (defun %expand (moved)
   "MOVED, with what landed under each map in it: (write /buf/notes {:mode
@@ -944,7 +966,7 @@ swap. GUARD says what has to still be true for any of it to land."
                    (fset:do-map (key value new)
                      (let ((was (and (fset:map? old) (fset:lookup old key))))
                        (unless (fset:equal? was value)
-                         (walk (list (p:child path (p:name key)) was value)))))))))
+                         (walk (list (p:path path (p:name key)) was value)))))))))
       (mapc #'walk moved))
     (nreverse out)))
 

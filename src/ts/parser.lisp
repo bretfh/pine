@@ -67,7 +67,8 @@ decide between two of them."
 (defun %receive (ps msg)
   "Handle one request against PS. Every answer is a write."
   (destructuring-bind (tag &key lines edit tick viewport name from to kind line col
-                       answer space from-lines &allow-other-keys)
+                       answer space from-lines width package
+                       &allow-other-keys)
       msg
     (declare (ignorable tick))
     ;; the answer goes back into the namespace that asked, not whichever one is
@@ -75,6 +76,7 @@ decide between two of them."
     (let ((ns:*space* (or space ns:*space*)))
       (case tag
         (:parse
+         (when package (setf (pine.ts.runtime:ps-package ps) package))
          (%ensure-tree ps lines edit from-lines viewport)
          (ns:write (%at name "prop")
                    (fset:seq :replace :syntax
@@ -82,9 +84,11 @@ decide between two of them."
         (:indent
          ;; where a line should sit is not a place, so it goes back to whoever
          ;; asked rather than through a path of its own
+         (when package (setf (pine.ts.runtime:ps-package ps) package))
          (%ensure-tree ps lines edit from-lines viewport)
          (let ((targets (loop :for l :from from :to to
-                              :for target = (pine.ts.highlight:parse-indent ps l)
+                              :for target = (pine.ts.highlight:parse-indent
+                                             ps l :width (or width 2))
                               :when target :collect (cons l target))))
            (when answer (funcall answer targets))))
         (:motion
@@ -99,7 +103,8 @@ decide between two of them."
 unavailable.
 
 Pinned: it owns the parse state, and no other thread may touch a TSParser."
-  (let ((ps (pine.ts.runtime:make-parse-state runtime language)))
+  (let ((ps (pine.ts.runtime:make-parse-state
+             runtime language nil nil :syntax (pine.ts.syntax:for language))))
     (when ps
       (make-parse-link
        (sento.actor-context:actor-of

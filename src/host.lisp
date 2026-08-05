@@ -63,14 +63,31 @@ The space keeps it: two pines in one image mount their own."
 stands there is another pine's tree, mirrored, and that pine already knows it."
   (not (p:prefixp /host path)))
 
-(defun %shipped (moved prefix)
+(defun %held-change-p (path new)
+  "Whether the tree took this change.
+
+A provider's value is not in the tree, and a subscription starts from what is
+held, so a snapshot of a live path crossing on a write would put a value on the
+far side that it could not have got any other way and that nothing here will
+correct."
+  (let ((held (ns:held path)))
+    (if (null new) (null held) (eq held new))))
+
+(defun %shipped (moved prefix &key settled)
   "MOVED as what an asker is told: each path under its own PREFIX, and each
 value as text. Code does not cross, so a value that will not serialize is
-shipped as nothing."
+shipped as nothing.
+
+SETTLED says these values came out of the tree already, which is what walking it
+gives, so there is nothing to ask about them. Without it each one is checked,
+and that check is a walk of the tree: it belongs on the handful of paths a commit
+moved, not on every path there is."
   (loop :for change :in moved
         :for path := (first change)
         :for new := (third change)
-        :when (and (%mine-p path) (pine.store:storablep new))
+        :when (and (%mine-p path)
+                   (or settled (%held-change-p path new))
+                   (pine.store:storablep new))
           :collect (list (p:text (p:path prefix (p:spliced path))) (%out new))))
 
 (defun %telling (askers)
@@ -93,18 +110,23 @@ hear about: it asked about a path, and that a path refused is an answer."
           (:doc (%out (ns:doc (p:parse path))))
           (:ls (%out (mapcar #'p:text
                              (pine.data:keys
-                              (ns:read (p:child (p:parse path) (p:any)))))))))
+                              (ns:read (p:path (p:parse path) (p:any)))))))))
     (error (c) (list :error (princ-to-string c)))))
 
 (defun %everything ()
   "What this pine holds, as a MOVED list, so a fresh subscription starts from
 the whole tree. Held, not read: asking would run every provider on this machine
 because somebody mounted us, and a live path arrives when it moves."
-  (labels ((walk (path value acc)
-             (if (fset:map? value)
+  (labels ((subtreep (value)
+             ;; a map keyed by paths is a transaction: what /key/wm/S-Q holds is
+             ;; the write that key makes, one value at one path, not two places
+             ;; named /wm and /sh under it
+             (and (fset:map? value) (not (p:transactionp value))))
+           (walk (path value acc)
+             (if (subtreep value)
                  (let ((out acc))
                    (fset:do-map (key inner value)
-                     (setf out (walk (p:child path (p:name key)) inner out)))
+                     (setf out (walk (p:path path (p:name key)) inner out)))
                    out)
                  (cons (list path nil value) acc))))
     (walk (p:root) (or (ns:held (p:root)) (fset:empty-map)) nil)))
@@ -131,7 +153,8 @@ and a subscription naming an actor of its own and the prefix it mounted us at."
                 (lambda (all) (cons asker (remove uri all :key #'asker-uri
                                                           :test #'string=))))
                (sento.actor:reply
-                (%out (%shipped (%everything) (asker-prefix asker)))))))
+                (%out (%shipped (%everything) (asker-prefix asker)
+                                :settled t))))))
           (:unsubscribe
            (let ((uri (second message)))
              (sento.atomic:atomic-swap
@@ -237,14 +260,14 @@ Distribution is a prefix, so another pine is a provider like a mixer is."
   "Reach the pine at HOST:PORT as NAME, so /host/NAME/... is its namespace."
   (let ((ref (sento.remoting:make-remote-ref
               system (pine.core.server:daemon-uri "ns" :host host :port port))))
-    (ns:write (p:child /host (string-downcase (string name)))
+    (ns:write (p:path /host (string-downcase (string name)))
               (provider (%attach system ref name)))
     ref))
 
 (defun unmount (name)
   "Take the pine mounted as NAME down: the provider comes off the tree, the
 subscription ends, and the actor that was hearing about it goes."
-  (let ((at (p:child /host (string-downcase (string name)))))
+  (let ((at (p:path /host (string-downcase (string name)))))
     (%detach (p:text at))
     (ns:unmount at)))
 
@@ -262,7 +285,7 @@ another pine can put it under theirs."))
              ;; away because the provider did, so this is where they are told.
              (/host/?name
               {:in (pine.data:fn [v]
-                     (unless v (%detach (p:text (p:child /host name))))
+                     (unless v (%detach (p:text (p:path /host name))))
                      v)
                :doc "another pine, as a subtree"})
              (/host {:doc "other pines"})))

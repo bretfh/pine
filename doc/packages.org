@@ -59,7 +59,7 @@ file under it, and world is its only caller) =pine.state.ref= (reactive cells)
 - =pine.ui.layout= :: measure / arrange / paint, hit-testing, tree surgery.
 - =pine.ui.cells= :: a node tree rendered to styled cell rows.
 - =pine.ui.wire= :: the wire codec and rows-patch.
-- =pine.ui.face= =pine.ui.rules= =pine.ui.style= :: faces and themes, the
+- =pine.ui.face= =pine.ui.css= =pine.ui.style= :: faces and themes, the
   user stylesheet, the CSS resolver.
 - =pine.ui.render= :: buffer -> grid -> rows, the renderer actor.
 

@@ -33,12 +33,12 @@ hash key and a fasl constant."
 
 ;;;; taking one apart
 
-(test parent-leaf-child-and-under
+(test parent-leaf-and-under
   (let ((p /buf/scratch/point))
     (is (string= "/buf/scratch" (pine.path:text (pine.path:parent p))))
     (is (string= "point" (pine.path:leaf p)))
     (is (string= "/buf/scratch/point/x"
-                 (pine.path:text (pine.path:child p "x"))))
+                 (pine.path:text (pine.path:path p "x"))))
     (is (equal '("scratch" "point") (pine.path:under /buf p)))
     (is (null (pine.path:under /win p)))
     (is (pine.path:prefixp /buf p))
@@ -120,7 +120,7 @@ hash key and a fasl constant."
   "A namespace lookup for tests: TABLE is an alist of path text to value."
   (lambda (p) (cdr (assoc (pine.path:text p) table :test #'string=))))
 
-(test a-constraint-tests-the-value-at-a-child
+(test a-constraint-tests-the-value-at-each-place-under-it
   (let ((value (stub-value '(("/proc/editor/state" . :running)
                              ("/proc/backup/state" . :failed)))))
     (is (pine.path:match /proc/*[state = :failed] /proc/backup :value value))

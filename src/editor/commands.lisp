@@ -104,7 +104,7 @@
 ;; context. How tall the pane is, is a place the renderer publishes.
 (defun %page ()
   (let ((at (or (pine.win:focused) (pine.buf:at "current"))))
-    (max 1 (- (or (pine.ns:read (pine.path:child at "height")) 24) 2))))
+    (max 1 (- (or (pine.ns:read (pine.path:path at "height")) 24) 2))))
 
 (defcmd "scroll-down" () (pine.editor.win:scroll-window (%page)))
 (defcmd "scroll-up" ()   (pine.editor.win:scroll-window (- (%page))))
@@ -195,12 +195,18 @@ line the person who asked for it reads."
                   (:prompt "Eval: ")
                   (:history :eval)
                   (:then (lambda (text)
-                           (let ((pkg (let ((buf (pine.buf:current-name)))
-                                        (if buf
-                                            (pine.text:buffer-package
-                                             (pine.buf:state-of buf))
-                                            (find-package :cl-user)))))
-                             (pine.eval:form-string text pkg)))))))
+                           ;; M-: reads in the language of the buffer it was
+                           ;; typed from, so (ns:read /win/0) is evaluable
+                           (let* ((buf (pine.buf:current-name))
+                                  (state (and buf (pine.buf:state-of buf)))
+                                  (pkg (if state
+                                           (pine.text:buffer-package state)
+                                           (find-package :cl-user))))
+                             (pine.eval:form-string
+                              text pkg
+                              :readtable (and state
+                                              (pine.text:buffer-readtable-name
+                                               state)))))))))
 (defcmd "choose-restart" ()
   (let ((names (remove nil (pine.editor.debugger:restarts))))
     (if names
@@ -266,9 +272,8 @@ line the person who asked for it reads."
     (pine.err:attempt
      (lambda ()
        (let* ((client (pine.editor.frame:current-client))
-              (f (pine.editor.frame:frame client))
-              (cols (pine.editor.view-state:frame-cols f))
-              (rows (max 1 (- (pine.editor.view-state:frame-rows f) 2)))
+              (cols (pine.editor.frame:cols client))
+              (rows (max 1 (- (pine.editor.frame:rows client) 2)))
               (wake (pine.editor.frame:terminal-wake client))
               (buf (pine.editor.frame:make-buffer "*terminal*")))
          (pine.term:open-terminal
@@ -319,10 +324,10 @@ line the person who asked for it reads."
     (when snap
       (pine.buf:indent (pine.buf:name-of buf) 0
                        (1- (pine.text:line-count snap))))))
-;; tool buffers: the selection moves and the row acts, as verbs on the buffer
-(defcmd "view-next" () (pine.ns:write (pine.buf:at "current") (fset:seq :select 1)))
-(defcmd "view-prev" () (pine.ns:write (pine.buf:at "current") (fset:seq :select -1)))
-(defcmd "view-activate" () (pine.ns:write (pine.buf:at "current") (fset:seq :activate)))
+;; UI buffers: the selection moves and the row acts, as verbs on the buffer
+(defcmd "list-next" () (pine.ns:write (pine.buf:at "current") (fset:seq :select 1)))
+(defcmd "list-prev" () (pine.ns:write (pine.buf:at "current") (fset:seq :select -1)))
+(defcmd "list-activate" () (pine.ns:write (pine.buf:at "current") (fset:seq :activate)))
 ;; minibuffer-mode: the only keys the prompt binds; everything else is the
 ;; ordinary buffer editing commands, so the prompt edits like any buffer.
 (defcmd "minibuffer-accept" () (pine.echo:accept))
@@ -422,20 +427,20 @@ line the person who asked for it reads."
   "C-M-i"    "complete-symbol"
   "M-Tab"    "complete-symbol")
 
-;;;; the debugger: the restart rows answer to a tool buffer's Return/C-n/C-p;
+;;;; the debugger: the restart rows answer to a UI buffer's Return/C-n/C-p;
 ;;;; these are the extras.
 (pine.key:define-keys :debugger
   "a"    "debugger-abort"
   "q"    "debugger-quit"
   "Tab"  "debugger-next-session")
 
-;;;; a tool buffer: the selection moves and the row acts.
-(pine.key:define-keys :view
-  "Down"    "view-next"
-  "C-n"     "view-next"
-  "Up"      "view-prev"
-  "C-p"     "view-prev"
-  "Return"  "view-activate")
+;;;; a UI buffer: the selection moves and the row acts.
+(pine.key:define-keys :list
+  "Down"    "list-next"
+  "C-n"     "list-next"
+  "Up"      "list-prev"
+  "C-p"     "list-prev"
+  "Return"  "list-activate")
 
 ;;;; minibuffer-mode: accept, abort, complete, candidate motion. Every other
 ;;;; key falls through to text-mode, so the prompt has full editing.

@@ -18,7 +18,7 @@
 ;;;; than a fight over one variable. The captured lines are the exception --
 ;;;; they are the buffer's own seq, held while the search runs.
 
-(defun at (leaf) (p:child /isearch leaf))
+(defun at (leaf) (p:path /isearch leaf))
 
 (defun searching () (ns:read /isearch/string))
 

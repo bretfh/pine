@@ -7,7 +7,8 @@
   "A space with /buf served. No daemon, no actors: a buffer is paths, so an
 edit is a write and it has landed when the write answers."
   `(pine.ns:with-space ()
-     (pine.ns:raise :buf)
+     (pine.ts.syntax:declare-all)
+      (pine.ns:raise :buf)
      (pine.ns:write /buf/scratch/text [""])
      (pine.ns:write /buf/scratch/point [0 0])
      ,@body))
@@ -108,6 +109,35 @@ edit is a write and it has landed when the write answers."
       (pine.ns:write /buf/scratch/text [:revert])
       (is (string= (format nil "from disk~%") (pine.ns:read /buf/scratch/text))))))
 
+(test a-buffer-takes-the-readtable-its-text-declares
+  "What language a file is written in is a property of its text, so the buffer
+settles it where the text lands. Without it nothing anywhere knew that pine's
+own source is not read by the standard reader."
+  (with-buf
+    (pine.ns:raise :file)
+    (let ((path "/tmp/pine-readtable-probe.lisp"))
+      (with-open-file (s path :direction :output :if-exists :supersede)
+        (format s "(in-package #:pine.user)~%~
+                   (named-readtables:in-readtable pine.path:syntax)~%~
+                   (write /tab-width 4)~%"))
+      (pine.ns:write /buf/scratch [:visit path])
+      (is (eq 'pine.path:syntax (pine.ns:read /buf/scratch/readtable))
+          "the buffer did not take the readtable its text asks for: ~s"
+          (pine.ns:read /buf/scratch/readtable))
+      (is (eq (named-readtables:find-readtable 'pine.path:syntax)
+              (pine.text:buffer-readtable (pine.buf:state "scratch")))
+          "buffer-readtable did not answer the object"))))
+
+(test a-buffer-declaring-nothing-reads-as-the-standard-one
+  (with-buf
+    (pine.ns:raise :file)
+    (let ((path "/tmp/pine-plain-probe.lisp"))
+      (with-open-file (s path :direction :output :if-exists :supersede)
+        (format s "(defun f (x) (/ x 2))~%"))
+      (pine.ns:write /buf/scratch [:visit path])
+      (is (null (pine.ns:read /buf/scratch/readtable))
+          "a plain lisp file claimed a readtable"))))
+
 (test delete-takes-a-region
   (with-buf
     (pine.ns:write /buf/scratch/text ["one" "two" "three"])
@@ -145,7 +175,8 @@ are no undo stacks anywhere."
     (let ((store (pine.store:open ":memory:")))
       (unwind-protect
            (progn
-             (pine.ns:raise :buf)
+             (pine.ts.syntax:declare-all)
+      (pine.ns:raise :buf)
              (pine.ns:write /buf/scratch/text ["one"])
              (pine.ns:write /buf/scratch/point [0 3])
              (pine.ns:write /buf/scratch/text [:insert "!"])
@@ -250,6 +281,7 @@ anything called the parser. The colours land as properties on the buffer."
   (with-fixture substrate ()
     (pine.ns:with-space ()
       (pine.ns:write /mode/lisp {:grammar :commonlisp})
+      (pine.ts.syntax:declare-all)
       (pine.ns:raise :buf :system (pine.core.server:actor-system *server*)
                     :runtime (pine.core.server:ts-runtime *server*))
       (unwind-protect

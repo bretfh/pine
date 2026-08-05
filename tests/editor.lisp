@@ -133,9 +133,9 @@ new value or it did not."
     (pine.key::call-command "debugger-next-session")
     (sleep 0.05)
     (is (equal "alpha" (pine.eval:target)))
-    (pine.key::call-command "view-next")
+    (pine.key::call-command "list-next")
     (sleep 0.1)
-    (pine.key::call-command "view-activate")
+    (pine.key::call-command "list-activate")
     (sleep 0.05)
     (is (= 1 (length (pine.editor.debugger:ids))))
     (pine.editor.debugger:take "ABORT")
@@ -173,8 +173,8 @@ show a fault from the watch that heard about it."
       (sleep 0.3)
       (is (= 3 done)))))
 
-(test a-tool-buffer-renders-selects-and-activates
-  "A tool buffer is a view: the widget tree is at /buf/?name/view, the buffer
+(test a-ui-buffer-renders-selects-and-activates
+  "A UI buffer is a view: the widget tree is at /buf/?name/view, the buffer
 reads as its rows, and the selection moves and acts as verbs on the buffer."
   (with-fixture substrate ()
     (let ((fired nil)
@@ -193,11 +193,140 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
       (sleep 0.15)
       (is (string= (format nil "hd~%> one~%  two") (btext buf)))
       (setf (pine.editor.frame::current-buffer) buf)
-      (pine.key::call-command "view-next")
+      (pine.key::call-command "list-next")
       (sleep 0.1)
       (is (string= (format nil "hd~%  one~%> two") (btext buf)))
-      (pine.key::call-command "view-activate")
+      (pine.key::call-command "list-activate")
       (is (eq :two fired)))))
+
+(test what-is-under-point-is-a-lookup-not-a-second-render
+  "Asking what is under point used to render the whole tree again, so a keypress
+in a UI buffer laid the same widgets out two or three times. The render is kept
+beside the rows, keyed by the view, the width and the selection, so what comes
+back is the tree that was already arranged and a render that would differ is
+never the one kept."
+  (with-fixture substrate ()
+    (let ((buf (pine.editor.frame::make-buffer "render-probe")))
+      (unwind-protect
+           (progn
+             (pine.view:show
+              "render-probe"
+              (lambda (name)
+                (declare (ignore name))
+                (pine.ui.build:column
+                 (pine.ui.build:choice (pine.ui.build:label "one"))
+                 (pine.ui.build:choice (pine.ui.build:label "two")))))
+             (sleep 0.15)
+             (setf (pine.editor.frame::current-buffer) buf)
+             (let ((laid-out (pine.view:rendered "render-probe")))
+               (is (eq laid-out (pine.view:rendered "render-probe"))
+                   "nothing moved and the view was laid out again")
+               (pine.key::call-command "list-next")
+               (sleep 0.1)
+               (is (not (eq laid-out (pine.view:rendered "render-probe")))
+                   "the selection moved and the rows from before came back")))
+        (pine.buf:kill "render-probe")))))
+
+(test the-keyboard-follows-the-focused-pane
+  "A command that opens a buffer writes the pane, and there is nothing else for
+it to write: which buffer is current follows. Before, a mode's own keys never
+reached the buffer its command had just opened, because the keyboard was still
+on the buffer that was there."
+  (with-fixture substrate ()
+    (let ((was (pine.buf:current-name)))
+      (unwind-protect
+           (progn
+             (pine.editor.frame::make-buffer "follow-probe")
+             (pine.ns:write (pine.path:parse "/win/focused/buf")
+                            (pine.buf:at "follow-probe"))
+             (sleep 0.15)
+             (is (string= "follow-probe" (pine.buf:current-name))
+                 "writing the focused pane did not move the keyboard")
+             (is (fset:equal? (pine.buf:at "follow-probe")
+                              (pine.win:buf-of (pine.win:focused)))
+                 "/win/focused/buf did not reach the window it names")
+             ;; and the other way: focus another window and the keyboard goes
+             (pine.ns:write (pine.path:parse "/win/focused") [:split :below])
+             (sleep 0.15)
+             (let ((other (second (pine.win:windows))))
+               (is-true other "the split made no second window")
+               (when other
+                 (pine.ns:write (pine.path:path other "buf") (pine.buf:at "scratch"))
+                 (pine.win:focus other)
+                 (sleep 0.15)
+                 (is (string= "scratch" (pine.buf:current-name))
+                     "moving the focus did not move the keyboard"))))
+        (pine.win:reset (pine.buf:at was))
+        (pine.buf:kill "follow-probe")))))
+
+(test a-field-in-a-ui-buffer-is-a-place-the-keyboard-reaches
+  "A UI buffer is not only rows to choose between: a field is a place you put a
+value in. The selection lands on it like it lands on a row, it stands for the
+path it edits, and Return on it opens the same prompt a click does, so what is
+typed goes to that path."
+  (with-fixture substrate ()
+    (let ((buf (pine.editor.frame::make-buffer "field-probe")))
+      (unwind-protect
+           (progn
+             (pine.ns:write (pine.path:parse "/probe-field") "before")
+             (pine.view:show
+              "field-probe"
+              (lambda (name)
+                (declare (ignore name))
+                (pine.ui.build:column
+                 (pine.ui.build:choice (pine.ui.build:label "a row"))
+                 (pine.ui.build:field (pine.path:parse "/probe-field")
+                                      :hint "Value:"))))
+             (sleep 0.15)
+             (setf (pine.editor.frame::current-buffer) buf)
+             (pine.key::call-command "list-next")
+             (sleep 0.1)
+             (is (fset:equal? (pine.path:parse "/probe-field")
+                              (pine.ns:read (pine.buf:at "field-probe" :selection)))
+                 "the selection did not land on the field")
+             (pine.key::call-command "list-activate")
+             (sleep 0.15)
+             (is (string= pine.echo:+buffer+ (pine.buf:current-name))
+                 "Return on a field did not open the prompt")
+             (is (string= "before" (minibuffer-input))
+                 "the prompt was not seeded with what the path holds")
+             (press* "C-a" "C-k")
+             (type-text "after")
+             (press "Return")
+             (sleep 0.15)
+             (is (string= "after" (pine.ns:read (pine.path:parse "/probe-field")))
+                 "what was typed did not reach the path the field edits"))
+        (pine.buf:kill "field-probe")
+        (pine.ns:write (pine.path:parse "/probe-field") nil)))))
+
+(test a-clickable-row-still-knows-what-it-stands-for
+  "A row that does something when it is clicked keeps what it is a projection
+of. Before, the click took the slot the identity was in, and every listing whose
+rows were clickable had a selection that pointed at nothing."
+  (with-fixture substrate ()
+    (pine.ns:write (pine.path:parse "/probe-list/a") 1)
+    (pine.ns:write (pine.path:parse "/probe-list/b") 2)
+    (unwind-protect
+         (progn
+           (pine.view:show
+            "click-probe"
+            (lambda (name)
+              (declare (ignore name))
+              (pine.ui.build:rows
+               (pine.path:parse "/probe-list/*")
+               (lambda ()
+                 (pine.ui.build:choice
+                  :click (lambda () :clicked)
+                  (pine.ui.build:label (pine.path:leaf (pine.path:here))))))))
+           (sleep 0.15)
+           (let ((chosen (pine.ns:read
+                          (pine.path:parse "/buf/click-probe/selection"))))
+             (is-true (pine.path:pathp chosen)
+                      "a clickable row stood for nothing")
+             (when (pine.path:pathp chosen)
+               (is (pine.path:prefixp (pine.path:parse "/probe-list") chosen)
+                   "the row stands for ~a" chosen))))
+      (pine.ns:write (pine.path:parse "/probe-list") nil))))
 
 (test the-user-language-drives-the-real-dispatch
   (with-fixture substrate ()
@@ -234,7 +363,7 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
                   (pine.ui.face:hex-rgb (pine.ui.face:color :accent)))
                  (subseq (rest (first (cdr (first rows)))) 0 3))))))
 
-(test a-user-tool-buffer-selects-and-activates
+(test a-user-ui-buffer-selects-and-activates
   (with-fixture substrate ()
     (in-user "(defvar *tool* nil)")
     (in-user "(write /mode/user-tool
@@ -248,8 +377,8 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
     (in-user "(write /buf/current /buf/*user-tool*)")
     (sleep 0.15)
     (is (string= (format nil "tool~%> a~%  b") (btext "*user-tool*")))
-    (pine.key::call-command "view-next")
-    (pine.key::call-command "view-activate")
+    (pine.key::call-command "list-next")
+    (pine.key::call-command "list-activate")
     (sleep 0.05)
     (is (eq :b (user-value "*TOOL*")))))
 
@@ -285,30 +414,34 @@ reads as its rows, and the selection moves and acts as verbs on the buffer."
   (dolist (name '("DEFREF" "REF" "DEFONCE" "VAR" "DEFPOLL" "DEFSOURCE"
                   "DEFSURFACE" "SHOW" "HIDE" "TOGGLE" "DEFCOMMAND" "DEFMODE"
                   "KBD" "KEYMAP" "DEFINE-KEY" "GLOBAL-SET-KEY" "DEFFACE"
-                  "DEFRULES" "LOAD-THEME" "ASK" "TELL" "BUFFER" "DEFAGENT"
+                  "DEFRULES" "ADD-RULES" "LOAD-THEME" "ASK" "TELL" "BUFFER" "DEFAGENT"
                   "SPAWN" "KILL" "SH" "LAUNCH" "READ-INT-FILE"))
     (is (null (find-symbol name :pine.user))
         "pine.user still names ~a" name)))
 
-(test add-rules-broadcasts-the-merged-set-to-every-attached-app
+(test styling-a-selector-reaches-every-attached-app
+  "A config styles a selector by writing its path. There is no verb to call: the
+write is the whole of it, and the frontend images that paint in pixels hear
+about it because /style moved."
   (with-fixture substrate ()
     (let* ((got nil)
            (system (pine.core.server:actor-system *server*))
            (display (sento.actor-context:actor-of
                      system
-                     :name (format nil "rules-probe-~a" (gensym))
+                     :name (format nil "style-probe-~a" (gensym))
                      :receive (lambda (msg)
-                                (when (eq (first msg) :rules)
-                                  (setf got (getf (rest msg) :rules)))
+                                (when (eq (first msg) :style)
+                                  (setf got (getf (rest msg) :styles)))
                                 nil)))
            (client (pine.core.attach::make-attached-client
                     :id 999 :kind :probe :display display)))
       (push client pine.core.attach:*clients*)
       (unwind-protect
            (progn
-             (pine.ui.rules:add-rules (list (list ".wire-probe" {:opacity "0.5"})))
+             (pine.ns:write (pine.path:parse "/style/wire-probe") {:opacity "0.5"})
              (sleep 0.2)
              (is (find ".wire-probe" got :key #'first :test #'string=)))
+        (pine.ns:write (pine.path:parse "/style/wire-probe") nil)
         (setf pine.core.attach:*clients*
               (remove client pine.core.attach:*clients*))))))
 
@@ -388,7 +521,7 @@ is no snapshot of either."
       (is (= 3 (length (pine.win:windows))))
       (is (equal "pine-world-probe.txt"
                  (pine.path:leaf (pine.pane:subject (pine.win:focused)))))
-      (is (eq :held (pine.ns:kind (pine.path:child (pine.win:focused) "buf")))
+      (is (eq :held (pine.ns:kind (pine.path:path (pine.win:focused) "buf")))
           "the arrangement is held, so it comes back with the store")
       (is (eq :held (pine.ns:kind (pine.buf:at "pine-world-probe.txt" :file)))
           "and so is the file the buffer visits")
@@ -420,11 +553,10 @@ like any other path, so no tree is ever turned into a form."
 
 (test the-live-tree-seeds-splits-focuses-and-follows-the-modeline
   (with-fixture substrate ()
-    (let* ((frame (pine.editor.frame::frame *client*))
-           (scratch (pine.buf:live "scratch"))
+    (let* ((scratch (pine.buf:live "scratch"))
            (other (pine.editor.frame::make-buffer "editor-b2")))
-      (setf (pine.editor.view-state:frame-cols frame) 40
-            (pine.editor.view-state:frame-rows frame) 12)
+      (setf (pine.editor.frame:cols *client*) 40
+            (pine.editor.frame:rows *client*) 12)
       (pine.editor.frame::set-buffer-mode other :text)
       (pine.buf:edit other (fset:seq :insert "beta-two"))
       (sleep 0.1)
@@ -432,10 +564,10 @@ like any other path, so no tree is ever turned into a form."
       (let* ((tree (pine.editor.render:refresh-editor-tree *client*))
              (leaves (remove-if-not (lambda (n)
                                       (typep n 'pine.ui.node:buffer-view))
-                                    (pine.editor.render:window-leaves tree))))
+                                    (pine.editor.render:view-leaves tree))))
         (is (not (null tree)))
         (is (= 1 (length (pine.win:windows))))
-        (is (= 10 (length (pine.ui.node:window-rows (first leaves))))))
+        (is (= 10 (length (pine.ui.node:view-rows (first leaves))))))
       (pine.editor.session::%seed-editor-tree *client*)
       (pine.editor.render:relayout)
       (pine.key::call-command "split-window-below")
@@ -454,9 +586,9 @@ like any other path, so no tree is ever turned into a form."
                (pine.editor.render:refresh-editor-tree *client*)
                (let ((n (find-if (lambda (x)
                                    (typep x 'pine.ui.node:modeline-view))
-                                 (pine.editor.render:window-leaves
+                                 (pine.editor.render:view-leaves
                                   (pine.editor.frame::tree *client*)))))
-                 (car (first (pine.ui.node:window-rows n))))))
+                 (car (first (pine.ui.node:view-rows n))))))
         ;; the tree is built again from /win after every command, so the node
         ;; is looked up again rather than held
         (is (search "editor-b2" (modeline-text)))
@@ -498,11 +630,11 @@ anything asks -- which is the whole reason the editor is nothing special."
         (setf (pine.editor.frame::current-buffer) buf)
         (sleep 0.2)
         (pine.editor.render:refresh-editor-tree *client*)
-        (is (search "=> 3" (car (first (pine.ui.node:window-rows node)))))
+        (is (search "=> 3" (car (first (pine.ui.node:view-rows node)))))
         (pine.buf:edit buf (fset:seq :insert "d"))
         (sleep 0.15)
         (pine.editor.render:refresh-editor-tree *client*)
-        (is (not (search "=>" (car (first (pine.ui.node:window-rows node))))))))
+        (is (not (search "=>" (car (first (pine.ui.node:view-rows node))))))))
     (pine.editor.session::%seed-editor-tree *client*)
     (pine.editor.render:relayout)))
 

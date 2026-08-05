@@ -169,7 +169,7 @@ a script that never heard of a window dispatches the same keys."
                         (fset:do-map (key inner value)
                           (declare (ignore inner))
                           (let ((name (p:name key)))
-                            (walk (p:child path name)
+                            (walk (p:path path name)
                                   (if so-far
                                       (concatenate 'string so-far " " name)
                                       name)))))

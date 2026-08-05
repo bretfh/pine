@@ -16,18 +16,24 @@ are never read from Lisp, only passed back to ts_node_*.
 
 libtree-sitter itself is the Guix "tree-sitter" package, loaded by name.
 
-* Grammars
+* Languages are declarations
 
-*grammars* maps a language keyword to (library c-fn):
+A language is written at /syntax/?name: the grammar to load, what each node type
+paints, and what a symbol in head position does to the form it heads. Ordinary
+data, not a provider, because the tree is the storage and there is nothing
+behind it -- so amending one macro is a write to one leaf:
 
-| language    | library                   | fn                     |
-|-------------+---------------------------+------------------------|
-| :commonlisp | libtree-sitter-commonlisp | tree_sitter_commonlisp |
-| :scheme     | libtree-sitter-scheme     | tree_sitter_scheme     |
+  (write /syntax/commonlisp/head/defcmd {:rest :body :indent 2})
 
-Grammar shared libraries are Guix packages (see guix/tree-sitter-commonlisp.scm)
-loaded off the search path by name; Guix puts them under lib/tree-sitter/, not
-lib/, so grammar-library-candidates checks there plus pine's own tree.
+src/ts/lang/commonlisp.lisp and src/ts/lang/scheme.lisp are the two pine ships.
+Adding a language is a file that writes a path, the way adding a device is.
+
+pine.ts.runtime holds no list of grammars. It asks *grammar-of*, which
+pine.ts.syntax sets to read the declaration, so what grammars exist is written
+rather than compiled in. Grammar shared libraries are Guix packages (see
+guix/tree-sitter-commonlisp.scm) loaded off the search path by name; Guix puts
+them under lib/tree-sitter/, not lib/, so grammar-library-candidates checks
+there plus pine's own tree.
 
 * Runtime
 
@@ -44,7 +50,7 @@ lib/, so grammar-library-candidates checks there plus pine's own tree.
 * The band
 
 Past +whole-file-lines+ a buffer is not handed to tree-sitter whole. The cost of
-a parse follows the root's child count, and a million lines of lisp is a quarter
+a parse follows how many nodes the root holds, and a million lines of lisp is a quarter
 of a million top-level forms: rebuilding that array per keystroke was 1.8s.
 
 parse-lines! takes the :viewport a window is showing and slices the band around
@@ -63,7 +69,7 @@ The parse and the byte index never touch the lines outside the band. At a
 million lines a banded parse costs 2.6ms and 1.5MB of resident set, against
 5.4s and 2.9GB for the file.
 
-* Highlighting: single-pass walker
+* Highlighting: one walk over rules that are data
 
 Supersedes the query-based flow described in "Highlighting" below. The query
 approach over-tagged (every form head a call, every symbol a variable) and was
@@ -87,7 +93,29 @@ render-side priority table decides syntax any more. Byte offsets from a node
 become character positions through the index at emit time; the text is never
 sliced by a byte offset, so the encoding defect cannot recur.
 
-Per language a classify step names the face from the node type + context:
+What the walk does at each node is a RULE, and the rules are data. A node rule
+takes :face :role :inner :delimiters :head :fields :shape :rest :quote; a head
+rule takes :face :name-face :shape :rest :indent. :shape is a map from element
+position to ROLE, and the roles are the fourteen things a position can be --
+:form :body :here :quoted :skip :operand :package :name :binding-name :bindings
+:binding :vars :var :lambda-list :types :slots :slot. Each was a local function
+of the hand-written walk this replaces; anything in a :shape or :fields position
+that is not a role names a face.
+
+Body-ness is derived, never declared twice: a rule that walks what follows as a
+:body is a rule that indents it as one, so body-form-p and parse-indent read one
+source and cannot disagree.
+
+Scheme is data and no code at all. That is the proof the decomposition is right.
+
+What is NOT written down is what a symbol IS. The daemon holds the code, so it
+is asked: macro-function says a head is a macro rather than a call, and the
+&BODY position in its lambda list is exactly emacs's indent N -- said by the
+macro itself where the old walker guessed from a "def" prefix. special-operator-p
+and constantp cover the rest. That is ~250 hand-typed symbol names deleted, and
+the image knows the user's own macros too. A name the image has never heard of
+falls back to the shape of the name, which is what editing a file this image has
+not loaded is. The old per-language classify step read:
 
   classify-cl     : owns *cl-special-forms* *cl-builtins* *cl-constants* and the
                     binder tables; decides a symbol by head-vs-operand and by
@@ -142,7 +170,7 @@ rather than a buffer.
 |--------------------+-----------------------------------------------------------------|
 | forward-sexp       | named node at point -> next named sibling's end (or parent end) |
 | backward-sexp      | mirror: previous named sibling's start                          |
-| beginning-of-defun | climb to the child of root (top-level form), its start          |
+| beginning-of-defun | climb to the node of root it sits in (top-level form), its start          |
 | end-of-defun       | same form, its end                                              |
 | mark-sexp          | set mark, then forward-sexp                                     |
 
@@ -179,7 +207,6 @@ the line seq through a TSInput callback and a byte index.
 - Language injection (C inside ffi strings, SQL in strings). The grammar parses
   the forms; merging a second parser's highlights over injected regions is the
   next capability.
-- scheme grammar is registered but no scheme-mode is wired to a file type yet.
 
 * Dependencies
 
@@ -188,4 +215,3 @@ the line seq through a TSInput callback and a byte index.
 | libtree-sitter             | Guix "tree-sitter"                              |
 | cffi, cffi-libffi          | Guix "sbcl-cffi"                                |
 | tree-sitter-commonlisp .so | Guix package (guix/tree-sitter-commonlisp.scm)  |
-| queries/*/highlights.scm   | ship in-tree                                     |

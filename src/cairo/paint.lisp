@@ -8,7 +8,7 @@
 ;;;; pixels when *text-size* is bound; here we bind it to a cairo text measurer
 ;;;; and add PAINT-PX, a second paint pass that draws each arranged node to a
 ;;;; cairo context -- rounded backgrounds, borders, themed text, sliders, and
-;;;; rings -- styled by pine.ui.style resolving the shared theme-rules. No cell
+;;;; rings -- styled by pine.ui.style resolving the shared stylesheet. No cell
 ;;;; raster: the same tree the daemon builds renders straight to pixels.
 
 (export '(paint-px render-tree-to-png paint-tree paint-arranged measure-tree
@@ -42,13 +42,13 @@ non-hover style is cached for the render; hover re-resolves."
               (when *style-cache* (setf (gethash n *style-cache*) st))
               st)))))
 
-(defun child-chain (n chain) (append chain (list (pine.ui.cells:node-classes n))))
+(defun node-chain (n chain) (append chain (list (pine.ui.cells:node-classes n))))
 
 (defun apply-styles! (n chain)
   "Fold CSS padding / min-size / font-size into the node before layout, so
 measure/arrange (which honour pad/min/font-px) produce the styled pixel sizes.
 Caches the resolved style for the paint pass."
-  (let* ((full (child-chain n chain))
+  (let* ((full (node-chain n chain))
          (st (pine.ui.style:resolve full)))
     (when *style-cache* (setf (gethash n *style-cache*) st))
     (when (pine.ui.style:st-pad-x st) (setf (pad-x n) (pine.ui.style:st-pad-x st)))
@@ -163,10 +163,10 @@ is the ancestor class-set list, root-first, for style resolution."))
     (multiple-value-bind (x y w h) (node-rect n)
       (draw-chrome st x y w h))))
 
-(defun paint-children (n chain list)
-  (let ((cc (child-chain n chain))) (dolist (c list) (when c (paint-px c cc)))))
+(defun paint-nodes (n chain list)
+  (let ((cc (node-chain n chain))) (dolist (c list) (when c (paint-px c cc)))))
 
-(defmethod paint-px ((n node) chain) (paint-children n chain (pine.ui.layout:nodes-of n)))
+(defmethod paint-px ((n node) chain) (paint-nodes n chain (pine.ui.layout:nodes-of n)))
 
 (defmethod paint-px ((n scroll) chain)
   "Clip to the viewport rect before painting the (taller, offset) content."
@@ -174,7 +174,7 @@ is the ancestor class-set list, root-first, for style resolution."))
     (cairo:save)
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:clip)
-    (paint-children n chain (pine.ui.layout:nodes-of n))
+    (paint-nodes n chain (pine.ui.layout:nodes-of n))
     (cairo:restore)))
 
 (defmethod paint-px ((n text-node) chain)
@@ -240,7 +240,7 @@ is the ancestor class-set list, root-first, for style resolution."))
       (when (plusp frac)
         (set-face-rgb (arc-face n))
         (cairo:new-sub-path) (cairo:arc cx cy rad start end) (cairo:stroke))))
-  (when (node n) (paint-children n chain (list (node n)))))
+  (when (node n) (paint-nodes n chain (list (node n)))))
 
 (defmethod paint-px ((n picture) chain)
   (declare (ignore chain))
@@ -273,24 +273,24 @@ reports for one cell, so a window measures and paints at the same grid."
               (float (max 1 (ceiling (+ (cairo:font-ascent fe) (cairo:font-descent fe)))) 1d0)
               (cairo:font-ascent fe)))))
 
-(defmethod paint-px ((n window-node) chain)
+(defmethod paint-px ((n view-node) chain)
   (multiple-value-bind (x y w h) (node-rect n)
     (destructuring-bind (br bg bb) (pine.ui.face:face-bg :window)
       (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0)
                              (float (or (pine.ui.style:st-opacity
                                          (styled n chain (hovered n)))
-                                        (window-opacity n))
+                                        (view-opacity n))
                                     1d0)))
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:fill-path)
     (let ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
-          (over (pine.ui.layout:window-overlay-count n)))
+          (over (pine.ui.layout:view-overlay-count n)))
       (multiple-value-bind (cw ch asc) (cairo-cell-metrics fpx)
         ;; the overlay block (completion popup) floats above the rect, over
         ;; whatever the flow put there; no clip to the rect
         (when (plusp over)
           (let ((top (- y (* over ch)))
-                (orows (subseq (window-rows n) 0 over)))
+                (orows (subseq (view-rows n) 0 over)))
             (destructuring-bind (br bg bb) (or (pine.ui.face:face-bg :completion)
                                                (pine.ui.face:face-bg :window)
                                                (list 0 0 0))
@@ -306,12 +306,12 @@ reports for one cell, so a window measures and paints at the same grid."
         (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
         (cairo:clip)
         (cairo:translate 0d0 (float y 1d0))
-        (pine.cairo.grid:paint-rows (subseq (window-rows n) over) cw ch asc (float x 1d0))
+        (pine.cairo.grid:paint-rows (subseq (view-rows n) over) cw ch asc (float x 1d0))
         ;; the point (a hollow caret), when this window carries one
-        (when (>= (window-crow n) 0)
+        (when (>= (view-crow n) 0)
           (destructuring-bind (br bg bb) (pine.ui.face:face-bg :cursor)
             (cairo:set-source-rgb (/ br 255.0) (/ bg 255.0) (/ bb 255.0)))
-          (cairo:rectangle (+ (float x 1d0) (* (window-ccol n) cw)) (* (window-crow n) ch) cw ch)
+          (cairo:rectangle (+ (float x 1d0) (* (view-ccol n) cw)) (* (view-crow n) ch) cw ch)
           (cairo:set-line-width 1.5d0) (cairo:stroke))
         (cairo:restore)))))
 

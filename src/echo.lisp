@@ -26,6 +26,11 @@
     :history-pos :back)
   "The leaves a prompt works with, so FORGET knows what to put down.")
 
+(defparameter +prompt-keys+
+  '(:prompt :complete :history :initial :secret :then)
+  "What a prompt is made of. Taking one down takes these off /echo and leaves
+the hint, the result and the width, which are /echo's and not the prompt's.")
+
 (defparameter +separator+ " ")
 
 (defvar *sources* (pine.data:table))
@@ -34,7 +39,7 @@
 
 (defun %default-directory ()
   (let* ((current (ns:read /buf/current))
-         (file (and current (ns:read (p:child current "file")))))
+         (file (and current (ns:read (p:path current "file")))))
     (if file (directory-namestring file) (namestring (uiop:getcwd)))))
 
 (defun %prompt-in (v)
@@ -81,6 +86,17 @@ nothing else."
 
 (defun forget ()
   (dolist (key +said+) (setf (said key) nil)))
+
+(defun %take-down ()
+  "Take the prompt off /echo without taking /echo with it.
+
+Writing nothing at the directory would remove the whole subtree: the hint, the
+width the renderer publishes, and the result a :then is about to read. A map of
+the prompt's own keys written nothing merges, so only they go."
+  (ns:write /echo
+            (reduce (lambda (m key) (fset:with m key nil))
+                    +prompt-keys+
+                    :initial-value (fset:empty-map))))
 
 (defun popup-rows () (said :popup-rows))
 
@@ -366,7 +382,7 @@ about them.")
     (when h
       (unless (said :history-items)
         (setf (said :history-items)
-              (pine.data:vals (ns:read (p:child (%history-at h) (p:any))
+              (pine.data:vals (ns:read (p:path (%history-at h) (p:any))
                                        (fset:empty-map)))))
       (let* ((items (said :history-items))
              (pos (said :history-pos))
@@ -390,8 +406,10 @@ about them.")
 (defun %finish (text)
   (let ((then (let ((up (prompt))) (and up (fset:lookup up :then)))))
     (%push-history text)
+    ;; the prompt comes down first and the result goes on after it, so a :then
+    ;; that reads /echo/result reads what was typed
+    (%take-down)
     (ns:write /echo/result text)
-    (ns:write /echo nil)
     (handler-case (cond ((null then) nil)
                         ((functionp then) (funcall then text))
                         (t (pine.cmd:run then)))
@@ -418,11 +436,11 @@ about them.")
     ((file-p) (%file-accept))
     ((completing-p) (%finish (or (%selected) (input))))
     ((prompt) (%finish (input)))
-    (t (ns:write /echo nil))))
+    (t (%take-down))))
 
 (defun abort ()
   (when (prompt)
-    (ns:write /echo nil)
+    (%take-down)
     (message "quit")))
 
 (defun complete-selection ()

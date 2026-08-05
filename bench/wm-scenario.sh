@@ -133,7 +133,7 @@ done
 
 log "scenario done"
 # The daemon only tears its frontends down on a clean stop, so a bare kill
-# leaves them orphaned and talking to a daemon that is gone. Take the children
+# leaves them orphaned and talking to a daemon that is gone. Take the processes it spawned
 # first, by parent, so nothing outlives the harness.
 kill $(ps -o pid= --ppid "$daemon_pid" 2>/dev/null) 2>/dev/null || true
 kill "$daemon_pid" 2>/dev/null || true

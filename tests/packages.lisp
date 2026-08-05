@@ -422,13 +422,13 @@ cannot call."
 
 ;;;; The tree against the doc
 ;;;;
-;;;; doc/api.org says what a buffer is. A leaf the code keeps under one and
+;;;; doc/new-api.org says what a buffer is. A leaf the code keeps under one and
 ;;;; the doc does not name is drift, and drift is how an API becomes a port of
 ;;;; whatever was there before.
 
 (defun %doc-text ()
   (uiop:read-file-string
-   (merge-pathnames "doc/api.org" (asdf:system-source-directory :pine))))
+   (merge-pathnames "doc/new-api.org" (asdf:system-source-directory :pine))))
 
 (defun %doc-paths (under)
   "Every path the doc names under UNDER, as text. A path is written =/like/this=."
@@ -471,7 +471,8 @@ reading the buffer still answers what the doc describes.")
 
 (test a-buffer-carries-only-the-leaves-the-doc-names
   (pine.ns:with-space ()
-    (pine.ns:raise :buf)
+    (pine.ts.syntax:declare-all)
+      (pine.ns:raise :buf)
     (pine.ns:write (pine.buf:at "probe" :text) "hello")
     (pine.ns:write (pine.buf:at "probe" :text) (fset:seq :insert "!"))
     (pine.ns:write (pine.buf:at "probe" :mode) :text)

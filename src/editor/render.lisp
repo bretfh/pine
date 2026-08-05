@@ -8,7 +8,7 @@
    #:echo-rows
    #:arrange-editor-tree
    #:refresh-editor-tree
-   #:window-leaves
+   #:view-leaves
    #:relayout))
 
 (in-package #:pine.editor.render)
@@ -69,13 +69,12 @@ attached frontend."
                        (:resize
                         (destructuring-bind (&key cols rows width height cell-w cell-h)
                             (rest msg)
-                          (let ((f (pine.editor.frame:frame client)))
-                            (setf (pine.editor.view-state:frame-cols f) cols
-                                  (pine.editor.view-state:frame-rows f) rows
-                                  (pine.editor.frame:px-width client) width
-                                  (pine.editor.frame:px-height client) height
-                                  (pine.editor.frame:cell-w client) cell-w
-                                  (pine.editor.frame:cell-h client) cell-h))
+                          (setf (pine.editor.frame:cols client) cols
+                                (pine.editor.frame:rows client) rows
+                                (pine.editor.frame:px-width client) width
+                                (pine.editor.frame:px-height client) height
+                                (pine.editor.frame:cell-w client) cell-w
+                                (pine.editor.frame:cell-h client) cell-h)
                           (relayout)
                           (pine.term:resize-active-terminal cols rows)
                           (paint-frame client)))
@@ -101,13 +100,13 @@ attached frontend."
 
 ;;;; Arranging
 
-(defun window-leaves (tree)
+(defun view-leaves (tree)
   "The pane leaves under TREE, in tree order."
   (let (acc)
     (labels ((walk (n)
-               (when (and (typep n 'pine.ui.node:window-node)
+               (when (and (typep n 'pine.ui.node:view-node)
                           (not (eq (class-of n)
-                                   (find-class 'pine.ui.node:window-node))))
+                                   (find-class 'pine.ui.node:view-node))))
                  (push n acc))
                (dolist (c (pine.ui.layout:nodes-of n)) (walk c))))
       (walk tree))
@@ -153,15 +152,15 @@ should not have to ask it. A write of a height that did not change moves
 nothing, so this settles after the first frame at a size."
   (let ((ranges (make-hash-table :test 'equal)))
     (dolist (n leaves)
-      (let ((at (pine.ui.node:window-of n)))
+      (let ((at (pine.ui.node:of n)))
         (when (and at (pine.path:pathp at)
                    (typep n 'pine.ui.node:buffer-view))
           (let* ((name (pine.path:leaf (pine.pane:subject at)))
                  (top (pine.pane:scroll at))
                  (height (%leaf-lines client n))
                  (held (gethash name ranges)))
-            (pine.ns:write (pine.path:child at "height") height)
-            (pine.ns:write (pine.path:child at "width") (%leaf-cols client n))
+            (pine.ns:write (pine.path:path at "height") height)
+            (pine.ns:write (pine.path:path at "width") (%leaf-cols client n))
             (setf (gethash name ranges)
                   (if held
                       (cons (min (car held) top) (max (cdr held) (+ top height)))
@@ -174,17 +173,16 @@ nothing, so this settles after the first frame at a size."
   "Arrange the client's live tree once: in pixels at the frontend's reported
 geometry when it gave one, so the rects cross the wire and are painted as they
 are, else in cells at the frame size. Answers the pane leaves."
-  (let ((tree (pine.editor.frame:tree client))
-        (f (pine.editor.frame:frame client)))
+  (let ((tree (pine.editor.frame:tree client)))
     (when tree
       (multiple-value-bind (cw ch pw ph) (%px-metrics client)
-        (let ((aw (if cw pw (pine.editor.view-state:frame-cols f)))
-              (ah (if cw ph (pine.editor.view-state:frame-rows f)))
-              (leaves (window-leaves tree)))
+        (let ((aw (if cw pw (pine.editor.frame:cols client)))
+              (ah (if cw ph (pine.editor.frame:rows client)))
+              (leaves (view-leaves tree)))
           (dolist (n leaves)
-            (setf (pine.ui.node:window-rows n) nil
-                  (pine.ui.node:window-crow n) -1
-                  (pine.ui.node:window-ccol n) -1))
+            (setf (pine.ui.node:view-rows n) nil
+                  (pine.ui.node:view-crow n) -1
+                  (pine.ui.node:view-ccol n) -1))
           (let ((pine.ui.layout:*text-size* (when cw (%cell-metric cw ch))))
             (pine.ui.layout:measure tree aw ah)
             (pine.ui.layout:arrange tree 0 0 aw ah))
@@ -265,27 +263,27 @@ one being typed into."
 (defmethod render-leaf ((n pine.ui.node:buffer-view) client focused prompt)
   "What the pane shows, asked of the layer: the node names its content and the
 content type answers."
-  (let ((at (pine.ui.node:window-of n)))
+  (let ((at (pine.ui.node:of n)))
     (when at
       (multiple-value-bind (rows crow ccol)
           (pine.pane:rows at (%leaf-cols client n) (%leaf-lines client n))
-        (setf (pine.ui.node:window-rows n) rows)
+        (setf (pine.ui.node:view-rows n) rows)
         (when (and (not prompt) (%has-the-keyboard-p at focused))
-          (setf (pine.ui.node:window-crow n) crow
-                (pine.ui.node:window-ccol n) ccol))))))
+          (setf (pine.ui.node:view-crow n) crow
+                (pine.ui.node:view-ccol n) ccol))))))
 
 (defmethod render-leaf ((n pine.ui.node:modeline-view) client focused prompt)
   (declare (ignore prompt))
-  (let ((at (or (pine.ui.node:window-of n) focused /buf/current)))
-    (setf (pine.ui.node:window-rows n)
+  (let ((at (or (pine.ui.node:of n) focused /buf/current)))
+    (setf (pine.ui.node:view-rows n)
           (modeline-rows at (%leaf-cols client n)))))
 
 (defmethod render-leaf ((n pine.ui.node:echo-view) client focused prompt)
   (declare (ignore focused prompt))
   (multiple-value-bind (rows crow ccol) (echo-rows client (%leaf-cols client n))
-    (setf (pine.ui.node:window-rows n) rows
-          (pine.ui.node:window-crow n) crow
-          (pine.ui.node:window-ccol n) ccol)))
+    (setf (pine.ui.node:view-rows n) rows
+          (pine.ui.node:view-crow n) crow
+          (pine.ui.node:view-ccol n) ccol)))
 
 (defun refresh-editor-tree (client)
   "One frame: arrange through the engine, then fill every pane. Answers the

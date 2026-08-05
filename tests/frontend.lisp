@@ -122,7 +122,7 @@ asked, so the loop can be watched without a display."))
     (is (eq :fine result))
     (is (null failure))))
 
-(defmacro watching-err ((var) &body body)
+(defmacro collecting-faults ((var) &body body)
   "Run BODY with something looking at /err that collects every fault into VAR.
 
 Set on the space rather than bound here, because the thread that faults is not
@@ -139,7 +139,7 @@ position to decide."
        (pine.ns:watch /err nil :as :probe))))
 
 (test a-failure-reaches-what-is-watching-err-once
-  (watching-err (seen)
+  (collecting-faults (seen)
     (pine.err:attempt (lambda () (error "probe")) "probe context")
     (let ((ours (remove-if-not (lambda (f)
                                  (equal "probe context" (pine.err:fault-label f)))

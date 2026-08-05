@@ -31,14 +31,14 @@
     (multiple-value-bind (w h) (pine.ui.layout:measure row 40 10)
       (is (equal '(4 1) (list w h))))))
 
-(test spacing-counts-only-between-children
+(test spacing-counts-only-between-nodes
   (let ((column (pine.ui.build:column :spacing 2
                                       (pine.ui.build:label "a")
                                       (pine.ui.build:label "b")
                                       (pine.ui.build:label "c"))))
     (is (= 7 (nth-value 1 (pine.ui.layout:measure column 40 40))))))
 
-(test stretch-gives-every-child-the-cross-axis
+(test stretch-gives-every-node-the-cross-axis
   (let ((column (pine.ui.build:column :align :stretch
                                       (pine.ui.build:label "a")
                                       (pine.ui.build:label "bb"))))
@@ -113,7 +113,7 @@
                                       (pine.ui.build:rule :char #\-))))
     (is (equal '("ab" "----------") (rendered-rows column 10)))))
 
-(test a-window-node-measures-its-rows
+(test a-view-node-measures-its-rows
   (let ((node (pine.ui.build:cells (list (cons "abcd" nil) (cons "ef" nil)))))
     (multiple-value-bind (w h) (pine.ui.layout:measure node 40 40)
       (is (equal '(4 2) (list w h))))))
@@ -121,7 +121,7 @@
 (test overlay-rows-sit-outside-the-measured-height
   (let ((node (pine.ui.build:cells (list (cons "pop" nil) (cons "line" nil))
                                     :base 1)))
-    (is (= 1 (pine.ui.layout:window-overlay-count node)))
+    (is (= 1 (pine.ui.layout:view-overlay-count node)))
     (is (= 1 (nth-value 1 (pine.ui.layout:measure node 40 40))))))
 
 (test render-reports-selection-prefixes-and-the-arranged-tree
@@ -226,7 +226,7 @@
     (pine.ui.layout:remove-node root b)
     (is (equal (list a c) (pine.ui.node:nodes root)))))
 
-(test removing-down-to-one-child-splices-the-container-out
+(test removing-down-to-one-node-splices-the-container-out
   (let* ((a (pine.ui.build:label "a"))
          (b (pine.ui.build:label "b"))
          (inner (pine.ui.build:row a b))
@@ -299,12 +299,55 @@
                                       (pine.ui.build:label "go"))))
       (is (eq t ran) "a command path did not run"))))
 
-(test grid-stack-and-field-are-there-and-build
+(test a-grid-is-rows-of-columns
   (let ((g (pine.ui.build:grid :columns 2
                                (pine.ui.build:label "a") (pine.ui.build:label "b")
-                               (pine.ui.build:label "c")))
-        (s (pine.ui.build:stack (pine.ui.build:label "under")
-                                (pine.ui.build:label "over"))))
+                               (pine.ui.build:label "c"))))
     (is (= 2 (length (pine.ui.node:nodes g))) "three cells two wide are two rows")
-    (is (= 2 (length (pine.ui.node:nodes (first (pine.ui.node:nodes g))))))
-    (is (= 2 (length (pine.ui.node:nodes s))))))
+    (is (= 2 (length (pine.ui.node:nodes (first (pine.ui.node:nodes g))))))))
+
+(test a-field-is-the-path-it-shows
+  "The display and the edit are one path: a field shows what its path holds, and
+what is typed into the prompt it opens is written back there. No :value and no
+:on-change anywhere in a config."
+  (with-fixture substrate ()
+    (let ((at (pine.path:parse "/probe-field")))
+      (pine.ns:write at "foot")
+      (let ((f (pine.ui.build:field at :hint "Terminal:")))
+        (is (equal "foot" (pine.ui.node:content f))
+            "a field did not show what its path holds")
+        (pine.ui.layout:arrange f 0 0 10 1)
+        (let ((thunk (pine.ui.layout:click-thunk f 0 0)))
+          (is (not (null thunk)) "a field answered no click, so it cannot be edited")
+          (funcall thunk)
+          (is (pine.echo:prompt-p) "clicking a field did not ask for a value")
+          (is (equal "foot" (pine.echo:input))
+              "the prompt did not start from the value it is showing")
+          (pine.echo:set-input "alacritty")
+          (pine.echo:accept)
+          (is (equal "alacritty" (pine.ns:read at))
+              "what was typed did not reach the path the field shows")))
+      (pine.ns:write at nil))))
+
+(test a-stack-puts-every-node-in-one-place
+  "A stack is the one container that does not divide its space: each node gets
+the whole rect, and the order they were written is what puts one over another."
+  (let* ((under (pine.ui.build:label "under"))
+         (over (pine.ui.build:label "over"))
+         (s (pine.ui.build:stack under over)))
+    (pine.ui.layout:arrange s 0 0 10 4)
+    (is (= 2 (length (pine.ui.node:nodes s))))
+    (is (and (= (pine.ui.node:start-col under) (pine.ui.node:start-col over))
+             (= (pine.ui.node:start-line under) (pine.ui.node:start-line over))
+             (= (pine.ui.node:end-col under) (pine.ui.node:end-col over)))
+        "the two nodes were laid out side by side rather than one over the other")
+    (let ((rows (pine.ui.cells:render s 10 :height 4)))
+      (is (equal "over" (subseq (car (first rows)) 0 4))
+          "the last node written is not the one on top"))))
+
+(test a-label-is-not-a-place-and-takes-no-click
+  "A run of text that answered every hit over itself would swallow the clicks of
+whatever it sits inside."
+  (let ((l (pine.ui.build:label "just words")))
+    (pine.ui.layout:arrange l 0 0 10 1)
+    (is (null (pine.ui.layout:node-at l 0 0)))))

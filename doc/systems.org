@@ -21,7 +21,7 @@ specifies each.
 * The standing rule
 
 Each system below is built from verbs on buffers, modes, commands, and
-tool buffers -- primitives that already exist. None of them modifies
+UI buffers -- primitives that already exist. None of them modifies
 the core. A design that appears to require a new kind of state, a new
 global variable, or a second copy of an existing mechanism should be
 reworked in terms of the existing primitive.

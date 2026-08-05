@@ -44,7 +44,7 @@ wire.
 They read like their Clojure counterparts, nest, and evaluate their elements.
 
 #+begin_src lisp
-{:name "bar" :as :bar :children [{:kind :label} {:kind :gap}]}
+{:name "bar" :as :bar :nodes [{:kind :label} {:kind :gap}]}
 #+end_src
 
 ** Why, and it is not taste
@@ -105,7 +105,7 @@ readable back, so it is data like any other.
 | =?@name=     | bind the rest                                    |
 | =${form}=    | evaluate; the value is one segment               |
 | =$@{form}=   | evaluate; a path, seq or slash-bearing string splices |
-| =[pred]=     | keep the children satisfying it                  |
+| =[pred]=     | keep the places satisfying it                  |
 | =/.=         | the current path                                 |
 | =/..=        | the parent                                       |
 
@@ -603,10 +603,11 @@ serializer to survive a restart.
 | =/buf/?name/mark=        | =[line col]= or nil       | set it                      |
 | =/buf/?name/file=        | the file it visits        | visit another               |
 | =/buf/?name/mode=        | a mode keyword            | change mode                 |
+| =/buf/?name/readtable=   | the named-readtable it is written in | change the language |
 | =/buf/?name/minor=       | a set                     | =[:conj :paren]= =[:disj :paren]= |
 | =/buf/?name/modified=    | boolean                   |                             |
 | =/buf/?name/tree=        | the parse tree            |                             |
-| =/buf/?name/view=        | a widget tree, if it has one | make it a tool buffer    |
+| =/buf/?name/view=        | a widget tree, if it has one | make it a UI buffer    |
 | =/buf/current=           | a buffer path             | switch to one               |
 
 Text verbs: =[:insert TEXT]=, =[:delete FROM TO]=, =[:move UNIT N]=, =[:undo]=,
@@ -713,7 +714,7 @@ handler, which is a pure function answering writes. There is no class, no
 | =:comment=   | comment syntax                                           |
 | =:indent=    | indent data                                              |
 | =:on=        | verb to handler                                          |
-| =:view=      | a tool buffer's widget tree                              |
+| =:view=      | a UI buffer's widget tree                              |
 
 ** Dispatch
 
@@ -751,7 +752,7 @@ Same shape, plus where it sits.
 
 ** A whole mode, end to end
 
-A tool buffer is a mode with a =:view=. This is the process list, complete: it
+A UI buffer is a mode with a =:view=. This is the process list, complete: it
 has no state of its own, because the state is =/proc=.
 
 #+begin_src lisp

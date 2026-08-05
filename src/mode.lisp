@@ -1,8 +1,8 @@
 (defpackage #:pine.mode
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:chain #:setting #:for-file #:minors #:handler #:matches-p
-           #:minor-p #:names #:server
+  (:export #:chain #:setting #:for-file #:minors #:claimants #:handler
+           #:matches-p #:minor-p #:names #:server
            #:producers #:answer #:+merged+))
 
 (in-package #:pine.mode)
@@ -69,15 +69,23 @@ covers any run of characters including none."
           #'>
           :key (lambda (m) (or (ns:read (p:path /minor m :precedence)) 0)))))
 
+(defun claimants (buf verb)
+  "Every handler for VERB on BUF, most specific first: the minor modes by
+precedence, then the mode and everything it falls back to.
+
+A handler that writes the verb it claimed reaches the next of these, and the
+built-in only once they run out. So a mode may lay itself over another rather
+than only replacing it, and the whole chain is still one read."
+  (append (loop :for m :in (minors buf)
+                :for fn = (ns:read (p:path /minor m :on verb))
+                :when fn :collect fn)
+          (loop :for mode :in (chain (ns:read (p:path /buf buf :mode)))
+                :for fn = (ns:read (p:path /mode mode :on verb))
+                :when fn :collect fn)))
+
 (defun handler (buf verb)
-  "What answers VERB for BUF: a minor mode's :on entry by precedence, then the
-major mode's and its parents'. NIL means the built-in verb answers."
-  (or (loop :for m :in (minors buf)
-            :for fn = (ns:read (p:path /minor m :on verb))
-            :when fn :do (return fn))
-      (loop :for mode :in (chain (ns:read (p:path /buf buf :mode)))
-            :for fn = (ns:read (p:path /mode mode :on verb))
-            :when fn :do (return fn))))
+  "The first thing that answers VERB for BUF. NIL means the built-in does."
+  (first (claimants buf verb)))
 
 ;;;; What a mode answers about a buffer, as against what it does to one. A
 ;;;; producer is a function at /mode/?name/answers/?verb, and a mode that
@@ -117,11 +125,6 @@ precedence, then the mode and everything it falls back to."
           (mapcar (lambda (path) (p:key (p:leaf path)))
                   (pine.data:keys (ns:read /minor/* {})))))
 
-(defun %overwritten (line col text)
-  (let ((before (subseq line 0 (min col (length line))))
-        (after (subseq line (min (length line) (+ col (length text))))))
-    (concatenate 'string before text after)))
-
 (defun overwrite ()
   (ns:write
    /minor/overwrite
@@ -129,14 +132,22 @@ precedence, then the mode and everything it falls back to."
     :indicator "Ovwrt"
     :on {:insert
          (pine.data:fn [buf text]
+           ;; take what the insert is about to cover, then write the verb again:
+           ;; it lands on whatever claims :insert under this mode, and on the
+           ;; built-in when nothing does. Nothing here inserts or moves point,
+           ;; because the mode underneath already knows how
            (let* ((point (ns:read (p:path /buf buf :point)))
                   (line (or (fset:lookup point 0) 0))
                   (col (or (fset:lookup point 1) 0))
-                  (at (p:path /buf buf :line (princ-to-string line)))
-                  (had (or (ns:read at) "")))
-             (fset:map (at (%overwritten had col text))
-                       ((p:path /buf buf :point)
-                        (fset:seq line (+ col (length text)))))))}}))
+                  (had (or (ns:read (p:path /buf buf :line
+                                            (princ-to-string line)))
+                           ""))
+                  (over (min (length text) (max 0 (- (length had) col)))))
+             (when (plusp over)
+               (ns:write (p:path /buf buf :text)
+                         (fset:seq :delete (fset:seq line col)
+                                   (fset:seq line (+ col over)))))
+             (fset:map ((p:path /buf buf :text) (fset:seq :insert text)))))}}))
 
 (defun provider ()
   (ns:provider

@@ -110,8 +110,8 @@ and cursor, and the whole tree otherwise."
              (patch (pine.ui.wire:rows-patch (sess-sent-wire s) wire)))
         (unless (sess-sent-wire s)
           (pine.log:note "editor frame 1: ~d pane~:p, ~d row~:p"
-                         (length (pine.ui.wire:wire-windows wire))
-                         (loop :for w :in (pine.ui.wire:wire-windows wire)
+                         (length (pine.ui.wire:wire-views wire))
+                         (loop :for w :in (pine.ui.wire:wire-views wire)
                                :sum (length (getf (second w) :rows)))))
         (incf (sess-generation s))
         (cond
@@ -222,16 +222,16 @@ output arrived, and nothing at all while no terminal is producing any."
         (ignore-errors (pine.buf:put buf :package :pine-user)))
       (%seed-editor-tree client)
       (watch-arrangement client)
-      (let ((f (pine.editor.frame:frame client)))
-        (setf (pine.editor.view-state:frame-cols f) 80 (pine.editor.view-state:frame-rows f) 29)
-        (pine.editor.render:relayout))
+      (setf (pine.editor.frame:cols client) 80
+            (pine.editor.frame:rows client) 29)
+      (pine.editor.render:relayout)
       (pine.echo:ensure)
       (let ((s (make-sess :client client :aclient aclient :sink sink)))
         (when aclient
           (setf (pine.core.attach:attached-client-session aclient) s)
-          (let ((rules (pine.ui.rules:user-rules)))
-            (when rules
-              (pine.core.attach:push-to-app aclient :rules :rules rules))))
+          (let ((styles (pine.ui.css:styles)))
+            (when styles
+              (pine.core.attach:push-to-app aclient :style :styles styles))))
         (setf (sess-thread s)
               (bordeaux-threads:make-thread (lambda () (session-loop s))
                                             :name "pine-editor-input"))

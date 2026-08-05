@@ -24,7 +24,7 @@ pine therefore builds no VC dispatch layer. The role of a generic
 layer is filled by primitives that already exist: branch and dirty
 state are refs feeding modeline segments and desktop widgets; hunks
 and blame are region properties (properties.org); status and log are
-layout buffers with actions; operations are commands. A version
+UI buffers with actions; operations are commands. A version
 control backend produces data for those surfaces and nothing else.
 git is the first backend and is built to git's full model; if a
 second VCS is ever added, it is another producer, and any shared
@@ -59,7 +59,7 @@ All results cross remoting as readable data:
 Writes -- stage, unstage, commit, checkout -- are agent asks with the
 same data discipline. The agent watches nothing; every answer is
 computed when asked, and the editor asks on events it already has:
-save, buffer switch, tool-buffer refresh.
+save, buffer switch, UI buffer refresh.
 
 * Surfaces
 

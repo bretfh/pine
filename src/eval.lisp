@@ -31,17 +31,21 @@ survives the image that set it and a second frontend has its own."
 (defun (setf target) (value)
   (ns:write /eval/target value))
 
-(defun in-target (str package &key on-done bindings)
+(defun in-target (str package &key readtable on-done bindings)
+  "Evaluate STR wherever /eval/target names. READTABLE is a named-readtable
+name: it travels as a symbol, so a buffer written in a config's own reader
+evaluates the same in this image and in one three hosts away."
   (let ((where (target)))
     (if (or (null where) (eq where :local))
         (if pine.core.actor:*local-agent*
             (pine.core.actor:agent-eval nil pine.core.actor:*local-agent* str
-                                        :package package :bindings bindings
-                                        :on-done on-done)
-            (pine.err:evaluate-string str :package package
+                                        :package package :readtable readtable
+                                        :bindings bindings :on-done on-done)
+            (pine.err:evaluate-string str :package package :readtable readtable
                                           :bindings bindings :on-done on-done))
         (pine.core.actor:agent-eval pine.core.server:*server* where str
-                                    :package package :on-done on-done))))
+                                    :package package :readtable readtable
+                                    :on-done on-done))))
 
 (defun %current ()
   (let ((at (ns:read /buf/current)))
@@ -67,8 +71,9 @@ beside the form when AT is the (BUFFER . LINE) it came from."
   (finished (pine.err:evaluation-status ev) ev at)
   (when *on-done* (funcall *on-done* ev at)))
 
-(defun form-string (str package &key at bindings)
+(defun form-string (str package &key at readtable bindings)
   (in-target str package
+             :readtable readtable
              :bindings bindings
              :on-done (lambda (ev) (%done ev at))))
 
@@ -114,6 +119,7 @@ beside the form when AT is the (BUFFER . LINE) it came from."
                   (form-string (subseq text (b:line-col->offset text sl sc)
                                        (b:line-col->offset text el ec))
                                (b:buffer-package state)
+                               :readtable (b:buffer-readtable-name state)
                                :at (cons name el))
                   (last-sexp))))))))
 
@@ -127,6 +133,7 @@ beside the form when AT is the (BUFFER . LINE) it came from."
         (multiple-value-bind (start end) (b:preceding-sexp-bounds text offset)
           (if start
               (form-string (subseq text start end) (b:buffer-package state)
+                           :readtable (b:buffer-readtable-name state)
                            :at (cons name (%offset->lc text end)))
               (pine.echo:message "no form before point")))))))
 
@@ -136,8 +143,10 @@ beside the form when AT is the (BUFFER . LINE) it came from."
       (let* ((state (pine.buf:state name))
              (text (b:state->string state))
              (package (b:buffer-package state))
+             (readtable (b:buffer-readtable state))
              (thunk (lambda ()
-                      (let ((*package* package) (pos 0) (count 0))
+                      (let ((*package* package) (*readtable* readtable)
+                            (pos 0) (count 0))
                         (loop
                           (multiple-value-bind (form new-pos)
                               (read-from-string text nil :eof :start pos)
@@ -176,13 +185,15 @@ beside the form when AT is the (BUFFER . LINE) it came from."
 package. (values SYMBOL TOKEN)."
   (let* ((state (pine.buf:state name))
          (pkg (b:buffer-package state))
+         (rt (b:buffer-readtable state))
          (token (or of
                     (let* ((text (b:state->string state))
                            (snap (b:state->snapshot state))
                            (off (min (b:point->offset snap) (length text))))
                       (%token-at text off)))))
     (when token
-      (values (let ((*package* pkg)) (ignore-errors (read-from-string token)))
+      (values (let ((*package* pkg) (*readtable* rt))
+                (ignore-errors (read-from-string token)))
               token))))
 
 (defun %placed (src kind)

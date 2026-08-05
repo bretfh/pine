@@ -6,7 +6,7 @@
 
 pine has two annotation mechanisms today. Highlights (:set-highlights,
 mode/edit.lisp) are runs of (line start end face) computed by
-tree-sitter or installed by tool buffers; they style text, carry no
+tree-sitter or installed by UI buffers; they style text, carry no
 payload, and are replaced wholesale on reparse. Overlays (:overlay /
 :clear-overlays, mode/edit.lisp) are per-line annotations stored in the
 buffer meta under :overlays -- text rendered after the line, styled by
@@ -37,7 +37,7 @@ resolved by the one stylesheet that both the cairo painter and the
 cell renderer read. It omits: keymaps on regions (behavior belongs to
 modes and commands), before/after display strings (the existing
 overlay rendering covers trailing annotation text; richer display is a
-layout buffer's job), and priorities (a cell takes the classes of
+UI buffer's job), and priorities (a cell takes the classes of
 every property covering it, and the stylesheet cascade resolves
 appearance as it does everywhere else).
 
@@ -92,7 +92,7 @@ area when point enters its region.
 
 * Rendering
 
-render-window-rows (render/render.lisp) currently merges highlight
+render-view-rows (render/render.lisp) currently merges highlight
 runs into cell styles and appends overlay text after lines. It becomes
 one pass over the properties visible in the window: class to style
 through the shared resolution, trailing annotation data rendered where

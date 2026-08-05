@@ -1,9 +1,9 @@
 (defpackage #:pine.editor.frame
   (:use :cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:vs #:pine.editor.view-state))
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
   (:export
-   #:client #:renderer #:paint-sink #:render-state #:frame #:tree
-   #:px-width #:px-height #:cell-w #:cell-h #:terminal-wake
+   #:client #:renderer #:paint-sink #:render-state #:tree
+   #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h #:terminal-wake
    #:server-of #:*client* #:current-client #:buffer-in-scope
    #:current-buffer
    #:buffer-mode #:current-buffer-mode #:set-buffer-mode
@@ -31,8 +31,10 @@
    ;; where a frame goes when one is due: the seam to the attached frontend
    (paint-sink   :initarg :paint-sink :accessor paint-sink  :initform nil)
    (render-state :accessor render-state :initform (fset:map (:dirty nil)))
-   (frame        :initarg :frame     :accessor frame        :initform nil)
-   ;; the attached surface's pixel geometry, reported with :resize
+   ;; the attached surface, reported with :resize: how many cells it is,
+   ;; and the pixels behind them when the frontend paints in pixels
+   (cols         :initarg :cols      :accessor cols         :initform 80)
+   (rows         :initarg :rows      :accessor rows         :initform 30)
    (px-width     :initarg :px-width  :accessor px-width     :initform nil)
    (px-height    :initarg :px-height :accessor px-height    :initform nil)
    (cell-w       :initarg :cell-w    :accessor cell-w       :initform nil)
@@ -58,8 +60,7 @@
   name)
 
 (defun start-client (server)
-  (let ((c (make-instance 'client :server-of server
-                                  :frame (make-instance 'vs:frame))))
+  (let ((c (make-instance 'client :server-of server)))
     (push c (pine.core.server:clients server))
     c))
 

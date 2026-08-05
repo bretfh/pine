@@ -2,6 +2,9 @@
 
 (def-suite* :pine.ts :in :pine)
 
+;; a macro whose name gives nothing away, so only the image can say what it is
+(defmacro with-probe (thing &body body) `(progn ,thing ,@body))
+
 ;;;; The grammar is a dependency, not a maybe: the manifest ships
 ;;;; tree-sitter-commonlisp. A run without it is a broken environment, so
 ;;;; GRAMMAR-LOADS asserts it and the rest of the file uses it unguarded.
@@ -11,8 +14,20 @@
 (defun runtime ()
   (or *runtime* (setf *runtime* (pine.ts.runtime:make-ts-runtime))))
 
+(defun cl-syntax ()
+  "The compiled Common Lisp rules, declared the way a running pine declares
+them."
+  (pine.ts.syntax:declare-all)
+  (pine.ts.syntax:for :commonlisp))
+
 (defmacro with-parse-state ((var language) &body body)
-  `(let ((,var (pine.ts.runtime:make-parse-state (runtime) ,language)))
+  ;; a language is a declaration, so something has to have declared it
+  `(let ((,var (progn
+                 (pine.ts.syntax:declare-all)
+                 (multiple-value-bind (lib fn) (pine.ts.syntax:grammar-of ,language)
+                   (pine.ts.runtime:make-parse-state
+                    (runtime) ,language lib fn
+                    :syntax (pine.ts.syntax:for ,language))))))
      (unwind-protect (progn ,@body)
        (when ,var (pine.ts.runtime:free-parse-state ,var)))))
 
@@ -212,26 +227,127 @@ fraction of what the full walk does."
                (list (pine.ts.highlight:parse-indent ps 0)
                      (pine.ts.highlight:parse-indent ps 1))))))
 
-(test body-forms-are-recognized-by-family
-  (is-true (pine.ts.highlight:body-form-p :commonlisp "defun"))
-  (is-true (pine.ts.highlight:body-form-p :commonlisp "with-open-file"))
-  (is-true (pine.ts.highlight:body-form-p :commonlisp "do-symbols"))
-  (is-true (pine.ts.highlight:body-form-p :commonlisp "let"))
-  (is-true (pine.ts.highlight:body-form-p :commonlisp "loop"))
-  (is-false (pine.ts.highlight:body-form-p :commonlisp "format"))
-  (is-false (pine.ts.highlight:body-form-p :commonlisp nil)))
+(test a-forms-head-is-its-head-and-not-its-header
+  "The grammar gives a defun a header node of its own, and the head sits inside
+it. Taking the first named node answered the whole header text, which only ever
+worked because the body test was a string prefix: anything starting with def
+indents its body whatever the rest of the text says."
+  (with-parse-state (ps :commonlisp)
+    (pine.ts.runtime:parse-text! ps (format nil "(defun f (x)~%1)"))
+    (let* ((src (pine.ts.runtime:ps-byte-index ps))
+           ;; the node the indenter actually asks about: the form enclosing the
+           ;; body line
+           (form (pine.ts.highlight::%enclosing-form
+                  (pine.ts.runtime:ts-node-named-descendant-for-byte-range
+                   (pine.ts.runtime:ts-tree-root-node (pine.ts.runtime:ps-tree ps))
+                   13 13)
+                  13 src))
+           (name (and form (pine.ts.highlight::%form-head-name form src))))
+      (is (string= "defun" name)
+          "the head came back as ~s, not the symbol that heads the form" name))))
 
-(test head-kinds-name-the-role-of-a-form
-  (is (eq :binder-nested (pine.ts.highlight:cl-head-kind "let"))
-      "a binder is classified as one before it is classified as a special form")
-  (is (eq :binder-flat-all (pine.ts.highlight:cl-head-kind "multiple-value-bind")))
-  (is (eq :binder-flat-first (pine.ts.highlight:cl-head-kind "dolist")))
-  (is (eq :special (pine.ts.highlight:cl-head-kind "if")))
-  (is (eq :builtin (pine.ts.highlight:cl-head-kind "car")))
-  (is (eq :def-var (pine.ts.highlight:cl-head-kind "defparameter")))
-  (is (eq :def-class (pine.ts.highlight:cl-head-kind "defclass")))
-  (is (eq :def-package (pine.ts.highlight:cl-head-kind "defpackage")))
-  (is (eq :call (pine.ts.highlight:cl-head-kind "frobnicate"))))
+(test indent-width-comes-from-the-mode
+  "A body indents by what the mode says, not by a two written into the indenter."
+  (with-parse-state (ps :commonlisp)
+    (pine.ts.runtime:parse-text! ps (format nil "(defun f (x)~%1)"))
+    (is (= 2 (pine.ts.highlight:parse-indent ps 1)))
+    (is (= 4 (pine.ts.highlight:parse-indent ps 1 :width 4))
+        "a mode indenting by four still got two")))
+
+(test a-set-is-painted-like-any-other-bracket
+  "#{...} parses and used to fall through to the default walk, so it got no
+delimiter face and no rainbow depth at all."
+  (let ((runs (full-highlights "(f #{:a :b})")))
+    (is (member '(0 3 5 :delimiter.1) runs :test #'equal)
+        "the opening #{ was not painted as a two-character delimiter: ~s" runs)
+    (is (member '(0 5 7 :constant) runs :test #'equal)
+        "an element of the set was not painted")))
+
+(test a-macro-indents-by-where-its-own-body-begins
+  "The payoff of asking the image: WITH-PROBE distinguishes one argument before
+its &BODY, so the first argument aligns and the body indents. Nothing anywhere
+was written down about it, and its name says nothing either."
+  (pine.ns:with-space ()
+    (let ((rule (pine.ts.highlight:head-rule (cl-syntax) "with-probe"
+                                             (find-package :pine.test))))
+      (is-true rule "the image said nothing about a macro it holds")
+      (when rule
+        (is (eql 1 (fset:lookup rule :indent))
+            "&body sits after one argument, so one argument is distinguished")))
+    (with-parse-state (ps :commonlisp)
+      (pine.ts.runtime:parse-text!
+       ps (format nil "(with-probe a~%b~%c)"))
+      (setf (pine.ts.runtime:ps-package ps) (find-package :pine.test))
+      ;; a aligns under the first argument; b and c are body
+      (is (= 2 (pine.ts.highlight:parse-indent ps 1))
+          "the body did not indent, got ~s" (pine.ts.highlight:parse-indent ps 1))
+      (is (= 2 (pine.ts.highlight:parse-indent ps 2))))))
+
+(test body-forms-are-recognized-by-family
+ (pine.ns:with-space ()
+  (is-true (pine.ts.highlight:body-form-p (cl-syntax) "defun"))
+  (is-true (pine.ts.highlight:body-form-p (cl-syntax) "with-open-file"))
+  (is-true (pine.ts.highlight:body-form-p (cl-syntax) "do-symbols"))
+  (is-true (pine.ts.highlight:body-form-p (cl-syntax) "let"))
+  (is-true (pine.ts.highlight:body-form-p (cl-syntax) "loop"))
+  (is-false (pine.ts.highlight:body-form-p (cl-syntax) "format"))
+  (is-false (pine.ts.highlight:body-form-p (cl-syntax) nil))))
+
+(defun head-face (name)
+  (let ((rule (pine.ts.highlight:head-rule (cl-syntax) name)))
+    (and rule (fset:lookup rule :face))))
+
+(defun head-shape (name)
+  "What a head puts at each position, as (index . role) pairs in order."
+  (let ((rule (pine.ts.highlight:head-rule (cl-syntax) name)))
+    (and rule (let ((s (fset:lookup rule :shape)) (out nil))
+                (when (fset:map? s)
+                  (fset:do-map (i role s) (push (cons i role) out)))
+                (sort out #'< :key #'car)))))
+
+(test what-a-head-does-is-written-or-worked-out
+  "A head with a shape is written down, because only the shape of the language
+says it. What a symbol IS -- macro, special operator, builtin -- is not written
+anywhere: the image is asked."
+  (pine.ns:with-space ()
+    (is (equal '((1 . :bindings)) (head-shape "let")))
+    (is (equal '((1 . :vars)) (head-shape "multiple-value-bind")))
+    (is (equal '((1 . :var)) (head-shape "dolist")))
+    (is (equal '((1 . :name) (2 . :types) (3 . :slots)) (head-shape "defclass")))
+    ;; asked of the image, written nowhere
+    (is (eq :keyword (head-face "if")) "a special operator is not a call")
+    (is (eq :builtin (head-face "car")) "a CL function is a builtin")
+    (is (eq :keyword (head-face "when")) "a CL macro is not a call")
+    (is (null (head-face "frobnicate")) "an unknown symbol is an ordinary call")))
+
+(test a-config-can-say-what-its-own-macro-does
+  "The whole point: someone writes a macro and says how it is walked, with a
+write, without touching pine."
+  (pine.ns:with-space ()
+    (pine.ts.syntax:declare-all)
+    (pine.ns:write (pine.path:parse "/syntax/commonlisp/head/with-frobnitz")
+                   (fset:map (:face :keyword) (:shape (fset:map (1 :bindings)))
+                             (:rest :body)))
+    (is (eq :keyword (head-face "with-frobnitz")))
+    (is (equal '((1 . :bindings)) (head-shape "with-frobnitz")))
+    (is-true (pine.ts.highlight:body-form-p (cl-syntax) "with-frobnitz")
+             "a form a config says takes a body did not indent as one")))
+
+(test the-image-answers-for-a-macro-nobody-wrote-down
+  "sb-introspect says where &body sits in a macro's lambda list, which is
+exactly the number of arguments to align before indenting. A guess from the
+name cannot know that; the running image does."
+  (pine.ns:with-space ()
+    (let ((rule (pine.ts.highlight:head-rule (cl-syntax) "with-open-stream")))
+      (is-true rule "the image said nothing about a macro it holds")
+      (when rule
+        (is (eq :keyword (fset:lookup rule :face)))))
+    ;; defcmd is pine's own, defined in this image with &body
+    (let ((rule (pine.ts.highlight:head-rule (cl-syntax) "defcmd")))
+      (is-true rule "the image said nothing about pine's own macro")
+      (when rule
+        (is (eq :body (fset:lookup rule :rest))
+            "a macro with &body did not take a body")))))
 
 (test structural-motion-crosses-forms
   (let ((text (format nil "(a b)~%(c d)")))
@@ -288,7 +404,12 @@ fraction of what the full walk does."
          (lines (banded-lines 40000))
          (n (fset:size lines))
          (ps (progn (pine.ts.runtime:ensure-ts rt)
-                    (pine.ts.runtime:make-parse-state rt :commonlisp))))
+                    (pine.ts.syntax:declare-all)
+                    (multiple-value-bind (lib fn)
+                        (pine.ts.syntax:grammar-of :commonlisp)
+                      (pine.ts.runtime:make-parse-state
+                       rt :commonlisp lib fn
+                       :syntax (pine.ts.syntax:for :commonlisp))))))
     (when ps
       (unwind-protect
            (let ((top (cons 0 43))
@@ -319,7 +440,12 @@ fraction of what the full walk does."
   (let* ((rt (pine.ts.runtime:make-ts-runtime))
          (lines (banded-lines 40000))
          (ps (progn (pine.ts.runtime:ensure-ts rt)
-                    (pine.ts.runtime:make-parse-state rt :commonlisp))))
+                    (pine.ts.syntax:declare-all)
+                    (multiple-value-bind (lib fn)
+                        (pine.ts.syntax:grammar-of :commonlisp)
+                      (pine.ts.runtime:make-parse-state
+                       rt :commonlisp lib fn
+                       :syntax (pine.ts.syntax:for :commonlisp))))))
     (when ps
       (unwind-protect
            (let ((vp (cons 0 43)))

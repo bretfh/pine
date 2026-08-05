@@ -129,7 +129,7 @@ refused connection is the app being gone."
         t)))
 
 (defun %note-attached (kind there)
-  (pine.ns:write (pine.path:child (pine.path:parse "/attached")
+  (pine.ns:write (pine.path:path (pine.path:parse "/attached")
                                   (string-downcase (string kind)))
                  there))
 

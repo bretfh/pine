@@ -1,7 +1,7 @@
 (defpackage #:pine.ui.paths
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:face #:pine.ui.face)
-                    (#:rules #:pine.ui.rules))
+                    (#:css #:pine.ui.css))
   (:export #:server))
 
 (in-package #:pine.ui.paths)
@@ -26,7 +26,10 @@
         #'string<))
 
 (defun %theme-of (name)
-  (face:find-theme (face:theme-key name)))
+  "The theme NAME names, or NIL. A theme that is not there is nothing rather
+than an error, the way a path that holds nothing is: reading the palette of a
+theme is also how the write that makes one asks what was there before."
+  (pine.data:at face:*themes* (face:theme-key name)))
 
 (defun %face-map (f)
   (when f
@@ -148,12 +151,12 @@ A theme is its palette and its metrics. Its faces are their own paths, at
    (/style/?class
     {:doc "one class's style rule, as {:prop value}"})
    (/style
-    {:doc "the rules a config added, which win the cascade"})))
+    {:doc "what a config styled, which wins the cascade"})))
 
 (defclass server (ns:server) ()
   (:default-initargs :name :theme :serves (list /theme /face /style))
   (:documentation "Style, as paths: the theme everything resolves in, the faces
-it has, and the rules a config added."))
+it has, and what a config styled."))
 
 (defmethod ns:raise ((s server) &key &allow-other-keys)
   "Serve the three, and answer the cells the space keeps for what is worked out
@@ -168,7 +171,12 @@ is a write, and a paint may not write."
   (ns:write /style (style))
   ;; the theme pine ships, unless this space already said otherwise
   (unless (ns:read /theme) (ns:write /theme face:+default-theme+))
+  ;; a config styles a selector by writing its path, so this is where a frontend
+  ;; image that paints in pixels hears about it. Nothing a config calls: the
+  ;; write is the whole of it.
+  (ns:watch /style/* (pine.data:fn [v] (declare (ignore v)) (css:broadcast) {})
+            :as :style-broadcast)
   (fset:map (:faces (sento.atomic:make-atomic-reference :value nil))
-            (:rules (sento.atomic:make-atomic-reference :value nil))))
+            (:stylesheet (sento.atomic:make-atomic-reference :value nil))))
 
 (ns:register (make-instance 'server))

@@ -1,7 +1,7 @@
 (defpackage #:pine.ui.build
   (:use #:cl #:pine.ui.node)
   (:shadow #:centerbox #:ring #:box #:center #:scroll #:slider #:calendar
-           #:image #:cells)
+           #:image #:cells #:stack)
   (:export #:box #:button #:calendar #:cells #:centerbox #:center #:choice
            #:column #:gap #:icon #:image #:label #:ring #:row
            #:rows #:rule #:scroll #:slider #:grid #:stack
@@ -67,8 +67,15 @@ read the props that are its own."
         :unless (eq k key) :append (list k v)))
 
 (defun label (text &rest props)
-  "A text run. TEXT may be a path, which is read."
-  (apply #'make-instance 'text-node :content (shown text) props))
+  "A text run. TEXT may be a path, which is read.
+
+Whatever it answers is shown as text. A slot takes a path in place of a value,
+and /sys/cpu holds a number, so a label that only took strings would make every
+config write PRINC-TO-STRING around half of them."
+  (apply #'make-instance 'text-node
+         :content (let ((it (shown text)))
+                    (if (stringp it) it (princ-to-string it)))
+         props))
 
 (defun icon (glyph &rest raw-props)
   "A glyph (a codepoint or string). With :on-click it becomes a clickable cell:
@@ -159,10 +166,18 @@ typed into it is written back there. No :value and no :on-change."
   (let ((props (pine.data:pairs raw-props)))
     (apply #'make-instance 'text-node
            :content (princ-to-string (shown subject))
+           :of (when (pine.path:pathp subject) subject)
            :on-change (when (pine.path:pathp subject)
                         (lambda (v) (pine.ns:write subject v)))
            :class (or (fset:lookup props :class) "field")
            (%without props :class))))
+
+(defun stack (&rest args)
+  "Nodes in one place, the last on top: each is given the whole rect and they
+are painted in the order they were written."
+  (multiple-value-bind (props items) (%parse-args args)
+    (apply #'make-instance 'pine.ui.node:stack :nodes items
+           (pine.data:plist props))))
 
 (defun grid (&rest args)
   "A column of rows, COLUMNS wide."
@@ -175,11 +190,6 @@ typed into it is written back there. No :value and no :on-change."
                                           :nodes (subseq rest 0 (min columns (length rest)))
                                           (%without props :columns)))
              (%without props :columns)))))
-
-(defun stack (&rest args)
-  "Nodes in one place, the last on top."
-  (multiple-value-bind (props items) (%parse-args args)
-    (apply #'make-instance 'vstack :nodes items (pine.data:plist props))))
 
 (defun ring (&rest args)
   "A circular gauge. Given a path as its subject it shows that path."
@@ -208,14 +218,19 @@ typed into it is written back there. No :value and no :on-change."
 class it is, :OF the content it shows, :CROW and :CCOL the caret. Measure and
 arrange are O(1); paint blits the rows."
   (apply #'make-instance
-         (or (getf props :as) 'pine.ui.node:window-node)
+         (or (getf props :as) 'pine.ui.node:view-node)
          :rows rows (%without-key props :as)))
 
 
 (defun rows (items item-fn &rest props)
   "A vertical list over a pattern, whose matches are the rows, or over a list
 of values. Over a pattern ITEM-FN takes nothing and reads /.; over values it
-takes the value and its index."
+takes the value and its index.
+
+Over a pattern the row remembers the path it was built for. That is what makes
+the listing a listing of things rather than of lines: the selection, the keys a
+mode binds and a click all reach the same place, and none of them needs a table
+saying which line was which."
   (let ((over-paths (pine.path:pathp items)))
     (apply #'make-instance 'list-node
            :items (if over-paths
@@ -228,14 +243,20 @@ takes the value and its index."
                                   (if (pine.path:pathp item)
                                       item
                                       (pine.path:here))))
-                            (funcall item-fn)))
+                            (let ((row (funcall item-fn)))
+                              (when (and row (null (pine.ui.node:of row)))
+                                (setf (pine.ui.node:of row) pine.path:*here*))
+                              row)))
                         item-fn)
            props)))
 
 (defun choice (&rest args)
-  "A selectable row. :click takes a command path, a write-map or a function."
+  "A selectable row. :click takes a command path, a write-map or a function.
+
+The click is its own slot. A row that is clickable still keeps its :data and
+still knows what it stands for, which is the whole of what makes a listing act
+on things rather than on lines."
   (multiple-value-bind (props items) (%parse-args args)
-    (let ((click (%click props)))
-      (apply #'make-instance 'selectable :node (first items)
-             :data (or click (fset:lookup props :data))
-             (%without props :click :on-click :confirm :data)))))
+    (apply #'make-instance 'selectable :node (first items)
+           :click (%click props)
+           (%without props :click :on-click :confirm))))

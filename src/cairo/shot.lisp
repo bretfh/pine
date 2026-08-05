@@ -42,11 +42,10 @@ session, its tree refreshed and cell-rendered through pine.ui.cells:render."
     (sleep 0.8)
     (let* ((pine.editor.frame:*client* client)
            (tree (pine.editor.render:refresh-editor-tree client))
-           (f (pine.editor.frame:frame client))
            (rows (and tree
                       (nth-value 0 (pine.ui.cells:render
-                                    tree (pine.editor.view-state:frame-cols f)
-                                    :height (pine.editor.view-state:frame-rows f))))))
+                                    tree (pine.editor.frame:cols client)
+                                    :height (pine.editor.frame:rows client))))))
       (cond (rows (pine.cairo.grid:render-grid-to-png rows path)
                   (format t "~&wrote ~a~%" path) path)
             (t (format t "~&shot: no frame captured~%") nil)))))

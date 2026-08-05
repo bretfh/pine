@@ -26,9 +26,12 @@ name does, so 'greet and \"greet\" are one command."
 
 (defmacro defcmd (name (&rest args) &body body)
   "Define the command NAME. It is written now, and remembered so that RAISE
-writes it again into a namespace that has not seen it."
-  (declare (ignore args))
-  `(let ((handler (lambda () ,@body))
+writes it again into a namespace that has not seen it.
+
+The lambda list is the whole declaration of what the command wants: one argument
+is the buffer it is being run on, which RUN reads off the list rather than
+finding out by calling."
+  `(let ((handler (lambda ,args ,@body))
          (key (p:leaf (at ',name))))
      (sento.atomic:atomic-swap *builtin*
                                (lambda (all) (fset:with all key handler)))
