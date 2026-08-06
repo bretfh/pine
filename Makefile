@@ -1,4 +1,4 @@
-.PHONY: foreign foreign-deps foreign-libs
+.PHONY: foreign foreign-deps foreign-libs foreign-wayflan
 .PHONY: repl dev daemon editor desktop check docs shot cairo-shot split-shot wm-shot wm-nested bin bench test stress probe ts-probe hl vm threads
 
 # Two ways to get what pine needs, and every target below works under either.
@@ -208,8 +208,35 @@ foreign:
 	@test -n "$$WAYLAND_DISPLAY" \
 	  && echo "  wayland   WAYLAND_DISPLAY=$$WAYLAND_DISPLAY" \
 	  || echo "  wayland   not set     the editor, desktop and wm want $(WAYLAND)"
+	@test -d systems/wayflan \
+	  && { grep -q "cons value value" systems/wayflan/src/client/client.lisp 2>/dev/null \
+	       && echo "  wayflan   patched" \
+	       || echo "  wayflan   UNPATCHED   make FOREIGN=1 foreign-wayflan"; } \
+	  || echo "  wayflan   not fetched yet"
 	@echo
 	@echo "then: make FOREIGN=1 foreign-deps && make FOREIGN=1 foreign-libs && make FOREIGN=1 test"
+	@echo "nix:  nix develop, then the same three"
+
+# pine runs against river, and upstream wayflan cannot. Two wire-level fixes,
+# the same two the guix package carries: the enum decoder errors on values
+# outside its protocol tables (river advertises wl_shm formats -- drm fourcc
+# codes -- that the bundled tables predate), and the string reader dies on a
+# null string, which is what an unset app_id is on the wire. Unknown enums
+# decode to their raw integer and null strings to ""; encoding stays strict.
+#
+# Loading wayflan is enough for the test suite, so this is only needed to run
+# the editor, the desktop or the wm.
+foreign-wayflan:
+	@test -d systems/wayflan || { echo "no systems/wayflan: make FOREIGN=1 foreign-deps first"; exit 1; }
+	@grep -q "cons value value" systems/wayflan/src/client/client.lisp \
+	  && { echo "already patched"; exit 0; } || true
+	sed -i.bak "s|(car (or (find value table :key #'cdr :test #'=)|(car (or (find value table :key #'cdr :test #'=) (cons value value)|" \
+	  systems/wayflan/src/client/client.lisp
+	sed -i.bak "s|(cffi:foreign-string-to-lisp|(if (< nul-length 2) (and (plusp nul-length) \"\") (cffi:foreign-string-to-lisp|" \
+	  systems/wayflan/src/wire.lisp
+	sed -i.bak "s|^        :encoding :utf-8)$$|        :encoding :utf-8))|" \
+	  systems/wayflan/src/wire.lisp
+	@echo "patched systems/wayflan"
 
 # the lisp systems, from ocicl. It resolves what these depend on in turn.
 foreign-deps:
