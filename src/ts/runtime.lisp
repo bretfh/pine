@@ -233,16 +233,23 @@ copy the first one is still pointing into."
         (pine.err:report-failure c "loading libtree-sitter"))))
   runtime)
 
+(defparameter +library-suffix+
+  #+darwin ".dylib" #-darwin ".so"
+  "What a shared library is called here. The loader's own search takes the
+suffix off our hands; the paths below are spelled out, so they cannot.")
+
 (defun grammar-library-candidates (library-name)
   "Places a grammar shared library may live: the loader's search path (Guix
-puts grammars under lib/tree-sitter/, not lib/) and pine's own tree."
-  (let ((so (concatenate 'string library-name ".so"))
+puts grammars under lib/tree-sitter/, not lib/), and pine's own tree, which is
+where a build outside Guix puts them."
+  (let ((file (concatenate 'string library-name +library-suffix+))
         (env (sb-ext:posix-getenv "GUIX_ENVIRONMENT")))
     (remove nil
             (list (list :default library-name)
-                  (when env (format nil "~a/lib/tree-sitter/~a" env so))
+                  (when env (format nil "~a/lib/tree-sitter/~a" env file))
                   (format nil "~alib/tree-sitter/~a"
-                          (namestring (asdf:system-source-directory :pine)) so)))))
+                          (namestring (asdf:system-source-directory :pine))
+                          file)))))
 
 (defun load-grammar-library (library-name)
   (loop for candidate in (grammar-library-candidates library-name)

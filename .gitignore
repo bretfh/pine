@@ -9,3 +9,7 @@ systems/
 ._*
 .pine.bin
 /pine
+lib/*.so
+lib/*.dylib
+lib/pine-pty-helper
+lib/tree-sitter/
