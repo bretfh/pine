@@ -25,7 +25,10 @@ behind it -- so amending one macro is a write to one leaf:
 
   (write /syntax/commonlisp/head/defcmd {:rest :body :indent 2})
 
-src/ts/lang/commonlisp.lisp and src/ts/lang/scheme.lisp are the two pine ships.
+src/ts/lang/commonlisp.lisp, src/ts/lang/scheme.lisp and src/ts/lang/pine.lisp
+are the three pine ships. pine's own is the smallest and the proof: it is
+Common Lisp's declaration with a different grammar and five node rules for what
+the readtable adds, not a second walker.
 Adding a language is a file that writes a path, the way adding a device is.
 
 pine.ts.runtime holds no list of grammars. It asks *grammar-of*, which
@@ -142,6 +145,26 @@ the grammar still loads for parsing and motion.
 Checkable headless with `make hl FORM='...'`, which prints each token and its
 face, so every rule and the binding/namespace/unicode cases stay regressions.
 
+* Which grammar a buffer is parsed with
+
+A lisp file is not always Common Lisp. pine's reader adds brace maps, bracket
+seqs, paths and interpolation, and a file that declares
+=(in-readtable pine.path:syntax)= is a different language: under it =/= is a
+terminating macro character, so =(/ a b)= is a path where plain CL reads
+division. That is why =pine= is its own grammar rather than a widening of the
+Common Lisp one, generated from the same checkout as a dialect of it.
+
+The readtable chooses. =/buf/?name/readtable= is inferred from the text the way
+the package is, and =/mode/?name/grammars= maps a named-readtable to a grammar,
+so a config with its own =defreadtable= says what parses it by writing one leaf.
+=%grammar-of= asks the readtable first and the mode second; a buffer whose
+readtable moves gets a new parser, because a parse-state binds its language when
+it is made.
+
+Where a file is can say what it is: =/mode/?name/paths= is globbed against the
+whole namestring and asked before =:files=, because a config is written in
+pine's reader and nothing about its name says so.
+
 * byte <-> char (UTF-8), without a flat string
 
 tree-sitter asks for bytes at an offset; the buffer is an fset seq of lines and
@@ -204,9 +227,13 @@ the line seq through a TSInput callback and a byte index.
 - Type dispatch is a fresh lisp string per node and up to fifteen string= per
   walk step. ts_node_symbol answers a uint16; the names this file cares about
   could resolve to ids once per language.
-- Language injection (C inside ffi strings, SQL in strings). The grammar parses
-  the forms; merging a second parser's highlights over injected regions is the
-  next capability.
+- Language injection: a markdown document whose code blocks are highlighted as
+  the language they name. The grammar parses the forms; merging a second
+  parser's highlights over injected regions is the next capability.
+- LOOP's hash-table extension (=:being :the :hash-keys :of=) is not in the
+  commonlisp grammar, so src/provider/backlight.lisp still has ERROR nodes. It
+  fails identically under =:commonlisp=, so it is upstream's rather than
+  pine's reader; tests/ts.lisp names it.
 
 * Dependencies
 

@@ -1,6 +1,6 @@
 (use-modules (guix profiles) (gnu packages))
 (add-to-load-path (string-append (dirname (current-filename)) "/guix"))
-(use-modules (tree-sitter-commonlisp) (pine-pty) (sento)
+(use-modules (tree-sitter-commonlisp) (tree-sitter-pine) (pine-pty) (sento)
              (timer-wheel) (local-time-duration) (pure-tls)
              (cl-cancel) (precise-time) (river) (wayflan))
 
@@ -73,7 +73,8 @@
               "sbcl-trivial-features"
               "sbcl-trivial-gray-streams"
               "sbcl-usocket"))
-       (packages->manifest (list tree-sitter-commonlisp pine-pty sbcl-sento
+       (packages->manifest (list tree-sitter-commonlisp tree-sitter-pine
+                                 pine-pty sbcl-sento
                                  sbcl-timer-wheel sbcl-local-time-duration
                                  sbcl-pure-tls sbcl-cl-cancel
                                  sbcl-precise-time river-0.4

@@ -607,6 +607,17 @@ string rather than a buffer: a tool, a test, a snippet."
 
 ;;;; Structural motion off the persistent tree.
 
+(defun %outermost-path (node)
+  "NODE, or the path it sits inside. A path's segments are named nodes so they
+can be painted, but the reader sees one object, so a structural motion steps
+over a whole path rather than through it."
+  (loop :with out := node
+        :for n := node :then (ts-node-parent n)
+        :for depth :from 0 :below 64
+        :until (ts-node-is-null n)
+        :do (when (string= "ns_path" (ts-node-type n)) (setf out n))
+        :finally (return out)))
+
 (defun %forward-sexp-byte (root byte)
   (let ((cur (ts-node-named-descendant-for-byte-range root byte byte)))
     (cond

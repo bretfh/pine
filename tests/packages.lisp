@@ -511,10 +511,15 @@ reading the buffer still answers what the doc describes.")
 (defun %src-file (symbol)
   "Where SYMBOL is defined, when that is a file of pine's own. The terminal
 emulator counts: it is a system of its own but it is in the same image, and a
-global there is shared exactly as far."
-  (let ((file (definition-file symbol)))
-    (when (and file (or (search "/pine-ns/src/" file)
-                        (search "/pine-ns/vt/" file)))
+global there is shared exactly as far.
+
+Asked of the system rather than matched against a directory name: which
+directory pine is checked out into is not pine's business, and pinning it there
+made every one of these look unassigned from any other checkout."
+  (let ((file (definition-file symbol))
+        (root (namestring (asdf:system-source-directory :pine))))
+    (when (and file (or (search (concatenate 'string root "src/") file)
+                        (search (concatenate 'string root "vt/") file)))
       file)))
 
 (defun %assigned-specials ()

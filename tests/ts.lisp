@@ -14,6 +14,9 @@
 (defun runtime ()
   (or *runtime* (setf *runtime* (pine.ts.runtime:make-ts-runtime))))
 
+(defun pine.syntax-declared ()
+  (pine.ts.syntax:declare-all))
+
 (defun cl-syntax ()
   "The compiled Common Lisp rules, declared the way a running pine declares
 them."
@@ -282,6 +285,82 @@ was written down about it, and its name says nothing either."
       (is (= 2 (pine.ts.highlight:parse-indent ps 1))
           "the body did not indent, got ~s" (pine.ts.highlight:parse-indent ps 1))
       (is (= 2 (pine.ts.highlight:parse-indent ps 2))))))
+
+(defun %error-nodes (root)
+  (let ((n 0))
+    (labels ((walk (nd)
+               (when (string= "ERROR" (pine.ts.runtime:ts-node-type nd)) (incf n))
+               (dotimes (i (pine.ts.runtime:ts-node-named-count nd))
+                 (walk (pine.ts.runtime:ts-node-named-nth nd i)))))
+      (walk root))
+    n))
+
+(defparameter +unparsed+
+  '("backlight.lisp" "echo.lisp")
+  "Files the grammar still cannot read, and why. Both fail identically under
+:commonlisp, so both are the Common Lisp grammar's and not pine's reader.
+
+backlight.lisp uses LOOP's hash-table extension, :being :the :hash-keys :of,
+which the grammar does not cover.
+
+echo.lisp holds the string \"~/\". Every string is parsed as a format control,
+and ~/ begins the call-a-function directive, which wants a closing slash. It is
+a legal string that is not a legal format directive, and nothing in the text
+says which of the two it is.")
+
+(test pine-source-parses-under-the-grammar-its-readtable-names
+  "The claim this whole subsystem is for: a file written in pine's own reader is
+not a broken Common Lisp file, it is a different language, and pine knows which
+one because the text says so."
+  (pine.ns:with-space ()
+    (pine.syntax-declared)
+    (let ((rt (pine.ts.runtime:make-ts-runtime))
+          (bad nil))
+      (pine.ts.runtime:ensure-ts rt)
+      (dolist (f (directory (merge-pathnames "src/**/*.lisp"
+                                             (asdf:system-source-directory :pine))))
+        (unless (member (file-namestring f) +unparsed+ :test #'string=)
+          (let* ((text (pine.buf:read-file f))
+                 (lang (if (pine.text:readtable-in text) :pine :commonlisp)))
+            (multiple-value-bind (lib fn) (pine.ts.syntax:grammar-of lang)
+              (let ((ps (pine.ts.runtime:make-parse-state rt lang lib fn)))
+                (when ps
+                  (unwind-protect
+                       (progn
+                         (pine.ts.runtime:parse-text! ps text)
+                         (let ((n (%error-nodes
+                                   (pine.ts.runtime:ts-tree-root-node
+                                    (pine.ts.runtime:ps-tree ps)))))
+                           (when (plusp n)
+                             (push (list (file-namestring f) lang n) bad))))
+                    (pine.ts.runtime:free-parse-state ps))))))))
+      (is (null bad)
+          "~d file~:p did not parse:~{~%  ~{~a under ~a: ~a ERROR nodes~}~}"
+          (length bad) bad))))
+
+(test a-pine-file-is-parsed-by-pines-own-grammar
+  "The readtable chooses the grammar. Nothing about the file name says which
+reader a lisp file wants, and the mode covers a family rather than one reader."
+  (pine.ns:with-space ()
+    (pine.syntax-declared)
+    (pine.ns:raise :mode)
+    (pine.ns:raise :buf)
+    (pine.ns:write (pine.buf:at "g" :mode) :lisp)
+    (pine.ns:write (pine.buf:at "g" :readtable) 'pine.path:syntax)
+    (is (eq :pine (pine.buf::%grammar-of "g"))
+        "a buffer declaring pine's reader did not get pine's grammar")
+    (pine.ns:write (pine.buf:at "g" :readtable) nil)
+    (is (eq :commonlisp (pine.buf::%grammar-of "g"))
+        "a buffer declaring no reader did not fall back to its mode")))
+
+(test where-a-file-is-can-say-what-it-is
+  "A config is written in pine's reader and its name says nothing, so the mode
+claims it by path."
+  (pine.ns:with-space ()
+    (pine.ns:raise :mode)
+    (is (eq :pine (pine.mode:for-file "/home/someone/.config/pine/init.lisp")))
+    (is (eq :lisp (pine.mode:for-file "/home/someone/src/other/init.lisp"))
+        "a lisp file outside a pine directory is ordinary lisp")))
 
 (test body-forms-are-recognized-by-family
  (pine.ns:with-space ()

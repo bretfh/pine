@@ -604,7 +604,7 @@ serializer to survive a restart.
 | =/buf/?name/mark=        | =[line col]= or nil       | set it                      |
 | =/buf/?name/file=        | the file it visits        | visit another               |
 | =/buf/?name/mode=        | a mode keyword            | change mode                 |
-| =/buf/?name/readtable=   | the named-readtable it is written in | change the language |
+| =/buf/?name/readtable=   | the named-readtable it is written in, which chooses its grammar | change the language |
 | =/buf/?name/minor=       | a set                     | =[:conj :paren]= =[:disj :paren]= |
 | =/buf/?name/modified=    | boolean                   |                             |
 | =/buf/?name/tree=        | the parse tree            |                             |

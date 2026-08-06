@@ -59,7 +59,8 @@
                                        (:module "lang"
                                                 :serial t
                                                 :components ((:file "commonlisp")
-                                                             (:file "scheme")))
+                                                             (:file "scheme")
+                                                             (:file "pine")))
                                        (:file "parser")))
                  (:module "face"
                           :serial t :pathname "ui/"

@@ -634,6 +634,19 @@ this puts in. Not a place, so it goes back to whoever asked."
          (said (and mode (pine.mode:setting mode :indent))))
     (or (and (fset:map? said) (fset:lookup said :width)) 2)))
 
+(defun %grammar-of (name)
+  "The grammar NAME's text is parsed with.
+
+What its readtable names first: what language a file is written in is a property
+of its text, and a mode covers a family of files rather than one reader. A mode
+says what to use when the text says nothing."
+  (let* ((mode (ns:read (at name :mode)))
+         (readtable (ns:read (at name :readtable)))
+         (by-readtable (and readtable mode
+                            (let ((m (pine.mode:setting mode :grammars)))
+                              (and (fset:map? m) (fset:lookup m readtable))))))
+    (or by-readtable (and mode (pine.mode:setting mode :grammar)))))
+
 (defun %parser-at (name)
   "Where NAME's parser is declared. A parser holds a TSParser, so /proc is where
 it lives and stopping it is a write."
@@ -659,9 +672,17 @@ is no longer the server's would look for a grammar in a table nothing writes."
   "NAME's parser, started if it names a grammar and has none. Declared at /proc,
 so two threads asking at once settle the way every other declaration does and
 the loser's actor is stopped rather than left holding a thread nobody sends to."
-  (or (%link-of name)
-      (let* ((mode (ns:read (at name :mode)))
-             (grammar (and mode (pine.mode:setting mode :grammar))))
+  (or (let ((had (%link-of name)))
+        ;; a parse-state binds its language when it is made, so a buffer whose
+        ;; readtable moved needs a new one rather than a reconfigured one
+        (when had
+          (if (eq (%grammar-of name)
+                  (pine.ts.runtime:ps-language (pine.ts.parser:link-state had)))
+              had
+              (progn (sento.actor:tell (pine.ts.parser:link-actor had) '(:stop))
+                     (ns:write (%parser-at name) nil)
+                     nil))))
+      (let ((grammar (%grammar-of name)))
         (when (and grammar system runtime)
           (let ((mine (pine.ts.parser:start-parser system runtime grammar name)))
             (when mine

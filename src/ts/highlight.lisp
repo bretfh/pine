@@ -158,7 +158,7 @@ opener is: a set opens with two characters."
 
 (defparameter +roles+
   '(:form :body :here :quoted :skip :operand :package :name :binding-name
-    :bindings :binding :vars :var :lambda-list :types :slots :slot)
+    :bindings :binding :vars :var :lambda-list :types :slots :slot :path)
   "How a position of a form is walked. A rule composes these; anything in a
 :shape or :fields position that is not one of them names a face to paint with.")
 
@@ -173,6 +173,7 @@ opener is: a set opens with two characters."
     (:skip nil)
     (:operand (%emit-node node (%operand-face node ctx) ctx))
     (:package (%package node nil ctx))
+    (:path (%path node ctx))
     ;; the face a definition's name takes: what the head rule said, and
     ;; :function-name where there is no head rule to say (a defun's header)
     (:name (%name node (or (ctx-head ctx) :function-name) ctx))
@@ -188,6 +189,43 @@ opener is: a set opens with two characters."
     (t (if (keywordp role)
            (%emit-node node role ctx)
            (%walk node (%deeper ctx))))))
+
+(defun %segment-face (text lastp)
+  "What one segment of a path paints. A binder is a binder wherever it sits, a
+pattern operator is an operator, and what leads up to the leaf recedes the way
+a package prefix does."
+  (let ((n (length text)))
+    (cond ((and (>= n 1) (char= #\? (char text 0))) :variable-param)
+          ((or (string= text "*") (string= text "**")) :keyword)
+          ((or (string= text ".") (string= text "..")) :keyword)
+          (lastp :constant)
+          (t :namespace))))
+
+(defun %path (node ctx)
+  "A path is one object painted in parts. The whole node takes the separators'
+face first and each part paints over it, which is what the per-column rule of
+a later property winning is for."
+  (%emit-node node :quote ctx)
+  (let* ((parts (ts-named-nodes node))
+         (last (car (last parts))))
+    (dolist (part parts)
+      (let ((type (ts-node-type part)))
+        (cond
+          ((string= type "path_segment")
+           (%emit-node part (%segment-face (%text part ctx) (eq part last)) ctx))
+          ((string= type "path_interpolation")
+           (let ((value (ts-field part "value")))
+             (%emit-node part :escape ctx)
+             (when value (%walk value (%deeper ctx)))))
+          ((string= type "path_alternation")
+           (dolist (name (ts-named-nodes part))
+             (%emit-node name :constant ctx)))
+          ((string= type "path_constraint")
+           (let ((key (ts-field part "key"))
+                 (value (ts-field part "value")))
+             (when key (%emit-node key :constant ctx))
+             (when value (%walk value (%deeper ctx)))))
+          (t (%walk part (%deeper ctx))))))))
 
 (defun %name (node face ctx)
   (let ((type (ts-node-type node)))
@@ -456,7 +494,8 @@ what follows as a body is a rule that indents it as one."
   (source-char-at src (ts-node-start-byte node)))
 
 (defparameter +form-openers+
-  '(("list_lit" . 1) ("defun" . 1) ("loop_macro" . 1) ("set_lit" . 2))
+  '(("list_lit" . 1) ("defun" . 1) ("loop_macro" . 1) ("set_lit" . 2)
+    ("map_lit" . 1) ("seq_lit" . 1))
   "Node types whose first token opens a form, and how wide that opener is.
 
 A type table rather than a first-character test: a set opens with two
@@ -504,6 +543,22 @@ nested head is not a body operator)."
             (he (ts-node-end-byte head)))
         (when (= (%byte-line hs src) (%byte-line (max hs (1- he)) src))
           (string-downcase (source-substring src hs he)))))))
+
+(defun %align-first (form open-col src)
+  "Align under element 0 when it sits on the opener's line, else one past the
+opener. A map and a seq have no head: every element is an element, so there is
+no argument to align under and the first thing in it is the first thing."
+  (if (plusp (ts-node-named-count form))
+      (let* ((first (ts-node-named-nth form 0))
+             (fb (ts-node-start-byte first)))
+        (if (= (%byte-line (ts-node-start-byte form) src) (%byte-line fb src))
+            (%byte-col fb src)
+            (1+ open-col)))
+      (1+ open-col)))
+
+(defun %headless-p (form)
+  "Whether FORM is a collection rather than a call. Its elements are elements."
+  (member (ts-node-type form) '("map_lit" "seq_lit" "set_lit") :test #'string=))
 
 (defun %align-column (form open-col src)
   "Align under the first argument when it shares the head's line; otherwise one
@@ -553,8 +608,10 @@ by four does, rather than by the two that used to be written here."
                                          (head-rule lang name (ps-package ps))))
                               (distinguished (and rule (fset:lookup rule :indent))))
                          (cond
-                           ;; a set has no head: every element is an element
-                           ((and opener (> opener 1)) (+ open-col opener))
+                           ;; a collection has no head, so its continuation
+                           ;; lines align under its first element, not its
+                           ;; second: there is no head to skip
+                           ((%headless-p form) (%align-first form open-col src))
                            ;; a form that distinguishes its first N arguments
                            ;; aligns those and indents what follows. N is where
                            ;; &body sits in the macro's own lambda list. Only on

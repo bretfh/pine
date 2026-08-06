@@ -48,19 +48,28 @@ covers any run of characters including none."
         ((fset:seq? value) (fset:convert 'list value))
         (t value)))
 
-(defun %claims ()
-  "Each mode that claims file types, with the patterns it claims."
+(defun %claims (leaf)
+  "Each mode that claims files by LEAF, with the patterns it claims."
   (let (acc)
-    (fset:do-map (path value (ns:read /mode/*/files {}))
+    (fset:do-map (path value (ns:read (p:path /mode (p:any) leaf) {}))
       (push (cons (p:key (p:leaf (p:parent path))) (%patterns value)) acc))
     (nreverse acc)))
 
+(defun %claimed (claims against)
+  (loop :for (at . patterns) :in claims
+        :when (some (lambda (pattern) (matches-p pattern against)) patterns)
+          :do (return at)))
+
 (defun for-file (path)
-  "The mode whose :files cover PATH, or NIL."
-  (let ((name (file-namestring (pathname path))))
-    (loop :for (at . patterns) :in (%claims)
-          :when (some (lambda (pattern) (matches-p pattern name)) patterns)
-            :do (return at))))
+  "The mode whose :paths or :files cover PATH, or NIL.
+
+:PATHS is matched against the whole namestring and asked first, because where a
+file is can say more than what it is called: every .lisp under a config
+directory is written in the config's own reader, and nothing about the name
+says so."
+  (let ((full (namestring (pathname path))))
+    (or (%claimed (%claims :paths) full)
+        (%claimed (%claims :files) (file-namestring (pathname path))))))
 
 (defun minors (buf)
   "BUF's minor modes, highest /minor/?m/precedence first."
@@ -152,7 +161,8 @@ precedence, then the mode and everything it falls back to."
 (defun provider ()
   (ns:provider
    (/mode/?name
-    {:doc "a mode: :parent :grammar :indicator :files :comment :indent :on"})
+    {:doc "a mode: :parent :grammar :grammars :indicator :files :paths :comment
+:indent :on"})
    (/mode {:doc "every mode there is"})))
 
 (defclass server (ns:server) ()
@@ -162,11 +172,26 @@ precedence, then the mode and everything it falls back to."
 (defmethod ns:raise ((s server) &key &allow-other-keys)
   (ns:write /mode (provider))
   (ns:write /mode/text {:indicator "Text"})
+  ;; a config is written in pine's own reader, and nothing about the file name
+  ;; says so: the loader supplies the readtable, so the mode says where. A
+  ;; :paths pattern is matched against the whole namestring and asked before
+  ;; :files, because where a file is can say more than what it is called.
+  (ns:write /mode/pine {:parent :lisp
+                        :indicator "Pine"
+                        :readtable 'pine.path:syntax
+                        ;; * covers any run including a slash, so this is both
+                        ;; ~/.config/pine/init.lisp and the examples in the tree
+                        :paths ["*/pine/*.lisp"]})
   (ns:write /mode/prog {:parent :text
                         :indent {:width 2}
                         :comment {:line ";"}})
   (ns:write /mode/lisp {:parent :prog
                         :grammar :commonlisp
+                        ;; a reader says what its files are written in, so a
+                        ;; config with its own defreadtable names the grammar
+                        ;; it parses with by writing one leaf here
+                        :grammars {'pine.path:syntax :pine 'pine.path:data :pine
+                                   'pine.data:syntax :pine 'pine.data:data :pine}
                         :indicator "Lisp"
                         :files ["*.lisp" "*.asd" "*.cl" "*.lsp"]
                         :comment {:line ";;"}
