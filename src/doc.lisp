@@ -1,7 +1,6 @@
 (defpackage #:pine.doc
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:server))
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path)))
 
 (in-package #:pine.doc)
 (named-readtables:in-readtable pine.path:syntax)
@@ -17,11 +16,7 @@
      :doc "what that path is, and what it takes"})
    (/doc {:read (pine.data:fn [] "what any path is, and what it takes")})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :doc :serves (list /doc))
-  (:documentation "What any path is, read back from the clause that serves it."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /doc (provider)))
-
-(ns:register (make-instance 'server))
+(ns:serve :doc
+  {:at [/doc]
+   :doc "what any path is, read back from the clause that serves it"
+   :up (lambda () (ns:write /doc (provider)))})

@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.clock
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns))
-  (:export #:server #:tick))
+  (:export #:tick))
 
 (in-package #:pine.provider.clock)
 (named-readtables:in-readtable pine.path:syntax)
@@ -31,26 +31,23 @@ in the tree, so the time is still written, watched and read like anything else."
   (ns:provider
    (/clock {:doc "the time: :at :second :min :hour :day :month :year :weekday"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :clock :serves (list /clock))
-  (:documentation "The time, as paths, kept current on the actor system's own
-timer. A paced tick is a timer, not a thread that sleeps."))
-
-(defmethod ns:raise ((s server) &key system (every 1) &allow-other-keys)
-  "Keep /clock current on SYSTEM's wheel timer. Answers the timer, which the
-space keeps: a registration is a thing to cancel, not a value."
-  (declare (ignore s))
-  (ns:write /clock (provider))
-  (tick)
-  (when system
-    (let ((timer (sento.actor-system:scheduler system)))
-      (sento.wheel-timer:schedule-recurring
-       timer every every (lambda () (pine.err:attempt #'tick "the clock")) +key+)
-      timer)))
-
-(defmethod ns:lower ((s server))
-  (let ((timer (ns:kept (ns:name s))))
-    (when timer (ignore-errors (sento.wheel-timer:cancel timer +key+))))
-  (call-next-method))
-
-(ns:register (make-instance 'server))
+(ns:serve :clock
+  {:at [/clock]
+   :doc "the time, as paths, kept current on the actor system's own timer. A
+paced tick is a timer, not a thread that sleeps."
+   ;; the timer is what the space keeps: a registration is a thing to cancel,
+   ;; not a value
+   :up (lambda ()
+         (ns:write /clock (provider))
+         (tick)
+         (let ((system (ns:given :system))
+               (every (or (ns:given :every) 1)))
+           (when system
+             (let ((timer (sento.actor-system:scheduler system)))
+               (sento.wheel-timer:schedule-recurring
+                timer every every
+                (lambda () (pine.err:attempt #'tick "the clock")) +key+)
+               timer))))
+   :down (lambda (timer)
+           (when timer
+             (ignore-errors (sento.wheel-timer:cancel timer +key+))))})

@@ -1,7 +1,7 @@
 (defpackage #:pine.view
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:show #:server #:rendered #:view-of #:selection-path
+  (:export #:show #:rendered #:view-of #:selection-path
            #:node-at-point))
 
 (in-package #:pine.view)
@@ -158,36 +158,35 @@ mode's own keys act on the path, which is what /buf/?name/selection is for."
 (defun %text (name)
   (%rows-text (rendered name)))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :view :serves (list /minor/list))
-  (:documentation "What a UI buffer is: a widget tree at a path, read as
-rows, with the minor mode that moves between them."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  "Give a buffer the verbs a view needs, and the minor mode whose keys move
-between rows. A mode that claims :activate answers before the built-in one,
-which is what makes a UI buffer's Return its own."
-  (ns:write /minor/list {:precedence 15})
-  (setf pine.buf:*verbs*
-        (fset:map (:activate (lambda (name) (%activate name)))
-                  (:select (lambda (name delta) (%select name delta)))))
-  ;; the view moved, so the buffer reads as its rows and the selection stands
-  ;; for whatever the row under it now shows. Both are read off the one tree, so
-  ;; they move together and neither is stored: they come back by being rendered
-  ;; again. A buffer that became a view through its mode gets its selection here
-  ;; rather than only through SHOW, which is the route a config never takes.
-  (ns:watch /buf/*/view
-                 (pine.data:fn [v]
-                   (let ((name (p:leaf (p:parent (ns:here)))))
-                     (if v
-                         (fset:map ((pine.buf:at name :text) (%text name))
-                                   ((pine.buf:at name :selection)
-                                    (selection-path name)))
-                         (progn (%forget-render name) {}))))
-                 :as :view-text)
-  ;; the last render of each UI buffer, which is this space's and not the
-  ;; image's: two spaces show different buffers at different widths
-  (sento.atomic:make-atomic-reference :value (fset:empty-map)))
+(ns:serve :view
+  {:at [/minor/list]
+   :doc "what a UI buffer is: a widget tree at a path, read as rows, with the
+minor mode that moves between them"
+   ;; a mode that claims :activate answers before the built-in one, which is
+   ;; what makes a UI buffer's Return its own
+   :up (lambda ()
+         (ns:write /minor/list {:precedence 15})
+         (setf pine.buf:*verbs*
+               {:activate (lambda (name) (%activate name))
+                :select (lambda (name delta) (%select name delta))})
+         ;; the view moved, so the buffer reads as its rows and the selection
+         ;; stands for whatever the row under it now shows. Both are read off
+         ;; the one tree, so they move together and neither is stored: they come
+         ;; back by being rendered again. A buffer that became a view through
+         ;; its mode gets its selection here rather than only through SHOW,
+         ;; which is the route a config never takes.
+         (ns:watch /buf/*/view
+                   (pine.data:fn [v]
+                     (let ((name (p:leaf (p:parent (ns:here)))))
+                       (if v
+                           (fset:map ((pine.buf:at name :text) (%text name))
+                                     ((pine.buf:at name :selection)
+                                      (selection-path name)))
+                           (progn (%forget-render name) {}))))
+                   :as :view-text)
+         ;; the last render of each UI buffer, which is this space's and not the
+         ;; image's: two spaces show different buffers at different widths
+         (sento.atomic:make-atomic-reference :value (fset:empty-map)))})
 
 (defun show (name view &key (mode :text) (switch t))
   "Open NAME as a UI buffer showing VIEW, a function of the buffer name.
@@ -206,5 +205,4 @@ wants to exist before anyone looks at it."
   (when switch (ns:write /buf/current (pine.buf:at name)))
   name)
 
-(ns:register (make-instance 'server))
 

@@ -6,9 +6,9 @@
            #:read #:write #:put #:watch #:preview #:toggle #:held
            #:provider #:here #:options #:doc #:diff #:mounts #:unmount
            #:stir #:matches #:verbs
-           #:server #:name #:serves #:after #:register #:unregister #:servers
+           #:serve #:unserve #:served #:given
            #:kept #:root
-           #:raise #:lower #:raise-all #:lower-all
+           #:up #:down #:up-all #:down-all
            #:roots #:root-at #:root-ago #:at-root #:as-of #:revert #:*roots-kept*
            #:kind #:setting #:watched #:on-commit #:on-interval #:again
            #:refused #:no-verb #:cycle #:at #:why))
@@ -83,10 +83,14 @@
   "The namespace this image serves. One per image, and every thread sees the
 same one.")
 
-(defvar *servers*
+(defvar *served*
   (sento.atomic:make-atomic-reference :value (fset:empty-seq))
-  "Every server this image knows how to raise, in the order they were declared.
-Image-wide: what pine can serve is what its code says.")
+  "Every subtree this image knows how to bring up, in the order they were
+declared. Image-wide: what pine can serve is what its code says.")
+
+(defvar *given* nil
+  "What the caller handed UP, bound around a declaration's :UP. GIVEN reads it,
+the way HERE reads the path being served.")
 
 (defvar *reads* nil "Where the paths read while computing a value collect.")
 
@@ -323,59 +327,55 @@ tree's own are in it whether a provider mentioned them or not."
   "Where a provider is bound, newest first."
   (mapcar #'car (space-mounts (current))))
 
-(defclass server ()
-  ((name :initarg :name :reader name
-         :documentation "What it is called, as a keyword.")
-   (serves :initarg :serves :initform nil :reader serves
-           :documentation "The paths it puts at the tree, so LOWER can take
-them off and so a reader can find out what a subtree belongs to.")
-   (after :initarg :after :initform nil :reader after
-          :documentation "The servers that must be up before this one, by name.
-What says nothing is raised in the order it was declared in."))
-  (:documentation "Something that serves a subtree: a subclass, a RAISE method
-and a REGISTER."))
+(defun %served-name (declaration) (fset:lookup declaration :name))
 
-(defun register (server)
-  "Say that SERVER is one of the things pine serves, and answer it. Registering
-a name again replaces it, so loading a file twice is safe."
-  (sento.atomic:atomic-swap
-   *servers*
-   (lambda (all)
-     (let ((at (position (name server) (fset:convert 'list all) :key #'name)))
-       (if at (fset:with all at server) (fset:with-last all server)))))
-  server)
+(defun serve (name declaration)
+  "Say what NAME serves, and answer NAME.
 
-(defun unregister (name)
-  "Take the server called NAME out of the list. It is not lowered: what it put
-at the tree is the space's, and this only says pine no longer knows how to
-raise it."
+DECLARATION holds :AT, the paths it puts at the tree; :AFTER, the names that
+must be up before it; :DOC, what the subtree is; :UP, run to bring it up in a
+space and answering whatever that space must hold on to; and :DOWN, handed that
+back when it comes down. Serving a name again replaces it, so loading a file
+twice is safe."
+  (let ((it (fset:with declaration :name name)))
+    (sento.atomic:atomic-swap
+     *served*
+     (lambda (all)
+       (let ((at (position name (fset:convert 'list all) :key #'%served-name)))
+         (if at (fset:with all at it) (fset:with-last all it))))))
+  name)
+
+(defun unserve (name)
+  "Say pine no longer knows how to bring NAME up. What it put at the tree stays:
+that is the space's, and this is the image's."
   (sento.atomic:atomic-swap
-   *servers*
+   *served*
    (lambda (all)
      (fset:convert 'fset:seq
-                   (remove name (fset:convert 'list all) :key #'name))))
+                   (remove name (fset:convert 'list all) :key #'%served-name))))
   name)
 
 (defun %in-order (all)
   "ALL, each after everything it says it is after."
   (let ((out nil) (doing (fset:empty-set)))
-    (labels ((visit (s)
-               (unless (member s out)
-                 (when (fset:contains? doing (name s))
-                   (error 'cycle :at (list (name s))))
-                 (setf doing (fset:with doing (name s)))
-                 (dolist (need (after s))
-                   (let ((it (find need all :key #'name)))
-                     (when it (visit it))))
-                 (setf doing (fset:less doing (name s)))
-                 (push s out))))
+    (labels ((visit (d)
+               (let ((name (%served-name d)))
+                 (unless (member name out :key #'%served-name)
+                   (when (fset:contains? doing name)
+                     (error 'cycle :at (list name)))
+                   (setf doing (fset:with doing name))
+                   (fset:do-seq (need (or (fset:lookup d :after) (fset:empty-seq)))
+                     (let ((it (find need all :key #'%served-name)))
+                       (when it (visit it))))
+                   (setf doing (fset:less doing name))
+                   (push d out)))))
       (mapc #'visit all))
     (nreverse out)))
 
-(defun servers (&optional name)
-  "Every server, in the order they must be raised, or the one called NAME."
-  (let ((all (%in-order (fset:convert 'list (sento.atomic:atomic-get *servers*)))))
-    (if name (find name all :key #'name) all)))
+(defun served (&optional name)
+  "Every declaration, in the order they must come up, or the one called NAME."
+  (let ((all (%in-order (fset:convert 'list (sento.atomic:atomic-get *served*)))))
+    (if name (find name all :key #'%served-name) all)))
 
 (defun root ()
   "The tree as it stands, as one object. A write supersedes rather than
@@ -383,8 +383,8 @@ mutates, so EQ on it answers whether anything anywhere moved."
   (space-root (current)))
 
 (defun kept (&optional name)
-  "What the servers this space raised are holding: the whole map, or NAME's.
-A supervisor's table, a connection, a subscription -- what cannot be a value."
+  "What this space is holding for what it brought up: the whole map, or NAME's.
+A supervisor's table, a connection, a subscription: what cannot be a value."
   (let ((all (space-kept (current))))
     (if name (fset:lookup all name) all)))
 
@@ -398,35 +398,51 @@ A supervisor's table, a connection, a subscription -- what cannot be a value."
              next)))
   value)
 
-(defgeneric raise (server &key &allow-other-keys)
-  (:documentation "Put SERVER's paths at the tree.
+(defun given (&optional key)
+  "What the caller handed UP: the whole map, or one of it. NIL for what nobody
+passed, so a declaration that wants an actor system asks for one and does
+without when there is none."
+  (let ((all (or *given* (fset:empty-map))))
+    (if key (fset:lookup all key) all)))
 
-Answers whatever the caller may have to hold on to, and NIL where there is
-nothing. A server takes the keywords it needs and ignores the rest, so one call
-raises all of them.")
-  (:method ((name symbol) &rest args &key &allow-other-keys)
-    "Raise the server called NAME, and keep what it answered."
-    (let ((it (servers name)))
-      (unless it (error 'refused :at name :why "there is no server by that name"))
-      (setf (kept name) (apply #'raise it args)))))
+(defun up (name &optional given)
+  "Bring NAME up in this space, and keep what it answered.
 
-(defgeneric lower (server)
-  (:documentation "Take SERVER off the tree.")
-  (:method ((s server))
-    (dolist (path (serves s)) (%write-one path nil))
-    nil)
-  (:method ((name symbol))
-    (let ((it (servers name)))
-      (when it (lower it)))))
+What a declaration's :UP answers is whatever the space must hold on to: a
+supervisor's table, a connection, a timer. GIVEN is read from inside it."
+  (let ((it (served name)))
+    (unless it
+      (error 'refused :at name :why "there is nothing served by that name"))
+    (let ((*given* (or given *given* (fset:empty-map)))
+          (bring-up (fset:lookup it :up)))
+      (setf (kept name) (when bring-up (funcall bring-up))))))
 
-(defun raise-all (&rest args &key &allow-other-keys)
-  "Raise every server, in order, and answer a map of name to what each said."
-  (dolist (s (servers) (kept))
-    (apply #'raise (name s) args)))
+(defun down (name)
+  "Take NAME off the tree: what it holds is given back first, then the paths it
+put there go, then the space forgets what it kept for it."
+  (let ((it (served name)))
+    (when it
+      (let ((take-down (fset:lookup it :down)))
+        (when take-down (funcall take-down (kept name))))
+      ;; what writing nothing at a mount does: the provider comes off, then the
+      ;; value. A provider does not get to refuse its own removal -- /sh answers
+      ;; reads and takes verbs and writes nothing, so an unforced nil there
+      ;; signals and everything behind it in the order stays up.
+      (fset:do-seq (path (or (fset:lookup it :at) (fset:empty-seq)))
+        (if (%mounted-at path)
+            (unmount path)
+            (%write-one path nil :force t)))
+      (setf (kept name) nil)))
+  nil)
 
-(defun lower-all ()
-  "Take every server off, in the reverse of the order they went up."
-  (dolist (s (reverse (servers))) (lower s))
+(defun up-all (&optional given)
+  "Bring everything up, in order, and answer a map of name to what each kept."
+  (dolist (d (served) (kept))
+    (up (%served-name d) given)))
+
+(defun down-all ()
+  "Take everything off, in the reverse of the order it went up."
+  (dolist (d (reverse (served))) (down (%served-name d)))
   nil)
 
 (defun doc (path)
@@ -1272,15 +1288,11 @@ the newest root that old."
      (:doc "what a path held as of a root")))
    (/was (fset:map (:doc "the tree as of a root: /was/${n}/any/path")))))
 
-(defclass roots-server (server) ()
-  (:default-initargs :name :roots :serves (list /history /was))
-  (:documentation "The superseded roots, at /history and /was. They are the
-space's and not a file's, so a pine with no store has its history."))
-
-(defmethod raise ((s roots-server) &key &allow-other-keys)
-  (declare (ignore s))
-  (write /history (history-provider))
-  (write /was (was-provider))
-  nil)
-
-(register (make-instance 'roots-server))
+(serve :roots
+  {:at [/history /was]
+   :doc "the superseded roots, at /history and /was. They are the space's and
+not a file's, so a pine with no store has its history."
+   :up (lambda ()
+         (write /history (history-provider))
+         (write /was (was-provider))
+         nil)})

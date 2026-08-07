@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.sh
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:server #:*ran-kept*))
+  (:export #:*ran-kept*))
 
 (in-package #:pine.provider.sh)
 (named-readtables:in-readtable pine.path:syntax)
@@ -166,24 +166,19 @@ for each line"})
                    t)}
      :doc "what has run, newest first; [:run ARGV...] or [:sh LINE] to run one"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :sh :serves (list /sh))
-  (:documentation "Running something, and what it said."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  "Serve /sh, and answer the cells this space keeps: what it ran, and the
-commands it is subscribed to."
-  (ns:write /sh (provider))
-  (fset:map (:ran (sento.atomic:make-atomic-reference :value (fset:empty-seq)))
-            (:streams (sento.atomic:make-atomic-reference :value (fset:empty-map)))))
-
-(defmethod ns:lower ((s server))
-  "Stop every subscription. A process nobody is listening to is not running."
-  (let ((cell (%cell :streams)))
-    (when cell
-      (fset:do-map (command process (sento.atomic:atomic-get cell))
-        (declare (ignore command))
-        (ignore-errors (uiop:terminate-process process :urgent t)))))
-  (call-next-method))
-
-(ns:register (make-instance 'server))
+(ns:serve :sh
+  {:at [/sh]
+   :doc "running something, and what it said"
+   ;; the cells this space keeps: what it ran, and the commands it is
+   ;; subscribed to
+   :up (lambda ()
+         (ns:write /sh (provider))
+         {:ran (sento.atomic:make-atomic-reference :value (fset:empty-seq))
+          :streams (sento.atomic:make-atomic-reference :value (fset:empty-map))})
+   ;; a process nobody is listening to is not running
+   :down (lambda (cells)
+           (let ((cell (and cells (fset:lookup cells :streams))))
+             (when cell
+               (fset:do-map (command process (sento.atomic:atomic-get cell))
+                 (declare (ignore command))
+                 (ignore-errors (uiop:terminate-process process :urgent t))))))})

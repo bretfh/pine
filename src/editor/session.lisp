@@ -5,7 +5,7 @@
    #:sess-client #:sess-aclient #:sess-sink #:sess-inbox #:sess-lock
    #:sess-cvar #:sess-stop #:sess-thread #:sess-pump
    #:sess-sent-wire #:sess-generation #:sess-signal
-   #:editor-app #:editor-font-px #:editor-frame
+   #:editor-font-px #:editor-frame
    #:editor-tree #:make-editor-session #:reseed-editor-sessions
    #:watch-editor-surface #:watch-arrangement
    #:push-editor-surface #:start-term-pump #:stop-session
@@ -238,19 +238,15 @@ output arrived, and nothing at all while no terminal is producing any."
         (start-term-pump s)
         s))))
 
-(defclass editor-app (pine.core.attach:app) ()
-  (:default-initargs :kind :editor)
-  (:documentation "The editor window: buffers, windows, the mode line."))
-
-(defmethod pine.core.attach:attached ((app editor-app) client)
-  (make-editor-session
-   client :sink (lambda (&rest _) (declare (ignore _)) (editor-frame client))))
-
-(defmethod pine.core.attach:received ((app editor-app) client message)
-  (session-input client message))
-
-(defmethod pine.core.attach:detached ((app editor-app) client)
-  (let ((s (pine.core.attach:attached-client-session client)))
-    (when (sess-p s) (stop-session s))))
-
-(pine.core.attach:register-app (make-instance 'editor-app))
+(pine.core.attach:app :editor
+  {:doc "the editor window: buffers, windows, the mode line"
+   :attached (lambda (client)
+               (make-editor-session
+                client
+                :sink (lambda (&rest _)
+                        (declare (ignore _))
+                        (editor-frame client))))
+   :received (lambda (client message) (session-input client message))
+   :detached (lambda (client)
+               (let ((s (pine.core.attach:attached-client-session client)))
+                 (when (sess-p s) (stop-session s))))})

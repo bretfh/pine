@@ -1,7 +1,7 @@
 (defpackage #:pine.win
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:server #:windows #:focused #:focus #:split-p #:parts #:provider
+  (:export #:windows #:focused #:focus #:split-p #:parts #:provider
            #:buf-of #:scroll-of #:weight-of #:runs-of #:seed #:reset
            #:split #:close #:only)
   (:shadow #:close))
@@ -144,11 +144,7 @@ focus lands on whatever is still there."
    (/win/?@at
     {:doc "a window's buf, scroll and weight, or the two halves of a stack"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :win :serves (list /win))
-  (:documentation "pine's own windows: the arrangement, as paths."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /win (provider)))
-
-(ns:register (make-instance 'server))
+(ns:serve :win
+  {:at [/win]
+   :doc "pine's own windows: the arrangement, as paths"
+   :up (lambda () (ns:write /win (provider)))})

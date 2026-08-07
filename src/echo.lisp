@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text))
   (:shadow #:complete #:abort #:next #:last)
-  (:export #:server #:message #:current-message #:+buffer+
+  (:export #:message #:current-message #:+buffer+
            #:prompt #:prompt-p #:prompt-text #:result
            #:accept #:abort #:complete-input #:changed
            #:next #:previous #:history-next #:history-previous
@@ -478,30 +478,27 @@ about them.")
     (when (and back (not (fset:equal? back (pine.buf:at +buffer+))))
       (ns:write /buf/current back))))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :echo :serves (list /echo))
-  (:documentation "The minibuffer: prompts, hints, results, and completion."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /echo (provider))
-  (ns:watch (pine.buf:at +buffer+ :text)
-            (pine.data:fn [v]
-              (declare (ignore v))
-              (changed)
-              {})
-            :as :echo-input)
-  (ns:watch /echo
-            (pine.data:fn [v]
-              (declare (ignore v))
-              (when (fset:equal? (ns:here) /echo)
-                (if (prompt-p) (%open) (%close)))
-              {})
-            :as :echo)
-  (ns:watch /echo/cols
-            (pine.data:fn [v]
-              (declare (ignore v))
-              (when (and (prompt-p) (completing-p)) (%show))
-              {})
-            :as :echo-cols))
-
-(ns:register (make-instance 'server))
+(ns:serve :echo
+  {:at [/echo]
+   :doc "the minibuffer: prompts, hints, results, and completion"
+   :up (lambda ()
+         (ns:write /echo (provider))
+         (ns:watch (pine.buf:at +buffer+ :text)
+                   (pine.data:fn [v]
+                     (declare (ignore v))
+                     (changed)
+                     {})
+                   :as :echo-input)
+         (ns:watch /echo
+                   (pine.data:fn [v]
+                     (declare (ignore v))
+                     (when (fset:equal? (ns:here) /echo)
+                       (if (prompt-p) (%open) (%close)))
+                     {})
+                   :as :echo)
+         (ns:watch /echo/cols
+                   (pine.data:fn [v]
+                     (declare (ignore v))
+                     (when (and (prompt-p) (completing-p)) (%show))
+                     {})
+                   :as :echo-cols))})

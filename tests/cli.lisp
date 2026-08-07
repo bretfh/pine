@@ -33,7 +33,7 @@
            (progn
              (setf server (pine::start-daemon :remoting-port port :config config))
              (&body))
-        (ignore-errors (pine.ns:lower-all))
+        (ignore-errors (pine.ns:down-all))
         (when server (pine.core.server:stop-server server))
         (setf pine.ns:*space* was)
         (loop :repeat 40 :until (pine:port-free-p port) :do (sleep 0.25))))))

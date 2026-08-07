@@ -1,3 +1,20 @@
+;; pine presents some verbs against the running daemon, plus the lifecycle it
+;; cannot express from inside itself.
+;;
+;;   pine read  /audio/volume
+;;   pine read  '/proc/*/state'
+;;   pine write /audio/volume 40
+;;   pine write -y '/buf/*/tab-width' 4
+;;   pine write /buf/scratch/text '[:insert "hello"]'
+;;   pine watch /media/title
+;;   pine diff  /was/-1h /
+;;
+;;   pine start | stop | restart | status
+;;   pine eval  '(any lisp form)'
+;;
+;; It holds no state and knows nothing about what it is asking for: a path is
+;; text and a lisp value.
+
 (defpackage #:pine.cli
   (:use #:cl)
   (:local-nicknames (#:server #:pine.core.server))
@@ -5,24 +22,6 @@
 
 (in-package #:pine.cli)
 
-
-;;;; pine is the three verbs against the running daemon, plus the lifecycle it
-;;;; cannot express from inside itself.
-;;;;
-;;;;   pine read  /audio/volume
-;;;;   pine read  '/proc/*/state'
-;;;;   pine write /audio/volume 40
-;;;;   pine write -y '/buf/*/tab-width' 4
-;;;;   pine write /buf/scratch/text '[:insert "hello"]'
-;;;;   pine watch /media/title
-;;;;   pine diff  /was/-1h /
-;;;;
-;;;;   pine start | stop | restart | status
-;;;;   pine eval  '(any lisp form)'
-;;;;
-;;;; It holds no state and knows nothing about what it is asking for: a path is
-;;;; text and a value is readable lisp, so a path added tomorrow is reachable
-;;;; from the shell today.
 
 (defparameter *usage*
   "usage: pine {read PATH | write [-y] PATH VALUE | watch PATH | diff FROM TO |
@@ -53,8 +52,8 @@ here is torn down."
         answer)
     (error () (format t "pine: no daemon at ~a:~d~%" host port) nil)))
 
-;;;; The three verbs. Reading and writing are one ask each; watching stands up
-;;;; an actor of its own and stays.
+;; Verbs. Reading and writing are one ask each; watching stands up an actor of
+;; its own and stays.
 
 (defun read-path (text) (ask (list :read text)))
 
@@ -94,13 +93,13 @@ before it does, because the shell is where a pattern is easiest to mistype."
         (return-from watch-path nil)))
     (loop (sleep 3600))))
 
-;;;; Lifecycle: what the daemon cannot do to itself.
+;; Lifecycle: what the daemon cannot do to itself.
 
 (defun stop-daemon (&key (port server:*port*))
   "Ask the daemon to shut down, taking its frontends with it, then make sure
 the port is free even if it was an old or wedged daemon."
   (ignore-errors
-    (pine.core.actor:ask (%control (%system) :port port) '(:stop) :timeout 3))
+   (pine.core.actor:ask (%control (%system) :port port) '(:stop) :timeout 3))
   (sleep 0.4)
   (unless (pine:port-free-p port) (pine:kill-port port))
   (format t "pine: stopped~%"))
@@ -111,8 +110,6 @@ the port is free even if it was an old or wedged daemon."
   (pine:run-all))
 
 (defun main (&optional (args (rest sb-ext:*posix-argv*)))
-  ;; a CLI prints its answer, nothing else: quiet sento/log4cl's INFO chatter
-  ;; that otherwise buries it
   (log:config :error)
   ;; this image may have been saved on another machine, and it answered
   ;; PINE_PORT and the core count when it was built
@@ -120,28 +117,27 @@ the port is free even if it was an old or wedged daemon."
   (let ((verb (first args)) (more (rest args)))
     (cond
       ((null verb) (format t "~a~%" *usage*))
-      ;; the three verbs
-      ((string= verb "read")  (read-path (first more)))
+      ((string= verb "read") (read-path (first more)))
       ((string= verb "write")
        (let ((force (member "-y" more :test #'string=)))
          (let ((rest (remove "-y" more :test #'string=)))
            (write-path (first rest) (format nil "~{~a~^ ~}" (cl:rest rest))
                        :force (and force t)))))
       ((string= verb "watch") (watch-path (first more)))
-      ((string= verb "diff")  (diff-paths (first more) (second more)))
+      ((string= verb "diff") (diff-paths (first more) (second more)))
       ;; the lifecycle
-      ((string= verb "start")   (pine:run-all))
-      ((string= verb "stop")    (stop-daemon))
+      ((string= verb "start") (pine:run-all))
+      ((string= verb "stop") (stop-daemon))
       ((string= verb "restart") (restart-daemon))
-      ((string= verb "daemon")  (pine:run-daemon))
+      ((string= verb "daemon") (pine:run-daemon))
       ((member verb '("editor" "desktop" "wm") :test #'string=)
        (pine:run-app verb))
       ((string= verb "status") (ask '(:status)))
-      ((string= verb "eval")   (ask (list :eval (format nil "~{~a~^ ~}" more))))
+      ((string= verb "eval") (ask (list :eval (format nil "~{~a~^ ~}" more))))
       ((string= verb "session")
        (ask (list :session (or (first more) (uiop:getenv "WAYLAND_DISPLAY")))))
       ((string= verb "reload") (ask '(:reload)))
       ((string= verb "agents") (ask '(:agents)))
-      ((string= verb "spawn")  (ask (list :spawn (first more))))
-      ((string= verb "kill")   (ask (list :kill (first more))))
+      ((string= verb "spawn") (ask (list :spawn (first more))))
+      ((string= verb "kill") (ask (list :kill (first more))))
       (t (format t "pine: unknown verb ~a~%~a~%" verb *usage*)))))

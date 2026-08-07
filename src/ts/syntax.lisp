@@ -1,7 +1,7 @@
 (defpackage #:pine.ts.syntax
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:hl #:pine.ts.highlight))
-  (:export #:language #:for #:grammar-of #:server #:declare-all
+  (:export #:language #:for #:grammar-of #:declare-all
            #:compute-highlights #:hl-dump #:hl-dump-file))
 
 (in-package #:pine.ts.syntax)
@@ -183,27 +183,23 @@ write supersedes, so EQ on it answers whether anything about the language moved.
     {:doc "a language: its grammar, its node rules and its head rules"})
    (/syntax {:doc "the languages there are"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :syntax :serves (list /syntax))
-  (:documentation "Languages, as paths: what to parse with and what to paint."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /syntax (provider))
-  ;; a language that moved is one whose rules have to be built again
-  (ns:watch /syntax/*
-            (pine.data:fn [v]
-              (declare (ignore v))
-              (pine.data:clear (%compiled))
-              {})
-            :as :syntax-compiled)
-  ;; what the space keeps: the rules each declaration compiled to
-  (pine.data:table))
-
-(defmethod ns:lower ((s server))
-  (ns:watch /syntax/* nil :as :syntax-compiled)
-  (call-next-method))
-
-(ns:register (make-instance 'server))
+(ns:serve :syntax
+  {:at [/syntax]
+   :doc "languages, as paths: what to parse with and what to paint"
+   :up (lambda ()
+         (ns:write /syntax (provider))
+         ;; a language that moved is one whose rules have to be built again
+         (ns:watch /syntax/*
+                   (pine.data:fn [v]
+                     (declare (ignore v))
+                     (pine.data:clear (%compiled))
+                     {})
+                   :as :syntax-compiled)
+         ;; what the space keeps: the rules each declaration compiled to
+         (pine.data:table))
+   :down (lambda (rules)
+           (declare (ignore rules))
+           (ns:watch /syntax/* nil :as :syntax-compiled))})
 
 ;; How the runtime finds a grammar. A registry, not state: which function
 ;; answers is a property of the code that is loaded, and what it answers comes
@@ -214,14 +210,16 @@ write supersedes, so EQ on it answers whether anything about the language moved.
 ;;;; Highlighting something that is not a buffer: a tool, a test, a snippet.
 
 (defun declare-all ()
-  "Raise every server that declares a language. Which languages exist is which
-servers serve something under /syntax, so a tool does not carry a list of them
-and a config that adds one is picked up here for free."
-  (ns:raise :syntax)
-  (dolist (s (ns:servers))
-    (when (and (not (eq :syntax (ns:name s)))
-               (some (lambda (path) (p:prefixp /syntax path)) (ns:serves s)))
-      (ns:raise (ns:name s)))))
+  "Bring up everything that declares a language. Which languages exist is what
+is served under /syntax, so a tool does not carry a list of them and a config
+that adds one is picked up here for free."
+  (ns:up :syntax)
+  (dolist (d (ns:served))
+    (let ((name (fset:lookup d :name))
+          (at (fset:convert 'list (or (fset:lookup d :at) (fset:empty-seq)))))
+      (when (and (not (eq :syntax name))
+                 (some (lambda (path) (p:prefixp /syntax path)) at))
+        (ns:up name)))))
 
 (defun %state (runtime name)
   (multiple-value-bind (lib fn) (grammar-of name)

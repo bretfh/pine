@@ -7,7 +7,7 @@
 
 (test a-line-written-to-log-is-the-last-line
   (pine.ns:with-space ()
-    (pine.ns:raise :log)
+    (pine.ns:up :log)
     (let ((*error-output* (make-broadcast-stream)))
       (pine.log:note "the first thing")
       (pine.log:note "the second thing"))
@@ -16,7 +16,7 @@
 
 (test the-log-is-bounded
   (pine.ns:with-space ()
-    (pine.ns:raise :log)
+    (pine.ns:up :log)
     (let ((*error-output* (make-broadcast-stream)))
       (dotimes (i (+ pine.log:*kept* 20))
         (pine.log:note "line ~d" i)))
@@ -26,18 +26,18 @@
 (test what-pine-said-is-not-in-the-file
   "Output is what this image said, not what the world holds."
   (pine.ns:with-space ()
-    (pine.ns:raise :log)
+    (pine.ns:up :log)
     (is (null (pine.ns:setting /log :keep t)))))
 
 (test anything-written-to-the-log-becomes-a-line
   (pine.ns:with-space ()
-    (pine.ns:raise :log)
+    (pine.ns:up :log)
     (pine.ns:write /log 42)
     (is (string= "42" (pine.ns:read /log)))))
 
 (test a-provider-says-what-its-paths-are-for
   (pine.ns:with-space ()
-    (pine.ns:raise :doc)
+    (pine.ns:up :doc)
     (pine.ns:write /audio
                    (pine.ns:provider
                     (/audio/volume {:read (pine.data:fn [] 40)
@@ -47,14 +47,14 @@
 
 (test a-path-nobody-documented-answers-nothing
   (pine.ns:with-space ()
-    (pine.ns:raise :doc)
+    (pine.ns:up :doc)
     (pine.ns:write /tab-width 8)
     (is (null (pine.ns:read /doc/tab-width))
         "a held path has no doc, and saying so is the point")))
 
 (test a-clause-with-no-doc-falls-back-to-its-providers
   (pine.ns:with-space ()
-    (pine.ns:raise :doc)
+    (pine.ns:up :doc)
     (pine.ns:write /audio
                    (pine.ns:provider
                     {:doc "pipewire, through wpctl and pactl"}
@@ -372,7 +372,7 @@ shipped.")
 config out of the doc and runs it: no readtable line, no nil guards, nothing
 edited to suit the tree. What it writes has to lay out and paint."
   (pine.ns:with-space ()
-    (pine.ns:raise-all)
+    (pine.ns:up-all)
     (let ((*package* (find-package :pine.user))
           (*readtable* (named-readtables:find-readtable 'pine.path:syntax))
           (text (%doc-config)))

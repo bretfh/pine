@@ -6,7 +6,7 @@
            #:key-sym #:key-ctrl #:key-meta #:key-shift #:key-super
            #:key= #:parse-key #:parse-chord #:key->string
            #:at #:bind #:define-keys #:lookup #:bindings
-           #:prefix-p #:roots #:server
+           #:prefix-p #:roots
            #:dispatch #:self-insert
            #:said #:prefix #:times #:last #:key-of
            #:call-command #:command-error #:key-binding #:read-next-key
@@ -305,20 +305,18 @@ records and returns. Whoever is watching /err decides."
                  (funcall on-plain key)
                  (setf (prefix) nil)))))))))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :key :serves (list /key /dispatch) :after (list :cmd))
-  (:documentation "The keymaps, the bindings pine ships, and the dispatch. After
-:CMD because it puts a clause of its own at /cmd, and the newest provider at a
-path is the one that answers."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /key (provider))
-  (ns:write /dispatch (dispatch-provider))
-  (ns:write /cmd (ns:provider
-                  (/cmd/last {:read (pine.data:fn [] (last))
-                              :doc "the command that ran last"})))
-  (fset:do-map (text value (sento.atomic:atomic-get *bound*))
-    (ns:write (p:parse text) value))
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :key
+  {:at [/key /dispatch]
+   ;; after :cmd because it puts a clause of its own at /cmd, and the newest
+   ;; provider at a path is the one that answers
+   :after [:cmd]
+   :doc "the keymaps, the bindings pine ships, and the dispatch"
+   :up (lambda ()
+         (ns:write /key (provider))
+         (ns:write /dispatch (dispatch-provider))
+         (ns:write /cmd (ns:provider
+                         (/cmd/last {:read (pine.data:fn [] (last))
+                                     :doc "the command that ran last"})))
+         (fset:do-map (text value (sento.atomic:atomic-get *bound*))
+           (ns:write (p:parse text) value))
+         nil)})

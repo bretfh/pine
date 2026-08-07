@@ -13,7 +13,7 @@
     (pine.editor.render:start-renderer client)
     (pine.echo:ensure)
     (setf pine.key:*terminal-handler* #'pine.term:terminal-dispatch)
-    (pine.ns:raise :err)
+    (pine.ns:up :err)
     (pine.editor.debugger:install)
     (let ((buf (pine.editor.frame:make-buffer "scratch")))
       (pine.editor.frame:set-buffer-mode buf :text)

@@ -8,7 +8,7 @@
 that a test can watch it bite."
   `(pine.ns:with-space ()
      (let ((saved (pine.ns:read (pine.path:parse "/park-seconds"))))
-       (pine.ns:raise :err)
+       (pine.ns:up :err)
        (pine.ns:write (pine.path:parse "/park-seconds") 1)
        (unwind-protect (progn ,@body)
          (pine.ns:write (pine.path:parse "/park-seconds") saved)))))
@@ -249,12 +249,12 @@ have their own faults and their own ids, and neither can decide the other's."
   (let ((a (pine.ns:fresh))
         (b (pine.ns:fresh)))
     (pine.ns:with-space (a)
-      (pine.ns:raise :err)
+      (pine.ns:up :err)
       (pine.err:report-failure (make-condition 'simple-error
                                                :format-control "in a")
                                "a probe"))
     (pine.ns:with-space (b)
-      (pine.ns:raise :err)
+      (pine.ns:up :err)
       (is (null (pine.err:faults))
           "a fault in one space showed up in another"))
     (pine.ns:with-space (a)

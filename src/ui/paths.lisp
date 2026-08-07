@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:face #:pine.ui.face)
                     (#:css #:pine.ui.css))
-  (:export #:server))
+  (:export))
 
 (in-package #:pine.ui.paths)
 (named-readtables:in-readtable pine.path:syntax)
@@ -153,30 +153,26 @@ A theme is its palette and its metrics. Its faces are their own paths, at
    (/style
     {:doc "what a config styled, which wins the cascade"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :theme :serves (list /theme /face /style))
-  (:documentation "Style, as paths: the theme everything resolves in, the faces
-it has, and what a config styled."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  "Serve the three, and answer the cells the space keeps for what is worked out
-from them.
-
-Resolving the faces and compiling the stylesheet is what every painted cell and
-every styled node asks for, and both are built from paths. They are worked out
-once and kept until the tree moves; the cells are made here because making one
-is a write, and a paint may not write."
-  (ns:write /theme (theme))
-  (ns:write /face (faces))
-  (ns:write /style (style))
-  ;; the theme pine ships, unless this space already said otherwise
-  (unless (ns:read /theme) (ns:write /theme face:+default-theme+))
-  ;; a config styles a selector by writing its path, so this is where a frontend
-  ;; image that paints in pixels hears about it. Nothing a config calls: the
-  ;; write is the whole of it.
-  (ns:watch /style/* (pine.data:fn [v] (declare (ignore v)) (css:broadcast) {})
-            :as :style-broadcast)
-  (fset:map (:faces (sento.atomic:make-atomic-reference :value nil))
-            (:stylesheet (sento.atomic:make-atomic-reference :value nil))))
-
-(ns:register (make-instance 'server))
+(ns:serve :theme
+  {:at [/theme /face /style]
+   :doc "style, as paths: the theme everything resolves in, the faces it has,
+and what a config styled"
+   ;; what it keeps is the cells for what is worked out from the three.
+   ;; Resolving the faces and compiling the stylesheet is what every painted
+   ;; cell and every styled node asks for, and both are built from paths. They
+   ;; are worked out once and kept until the tree moves; the cells are made
+   ;; here because making one is a write, and a paint may not write.
+   :up (lambda ()
+         (ns:write /theme (theme))
+         (ns:write /face (faces))
+         (ns:write /style (style))
+         ;; the theme pine ships, unless this space already said otherwise
+         (unless (ns:read /theme) (ns:write /theme face:+default-theme+))
+         ;; a config styles a selector by writing its path, so this is where a
+         ;; frontend image that paints in pixels hears about it. Nothing a
+         ;; config calls: the write is the whole of it.
+         (ns:watch /style/*
+                   (pine.data:fn [v] (declare (ignore v)) (css:broadcast) {})
+                   :as :style-broadcast)
+         {:faces (sento.atomic:make-atomic-reference :value nil)
+          :stylesheet (sento.atomic:make-atomic-reference :value nil)})})

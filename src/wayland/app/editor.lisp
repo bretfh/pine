@@ -291,6 +291,4 @@ pushes. The daemon must be up."
       (pine.frontend:close-pump (ed-pump ed))
       (pine.frontend:shutdown backing))))
 
-(defmethod pine.core.attach:run-frontend ((app pine.editor.session:editor-app))
-  (declare (ignore app))
-  (run-editor))
+(pine.core.attach:frontend :editor #'run-editor)

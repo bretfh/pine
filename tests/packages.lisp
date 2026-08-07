@@ -472,7 +472,7 @@ reading the buffer still answers what the doc describes.")
 (test a-buffer-carries-only-the-leaves-the-doc-names
   (pine.ns:with-space ()
     (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf)
+      (pine.ns:up :buf)
     (pine.ns:write (pine.buf:at "probe" :text) "hello")
     (pine.ns:write (pine.buf:at "probe" :text) (fset:seq :insert "!"))
     (pine.ns:write (pine.buf:at "probe" :mode) :text)
@@ -611,7 +611,7 @@ going to; anything else is new and has to say for itself."
   '(;; the namespace itself: the one table the rest of this is about
     ("PINE.NS"             "*SPACE*"     "the space this image serves")
     ;; registries: what this image's code can do, filled as the files load
-    ("PINE.NS"             "*SERVERS*"   "what pine can serve")
+    ("PINE.NS"             "*SERVED*"    "what pine can serve")
     ("PINE.PROC"           "*KINDS*"     "what /proc knows how to run")
     ("PINE.UI.WIRE"        "*CODEC*"     "what crosses the wire, both ways")
     ("PINE.CMD"            "*BUILTIN*"   "the commands pine ships")
@@ -666,13 +666,23 @@ list has to be off the list."
                              rest)))
                   (return (string-downcase (subseq rest 0 (or end (length rest)))))))))
 
+(defun %readablep (file)
+  "Whether FILE can be opened. PROBE-FILE answers a dangling symlink with its
+own name rather than NIL, so this is what says the difference."
+  (let ((stream (open file :if-does-not-exist nil)))
+    (when stream (close stream) t)))
+
 (defun %source-files (dir)
-  "Every .lisp file at or under DIR."
+  "Every .lisp file at or under DIR.
+
+An editor's own droppings are not source: a lock is a dangling symlink named
+after the file it holds, so it globs as one and reading it signals."
   (let ((acc nil))
     (dolist (entry (directory (merge-pathnames "*.*" dir)) acc)
       (cond ((null (pathname-name entry))
              (setf acc (append acc (%source-files entry))))
-            ((equal "lisp" (pathname-type entry)) (push entry acc))))))
+            ((and (equal "lisp" (pathname-type entry)) (%readablep entry))
+             (push entry acc))))))
 
 (defun %where-it-belongs (name)
   "The path under src/ a package of NAME declares itself in."

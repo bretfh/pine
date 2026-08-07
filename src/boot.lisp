@@ -1,3 +1,10 @@
+;; Frontends. The editor and the desktop are not part of this process: each
+;; is its own OS image -- `pine editor' / `pine desktop', the same binary
+;; re-invoked -- so one can crash, be killed, or hang without touching the
+;; daemon or the other. Each attaches back over remoting and renders the
+;; surfaces the daemon builds from init.lisp.
+;;
+;; They are declarations under /proc like anything else that runs.
 (defpackage #:pine
   (:use :cl)
   (:export
@@ -8,7 +15,6 @@
    #:run-app
    #:frontend
    #:stop
-   ;; what the daemon cannot do to itself, so the CLI does it
    #:port-free-p
    #:kill-port
    #:load-config
@@ -16,15 +22,6 @@
 
 (in-package #:pine)
 (named-readtables:in-readtable pine.path:syntax)
-
-
-;;;; Frontends. The editor and the desktop are not part of this process: each
-;;;; is its own OS image -- `pine editor' / `pine desktop', the same binary
-;;;; re-invoked -- so one can crash, be killed, or hang without touching the
-;;;; daemon or the other. Each attaches back over remoting and renders the
-;;;; surfaces the daemon builds from init.lisp.
-;;;;
-;;;; They are declarations under /proc like anything else that runs.
 
 (defparameter +frontends+ '("desktop" "editor")
   "The frontend verbs pine ships, each its own process.
@@ -108,7 +105,7 @@ display changes."
                      (dolist (verb +frontends+ start)
                        (setf start (fset:with start
                                               (pine.path:path /proc
-                                                               (string-downcase verb))
+                                                              (string-downcase verb))
                                               (fset:seq :start))))))
                  :as :frontend-display))
 
@@ -138,8 +135,8 @@ editor and desktop down with it."
   "Kill whatever process holds PORT. Version-independent, so `pine stop' works
 even on an old or wedged daemon that has no clean :stop."
   (ignore-errors
-    (uiop:run-program (list "fuser" "-k" (format nil "~d/tcp" port))
-                      :ignore-error-status t :output nil :error-output nil)))
+   (uiop:run-program (list "fuser" "-k" (format nil "~d/tcp" port))
+                     :ignore-error-status t :output nil :error-output nil)))
 
 (defun port-free-p (port)
   "True when nothing listens on PORT (the daemon is down)."
@@ -157,7 +154,7 @@ What comes off is what the registry says went up, so a subsystem added since
 cannot be left running by a shutdown that never heard of it. /proc goes with
 it, which is what stops the frontends and everything else declared."
   (pine.core.hooks:run-shutdown-hooks)
-  (pine.ns:lower-all))
+  (pine.ns:down-all))
 
 
 
@@ -166,7 +163,7 @@ it, which is what stops the frontends and everything else declared."
   (start-daemon :workers workers :remoting-port remoting-port))
 
 (defun start-daemon (&key (workers pine.core.server:*workers*) (remoting-port 0)
-                          (config (config-directory)))
+                       (config (config-directory)))
   (let ((srv (pine.core.server:start-server :workers workers :remoting-port remoting-port)))
     (setf pine.core.server:*server* srv)
     (setf (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
@@ -175,11 +172,11 @@ it, which is what stops the frontends and everything else declared."
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     (pine.core.actor:start-agent-debug srv)
-    ;; everything pine serves, in the order the registry says. There is no
-    ;; list here to fall behind the one the tests raise.
-    (let ((up (pine.ns:raise-all
-               :system (pine.core.server:actor-system srv)
-               :runtime (pine.core.server:ts-runtime srv))))
+    ;; everything pine serves, in the order the declarations say. There is no
+    ;; list here to fall behind the one the tests bring up.
+    (let ((up (pine.ns:up-all
+               {:system (pine.core.server:actor-system srv)
+               :runtime (pine.core.server:ts-runtime srv)})))
       (setf (pine.core.server:proc srv) (fset:lookup up :proc)
             (pine.core.server:store srv) (fset:lookup up :store)))
     ;; the clock an :every write asks for. The namespace says what was asked;
@@ -200,7 +197,7 @@ it, which is what stops the frontends and everything else declared."
     (pine.core.attach:start-attach-listener srv)
     (start-control srv)
     (pine.core.hooks:add-shutdown-hook :store
-      (lambda () (pine.buf:record-places)))
+                                       (lambda () (pine.buf:record-places)))
     (load-init config)
     (pine.log:note "daemon ready [remoting ~a]" (pine.core.server:remoting-port srv))
     srv))
@@ -242,18 +239,16 @@ and outliving every restart."
 
 (defun daemon-listening-p (port)
   (ignore-errors
-    (let ((s (usocket:socket-connect pine.core.server:*host* port :timeout 1)))
-      (usocket:socket-close s) t)))
+   (let ((s (usocket:socket-connect pine.core.server:*host* port :timeout 1)))
+     (usocket:socket-close s) t)))
 
 (defun run-app (verb)
   "Run the frontend VERB names, in this image.
 
-The daemon registers one app per kind at startup; the backing defines how each
-one runs. Without a backing the app says so rather than the CLI guessing."
-  (let ((app (pine.core.attach:find-app (intern (string-upcase verb) :keyword))))
-    (if app
-        (pine.core.attach:run-frontend app)
-        (format t "pine: no ~a app~%" verb))))
+What a kind is, from the daemon's side, is declared where it lives; how it runs
+in this image is the backing's to say. A build without one says so rather than
+the CLI guessing."
+  (pine.core.attach:run-frontend (intern (string-upcase verb) :keyword)))
 
 (defun run-all (&key (port pine.core.server:*port*))
   "`pine start': the shim. Kick the daemon in its own process if it is not already
@@ -335,8 +330,8 @@ loaded before it."
 (defun %watcher (uri)
   "The remote the CLI is listening on, or NIL when it has gone."
   (ignore-errors
-    (sento.remoting:make-remote-ref
-     (pine.core.server:actor-system pine.core.server:*server*) uri)))
+   (sento.remoting:make-remote-ref
+    (pine.core.server:actor-system pine.core.server:*server*) uri)))
 
 (defun %watch-for (server text uri)
   "Watch what TEXT names and tell URI each change, until the telling fails.
@@ -359,58 +354,58 @@ than doubling it, and a `pine watch' that goes away takes its watch with it."
       "watching")))
 
 (defun start-control (server)
-  (sento.actor-context:actor-of (pine.core.server:actor-system server) :name "control"
-    :dispatcher :pinned
-    :receive
-    (lambda (msg)
-      (flet ((r (x) (sento.actor:reply x)))
-        (handler-case
-            (case (first msg)
-              ;; the three verbs, against the running daemon
-              (:read (r (%said (pine.ns:read (pine.path:parse (second msg))))))
-              (:write (pine.ns:write (pine.path:parse (second msg))
-                                     (%heard (third msg))
-                                     :force (fourth msg))
-                      (r "ok"))
-              ;; what a write to this path would touch, so the caller can say
-              ;; where it lands before it lands
-              (:matches (r (mapcar #'pine.path:text
-                                   (pine.ns:matches
-                                    (pine.path:parse (second msg))))))
-              (:watch (r (or (%watch-for server (second msg) (third msg))
-                             "nowhere to send it")))
-              (:diff (r (%said (pine.ns:diff (pine.path:parse (second msg))
-                                             (pine.path:parse (third msg))))))
-              (:status
-               (r (format nil "pine up  port ~a  agents ~d"
-                          (pine.core.server:remoting-port server)
-                          (length (pine.core.actor:list-agents server)))))
-              ;; the same language a config is written in, so a form typed at
-              ;; the shell may say /audio/volume like one in init.lisp
-              (:eval
-               (let ((*package* (find-package :pine.user))
-                     (*readtable* (named-readtables:find-readtable 'pine.path:syntax)))
-                 (r (princ-to-string (eval (read-from-string (second msg)))))))
-              (:stop
-               (r "stopping")
-               ;; reply first, then tear down off the actor thread: kill the
-               ;; frontends this daemon spawned, then exit the image.
-               (bordeaux-threads:make-thread
-                (lambda ()
-                  (ignore-errors (stop-frontends))
-                  (sleep 0.2)
-                  (sb-ext:exit :code 0 :abort t))
-                :name "pine-shutdown"))
-              (:session
-               (r (or (set-session-display (second msg))
-                      "no display given")))
-              ;; nothing here tells anyone what moved: a config is writes, and
-              ;; what watches those paths hears about them
-              (:reload (load-init)
-                       (ignore-errors (pine.desktop:refresh-all))
-                       (r "reloaded"))
-              (:agents (r (mapcar #'pine.core.actor:agent-info-name (pine.core.actor:list-agents server))))
-              (:spawn (pine.core.actor:spawn-agent server (second msg)) (r "spawned"))
-              (:kill  (pine.core.actor:kill-agent server (second msg)) (r "killed"))
-              (t (r (list :unknown (first msg)))))
-          (error (e) (r (format nil "error: ~a" e))))))))
+  (sento.actor-context:actor-of
+   (pine.core.server:actor-system server) :name "control"
+   :dispatcher :pinned
+   :receive
+   (lambda (msg)
+     (flet ((r (x) (sento.actor:reply x)))
+       (handler-case
+           (case (first msg)
+             (:read (r (%said (pine.ns:read (pine.path:parse (second msg))))))
+             (:write (pine.ns:write (pine.path:parse (second msg))
+                                    (%heard (third msg))
+                                    :force (fourth msg))
+              (r "ok"))
+             ;; what a write to this path would touch, so the caller can say
+             ;; where it lands before it lands
+             (:matches (r (mapcar #'pine.path:text
+                                  (pine.ns:matches
+                                   (pine.path:parse (second msg))))))
+             (:watch (r (or (%watch-for server (second msg) (third msg))
+                            "nowhere to send it")))
+             (:diff (r (%said (pine.ns:diff (pine.path:parse (second msg))
+                                            (pine.path:parse (third msg))))))
+             (:status
+              (r (format nil "pine up  port ~a  agents ~d"
+                         (pine.core.server:remoting-port server)
+                         (length (pine.core.actor:list-agents server)))))
+             ;; the same language a config is written in, so a form typed at
+             ;; the shell may say /audio/volume like one in init.lisp
+             (:eval
+              (let ((*package* (find-package :pine.user))
+                    (*readtable* (named-readtables:find-readtable 'pine.path:syntax)))
+                (r (princ-to-string (eval (read-from-string (second msg)))))))
+             (:stop
+              (r "stopping")
+              ;; reply first, then tear down off the actor thread: kill the
+              ;; frontends this daemon spawned, then exit the image.
+              (bordeaux-threads:make-thread
+               (lambda ()
+                 (ignore-errors (stop-frontends))
+                 (sleep 0.2)
+                 (sb-ext:exit :code 0 :abort t))
+               :name "pine-shutdown"))
+             (:session
+              (r (or (set-session-display (second msg))
+                     "no display given")))
+             ;; nothing here tells anyone what moved: a config is writes, and
+             ;; what watches those paths hears about them
+             (:reload (load-init)
+              (ignore-errors (pine.desktop:refresh-all))
+              (r "reloaded"))
+             (:agents (r (mapcar #'pine.core.actor:agent-info-name (pine.core.actor:list-agents server))))
+             (:spawn (pine.core.actor:spawn-agent server (second msg)) (r "spawned"))
+             (:kill (pine.core.actor:kill-agent server (second msg)) (r "killed"))
+             (t (r (list :unknown (first msg)))))
+         (error (e) (r (format nil "error: ~a" e))))))))

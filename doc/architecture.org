@@ -109,20 +109,35 @@ crosses to another image the way everything else on the wire does. Without it,
 =C-x C-e= on a line holding a path or a map read under the wrong reader and
 signalled.
 
-* The four contracts
+* What a subsystem is
 
-Everything extensible in pine by writing code is one of these. A new capability
-is a method, not a branch. There is a fifth thing one extends, and it is not a
-method at all: see "A language is data" below.
+A declaration, at a name:
 
-** server
+#+begin_src lisp
+  (serve :clock
+    {:at    [/clock]
+     :after [:mode]
+     :doc   "the time, as paths"
+     :up    (lambda () (write /clock (provider)) ...)
+     :down  (lambda (timer) (cancel timer))})
+#+end_src
 
-What serves a subtree. Declares its paths, its provider, what it needs mounted
-first, and how it comes down. The kernel mounts, unmounts, and answers what is
-mounted.
+=:at= is what it puts at the tree, =:after= what has to be up before it, =:up=
+answers whatever the space must hold on to, and =:down= is handed that back. The
+paths come off either way, so nothing unwrites its own.
 
-Adding a subsystem is a declaration. It cannot be forgotten by a mount list,
-because there is no mount list.
+=up= brings one up in this space and =up-all= brings up everything in order, so
+adding a subsystem cannot be forgotten by a mount list: there is no mount list.
+What =:up= was handed is read where it is wanted, through =given=, the same way
+=here= says which path a provider is answering for.
+
+There is no class, and nothing to subclass. A language is a declaration at
+=/syntax/?name= for the same reason; see "A language is data" below.
+
+* The three contracts
+
+Everything else extensible in pine by writing code is one of these. A new
+capability is a method, not a branch.
 
 ** runnable
 
@@ -166,10 +181,10 @@ one surface over =(read /err/*)=, so nothing has to be told which kind it has.
 
 * A language is data
 
-The four contracts are CLOS: a subclass and its methods. A language is the one
-extension surface that is not. It is a map at =/syntax/?name= holding what
-grammar to load, what each node type paints, and what a symbol in head position
-does to the form it heads.
+The three contracts are CLOS: a subclass and its methods. A language, like a
+subsystem, is not. It is a map at =/syntax/?name= holding what grammar to load,
+what each node type paints, and what a symbol in head position does to the form
+it heads.
 
 Data rather than a provider, because the tree is the storage and there is no
 world behind it. That is what makes amending one macro a write to one leaf:

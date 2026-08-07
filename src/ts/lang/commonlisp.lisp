@@ -1,7 +1,7 @@
 (defpackage #:pine.ts.lang.commonlisp
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:syntax #:pine.ts.syntax))
-  (:export #:commonlisp #:server))
+  (:export #:commonlisp))
 
 (in-package #:pine.ts.lang.commonlisp)
 (named-readtables:in-readtable pine.path:syntax)
@@ -119,13 +119,8 @@
    (/head/otherwise        {:face :keyword})
    (/head/t                {:face :keyword})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :syntax-commonlisp :serves (list /syntax/commonlisp)
-                     :after (list :syntax))
-  (:documentation "Common Lisp's rules, at /syntax/commonlisp."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /syntax/commonlisp (commonlisp))
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :syntax-commonlisp
+  {:at [/syntax/commonlisp]
+   :after [:syntax]
+   :doc "Common Lisp's rules, at /syntax/commonlisp"
+   :up (lambda () (ns:write /syntax/commonlisp (commonlisp)) nil)})

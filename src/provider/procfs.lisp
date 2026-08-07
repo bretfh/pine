@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.procfs
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns))
-  (:export #:server #:procfs))
+  (:export #:procfs))
 
 (in-package #:pine.provider.procfs)
 (named-readtables:in-readtable pine.path:syntax)
@@ -108,13 +108,10 @@
                 '("cpu" "ram" "temp" "disk" "uptime" "load" "user" "host"))
           :doc "the machine"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :sys :serves (list /sys))
-  (:documentation "The machine: cpu, ram, temperature, disk, uptime, load."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  "Serve /sys, and answer the cell the cpu delta is measured against."
-  (ns:write /sys (procfs))
-  (sento.atomic:make-atomic-reference :value nil))
-
-(ns:register (make-instance 'server))
+(ns:serve :sys
+  {:at [/sys]
+   :doc "the machine: cpu, ram, temperature, disk, uptime, load"
+   ;; the cell is what the cpu delta is measured against
+   :up (lambda ()
+         (ns:write /sys (procfs))
+         (sento.atomic:make-atomic-reference :value nil))})

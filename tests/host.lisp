@@ -14,7 +14,7 @@ another pine would use."
      (unwind-protect
           (pine.ns:with-space ()
             (let ((system (pine.core.server:actor-system server)))
-              (pine.host:serve system)
+              (pine.host:answer-for system)
               (pine.host:mount :probe :system system
                                       :host pine.core.server:*host*
                                       :port +host-port+)
@@ -30,7 +30,7 @@ the paths it mirrors."
     (unwind-protect
          (pine.ns:with-space ()
            (let ((system (pine.core.server:actor-system server)))
-             (pine.host:serve system)
+             (pine.host:answer-for system)
              (pine.ns:write /theme :ef-dream)
              (pine.ns:write /host/probe
                             (pine.host:pine
@@ -222,7 +222,7 @@ whose keys have different prefixes is the same sentence across two pines."
   "/doc is how you ask what a path is and what it takes, and a mounted path is
 a path."
   (with-host
-    (pine.ns:raise :doc)
+    (pine.ns:up :doc)
     (pine.ns:write /audio (pine.provider.pipewire:pipewire))
     (is (pine.ns:read /doc/host/probe/audio/volume)
         "a mounted path said nothing about itself")))

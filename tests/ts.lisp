@@ -343,8 +343,8 @@ one because the text says so."
 reader a lisp file wants, and the mode covers a family rather than one reader."
   (pine.ns:with-space ()
     (pine.syntax-declared)
-    (pine.ns:raise :mode)
-    (pine.ns:raise :buf)
+    (pine.ns:up :mode)
+    (pine.ns:up :buf)
     (pine.ns:write (pine.buf:at "g" :mode) :lisp)
     (pine.ns:write (pine.buf:at "g" :readtable) 'pine.path:syntax)
     (is (eq :pine (pine.buf::%grammar-of "g"))
@@ -357,7 +357,7 @@ reader a lisp file wants, and the mode covers a family rather than one reader."
   "A config is written in pine's reader and its name says nothing, so the mode
 claims it by path."
   (pine.ns:with-space ()
-    (pine.ns:raise :mode)
+    (pine.ns:up :mode)
     (is (eq :pine (pine.mode:for-file "/home/someone/.config/pine/init.lisp")))
     (is (eq :lisp (pine.mode:for-file "/home/someone/src/other/init.lisp"))
         "a lisp file outside a pine directory is ordinary lisp")))

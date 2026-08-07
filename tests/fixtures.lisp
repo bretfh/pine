@@ -40,10 +40,10 @@ with a renderer, scratch and the minibuffer. Returns the server."
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
     ;; the same call the daemon makes: there is one list of what pine serves
-    (let ((up (pine.ns:raise-all
-               :system (pine.core.server:actor-system srv)
-               :runtime (pine.core.server:ts-runtime srv)
-               :store-path (store-file))))
+    (let ((up (pine.ns:up-all
+               (fset:map (:system (pine.core.server:actor-system srv))
+                         (:runtime (pine.core.server:ts-runtime srv))
+                         (:store-path (store-file))))))
       (setf (pine.core.server:proc srv) (fset:lookup up :proc)
             (pine.core.server:store srv) (fset:lookup up :store)
             *store* (fset:lookup up :store)))

@@ -174,6 +174,4 @@ the daemon (make daemon) must already be up."
                             :done (lambda () (client-done client)))
       (pine.frontend:close-pump (client-pump client)))))
 
-(defmethod pine.core.attach:run-frontend ((app pine.desktop::desktop-app))
-  (declare (ignore app))
-  (run-desktop))
+(pine.core.attach:frontend :desktop #'run-desktop)

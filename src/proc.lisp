@@ -1,7 +1,7 @@
 (defpackage #:pine.proc
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:proc #:server #:tick #:emit
+  (:export #:proc #:tick #:emit
            #:runnable #:kinds #:kind-of #:start #:halt #:alive-p #:took
            #:interval #:*backoff-cap* #:*out-kept*))
 
@@ -372,7 +372,7 @@ declaration again leaves it running."
     {:ls (pine.data:fn [] (sort (pine.data:keys (%now proc)) #'string<))
      :doc "everything running, whatever its blast radius"})))
 
-(defun %raise (&key system image-argv)
+(defun %up (&key system image-argv)
   (let* ((timer (when system
                   (or (sento.actor-system:scheduler system)
                       (error "This actor system has no scheduler, so nothing ~
@@ -387,7 +387,7 @@ declaration again leaves it running."
        :pine-proc))
     proc))
 
-(defun %lower (proc)
+(defun %down (proc)
   (when (proc-timer proc)
     (sento.wheel-timer:cancel (proc-timer proc) :pine-proc))
   (fset:do-map (name entry (%now proc))
@@ -399,18 +399,10 @@ declaration again leaves it running."
   (ns:write /proc nil)
   nil)
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :proc :serves (list /proc))
-  (:documentation "Everything running, in one table. The table holds processes
-and threads, which cannot be values, so the space keeps it."))
-
-(defmethod ns:raise ((s server) &key system image-argv &allow-other-keys)
-  (declare (ignore s))
-  (%raise :system system :image-argv image-argv))
-
-(defmethod ns:lower ((s server))
-  (let ((proc (ns:kept (ns:name s))))
-    (when proc (%lower proc)))
-  (call-next-method))
-
-(ns:register (make-instance 'server))
+(ns:serve :proc
+  {:at [/proc]
+   :doc "everything running, in one table. The table holds processes and
+threads, which cannot be values, so the space keeps it."
+   :up (lambda ()
+         (%up :system (ns:given :system) :image-argv (ns:given :image-argv)))
+   :down (lambda (proc) (when proc (%down proc)))})

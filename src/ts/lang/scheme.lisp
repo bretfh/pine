@@ -1,7 +1,7 @@
 (defpackage #:pine.ts.lang.scheme
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:syntax #:pine.ts.syntax))
-  (:export #:scheme #:server))
+  (:export #:scheme))
 
 (in-package #:pine.ts.lang.scheme)
 (named-readtables:in-readtable pine.path:syntax)
@@ -59,13 +59,8 @@
    (/head/guard     {:face :keyword :rest :body})
    (/head/syntax-rules {:face :keyword :rest :body})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :syntax-scheme :serves (list /syntax/scheme)
-                     :after (list :syntax))
-  (:documentation "Scheme's rules, at /syntax/scheme."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /syntax/scheme (scheme))
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :syntax-scheme
+  {:at [/syntax/scheme]
+   :after [:syntax]
+   :doc "Scheme's rules, at /syntax/scheme"
+   :up (lambda () (ns:write /syntax/scheme (scheme)) nil)})

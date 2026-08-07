@@ -14,8 +14,8 @@
 (def-fixture wm-session ()
   "A space of its own with /wm raised and one 100x50 output."
   (pine.ns:with-space ()
-    (pine.ns:raise :theme)
-    (pine.ns:raise :wm)
+    (pine.ns:up :theme)
+    (pine.ns:up :wm)
     (pine.ns:write /wm/output {:x 0 :y 0 :width 100 :height 50})
     (&body)))
 
@@ -29,7 +29,7 @@
 
 (test with-nothing-arranged-there-are-no-windows
   (pine.ns:with-space ()
-    (pine.ns:raise :wm)
+    (pine.ns:up :wm)
     (is-false (pine.wm:attached-p))
     (is (null (pine.wm:windows)))))
 
@@ -121,7 +121,7 @@
 nothing is lost when a frontend detaches."
   (with-fixture wm-session ()
     (add-windows "w1" "w2")
-    (pine.core.attach:detached (make-instance 'pine.wm::wm-app) nil)
+    (pine.core.attach:detached :wm nil)
     (is (= 2 (length (pine.wm:windows))))))
 
 (test the-binding-table-carries-chord-and-command-strings

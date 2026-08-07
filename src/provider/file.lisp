@@ -1,7 +1,6 @@
 (defpackage #:pine.provider.file
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:server))
+  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path)))
 
 (in-package #:pine.provider.file)
 (named-readtables:in-readtable pine.path:syntax)
@@ -61,11 +60,7 @@
      :ls (pine.data:fn [] (mapcar #'p:name (%ls rest)))
      :doc "a file's contents, or a directory's entries; nil deletes"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :file :serves (list /file))
-  (:documentation "The filesystem, as a subtree."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /file (provider)))
-
-(ns:register (make-instance 'server))
+(ns:serve :file
+  {:at [/file]
+   :doc "the filesystem, as a subtree"
+   :up (lambda () (ns:write /file (provider)))})

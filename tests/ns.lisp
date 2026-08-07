@@ -616,62 +616,114 @@ first and write it after, and most of these disappear."
 
 ;;;; what serves a subtree
 
-(defclass probe-server (pine.ns:server) ()
-  (:default-initargs :name :probe :serves (list /probe))
-  (:documentation "A server this file invented, to check that pine raises one
-it has never heard of."))
+(defun %names ()
+  (mapcar (lambda (d) (fset:lookup d :name)) (pine.ns:served)))
 
-(defmethod pine.ns:raise ((s probe-server) &key &allow-other-keys)
-  (pine.ns:write /probe :up))
-
-(defclass probe-after-server (pine.ns:server) ()
-  (:default-initargs :name :probe-after :serves (list /probe-after)
-                     :after (list :probe)))
-
-(defmethod pine.ns:raise ((s probe-after-server) &key &allow-other-keys)
-  (pine.ns:write /probe-after (pine.ns:read /probe)))
-
-(test a-server-declared-outside-the-tree-joins-the-list
-  "Adding a subsystem is a subclass, a method and a register. There is no mount
-list for it to be left out of."
-  (pine.ns:register (make-instance 'probe-server))
+(test a-subsystem-declared-outside-the-tree-joins-the-list
+  "Adding a subsystem is one form. There is no mount list for it to be left out
+of, and no class for it to be a subclass of."
+  (pine.ns:serve :probe
+    {:at [/probe]
+     :doc "a subtree this file invented, to check that pine brings up one it
+has never heard of"
+     :up (lambda () (pine.ns:write /probe :up))})
   (unwind-protect
        (pine.ns:with-space ()
-         (is (member :probe (mapcar #'pine.ns:name (pine.ns:servers))))
-         (pine.ns:raise :probe)
+         (is (member :probe (%names)))
+         (pine.ns:up :probe)
          (is (eq :up (pine.ns:read /probe)))
-         (pine.ns:lower :probe)
+         (pine.ns:down :probe)
          (is (null (pine.ns:read /probe))))
-    (pine.ns:unregister :probe)))
+    (pine.ns:unserve :probe)))
 
-(test a-server-is-raised-after-what-it-says-it-is-after
-  "Declared the other way round, so the order comes from what they say rather
-than from when they were registered."
-  (pine.ns:register (make-instance 'probe-after-server))
-  (pine.ns:register (make-instance 'probe-server))
+(test what-it-is-given-is-read-where-it-is-wanted
+  ":UP takes no arguments. What UP was handed is read through GIVEN, so a
+declaration that wants an actor system asks for one and the twenty-two that
+want nothing say nothing."
+  (pine.ns:serve :probe
+    {:at [/probe]
+     :up (lambda () (pine.ns:write /probe (pine.ns:given :sample)))})
   (unwind-protect
-       (let* ((names (mapcar #'pine.ns:name (pine.ns:servers)))
+       (pine.ns:with-space ()
+         (pine.ns:up :probe {:sample 7})
+         (is (eql 7 (pine.ns:read /probe)))
+         ;; nobody passed one, so it reads nil rather than signalling
+         (pine.ns:up :probe)
+         (is (null (pine.ns:read /probe))))
+    (pine.ns:unserve :probe)))
+
+(test what-a-space-kept-comes-back-to-down-and-is-then-forgotten
+  "The five that used to define LOWER all did the same thing by hand: take what
+the space kept, dispose of it, and call the next method to unwrite the paths."
+  (let ((given nil))
+    (pine.ns:serve :probe
+      {:at [/probe]
+       :up (lambda () (pine.ns:write /probe :up) :a-handle)
+       :down (lambda (handle) (setf given handle))})
+    (unwind-protect
+         (pine.ns:with-space ()
+           (pine.ns:up :probe)
+           (is (eq :a-handle (pine.ns:kept :probe)))
+           (pine.ns:down :probe)
+           (is (eq :a-handle given) "what it kept was not handed back")
+           (is (null (pine.ns:kept :probe)) "the space is still holding it")
+           (is (null (pine.ns:read /probe))))
+      (pine.ns:unserve :probe))))
+
+(test going-down-takes-the-provider-with-it
+  "A subtree comes off the way writing nothing at a mount does: the provider
+first, then the value. It went down by writing over the provider, which a
+read-only one like /sh refuses -- so DOWN-ALL signalled at the first of them
+and everything behind it in the order stayed up and mounted."
+  (pine.ns:serve :probe
+    {:at [/probe]
+     :up (lambda ()
+           (pine.ns:write /probe
+                          (pine.ns:provider
+                           (/probe {:read (pine.data:fn [] :answered)
+                                    :doc "read-only, like /sh"}))))})
+  (unwind-protect
+       (pine.ns:with-space ()
+         (pine.ns:up :probe)
+         (is (eq :answered (pine.ns:read /probe)))
+         (is (find /probe (pine.ns:mounts) :test #'fset:equal?))
+         (finishes (pine.ns:down :probe))
+         (is (null (pine.ns:read /probe)))
+         (is (null (find /probe (pine.ns:mounts) :test #'fset:equal?))
+             "the provider is still mounted"))
+    (pine.ns:unserve :probe)))
+
+(test a-subsystem-comes-up-after-what-it-says-it-is-after
+  "Declared the other way round, so the order comes from what they say rather
+than from when they were declared."
+  (pine.ns:serve :probe-after
+    {:at [/probe-after]
+     :after [:probe]
+     :up (lambda () (pine.ns:write /probe-after (pine.ns:read /probe)))})
+  (pine.ns:serve :probe {:at [/probe] :up (lambda () (pine.ns:write /probe :up))})
+  (unwind-protect
+       (let* ((names (%names))
               (a (position :probe names))
               (b (position :probe-after names)))
-         (is (< a b) "the registry raised :probe-after before :probe"))
-    (pine.ns:unregister :probe)
-    (pine.ns:unregister :probe-after)))
+         (is (< a b) "the order put :probe-after before :probe"))
+    (pine.ns:unserve :probe)
+    (pine.ns:unserve :probe-after)))
 
-(test every-server-in-the-list-is-named-once
-  (let ((names (mapcar #'pine.ns:name (pine.ns:servers))))
+(test everything-served-is-named-once
+  (let ((names (%names)))
     (is (= (length names) (length (remove-duplicates names)))
-        "two servers answer to the same name: ~a"
+        "two declarations answer to the same name: ~a"
         (loop :for n :in names
               :when (< 1 (count n names)) :collect n))))
 
 (test the-list-holds-what-a-running-pine-serves
   "Not an inventory: this is the check that the things the daemon used to mount
 by hand are in the one list, so nothing has to be kept in step with it."
-  (let ((names (mapcar #'pine.ns:name (pine.ns:servers))))
+  (let ((names (%names)))
     (dolist (want '(:log :doc :err :file :sh :env :clock :sys :proc :win :host
                     :mode :cmd :key :terminal :view :echo :surface :theme :buf
                     :store :settings))
-      (is (member want names) "~a serves nothing anyone raises" want))))
+      (is (member want names) "~a serves nothing anyone brings up" want))))
 
 (test two-spaces-in-one-image-style-themselves-separately
   "The one-line statement of who owns what.
@@ -684,11 +736,11 @@ the first."
   (let ((a (pine.ns:fresh))
         (b (pine.ns:fresh)))
     (pine.ns:with-space (a)
-      (pine.ns:raise :theme)
+      (pine.ns:up :theme)
       (pine.ns:write /face/probe-face {:fg "#ff0000"})
       (pine.ui.css:install (list (list :probe-two-spaces {:min-width 11}))))
     (pine.ns:with-space (b)
-      (pine.ns:raise :theme)
+      (pine.ns:up :theme)
       (is (null (pine.ui.face:find-face :probe-face))
           "a face written in one space is in another space's table")
       (is (null (assoc ".probe-two-spaces" (pine.ui.css:styles) :test #'string=))
@@ -704,7 +756,7 @@ the first."
 
 (defmacro with-roots (&body body)
   `(pine.ns:with-space ()
-     (pine.ns:raise :roots)
+     (pine.ns:up :roots)
      ,@body))
 
 (test history-is-the-roots-newest-first

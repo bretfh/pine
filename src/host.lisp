@@ -1,7 +1,7 @@
 (defpackage #:pine.host
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:serve #:mount #:server #:pine #:unmount #:*timeout*))
+  (:export #:answer-for #:mount #:pine #:unmount #:*timeout*))
 
 (in-package #:pine.host)
 (named-readtables:in-readtable pine.path:syntax)
@@ -131,7 +131,7 @@ because somebody mounted us, and a live path arrives when it moves."
                  (cons (list path nil value) acc))))
     (walk (p:root) (or (ns:held (p:root)) (fset:empty-map)) nil)))
 
-(defun serve (system)
+(defun answer-for (system)
   "Make this image's namespace reachable by another pine: reads, writes and doc,
 and a subscription naming an actor of its own and the prefix it mounted us at."
   (let ((askers (sento.atomic:make-atomic-reference :value nil)))
@@ -271,27 +271,26 @@ subscription ends, and the actor that was hearing about it goes."
     (%detach (p:text at))
     (ns:unmount at)))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :host :serves (list /host))
-  (:documentation "Other pines, and being one. Distribution is a prefix: this
-says what the prefix means, and it answers for this image's own namespace so
-another pine can put it under theirs."))
-
-(defmethod ns:raise ((s server) &key system &allow-other-keys)
-  (ns:write /host
-            (ns:provider
-             ;; writing nil here is how a mount comes down, and a mount is a
-             ;; subscription on another pine and an actor here. Neither goes
-             ;; away because the provider did, so this is where they are told.
-             (/host/?name
-              {:in (pine.data:fn [v]
-                     (unless v (%detach (p:text (p:path /host name))))
-                     v)
-               :doc "another pine, as a subtree"})
-             (/host {:doc "other pines"})))
-  (when system (serve system))
-  ;; what the space keeps is the mounts, not the actor: an actor is this
-  ;; image's and the mounts are this pine's
-  (sento.atomic:make-atomic-reference :value (fset:empty-map)))
-
-(ns:register (make-instance 'server))
+(ns:serve :host
+  {:at [/host]
+   :doc "other pines, and being one. Distribution is a prefix: this says what
+the prefix means, and it answers for this image's own namespace so another pine
+can put it under theirs."
+   :up (lambda ()
+         (ns:write /host
+                   (ns:provider
+                    ;; writing nil here is how a mount comes down, and a mount
+                    ;; is a subscription on another pine and an actor here.
+                    ;; Neither goes away because the provider did, so this is
+                    ;; where they are told.
+                    (/host/?name
+                     {:in (pine.data:fn [v]
+                            (unless v (%detach (p:text (p:path /host name))))
+                            v)
+                      :doc "another pine, as a subtree"})
+                    (/host {:doc "other pines"})))
+         (let ((system (ns:given :system)))
+           (when system (answer-for system)))
+         ;; what the space keeps is the mounts, not the actor: an actor is this
+         ;; image's and the mounts are this pine's
+         (sento.atomic:make-atomic-reference :value (fset:empty-map)))})

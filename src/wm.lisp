@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:win #:pine.win))
   (:export #:binding-table #:push-bindings #:run-binding
-           #:attached-p #:windows #:focused #:server
+           #:attached-p #:windows #:focused
            #:close-window #:focus-step #:split #:exit-session)
   (:documentation "Window management policy: the keymap whose chords are
 registered with the compositor, the commands they run, and the actions sent to
@@ -227,23 +227,18 @@ from this keymap alone."
 
 ;;;; The session
 
-(defclass wm-app (pine.core.attach:app) ()
-  (:default-initargs :kind :wm)
-  (:documentation "The compositor's windows as an arrangement, and the chords
-that move them."))
+(pine.core.attach:app :wm
+  {:doc "the compositor's windows as an arrangement, and the chords that move
+them"
+   :attached (lambda (client) (declare (ignore client)) (push-bindings))
+   ;; nothing on detach: the windows belong to the compositor and outlive the
+   ;; frontend. The next one to attach reports them again, and /wm still says
+   ;; how they were arranged.
+   :received (lambda (client message)
+               (declare (ignore client))
+               (%received message))})
 
-(defmethod pine.core.attach:attached ((app wm-app) client)
-  (declare (ignore client))
-  (push-bindings))
-
-(defmethod pine.core.attach:detached ((app wm-app) client)
-  "The windows belong to the compositor and outlive the frontend; the next one
-to attach reports them again, and /wm still says how they were arranged."
-  (declare (ignore client))
-  nil)
-
-(defmethod pine.core.attach:received ((app wm-app) client message)
-  (declare (ignore client))
+(defun %received (message)
   (case (first message)
     (:binding
      (destructuring-bind (&key keys) (rest message) (run-binding keys)))
@@ -263,26 +258,22 @@ to attach reports them again, and /wm still says how they were arranged."
          (when path (win:focus path /wm) (push-arrangement)))))
     (t nil)))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :wm :serves (list /wm))
-  (:documentation "The compositor's arrangement, as paths."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /wm
-            (ns:provider
-             (/wm/focused
-              {:verbs {:split (pine.data:fn (&optional (side :below))
-                                (let ((at (focused)))
-                                  (when at (win:split at side /wm))))
-                       :close (pine.data:fn []
-                                (let ((at (focused)))
-                                  (when at (win:close at /wm))))
-                       :only (pine.data:fn []
-                               (let ((at (focused)))
-                                 (when at (win:only at /wm))))}
-               :doc "the window with the keyboard; [:split] [:close] [:only]"})
-             (/wm/?@at
-              {:doc "a window's id and weight, or the halves of a stack"}))))
-
-(ns:register (make-instance 'server))
-(pine.core.attach:register-app (make-instance 'wm-app))
+(ns:serve :wm
+  {:at [/wm]
+   :doc "the compositor's arrangement, as paths"
+   :up (lambda ()
+         (ns:write /wm
+                   (ns:provider
+                    (/wm/focused
+                     {:verbs {:split (pine.data:fn (&optional (side :below))
+                                       (let ((at (focused)))
+                                         (when at (win:split at side /wm))))
+                              :close (pine.data:fn []
+                                       (let ((at (focused)))
+                                         (when at (win:close at /wm))))
+                              :only (pine.data:fn []
+                                      (let ((at (focused)))
+                                        (when at (win:only at /wm))))}
+                      :doc "the window with the keyboard; [:split] [:close] [:only]"})
+                    (/wm/?@at
+                     {:doc "a window's id and weight, or the halves of a stack"}))))})

@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
   (:export #:chain #:setting #:for-file #:minors #:claimants #:handler
-           #:matches-p #:minor-p #:names #:server
+           #:matches-p #:minor-p #:names
            #:producers #:answer #:+merged+))
 
 (in-package #:pine.mode)
@@ -165,48 +165,48 @@ precedence, then the mode and everything it falls back to."
 :indent :on"})
    (/mode {:doc "every mode there is"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :mode :serves (list /mode /minor))
-  (:documentation "Modes and minor modes, and the ones pine ships."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /mode (provider))
-  (ns:write /mode/text {:indicator "Text"})
-  ;; a config is written in pine's own reader, and nothing about the file name
-  ;; says so: the loader supplies the readtable, so the mode says where. A
-  ;; :paths pattern is matched against the whole namestring and asked before
-  ;; :files, because where a file is can say more than what it is called.
-  (ns:write /mode/pine {:parent :lisp
-                        :indicator "Pine"
-                        :readtable 'pine.path:syntax
-                        ;; * covers any run including a slash, so this is both
-                        ;; ~/.config/pine/init.lisp and the examples in the tree
-                        :paths ["*/pine/*.lisp"]})
-  (ns:write /mode/prog {:parent :text
-                        :indent {:width 2}
-                        :comment {:line ";"}})
-  (ns:write /mode/lisp {:parent :prog
-                        :grammar :commonlisp
-                        ;; a reader says what its files are written in, so a
-                        ;; config with its own defreadtable names the grammar
-                        ;; it parses with by writing one leaf here
-                        :grammars {'pine.path:syntax :pine 'pine.path:data :pine
-                                   'pine.data:syntax :pine 'pine.data:data :pine}
-                        :indicator "Lisp"
-                        :files ["*.lisp" "*.asd" "*.cl" "*.lsp"]
-                        :comment {:line ";;"}
-                        :indent {:width 2}
-                        ;; a newline in lisp lands now and takes its column
-                        ;; when the parse says what it is
-                        :on {:newline (pine.data:fn [buf]
-                                        (fset:map ((p:path /buf buf :text)
-                                                   [:newline])
-                                                  ((p:path /buf buf)
-                                                   [:indent-line])))}})
-  (ns:write /mode/debugger {:parent :text :indicator "Debug"})
-  (overwrite)
-  (ns:write /minor/minibuffer {:precedence 20})
-  (ns:write /minor/layout {:precedence 15})
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :mode
+  {:at [/mode /minor]
+   :doc "modes and minor modes, and the ones pine ships"
+   :up (lambda ()
+         (ns:write /mode (provider))
+         (ns:write /mode/text {:indicator "Text"})
+         ;; a config is written in pine's own reader, and nothing about the file
+         ;; name says so: the loader supplies the readtable, so the mode says
+         ;; where. A :paths pattern is matched against the whole namestring and
+         ;; asked before :files, because where a file is can say more than what
+         ;; it is called.
+         (ns:write /mode/pine
+                   {:parent :lisp
+                    :indicator "Pine"
+                    :readtable 'pine.path:syntax
+                    ;; * covers any run including a slash, so this is both
+                    ;; ~/.config/pine/init.lisp and the examples in the tree
+                    :paths ["*/pine/*.lisp"]})
+         (ns:write /mode/prog {:parent :text
+                               :indent {:width 2}
+                               :comment {:line ";"}})
+         (ns:write /mode/lisp
+                   {:parent :prog
+                    :grammar :commonlisp
+                    ;; a reader says what its files are written in, so a config
+                    ;; with its own defreadtable names the grammar it parses
+                    ;; with by writing one leaf here
+                    :grammars {'pine.path:syntax :pine 'pine.path:data :pine
+                               'pine.data:syntax :pine 'pine.data:data :pine}
+                    :indicator "Lisp"
+                    :files ["*.lisp" "*.asd" "*.cl" "*.lsp"]
+                    :comment {:line ";;"}
+                    :indent {:width 2}
+                    ;; a newline in lisp lands now and takes its column when the
+                    ;; parse says what it is
+                    :on {:newline (pine.data:fn [buf]
+                                    (fset:map ((p:path /buf buf :text)
+                                               [:newline])
+                                              ((p:path /buf buf)
+                                               [:indent-line])))}})
+         (ns:write /mode/debugger {:parent :text :indicator "Debug"})
+         (overwrite)
+         (ns:write /minor/minibuffer {:precedence 20})
+         (ns:write /minor/layout {:precedence 15})
+         nil)})

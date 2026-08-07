@@ -290,7 +290,7 @@
               (pine.ui.build:label "mute"))))
       (funcall (pine.ui.node:callback b))
       (is (eq t (pine.ns:read (pine.path:parse "/audio/muted")))))
-    (pine.ns:raise :cmd)
+    (pine.ns:up :cmd)
     (let ((ran nil))
       (pine.ns:write (pine.path:parse "/cmd/probe-click")
                      (lambda () (setf ran t) (fset:empty-map)))

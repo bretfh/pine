@@ -5,7 +5,7 @@
   (:export #:target #:in-target #:form-string
            #:last-sexp #:defun-at-point #:buffer #:load
            #:definition #:references #:hover #:complete-symbol #:arglist
-           #:*on-done* #:target-was #:visit-place #:server))
+           #:*on-done* #:target-was #:visit-place))
 
 (in-package #:pine.eval)
 (named-readtables:in-readtable pine.path:syntax)
@@ -244,22 +244,18 @@ package. (values SYMBOL TOKEN)."
               (args args)
               (doc (format nil "~a: ~a" token doc)))))))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :eval :after (list :mode))
-  (:documentation "What the running image can say about a lisp buffer, as the
-producers lisp-mode answers with."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (declare (ignore s))
-  (ns:write /mode/lisp/answers
-            {:definition (pine.data:fn [buf of] (definition-producer buf of))
-             :references (pine.data:fn [buf of] (references-producer buf of))
-             :complete   (pine.data:fn [buf of] (complete-producer buf of))
-             :arglist    (pine.data:fn [buf of] (arglist-producer buf of))
-             :hover      (pine.data:fn [buf of] (hover-producer buf of))})
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :eval
+  {:after [:mode]
+   :doc "what the running image can say about a lisp buffer, as the producers
+lisp-mode answers with"
+   :up (lambda ()
+         (ns:write /mode/lisp/answers
+                   {:definition (pine.data:fn [buf of] (definition-producer buf of))
+                    :references (pine.data:fn [buf of] (references-producer buf of))
+                    :complete   (pine.data:fn [buf of] (complete-producer buf of))
+                    :arglist    (pine.data:fn [buf of] (arglist-producer buf of))
+                    :hover      (pine.data:fn [buf of] (hover-producer buf of))})
+         nil)})
 
 (defun visit-place (place)
   "Open the (FILE LINE COL KIND) PLACE names in its own buffer and put point

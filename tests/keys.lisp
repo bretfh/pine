@@ -35,7 +35,7 @@
 
 (test a-binding-is-a-path-and-a-prefix-is-a-directory
   (pine.ns:with-space ()
-    (pine.ns:raise :key)
+    (pine.ns:up :key)
     (pine.key:bind :probe "a" "cmd-a")
     (pine.key:bind :probe "C-c p" "deep")
     (is (fset:equal? (pine.cmd:at "cmd-a") (pine.key:lookup :probe "a")))
@@ -47,14 +47,14 @@
 (test a-chord-normalizes-on-write
   "C-M-x and M-C-x are one path, so there is no aliasing to remember."
   (pine.ns:with-space ()
-    (pine.ns:raise :key)
+    (pine.ns:up :key)
     (pine.ns:write (pine.path:parse "/key/mode/probe/M-C-x") (pine.cmd:at "aliased"))
     (is (fset:equal? (pine.cmd:at "aliased")
                      (pine.ns:read (pine.path:parse "/key/mode/probe/C-M-x"))))))
 
 (test bindings-render-chords-space-joined
   (pine.ns:with-space ()
-    (pine.ns:raise :key)
+    (pine.ns:up :key)
     (pine.key:define-keys :probe-bindings
       "C-x C-f" "find-file"
       "M-x"     "execute-command")
@@ -67,8 +67,8 @@
 (test a-mode-falls-back-through-its-parents-for-a-key
   "The keymap chain is the mode chain, read now."
   (pine.ns:with-space ()
-    (pine.ns:raise :mode)
-    (pine.ns:raise :key)
+    (pine.ns:up :mode)
+    (pine.ns:up :key)
     (pine.key:bind :text "a" "from-text")
     (pine.key:bind :lisp "b" "from-lisp")
     (let ((roots (pine.key:roots :lisp nil)))
@@ -183,13 +183,13 @@ argument typed in either reached whichever command ran next."
   (let ((a (pine.ns:fresh))
         (b (pine.ns:fresh)))
     (pine.ns:with-space (a)
-      (pine.ns:raise :cmd)
-      (pine.ns:raise :key)
+      (pine.ns:up :cmd)
+      (pine.ns:up :key)
       (setf (pine.key:prefix) (list 4))
       (setf (pine.key:last) "probe-a"))
     (pine.ns:with-space (b)
-      (pine.ns:raise :cmd)
-      (pine.ns:raise :key)
+      (pine.ns:up :cmd)
+      (pine.ns:up :key)
       (is (null (pine.key:prefix))
           "a prefix argument typed in one space is waiting in the other")
       (is (null (pine.key:last))

@@ -8,7 +8,7 @@
 edit is a write and it has landed when the write answers."
   `(pine.ns:with-space ()
      (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf)
+      (pine.ns:up :buf)
      (pine.ns:write /buf/scratch/text [""])
      (pine.ns:write /buf/scratch/point [0 0])
      ,@body))
@@ -99,7 +99,7 @@ edit is a write and it has landed when the write answers."
 
 (test reverting-reads-the-file-again
   (with-buf
-    (pine.ns:raise :file)
+    (pine.ns:up :file)
     (let ((path "/tmp/pine-revert-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "from disk~%"))
@@ -114,7 +114,7 @@ edit is a write and it has landed when the write answers."
 settles it where the text lands. Without it nothing anywhere knew that pine's
 own source is not read by the standard reader."
   (with-buf
-    (pine.ns:raise :file)
+    (pine.ns:up :file)
     (let ((path "/tmp/pine-readtable-probe.lisp"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "(in-package #:pine.user)~%~
@@ -130,7 +130,7 @@ own source is not read by the standard reader."
 
 (test a-buffer-declaring-nothing-reads-as-the-standard-one
   (with-buf
-    (pine.ns:raise :file)
+    (pine.ns:up :file)
     (let ((path "/tmp/pine-plain-probe.lisp"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "(defun f (x) (/ x 2))~%"))
@@ -176,7 +176,7 @@ are no undo stacks anywhere."
       (unwind-protect
            (progn
              (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf)
+      (pine.ns:up :buf)
              (pine.ns:write /buf/scratch/text ["one"])
              (pine.ns:write /buf/scratch/point [0 3])
              (pine.ns:write /buf/scratch/text [:insert "!"])
@@ -193,7 +193,7 @@ are no undo stacks anywhere."
 
 (test modified-follows-the-file
   (with-buf
-    (pine.ns:raise :file)
+    (pine.ns:up :file)
     (let ((path "/tmp/pine-modified-probe.txt"))
       (with-open-file (s path :direction :output :if-exists :supersede)
         (format s "on disk~%"))
@@ -282,8 +282,8 @@ anything called the parser. The colours land as properties on the buffer."
     (pine.ns:with-space ()
       (pine.ns:write /mode/lisp {:grammar :commonlisp})
       (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf :system (pine.core.server:actor-system *server*)
-                    :runtime (pine.core.server:ts-runtime *server*))
+      (pine.ns:up :buf {:system (pine.core.server:actor-system *server*)
+                        :runtime (pine.core.server:ts-runtime *server*)})
       (unwind-protect
            (progn
              (pine.ns:write /buf/probe/mode :lisp)
@@ -294,7 +294,7 @@ anything called the parser. The colours land as properties on the buffer."
                                 :seconds 15)
                       "no colours ever landed")
              (is (plusp (fset:size (pine.buf:properties "probe")))))
-        (pine.ns:lower :buf)))))
+        (pine.ns:down :buf)))))
 
 (test a-parse-starts-when-one-is-asked-for-and-not-only-when-something-moved
   "The parse is not driven by a change alone. A buffer whose parser is gone --

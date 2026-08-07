@@ -1,7 +1,7 @@
 (defpackage #:pine.desktop
   (:use #:cl)
   (:export #:surface-at #:surface-tree #:surface-role #:shownp #:names
-           #:push-surface #:show-panel #:hide-panel #:server
+           #:push-surface #:show-panel #:hide-panel
            #:refresh-all #:*surface-client*))
 
 (in-package #:pine.desktop)
@@ -177,31 +177,21 @@ M-x reload-desktop does after a config is loaded again."
        (destructuring-bind (&key text) (rest msg)
          (pine.ns:write /hint (or text "")))))))
 
-(defclass server (pine.ns:server) ()
-  (:default-initargs :name :surface :serves (list /surface))
-  (:documentation "What pine draws on wayland, as expressions at paths."))
+(pine.ns:serve :surface
+  {:at [/surface]
+   :doc "what pine draws on wayland, as expressions at paths"
+   :up (lambda () (pine.ns:write /surface (provider)))})
 
-(defmethod pine.ns:raise ((s server) &key &allow-other-keys)
-  (pine.ns:write /surface (provider)))
-
-(defclass desktop-app (pine.core.attach:app) ()
-  (:default-initargs :kind :desktop)
-  (:documentation "The bar, the echo strip, and the panels."))
-
-(defmethod pine.core.attach:attached ((app desktop-app) client)
-  (make-desktop-session client))
-
-(defmethod pine.core.attach:received ((app desktop-app) client message)
-  (desktop-input client message))
-
-(defmethod pine.core.attach:detached ((app desktop-app) client)
-  "Stop pushing to a frontend that is gone: the watch over /surface goes with
-it, and nothing else was holding anything for it."
-  (pine.ns:watch /surface nil :as (list :surface client)))
+(pine.core.attach:app :desktop
+  {:doc "the bar, the echo strip, and the panels"
+   :attached (lambda (client) (make-desktop-session client))
+   :received (lambda (client message) (desktop-input client message))
+   ;; stop pushing to a frontend that is gone: the watch over /surface goes with
+   ;; it, and nothing else was holding anything for it
+   :detached (lambda (client)
+               (pine.ns:watch /surface nil :as (list :surface client)))})
 
 (pine.cmd:defcmd "reload-desktop" ()
   "Re-push every surface for every attached desktop client."
   (refresh-all))
 
-(pine.ns:register (make-instance 'server))
-(pine.core.attach:register-app (make-instance 'desktop-app))

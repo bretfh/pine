@@ -1,7 +1,7 @@
 (defpackage #:pine.cmd
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:at #:run #:runnablep #:names #:defcmd #:server))
+  (:export #:at #:run #:runnablep #:names #:defcmd))
 
 (in-package #:pine.cmd)
 (named-readtables:in-readtable pine.path:syntax)
@@ -90,14 +90,11 @@ write."
    (/cmd/?name {:doc "a handler, a write-map or a path to run"})
    (/cmd {:doc "every command there is, which is what M-x reads"})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :cmd :serves (list /cmd))
-  (:documentation "Every command there is, which is what M-x reads."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /cmd (provider))
-  (fset:do-map (name handler (sento.atomic:atomic-get *builtin*))
-    (ns:write (at name) handler))
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :cmd
+  {:at [/cmd]
+   :doc "every command there is, which is what M-x reads"
+   :up (lambda ()
+         (ns:write /cmd (provider))
+         (fset:do-map (name handler (sento.atomic:atomic-get *builtin*))
+           (ns:write (at name) handler))
+         nil)})

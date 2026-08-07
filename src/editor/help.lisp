@@ -3,7 +3,7 @@
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path)
                     (#:frame #:pine.editor.frame) (#:b #:pine.ui.build))
   (:export #:describe-key-text #:bindings #:variables #:modes
-           #:server #:setting))
+           #:setting))
 
 (in-package #:pine.editor.help)
 (named-readtables:in-readtable pine.path:syntax)
@@ -42,20 +42,18 @@
 ;;;; (write /buf/foo.py/tab-width 4) here. There is no declaration, no scope
 ;;;; table and no default slot, because the fallback is where the value is.
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :settings
-                     :serves (list /tab-width /format-on-save /debug-on-error
-                                   /park-seconds /proc-interval
-                                   /faults-kept /evaluations-kept))
-  (:documentation "The settings pine ships, as ordinary paths."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (dolist (setting '((/tab-width 8) (/format-on-save nil) (/debug-on-error nil)
-                     (/park-seconds 300) (/proc-interval 1)
-                     (/faults-kept 50) (/evaluations-kept 50)))
-    (destructuring-bind (path value) setting
-      (when (and value (null (ns:read path)))
-        (ns:write path value)))))
+(ns:serve :settings
+  {:at [/tab-width /format-on-save /debug-on-error
+        /park-seconds /proc-interval /faults-kept /evaluations-kept]
+   :doc "the settings pine ships, as ordinary paths"
+   :up (lambda ()
+         (dolist (setting '((/tab-width 8) (/format-on-save nil)
+                            (/debug-on-error nil) (/park-seconds 300)
+                            (/proc-interval 1) (/faults-kept 50)
+                            (/evaluations-kept 50)))
+           (destructuring-bind (path value) setting
+             (when (and value (null (ns:read path)))
+               (ns:write path value)))))})
 
 (defun setting (name)
   "NAME's value for the buffer in scope, falling back to the root."
@@ -103,4 +101,3 @@
                                         (or (ns:read (p:path /minor m :precedence)) 0))))
                 (list (%entry "  none")))))))
 
-(ns:register (make-instance 'server))

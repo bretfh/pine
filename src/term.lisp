@@ -11,7 +11,7 @@
    #:drain-terminals
    #:resize-active-terminal
    #:terminal-dispatch
-   #:server))
+  ))
 
 (in-package #:pine.term)
 (named-readtables:in-readtable pine.path:syntax)
@@ -239,26 +239,21 @@ prefix so the user can switch away."
 
 ;;;; Terminal mode: the text verbs go to the pty and the shell answers.
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :terminal
-                     :serves (list (p:parse "/mode/terminal"))
-                     :after (list :mode))
-  (:documentation "Terminal mode."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write (p:parse "/mode/terminal")
-            (fset:map (:parent :text)
-                      (:indicator "Term")
-                      (:on (fset:map
-                            (:insert (lambda (buf text)
-                                       (term-write buf text)
-                                       (fset:empty-map)))
-                            (:newline (lambda (buf)
-                                        (term-write buf (string #\Newline))
-                                        (fset:empty-map)))
-                            (:delete (lambda (buf from to)
-                                       (declare (ignore from to))
-                                       (term-write buf (string (code-char 127)))
-                                       (fset:empty-map))))))))
-
-(ns:register (make-instance 'server))
+(ns:serve :terminal
+  {:at [(p:parse "/mode/terminal")]
+   :after [:mode]
+   :doc "terminal mode: the text verbs go to the pty and the shell answers"
+   :up (lambda ()
+         (ns:write (p:parse "/mode/terminal")
+                   {:parent :text
+                    :indicator "Term"
+                    :on {:insert (lambda (buf text)
+                                   (term-write buf text)
+                                   {})
+                         :newline (lambda (buf)
+                                    (term-write buf (string #\Newline))
+                                    {})
+                         :delete (lambda (buf from to)
+                                   (declare (ignore from to))
+                                   (term-write buf (string (code-char 127)))
+                                   {})}}))})

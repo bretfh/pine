@@ -1,7 +1,7 @@
 (defpackage #:pine.ts.lang.pine
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:syntax #:pine.ts.syntax))
-  (:export #:pine #:server))
+  (:export #:pine))
 
 (in-package #:pine.ts.lang.pine)
 (named-readtables:in-readtable pine.path:syntax)
@@ -31,13 +31,8 @@
    (/node/unquote_lit
     {:fields {"marker" :escape "close" :escape} :rest :form})))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :syntax-pine :serves (list /syntax/pine)
-                     :after (list :syntax :syntax-commonlisp))
-  (:documentation "pine's own reader, at /syntax/pine."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  (ns:write /syntax/pine (pine))
-  nil)
-
-(ns:register (make-instance 'server))
+(ns:serve :syntax-pine
+  {:at [/syntax/pine]
+   :after [:syntax :syntax-commonlisp]
+   :doc "pine's own reader, at /syntax/pine"
+   :up (lambda () (ns:write /syntax/pine (pine)) nil)})

@@ -19,8 +19,8 @@ time."
     (ignore-errors (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv)))
     (pine.core.actor:start-agent-registry srv)
     (pine.core.actor:start-local-agent srv)
-    (pine.ns:raise-all :system (pine.core.server:actor-system srv)
-                       :runtime (pine.core.server:ts-runtime srv))
+    (pine.ns:up-all (fset:map (:system (pine.core.server:actor-system srv))
+                              (:runtime (pine.core.server:ts-runtime srv))))
     srv))
 
 (defun frame-shot (&key (path "/tmp/pine-shot.png")
@@ -65,7 +65,7 @@ shot would say the surfaces are broken when it is the tree that is missing. A
 config that will not load is reported and the shot goes on with whatever did."
   (unless pine.core.server:*server*
     (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
-  (pine.ns:raise-all)
+  (pine.ns:up-all)
   (when (probe-file init)
     (handler-case (pine:load-config init)
       (error (e) (format *error-output* "~&shot: ~a: ~a~%" init e)))))

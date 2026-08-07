@@ -2,7 +2,7 @@
   (:use #:cl)
   (:shadow #:open #:close)
   (:local-nicknames (#:p #:pine.path) (#:ns #:pine.ns))
-  (:export #:store #:server #:open #:close #:restore #:storablep))
+  (:export #:store #:open #:close #:restore #:storablep))
 
 (in-package #:pine.store)
 (named-readtables:in-readtable pine.path:syntax)
@@ -166,24 +166,12 @@ as long as the image."
   (sento.agent:agent-stop (store-agent store))
   nil)
 
-(defclass server (ns:server) ()
-  (:default-initargs
-   :name :store
-   ;; last, because restoring writes into every subtree that keeps a path, and
-   ;; a stored value has to win over the one a config seeded
-   :after (list :mode :win :cmd :key :buf :echo :theme))
-  (:documentation "What outlives the daemon, and the one file it lives in. A
-sqlite handle is a thing and not a value, so the space keeps it: one pine is
-one file."))
-
-(defmethod ns:raise ((s server) &key store-path &allow-other-keys)
-  "Open the file, read every held path back, and keep it written through."
-  (declare (ignore s))
-  (open store-path))
-
-(defmethod ns:lower ((s server))
-  (let ((store (ns:kept (ns:name s))))
-    (when store (close store)))
-  (call-next-method))
-
-(ns:register (make-instance 'server))
+(ns:serve :store
+  ;; last, because restoring writes into every subtree that keeps a path, and a
+  ;; stored value has to win over the one a config seeded
+  {:after [:mode :win :cmd :key :buf :echo :theme]
+   :doc "what outlives the daemon, and the one file it lives in. A sqlite
+handle is a thing and not a value, so the space keeps it: one pine is one file."
+   ;; open the file, read every held path back, and keep it written through
+   :up (lambda () (open (ns:given :store-path)))
+   :down (lambda (store) (when store (close store)))})

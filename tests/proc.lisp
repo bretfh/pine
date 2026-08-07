@@ -6,10 +6,10 @@
 (defmacro with-proc ((&key system) &body body)
   "A space of its own with /proc served, bound to PROC and torn down afterwards."
   `(pine.ns:with-space ()
-     (let ((proc (pine.ns:raise :proc :system ,system)))
+     (let ((proc (pine.ns:up :proc {:system ,system})))
        (declare (ignorable proc))
        (unwind-protect (progn ,@body)
-         (pine.ns:lower :proc)))))
+         (pine.ns:down :proc)))))
 
 (defun settle (proc predicate &key (seconds 5))
   (let ((deadline (+ (get-internal-real-time)
@@ -215,8 +215,8 @@ a supervisor nobody asked for."
     (unwind-protect
          (pine.ns:with-space ()
            (pine.ns:write (pine.path:parse "/proc-interval") 1)
-           (let ((proc (pine.ns:raise :proc
-                        :system (pine.core.server:actor-system server))))
+           (let ((proc (pine.ns:up :proc
+                        {:system (pine.core.server:actor-system server)})))
              (declare (ignorable proc))
              (unwind-protect
                   (progn
@@ -229,7 +229,7 @@ a supervisor nobody asked for."
                                      :when (> (get-internal-real-time) deadline)
                                        :return nil
                                      :do (sleep 0.1)))))
-               (pine.ns:lower :proc))))
+               (pine.ns:down :proc))))
       (pine.ns:write (pine.path:parse "/proc-interval") interval)
       (pine.core.server:stop-server server))))
 

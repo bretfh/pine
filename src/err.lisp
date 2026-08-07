@@ -11,7 +11,7 @@
            #:evaluate #:evaluate-string #:evaluate-thunk
            #:list-evaluations #:find-evaluation #:abort-evaluation
            #:with-debugger #:call-with-debugger
-           #:park-seconds #:faults-kept #:evaluations-kept #:server))
+           #:park-seconds #:faults-kept #:evaluations-kept))
 
 (in-package #:pine.err)
 (named-readtables:in-readtable pine.path:syntax)
@@ -213,34 +213,30 @@ thread parked in it has a reason to keep waiting."
   (let ((id (parse-integer segment :junk-allowed t)))
     (and id (faults id))))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :err :serves (list /err))
-  (:documentation "What has faulted, and what it is waiting to be told."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  "Serve /err from what has faulted, and answer the cell this space keeps them
-in. Live, not held: the file has no business holding a fault.
-
-The cell is whichever one this space already has, so a fault from before /err
-was served is still there afterwards."
-  (declare (ignore s))
-  (ns:write /err
-    (ns:provider
-     (/err {:ls (d:fn [] (mapcar (lambda (f) (princ-to-string (fault-id f))) (faults)))
-            :doc "every fault waiting on a decision"})
-     (/err/?id
-      {:read (d:fn [] (let ((f (%at id))) (and f (described f))))
-       :verbs {:restart (d:fn [name]
-                          (let ((f (%at id))) (when f (resume f name))))}
-       :doc "a fault; write [:restart NAME] to decide it"})
-     (/err/?id/attended
-      {:read (d:fn [] (let ((f (%at id))) (and f (fault-attended f))))
-       :write (d:fn [v]
-                (let ((f (%at id))) (when f (setf (fault-attended f) (and v t)))))
-       :doc "true while someone has this fault open"})))
-  (%cell))
-
-(ns:register (make-instance 'server))
+(ns:serve :err
+  {:at [/err]
+   :doc "what has faulted, and what it is waiting to be told"
+   ;; the faults are live, not held: the file has no business holding one. The
+   ;; cell is whichever one this space already has, so a fault from before /err
+   ;; was served is still there afterwards.
+   :up (lambda ()
+         (ns:write /err
+           (ns:provider
+            (/err {:ls (d:fn [] (mapcar (lambda (f) (princ-to-string (fault-id f)))
+                                        (faults)))
+                   :doc "every fault waiting on a decision"})
+            (/err/?id
+             {:read (d:fn [] (let ((f (%at id))) (and f (described f))))
+              :verbs {:restart (d:fn [name]
+                                 (let ((f (%at id))) (when f (resume f name))))}
+              :doc "a fault; write [:restart NAME] to decide it"})
+            (/err/?id/attended
+             {:read (d:fn [] (let ((f (%at id))) (and f (fault-attended f))))
+              :write (d:fn [v]
+                       (let ((f (%at id)))
+                         (when f (setf (fault-attended f) (and v t)))))
+              :doc "true while someone has this fault open"})))
+         (%cell))})
 
 ;;;; Making one out of a condition
 

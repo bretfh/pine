@@ -477,6 +477,4 @@ offers no window management, or another manager holds it~%")
       (pine.frontend:close-pump (wm-pump wm))
       (pine.frontend:shutdown backing))))
 
-(defmethod pine.core.attach:run-frontend ((app pine.wm::wm-app))
-  (declare (ignore app))
-  (run-wm))
+(pine.core.attach:frontend :wm #'run-wm)

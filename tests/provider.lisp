@@ -5,10 +5,10 @@
 
 (defmacro with-providers (&body body)
   `(pine.ns:with-space ()
-     (pine.ns:raise :file)
-     (pine.ns:raise :sh)
-     (pine.ns:raise :env)
-     (pine.ns:raise :sys)
+     (pine.ns:up :file)
+     (pine.ns:up :sh)
+     (pine.ns:up :env)
+     (pine.ns:up :sys)
      ,@body))
 
 ;;;; /file

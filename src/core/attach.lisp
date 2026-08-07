@@ -3,7 +3,7 @@
   (:export #:start-attach-listener
            #:protocol-version #:version-accepted-p #:+wire-generation+
            #:attach-to-daemon
-           #:app #:app-kind #:register-app #:find-app
+           #:app #:frontend #:kinds
            #:attached #:received #:detached #:run-frontend
            #:attached-client #:attached-client-id #:attached-client-kind
            #:attached-client-display #:attached-client-input #:attached-client-session
@@ -27,34 +27,57 @@
 
 (defstruct attached-client id kind display uri input session)
 
-(defclass app ()
-  ((kind :initarg :kind :reader app-kind
-         :documentation "The keyword a frontend attaches as."))
-  (:documentation "A kind of frontend, from the daemon's side. The daemon holds
-one instance per kind, and the kind keyword is what the wire carries."))
-
 (defvar *clients* nil "Daemon-side list of attached-client.")
 
 (defvar *apps* (pine.data:table)
-  "Kind to app instance, so kinds coexist on one daemon.")
+  "Kind to what that kind is, so kinds coexist on one daemon.")
 
-(defgeneric attached (app client)
-  (:documentation "A frontend of APP's kind has arrived. Build its session.")
-  (:method ((app app) client) (declare (ignore client)) nil))
+(defun app (kind declaration)
+  "Say what a frontend of KIND is, from the daemon's side, and answer KIND.
 
-(defgeneric received (app client message)
-  (:documentation "MESSAGE arrived from an attached frontend of APP's kind.")
-  (:method ((app app) client message) (declare (ignore client message)) nil))
+DECLARATION holds :ATTACHED, run when one arrives and answering its session;
+:RECEIVED, handed each message it sends; :DETACHED, run when it is gone; and
+:DOC. How it runs in this image is FRONTEND, because that is a different
+image's business and a build without a back end has none."
+  (pine.data:put *apps* kind (fset:with declaration :kind kind))
+  kind)
 
-(defgeneric detached (app client)
-  (:documentation "The frontend is gone. Tear its session down.")
-  (:method ((app app) client) (declare (ignore client)) nil))
+(defun frontend (kind run)
+  "Say how a frontend of KIND runs in this image. The back end that can run one
+says so from its own file, so a build without it has nothing here and the CLI
+says as much rather than guessing."
+  (pine.data:put *apps* kind
+                 (fset:with (or (pine.data:at *apps* kind) (fset:empty-map))
+                            :run run))
+  kind)
 
-(defgeneric run-frontend (app)
-  (:documentation "Run APP's frontend in this image, until it exits. Defined by
-whichever backing is loaded.")
-  (:method ((app app))
-    (format t "pine: no ~(~a~) frontend in this build~%" (app-kind app))))
+(defun kinds () (pine.data:keys *apps*))
+
+(defun %of (kind key)
+  (let ((it (pine.data:at *apps* kind)))
+    (and it (fset:lookup it key))))
+
+(defun attached (kind client)
+  "A frontend of KIND has arrived. Build its session."
+  (let ((fn (%of kind :attached)))
+    (when fn (funcall fn client))))
+
+(defun received (kind client message)
+  "MESSAGE arrived from an attached frontend of KIND."
+  (let ((fn (%of kind :received)))
+    (when fn (funcall fn client message))))
+
+(defun detached (kind client)
+  "The frontend is gone. Tear its session down."
+  (let ((fn (%of kind :detached)))
+    (when fn (funcall fn client))))
+
+(defun run-frontend (kind)
+  "Run KIND's frontend in this image, until it exits."
+  (let ((fn (%of kind :run)))
+    (if fn
+        (funcall fn)
+        (format t "pine: no ~(~a~) frontend in this build~%" kind))))
 
 (defparameter +wire-generation+ "ns1"
   "What this protocol is, as against what release it shipped in.
@@ -80,29 +103,15 @@ still moving; a range belongs here once it stops."
 (defun daemon-base-uri (server)
   (pine.core.server:daemon-uri "" :port (pine.core.server:remoting-port server)))
 
-(defun register-app (app)
-  "Make APP the daemon's handler for its kind."
-  (pine.data:put *apps* (app-kind app) app))
-
-(defun find-app (kind)
-  (pine.data:at *apps* kind))
-
-(defun %app-of (client)
-  (find-app (attached-client-kind client)))
-
 (defun on-client-input (client msg)
-  (let ((app (%app-of client)))
-    (when app
-      (pine.err:attempt (lambda () (received app client msg))
-                        (format nil "~(~a~) input ~s"
-                                (attached-client-kind client) (first msg))))))
+  (let ((kind (attached-client-kind client)))
+    (pine.err:attempt (lambda () (received kind client msg))
+                      (format nil "~(~a~) input ~s" kind (first msg)))))
 
 (defun on-client-detach (client)
-  (let ((app (%app-of client)))
-    (when app
-      (pine.err:attempt (lambda () (detached app client))
-                        (format nil "~(~a~) detaching"
-                                (attached-client-kind client))))))
+  (let ((kind (attached-client-kind client)))
+    (pine.err:attempt (lambda () (detached kind client))
+                      (format nil "~(~a~) detaching" kind))))
 
 (defun uri-endpoint (uri)
   "The host and port of a sento URI, as two values, or NIL when it has neither."
@@ -171,12 +180,10 @@ refused connection is the app being gone."
             :receive (lambda (m) (on-client-input client m))))
     (push client *clients*)
     (%note-attached kind t)
-    (let ((app (%app-of client)))
-      (when app
-        (handler-case (attached app client)
-          (error (c)
-            (format *error-output* "pine: ~a attach handler failed: ~a~%" kind c)
-            (finish-output *error-output*)))))
+    (handler-case (attached kind client)
+      (error (c)
+        (format *error-output* "pine: ~a attach handler failed: ~a~%" kind c)
+        (finish-output *error-output*)))
     (sento.actor:tell display
       (list :attached :id id
             :client-uri (format nil "~aclient-~d" (daemon-base-uri server) id)

@@ -3,7 +3,7 @@
   (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:b #:pine.text))
   (:shadow #:make)
   (:export #:buf #:bufp
-           #:make #:server #:at #:names #:drop #:kill #:forget
+           #:make #:at #:names #:drop #:kill #:forget
            #:state #:state-of #:snapshot-of #:text-of #:name-of #:live
            #:local #:put #:edit #:put-point #:point #:landing
            #:overlay #:clear-overlays
@@ -1091,72 +1091,71 @@ means.")
 
 ;;;; The server
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :buf :serves (list /buf) :after (list :mode :view))
-  (:documentation "Buffers. After :MODE and :VIEW because a buffer whose mode
-declares a view gets one on every mode change, and that asks the mode what it
-declared and needs the minor mode that moves between its rows."))
-
-(defmethod ns:raise ((s server) &key system runtime &allow-other-keys)
-  "Serve /buf. With SYSTEM and RUNTIME a buffer that names a grammar is parsed
-whenever its text or its mode moves. The watches take neither: where a parser
-starts is this image's server, asked when the parse is wanted."
-  (ns:write /buf (provider))
-  (when (and system runtime)
-    (ns:watch /buf/*/text
-              (pine.data:fn [v]
-                (declare (ignore v))
-                (%parse (p:leaf (p:parent (ns:here))))
-                {})
-              :as :buf-parse)
-    (ns:watch /buf/*/mode
-              (pine.data:fn [v]
-                (declare (ignore v))
-                (%parse (p:leaf (p:parent (ns:here))))
-                {})
-              :as :buf-mode))
-  ;; a buffer's file is stored and its text is not, so the text follows the
-  ;; file: this is what a buffer coming back at boot is
-  (ns:watch /buf/*/file
-            (pine.data:fn [file]
-              (let ((name (p:leaf (p:parent (ns:here)))))
-                (if (and file (null (ns:held (at name :text))))
-                    (%read-in name file)
-                    {})))
-            :as :buf-visit)
-  ;; a mode with a :view makes the buffer a UI buffer
-  (ns:watch /buf/*/mode
-            (pine.data:fn [v]
-              (declare (ignore v))
-              (%view (p:leaf (p:parent (ns:here))))
-              {})
-            :as :buf-view)
-  ;; the keyboard is on what the focused pane shows. A command that opens a
-  ;; buffer says so by writing that pane, and there is nothing else for it to
-  ;; write: which buffer is current follows, both when the pane changes what it
-  ;; shows and when the focus moves to another pane.
-  (ns:watch /win/focused
-            (pine.data:fn [pane]
-              (let ((showing (and pane (pine.win:buf-of pane))))
-                (if showing (fset:map (/buf/current showing)) {})))
-            :as :buf-follows-focus)
-  (ns:watch /win/**/buf
-            (pine.data:fn [showing]
-              (let ((pane (p:parent (ns:here))))
-                (if (and showing (fset:equal? pane (pine.win:focused)))
-                    (fset:map (/buf/current showing))
-                    {})))
-            :as :buf-follows-pane)
-  nil)
-
-(defmethod ns:lower ((s server))
-  (ns:watch /buf/*/text nil :as :buf-parse)
-  (ns:watch /buf/*/mode nil :as :buf-mode)
-  (ns:watch /buf/*/mode nil :as :buf-view)
-  (ns:watch /buf/*/file nil :as :buf-visit)
-  (ns:watch /win/focused nil :as :buf-follows-focus)
-  (ns:watch /win/**/buf nil :as :buf-follows-pane)
-  ;; the parsers come down with /proc, which is what declared them
-  (call-next-method))
-
-(ns:register (make-instance 'server))
+(ns:serve :buf
+  {:at [/buf]
+   ;; after :mode and :view because a buffer whose mode declares a view gets one
+   ;; on every mode change, and that asks the mode what it declared and needs
+   ;; the minor mode that moves between its rows
+   :after [:mode :view]
+   :doc "buffers: what is open, what it says, and where point is"
+   :up (lambda ()
+         (ns:write /buf (provider))
+         ;; with an actor system and a runtime, a buffer that names a grammar is
+         ;; parsed whenever its text or its mode moves. The watches take
+         ;; neither: where a parser starts is this image's, asked when the parse
+         ;; is wanted.
+         (when (and (ns:given :system) (ns:given :runtime))
+           (ns:watch /buf/*/text
+                     (pine.data:fn [v]
+                       (declare (ignore v))
+                       (%parse (p:leaf (p:parent (ns:here))))
+                       {})
+                     :as :buf-parse)
+           (ns:watch /buf/*/mode
+                     (pine.data:fn [v]
+                       (declare (ignore v))
+                       (%parse (p:leaf (p:parent (ns:here))))
+                       {})
+                     :as :buf-mode))
+         ;; a buffer's file is stored and its text is not, so the text follows
+         ;; the file: this is what a buffer coming back at boot is
+         (ns:watch /buf/*/file
+                   (pine.data:fn [file]
+                     (let ((name (p:leaf (p:parent (ns:here)))))
+                       (if (and file (null (ns:held (at name :text))))
+                           (%read-in name file)
+                           {})))
+                   :as :buf-visit)
+         ;; a mode with a :view makes the buffer a UI buffer
+         (ns:watch /buf/*/mode
+                   (pine.data:fn [v]
+                     (declare (ignore v))
+                     (%view (p:leaf (p:parent (ns:here))))
+                     {})
+                   :as :buf-view)
+         ;; the keyboard is on what the focused pane shows. A command that opens
+         ;; a buffer says so by writing that pane, and there is nothing else for
+         ;; it to write: which buffer is current follows, both when the pane
+         ;; changes what it shows and when the focus moves to another pane.
+         (ns:watch /win/focused
+                   (pine.data:fn [pane]
+                     (let ((showing (and pane (pine.win:buf-of pane))))
+                       (if showing (fset:map (/buf/current showing)) {})))
+                   :as :buf-follows-focus)
+         (ns:watch /win/**/buf
+                   (pine.data:fn [showing]
+                     (let ((pane (p:parent (ns:here))))
+                       (if (and showing (fset:equal? pane (pine.win:focused)))
+                           (fset:map (/buf/current showing))
+                           {})))
+                   :as :buf-follows-pane)
+         nil)
+   ;; the parsers come down with /proc, which is what declared them
+   :down (lambda (kept)
+           (declare (ignore kept))
+           (ns:watch /buf/*/text nil :as :buf-parse)
+           (ns:watch /buf/*/mode nil :as :buf-mode)
+           (ns:watch /buf/*/mode nil :as :buf-view)
+           (ns:watch /buf/*/file nil :as :buf-visit)
+           (ns:watch /win/focused nil :as :buf-follows-focus)
+           (ns:watch /win/**/buf nil :as :buf-follows-pane))})

@@ -1,7 +1,7 @@
 (defpackage #:pine.log
   (:use #:cl)
   (:local-nicknames (#:ns #:pine.ns))
-  (:export #:server #:note #:*kept*))
+  (:export #:note #:*kept*))
 
 (in-package #:pine.log)
 (named-readtables:in-readtable pine.path:syntax)
@@ -21,18 +21,15 @@ output is read from before anything is attached to watch."
     (finish-output *error-output*)
     line))
 
-(defclass server (ns:server) ()
-  (:default-initargs :name :log :serves (list /log))
-  (:documentation "What pine says, as a ring at /log."))
-
-(defmethod ns:raise ((s server) &key &allow-other-keys)
-  "Bound the ring, and say what it is. Output is what this image said rather
-than what the world holds, so it is not kept in the file."
-  (setf (ns:setting /log :max) *kept*
-        (ns:setting /log :keep) nil)
-  (ns:write /log
-            (ns:provider
-             (/log {:in (pine.data:fn [line] (princ-to-string line))
-                    :doc "the last line pine said; /log/* is the ring"}))))
-
-(ns:register (make-instance 'server))
+(ns:serve :log
+  {:at [/log]
+   :doc "what pine says, as a ring at /log"
+   ;; output is what this image said rather than what the world holds, so the
+   ;; ring is bounded and not kept in the file
+   :up (lambda ()
+         (setf (ns:setting /log :max) *kept*
+               (ns:setting /log :keep) nil)
+         (ns:write /log
+                   (ns:provider
+                    (/log {:in (pine.data:fn [line] (princ-to-string line))
+                           :doc "the last line pine said; /log/* is the ring"}))))})

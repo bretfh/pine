@@ -117,7 +117,7 @@ me'. Only when they run out does the built-in answer, so a mode can adjust what
 another does instead of having to do the whole job itself."
   (with-modes
     (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf)
+      (pine.ns:up :buf)
     (unwind-protect
          (let ((seen nil))
            (pine.ns:write /minor/shout {:precedence 10})
@@ -139,16 +139,16 @@ another does instead of having to do the whole job itself."
                "the minor mode did not reach the major one under it")
            (is (equal "HI!" (pine.ns:read (pine.buf:at "layered" :text)))
                "each mode did not see what the one above it made of the write"))
-      (pine.ns:lower :buf))))
+      (pine.ns:down :buf))))
 
 (test overwrite-covers-what-it-types-and-lets-the-insert-through
   "The proof of layering, in the mode pine ships for it: overwrite takes the
 characters the insert is about to cover and writes the verb again. Inserting is
 still the job of whatever claims it underneath."
   (pine.ns:with-space ()
-    (pine.ns:raise :mode)
+    (pine.ns:up :mode)
     (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf)
+      (pine.ns:up :buf)
     (unwind-protect
          (progn
            (pine.ns:write /buf/over/text "abcd")
@@ -157,8 +157,8 @@ still the job of whatever claims it underneath."
            (pine.ns:write (pine.buf:at "over" :text) (fset:seq :insert "XY"))
            (is (equal "aXYd" (pine.ns:read (pine.buf:at "over" :text)))
                "overwrite did not cover the characters it typed over"))
-      (pine.ns:lower :buf)
-      (pine.ns:lower :mode))))
+      (pine.ns:down :buf)
+      (pine.ns:down :mode))))
 
 ;;;; the dispatch reads back
 
@@ -196,7 +196,7 @@ buffer without one line of pine having heard of it."
   "A surface asks the buffer, not the mode: the path is the whole interface."
   (with-modes
     (pine.ts.syntax:declare-all)
-      (pine.ns:raise :buf)
+      (pine.ns:up :buf)
     (unwind-protect
          (progn
            (pine.ns:write /mode/probe {:parent :text})
@@ -207,7 +207,7 @@ buffer without one line of pine having heard of it."
            (pine.ns:write /buf/probe-buf/mode :probe)
            (is (equal "probe-buf takes nothing"
                       (pine.ns:read /buf/probe-buf/arglist))))
-      (pine.ns:lower :buf))))
+      (pine.ns:down :buf))))
 
 (test a-point-verb-takes-the-most-specific-answer-and-a-set-verb-merges
   (with-modes
