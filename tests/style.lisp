@@ -2,7 +2,7 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)
@@ -15,9 +15,10 @@
   (merge-pathnames "src/" (asdf:system-source-directory :pine)))
 
 (defun %files ()
-  (loop :for module :in +modules+
-        :append (directory (merge-pathnames (format nil "~a/*.lisp" module)
-                                            (%module-root)))))
+  (cons (merge-pathnames "boot.lisp" (%module-root))
+        (loop :for module :in +modules+
+              :append (directory (merge-pathnames (format nil "~a/*.lisp" module)
+                                                  (%module-root))))))
 
 (defun %lines (file)
   (with-open-file (in file)

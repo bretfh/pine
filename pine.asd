@@ -32,7 +32,12 @@
                  (:module "repl"
                           :serial t
                           :components ((:file "command") (:file "mode")
-                                       (:file "session")))))
+                                       (:file "session")))
+                 (:module "path"
+                          :serial t
+                          :components ((:file "path") (:file "reader")
+                                       (:file "place")))
+                 (:file "boot")))
 
 (asdf:defsystem #:pine/test
                 :depends-on (#:pine #:fiveam)
@@ -40,7 +45,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))
