@@ -79,6 +79,9 @@
                  (:module "net"
                           :serial t
                           :components ((:file "server") (:file "attach") (:file "agent")))
+                 (:module "session"
+                          :serial t :pathname "edit/"
+                          :components ((:file "session")))
                  (:file "frontend")
                  (:file "boot")))
 

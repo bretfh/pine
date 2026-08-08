@@ -150,3 +150,138 @@ remote. Nothing above it knows the difference."
                         (pine.proc.process:env p))
                "the frontend is told which pine to attach to")))
     (pine:stop)))
+
+(test a-client-attaches-over-the-wire-and-the-daemon-holds-it
+  "The handshake, end to end: a client with its own actor system tells the
+daemon's attach actor, the daemon accepts, and both sides see it. Nothing below
+this was tested before, which is why the message shape was wrong."
+  (let ((seen nil))
+    (unwind-protect
+         (progn
+           (pine:daemon :remoting 0 :config nil)
+           (pine.net.attach:app :probe-front
+                                (fset:map (:attached (lambda (c) (push c seen)))))
+           (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
+                 (answered (pine.run.cell:cell nil)))
+             (unwind-protect
+                  (let ((sys (pine.net.server:actor-system client)))
+                    (sento.actor-context:actor-of sys
+                      :name "display"
+                      :dispatcher :pinned
+                      :receive (lambda (m) (pine.run.cell:put answered m)))
+                    (pine.net.attach:attach-to
+                     sys
+                     (pine.net.server:daemon-uri
+                      "attach" :port (pine.net.server:remoting-port pine:*image*))
+                     (pine.net.server:local-uri
+                      "display" (pine.net.server:remoting-port client))
+                     :kind :probe-front)
+                    (is-true (wait-until (lambda () (pine.run.cell:held answered)))
+                             "the daemon never answered the attach")
+                    (let ((reply (pine.run.cell:held answered)))
+                      (is (eq :attached (first reply))
+                          "the daemon refused or said something else: ~s" reply)
+                      (is (integerp (getf (rest reply) :id))))
+                    (is (= 1 (length (pine.net.attach:clients :probe-front)))
+                        "the daemon is not holding the client")
+                    (is (= 1 (length seen)) "the kind's :attached never ran"))
+               (pine.net.server:stop-server client))))
+      (pine:stop))))
+
+(test a-client-built-against-another-wire-is-told-so
+  (unwind-protect
+       (progn
+         (pine:daemon :remoting 0 :config nil)
+         (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
+               (answered (pine.run.cell:cell nil)))
+           (unwind-protect
+                (let ((sys (pine.net.server:actor-system client)))
+                  (sento.actor-context:actor-of sys
+                    :name "display" :dispatcher :pinned
+                    :receive (lambda (m) (pine.run.cell:put answered m)))
+                  (sento.actor:tell
+                   (sento.remoting:make-remote-ref
+                    sys (pine.net.server:daemon-uri
+                         "attach" :port (pine.net.server:remoting-port pine:*image*)))
+                   (list :attach :kind :probe-old :version "ns1/0.0.1"
+                         :uri "x" :display (pine.net.server:local-uri
+                                            "display"
+                                            (pine.net.server:remoting-port client))))
+                  (is-true (wait-until (lambda () (pine.run.cell:held answered))))
+                  (is (eq :refused (first (pine.run.cell:held answered)))
+                      "an old frontend should be told plainly, not left painting"))
+             (pine.net.server:stop-server client))))
+    (pine:stop)))
+
+(test attaching-as-an-editor-gets-a-frame-that-rebuilds-into-widgets
+  "What nothing renders means: the daemon must push a frame the frontend can
+turn back into a widget tree. This walks the whole path with no display."
+  (unwind-protect
+       (progn
+         (pine:daemon :remoting 0 :config nil)
+         (setf (pine.fs.node:contents (pine.edit.buffer:current)) "hello
+there")
+         (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
+               (got (pine.run.cell:cell nil)))
+           (unwind-protect
+                (let ((sys (pine.net.server:actor-system client)))
+                  (sento.actor-context:actor-of sys
+                    :name "display" :dispatcher :pinned
+                    :receive (lambda (m)
+                               (pine.run.cell:swap got (lambda (all) (cons m all)))))
+                  (pine.net.attach:attach-to
+                   sys
+                   (pine.net.server:daemon-uri
+                    "attach" :port (pine.net.server:remoting-port pine:*image*))
+                   (pine.net.server:local-uri
+                    "display" (pine.net.server:remoting-port client))
+                   :kind :editor)
+                  (is-true (wait-until
+                            (lambda ()
+                              (find :widgets (pine.run.cell:held got) :key #'first)))
+                           "no frame was pushed to the editor")
+                  (let* ((frame (find :widgets (pine.run.cell:held got) :key #'first))
+                         (tree (getf (rest frame) :tree)))
+                    (is (equal "editor" (getf (rest frame) :surface)))
+                    (is (integerp (getf (rest frame) :generation)))
+                    (let ((rebuilt (pine.ui.wire:wire->node tree)))
+                      (is (typep rebuilt 'pine.ui.node:node)
+                          "the frontend cannot rebuild what it was sent")
+                      (let ((rows (pine.ui.cells:render rebuilt 40)))
+                        (is (find-if (lambda (row) (search "hello" (car row))) rows)
+                            "the buffer's text is not in the frame")
+                        (is (find-if (lambda (row) (search "scratch" (car row))) rows)
+                            "the modeline is not in the frame")))))
+             (pine.net.server:stop-server client))))
+    (pine:stop)))
+
+(test a-key-from-the-frontend-edits-the-buffer-and-a-new-frame-follows
+  (unwind-protect
+       (progn
+         (pine:daemon :remoting 0 :config nil)
+         (setf (pine.fs.node:contents (pine.edit.buffer:current)) "")
+         (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
+               (got (pine.run.cell:cell nil)))
+           (unwind-protect
+                (let ((sys (pine.net.server:actor-system client)))
+                  (sento.actor-context:actor-of sys
+                    :name "display" :dispatcher :pinned
+                    :receive (lambda (m)
+                               (pine.run.cell:swap got (lambda (all) (cons m all)))))
+                  (pine.net.attach:attach-to
+                   sys
+                   (pine.net.server:daemon-uri
+                    "attach" :port (pine.net.server:remoting-port pine:*image*))
+                   (pine.net.server:local-uri
+                    "display" (pine.net.server:remoting-port client))
+                   :kind :editor)
+                  (is-true (wait-until
+                            (lambda () (pine.net.attach:clients :editor))))
+                  (let ((c (first (pine.net.attach:clients :editor))))
+                    (dolist (ch '("h" "i"))
+                      (pine.edit.session:received
+                       c (list :key :key-str ch :ctrl nil :meta nil)))
+                    (is (equal "hi" (pine.fs.node:contents (pine.edit.buffer:current)))
+                        "a key from the wire did not reach the buffer")))
+             (pine.net.server:stop-server client))))
+    (pine:stop)))

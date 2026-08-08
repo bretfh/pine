@@ -20,7 +20,7 @@
                     (#:load #:pine.run.log) (#:place #:pine.path.place)
                     (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
                     (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
-                    (#:media #:pine.provider.media))
+                    (#:media #:pine.provider.media) (#:esession #:pine.edit.session))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
@@ -172,6 +172,7 @@
     (mount:mount "/" root "file"))
   (edit:install)
   (term:install)
+  (esession:install)
   (let ((scratch (buffer:make-buffer "scratch" :mode "lisp")))
     (setf (buffer:current) scratch)
     (window:seed! scratch))
@@ -300,7 +301,7 @@
     (loop :for c :in (attach:clients)
           :collect (list (attach:client-kind c) (attach:client-id c))))
   (load-config config)
-  (load:note "~a: remoting ~d, ~d command~:p, ~d process~:p"
+  (load:note "~a: remoting ~d, ~d command~:p, ~d running"
              (world:name world:*world*)
              (net:remoting-port *image*)
              (length (cmd:commands))

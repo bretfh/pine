@@ -79,7 +79,7 @@
     message))
 
 (defun %accept (s message display-uri)
-  (destructuring-bind (&key kind version uri) (rest message)
+  (destructuring-bind (&key kind version uri &allow-other-keys) (rest message)
     (if (not (acceptable version))
         (progn (sento.actor:tell
                 (sento.remoting:make-remote-ref (server:actor-system s) display-uri)
