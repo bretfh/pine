@@ -1,0 +1,173 @@
+(defpackage #:pine.data
+  (:use #:cl)
+  (:shadow #:map #:set #:keys #:count #:remove #:union #:subseq #:last #:first
+           #:rest #:reverse #:sort #:find #:position #:some #:every #:append)
+  (:export #:map #:seq #:set #:mapp #:seqp #:setp #:collectionp
+           #:at #:with #:without #:size #:emptyp #:count
+           #:keys #:vals #:pairs #:fold #:do-each #:do-pairs
+           #:as #:same #:merged #:union #:contains
+           #:first #:last #:rest #:append #:subseq #:reverse #:sort
+           #:find #:position #:some #:every #:remove
+           #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at))
+
+(in-package #:pine.data)
+
+(defvar +no-map+ (fset:empty-map))
+(defvar +no-seq+ (fset:empty-seq))
+(defvar +no-set+ (fset:empty-set))
+
+(defun no-map () +no-map+)
+(defun no-seq () +no-seq+)
+(defun no-set () +no-set+)
+
+(defun map (&rest pairs)
+  (loop :with out := +no-map+
+        :for (key value) :on pairs :by #'cddr
+        :do (setf out (fset:with out key value))
+        :finally (return out)))
+
+(defun seq (&rest values) (fset:convert 'fset:seq values))
+
+(defun set (&rest values) (fset:convert 'fset:set values))
+
+(defun mapp (x) (fset:map? x))
+(defun seqp (x) (fset:seq? x))
+(defun setp (x) (fset:set? x))
+(defun collectionp (x) (or (mapp x) (seqp x) (setp x)))
+
+(defgeneric at (collection key &optional default)
+  (:method ((c fset:map) key &optional default)
+    (multiple-value-bind (value foundp) (fset:lookup c key)
+      (if foundp value default)))
+  (:method ((c fset:seq) key &optional default)
+    (if (and (integerp key) (>= key 0) (< key (fset:size c)))
+        (fset:@ c key)
+        default))
+  (:method ((c fset:set) key &optional default)
+    (if (fset:contains? c key) key default))
+  (:method ((c null) key &optional default)
+    (declare (ignore key))
+    default)
+  (:method ((c hash-table) key &optional default)
+    (gethash key c default))
+  (:method ((c cons) key &optional default)
+    (if (integerp key) (or (nth key c) default) (getf c key default))))
+
+(defgeneric with (collection key &optional value)
+  (:method ((c fset:map) key &optional value) (fset:with c key value))
+  (:method ((c fset:seq) key &optional value)
+    (if (integerp key) (fset:with c key value) (fset:with-last c key)))
+  (:method ((c fset:set) key &optional value)
+    (declare (ignore value))
+    (fset:with c key))
+  (:method ((c null) key &optional value)
+    (if value (fset:with +no-map+ key value) (fset:with-last +no-seq+ key))))
+
+(defun with-at (collection index value) (fset:with collection index value))
+
+(defun insert-at (collection index value) (fset:insert collection index value))
+
+(defgeneric without (collection key)
+  (:method ((c fset:map) key) (fset:less c key))
+  (:method ((c fset:seq) key) (fset:less c key))
+  (:method ((c fset:set) key) (fset:less c key))
+  (:method ((c null) key) (declare (ignore key)) nil))
+
+(defgeneric size (collection)
+  (:method ((c fset:collection)) (fset:size c))
+  (:method ((c null)) 0)
+  (:method ((c sequence)) (length c))
+  (:method ((c hash-table)) (hash-table-count c)))
+
+(defun count (collection) (size collection))
+
+(defun emptyp (collection) (zerop (size collection)))
+
+(defgeneric contains (collection value)
+  (:method ((c fset:set) value) (fset:contains? c value))
+  (:method ((c fset:seq) value) (and (fset:position value c) t))
+  (:method ((c fset:map) value) (nth-value 1 (fset:lookup c value)))
+  (:method ((c null) value) (declare (ignore value)) nil))
+
+(defgeneric keys (collection)
+  (:method ((c fset:map)) (fset:convert 'list (fset:domain c)))
+  (:method ((c fset:set)) (fset:convert 'list c))
+  (:method ((c fset:seq)) (loop :for i :below (fset:size c) :collect i))
+  (:method ((c null)) nil))
+
+(defgeneric vals (collection)
+  (:method ((c fset:map)) (fset:convert 'list (fset:range c)))
+  (:method ((c fset:seq)) (fset:convert 'list c))
+  (:method ((c fset:set)) (fset:convert 'list c))
+  (:method ((c null)) nil))
+
+(defun pairs (collection)
+  (loop :for key :in (keys collection) :collect (cons key (at collection key))))
+
+(defgeneric fold (collection initial function)
+  (:method ((c fset:map) initial function)
+    (let ((acc initial))
+      (fset:do-map (key value c acc) (setf acc (funcall function acc key value)))))
+  (:method ((c fset:seq) initial function)
+    (let ((acc initial) (i -1))
+      (fset:do-seq (value c)
+        (setf acc (funcall function acc (incf i) value)))
+      acc))
+  (:method ((c fset:set) initial function)
+    (let ((acc initial))
+      (fset:do-set (value c)
+        (setf acc (funcall function acc value value)))
+      acc))
+  (:method ((c null) initial function)
+    (declare (ignore function))
+    initial))
+
+(defmacro do-pairs ((key value collection &optional result) &body body)
+  (let ((c (gensym)))
+    `(let ((,c ,collection))
+       (cond ((mapp ,c) (fset:do-map (,key ,value ,c ,result) ,@body))
+             ((seqp ,c) (let ((,key -1))
+                          (fset:do-seq (,value ,c)
+                            (incf ,key) ,@body)
+                          ,result))
+             ((setp ,c) (fset:do-set (,value ,c)
+                          (let ((,key ,value)) (declare (ignorable ,key)) ,@body))
+                        ,result)
+             (t ,result)))))
+
+(defmacro do-each ((value collection &optional result) &body body)
+  (let ((key (gensym)))
+    `(do-pairs (,key ,value ,collection ,result)
+       (declare (ignorable ,key))
+       ,@body)))
+
+(defgeneric as (kind collection)
+  (:method ((kind (eql :list)) collection)
+    (if (collectionp collection) (fset:convert 'list collection) collection))
+  (:method ((kind (eql :seq)) collection) (fset:convert 'fset:seq collection))
+  (:method ((kind (eql :set)) collection) (fset:convert 'fset:set collection))
+  (:method ((kind (eql :map)) collection) (fset:convert 'fset:map collection))
+  (:method ((kind (eql :vector)) collection) (fset:convert 'vector collection)))
+
+(defun same (a b) (fset:equal? a b))
+
+(defun merged (&rest collections)
+  (reduce (lambda (a b) (if (and (mapp a) (mapp b)) (fset:map-union a b) (or b a)))
+          collections :initial-value +no-map+))
+
+(defun union (&rest sets)
+  (reduce #'fset:union sets :initial-value +no-set+))
+
+(defun first (c) (at c 0))
+(defun last (c) (at c (1- (size c))))
+(defun rest (c) (fset:subseq c 1))
+(defun append (a b) (fset:concat a b))
+(defun subseq (c from &optional to) (fset:subseq c from (or to (size c))))
+(defun reverse (c) (fset:reverse c))
+(defun sort (c predicate &key key) (fset:sort c predicate :key key))
+(defun find (item c &key (test #'fset:equal?)) (fset:find item c :test test))
+(defun position (item c) (fset:position item c))
+(defun index-of (item c) (fset:position item c))
+(defun some (predicate c) (fset:some predicate c))
+(defun every (predicate c) (fset:every predicate c))
+(defun remove (item c) (fset:remove item c))

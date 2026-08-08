@@ -9,6 +9,7 @@
                              #:named-readtables
                              #:cffi
                              #:cffi-libffi
+                             #:fset
                              #:sqlite
                              #:sb-introspect
                              #:uiop)
@@ -16,7 +17,8 @@
                 :serial t
                 :pathname "src/"
                 :components
-                ((:module "run"
+                ((:file "data")
+                 (:module "run"
                           :serial t
                           :components ((:file "cell") (:file "plist") (:file "mailbox")
                                        (:file "task") (:file "fault") (:file "log")))
