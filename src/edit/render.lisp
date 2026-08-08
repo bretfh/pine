@@ -77,7 +77,7 @@
 
 (defun window-tree (w)
   (scroll-to-point w)
-  (build:column :align :stretch
+  (build:column :align :stretch :class "window" :expand 1
                 (buffer-tree w)
                 (modeline w)))
 

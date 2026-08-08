@@ -113,6 +113,29 @@ there")
     (pine.repl.command:run "delete-other-windows")
     (is (= 1 (length (pine.edit.window:windows))))))
 
+(defun %classed (tree class)
+  (labels ((walk (n)
+             (if (equal class (pine.ui.node:css-class n))
+                 n
+                 (some #'walk (pine.ui.layout:nodes-of n)))))
+    (walk tree)))
+
+(test the-frame-fills-the-height-it-is-given
+  (with-editor (:text "hello")
+    (let ((tree (pine.edit.render:frame-tree)))
+      (pine.ui.layout:measure tree 80 24)
+      (pine.ui.layout:arrange tree 0 0 80 24)
+      (let ((view (%classed tree "editor-view"))
+            (modeline (%classed tree "modeline"))
+            (echo (%classed tree "echo")))
+        (is (= 23 (pine.ui.node:end-line echo))
+            "the echo line sits on the last row, not under the first")
+        (is (= 22 (pine.ui.node:start-line modeline))
+            "the modeline sits above it")
+        (is (= 0 (pine.ui.node:start-line view)))
+        (is (= 21 (pine.ui.node:end-line view))
+            "the buffer view takes every row down to the modeline")))))
+
 (test a-file-opens-into-a-buffer-and-saves-back
   (let ((file (merge-pathnames "pine-probe-edit.lisp" (uiop:temporary-directory))))
     (unwind-protect

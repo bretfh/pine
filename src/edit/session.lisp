@@ -31,10 +31,11 @@
 (defun surface () *surface*)
 
 (defun %tree (s)
-  (let ((w (window:focused)))
-    (when w
+  (let* ((windows (window:windows))
+         (share (max 2 (floor (max 2 (1- (rows s))) (max 1 (length windows))))))
+    (dolist (w windows)
       (setf (window:width-of w) (cols s)
-            (window:height-of w) (max 1 (1- (rows s)))))
+            (window:height-of w) (1- share)))
     (render:frame-tree)))
 
 (defun push-frame (s)
