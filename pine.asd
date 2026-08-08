@@ -60,7 +60,7 @@
                                                              (:file "pine")))))
                  (:module "edit"
                           :serial t
-                          :components ((:file "text") (:file "buffer")
+                          :components ((:file "text") (:file "history") (:file "buffer")
                                        (:file "window") (:file "key")
                                        (:file "render") (:file "commands")))
                  (:file "frontend")

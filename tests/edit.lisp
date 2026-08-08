@@ -164,3 +164,63 @@ there")
       (is (eq (pine.data:at lines 99999) (pine.data:at fresh 99999)))
       (is (not (equal (pine.edit.text:line-at lines 50000)
                       (pine.edit.text:line-at fresh 50000)))))))
+
+(test undo-puts-back-what-an-edit-changed-and-redo-does-it-again
+  (with-editor (:text "hello")
+    (pine.edit.buffer:goto! (b) 0 5)
+    (pine.edit.buffer:insert! (b) " there")
+    (is (equal "hello there" (pine.fs.node:contents (b))))
+    (is-true (pine.edit.buffer:undoable (b)))
+    (pine.edit.buffer:undo! (b))
+    (is (equal "hello" (pine.fs.node:contents (b))))
+    (is (equal '(0 5) (pine.edit.buffer:point (b))) "point comes back too")
+    (pine.edit.buffer:redo! (b))
+    (is (equal "hello there" (pine.fs.node:contents (b))))))
+
+(test undo-is-cheap-because-the-seqs-share
+  (with-editor ()
+    (setf (pine.fs.node:contents (b))
+          (with-output-to-string (s) (dotimes (i 20000) (format s "line ~d~%" i))))
+    (pine.edit.buffer:goto! (b) 10000 0)
+    (let ((before (pine.run.cell:held (pine.edit.buffer:lines (b)))))
+      (pine.edit.buffer:insert! (b) "x")
+      (let ((after (pine.run.cell:held (pine.edit.buffer:lines (b)))))
+        (is (eq (pine.data:at before 0) (pine.data:at after 0)))
+        (pine.edit.buffer:undo! (b))
+        (is (eq before (pine.run.cell:held (pine.edit.buffer:lines (b))))
+            "undo is the seq it had, not a rebuilt one")))))
+
+(test a-named-mark-is-a-place-that-outlives-point
+  (with-editor (:text "one
+two
+three")
+    (pine.edit.buffer:goto! (b) 1 2)
+    (is (equal '(1 2) (pine.edit.buffer:put-mark! (b) :probe)))
+    (pine.edit.buffer:goto! (b) 2 0)
+    (is (equal '(1 2) (pine.edit.buffer:mark-at (b) :probe)))
+    (pine.edit.buffer:drop-mark! (b) :probe)
+    (is (null (pine.edit.buffer:mark-at (b) :probe)))))
+
+(test a-region-carries-properties-and-they-read-back-by-place
+  (with-editor (:text "hello there")
+    (pine.edit.buffer:propertize! (b) 0 0 5 '(:face :match))
+    (is (equal '((:face :match)) (pine.edit.buffer:properties-at (b) 0 2)))
+    (is (null (pine.edit.buffer:properties-at (b) 0 7)))
+    (pine.edit.buffer:clear-properties! (b))
+    (is (null (pine.edit.buffer:properties-at (b) 0 2)))))
+
+(test a-line-in-lisp-indents-by-what-the-parse-says
+  (with-editor (:text "(defun f (x)
+x)")
+    (setf pine.edit.render:*runtime* (pine.ts.runtime:make-ts-runtime))
+    (pine.ts.runtime:ensure-ts pine.edit.render:*runtime*)
+    (unwind-protect
+         (progn
+           (is (eql 2 (pine.edit.render:indent-for (b) 1))
+               "a defun's body indents by two, said by the parse and not a rule here")
+           (pine.edit.buffer:goto! (b) 1 0)
+           (pine.repl.command:run "indent-line")
+           (is (equal "  x)" (pine.edit.buffer:line (b) 1)))
+           (is (eql 2 (pine.edit.buffer:point-col (b)))
+               "point moved with the text it was sitting in"))
+      (pine.edit.render:forget-parse (b)))))

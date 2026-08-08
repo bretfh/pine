@@ -6,10 +6,12 @@
                     (#:mode #:pine.repl.mode) (#:syntax #:pine.ts.syntax)
                     (#:hl #:pine.ts.highlight))
   (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline
-           #:visible-lines #:scroll-to-point #:*runtime* #:highlights-for))
+           #:visible-lines #:scroll-to-point #:*runtime* #:highlights-for
+           #:indent-for #:parse-state-for #:forget-parse))
 
 (in-package #:pine.edit.render)
 
+(defvar *states* (make-hash-table :test 'equal))
 (defvar *runtime* nil)
 
 (defun visible-lines (b from height)
@@ -88,3 +90,31 @@
 (defun rows (&key (width 80) (height 24) (echo ""))
   (let ((tree (frame-tree :echo echo)))
     (cells:render tree width :height height)))
+
+(defun forget-parse (b)
+  (let ((ps (gethash (node:name b) *states*)))
+    (when ps
+      (pine.ts.runtime:free-parse-state ps)
+      (remhash (node:name b) *states*))))
+
+(defun parse-state-for (b)
+  (let ((grammar (mode:setting (buffer:mode-of b) :grammar)))
+    (when (and grammar *runtime*)
+      (let ((ps (gethash (node:name b) *states*)))
+        (unless ps
+          (multiple-value-bind (lib fn) (syntax:grammar-of grammar)
+            (when lib
+              (setf ps (pine.ts.runtime:make-parse-state
+                        *runtime* grammar lib fn :syntax (syntax:for grammar))
+                    (gethash (node:name b) *states*) ps))))
+        (when ps
+          (pine.ts.runtime:parse-lines! ps (d:as :list (pine.run.cell:held
+                                                        (buffer:lines b))))
+          ps)))))
+
+(defun indent-for (b line)
+  (let ((width (or (mode:setting (buffer:mode-of b) :indent) 2))
+        (ps (parse-state-for b)))
+    (or (and ps (hl:parse-indent ps line :width width))
+        (and (plusp line) (buffer:indent-of b (1- line)))
+        0)))

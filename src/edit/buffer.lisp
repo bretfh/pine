@@ -2,13 +2,18 @@
   (:use #:cl)
   (:local-nicknames (#:c #:pine.run.cell) (#:node #:pine.fs.node)
                     (#:tree #:pine.fs.tree) (#:world #:pine.world.world)
-                    (#:mode #:pine.repl.mode) (#:text #:pine.edit.text))
+                    (#:mode #:pine.repl.mode) (#:text #:pine.edit.text)
+                    (#:d #:pine.data) (#:history #:pine.edit.history))
   (:export #:buffer #:slot-node #:make-buffer #:buffers #:buffer-named
            #:kill-buffer #:current #:current-buffer #:lines #:point #:mark
            #:mode-of #:minors-of #:file-of #:tick #:properties
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
            #:goto! #:move! #:region-of #:mark! #:visit! #:save!
-           #:point-line #:point-col #:changed))
+           #:point-line #:point-col #:changed
+           #:past #:undo! #:redo! #:undoable #:redoable
+           #:marks #:mark-at #:put-mark! #:drop-mark!
+           #:propertize! #:properties-at #:clear-properties!
+           #:indent-line! #:indent-of))
 
 (in-package #:pine.edit.buffer)
 
@@ -38,7 +43,9 @@
    (minors-of  :initarg :minors :accessor minors-of :initform nil)
    (file-of    :initarg :file   :accessor file-of   :initform nil)
    (tick       :initform 0   :accessor tick)
-   (properties :initform nil :accessor properties)))
+   (past       :initform (history:history) :reader past)
+   (marks      :initform (d:no-map) :accessor marks)
+   (properties :initform (d:no-seq) :accessor properties)))
 
 (defmethod print-object ((b buffer) stream)
   (print-unreadable-object (b stream :type t)
@@ -49,6 +56,7 @@
 (defmethod node:contents ((b buffer)) (text:text-of (c:held (lines b))))
 
 (defmethod (setf node:contents) (value (b buffer))
+  (%note b)
   (c:put (lines b) (text:lines-of (princ-to-string value)))
   (changed b)
   value)
@@ -123,7 +131,76 @@
       (text:move-by unit (c:held (lines b)) (point-line b) (point-col b) n)
     (goto! b line col)))
 
+(defun %note (b)
+  (history:remember (past b) (c:held (lines b)) (point-line b) (point-col b))
+  b)
+
+(defun undoable (b) (history:undoable (past b)))
+(defun redoable (b) (history:redoable (past b)))
+
+(defun %restore (b was)
+  (when was
+    (c:put (lines b) (history:state-lines was))
+    (setf (point-line b) (history:state-line was)
+          (point-col b) (history:state-col was))
+    (changed b))
+  (and was (point b)))
+
+(defun undo! (b)
+  (%restore b (history:undo (past b)
+                            (history:state (c:held (lines b))
+                                           (point-line b) (point-col b)))))
+
+(defun redo! (b)
+  (%restore b (history:redo (past b)
+                            (history:state (c:held (lines b))
+                                           (point-line b) (point-col b)))))
+
+(defun mark-at (b name) (d:at (marks b) name))
+
+(defun put-mark! (b name &optional (line (point-line b)) (col (point-col b)))
+  (setf (marks b) (d:with (marks b) name (list line col)))
+  (list line col))
+
+(defun drop-mark! (b name)
+  (setf (marks b) (d:without (marks b) name))
+  name)
+
+(defun propertize! (b line from to props)
+  (setf (properties b) (d:with (properties b) (list line from to props)))
+  props)
+
+(defun properties-at (b line col)
+  (let (acc)
+    (d:do-seq (i each (properties b) (nreverse acc))
+      (declare (ignore i))
+      (destructuring-bind (at from to props) each
+        (when (and (= at line) (>= col from) (< col to))
+          (push props acc))))))
+
+(defun clear-properties! (b)
+  (setf (properties b) (d:no-seq))
+  b)
+
+(defun indent-of (b line)
+  (text:indent-width (line b line)))
+
+(defun indent-line! (b line target)
+  (let* ((text (line b line))
+         (had (text:indent-width text))
+         (body (subseq text had))
+         (fresh (concatenate 'string (make-string target :initial-element #\Space)
+                             body)))
+    (unless (equal text fresh)
+      (%note b)
+      (c:put (lines b) (d:with-at (c:held (lines b)) line fresh))
+      (when (= line (point-line b))
+        (setf (point-col b) (max 0 (+ (point-col b) (- target had)))))
+      (changed b))
+    target))
+
 (defun insert! (b string)
+  (%note b)
   (multiple-value-bind (fresh line col)
       (text:insert (c:held (lines b)) (point-line b) (point-col b) string)
     (c:put (lines b) fresh)
@@ -134,6 +211,7 @@
 (defun newline! (b) (insert! b (string #\Newline)))
 
 (defun delete-back! (b &optional (n 1))
+  (%note b)
   (multiple-value-bind (line col)
       (text:move-by :char (c:held (lines b)) (point-line b) (point-col b) (- n))
     (multiple-value-bind (fresh at-line at-col taken)
