@@ -2,7 +2,7 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("repl")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)

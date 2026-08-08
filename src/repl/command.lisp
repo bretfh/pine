@@ -1,4 +1,11 @@
-(in-package #:pine.repl)
+(defpackage #:pine.repl.command
+  (:use #:cl)
+  (:shadow #:describe)
+  (:export #:command #:commandp #:defcommand #:command-named #:commands
+           #:forget #:name #:action #:describes #:asks #:arguments #:run
+           #:word #:unknown-command #:name-of))
+
+(in-package #:pine.repl.command)
 
 (defvar *commands* (make-hash-table :test 'equal))
 
@@ -29,6 +36,7 @@
 
 (defun command-named (name)
   (etypecase name
+    (null nil)
     (command name)
     (string (gethash name *commands*))
     (symbol (gethash (string-downcase (symbol-name name)) *commands*))))
@@ -61,9 +69,9 @@
     (when prompt
       (write-string prompt output)
       (force-output output))
-    (let ((line (cl:read-line input nil nil)))
+    (let ((line (read-line input nil nil)))
       (cond ((or (null line) (and (string= line "") default)) default)
-            ((eq as :form) (cl:read-from-string line))
+            ((eq as :form) (read-from-string line))
             ((eq as :integer) (parse-integer line :junk-allowed t))
             (t line)))))
 

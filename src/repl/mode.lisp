@@ -1,4 +1,12 @@
-(in-package #:pine.repl)
+(defpackage #:pine.repl.mode
+  (:use #:cl)
+  (:local-nicknames (#:cmd #:pine.repl.command))
+  (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:mode-for
+           #:name #:parent #:indicator #:settings #:claims #:claimsp
+           #:precedence #:chain #:setting #:handle #:handler #:claimants
+           #:bind #:binding #:in-force #:globp))
+
+(in-package #:pine.repl.mode)
 
 (defvar *modes* (make-hash-table :test 'equal))
 
@@ -41,6 +49,17 @@
   (remhash name *modes*)
   name)
 
+(defun globp (pattern text)
+  (labels ((walk (p n)
+             (cond ((and (null p) (null n)) t)
+                   ((null p) nil)
+                   ((char= (first p) #\*)
+                    (or (walk (rest p) n) (and n (walk p (rest n)))))
+                   ((null n) nil)
+                   ((char-equal (first p) (first n)) (walk (rest p) (rest n)))
+                   (t nil))))
+    (walk (coerce pattern 'list) (coerce text 'list))))
+
 (defgeneric chain (mode)
   (:method ((name string)) (chain (mode-named name)))
   (:method ((m null)) nil)
@@ -48,7 +67,7 @@
     (loop :with seen := nil
           :for at := m :then (mode-named (parent at))
           :while (and at (not (member at seen)))
-          :do (push at seen)
+          :do (cl:push at seen)
           :collect at)))
 
 (defgeneric setting (mode key &optional default)
@@ -72,19 +91,10 @@
                              (globp pattern (if (eq kind :paths) full leaf)))
                            patterns)))))
 
-(defun globp (pattern text)
-  (labels ((walk (p n)
-             (cond ((and (null p) (null n)) t)
-                   ((null p) nil)
-                   ((char= (first p) #\*)
-                    (or (walk (rest p) n) (and n (walk p (rest n)))))
-                   ((null n) nil)
-                   ((char-equal (first p) (first n)) (walk (rest p) (rest n)))
-                   (t nil))))
-    (walk (coerce pattern 'list) (coerce text 'list))))
-
 (defun mode-for (path)
-  (find-if (lambda (m) (claimsp m path)) (modes)))
+  (or (find-if (lambda (m) (find :paths (claims m) :key #'first))
+               (remove-if-not (lambda (m) (claimsp m path)) (modes)))
+      (find-if (lambda (m) (claimsp m path)) (modes))))
 
 (defgeneric handle (mode verb function)
   (:method ((name string) verb function) (handle (mode-named name) verb function))
@@ -97,7 +107,6 @@
     (setf (gethash chord (keys m)) command)))
 
 (defgeneric in-force (of)
-  (:documentation nil)
   (:method ((m mode)) (chain m)))
 
 (defgeneric claimants (of verb)
@@ -113,4 +122,4 @@
   (:method (of chord)
     (loop :for link :in (in-force of)
           :for c := (gethash chord (keys link))
-          :when c :do (return (command-named c)))))
+          :when c :do (return (cmd:command-named c)))))

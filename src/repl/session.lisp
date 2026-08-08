@@ -1,4 +1,14 @@
-(in-package #:pine.repl)
+(defpackage #:pine.repl.session
+  (:use #:cl)
+  (:shadow #:read #:print #:close)
+  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode))
+  (:export #:session #:open-session #:sessions #:*session* #:*history-kept*
+           #:*prompt* #:name #:owner #:package-of #:node-of #:mode-of #:minors
+           #:history #:input #:output #:openp
+           #:read #:evaluate #:print #:interact #:close
+           #:evaluation #:form #:answered #:fault #:said #:at-time))
+
+(in-package #:pine.repl.session)
 
 (defvar *session* nil)
 (defvar *sessions* nil)
@@ -17,16 +27,17 @@
     (cl:print (form e) stream)))
 
 (defclass session ()
-  ((name       :initarg :name       :reader name       :initform "session")
-   (owner      :initarg :owner      :reader owner      :initform nil)
-   (package-of :initarg :package    :accessor package-of :initform (find-package :cl-user))
-   (node-of    :initarg :node       :accessor node-of  :initform nil)
-   (mode-of    :initarg :mode       :accessor mode-of  :initform nil)
-   (minors     :initarg :minors     :accessor minors   :initform nil)
-   (history    :initform nil        :accessor history)
-   (input      :initarg :input      :reader input      :initform *standard-input*)
-   (output     :initarg :output     :reader output     :initform *standard-output*)
-   (openp      :initform t          :accessor openp)))
+  ((name       :initarg :name    :reader name       :initform "session")
+   (owner      :initarg :owner   :reader owner      :initform nil)
+   (package-of :initarg :package :accessor package-of
+               :initform (find-package :cl-user))
+   (node-of    :initarg :node    :accessor node-of  :initform nil)
+   (mode-of    :initarg :mode    :accessor mode-of  :initform nil)
+   (minors     :initarg :minors  :accessor minors   :initform nil)
+   (history    :initform nil     :accessor history)
+   (input      :initarg :input   :reader input      :initform *standard-input*)
+   (output     :initarg :output  :reader output     :initform *standard-output*)
+   (openp      :initform t       :accessor openp)))
 
 (defmethod print-object ((s session) stream)
   (print-unreadable-object (s stream :type t)
@@ -34,20 +45,23 @@
 
 (defun open-session (&rest initargs &key &allow-other-keys)
   (let ((s (apply #'make-instance 'session initargs)))
-    (push s *sessions*)
+    (cl:push s *sessions*)
     s))
+
+(defun sessions () *sessions*)
 
 (defmethod close ((s session))
   (setf (openp s) nil
         *sessions* (remove s *sessions*))
   s)
 
-(defmethod in-force ((s session))
-  (append (sort (mapcar #'mode-named (minors s)) #'> :key #'precedence)
-          (chain (mode-named (mode-of s)))))
+(defmethod mode:in-force ((s session))
+  (append (sort (remove nil (mapcar #'mode:mode-named (minors s)))
+                #'> :key #'mode:precedence)
+          (mode:chain (mode:mode-named (mode-of s)))))
 
-(defmethod setting ((s session) key &optional default)
-  (setting (mode-named (mode-of s)) key default))
+(defmethod mode:setting ((s session) key &optional default)
+  (mode:setting (mode:mode-named (mode-of s)) key default))
 
 (defgeneric read (session &optional from)
   (:method ((s session) &optional from)
@@ -56,10 +70,12 @@
           (cl:read-from-string from)
           (cl:read (input s) nil :eof)))))
 
-(defun %command-for (form)
+(defun %command-for (session form)
   (typecase form
-    (symbol (values (command-named form) nil))
-    (cons (let ((c (and (symbolp (car form)) (command-named (car form)))))
+    (symbol (values (or (mode:binding session (string-downcase (symbol-name form)))
+                        (cmd:command-named form))
+                    nil))
+    (cons (let ((c (and (symbolp (car form)) (cmd:command-named (car form)))))
             (values c (cdr form))))
     (t nil)))
 
@@ -77,14 +93,14 @@
 
 (defmethod evaluate :around ((s session) form)
   (let ((e (call-next-method)))
-    (push e (history s))
+    (cl:push e (history s))
     (let ((kept (history s)))
       (when (> (length kept) *history-kept*)
         (setf (history s) (subseq kept 0 *history-kept*))))
     e))
 
 (defmethod evaluate ((s session) form)
-  (multiple-value-bind (c given) (%command-for form)
+  (multiple-value-bind (c given) (%command-for s form)
     (multiple-value-bind (answered fault said)
         (%capturing
          (lambda ()
@@ -93,9 +109,9 @@
               (let ((*package* (package-of s))
                     (*session* s))
                 (if c
-                    (run c (if given
-                               (mapcar #'word given)
-                               (arguments c (input s) (output s))))
+                    (cmd:run c (if given
+                                   (mapcar #'cmd:word given)
+                                   (cmd:arguments c (input s) (output s))))
                     (eval form)))))))
       (make-instance 'evaluation :form form :answered answered
                                  :fault fault :said said))))
@@ -125,5 +141,3 @@
                     (close s)
                     (print s (evaluate s form)))))
     s))
-
-(defun sessions () *sessions*)

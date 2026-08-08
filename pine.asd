@@ -3,32 +3,44 @@
                 :author "Bret Horne"
                 :license "GPL"
                 :version "0.0.1"
-                :depends-on (#:sento
-                             #:sento-remoting
-                             #:usocket
-                             #:fset
-                             #:alexandria
+                :depends-on (#:alexandria
                              #:bordeaux-threads
                              #:closer-mop
                              #:named-readtables
                              #:cffi
-                             #:cffi-libffi
-                             #:com.inuoe.jzon
-                             #:sqlite)
+                             #:sqlite
+                             #:uiop)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
                 :serial t
                 :pathname "src/"
                 :components
-                ((:module "repl"
+                ((:module "run"
                           :serial t
-                          :components ((:file "package") (:file "command")
-                                       (:file "mode") (:file "session")))))
+                          :components ((:file "cell") (:file "mailbox")
+                                       (:file "task")))
+                 (:module "fs"
+                          :serial t
+                          :components ((:file "node") (:file "computed")
+                                       (:file "tree") (:file "mount")))
+                 (:module "world"
+                          :serial t
+                          :components ((:file "world") (:file "store")))
+                 (:module "proc"
+                          :serial t
+                          :components ((:file "process") (:file "lisp")
+                                       (:file "supervisor")))
+                 (:module "repl"
+                          :serial t
+                          :components ((:file "command") (:file "mode")
+                                       (:file "session")))))
 
 (asdf:defsystem #:pine/test
                 :depends-on (#:pine #:fiveam)
                 :serial t
                 :pathname "tests/"
-                :components ((:file "suite") (:file "style") (:file "repl") (:file "mode"))
+                :components ((:file "suite") (:file "style")
+                             (:file "run") (:file "fs") (:file "world")
+                             (:file "proc") (:file "repl") (:file "mode"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))
