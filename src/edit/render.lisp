@@ -45,7 +45,7 @@
          (height (max 1 (window:height-of w)))
          (highlights (highlights-for b)))
     (apply #'build:column
-           :align :stretch
+           :align :stretch :class "editor-view" :expand 1
            (loop :for text :in (visible-lines b from height)
                  :for line :from from
                  :collect (if highlights
@@ -73,7 +73,7 @@
              (or (mode:setting (buffer:mode-of b) :indicator) (buffer:mode-of b))
              (1+ (buffer:point-line b))
              (buffer:point-col b))
-     :face :modeline)))
+     :class "modeline" :face :modeline)))
 
 (defun window-tree (w)
   (scroll-to-point w)
@@ -86,7 +86,7 @@
     (when (and p (prompt:candidates p))
       (let ((found (prompt:matching p)))
         (when found
-          (apply #'build:column :align :stretch
+          (apply #'build:column :align :stretch :class "candidates"
                  (loop :for each :in (subseq found 0 (min 8 (length found)))
                        :for i :from 0
                        :collect (build:label (princ-to-string each)
@@ -97,10 +97,11 @@
 (defun frame-tree (&key echo)
   (let ((windows (window:windows))
         (candidates (candidate-tree)))
-    (apply #'build:column :align :stretch
+    (apply #'build:column :align :stretch :class "editor"
            (append (mapcar #'window-tree windows)
                    (when candidates (list candidates))
-                   (list (build:label (or echo (prompt:showing))))))))
+                   (list (build:label (or echo (prompt:showing))
+                                      :class "echo" :face :echo))))))
 
 (defun rows (&key (width 80) (height 24) echo)
   (let ((tree (frame-tree :echo echo)))

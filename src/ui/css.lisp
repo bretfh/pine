@@ -1,11 +1,13 @@
 (defpackage #:pine.ui.css
   (:use #:cl #:pine.ui.face)
   (:export #:styles #:stylesheet #:install #:broadcast #:selector
-           #:css-color #:css-glass #:css-mono #:css-rad #:*listeners*))
+           #:css-color #:css-glass #:css-mono #:css-rad #:*listeners* #:*given*))
 
 (in-package #:pine.ui.css)
 
 (defvar *listeners* nil)
+
+(defvar *given* nil)
 
 (defun %compound-p (s &optional (from 0))
   "Whether S says more than one class: a descendant, a list, a pseudo, or two
@@ -35,6 +37,8 @@ is stored as it was written."
 The same shape the built-ins are in, since the two are appended into one
 stylesheet and whatever compiles it should not have to know which half a style
 came from."
+  (when (and (null pine.world.world:*world*) *given*)
+    (return-from styles *given*))
   (let ((held (and pine.world.world:*world*
                    (pine.world.world:at pine.world.world:*world* "style")))
         (acc nil))
@@ -65,11 +69,13 @@ This is not the way a config styles anything: a config writes the path. This is
 the far end of BROADCAST, where a frontend image puts what the daemon sent it
 into its own tree. Selectors may be keywords, symbol lists or selector strings,
 and it is reload-safe because a selector names its own path."
-  (dolist (style styles)
-    (setf (pine.fs.node:contents
-           (pine.world.world:ensure pine.world.world:*world*
-                                    "style" (%segment (first style))))
-          (first (rest style))))
+  (cond ((null pine.world.world:*world*)
+         (setf *given* styles))
+        (t (dolist (style styles)
+             (setf (pine.fs.node:contents
+                    (pine.world.world:ensure pine.world.world:*world*
+                                             "style" (%segment (first style))))
+                   (first (rest style))))))
   (styles))
 
 (defun broadcast ()
@@ -125,6 +131,14 @@ wrote at /style."
       (list ".help-entry" (list :color (p :fg)))
 
       (list ".field" (list :color (p :fg) :background-color (p :bg-alt)
-                      :padding "0 4px")))
+                      :padding "0 4px"))
+      (list ".editor" (list :background-color (p :bg) :color (p :fg)
+                            :font-family (mono)))
+      (list ".editor-view" (list :background-color (p :bg) :color (p :fg)))
+      (list ".modeline" (list :background-color (p :accent)
+                              :color (p :accent-fg)))
+      (list ".echo" (list :background-color (p :bg) :color (p :fg)))
+      (list ".candidates" (list :background-color (p :bg-completion)
+                                :color (p :fg))))
 
      (styles))))

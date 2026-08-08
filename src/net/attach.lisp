@@ -93,6 +93,12 @@
           (push c (server:clients s))
           (fault:attempt (lambda () (attached kind c))
                          (format nil "~(~a~) attaching" kind))
+          (sento.actor-context:actor-of (server:actor-system s)
+            :name (format nil "client-~d" (client-id c))
+            :dispatcher :pinned
+            :receive (lambda (m)
+                       (fault:attempt (lambda () (received kind c m))
+                                      (format nil "~(~a~) input" kind))))
           (sento.actor:tell display (list :attached :id (client-id c)
                                           :version (protocol)))
           (log:note "~(~a~) attached as client ~d" kind (client-id c))

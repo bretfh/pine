@@ -74,3 +74,26 @@
          (let ((f (pine.ui.face:find-face :probe-face)))
            (is (equal "#ff0000" (pine.ui.face:fg f)))))
     (pine:stop)))
+
+(test a-frontend-has-no-world-and-still-resolves-a-background
+  "The frontend image never calls pine:start, so it has no tree. Installing the
+styles the daemon sent used to signal there, which killed the display actor and
+left every surface transparent."
+  (let ((pine.world.world:*world* nil)
+        (pine.ui.css:*given* nil))
+    (finishes (pine.ui.css:install (pine.ui.css:stylesheet)))
+    (dolist (class '("editor-view" "modeline" "echo"))
+      (let ((st (pine.ui.style:resolve (list nil '("editor") (list class)))))
+        (is (pine.ui.style:st-bg st) "~a resolves to no background" class)
+        (is (pine.ui.style:st-fg st) "~a resolves to no colour" class)))))
+
+(test the-editor-frame-carries-the-classes-its-styles-are-written-against
+  (unwind-protect
+       (progn
+         (pine:start)
+         (setf (pine.fs.node:contents (pine.edit.buffer:current)) "hello")
+         (let ((wire (pine.ui.wire:node->wire (pine.edit.render:frame-tree))))
+           (let ((text (princ-to-string wire)))
+             (dolist (class '("editor" "editor-view" "modeline" "echo"))
+               (is (search class text) "the frame has no ~a" class)))))
+    (pine:stop)))

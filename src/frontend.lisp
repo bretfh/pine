@@ -114,18 +114,21 @@ when it has none."
 (defun attach (kind handler &key (host pine.net.server:*host*)
                                  (port pine.net.server:*port*)
                                  (name "display"))
-  (let ((sys (sento.actor-system:make-actor-system)))
+  (let ((sys (sento.actor-system:make-actor-system))
+        (joined (pine.run.cell:cell nil)))
     (sento.remoting:enable-remoting sys :host pine.net.server:*host* :port 0)
     (sento.actor-context:actor-of sys
       :name name
       :dispatcher :pinned
-      :receive (lambda (message) (funcall handler message)))
+      :receive (lambda (message)
+                 (when (member (first message) '(:attached :refused))
+                   (pine.run.cell:put joined t))
+                 (funcall handler message)))
     (let* ((self-port (sento.remoting:remoting-port sys))
            (daemon (pine.net.server:daemon-uri "attach" :host host :port port))
-           (self (pine.net.server:local-uri name self-port :host host))
-           (joined nil))
-      (pine.net.attach:attach-to sys daemon self :kind kind)
+           (self (pine.net.server:local-uri name self-port :host host)))
       (bordeaux-threads:make-thread
-       (lambda () (%keep-attaching sys daemon self kind (lambda () joined)))
+       (lambda () (%keep-attaching sys daemon self kind
+                                   (lambda () (pine.run.cell:held joined))))
        :name "pine attach")
       sys)))
