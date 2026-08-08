@@ -8,7 +8,9 @@
                              #:closer-mop
                              #:named-readtables
                              #:cffi
+                             #:cffi-libffi
                              #:sqlite
+                             #:sb-introspect
                              #:uiop)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
                 :serial t
@@ -16,8 +18,8 @@
                 :components
                 ((:module "run"
                           :serial t
-                          :components ((:file "cell") (:file "mailbox")
-                                       (:file "task")))
+                          :components ((:file "cell") (:file "plist") (:file "mailbox")
+                                       (:file "task") (:file "fault") (:file "log")))
                  (:module "fs"
                           :serial t
                           :components ((:file "node") (:file "computed")
@@ -44,6 +46,16 @@
                                        (:file "style") (:file "build")
                                        (:file "layout") (:file "hit") (:file "cells")
                                        (:file "wire") (:file "paths")))
+                 (:module "ts"
+                          :serial t
+                          :components ((:file "index") (:file "runtime") (:file "parse") (:file "edit")
+                                       (:file "highlight") (:file "indent") (:file "walk")
+                                       (:file "syntax")
+                                       (:module "lang"
+                                                :serial t
+                                                :components ((:file "commonlisp")
+                                                             (:file "scheme")
+                                                             (:file "pine")))))
                  (:file "boot")))
 
 (asdf:defsystem #:pine/test
@@ -52,7 +64,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

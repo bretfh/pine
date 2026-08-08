@@ -13,7 +13,7 @@
    #:index-edit
    #:compact-index
    #:string-bytes
-   ;; reading the source itself, in characters
+
    #:line-string
    #:source-line-col
    #:source-byte
@@ -34,14 +34,12 @@ the pending list, and a rebuild costs a pass over the file, so this trades a
 bounded per-query cost against an amortised per-edit one.")
 
 (defstruct (byte-index (:constructor %make-index))
-  ;; the seq the base arrays were built from
+
   (base-lines nil)
-  ;; per-line byte length including the newline that follows it; the last line
-  ;; has no newline, so its entry is its own length
+
   (starts (make-array 0 :element-type '(unsigned-byte 62)) :type (simple-array (unsigned-byte 62) (*)))
   (base-total 0 :type (unsigned-byte 62))
-  ;; the lines this index currently describes, and the edits that took the base
-  ;; there: each is (LINE BYTE-DELTA LINE-DELTA), oldest first
+
   (lines nil)
   (pending nil :type list)
   (memo-line -1 :type fixnum)
@@ -68,22 +66,22 @@ bounded per-query cost against an amortised per-edit one.")
 
 (defun build-index (lines)
   "A fresh index over LINES, with no pending edits."
-  (let* ((n (fset:size lines))
+  (let* ((n (length lines))
          (starts (make-array (1+ n) :element-type '(unsigned-byte 62)))
          (offset 0)
          (i 0))
     (declare (type (unsigned-byte 62) offset))
-    (fset:do-seq (line lines)
+    (dolist (line lines)
       (setf (aref starts i) offset)
       (incf offset (%line-byte-length line))
-      ;; every line but the last is followed by a newline
+
       (when (< i (1- n)) (incf offset))
       (incf i))
     (setf (aref starts n) offset)
     (%make-index :base-lines lines :starts starts :base-total offset :lines lines)))
 
 (defun index-line-count (index)
-  (fset:size (byte-index-lines index)))
+  (length (byte-index-lines index)))
 
 (defun %shift (index line)
   "The byte shift the pending edits apply at LINE, and the base line LINE came
@@ -113,8 +111,8 @@ from."
 (defun line-bytes (index line)
   "LINE's own byte length, without its newline."
   (let ((lines (byte-index-lines index)))
-    (if (< line (fset:size lines))
-        (%line-byte-length (fset:@ lines line))
+    (if (< line (length lines))
+        (%line-byte-length (nth line lines))
         0)))
 
 (defun byte-line (index byte)
@@ -122,7 +120,7 @@ from."
   (let ((n (index-line-count index)))
     (if (zerop n)
         (values 0 0)
-        ;; binary search over line starts, which are monotone under the shifts
+
         (let ((lo 0) (hi (1- n)))
           (loop :while (< lo hi)
                 :do (let ((mid (floor (+ lo hi 1) 2)))
@@ -130,9 +128,6 @@ from."
                           (setf lo mid)
                           (setf hi (1- mid)))))
           (values lo (max 0 (- byte (line-start index lo))))))))
-
-;;;; Reading the source through the index. Tree-sitter reports positions in
-;;;; UTF-8 bytes; the cell grid, point and the walks all speak characters.
 
 (defun %byte-offset-to-col (line offset)
   "(values COL BYTES): the character column OFFSET bytes into LINE, and the byte
@@ -158,8 +153,8 @@ asked for, which a walk asks about once per node."
   (if (= line (byte-index-memo-line index))
       (byte-index-memo-text index)
       (let* ((lines (byte-index-lines index))
-             (text (if (and (>= line 0) (< line (fset:size lines)))
-                       (fset:@ lines line)
+             (text (if (and (>= line 0) (< line (length lines)))
+                       (nth line lines)
                        "")))
         (setf (byte-index-memo-line index) line
               (byte-index-memo-text index) text
@@ -256,10 +251,7 @@ typing stays a cons."
             (build-index lines)
             (progn (setf (byte-index-lines index) lines
                          (byte-index-pending index) pending)
-                   ;; the memoised line text describes the lines this index
-                   ;; described a moment ago, and one of them just changed. A
-                   ;; walk that only asks about the edited line would otherwise
-                   ;; count its columns against the text it used to have.
+
                    (forget-line index)
                    index)))))
 

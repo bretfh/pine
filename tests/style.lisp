@@ -2,7 +2,7 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)
@@ -14,11 +14,15 @@
 (defun %module-root ()
   (merge-pathnames "src/" (asdf:system-source-directory :pine)))
 
+(defun %lang-files ()
+  (directory (merge-pathnames "ts/lang/*.lisp" (%module-root))))
+
 (defun %files ()
-  (cons (merge-pathnames "boot.lisp" (%module-root))
-        (loop :for module :in +modules+
-              :append (directory (merge-pathnames (format nil "~a/*.lisp" module)
-                                                  (%module-root))))))
+  (append (list (merge-pathnames "boot.lisp" (%module-root)))
+          (loop :for module :in +modules+
+                :append (directory (merge-pathnames (format nil "~a/*.lisp" module)
+                                                    (%module-root))))
+          (%lang-files)))
 
 (defun %lines (file)
   (with-open-file (in file)
@@ -85,9 +89,14 @@
     (is (null long) "~d file~:p over ~d lines:~{~%  ~a~}"
         (length long) +line-limit+ (reverse long))))
 
+(defparameter +declarations+ '("syntax.lisp" "commonlisp.lisp" "scheme.lisp"
+                               "pine.lisp" "reader.lisp")
+  "Where the sugar belongs: the language declarations, and the module that is it.")
+
 (test the-operating-system-does-not-read-in-its-own-sugar
   (let ((using nil))
     (dolist (file (%files))
-      (when (find-if (lambda (line) (search "in-readtable" line)) (%lines file))
+      (when (and (find-if (lambda (line) (search "in-readtable" line)) (%lines file))
+                 (not (member (file-namestring file) +declarations+ :test #'equal)))
         (push (file-namestring file) using)))
     (is (null using) "~{~%  ~a declares a readtable~}" (reverse using))))

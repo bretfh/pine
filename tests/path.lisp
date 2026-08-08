@@ -51,5 +51,8 @@
   (let ((found (remove-if-not
                 (lambda (file) (search "in-readtable" (uiop:read-file-string file)))
                 (%files))))
-    (is (null (remove-if (lambda (f) (search "/path/" (namestring f))) found))
-        "only path/ may declare the readtable, and it is the module that is it")))
+    (is (null (remove-if (lambda (f)
+                           (or (search "/path/" (namestring f))
+                               (search "/ts/" (namestring f))))
+                         found))
+        "only path/ and the language declarations may declare the readtable")))

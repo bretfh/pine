@@ -21,6 +21,33 @@
         (list 'function '/)
         (list 'path:parse (concatenate 'string "/" text)))))
 
+(defun %until (stream close)
+  (loop :for ch := (peek-char t stream t nil t)
+        :until (char= ch close)
+        :collect (read stream t nil t)
+        :finally (read-char stream t nil t)))
+
+(defun read-map (stream char)
+  (declare (ignore char))
+  (cons 'list (%until stream #\})))
+
+(defun read-seq (stream char)
+  (declare (ignore char))
+  (cons 'list (%until stream #\])))
+
+(defun read-set (stream char arg)
+  (declare (ignore char arg))
+  (cons 'list (%until stream #\})))
+
+(defun read-close (stream char)
+  (declare (ignore stream))
+  (error "unmatched ~a" char))
+
 (named-readtables:defreadtable syntax
   (:merge :standard)
-  (:macro-char #\/ #'read-path t))
+  (:macro-char #\/ #'read-path t)
+  (:macro-char #\{ #'read-map nil)
+  (:macro-char #\} #'read-close nil)
+  (:macro-char #\[ #'read-seq nil)
+  (:macro-char #\] #'read-close nil)
+  (:dispatch-macro-char #\# #\{ #'read-set))
