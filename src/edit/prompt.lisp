@@ -7,7 +7,8 @@
   (:export #:prompt #:asking #:asking-p #:ask #:answer! #:cancel! #:said
            #:question #:answer-buffer #:then #:candidates #:chosen #:choose! #:was
            #:matching #:complete! #:source #:sources #:install #:*prompt*
-           #:showing #:category #:annotation))
+           #:showing #:category #:annotation #:name-of #:shows #:given
+           #:must-match))
 
 (in-package #:pine.edit.prompt)
 
@@ -20,8 +21,10 @@
    (was        :initarg :was        :reader was        :initform nil)
    (then       :initarg :then       :reader then       :initform nil)
    (category   :initarg :category   :reader category   :initform nil)
-   (candidates :initarg :candidates :accessor candidates :initform nil)
-   (chosen     :initform 0          :accessor chosen)))
+   (given      :initarg :candidates :reader given      :initform nil)
+   (must-match :initarg :must-match :reader must-match :initform nil)
+   (seen       :initform nil        :accessor seen)
+   (chose      :initform 0          :accessor chose)))
 
 (defmethod print-object ((p prompt) stream)
   (print-unreadable-object (p stream :type t)
@@ -44,28 +47,53 @@
 
 (defun sources () (d:keys (c:held *sources*)))
 
-(defun %candidates (category)
-  (let ((fn (d:at (c:held *sources*) category)))
-    (when fn (funcall fn))))
+(defun candidates (&optional (p *prompt*))
+  (when p
+    (or (given p)
+        (let ((fn (d:at (c:held *sources*) (category p))))
+          (when fn (fault:attempt (lambda () (funcall fn (said))) "the candidates"))))))
+
+(defun name-of (each) (princ-to-string (if (consp each) (first each) each)))
+
+(defun %sync (p)
+  (let ((text (said)))
+    (unless (equal text (seen p))
+      (setf (seen p) text (chose p) 0)))
+  p)
+
+(defun chosen (&optional (p *prompt*))
+  (when p (chose (%sync p))))
+
+(defun (setf chosen) (value p)
+  (setf (chose (%sync p)) value))
 
 (defun matching (&optional (p *prompt*))
-  (let ((text (said))
-        (all (candidates p)))
-    (if (or (null text) (zerop (length text)))
-        all
-        (remove-if-not (lambda (each)
-                         (search text (princ-to-string each) :test #'char-equal))
-                       all))))
+  (when p
+    (%sync p)
+    (let ((text (said))
+          (all (candidates p)))
+      (if (or (null text) (zerop (length text)))
+          all
+          (let ((opening nil) (within nil))
+            (dolist (each all)
+              (let ((name (name-of each)))
+                (cond ((and (<= (length text) (length name))
+                            (string-equal text name :end2 (length text)))
+                       (push each opening))
+                      ((search text name :test #'char-equal) (push each within)))))
+            (nconc (nreverse opening) (nreverse within)))))))
 
-(defun ask (question &key then category initial)
+(defun ask (question &key then category initial must-match candidates)
   (let ((b (answer-buffer)))
     (setf (node:contents b) (or initial ""))
     (buffer:move! b :buffer 1)
     (setf *prompt* (make-instance 'prompt :question question :then then
                                           :category category
-                                          :was (buffer:current)
-                                          :candidates (%candidates category))
-          (buffer:current) b))
+                                          :must-match must-match
+                                          :candidates candidates
+                                          :was (buffer:current))
+          (buffer:current) b)
+    (setf (seen *prompt*) (said)))
   (when world:*world*
     (setf (node:contents (world:ensure world:*world* "prompt")) question))
   *prompt*)
@@ -84,8 +112,9 @@
          (pick (and found (nth (min (chosen p) (1- (length found))) found))))
     (when pick
       (let ((b (answer-buffer)))
-        (setf (node:contents b) (princ-to-string pick))
-        (buffer:move! b :buffer 1))
+        (setf (node:contents b) (name-of pick))
+        (buffer:move! b :buffer 1)
+        (setf (seen p) (said)))
       pick)))
 
 (defun %close ()
@@ -98,9 +127,17 @@
     (when b (setf (node:contents b) "")))
   nil)
 
+(defun %answered (p)
+  (let ((said (said)))
+    (if (and p (must-match p))
+        (let* ((found (matching p))
+               (pick (nth (min (chosen p) (max 0 (1- (length found)))) found)))
+          (if pick (name-of pick) said))
+        said)))
+
 (defun answer! (&optional text)
   (let* ((p *prompt*)
-         (answer (or text (said)))
+         (answer (or text (%answered p)))
          (fn (and p (then p))))
     (%close)
     (when fn (fault:attempt (lambda () (funcall fn answer)) "answering a prompt"))
@@ -117,6 +154,12 @@
       (or (log:last-said) "")))
 
 (defun annotation (each)
-  (typecase each
-    (cons (format nil "~a" (rest each)))
-    (t "")))
+  (if (consp each) (princ-to-string (rest each)) ""))
+
+(defun shows (each width)
+  (let* ((name (name-of each))
+         (note (annotation each))
+         (gap (- width (length name) (length note))))
+    (if (and (plusp (length note)) (> gap 1))
+        (concatenate 'string name (make-string gap :initial-element #\space) note)
+        name)))

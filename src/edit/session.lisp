@@ -1,8 +1,7 @@
 (defpackage #:pine.edit.session
   (:use #:cl)
   (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:node #:pine.fs.node) (#:attach #:pine.net.attach)
-                    (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
+                    (#:attach #:pine.net.attach)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine.ui.css) (#:wire #:pine.ui.wire)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log))
@@ -30,13 +29,7 @@
 
 (defun surface () *surface*)
 
-(defun %tree (s)
-  (let* ((windows (window:windows))
-         (share (max 2 (floor (max 2 (1- (rows s))) (max 1 (length windows))))))
-    (dolist (w windows)
-      (setf (window:width-of w) (cols s)
-            (window:height-of w) (1- share)))
-    (render:frame-tree)))
+(defun %tree (s) (render:frame-tree :cols (cols s) :rows (rows s)))
 
 (defun push-frame (s)
   (let ((tree (%tree s)))

@@ -8,7 +8,7 @@
            #:kill-buffer #:current #:current-buffer #:lines #:point #:mark
            #:mode-of #:minors-of #:file-of #:tick #:properties
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
-           #:goto! #:move! #:region-of #:mark! #:visit! #:save!
+           #:delete-region! #:goto! #:move! #:region-of #:mark! #:visit! #:save!
            #:point-line #:point-col #:changed
            #:past #:undo! #:redo! #:undoable #:redoable
            #:marks #:mark-at #:put-mark! #:drop-mark!
@@ -220,6 +220,15 @@
       (setf (point-line b) at-line (point-col b) at-col)
       (changed b)
       taken)))
+
+(defun delete-region! (b from-line from-col to-line to-col)
+  (%note b)
+  (multiple-value-bind (fresh at-line at-col taken)
+      (text:delete (c:held (lines b)) from-line from-col to-line to-col)
+    (c:put (lines b) fresh)
+    (goto! b at-line at-col)
+    (changed b)
+    taken))
 
 (defun mark! (b &optional (line (point-line b)) (col (point-col b)))
   (setf (mark b) (list line col)))

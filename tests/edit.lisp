@@ -120,6 +120,14 @@ there")
                  (some #'walk (pine.ui.layout:nodes-of n)))))
     (walk tree)))
 
+(defun %all-classed (tree class)
+  (let (acc)
+    (labels ((walk (n)
+               (when (equal class (pine.ui.node:css-class n)) (push n acc))
+               (mapc #'walk (pine.ui.layout:nodes-of n))))
+      (walk tree))
+    (nreverse acc)))
+
 (test the-frame-fills-the-height-it-is-given
   (with-editor (:text "hello")
     (let ((tree (pine.edit.render:frame-tree)))
@@ -135,6 +143,38 @@ there")
         (is (= 0 (pine.ui.node:start-line view)))
         (is (= 21 (pine.ui.node:end-line view))
             "the buffer view takes every row down to the modeline")))))
+
+(test the-frame-carries-the-caret-where-point-is
+  (with-editor (:text "hello
+there")
+    (pine.edit.buffer:goto! (b) 1 3)
+    (let ((view (%classed (pine.edit.render:frame-tree :cols 40 :rows 8)
+                          "editor-view")))
+      (is (= 1 (pine.ui.node:view-crow view)))
+      (is (= 3 (pine.ui.node:view-ccol view))
+          "without this the window paints text with no cursor in it"))))
+
+(test the-caret-follows-the-window-that-has-the-keyboard
+  (with-editor (:text "hello")
+    (pine.repl.command:run "split-window-below")
+    (let* ((tree (pine.edit.render:frame-tree :cols 40 :rows 12))
+           (views (%all-classed tree "editor-view"))
+           (carets (remove -1 (mapcar #'pine.ui.node:view-crow views))))
+      (is (= 2 (length views)))
+      (is (= 1 (length carets)) "only the focused window shows a caret"))))
+
+(test the-region-is-painted-with-the-selection-background
+  (with-editor (:text "hello there")
+    (pine.edit.buffer:mark! (b) 0 0)
+    (pine.edit.buffer:goto! (b) 0 5)
+    (let* ((view (%classed (pine.edit.render:frame-tree :cols 40 :rows 8)
+                           "editor-view"))
+           (runs (cdr (first (pine.ui.node:view-rows view))))
+           (bg (pine.ui.face:face-bg :selection)))
+      (is (equal bg (subseq (first runs) 4 7))
+          "the marked run carries the selection background")
+      (is (not (equal bg (subseq (second runs) 4 7)))
+          "and the text past point does not"))))
 
 (test a-file-opens-into-a-buffer-and-saves-back
   (let ((file (merge-pathnames "pine-probe-edit.lisp" (uiop:temporary-directory))))

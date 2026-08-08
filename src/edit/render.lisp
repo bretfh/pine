@@ -2,10 +2,11 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:build #:pine.ui.build)
                     (#:cells #:pine.ui.cells) (#:layout #:pine.ui.layout)
+                    (#:raster #:pine.ui.raster) (#:face #:pine.ui.face)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:mode #:pine.repl.mode) (#:syntax #:pine.ts.syntax)
                     (#:hl #:pine.ts.highlight) (#:prompt #:pine.edit.prompt))
-  (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline
+  (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline #:echo-tree
            #:visible-lines #:scroll-to-point #:*runtime* #:highlights-for
            #:indent-for #:parse-state-for #:forget-parse))
 
@@ -13,6 +14,7 @@
 
 (defvar *states* (make-hash-table :test 'equal))
 (defvar *runtime* nil)
+(defparameter +candidates-shown+ 8)
 
 (defun visible-lines (b from height)
   (loop :for n :from from :below (min (buffer:line-count b) (+ from height))
@@ -39,31 +41,54 @@
         :when (and (= at line) (>= col from) (< col to))
           :do (return face)))
 
+(defun %cell-face (b highlights line col)
+  (or (getf (first (buffer:properties-at b line col)) :face)
+      (%face-at highlights line col)
+      :default))
+
+(defun %region-span (b)
+  (let ((mark (buffer:mark b)))
+    (when mark
+      (destructuring-bind (line col) mark
+        (let ((at-line (buffer:point-line b)) (at-col (buffer:point-col b)))
+          (if (or (< line at-line) (and (= line at-line) (<= col at-col)))
+              (list line col at-line at-col)
+              (list at-line at-col line col)))))))
+
+(defun %paint-region (r b from height width)
+  (let ((span (%region-span b))
+        (bg (face:face-bg :selection)))
+    (when (and span bg)
+      (destructuring-bind (start-line start-col end-line end-col) span
+        (destructuring-bind (br bg bb) bg
+          (loop :for line :from (max start-line from)
+                  :to (min end-line (1- (+ from height)))
+                :do (loop :for col :from (if (= line start-line) start-col 0)
+                            :below (if (= line end-line) end-col width)
+                          :do (raster:raster-put-bg r (- line from) col br bg bb))))))))
+
+(defun %carets-here (w)
+  (and (eq w (window:focused)) (not (prompt:asking-p))))
+
 (defun buffer-tree (w)
   (let* ((b (window:buffer-of w))
          (from (window:scroll-of w))
+         (width (max 1 (window:width-of w)))
          (height (max 1 (window:height-of w)))
-         (highlights (highlights-for b)))
-    (apply #'build:column
-           :align :stretch :class "editor-view" :expand 1
-           (loop :for text :in (visible-lines b from height)
-                 :for line :from from
-                 :collect (if highlights
-                              (apply #'build:row
-                                     (%runs text line highlights))
-                              (build:label text))))))
-
-(defun %runs (text line highlights)
-  (let ((out nil) (col 0))
-    (loop :while (< col (length text))
-          :for face := (%face-at highlights line col)
-          :for end := (or (loop :for i :from (1+ col) :below (length text)
-                                :unless (eq face (%face-at highlights line i))
-                                  :do (return i))
-                          (length text))
-          :do (push (build:label (subseq text col end) :face face) out)
-              (setf col end))
-    (or (nreverse out) (list (build:label "")))))
+         (highlights (highlights-for b))
+         (r (raster:make-raster width height))
+         (caret (%carets-here w)))
+    (loop :for text :in (visible-lines b from height)
+          :for row :from 0
+          :for line :from from
+          :do (loop :for col :from 0 :below (min width (length text))
+                    :do (raster:raster-put r row col (char text col)
+                                           (%cell-face b highlights line col))))
+    (%paint-region r b from height width)
+    (build:cells (cells:rows-of r)
+                 :class "editor-view" :expand 1
+                 :crow (if caret (min (1- height) (max 0 (- (buffer:point-line b) from))) -1)
+                 :ccol (if caret (min (1- width) (buffer:point-col b)) -1))))
 
 (defun modeline (w)
   (let ((b (window:buffer-of w)))
@@ -81,31 +106,56 @@
                 (buffer-tree w)
                 (modeline w)))
 
-(defun candidate-tree ()
+(defun candidates-shown ()
   (let ((p (prompt:asking)))
-    (when (and p (prompt:candidates p))
+    (when p
       (let ((found (prompt:matching p)))
-        (when found
-          (apply #'build:column :align :stretch :class "candidates"
-                 (loop :for each :in (subseq found 0 (min 8 (length found)))
-                       :for i :from 0
-                       :collect (build:label (princ-to-string each)
-                                             :face (if (= i (prompt:chosen p))
-                                                       :accent
-                                                       :default)))))))))
+        (subseq found 0 (min +candidates-shown+ (length found)))))))
 
-(defun frame-tree (&key echo)
-  (let ((windows (window:windows))
-        (candidates (candidate-tree)))
+(defun candidate-tree (found width)
+  (when found
+    (let ((chosen (prompt:chosen (prompt:asking))))
+      (apply #'build:column :align :stretch :class "candidates"
+             (loop :for each :in found
+                   :for i :from 0
+                   :collect (build:label (prompt:shows each width)
+                                         :face (if (= i chosen)
+                                                   :completion-selected
+                                                   :completion)))))))
+
+(defun echo-tree (width &optional echo)
+  (let* ((p (and (null echo) (prompt:asking)))
+         (question (if p (prompt:question p) ""))
+         (text (or echo (prompt:showing)))
+         (r (raster:make-raster (max 1 width) 1)))
+    (loop :for col :from 0 :below (min width (length text))
+          :do (raster:raster-put r 0 col (char text col)
+                                 (if (< col (length question)) :prompt :echo)))
+    (build:cells (cells:rows-of r) :class "echo"
+                 :crow (if p 0 -1)
+                 :ccol (if p
+                           (min (1- width)
+                                (+ (length question)
+                                   (buffer:point-col (prompt:answer-buffer))))
+                           -1))))
+
+(defun frame-tree (&key (cols 80) (rows 24) echo)
+  (let* ((windows (window:windows))
+         (found (candidates-shown))
+         (share (max 2 (floor (max 2 (- rows 1 (length found)))
+                              (max 1 (length windows))))))
+    (dolist (w windows)
+      (setf (window:width-of w) (max 1 cols)
+            (window:height-of w) (max 1 (1- share))))
     (apply #'build:column :align :stretch :class "editor"
            (append (mapcar #'window-tree windows)
-                   (when candidates (list candidates))
-                   (list (build:label (or echo (prompt:showing))
-                                      :class "echo" :face :echo))))))
+                   (let ((tree (candidate-tree found cols)))
+                     (when tree (list tree)))
+                   (list (echo-tree cols echo))))))
 
 (defun rows (&key (width 80) (height 24) echo)
-  (let ((tree (frame-tree :echo echo)))
-    (cells:render tree width :height height)))
+  (cells:render (frame-tree :cols width :rows height :echo echo)
+                width :height height))
 
 (defun forget-parse (b)
   (let ((ps (gethash (node:name b) *states*)))
