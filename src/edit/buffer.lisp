@@ -108,7 +108,7 @@
 
 (defun line (b n) (text:line-at (c:held (lines b)) n))
 
-(defun line-count (b) (length (c:held (lines b))))
+(defun line-count (b) (text:line-count (c:held (lines b))))
 
 (defun text-of (b) (text:text-of (c:held (lines b))))
 

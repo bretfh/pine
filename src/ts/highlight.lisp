@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.highlight
   (:use #:cl #:pine.ts.runtime #:pine.ts.index)
-  (:local-nicknames (#:pl #:pine.run.plist))
+  (:local-nicknames (#:pl #:pine.data))
   (:export
 
    #:parse-highlights #:walk-highlights

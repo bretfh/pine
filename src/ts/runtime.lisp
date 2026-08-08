@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.runtime
   (:use :cl)
-  (:local-nicknames (#:pl #:pine.run.plist))
+  (:local-nicknames (#:pl #:pine.data))
   (:export
 
    #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
@@ -144,7 +144,7 @@ compiled in.")
                 :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
                 :initform (pine.run.cell:cell
-                           (list :loaded nil :missing nil))))
+                           (pl:map :loaded (pl:no-map) :missing (pl:no-set)))))
   (:documentation "The grammars this image has loaded: {:loaded {LANGUAGE ENTRY}
 :missing #{LANGUAGE}} in an atomic reference. A hit is a slot read."))
 

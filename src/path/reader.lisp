@@ -29,15 +29,15 @@
 
 (defun read-map (stream char)
   (declare (ignore char))
-  (cons 'list (%until stream #\})))
+  (cons 'pine.data:map (%until stream #\})))
 
 (defun read-seq (stream char)
   (declare (ignore char))
-  (cons 'list (%until stream #\])))
+  (cons 'pine.data:seq (%until stream #\])))
 
 (defun read-set (stream char arg)
   (declare (ignore char arg))
-  (cons 'list (%until stream #\})))
+  (cons 'pine.data:set (%until stream #\})))
 
 (defun read-close (stream char)
   (declare (ignore stream))

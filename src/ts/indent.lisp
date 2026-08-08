@@ -144,7 +144,7 @@ what follows as a body is a rule that indents it as one."
                   (let ((shape (pl:at rule :shape))
                         (found nil))
                     (when (pl:mapp shape)
-                      (pl:do-map (i role shape)
+                      (pl:do-pairs (i role shape)
                         (declare (ignorable i))
                         (when (eq :body role) (setf found t))))
                     found))

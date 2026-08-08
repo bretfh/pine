@@ -1,5 +1,6 @@
 (defpackage #:pine.edit.text
   (:use #:cl)
+  (:local-nicknames (#:d #:pine.data))
   (:shadow #:delete #:search)
   (:export #:lines-of #:text-of #:line-at #:line-count #:clamp
            #:insert #:delete #:region #:newline
@@ -12,25 +13,24 @@
 
 (defun lines-of (text)
   (let ((split (uiop:split-string (or text "") :separator '(#\Newline))))
-    (coerce (or split (list "")) 'vector)))
+    (d:as :seq (or split (list "")))))
 
 (defun text-of (lines)
-  (format nil "~{~a~^~%~}" (coerce lines 'list)))
+  (format nil "~{~a~^~%~}" (d:as :list lines)))
 
-(defun line-count (lines) (length lines))
+(defun line-count (lines) (d:size lines))
 
-(defun line-at (lines n)
-  (if (and (>= n 0) (< n (length lines))) (aref lines n) ""))
+(defun line-at (lines n) (d:at lines n ""))
 
 (defun clamp (lines line col)
-  (let* ((n (max 0 (min line (max 0 (1- (length lines))))))
+  (let* ((n (max 0 (min line (max 0 (1- (d:size lines))))))
          (text (line-at lines n)))
     (values n (max 0 (min col (length text))))))
 
 (defun %replace (lines from to fresh)
-  (let ((n (length lines)))
-    (concatenate 'vector (subseq lines 0 (min from n)) fresh
-                 (subseq lines (min (max from to) n)))))
+  (let ((n (d:size lines)))
+    (d:append (d:append (d:subseq lines 0 (min from n)) fresh)
+              (d:subseq lines (min (max from to) n) n))))
 
 (defun insert (lines line col string)
   (multiple-value-bind (line col) (clamp lines line col)
@@ -39,18 +39,17 @@
            (after (subseq text col))
            (pieces (uiop:split-string string :separator '(#\Newline))))
       (if (null (rest pieces))
-          (values (%replace lines line (1+ line)
-                            (vector (concatenate 'string before (first pieces) after)))
+          (values (d:with-at lines line
+                             (concatenate 'string before (first pieces) after))
                   line
                   (+ col (length (first pieces))))
-          (let ((fresh (make-array (length pieces))))
-            (setf (aref fresh 0) (concatenate 'string before (first pieces)))
-            (loop :for piece :in (rest pieces)
-                  :for i :from 1
-                  :do (setf (aref fresh i)
-                            (if (= i (1- (length pieces)))
-                                (concatenate 'string piece after)
-                                piece)))
+          (let ((fresh (d:as :seq
+                             (cons (concatenate 'string before (first pieces))
+                                   (loop :for piece :in (rest pieces)
+                                         :for i :from 1
+                                         :collect (if (= i (1- (length pieces)))
+                                                      (concatenate 'string piece after)
+                                                      piece))))))
             (values (%replace lines line (1+ line) fresh)
                     (+ line (1- (length pieces)))
                     (length (car (last pieces)))))))))
@@ -68,7 +67,7 @@
           (subseq (line-at lines from-line) from-col to-col)
           (format nil "~a~%~{~a~%~}~a"
                   (subseq (line-at lines from-line) from-col)
-                  (coerce (subseq lines (1+ from-line) to-line) 'list)
+                  (d:as :list (d:subseq lines (1+ from-line) to-line))
                   (subseq (line-at lines to-line) 0 to-col))))))
 
 (defun delete (lines from-line from-col to-line to-col)
@@ -82,7 +81,9 @@
             (joined (concatenate 'string
                                  (subseq (line-at lines from-line) 0 from-col)
                                  (subseq (line-at lines to-line) to-col))))
-        (values (%replace lines from-line (1+ to-line) (vector joined))
+        (values (if (= from-line to-line)
+                    (d:with-at lines from-line joined)
+                    (%replace lines from-line (1+ to-line) (d:seq joined)))
                 from-line from-col taken)))))
 
 (defun word-char-p (ch)
@@ -101,7 +102,7 @@
         :do (if (plusp n)
                 (if (< col (length (line-at lines line)))
                     (incf col)
-                    (when (< line (1- (length lines)))
+                    (when (< line (1- (d:size lines)))
                       (incf line) (setf col 0)))
                 (if (plusp col)
                     (decf col)
@@ -137,7 +138,7 @@
       (:word (%step-word lines line col n))
       (:line (clamp lines (+ line n) col))
       (:buffer (if (plusp n)
-                   (clamp lines (1- (length lines)) most-positive-fixnum)
+                   (clamp lines (1- (d:size lines)) most-positive-fixnum)
                    (values 0 0))))))
 
 (defun indent-width (text)
@@ -145,7 +146,7 @@
       (length text)))
 
 (defun search (lines needle line col &key (forward t))
-  (loop :with n := (length lines)
+  (loop :with n := (d:size lines)
         :for i := line :then (if forward (1+ i) (1- i))
         :while (and (>= i 0) (< i n))
         :for text := (line-at lines i)

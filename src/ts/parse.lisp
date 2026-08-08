@@ -31,7 +31,7 @@
    (grammars runtime)
    (lambda (state)
      (pl:with state :missing
-              (cons language (pl:at state :missing))))))
+              (pl:with (pl:at state :missing) language)))))
 
 (defun ensure-language (runtime language &optional lib fn)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
@@ -49,7 +49,7 @@ what grammars exist is something written rather than a list compiled in here."
           (let ((state (%grammars runtime)))
 
             (or (pl:at (pl:at state :loaded) language)
-                (unless (member language (pl:at state :missing))
+                (unless (pl:contains (pl:at state :missing) language)
                   (let ((entry (load-language-entry language library fn-name)))
                     (cond
                       (entry (%note-loaded runtime language entry)

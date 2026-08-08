@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.syntax
   (:use #:cl)
-  (:local-nicknames (#:pl #:pine.run.plist) (#:hl #:pine.ts.highlight)
+  (:local-nicknames (#:pl #:pine.data) (#:hl #:pine.ts.highlight)
                     (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:world #:pine.world.world) (#:path #:pine.path.path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
@@ -31,7 +31,7 @@
                  (setf (gethash (string-downcase (second parts)) nodes) rule))
                 ((equal "head" (first parts))
                  (setf (gethash (string-downcase (second parts)) heads) rule))))))
-    (list :options options :node nodes :head heads :otherwise otherwise)))
+    (pl:map :options options :node nodes :head heads :otherwise otherwise)))
 
 (defun %inherit (parent raw)
   (if (null parent)
@@ -42,9 +42,9 @@
         (maphash (lambda (k v) (setf (gethash k heads) v)) (pl:at parent :head))
         (maphash (lambda (k v) (setf (gethash k nodes) v)) (pl:at raw :node))
         (maphash (lambda (k v) (setf (gethash k heads) v)) (pl:at raw :head))
-        (list :options (pl:merged (pl:at parent :options) (pl:at raw :options))
-              :node nodes :head heads
-              :otherwise (or (pl:at raw :otherwise) (pl:at parent :otherwise))))))
+        (pl:map :options (pl:merged (pl:at parent :options) (pl:at raw :options))
+                :node nodes :head heads
+                :otherwise (or (pl:at raw :otherwise) (pl:at parent :otherwise))))))
 
 (defun %symbol (name package)
   (let ((upper (string-upcase name)))
@@ -75,7 +75,7 @@
       ((special-operator-p sym) {:face :keyword :rest :body})
       ((macro-function sym)
        (let ((n (%body-position sym)))
-         (cond (n (list :face :keyword :rest :body :indent n))
+         (cond (n (pl:map :face :keyword :rest :body :indent n))
                ((%by-name name) {:face :keyword :rest :body})
                (t {:face :keyword}))))
       ((and (fboundp sym) (eq (symbol-package sym) (find-package :cl)))
@@ -87,7 +87,7 @@
 
 (defun %names (set)
   (let ((out (make-hash-table :test 'equal)))
-    (dolist (name set out)
+    (pl:do-each (name set out)
       (setf (gethash (string-downcase (string name)) out) t))))
 
 (defun %compile (name raw)

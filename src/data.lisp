@@ -4,7 +4,7 @@
            #:rest #:reverse #:sort #:find #:position #:some #:every #:append)
   (:export #:map #:seq #:set #:mapp #:seqp #:setp #:collectionp
            #:at #:with #:without #:size #:emptyp #:count
-           #:keys #:vals #:pairs #:fold #:do-each #:do-pairs
+           #:keys #:vals #:pairs #:fold #:do-each #:do-pairs #:do-map #:do-seq
            #:as #:same #:merged #:union #:contains
            #:first #:last #:rest #:append #:subseq #:reverse #:sort
            #:find #:position #:some #:every #:remove
@@ -122,16 +122,32 @@
     (declare (ignore function))
     initial))
 
+(defmacro do-map ((key value collection &optional result) &body body)
+  (let ((c (gensym)))
+    `(let ((,c ,collection))
+       (when (mapp ,c) (fset:do-map (,key ,value ,c) (locally ,@body)))
+       ,result)))
+
+(defmacro do-seq ((index value collection &optional result) &body body)
+  (let ((c (gensym)))
+    `(let ((,c ,collection) (,index -1))
+       (declare (ignorable ,index))
+       (fset:do-seq (,value ,c) (incf ,index) (locally ,@body))
+       ,result)))
+
 (defmacro do-pairs ((key value collection &optional result) &body body)
   (let ((c (gensym)))
     `(let ((,c ,collection))
-       (cond ((mapp ,c) (fset:do-map (,key ,value ,c ,result) ,@body))
+       (cond ((mapp ,c) (fset:do-map (,key ,value ,c) (locally ,@body)) ,result)
              ((seqp ,c) (let ((,key -1))
                           (fset:do-seq (,value ,c)
-                            (incf ,key) ,@body)
+                            (incf ,key)
+                            (locally ,@body))
                           ,result))
              ((setp ,c) (fset:do-set (,value ,c)
-                          (let ((,key ,value)) (declare (ignorable ,key)) ,@body))
+                          (let ((,key ,value))
+                            (declare (ignorable ,key))
+                            (locally ,@body)))
                         ,result)
              (t ,result)))))
 
