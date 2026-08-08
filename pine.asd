@@ -15,6 +15,7 @@
                              #:usocket
                              #:sqlite
                              #:sb-posix
+                             #:pine/vt
                              #:sb-introspect
                              #:uiop)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
@@ -71,7 +72,7 @@
                           :components ((:file "text") (:file "history") (:file "buffer")
                                        (:file "window") (:file "prompt")
                                        (:file "key") (:file "render")
-                                       (:file "commands")))
+                                       (:file "term") (:file "commands")))
                  (:module "net"
                           :serial t
                           :components ((:file "server") (:file "attach") (:file "agent")))
@@ -84,7 +85,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "prompt") (:file "provider") (:file "net") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

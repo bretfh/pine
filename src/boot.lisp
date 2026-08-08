@@ -15,7 +15,8 @@
                     (#:net #:pine.net.server) (#:attach #:pine.net.attach)
                     (#:agent #:pine.net.agent) (#:plisp #:pine.proc.lisp)
                     (#:sh #:pine.provider.sh) (#:env #:pine.provider.env)
-                    (#:clock #:pine.provider.clock) (#:sys #:pine.provider.sys))
+                    (#:clock #:pine.provider.clock) (#:sys #:pine.provider.sys)
+                    (#:term #:pine.edit.term))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app))
@@ -147,6 +148,7 @@
     (clock:install root :supervisor *supervisor*)
     (mount:mount "/" root "file"))
   (edit:install)
+  (term:install)
   (let ((scratch (buffer:make-buffer "scratch" :mode "lisp")))
     (setf (buffer:current) scratch)
     (window:seed! scratch))
