@@ -2,7 +2,7 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)
@@ -24,18 +24,22 @@
   (with-open-file (in file)
     (loop :for line = (read-line in nil nil) :while line :collect line)))
 
-(defun %comment-column (line)
-  (loop :with in-string := nil
-        :for i :from 0 :below (length line)
-        :for ch := (char line i)
-        :do (cond ((and (char= ch #\\) in-string) (incf i))
-                  ((char= ch #\") (setf in-string (not in-string)))
-                  ((and (char= ch #\;) (not in-string))
-                   (unless (and (>= i 2)
-                                (char= (char line (- i 2)) #\#)
-                                (char= (char line (1- i)) #\\))
-                     (return i))))
-        :finally (return nil)))
+(defun %commented-lines (file)
+  (let ((in-string nil) (found nil) (n 0))
+    (dolist (line (%lines file) (nreverse found))
+      (incf n)
+      (loop :with i := 0
+            :while (< i (length line))
+            :for ch := (char line i)
+            :do (cond ((char= ch #\\) (incf i 2))
+                      ((and (char= ch #\#) (< (1+ i) (length line))
+                            (char= (char line (1+ i)) #\\))
+                       (incf i 3))
+                      ((char= ch #\") (setf in-string (not in-string)) (incf i))
+                      ((and (char= ch #\;) (not in-string))
+                       (push n found)
+                       (return))
+                      (t (incf i)))))))
 
 (defun %starts-with-any (line words)
   (let ((trimmed (string-left-trim " " line)))
@@ -50,11 +54,8 @@
 (test v2-code-carries-no-commentary
   (let ((found nil))
     (dolist (file (%files))
-      (loop :for line :in (%lines file)
-            :for n :from 1
-            :for at := (%comment-column line)
-            :when at
-              :do (push (format nil "~a:~d" (file-namestring file) n) found)))
+      (dolist (n (%commented-lines file))
+        (push (format nil "~a:~d" (file-namestring file) n) found)))
     (is (null found) "~d commented line~:p:~{~%  ~a~}" (length found) (reverse found))))
 
 (test every-global-is-in-the-block-at-the-top

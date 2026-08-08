@@ -37,6 +37,13 @@
                           :serial t
                           :components ((:file "path") (:file "reader")
                                        (:file "place")))
+                 (:module "ui"
+                          :serial t
+                          :components ((:file "node") (:file "face")
+                                       (:file "raster") (:file "css")
+                                       (:file "style") (:file "build")
+                                       (:file "layout") (:file "hit") (:file "cells")
+                                       (:file "wire") (:file "paths")))
                  (:file "boot")))
 
 (asdf:defsystem #:pine/test
@@ -45,7 +52,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

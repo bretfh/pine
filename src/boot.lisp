@@ -8,7 +8,7 @@
                     (#:session #:pine.repl.session)
                     (#:process #:pine.proc.process)
                     (#:super #:pine.proc.supervisor)
-                    (#:task #:pine.run.task))
+                    (#:task #:pine.run.task) (#:ui #:pine.ui.paths))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:here #:describe
            #:commands-node #:command-node))
 
@@ -120,6 +120,7 @@
   (world:ensure world:*world* "win")
   (%seed-commands)
   (%seed-modes)
+  (ui:install world:*world*)
   (when store
     (setf *store* (store:open-store store))
     (store:restore world:*world* *store*))
@@ -132,8 +133,8 @@
     (super:stop-all *supervisor*))
   (dolist (s (session:sessions)) (session:close s))
   (when *store*
-    (store:snapshot world:*world* *store*)
-    (store:close-store *store*)
+    (ignore-errors (store:snapshot world:*world* *store*))
+    (ignore-errors (store:close-store *store*))
     (setf *store* nil))
   (dolist (tk (task:tasks)) (task:stop tk))
   t)

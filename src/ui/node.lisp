@@ -1,11 +1,11 @@
 (defpackage #:pine.ui.node
   (:use #:cl)
   (:export
-   ;; the base, and what every node carries
+
    #:node #:key-of #:of #:face #:css-class #:hint #:hovered
    #:radius #:fill-of #:grad #:font-px #:pad-x #:pad-y #:min-w #:min-h
    #:node-margin #:expand-of #:start-line #:start-col #:end-line #:end-col
-   ;; the widgets
+
    #:text-node #:content #:on-change
    #:separator #:sep-char #:sep-vertical
    #:spacer #:vstack #:hstack #:stack #:nodes #:spacing #:align
@@ -20,50 +20,36 @@
    #:value #:min-of #:max-of
    #:calendar #:cal-year #:cal-month #:cal-day
    #:picture #:pic-path
-   ;; a leaf holding rendered cell rows
+
    #:view-node #:view-rows #:view-crow #:view-ccol #:view-opacity
    #:view-base
    #:buffer-view #:modeline-view #:echo-view #:os-window-view))
 
 (in-package #:pine.ui.node)
 
-;;;; The widget engine. A widget tree is laid out in three passes over a cell
-;;;; raster: MEASURE reports each node's natural size bottom-up, ARRANGE assigns
-;;;; absolute rects top-down, distributing slack to expanders, and PAINT writes
-;;;; styled cells into each rect. Separating the passes is what gives the box
-;;;; model: alignment, expansion and 2D placement. After arrange every node has
-;;;; an absolute rect, so hit-testing is exact.
-
 (defclass node ()
   ((key-of  :initarg :key    :accessor key-of  :initform nil)
-   ;; what this node is a projection of, as a path. A row of a listing stands
-   ;; for the thing it shows, and in pine a thing is already named by a path, so
-   ;; there is no id to mint and nothing to keep in step: the row survives a
-   ;; rebuild because what it stands for does not move.
+
    (of      :initarg :of     :accessor of      :initform nil)
-   ;; whether the selection is on this node. Any node the selection can reach
-   ;; carries it: a row of a listing, and a field, which is a place too
+
    (selectedp :initarg :selected :accessor selectedp :initform nil)
    (face    :initarg :face   :accessor face    :initform nil)
    (css-class :initarg :class :accessor css-class :initform nil)
    (hint    :initarg :hint   :accessor hint    :initform nil)
    (hovered :initform nil    :accessor hovered)
-   ;; cairo chrome drawn behind the content: a rounded/gradient background.
-   ;; radius in px; fill and grad are #rrggbb (grad = a linear gradient to it).
+
    (radius  :initarg :radius :accessor radius  :initform 0)
    (fill-of :initarg :fill   :accessor fill-of :initform nil)
    (grad    :initarg :grad   :accessor grad    :initform nil)
-   ;; font size in px for the pixel/cairo render; nil = the default size
+
    (font-px :initarg :font-px :accessor font-px :initform nil)
-   ;; padding inside the node's rect (px), and a minimum size, as in CSS.
-   ;; :pad sets both axes; :pad-x / :pad-y set one.
+
    (pad     :initarg :pad    :initform nil)
    (pad-x   :initarg :pad-x  :accessor pad-x   :initform 0)
    (pad-y   :initarg :pad-y  :accessor pad-y   :initform 0)
    (min-w   :initarg :min-w  :accessor min-w   :initform 0)
    (min-h   :initarg :min-h  :accessor min-h   :initform 0)
-   ;; outer margin (top right bottom left) in px, or nil; set only by the cairo
-   ;; style pass, so cell-grid nodes never carry it and layout is unchanged there.
+
    (margin  :initarg :margin :accessor node-margin :initform nil)
    (expand  :initarg :expand :accessor expand-of :initform 0)
    (start-line :initform 0 :accessor start-line)
@@ -73,16 +59,14 @@
 
 (defclass text-node (node)
   ((content :initarg :content :accessor content :initform "")
-   ;; a run of text that is also a place: FIELD sets this to write the path it
-   ;; shows, so the display and the edit are one path and no config carries a
-   ;; :value or an :on-change
+
    (on-change :initarg :on-change :accessor on-change :initform nil)))
 
 (defclass separator (node)
   ((sep-char :initarg :char :accessor sep-char :initform (code-char #x2500))
    (vertical :initarg :vertical :accessor sep-vertical :initform nil)))
 
-(defclass spacer (node) ())            ; flexible empty space; default expand 1
+(defclass spacer (node) ())
 
 (defclass vstack (node)
   ((nodes :initarg :nodes :accessor nodes :initform nil)
@@ -115,9 +99,7 @@ painted in the order they were written, so the last one is on top."))
 
 (defclass selectable (node)
   ((node             :initarg :node    :accessor node             :initform nil)
-   ;; what the author attached to this row, kept whatever else the row does:
-   ;; the click is its own slot, so a row that is clickable still knows what it
-   ;; stands for
+
    (data              :initarg :data     :accessor data              :initform nil)
    (click             :initarg :click    :accessor click             :initform nil)
    (prefix-selected   :initarg :prefix-selected   :accessor prefix-selected   :initform "> ")
@@ -131,8 +113,7 @@ painted in the order they were written, so the last one is on top."))
   ((items       :initarg :items       :accessor items       :initform nil)
    (item-fn     :initarg :item-fn     :accessor item-fn     :initform nil)
    (max-visible :initarg :max-visible :accessor max-visible :initform nil)
-   ;; the item nodes built at the last measure, kept so arrange/paint and
-   ;; hit-testing can reach them (item-fn builds them transiently otherwise).
+
    (rendered    :accessor rendered    :initform nil)))
 
 (defclass slider (node)
@@ -140,8 +121,7 @@ painted in the order they were written, so the last one is on top."))
    (min-of      :initarg :min         :accessor min-of      :initform 0)
    (max-of      :initarg :max         :accessor max-of      :initform 100)
    (track       :initarg :track       :accessor track       :initform 16)
-   ;; on-change is a function of the new value; clicking/dragging at a column
-   ;; maps to a value and calls it.
+
    (on-change   :initarg :on-change   :accessor on-change   :initform nil)
    (filled-face :initarg :filled-face :accessor filled-face :initform :function-name)
    (empty-face  :initarg :empty-face  :accessor empty-face  :initform :comment)))
@@ -164,20 +144,12 @@ painted in the order they were written, so the last one is on top."))
 (defclass picture (node)
   ((path :initarg :path :accessor pic-path :initform "")))
 
-;; A leaf holding rendered cell rows, each row a (text . runs) pair: measure and
-;; arrange are O(1) and paint blits the rows, so a buffer or a terminal composes
-;; into a widget tree without the layout engine touching the text cell by cell.
-;; What it shows is the pane path in OF, which every node carries, and which
-;; does not cross the wire.
 (defclass view-node (node)
   ((rows :initarg :rows :accessor view-rows :initform nil)
    (crow :initarg :crow :accessor view-crow :initform -1)
    (ccol :initarg :ccol :accessor view-ccol :initform -1)
    (opacity :initarg :opacity :accessor view-opacity :initform 1.0)
-   ;; BASE bounds the in-flow rows; anything before them is an overlay drawn
-   ;; upward from the arranged rect, outside measure -- how the completion
-   ;; popup floats above the echo line wherever the echo sits, without
-   ;; reflowing the tree as the candidate count changes. nil = all rows flow.
+
    (base :initarg :base :accessor view-base :initform nil)))
 
 (defclass buffer-view (view-node) ()
@@ -209,8 +181,7 @@ painted in the order they were written, so the last one is on top."))
   (when (zerop (expand-of n)) (setf (expand-of n) 1)))
 
 (defmethod initialize-instance :after ((n slider) &key)
-  ;; a slider reads live cell values, which may be nil before their source has
-  ;; run; coerce to numbers so measure/paint never do arithmetic on nil.
+
   (unless (numberp (value n))  (setf (value n) 0))
   (unless (numberp (min-of n)) (setf (min-of n) 0))
   (unless (numberp (max-of n)) (setf (max-of n) 100)))
