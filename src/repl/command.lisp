@@ -3,11 +3,13 @@
   (:shadow #:describe)
   (:export #:command #:commandp #:defcommand #:command-named #:commands
            #:forget #:name #:action #:describes #:asks #:arguments #:run
-           #:word #:unknown-command #:name-of))
+           #:word #:unknown-command #:name-of #:*asking*))
 
 (in-package #:pine.repl.command)
 
 (defvar *commands* (make-hash-table :test 'equal))
+
+(defvar *asking* nil)
 
 (define-condition unknown-command (error)
   ((name-of :initarg :name :reader name-of))
@@ -62,7 +64,10 @@
       (unless c (error 'unknown-command :name name))
       (run c arguments)))
   (:method ((c command) &optional arguments)
-    (apply (action c) arguments)))
+    (if (and (null arguments) (asks c))
+        (let ((asked (arguments c *standard-input* *standard-output*)))
+          (if (eq asked :asking) :asking (apply (action c) asked)))
+        (apply (action c) arguments))))
 
 (defun %ask-one (spec input output)
   (destructuring-bind (&key prompt (as :string) default) spec
@@ -81,4 +86,6 @@
       (unless c (error 'unknown-command :name name))
       (arguments c input output)))
   (:method ((c command) input output)
-    (loop :for spec :in (asks c) :collect (%ask-one spec input output))))
+    (cond ((null (asks c)) nil)
+          (*asking* (funcall *asking* c))
+          (t (loop :for spec :in (asks c) :collect (%ask-one spec input output))))))

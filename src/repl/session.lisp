@@ -109,9 +109,10 @@
               (let ((*package* (package-of s))
                     (*session* s))
                 (if c
-                    (cmd:run c (if given
-                                   (mapcar #'cmd:word given)
-                                   (cmd:arguments c (input s) (output s))))
+                    (let ((args (if given
+                                    (mapcar #'cmd:word given)
+                                    (cmd:arguments c (input s) (output s)))))
+                      (if (eq args :asking) :asking (cmd:run c args)))
                     (eval form)))))))
       (make-instance 'evaluation :form form :answered answered
                                  :fault fault :said said))))

@@ -4,7 +4,7 @@
                     (#:cells #:pine.ui.cells) (#:layout #:pine.ui.layout)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:mode #:pine.repl.mode) (#:syntax #:pine.ts.syntax)
-                    (#:hl #:pine.ts.highlight))
+                    (#:hl #:pine.ts.highlight) (#:prompt #:pine.edit.prompt))
   (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline
            #:visible-lines #:scroll-to-point #:*runtime* #:highlights-for
            #:indent-for #:parse-state-for #:forget-parse))
@@ -81,13 +81,28 @@
                 (buffer-tree w)
                 (modeline w)))
 
-(defun frame-tree (&key (echo ""))
-  (let ((windows (window:windows)))
+(defun candidate-tree ()
+  (let ((p (prompt:asking)))
+    (when (and p (prompt:candidates p))
+      (let ((found (prompt:matching p)))
+        (when found
+          (apply #'build:column :align :stretch
+                 (loop :for each :in (subseq found 0 (min 8 (length found)))
+                       :for i :from 0
+                       :collect (build:label (princ-to-string each)
+                                             :face (if (= i (prompt:chosen p))
+                                                       :accent
+                                                       :default)))))))))
+
+(defun frame-tree (&key echo)
+  (let ((windows (window:windows))
+        (candidates (candidate-tree)))
     (apply #'build:column :align :stretch
            (append (mapcar #'window-tree windows)
-                   (list (build:label echo))))))
+                   (when candidates (list candidates))
+                   (list (build:label (or echo (prompt:showing))))))))
 
-(defun rows (&key (width 80) (height 24) (echo ""))
+(defun rows (&key (width 80) (height 24) echo)
   (let ((tree (frame-tree :echo echo)))
     (cells:render tree width :height height)))
 

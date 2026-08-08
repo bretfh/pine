@@ -3,7 +3,7 @@
   (:shadow #:last)
   (:local-nicknames (#:c #:pine.run.cell) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:buffer #:pine.edit.buffer)
-                    (#:fault #:pine.run.fault))
+                    (#:fault #:pine.run.fault) (#:prompt #:pine.edit.prompt))
   (:export #:key #:make-key #:key-sym #:key-ctrl #:key-meta #:key-shift
            #:key-super #:key= #:parse-key #:parse-chord #:chord-text
            #:self-insert-p #:dispatch #:pending #:last #:prefix #:*on-insert*
@@ -72,7 +72,14 @@
 (defun prefix () (c:held *prefix*))
 
 (defun where (session)
-  (or session (buffer:current)))
+  (let ((b (or session (buffer:current))))
+    (when (and b (prompt:asking-p) (typep b 'buffer:buffer)
+               (not (member "prompt" (buffer:minors-of b) :test #'equal)))
+      (setf (buffer:minors-of b) (cons "prompt" (buffer:minors-of b))))
+    (when (and b (not (prompt:asking-p)) (typep b 'buffer:buffer))
+      (setf (buffer:minors-of b)
+            (remove "prompt" (buffer:minors-of b) :test #'equal)))
+    b))
 
 (defun bindings-of (session)
   (let (acc)
