@@ -65,8 +65,11 @@
                                                              (:file "pine")))))
                  (:module "provider"
                           :serial t
-                          :components ((:file "sh") (:file "env")
-                                       (:file "clock") (:file "sys")))
+                          :components ((:file "out") (:file "sh") (:file "env")
+                                       (:file "clock") (:file "sys")
+                                       (:file "audio") (:file "screen")
+                                       (:file "power") (:file "net")
+                                       (:file "media")))
                  (:module "edit"
                           :serial t
                           :components ((:file "text") (:file "history") (:file "buffer")

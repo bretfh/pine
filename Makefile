@@ -40,7 +40,7 @@ check:
 
 # the daemon: a pine listening on a remoting port, for a frontend to attach to
 daemon:
-	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --no-userinit --eval "(require :asdf)" --eval "(asdf:load-system :pine)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
+	$(IN) '$(ENV) sbcl --noinform --dynamic-space-size 4096 --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine))" --eval "(setf pine.run.log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
 
 # the editor: an xdg-shell window attached to the daemon. make daemon first.
 editor:

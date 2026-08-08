@@ -16,19 +16,39 @@
                     (#:agent #:pine.net.agent) (#:plisp #:pine.proc.lisp)
                     (#:sh #:pine.provider.sh) (#:env #:pine.provider.env)
                     (#:clock #:pine.provider.clock) (#:sys #:pine.provider.sys)
-                    (#:term #:pine.edit.term) (#:fault #:pine.run.fault))
+                    (#:term #:pine.edit.term) (#:fault #:pine.run.fault)
+                    (#:load #:pine.run.log) (#:place #:pine.path.place)
+                    (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
+                    (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
+                    (#:media #:pine.provider.media))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
+           #:user-package #:write-at #:read-at
+           #:audio #:screen #:power #:network #:media #:procfs #:shell
            #:frontend #:declare-frontends #:+frontends+))
 
 (in-package #:pine)
 
 (defvar *supervisor* nil)
+
 (defvar *store* nil)
+
 (defvar *image* nil)
 
 (defparameter +frontends+ '("editor" "desktop"))
+
+(defparameter +user-surface+
+  '((:pine "declare-frontends" "frontend" "start" "stop" "here" "spawn-agent"
+     "audio" "screen" "power" "network" "media" "procfs" "shell")
+    (:pine.repl.command "defcommand" "command" "command-named" "commands" "run")
+    (:pine.repl.mode "mode" "minor" "bind" "handle" "setting" "modes")
+    (:pine.fs.node "contents" "nodes" "name" "attach" "describes")
+    (:pine.fs.tree "at" "ensure" "place" "erase" "listing")
+    (:pine.world.world "*world*" "root")
+    (:pine.edit.prompt "ask")
+    (:pine.run.log "note")
+    (:pine.data "map" "seq" "set")))
 
 (defclass commands-node (node:node) ())
 (defclass command-node (node:node)
@@ -193,13 +213,51 @@
 (defun frame (&key (width 80) (height 24))
   (mapcar #'car (render:rows :width width :height height)))
 
+(defun procfs () (sys:install (world:root world:*world*) "sys"))
+(defun shell () (sh:install (world:root world:*world*)))
+(defun audio (&optional (name "audio")) (audio:install (world:root world:*world*) name))
+(defun screen (&optional (name "screen")) (screen:install (world:root world:*world*) name))
+(defun power (&optional (name "power")) (power:install (world:root world:*world*) name))
+(defun network (&optional (name "net")) (net-p:install (world:root world:*world*) name))
+(defun media (&key (name "media") player)
+  (media:install (world:root world:*world*) :name name :player player))
+
+(defun write-at (where value)
+  (setf (place:contents where) value))
+
+(defun read-at (where &optional default)
+  (let ((value (place:contents where)))
+    (if (null value) default value)))
+
+(defun user-package ()
+  (or (find-package :pine.user)
+      (let ((p (make-package :pine.user :use '(:cl))))
+        (dolist (entry +user-surface+)
+          (dolist (name (rest entry))
+            (let ((symbol (find-symbol (string-upcase name) (first entry))))
+              (when symbol (shadowing-import symbol p)))))
+        (shadow '("WRITE" "READ") p)
+        (setf (fdefinition (intern "WRITE" p)) #'write-at
+              (fdefinition (intern "READ" p)) #'read-at)
+        (export (list (intern "WRITE" p) (intern "READ" p)) p)
+        p)))
+
 (defun config-file ()
   (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home)))
 
 (defun load-config (&optional (file (config-file)))
+  (user-package)
   (when (and file (probe-file file))
-    (let ((*package* (find-package :pine)))
-      (fault:attempt (lambda () (load file)) (format nil "loading ~a" file)))))
+    (let ((*package* (user-package))
+          (*readtable* (named-readtables:find-readtable 'pine.path.reader:syntax))
+          (before (length (fault:faults))))
+      (load:note "reading ~a" file)
+      (fault:attempt (lambda () (load file)) (format nil "reading ~a" file))
+      (let ((broke (- (length (fault:faults)) before)))
+        (when (plusp broke)
+          (load:note "~a did not load: ~a" file
+                     (fault:condition-of (first (fault:faults)))))
+        (zerop broke)))))
 
 (defun %frontend-command (verb)
   (let ((self (first sb-ext:*posix-argv*)))
@@ -242,6 +300,11 @@
     (loop :for c :in (attach:clients)
           :collect (list (attach:client-kind c) (attach:client-id c))))
   (load-config config)
+  (load:note "~a: remoting ~d, ~d command~:p, ~d process~:p"
+             (world:name world:*world*)
+             (net:remoting-port *image*)
+             (length (cmd:commands))
+             (length (super:processes *supervisor*)))
   *image*)
 
 (defun spawn-agent (name)

@@ -95,3 +95,35 @@ the person's own program, and that is what /sh remembers."
         (is (member name live :test #'equal) "~a should be live" name)))
     (is (null (pine.fs.node:livep (pine.edit.buffer:current)))
         "a buffer is pine's own, so the store keeps it")))
+
+(test the-machine-providers-read-without-signalling
+  "They shell out to tools that may not be on a given machine. Absent is nil,
+never a backtrace, because a bar reading /audio/volume must not take the daemon
+down when pipewire is not running."
+  (with-providers
+    (let ((root (pine.world.world:root pine.world.world:*world*)))
+      (pine.provider.audio:install root)
+      (pine.provider.screen:install root)
+      (pine.provider.power:install root)
+      (pine.provider.net:install root)
+      (pine.provider.media:install root))
+    (dolist (path '("audio/volume" "audio/muted" "screen/brightness"
+                    "power/battery" "power/charging" "net/connection"
+                    "net/online" "media/status" "media/title"))
+      (finishes (held-at path)))))
+
+(test a-provider-lists-what-it-has-and-each-is-a-node
+  (with-providers
+    (pine.provider.audio:install (pine.world.world:root pine.world.world:*world*))
+    (let ((audio (pine.world.world:at pine.world.world:*world* "audio")))
+      (is (member "volume" (pine.fs.tree:listing audio) :test #'equal))
+      (is (member "sinks" (pine.fs.tree:listing audio) :test #'equal))
+      (is-true (pine.fs.node:livep audio)))))
+
+(test power-verbs-are-nodes-so-a-config-writes-one-rather-than-calling-out
+  (with-providers
+    (pine.provider.power:install (pine.world.world:root pine.world.world:*world*))
+    (let ((power (pine.world.world:at pine.world.world:*world* "power")))
+      (dolist (verb '("lock" "suspend" "reboot" "poweroff" "logout"))
+        (is (member verb (pine.fs.tree:listing power) :test #'equal)
+            "~a should be a node under /power" verb)))))
