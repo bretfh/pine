@@ -11,14 +11,18 @@
                     (#:task #:pine.run.task) (#:ui #:pine.ui.paths)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:edit #:pine.edit.commands) (#:key #:pine.edit.key)
-                    (#:render #:pine.edit.render))
-  (:export #:start #:stop #:main #:*supervisor* #:*store* #:here #:describe
-           #:commands-node #:command-node #:frame #:type!))
+                    (#:render #:pine.edit.render)
+                    (#:net #:pine.net.server) (#:attach #:pine.net.attach)
+                    (#:agent #:pine.net.agent) (#:plisp #:pine.proc.lisp))
+  (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
+           #:describe #:commands-node #:command-node #:frame #:type!
+           #:daemon #:spawn-agent #:run-app))
 
 (in-package #:pine)
 
 (defvar *supervisor* nil)
 (defvar *store* nil)
+(defvar *image* nil)
 
 (defclass commands-node (node:node) ())
 (defclass command-node (node:node)
@@ -113,9 +117,14 @@
                     :claims '((:files "*.lisp" "*.asd" "*.cl")))
   (mode:mode "shell" :settings '(:indicator "Shell")))
 
-(defun start (&key (name "pine") store)
+(defun start (&key (name "pine") store remoting)
   (setf world:*world* (world:make-world :name name)
         *supervisor* (super:supervisor))
+  (when remoting
+    (setf *image* (net:start-server :remoting-port remoting)
+          net:*server* *image*)
+    (attach:listen-for-attach *image*)
+    (agent:listen-for-agents *image*))
   (node:attach (make-instance 'commands-node :name "cmd"
                                              :describes "every command there is")
                (world:root world:*world*))
@@ -144,6 +153,9 @@
     (ignore-errors (store:close-store *store*))
     (setf *store* nil))
   (dolist (tk (task:tasks)) (task:stop tk))
+  (when *image*
+    (ignore-errors (net:stop-server *image*))
+    (setf *image* nil net:*server* nil))
   t)
 
 (defun main (&key store)
@@ -162,6 +174,24 @@
 
 (defun frame (&key (width 80) (height 24))
   (mapcar #'car (render:rows :width width :height height)))
+
+(defun daemon (&key store (remoting 0))
+  (start :store store :remoting remoting)
+  (cmd:defcommand "agents" () (:describes "every image attached to this one")
+    (mapcar #'agent:name (agent:agents)))
+  (cmd:defcommand "clients" () (:describes "every frontend attached")
+    (loop :for c :in (attach:clients)
+          :collect (list (attach:client-kind c) (attach:client-id c))))
+  *image*)
+
+(defun spawn-agent (name)
+  (let ((p (make-instance 'plisp:lisp-process :name name :systems '(:pine))))
+    (super:supervise *supervisor* p)
+    (process:start p)
+    p))
+
+(defun run-app (verb)
+  (attach:run-frontend (intern (string-upcase verb) :keyword)))
 
 (defun describe (where)
   (let ((n (%resolve nil where)))

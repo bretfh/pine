@@ -1,5 +1,5 @@
 .PHONY: foreign foreign-deps foreign-libs foreign-wayflan
-.PHONY: repl check test probe eval docs
+.PHONY: repl check test probe eval docs daemon
 
 # Two ways to get what pine needs, and every target below works under either.
 # Guix is what pine develops against and what plain `make' uses. FOREIGN=1 is
@@ -37,6 +37,10 @@ repl:
 check:
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(princ :wayland-loaded)" --eval "(terpri)"'
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(princ :loaded)" --eval "(terpri)"'
+
+# the daemon: a pine listening on a remoting port, for a frontend to attach to
+daemon:
+	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --no-userinit --eval "(require :asdf)" --eval "(asdf:load-system :pine)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
 
 # the fiveam suite. Exits nonzero on failure.
 test:

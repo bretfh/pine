@@ -10,6 +10,9 @@
                              #:cffi
                              #:cffi-libffi
                              #:fset
+                             #:sento
+                             #:sento-remoting
+                             #:usocket
                              #:sqlite
                              #:sb-introspect
                              #:uiop)
@@ -63,6 +66,9 @@
                           :components ((:file "text") (:file "history") (:file "buffer")
                                        (:file "window") (:file "key")
                                        (:file "render") (:file "commands")))
+                 (:module "net"
+                          :serial t
+                          :components ((:file "server") (:file "attach") (:file "agent")))
                  (:file "frontend")
                  (:file "boot")))
 
@@ -72,7 +78,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "net") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))
