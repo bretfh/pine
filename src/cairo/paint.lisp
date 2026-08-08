@@ -4,20 +4,16 @@
 
 (in-package #:pine.cairo.paint)
 
-;;;; The cairo backend for the widget engine. measure/arrange already run in
-;;;; pixels when *text-size* is bound; here we bind it to a cairo text measurer
-;;;; and add PAINT-PX, a second paint pass that draws each arranged node to a
-;;;; cairo context -- rounded backgrounds, borders, themed text, sliders, and
-;;;; rings -- styled by pine.ui.style resolving the shared stylesheet. No cell
-;;;; raster: the same tree the daemon builds renders straight to pixels.
+(defvar *cairo-font* "Maple Mono NF")
+
+(defvar *style-cache* nil "Per-render eq map node -> resolved style.")
+
+(defparameter +cal-months+
+  #("January" "February" "March" "April" "May" "June"
+    "July" "August" "September" "October" "November" "December"))
 
 (export '(paint-px render-tree-to-png paint-tree paint-arranged measure-tree
           with-cairo-layout *cairo-font*))
-
-(defvar *cairo-font* "Maple Mono NF")
-(defvar *style-cache* nil "Per-render eq map node -> resolved style.")
-
-;;;; Text measurement: the *text-size* hook, so measure lays out in pixels.
 
 (defun cairo-text-size (text font-px)
   (cairo:select-font-face *cairo-font* :normal :normal)
@@ -27,9 +23,6 @@
       (declare (ignore xb yb w h))
       (values (max 1 (ceiling ax))
               (max 1 (ceiling (+ (cairo:font-ascent fe) (cairo:font-descent fe))))))))
-
-;;;; Style plumbing. NODE-CLASSES lives in layout.lisp (shared with the cell
-;;;; render's RESOLVE-STYLES!).
 
 (defun styled (n chain hover)
   "The resolved style for N given its ancestor class CHAIN (root-first). The
@@ -59,8 +52,6 @@ Caches the resolved style for the paint pass."
     (when (and (pine.ui.style:st-font-px st) (null (font-px n)))
       (setf (font-px n) (pine.ui.style:st-font-px st)))
     (dolist (c (pine.ui.layout:nodes-of n)) (apply-styles! c full))))
-
-;;;; Cairo helpers.
 
 (defun set-hex (hex)
   (multiple-value-bind (r g b) (pine.ui.face:hex-rgb hex)
@@ -151,8 +142,6 @@ concentric low-alpha layers, so the panel reads as floating over the desktop."
             (cairo:rectangle (float x 1d0) (float y 1d0) (float iw 1d0) (float h 1d0))
             (cairo:set-source-rgb ir ig ib)
             (cairo:fill-path)))))))
-
-;;;; PAINT-PX: chrome via :before, content/recursion in the primary method.
 
 (defgeneric paint-px (node chain)
   (:documentation "Draw arranged NODE and its subtree to cairo:*context*. CHAIN
@@ -258,9 +247,6 @@ is the ancestor class-set list, root-first, for style resolution."))
             (cairo:set-source-surface img 0 0) (cairo:paint)
             (cairo:restore)))))))
 
-;;;; A window (a buffer or terminal rendered as rows) blits through the shared
-;;;; painter, offset to the node's rect. One leaf, the whole text area.
-
 (defun cairo-cell-metrics (fpx)
   "cell-w cell-h ascent, identical to what CAIRO-TEXT-SIZE (the measure hook)
 reports for one cell, so a window measures and paints at the same grid."
@@ -286,8 +272,7 @@ reports for one cell, so a window measures and paints at the same grid."
     (let ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
           (over (pine.ui.layout:view-overlay-count n)))
       (multiple-value-bind (cw ch asc) (cairo-cell-metrics fpx)
-        ;; the overlay block (completion popup) floats above the rect, over
-        ;; whatever the flow put there; no clip to the rect
+
         (when (plusp over)
           (let ((top (- y (* over ch)))
                 (orows (subseq (view-rows n) 0 over)))
@@ -307,16 +292,13 @@ reports for one cell, so a window measures and paints at the same grid."
         (cairo:clip)
         (cairo:translate 0d0 (float y 1d0))
         (pine.cairo.grid:paint-rows (subseq (view-rows n) over) cw ch asc (float x 1d0))
-        ;; the point (a hollow caret), when this window carries one
+
         (when (>= (view-crow n) 0)
           (destructuring-bind (br bg bb) (pine.ui.face:face-bg :cursor)
             (cairo:set-source-rgb (/ br 255.0) (/ bg 255.0) (/ bb 255.0)))
           (cairo:rectangle (+ (float x 1d0) (* (view-ccol n) cw)) (* (view-crow n) ch) cw ch)
           (cairo:set-line-width 1.5d0) (cairo:stroke))
         (cairo:restore)))))
-
-;;;; Calendar: a month grid. Row 0 the month/year title, row 1 the weekday
-;;;; header, rows 2..7 the day cells; the current day gets an accent pill.
 
 (defun %days-in-month (mo y)
   (if (= mo 2)
@@ -327,11 +309,7 @@ reports for one cell, so a window measures and paints at the same grid."
   (multiple-value-bind (s m h d dm yr dow)
       (decode-universal-time (encode-universal-time 0 0 12 1 mo y))
     (declare (ignore s m h d dm yr))
-    (mod (1+ dow) 7)))                                  ; 0 = Sunday column
-
-(defparameter +cal-months+
-  #("January" "February" "March" "April" "May" "June"
-    "July" "August" "September" "October" "November" "December"))
+    (mod (1+ dow) 7)))
 
 (defmethod pine.ui.layout:measure ((n calendar) aw ah)
   (declare (ignore aw ah))
@@ -373,9 +351,6 @@ reports for one cell, so a window measures and paints at the same grid."
                  (set-hex (pine.ui.face:color :accent)) (cairo:fill-path))
                (draw-cell-text (princ-to-string d) cx cy cw ch
                                (if (= d day) :accent-fg :fg))))))
-
-;;;; Render entry: a node tree -> a PNG. This is the eyes for the backend --
-;;;; render a real panel headless and look at it.
 
 (defmacro with-cairo-layout (&body body)
   "Bind the dynamic state the cairo layout pass needs: the theme font, the

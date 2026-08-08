@@ -2,7 +2,7 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "wayland" "cairo")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)
@@ -15,10 +15,12 @@
   (merge-pathnames "src/" (asdf:system-source-directory :pine)))
 
 (defun %lang-files ()
-  (directory (merge-pathnames "ts/lang/*.lisp" (%module-root))))
+  (append (directory (merge-pathnames "ts/lang/*.lisp" (%module-root)))
+          (directory (merge-pathnames "wayland/protocol/*.lisp" (%module-root)))))
 
 (defun %files ()
-  (append (list (merge-pathnames "boot.lisp" (%module-root)))
+  (append (list (merge-pathnames "boot.lisp" (%module-root))
+                (merge-pathnames "frontend.lisp" (%module-root)))
           (loop :for module :in +modules+
                 :append (directory (merge-pathnames (format nil "~a/*.lisp" module)
                                                     (%module-root))))

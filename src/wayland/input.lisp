@@ -7,20 +7,11 @@
 
 (in-package #:pine.wayland.input)
 
-;;;; Pointer input for layer surfaces: bind wl_seat -> wl_pointer, track the
-;;;; focused surface and cursor position, and drive the layout engine's own
-;;;; hit-testing (node-at / click-thunk) against the retained,
-;;;; arranged tree -- so hover highlights and clicks land on exactly what is
-;;;; painted. wayflan delivers pointer x/y already in surface pixels.
-
 (defvar *on-hover* nil
   "When set, a function of the hovered node (or nil) called on each hover change
 -- the daemon-attached client uses it to push the node's hint to the echo.")
 
 (defconstant +btn-left+ #x110)
-
-
-;;;; Connect + bind globals, including the seat.
 
 (defun connect-desktop ()
   "Open the display and bind compositor, shm, layer-shell, and seat globals."
@@ -43,8 +34,8 @@
                   (setf (wl-conn-seat conn) seat)
                   (push (a:curry #'handle-desktop-seat conn) (wl-proxy-hooks seat)))))))
           (wl-proxy-hooks registry))
-    (wl-display-roundtrip display)            ; globals + seat bound
-    (wl-display-roundtrip display)            ; seat capabilities -> pointer
+    (wl-display-roundtrip display)
+    (wl-display-roundtrip display)
     (unless (wl-conn-shell conn)
       (wl-display-disconnect display)
       (error "compositor does not advertise zwlr_layer_shell_v1"))
@@ -62,8 +53,6 @@
            (destroy-proxy (wl-conn-pointer conn))
            (setf (wl-conn-pointer conn) nil))))
     (:name (name) (declare (ignore name)))))
-
-;;;; Pointer events -> hover + click.
 
 (defun handle-pointer (conn &rest event)
   (event-case event
@@ -134,7 +123,7 @@ callback (that waits for release, so a scrub does not spam the action)."
   (a:when-let ((slider (wl-conn-drag conn)))
     (setf (wl-conn-drag conn) nil)
     (a:when-let ((fn (node:on-change slider)))
-      (pine.err:attempt (lambda () (funcall fn (node:value slider)))
+      (pine.run.fault:attempt (lambda () (funcall fn (node:value slider)))
                          "slider drag"))))
 
 (defun pointer-click (conn)
@@ -145,6 +134,6 @@ action may have changed the refs the tree reads)."
       (let ((thunk (lay:click-thunk (ls-tree ls)
                                   (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn)))))
         (when thunk
-          (pine.err:attempt thunk "widget action")
+          (pine.run.fault:attempt thunk "widget action")
           (build-tree ls)
           (paint-surface ls))))))

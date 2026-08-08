@@ -35,6 +35,7 @@ repl:
 
 # load everything and say so, without running anything
 check:
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(princ :wayland-loaded)" --eval "(terpri)"'
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(princ :loaded)" --eval "(terpri)"'
 
 # the fiveam suite. Exits nonzero on failure.

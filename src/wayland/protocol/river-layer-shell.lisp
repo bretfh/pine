@@ -1,7 +1,3 @@
-;;;; river_layer_shell_v1: how a window manager tells river it supports
-;;;; layer surfaces. River closes every layer surface immediately while no
-;;;; manager has bound this.
-
 (in-package #:pine.wayland.protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include

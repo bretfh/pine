@@ -56,6 +56,7 @@
                                                 :components ((:file "commonlisp")
                                                              (:file "scheme")
                                                              (:file "pine")))))
+                 (:file "frontend")
                  (:file "boot")))
 
 (asdf:defsystem #:pine/test
@@ -68,6 +69,26 @@
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))
+
+(asdf:defsystem #:pine/cairo
+                :depends-on (#:pine #:cl-cairo2)
+                :serial t
+                :pathname "src/cairo/"
+                :components ((:file "grid") (:file "paint")))
+
+(asdf:defsystem #:pine/wayland
+                :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
+                :serial t
+                :pathname "src/"
+                :components
+                ((:module "protocol"
+                          :serial t :pathname "wayland/protocol/"
+                          :components ((:file "wlr-layer-shell") (:file "river-wm")
+                                       (:file "river-xkb") (:file "river-layer-shell")))
+                 (:module "wayland"
+                          :serial t
+                          :components ((:file "connection") (:file "surface")
+                                       (:file "input")))))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"
