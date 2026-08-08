@@ -2,7 +2,7 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "wayland" "cairo")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "edit" "wayland" "cairo")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)

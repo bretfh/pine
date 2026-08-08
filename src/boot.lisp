@@ -8,9 +8,12 @@
                     (#:session #:pine.repl.session)
                     (#:process #:pine.proc.process)
                     (#:super #:pine.proc.supervisor)
-                    (#:task #:pine.run.task) (#:ui #:pine.ui.paths))
+                    (#:task #:pine.run.task) (#:ui #:pine.ui.paths)
+                    (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
+                    (#:edit #:pine.edit.commands) (#:key #:pine.edit.key)
+                    (#:render #:pine.edit.render))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:here #:describe
-           #:commands-node #:command-node))
+           #:commands-node #:command-node #:frame #:type!))
 
 (in-package #:pine)
 
@@ -121,6 +124,10 @@
   (%seed-commands)
   (%seed-modes)
   (ui:install world:*world*)
+  (edit:install)
+  (let ((scratch (buffer:make-buffer "scratch" :mode "lisp")))
+    (setf (buffer:current) scratch)
+    (window:seed! scratch))
   (when store
     (setf *store* (store:open-store store))
     (store:restore world:*world* *store*))
@@ -146,6 +153,15 @@
                                  :package (find-package :pine))))
     (unwind-protect (session:interact s)
       (stop))))
+
+(defun type! (text &optional (session session:*session*))
+  (declare (ignore session))
+  (loop :for ch :across text
+        :do (key:dispatch nil (key:make-key (string ch))))
+  (buffer:point (buffer:current)))
+
+(defun frame (&key (width 80) (height 24))
+  (mapcar #'car (render:rows :width width :height height)))
 
 (defun describe (where)
   (let ((n (%resolve nil where)))

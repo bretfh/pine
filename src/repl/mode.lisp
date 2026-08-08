@@ -4,7 +4,7 @@
   (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:mode-for
            #:name #:parent #:indicator #:settings #:claims #:claimsp
            #:precedence #:chain #:setting #:handle #:handler #:claimants
-           #:bind #:binding #:in-force #:globp))
+           #:bind #:binding #:in-force #:globp #:keys #:handlers))
 
 (in-package #:pine.repl.mode)
 
@@ -107,6 +107,7 @@
     (setf (gethash chord (keys m)) command)))
 
 (defgeneric in-force (of)
+  (:method ((m null)) nil)
   (:method ((m mode)) (chain m)))
 
 (defgeneric claimants (of verb)
