@@ -16,6 +16,8 @@
 
 (defmethod node:persistp ((n file-node)) nil)
 (defmethod node:persistp ((n directory-node)) nil)
+(defmethod node:livep ((n file-node)) t)
+(defmethod node:livep ((n directory-node)) t)
 
 (defmethod node:contents ((n file-node))
   (when (probe-file (truename-of n))

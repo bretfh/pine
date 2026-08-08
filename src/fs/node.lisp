@@ -3,7 +3,7 @@
   (:shadow #:describe)
   (:local-nicknames (#:c #:pine.run.cell))
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
-           #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp
+           #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
            #:dependents #:depend #:invalidate #:*reading* #:reading
            #:node-named #:make-node #:full-name))
 
@@ -65,6 +65,9 @@
 
 (defgeneric describe (node)
   (:method ((n node)) (describes n)))
+
+(defgeneric livep (node)
+  (:method ((n node)) nil))
 
 (defgeneric persistp (node)
   (:method ((n node)) nil)

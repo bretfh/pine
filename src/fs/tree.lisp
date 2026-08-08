@@ -55,11 +55,11 @@
          (holder (apply #'at from (butlast names))))
     (when holder (node:detach holder (car (last names))))))
 
-(defun walk (n function &key (depth -1))
+(defun walk (n function &key (depth -1) (into (complement #'node:livep)))
   (funcall function n)
-  (unless (zerop depth)
+  (when (and (not (zerop depth)) (or (null into) (funcall into n)))
     (dolist (under (node:nodes n))
-      (walk under function :depth (1- depth))))
+      (walk under function :depth (1- depth) :into into)))
   n)
 
 (defun listing (n)

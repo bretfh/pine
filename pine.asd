@@ -14,6 +14,7 @@
                              #:sento-remoting
                              #:usocket
                              #:sqlite
+                             #:sb-posix
                              #:sb-introspect
                              #:uiop)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
@@ -61,6 +62,10 @@
                                                 :components ((:file "commonlisp")
                                                              (:file "scheme")
                                                              (:file "pine")))))
+                 (:module "provider"
+                          :serial t
+                          :components ((:file "sh") (:file "env")
+                                       (:file "clock") (:file "sys")))
                  (:module "edit"
                           :serial t
                           :components ((:file "text") (:file "history") (:file "buffer")
@@ -79,7 +84,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "prompt") (:file "net") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "prompt") (:file "provider") (:file "net") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))
