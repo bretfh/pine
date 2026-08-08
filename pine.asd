@@ -108,7 +108,10 @@
                  (:module "wayland"
                           :serial t
                           :components ((:file "connection") (:file "surface")
-                                       (:file "input")))))
+                                       (:file "input")))
+                 (:module "app"
+                          :serial t :pathname "wayland/app/"
+                          :components ((:file "editor") (:file "keys")))))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"

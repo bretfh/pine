@@ -6,7 +6,7 @@
            #:run-frontend #:client #:client-id #:client-kind #:client-display
            #:client-uri #:client-session #:clients #:push-to
            #:listen-for-attach #:attach-to #:protocol #:acceptable
-           #:reap #:alive-p #:*wire* #:*clients* #:attached-p))
+           #:reap #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached))
 
 (in-package #:pine.net.attach)
 
@@ -78,14 +78,17 @@
     (when to (sento.actor:tell to message))
     message))
 
-(defun %accept (s message display)
+(defun %accept (s message display-uri)
   (destructuring-bind (&key kind version uri) (rest message)
     (if (not (acceptable version))
-        (progn (sento.actor:tell display (list :refused :reason :version
-                                               :version (protocol)))
+        (progn (sento.actor:tell
+                (sento.remoting:make-remote-ref (server:actor-system s) display-uri)
+                (list :refused :reason :version :version (protocol)))
                nil)
-        (let ((c (make-instance 'client :id (server:next-client-id s)
-                                        :kind kind :display display :uri uri)))
+        (let* ((display (sento.remoting:make-remote-ref (server:actor-system s)
+                                                       display-uri))
+               (c (make-instance 'client :id (server:next-client-id s)
+                                         :kind kind :display display :uri uri)))
           (push c *clients*)
           (push c (server:clients s))
           (fault:attempt (lambda () (attached kind c))
@@ -133,10 +136,14 @@
           (values (subseq authority 0 colon)
                   (parse-integer authority :start (1+ colon) :junk-allowed t)))))))
 
+(defun accept-attached (sys message)
+  (destructuring-bind (&key id version &allow-other-keys) (rest message)
+    (declare (ignore version))
+    (sento.remoting:make-remote-ref
+     sys (server:daemon-uri (format nil "client-~d" id)))))
+
 (defun attach-to (sys daemon self &key kind)
   (let ((there (sento.remoting:make-remote-ref sys daemon)))
     (sento.actor:tell there (list :attach :kind kind :version (protocol)
-                                          :uri self
-                                          :display (sento.remoting:make-remote-ref
-                                                    sys self)))
+                                          :uri self :display self))
     there))

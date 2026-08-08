@@ -3,7 +3,7 @@
   (:local-nicknames (#:c #:pine.run.cell) (#:task #:pine.run.task))
   (:export #:process #:program #:thread-process #:name #:state #:attempts
            #:restarts-p #:backoff #:start #:stop #:alivep #:said #:emit
-           #:took #:exit-of #:fault #:*out-kept* #:argv #:thunk #:every-seconds))
+           #:took #:exit-of #:fault #:*out-kept* #:argv #:env #:thunk #:every-seconds))
 
 (in-package #:pine.proc.process)
 

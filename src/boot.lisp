@@ -16,16 +16,19 @@
                     (#:agent #:pine.net.agent) (#:plisp #:pine.proc.lisp)
                     (#:sh #:pine.provider.sh) (#:env #:pine.provider.env)
                     (#:clock #:pine.provider.clock) (#:sys #:pine.provider.sys)
-                    (#:term #:pine.edit.term))
+                    (#:term #:pine.edit.term) (#:fault #:pine.run.fault))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
-           #:daemon #:spawn-agent #:run-app))
+           #:daemon #:spawn-agent #:run-app #:load-config #:config-file
+           #:frontend #:declare-frontends #:+frontends+))
 
 (in-package #:pine)
 
 (defvar *supervisor* nil)
 (defvar *store* nil)
 (defvar *image* nil)
+
+(defparameter +frontends+ '("editor" "desktop"))
 
 (defclass commands-node (node:node) ())
 (defclass command-node (node:node)
@@ -190,13 +193,55 @@
 (defun frame (&key (width 80) (height 24))
   (mapcar #'car (render:rows :width width :height height)))
 
-(defun daemon (&key store (remoting 0))
+(defun config-file ()
+  (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home)))
+
+(defun load-config (&optional (file (config-file)))
+  (when (and file (probe-file file))
+    (let ((*package* (find-package :pine)))
+      (fault:attempt (lambda () (load file)) (format nil "loading ~a" file)))))
+
+(defun %frontend-command (verb)
+  (let ((self (first sb-ext:*posix-argv*)))
+    (if (and self (not (search "sbcl" (namestring self))))
+        (list self verb)
+        (list (namestring sb-ext:*runtime-pathname*)
+              "--noinform" "--no-userinit" "--non-interactive"
+              "--eval" "(require :asdf)"
+              "--eval" "(asdf:load-system :pine/wayland)"
+              "--eval" (format nil "(pine:run-app ~s)" verb)))))
+
+(defun %frontend-environment ()
+  (cons (format nil "PINE_PORT=~d" net:*port*)
+        (remove-if (lambda (entry)
+                     (and (>= (length entry) 10)
+                          (string= "PINE_PORT=" entry :end2 10)))
+                   (sb-ext:posix-environ))))
+
+(defun frontend (verb)
+  (make-instance 'process:program
+                 :name verb
+                 :argv (%frontend-command verb)
+                 :env (%frontend-environment)))
+
+(defun declare-frontends (&optional (which +frontends+))
+  (dolist (verb which)
+    (unless (super:process-named *supervisor* verb)
+      (let ((p (frontend verb)))
+        (super:supervise *supervisor* p)
+        (setf (node:contents (world:ensure world:*world* "proc" verb)) :declared)
+        (fault:attempt (lambda () (process:start p))
+                       (format nil "starting the ~a frontend" verb)))))
+  (mapcar #'process:name (super:processes *supervisor*)))
+
+(defun daemon (&key store (remoting net:*port*) (config (config-file)))
   (start :store store :remoting remoting)
   (cmd:defcommand "agents" () (:describes "every image attached to this one")
     (mapcar #'agent:name (agent:agents)))
   (cmd:defcommand "clients" () (:describes "every frontend attached")
     (loop :for c :in (attach:clients)
           :collect (list (attach:client-kind c) (attach:client-id c))))
+  (load-config config)
   *image*)
 
 (defun spawn-agent (name)
@@ -206,6 +251,7 @@
     p))
 
 (defun run-app (verb)
+  (net:read-environment)
   (attach:run-frontend (intern (string-upcase verb) :keyword)))
 
 (defun describe (where)

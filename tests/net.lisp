@@ -102,3 +102,51 @@ remote. Nothing above it knows the difference."
                      :test #'equal)
              "the daemon's own commands are nodes like any other"))
     (pine:stop)))
+
+(test the-daemon-reads-an-init-file-and-what-it-declares-is-there
+  (unwind-protect
+       (let ((config (merge-pathnames "probe-init.lisp"
+                                      (asdf:system-relative-pathname :pine "tests/"))))
+         (pine:daemon :remoting 0 :config config)
+         (is (eq t (pine.fs.node:contents
+                    (pine.world.world:at pine.world.world:*world* "config/loaded")))
+             "the config ran")
+         (is (equal "hello from the config" (pine.repl.command:run "hello"))
+             "a command a config defined is a command")
+         (is (equal "hello"
+                    (pine.repl.command:name
+                     (pine.repl.mode:binding
+                      (pine.edit.buffer:current) "C-c h")))
+             "and a chord a config bound reaches it")
+         (is (member "hello" (pine.fs.tree:listing
+                              (pine.world.world:at pine.world.world:*world* "cmd"))
+                     :test #'equal)
+             "it is a node under /cmd like any other"))
+    (pine:stop)))
+
+(test a-config-that-will-not-load-is-reported-and-the-daemon-comes-up
+  (let ((bad (merge-pathnames "pine-probe-bad-init.lisp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (out bad :direction :output :if-exists :supersede)
+             (write-string "(in-package :pine) (this-is-not-a-function)" out))
+           (pine:daemon :remoting 0 :config bad)
+           (is (typep pine:*image* 'pine.net.server:server)
+               "a broken config does not stop the daemon coming up")
+           (is (find-if (lambda (f) (search "init" (or (pine.run.fault:label f) "")))
+                        (pine.run.fault:faults))
+               "and what went wrong is a fault, not a backtrace on the terminal"))
+      (pine:stop)
+      (ignore-errors (delete-file bad)))))
+
+(test a-frontend-is-a-declaration-the-supervisor-keeps-running
+  (unwind-protect
+       (progn
+         (pine:daemon :remoting 0 :config nil)
+         (let ((p (pine:frontend "editor")))
+           (is (typep p 'pine.proc.process:program))
+           (is (equal "editor" (pine.proc.process:name p)))
+           (is (find-if (lambda (entry) (search "PINE_PORT=" entry))
+                        (pine.proc.process:env p))
+               "the frontend is told which pine to attach to")))
+    (pine:stop)))

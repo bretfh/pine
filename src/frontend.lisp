@@ -2,9 +2,14 @@
   (:use #:cl)
   (:export #:pump #:make-pump #:close-pump #:pump-wake-in
            #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
-           #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run))
+           #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run
+           #:attach))
 
 (in-package #:pine.frontend)
+
+(defvar *attempts* 60)
+
+(defvar *interval* 2)
 
 (defstruct (pump (:constructor %make-pump))
   "The queue between the daemon's threads and the frontend's own.
@@ -99,3 +104,28 @@ when it has none."
               (when (wait-for-work backing pump
                                    (or (and deadline (funcall deadline)) -1))
                 (drain-wake pump)))))
+
+(defun %keep-attaching (sys daemon self kind ready)
+  (loop :repeat *attempts*
+        :until (funcall ready)
+        :do (pine.net.attach:attach-to sys daemon self :kind kind)
+            (sleep *interval*)))
+
+(defun attach (kind handler &key (host pine.net.server:*host*)
+                                 (port pine.net.server:*port*)
+                                 (name "display"))
+  (let ((sys (sento.actor-system:make-actor-system)))
+    (sento.remoting:enable-remoting sys :host pine.net.server:*host* :port 0)
+    (sento.actor-context:actor-of sys
+      :name name
+      :dispatcher :pinned
+      :receive (lambda (message) (funcall handler message)))
+    (let* ((self-port (sento.remoting:remoting-port sys))
+           (daemon (pine.net.server:daemon-uri "attach" :host host :port port))
+           (self (pine.net.server:local-uri name self-port :host host))
+           (joined nil))
+      (pine.net.attach:attach-to sys daemon self :kind kind)
+      (bordeaux-threads:make-thread
+       (lambda () (%keep-attaching sys daemon self kind (lambda () joined)))
+       :name "pine attach")
+      sys)))
