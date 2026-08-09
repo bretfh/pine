@@ -86,3 +86,34 @@
     (is (equal '(("probe" :panel nil)) (pine.repl.command:run "surfaces")))
     (pine.repl.command:run "show-surface" (list "probe"))
     (is (equal '(("probe" :panel t)) (pine.repl.command:run "surfaces")))))
+
+(def-suite* :pine.wm :in :pine)
+
+(test the-compositor-is-a-subtree-and-its-verbs-are-nodes
+  (with-desktop
+    (pine:niri)
+    (let ((wm (pine.app.wm:root)))
+      (is-true wm)
+      (is-true (pine.fs.node:livep wm)
+               "the compositor answers from itself, so no snapshot walks into it")
+      (is-true (pine.fs.tree:at wm "windows"))
+      (is-true (pine.fs.tree:at wm "workspaces"))
+      (is-true (pine.fs.node:resolve wm "close")
+               "what it can be told is a node, not a special message"))))
+
+(test the-wm-commands-read-the-compositor-rather-than-a-copy
+  (with-desktop
+    (pine:niri)
+    (is (equal (pine.app.wm:windows)
+               (pine.fs.node:contents (pine.fs.tree:at (pine.app.wm:root) "windows")))
+        "the command and the path answer the same thing")
+    (is-true (member "wm-focus-next" (mapcar #'pine.repl.command:name
+                                             (pine.repl.command:commands))
+                     :test #'equal))))
+
+(test the-terminal-this-machine-uses-is-a-node-a-config-writes
+  (with-desktop
+    (setf (pine.fs.node:contents
+           (pine.world.world:ensure pine.world.world:*world* "wm-terminal"))
+          "foot")
+    (is (equal "foot" (pine.app.wm:terminal)))))

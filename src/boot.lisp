@@ -22,16 +22,17 @@
                     (#:load #:pine.run.log) (#:place #:pine.path.place)
                     (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
                     (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
-                    (#:media #:pine.provider.media) (#:esession #:pine.edit.session)
+                    (#:media #:pine.provider.media) (#:wm #:pine.provider.wm) (#:esession #:pine.edit.session)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:parser #:pine.ts.parser)
                     (#:lisp #:pine.edit.eval)
-                    (#:desktop #:pine.app.desktop) (#:surface #:pine.app.surface))
+                    (#:desktop #:pine.app.desktop) (#:surface #:pine.app.surface)
+                    (#:wmapp #:pine.app.wm))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
            #:user-package #:write-at #:read-at
-           #:audio #:screen #:power #:network #:media #:procfs #:shell
+           #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri
            #:frontend #:declare-frontends #:+frontends+))
 
 (in-package #:pine)
@@ -46,7 +47,7 @@
 
 (defparameter +user-surface+
   '((:pine "declare-frontends" "frontend" "start" "stop" "here" "spawn-agent"
-     "audio" "screen" "power" "network" "media" "procfs" "shell")
+     "audio" "screen" "power" "network" "media" "procfs" "shell" "niri")
     (:pine.repl.command "defcommand" "command" "command-named" "commands" "run")
     (:pine.repl.mode "mode" "minor" "bind" "handle" "setting" "modes")
     (:pine.fs.node "contents" "nodes" "name" "attach" "describes")
@@ -191,6 +192,7 @@
   (edit:install)
   (lisp:install)
   (desktop:install)
+  (wmapp:install)
   (term:install)
   (esession:install)
   (%seed-syntax)
@@ -245,6 +247,8 @@
 (defun network (&optional (name "net")) (net-p:install (world:root world:*world*) name))
 (defun media (&key (name "media") player)
   (media:install (world:root world:*world*) :name name :player player))
+
+(defun niri (&optional (name "wm")) (wm:install (world:root world:*world*) name))
 
 (defun write-at (where value)
   (setf (place:contents where) value))

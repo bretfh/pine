@@ -14,6 +14,7 @@
                              #:sento-remoting
                              #:usocket
                              #:sqlite
+                             #:com.inuoe.jzon
                              #:sb-posix
                              #:pine/vt
                              #:sb-introspect
@@ -70,7 +71,7 @@
                                        (:file "clock") (:file "sys")
                                        (:file "audio") (:file "screen")
                                        (:file "power") (:file "net")
-                                       (:file "media")))
+                                       (:file "media") (:file "wm")))
                  (:module "edit"
                           :serial t
                           :components ((:file "text") (:file "history") (:file "buffer")
@@ -89,7 +90,7 @@
                                        (:file "eval") (:file "session")))
                  (:module "app"
                           :serial t
-                          :components ((:file "surface") (:file "desktop")))
+                          :components ((:file "surface") (:file "desktop") (:file "wm")))
                  (:file "frontend")
                  (:file "boot")
                  (:file "cli")))
