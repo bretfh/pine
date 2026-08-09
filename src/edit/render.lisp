@@ -7,11 +7,14 @@
                     (#:mode #:pine.repl.mode) (#:parser #:pine.ts.parser)
                     (#:prompt #:pine.edit.prompt))
   (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline #:echo-tree
-           #:visible-lines #:scroll-to-point #:highlights-for #:indent-for))
+           #:visible-lines #:scroll-to-point #:highlights-for #:indent-for
+           #:*cols* #:*rows*))
 
 (in-package #:pine.edit.render)
 
 (defparameter +candidates-shown+ 8)
+(defvar *cols* 80)
+(defvar *rows* 24)
 
 (defun visible-lines (b from height)
   (loop :for n :from from :below (min (buffer:line-count b) (+ from height))
@@ -136,7 +139,7 @@
                                    (buffer:point-col (prompt:answer-buffer))))
                            -1))))
 
-(defun frame-tree (&key (cols 80) (rows 24) echo)
+(defun frame-tree (&key (cols *cols*) (rows *rows*) echo)
   (let* ((windows (window:windows))
          (found (candidates-shown))
          (share (max 2 (floor (max 2 (- rows 1 (length found)))

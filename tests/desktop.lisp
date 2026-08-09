@@ -117,3 +117,90 @@
            (pine.world.world:ensure pine.world.world:*world* "wm-terminal"))
           "foot")
     (is (equal "foot" (pine.app.wm:terminal)))))
+
+(test the-editor-window-is-a-surface-like-any-other
+  (with-desktop
+    (let ((s (pine.edit.session:surface)))
+      (is-true s "nothing declared it, so pine did")
+      (is (eq :toplevel (pine.app.surface:as s)))
+      (is (eq s (pine.app.surface:surface-named "editor"))))))
+
+(test a-config-can-say-what-the-editor-window-is
+  (with-desktop
+    (pine.app.surface:surface
+     "editor"
+     (lambda () (pine.ui.build:column :class "chrome"
+                                      (pine.ui.build:label "pine")
+                                      (pine.edit.render:frame-tree)))
+     :as :toplevel)
+    (let ((tree (pine.fs.node:contents (pine.edit.session:surface))))
+      (is (equal "chrome" (pine.ui.node:css-class tree))
+          "the editor pushes the surface, so a config replacing it is what ships")
+      (is-true (%classed tree "editor-view")
+               "and the frame is still in there, because the config put it there"))))
+
+(defun told (message) (pine.app.compositor:received nil message))
+
+(defmacro with-compositor (&body body)
+  `(unwind-protect
+        (progn (pine:start) (pine:compositor)
+               (told '(:output :x 0 :y 0 :width 1920 :height 1080))
+               ,@body)
+     (pine:stop)))
+
+(test pine-as-the-window-manager-arranges-what-the-compositor-reports
+  (with-compositor
+    (told '(:window-added :id "a" :title "one" :app-id "probe"))
+    (is (equal '("a") (pine.app.wm:windows)))
+    (told '(:window-added :id "b" :title "two" :app-id "probe"))
+    (is (equal '("a" "b") (sort (copy-list (pine.app.wm:windows)) #'string<)))
+    (let ((rects (pine.app.compositor:rects (pine.app.wm:current))))
+      (is (= 2 (length rects)))
+      (is (equal '("a" "b") (sort (mapcar #'first rects) #'string<)))
+      (is (apply #'= (mapcar #'second rects))
+          "below means they share an x")
+      (is (/= (third (first rects)) (third (second rects)))
+          "and differ in y")
+      (is (>= 1920 (reduce #'max rects :key (lambda (r) (+ (second r) (fourth r)))))
+          "and neither runs off the output the compositor reported"))))
+
+(test a-window-that-closes-leaves-the-arrangement
+  (with-compositor
+    (told '(:window-added :id "a" :title "one" :app-id "probe"))
+    (told '(:window-added :id "b" :title "two" :app-id "probe"))
+    (told '(:window-closed :id "b"))
+    (is (equal '("a") (pine.app.wm:windows)))
+    (is (= 1 (length (pine.app.compositor:rects (pine.app.wm:current)))))))
+
+(test the-compositor-and-niri-answer-the-same-commands
+  (with-compositor
+    (told '(:window-added :id "a" :title "one" :app-id "probe"))
+    (told '(:window-added :id "b" :title "two" :app-id "probe"))
+    (told '(:window-focused :id "a"))
+    (is (equal "a" (pine.app.wm:focused)))
+    (is (equal "one" (pine.app.wm:title "a"))
+        "the same generic answers, whichever compositor is at /wm")
+    (pine.repl.command:run "wm-focus-next")
+    (is (equal "b" (pine.app.wm:focused)))
+    (pine.repl.command:run "wm-focus-previous")
+    (is (equal "a" (pine.app.wm:focused)))))
+
+(test the-chords-the-frontend-registers-are-an-ordinary-mode
+  (with-compositor
+    (let ((table (pine.app.compositor:bindings)))
+      (is (equal "wm-terminal" (cdr (assoc "s-Return" table :test #'equal))))
+      (is (equal "wm-focus-next" (cdr (assoc "s-j" table :test #'equal))))
+      (pine.repl.mode:bind "wm" "s-o" "wm-overview")
+      (is (equal "wm-overview"
+                 (cdr (assoc "s-o" (pine.app.compositor:bindings) :test #'equal)))
+          "a config binds a wm chord the way it binds any other"))))
+
+(test splitting-says-where-the-next-window-lands
+  (with-compositor
+    (told '(:window-added :id "a" :title "one" :app-id "probe"))
+    (pine.repl.command:run "wm-split-beside")
+    (told '(:window-added :id "b" :title "two" :app-id "probe"))
+    (let ((rects (pine.app.compositor:rects (pine.app.wm:current))))
+      (is (= 2 (length rects)))
+      (is (/= (second (first rects)) (second (second rects)))
+          "beside means they differ in x, not in y"))))

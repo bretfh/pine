@@ -83,6 +83,9 @@
                           :serial t
                           :components ((:file "server") (:file "attach") (:file "agent")
                                        (:file "control")))
+                 (:module "surface"
+                          :serial t :pathname "app/"
+                          :components ((:file "surface")))
                  (:module "editing"
                           :serial t :pathname "edit/"
                           :components ((:file "key") (:file "render")
@@ -90,7 +93,8 @@
                                        (:file "eval") (:file "session")))
                  (:module "app"
                           :serial t
-                          :components ((:file "surface") (:file "desktop") (:file "wm")))
+                          :components ((:file "desktop") (:file "wm")
+                                       (:file "compositor")))
                  (:file "frontend")
                  (:file "boot")
                  (:file "cli")))
@@ -128,7 +132,7 @@
                  (:module "app"
                           :serial t :pathname "wayland/app/"
                           :components ((:file "editor") (:file "keys")
-                                       (:file "desktop")))))
+                                       (:file "desktop") (:file "wm")))))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"

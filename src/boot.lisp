@@ -27,12 +27,13 @@
                     (#:parser #:pine.ts.parser)
                     (#:lisp #:pine.edit.eval)
                     (#:desktop #:pine.app.desktop) (#:surface #:pine.app.surface)
-                    (#:wmapp #:pine.app.wm) (#:css #:pine.ui.css))
+                    (#:wmapp #:pine.app.wm) (#:css #:pine.ui.css)
+                    (#:compositor #:pine.app.compositor))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
            #:user-package #:write-at #:read-at
-           #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri #:style
+           #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri #:compositor #:style
            #:frontend #:declare-frontends #:+frontends+))
 
 (in-package #:pine)
@@ -47,7 +48,7 @@
 
 (defparameter +user-surface+
   '((:pine "declare-frontends" "frontend" "start" "stop" "here" "spawn-agent"
-     "audio" "screen" "power" "network" "media" "procfs" "shell" "niri"
+     "audio" "screen" "power" "network" "media" "procfs" "shell" "niri" "compositor"
      "style")
     (:pine.repl.command "defcommand" "command" "command-named" "commands" "run")
     (:pine.repl.mode "mode" "minor" "bind" "handle" "setting" "modes")
@@ -55,6 +56,7 @@
     (:pine.fs.tree "at" "ensure" "place" "erase" "listing")
     (:pine.world.world "*world*" "root")
     (:pine.app.surface "surface" "defsurface" "show!" "hide!" "toggle!" "surfaces")
+    (:pine.edit.render "frame-tree")
     (:pine.ui.build "column" "row" "label" "icon" "button" "box" "center"
      "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
      "calendar" "image" "centerbox" "ring" "cells")
@@ -194,6 +196,7 @@
   (lisp:install)
   (desktop:install)
   (wmapp:install)
+  (compositor:install)
   (term:install)
   (esession:install)
   (%seed-syntax)
@@ -250,6 +253,8 @@
   (media:install (world:root world:*world*) :name name :player player))
 
 (defun niri (&optional (name "wm")) (wm:install (world:root world:*world*) name))
+
+(defun compositor () (compositor:pine-wm world:*world*))
 
 (defun style (selector props)
   (first (css:install (list (list selector props)))))

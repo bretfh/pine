@@ -20,10 +20,12 @@
 (defmethod print-object ((w window) stream)
   (print-unreadable-object (w stream :type t)
     (format stream "~a~@[ ~a~]" (node:name w)
-            (and (buffer-of w) (node:name (buffer-of w))))))
+            (let ((it (buffer-of w)))
+              (if (node:nodep it) (node:name it) it)))))
 
 (defmethod node:contents ((w window))
-  (and (buffer-of w) (node:name (buffer-of w))))
+  (let ((it (buffer-of w)))
+    (if (node:nodep it) (node:name it) it)))
 
 (defmethod node:persistp ((w window)) nil)
 

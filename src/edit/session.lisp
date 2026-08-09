@@ -4,6 +4,8 @@
                     (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine.ui.css) (#:wire #:pine.ui.wire)
+                    (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
+                    (#:surface #:pine.app.surface)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log))
   (:export #:session #:sessions #:install #:push-frame #:received
            #:cols #:rows #:generation #:client-of #:surface #:repaint))
@@ -27,9 +29,13 @@
 
 (defun %for (client) (d:at (c:held *sessions*) (attach:client-id client)))
 
-(defun surface () *surface*)
+(defun surface ()
+  (or (surface:surface-named *surface*)
+      (surface:surface *surface* (lambda () (render:frame-tree)) :as :toplevel)))
 
-(defun %tree (s) (render:frame-tree :cols (cols s) :rows (rows s)))
+(defun %tree (s)
+  (let ((render:*cols* (cols s)) (render:*rows* (rows s)))
+    (computed:recompute (surface))))
 
 (defun push-frame (s)
   (let ((tree (%tree s)))
@@ -38,7 +44,7 @@
       (attach:push-to (client-of s) :widgets
                       :surface *surface*
                       :tree (wire:node->wire tree)
-                      :as :toplevel
+                      :as (surface:as (surface))
                       :generation (generation s))
       (generation s))))
 
