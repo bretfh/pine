@@ -1,5 +1,5 @@
 .PHONY: foreign foreign-deps foreign-libs foreign-wayflan
-.PHONY: repl check test probe eval docs daemon editor
+.PHONY: repl check test probe eval docs daemon editor shot
 
 # Two ways to get what pine needs, and every target below works under either.
 # Guix is what pine develops against and what plain `make' uses. FOREIGN=1 is
@@ -45,6 +45,11 @@ daemon:
 # the editor: an xdg-shell window attached to the daemon. make daemon first.
 editor:
 	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine:run-app \"editor\")"'
+
+# the frame as PNGs, with no display and no daemon: /tmp/pine-rows.png is the
+# cell grid, /tmp/pine-window.png the pixel pass a wayland surface gets
+shot:
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine.cairo.shot:shot))" --eval "(terpri)"'
 
 # the fiveam suite. Exits nonzero on failure.
 test:

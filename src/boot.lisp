@@ -20,7 +20,8 @@
                     (#:load #:pine.run.log) (#:place #:pine.path.place)
                     (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
                     (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
-                    (#:media #:pine.provider.media) (#:esession #:pine.edit.session))
+                    (#:media #:pine.provider.media) (#:esession #:pine.edit.session)
+                    (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
@@ -148,6 +149,14 @@
                     :claims '((:files "*.lisp" "*.asd" "*.cl")))
   (mode:mode "shell" :settings '(:indicator "Shell")))
 
+(defun %seed-syntax ()
+  (let ((runtime (runtime:make-ts-runtime)))
+    (fault:attempt (lambda () (runtime:ensure-ts runtime)) "loading tree-sitter")
+    (when (runtime:ts-loaded-p runtime)
+      (setf render:*runtime* runtime)
+      (syntax:install world:*world*))
+    render:*runtime*))
+
 (defun start (&key (name "pine") store remoting)
   (setf world:*world* (world:make-world :name name)
         *supervisor* (super:supervisor))
@@ -173,6 +182,7 @@
   (edit:install)
   (term:install)
   (esession:install)
+  (%seed-syntax)
   (let ((scratch (buffer:make-buffer "scratch" :mode "lisp")))
     (setf (buffer:current) scratch)
     (window:seed! scratch))

@@ -8,10 +8,6 @@
     (unless library (return-from load-language-entry nil))
     (let ((lang (grammar-language-pointer library fn-name)))
       (when (and lang (not (cffi:null-pointer-p lang)))
-        (pine.run.log:note "loaded ~(~a~): language ~a abi ~a, set-language at ~a"
-                       language lang
-                       (ignore-errors (ts-language-version lang))
-                       (cffi:foreign-symbol-pointer "ts_parser_set_language"))
         (let ((parser (ts-parser-new)))
           (when (claim-language parser lang language)
             (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
