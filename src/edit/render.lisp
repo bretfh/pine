@@ -12,7 +12,7 @@
 
 (in-package #:pine.edit.render)
 
-(defparameter +candidates-shown+ 8)
+(defparameter +candidates-shown+ 12)
 (defvar *cols* 80)
 (defvar *rows* 24)
 
@@ -109,19 +109,25 @@
 (defun candidates-shown ()
   (let ((p (prompt:asking)))
     (when p
-      (let ((found (prompt:matching p)))
-        (subseq found 0 (min +candidates-shown+ (length found)))))))
+      (let* ((found (prompt:matching p))
+             (n (length found))
+             (from (pine.ui.wire:scroll-to-selection (prompt:chosen p) 0
+                                                     +candidates-shown+)))
+        (values (subseq found (min from n) (min (+ from +candidates-shown+) n))
+                from)))))
 
-(defun candidate-tree (found width)
-  (when found
-    (let ((chosen (prompt:chosen (prompt:asking))))
-      (apply #'build:column :align :stretch :class "candidates"
-             (loop :for each :in found
-                   :for i :from 0
-                   :collect (build:label (prompt:shows each width)
-                                         :face (if (= i chosen)
-                                                   :completion-selected
-                                                   :completion)))))))
+(defun %candidate-rows (found from width)
+  (let ((chosen (prompt:chosen (prompt:asking)))
+        (r (raster:make-raster (max 1 width) (max 1 (length found)))))
+    (loop :for each :in found
+          :for row :from 0
+          :for text := (prompt:shows each width)
+          :for face := (if (= (+ row from) chosen) :completion-selected :completion)
+          :do (loop :for col :from 0 :below width
+                    :do (raster:raster-put r row col
+                                           (if (< col (length text)) (char text col) #\space)
+                                           face)))
+    (cells:rows-of r)))
 
 (defun echo-tree (width &optional echo)
   (let* ((p (and (null echo) (prompt:asking)))
@@ -131,26 +137,27 @@
     (loop :for col :from 0 :below (min width (length text))
           :do (raster:raster-put r 0 col (char text col)
                                  (if (< col (length question)) :prompt :echo)))
-    (build:cells (cells:rows-of r) :class "echo"
-                 :crow (if p 0 -1)
-                 :ccol (if p
-                           (min (1- width)
-                                (+ (length question)
-                                   (buffer:point-col (prompt:answer-buffer))))
-                           -1))))
+    (multiple-value-bind (found from) (and p (candidates-shown))
+      (let ((rows (cells:rows-of r)))
+        (build:cells (if found
+                         (append (%candidate-rows found from width) rows)
+                         rows)
+                     :class "echo" :base 1
+                     :crow (if p 0 -1)
+                     :ccol (if p
+                               (min (1- width)
+                                    (+ (length question)
+                                       (buffer:point-col (prompt:answer-buffer))))
+                               -1))))))
 
 (defun frame-tree (&key (cols *cols*) (rows *rows*) echo)
   (let* ((windows (window:windows))
-         (found (candidates-shown))
-         (share (max 2 (floor (max 2 (- rows 1 (length found)))
-                              (max 1 (length windows))))))
+         (share (max 2 (floor (max 2 (1- rows)) (max 1 (length windows))))))
     (dolist (w windows)
       (setf (window:width-of w) (max 1 cols)
             (window:height-of w) (max 1 (1- share))))
     (apply #'build:column :align :stretch :class "editor"
            (append (mapcar #'window-tree windows)
-                   (let ((tree (candidate-tree found cols)))
-                     (when tree (list tree)))
                    (list (echo-tree cols echo))))))
 
 (defun rows (&key (width 80) (height 24) echo)

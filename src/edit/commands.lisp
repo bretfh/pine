@@ -31,23 +31,7 @@
              :name "editor"
              :package (or (find-package :pine.user) (find-package :cl-user))))))
 
-(defun %as-path (typed)
-  (let* ((typed (or typed ""))
-         (over (search "//" typed :from-end t))
-         (typed (if over (subseq typed (1+ over)) typed)))
-    (if (and (> (length typed) 1) (char= #\~ (char typed 0)))
-        (namestring (merge-pathnames (subseq typed 2) (user-homedir-pathname)))
-        typed)))
-
-(defun %files (typed)
-  (let* ((typed (%as-path typed))
-         (cut (position #\/ typed :from-end t))
-         (where (ignore-errors
-                 (uiop:directory-exists-p (if cut (subseq typed 0 (1+ cut)) "./")))))
-    (when where
-      (sort (mapcar #'namestring
-                    (append (uiop:subdirectories where) (uiop:directory-files where)))
-            #'string<))))
+(defun %as-path (typed) (prompt:expanded typed))
 
 (defun %commands ()
   (cmd:defcommand "forward-char" () (:describes "point one character on")
@@ -174,7 +158,7 @@
             (max 0 (- (buffer:point-line (%b)) (floor (window:height-of w) 2))))))
   (cmd:defcommand "eval-expression" (form)
       (:describes "read a form and evaluate it"
-       :asks '((:prompt "Eval: ")))
+       :asks '((:prompt "Eval: " :history :eval)))
     (let* ((s (%session))
            (e (session:evaluate s (session:read s (princ-to-string form)))))
       (if (session:fault e)
@@ -191,8 +175,7 @@
         (cmd:describes c))))
   (cmd:defcommand "find-file" (path)
       (:describes "open a file in a buffer"
-       :asks (list (list :prompt "Find file: " :category :file
-                         :initial (lambda () (namestring (uiop:getcwd))))))
+       :asks (list (list :prompt "Find file: " :category :file :history :files)))
     (let* ((path (%as-path (princ-to-string path)))
            (name (file-namestring (pathname path)))
            (b (or (buffer:buffer-named name) (buffer:make-buffer name))))
@@ -231,12 +214,18 @@
     (window:only! (window:focused))
     (mapcar #'node:name (window:windows)))
   (cmd:defcommand "run-command" () (:describes "run a command by name")
-    (prompt:ask "M-x " :category :command :must-match t
+    (prompt:ask "M-x " :category :command :must-match t :history :commands
                 :then (lambda (name)
                         (let ((c (cmd:command-named name)))
                           (if c (cmd:run c) (log:note "no command named ~a" name))))))
   (cmd:defcommand "answer" () (:describes "accept what is typed at the prompt")
-    (prompt:answer!))
+    (if (prompt:descends-p (prompt:asking))
+        (prompt:descend!)
+        (prompt:answer!)))
+  (cmd:defcommand "history-previous" () (:describes "what was answered here before")
+    (prompt:walk-history 1))
+  (cmd:defcommand "history-next" () (:describes "the answer after that one")
+    (prompt:walk-history -1))
   (cmd:defcommand "cancel" () (:describes "put the prompt away")
     (prompt:cancel!))
   (cmd:defcommand "complete" () (:describes "fill the prompt from the candidates")
@@ -277,7 +266,7 @@
   (prompt:source :mode
                  (lambda (typed) (declare (ignore typed))
                    (mapcar #'mode:name (mode:modes))))
-  (prompt:source :file #'%files))
+  (prompt:source :file (lambda (typed) (prompt:files typed))))
 
 (defun %modes ()
   (mode:mode "fundamental" :settings '(:indicator "Fund"))
@@ -322,7 +311,10 @@
   (mode:bind "text" "M-x" "run-command")
   (mode:bind "text" "C-s" "isearch-forward")
   (dolist (pair '(("RET" . "answer") ("C-g" . "cancel") ("TAB" . "complete")
-                  ("C-n" . "next-candidate") ("C-p" . "previous-candidate")))
+                  ("Return" . "answer") ("Escape" . "cancel") ("Tab" . "complete")
+                  ("C-n" . "next-candidate") ("C-p" . "previous-candidate")
+                  ("Down" . "next-candidate") ("Up" . "previous-candidate")
+                  ("M-p" . "history-previous") ("M-n" . "history-next")))
     (mode:bind "prompt" (car pair) (cdr pair))))
 
 (defun %asking (c)
@@ -330,6 +322,8 @@
          (initial (getf spec :initial)))
     (prompt:ask (or (getf spec :prompt) (format nil "~a: " (cmd:name c)))
                 :category (getf spec :category)
+                :history (getf spec :history)
+                :must-match (getf spec :must-match)
                 :initial (if (functionp initial) (funcall initial) initial)
                 :then (lambda (answer) (cmd:run c (list answer))))
     :asking))
