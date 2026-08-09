@@ -3,6 +3,7 @@
   (:shadow #:describe)
   (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:mount #:pine.fs.mount) (#:computed #:pine.fs.computed)
+                    (#:watch #:pine.fs.watch)
                     (#:world #:pine.world.world) (#:store #:pine.world.store)
                     (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:session #:pine.repl.session)
@@ -13,6 +14,7 @@
                     (#:edit #:pine.edit.commands) (#:key #:pine.edit.key)
                     (#:render #:pine.edit.render)
                     (#:net #:pine.net.server) (#:attach #:pine.net.attach)
+                    (#:control #:pine.net.control)
                     (#:agent #:pine.net.agent) (#:plisp #:pine.proc.lisp)
                     (#:sh #:pine.provider.sh) (#:env #:pine.provider.env)
                     (#:clock #:pine.provider.clock) (#:sys #:pine.provider.sys)
@@ -197,6 +199,7 @@
 
 (defun stop ()
   (parser:forget-all)
+  (watch:forget-all)
   (when *supervisor*
     (super:unwatch *supervisor*)
     (super:stop-all *supervisor*))
@@ -314,6 +317,10 @@
   (cmd:defcommand "clients" () (:describes "every frontend attached")
     (loop :for c :in (attach:clients)
           :collect (list (attach:client-kind c) (attach:client-id c))))
+  (control:serve *image* :on-quit (lambda ()
+                                    (task:spawn "quit"
+                                                (lambda () (sleep 0.2) (stop)
+                                                  (sb-ext:exit :abort t)))))
   (load-config config)
   (load:note "~a: remoting ~d, ~d command~:p, ~d running"
              (world:name world:*world*)

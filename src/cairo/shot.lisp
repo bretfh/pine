@@ -19,6 +19,7 @@
   (when text
     (setf (node:contents (buffer:current)) text)
     (buffer:goto! (buffer:current) 2 4))
+  (pine.ts.parser:wait (buffer:current))
   (buffer:current))
 
 (defun rows (&key (path "/tmp/pine-rows.png") (cols 84) (lines 24) (text *text*))

@@ -30,7 +30,8 @@
                  (:module "fs"
                           :serial t
                           :components ((:file "node") (:file "computed")
-                                       (:file "tree") (:file "mount")))
+                                       (:file "tree") (:file "mount")
+                                       (:file "watch")))
                  (:module "world"
                           :serial t
                           :components ((:file "world") (:file "store")))
@@ -79,14 +80,16 @@
                           :components ((:file "parser")))
                  (:module "net"
                           :serial t
-                          :components ((:file "server") (:file "attach") (:file "agent")))
+                          :components ((:file "server") (:file "attach") (:file "agent")
+                                       (:file "control")))
                  (:module "editing"
                           :serial t :pathname "edit/"
                           :components ((:file "key") (:file "render")
                                        (:file "term") (:file "commands")
                                        (:file "eval") (:file "session")))
                  (:file "frontend")
-                 (:file "boot")))
+                 (:file "boot")
+                 (:file "cli")))
 
 (asdf:defsystem #:pine/test
                 :depends-on (#:pine #:fiveam)
@@ -94,7 +97,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))
