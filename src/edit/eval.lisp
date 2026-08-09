@@ -14,6 +14,7 @@
 
 (defvar *went* (c:cell nil))
 (defparameter +kinds+ '(:function :macro :generic-function :variable :class))
+(defparameter +merged+ '(:references :complete))
 (defparameter +delimiters+ "
 ()'`,;\"")
 
@@ -167,8 +168,9 @@
               (t (format nil "~a is not defined" token)))))))
 
 (defun %answer (b verb &rest arguments)
-  (let ((fn (mode:handler b verb)))
-    (when fn (apply fn b arguments))))
+  (if (member verb +merged+)
+      (apply #'mode:merged b verb arguments)
+      (apply #'mode:claimed b verb arguments)))
 
 (defun went ()
   (let ((back (first (c:held *went*))))

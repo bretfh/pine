@@ -90,8 +90,8 @@
                           :serial t :pathname "edit/"
                           :components ((:file "key") (:file "render")
                                        (:file "term") (:file "commands")
-                                       (:file "motion") (:file "defaults")
-                                       (:file "eval")
+                                       (:file "motion") (:file "repl") (:file "debugger")
+                                       (:file "defaults") (:file "eval")
                                        (:file "session")))
                  (:module "app"
                           :serial t

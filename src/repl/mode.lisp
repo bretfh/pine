@@ -4,7 +4,8 @@
   (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:mode-for
            #:name #:parent #:indicator #:settings #:claims #:claimsp
            #:precedence #:chain #:setting #:handle #:handler #:claimants
-           #:bind #:binding #:in-force #:globp #:keys #:handlers))
+           #:bind #:binding #:in-force #:globp #:keys #:handlers
+           #:claimed #:merged))
 
 (in-package #:pine.repl.mode)
 
@@ -118,6 +119,19 @@
 
 (defgeneric handler (of verb)
   (:method (of verb) (first (claimants of verb))))
+
+(defun claimed (of verb &rest arguments)
+  "Offer VERB to every mode in force, nearest first, and answer the first that
+takes it. A handler that answers nil has not taken it, so the next mode sees it
+and finally whoever asked does it itself."
+  (loop :for fn :in (claimants of verb)
+        :for said := (apply fn of arguments)
+        :when said :do (return said)))
+
+(defun merged (of verb &rest arguments)
+  "What every mode in force says about VERB, appended."
+  (loop :for fn :in (claimants of verb)
+        :append (alexandria:ensure-list (apply fn of arguments))))
 
 (defgeneric binding (of chord)
   (:method (of chord)

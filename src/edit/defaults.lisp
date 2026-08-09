@@ -23,6 +23,20 @@
                    (mapcar #'mode:name (mode:modes))))
   (prompt:source :file (lambda (typed) (prompt:files typed))))
 
+(defun %indenting (b &rest arguments)
+  (declare (ignore arguments))
+  (buffer:newline! b)
+  (buffer:indent-line! b (buffer:point-line b)
+                       (pine.edit.render:indent-for b (buffer:point-line b)))
+  :indented)
+
+(defun %overwriting (b said)
+  (let ((line (buffer:point-line b)) (col (buffer:point-col b)))
+    (when (< col (length (buffer:line b line)))
+      (buffer:delete-region! b line col line (min (length (buffer:line b line))
+                                                  (+ col (length said))))))
+  nil)
+
 (defun %modes ()
   (mode:mode "fundamental" :settings '(:indicator "Fund"))
   (mode:mode "text" :settings '(:tab-width 8 :indicator "Text"))
@@ -33,7 +47,11 @@
   (mode:mode "pine" :parent "lisp"
                     :settings '(:indicator "Pine" :grammar :pine)
                     :claims '((:paths "*/pine/*.lisp")))
-  (mode:minor "prompt" :precedence 20))
+  (mode:minor "prompt" :precedence 20)
+  (mode:minor "overwrite" :precedence 10 :settings '(:indicator "Ovwrt"))
+  (mode:minor "list" :precedence 15)
+  (mode:handle "prog" :newline #'%indenting)
+  (mode:handle "overwrite" :insert #'%overwriting))
 
 (defun %keys ()
   (dolist (pair '(("C-f" . "forward-char") ("C-b" . "backward-char")

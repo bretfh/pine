@@ -107,10 +107,9 @@
            :pending)
           ((and (null (pending)) (self-insert-p k))
            (c:put *last* "self-insert")
-           (let ((b (buffer:current))
-                 (takes (mode:handler session :insert)))
-             (cond (takes (funcall takes b (key-sym k)))
-                   (b (buffer:insert! b (key-sym k))))
+           (let ((b (buffer:current)))
+             (unless (mode:claimed session :insert (key-sym k))
+               (when b (buffer:insert! b (key-sym k))))
              (when *on-insert* (funcall *on-insert* k))
              :inserted))
           (t
