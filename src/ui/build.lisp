@@ -2,7 +2,7 @@
   (:use #:cl #:pine.ui.node)
   (:shadow #:centerbox #:ring #:box #:center #:scroll #:slider #:calendar
            #:image #:cells #:stack)
-  (:export #:box #:button #:calendar #:cells #:centerbox #:center #:choice
+  (:export #:*asking* #:box #:button #:calendar #:cells #:centerbox #:center #:choice
            #:column #:gap #:icon #:image #:label #:ring #:row
            #:rows #:rule #:scroll #:slider #:grid #:stack
            #:field #:acting #:shown))
@@ -10,6 +10,7 @@
 (in-package #:pine.ui.build)
 
 (defvar *here* nil)
+(defvar *asking* nil)
 
 (defun %parse-args (args)
   "(values props nodes): peel the leading keyword/value prop pairs into a map,
@@ -28,10 +29,21 @@ the place it shows are one thing."
         ((null x) "")
         (t x)))
 
+(defun %writing (m)
+  "A write-map as a thunk: every place in it takes the value beside it, so a
+config can say what a click does without writing a closure."
+  (lambda ()
+    (pine.data:do-pairs (where value m)
+      (setf (pine.path.place:contents where) value))
+    t))
+
 (defun acting (click)
-  "What a :click does: a command path, a write-map, or a function."
+  "What a :click does: a function, a write-map, a path, or a command's name."
   (cond ((null click) nil)
         ((functionp click) click)
+        ((pine.data:mapp click) (%writing click))
+        ((pine.path.path:pathp click)
+         (lambda () (setf (pine.path.place:contents click) t)))
         (t (lambda () (pine.repl.command:run click)))))
 
 (defun %click (props)
@@ -42,13 +54,9 @@ the place it shows are one thing."
     (cond ((null thunk) nil)
           ((null ask) thunk)
           (t (lambda ()
-               (setf (pine.path.place:contents (pine.path.path:parse "/echo"))
-                     (list :prompt (format nil "~a (y or n) " ask)
-                           :then (lambda (answer)
-                                   (when (and (stringp answer)
-                                              (plusp (length answer))
-                                              (char-equal #\y (char answer 0)))
-                                     (funcall thunk))))))))))
+               (if *asking*
+                   (funcall *asking* ask thunk)
+                   (pine.run.log:note "~a: nothing here can ask" ask)))))))
 
 (defun %without (props &rest keys)
   "PROPS as initargs, with KEYS taken out: what a widget passes on after it has

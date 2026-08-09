@@ -119,7 +119,8 @@
         (:refresh (push-all s))
         (:hint
          (destructuring-bind (&key text) (rest message)
-           (setf (node:contents (pine.world.world:ensure pine.world.world:*world* "hint"))
+           (setf (node:contents (pine.world.world:ensure pine.world.world:*world*
+                                                        "echo" "hint"))
                  (or text ""))))
         (t nil)))))
 

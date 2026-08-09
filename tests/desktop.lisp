@@ -304,3 +304,46 @@
         (is-true push "the write the click made is what pushed the surface")
         (is (search "on" (princ-to-string (getf (rest push) :tree)))
             "and what it says is what the click made true")))))
+
+(test a-click-can-be-a-write-a-path-or-a-command
+  (with-desktop
+    (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
+      (setf (pine.fs.node:contents where) nil)
+      (let ((by-map (pine.ui.build:acting
+                     (pine.data:map (pine.path.path:parse "/probe") 41))))
+        (funcall by-map)
+        (is (eql 41 (pine.fs.node:contents where))
+            "a write-map is a click, so a config declares one without a closure"))
+      (let ((by-path (pine.ui.build:acting (pine.path.path:parse "/probe"))))
+        (funcall by-path)
+        (is (eq t (pine.fs.node:contents where))))
+      (let ((by-name (pine.ui.build:acting "pwd")))
+        (is (equal "/" (funcall by-name))
+            "a command's name is a click too")))))
+
+(test a-verb-is-applied-against-what-the-node-holds
+  (with-desktop
+    (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
+      (setf (pine.fs.node:contents where) nil)
+      (setf (pine.fs.node:contents where) (pine.data:seq :toggle))
+      (is (eq t (pine.fs.node:contents where)))
+      (setf (pine.fs.node:contents where) (pine.data:seq :toggle))
+      (is (null (pine.fs.node:contents where)))
+      (setf (pine.fs.node:contents where) (pine.data:seq :set 7))
+      (is (eql 7 (pine.fs.node:contents where)))
+      (setf (pine.fs.node:contents where) (pine.data:no-set))
+      (setf (pine.fs.node:contents where) (pine.data:seq :conj :probe))
+      (is-true (pine.data:contains (pine.fs.node:contents where) :probe)))))
+
+(test asking-before-a-dangerous-click-goes-through-the-prompt
+  (with-desktop
+    (let ((ran nil))
+      (let ((thunk (pine.ui.build::%click
+                    (list :on-click (lambda () (setf ran t)) :confirm "Really?"))))
+        (funcall thunk)
+        (is-true (pine.edit.prompt:asking-p) "it asked instead of acting")
+        (pine.edit.prompt:answer! "no")
+        (is-false ran)
+        (funcall thunk)
+        (pine.edit.prompt:answer! "yes")
+        (is-true ran)))))

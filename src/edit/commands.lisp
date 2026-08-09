@@ -334,7 +334,14 @@
                 :then (lambda (answer) (cmd:run c (list answer))))
     :asking))
 
+(defun %confirming (question thunk)
+  (prompt:ask (format nil "~a " question)
+              :candidates (list "yes" "no") :must-match t
+              :then (lambda (said) (when (equal "yes" said) (funcall thunk))))
+  :asking)
+
 (defun install ()
+  (setf pine.ui.build:*asking* #'%confirming)
   (%modes)
   (%commands)
   (%sources)
