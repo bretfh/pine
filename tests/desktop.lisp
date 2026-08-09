@@ -244,37 +244,63 @@
         (is (null (member "editor" surfaces :test #'equal))
             "a toplevel is the editor frontend's, not a layer surface")))))
 
-(test a-surface-that-reads-the-machine-is-repainted-without-being-invalidated
+(test a-provider-hands-out-the-same-node-every-time
   (with-desktop
     (pine:niri)
-    (pine.app.surface:surface
-     "live" (lambda () (pine.ui.build:label
-                        (princ-to-string (pine.fs.node:contents
-                                          (pine.fs.tree:at (pine.app.wm:root) "focused")))))
-     :as :bar)
-    (let ((s (pine.app.surface:surface-named "live")))
-      (pine.fs.node:contents s)
-      (is-true (pine.app.desktop:live-reader-p s)
-               "nothing writes a compositor, so nothing invalidates a surface reading one")
-      (pine.app.surface:surface "still" (lambda () (pine.ui.build:label "x")) :as :bar)
-      (let ((other (pine.app.surface:surface-named "still")))
-        (pine.fs.node:contents other)
-        (is-false (pine.app.desktop:live-reader-p other)
-                  "one that reads only the tree is repainted by the write instead")))))
+    (let ((wm (pine.app.wm:root)))
+      (is (eq (pine.fs.tree:at wm "focused") (pine.fs.tree:at wm "focused"))
+          "a surface can only depend on a child that is the same object twice")
+      (is (eq (first (pine.fs.node:nodes wm)) (first (pine.fs.node:nodes wm)))))))
 
-(test a-click-is-followed-by-a-fresh-tree
+(test stirring-a-provider-recomputes-what-read-it
   (with-desktop
-    (let ((client (make-instance 'probe-client))
-          (shown nil))
+    (pine:niri)
+    (let ((told 0)
+          (s (pine.app.surface:surface
+              "live"
+              (lambda () (pine.ui.build:label
+                          (princ-to-string
+                           (pine.fs.node:contents
+                            (pine.fs.tree:at (pine.app.wm:root) "focused")))))
+              :as :bar)))
+      (pine.fs.node:contents s)
+      (pine.fs.watch:watch s (lambda (of value) (declare (ignore of value)) (incf told)))
+      (pine.fs.node:stir (pine.app.wm:root))
+      (is (= 1 told)
+          "the compositor said it moved, so the bar that read it was pushed again"))))
+
+(test a-stream-says-a-provider-moved
+  (with-desktop
+    (let* ((root (pine.world.world:root pine.world.world:*world*))
+           (probe (pine.fs.tree:ensure root "probe"))
+           (told 0))
+      (declare (ignorable probe))
+      (let ((stream (pine.provider.sh:streaming
+                     "for i in 1 2 3; do echo tick; sleep 0.2; done")))
+        (is-true stream "a command that streams is a node under /sh")
+        (pine.fs.watch:watch stream
+                             (lambda (of said) (declare (ignore of said)) (incf told))
+                             :only nil :poll nil)
+        (loop :repeat 60 :until (>= told 2) :do (sleep 0.05))
+        (is (>= told 2) "each line the process said reached the tree")
+        (pine.provider.sh:quiet! stream)))))
+
+(test a-click-writes-and-the-write-is-what-pushes
+  (with-desktop
+    (let* ((client (make-instance 'probe-client))
+           (where (pine.world.world:ensure pine.world.world:*world* "probe")))
+      (setf (pine.fs.node:contents where) nil)
       (pine.app.surface:surface
        "probe"
-       (lambda () (pine.ui.build:button :on-click (lambda () (setf shown t))
-                                        (pine.ui.build:label (if shown "on" "off"))))
+       (lambda ()
+         (pine.ui.build:button
+          :on-click (lambda () (setf (pine.fs.node:contents where) t))
+          (pine.ui.build:label (if (pine.fs.node:contents where) "on" "off"))))
        :as :bar)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
       (pine.app.desktop:received client (list :widget-action :id 1 :args nil))
       (let ((push (find :widgets (sent client) :key #'first)))
-        (is-true push "the surface is pushed again after the click that changed it")
+        (is-true push "the write the click made is what pushed the surface")
         (is (search "on" (princ-to-string (getf (rest push) :tree)))
             "and what it says is what the click made true")))))

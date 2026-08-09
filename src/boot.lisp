@@ -22,7 +22,8 @@
                     (#:load #:pine.run.log) (#:place #:pine.path.place)
                     (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
                     (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
-                    (#:media #:pine.provider.media) (#:wm #:pine.provider.wm) (#:esession #:pine.edit.session)
+                    (#:media #:pine.provider.media) (#:wm #:pine.provider.wm)
+                    (#:live #:pine.provider.live) (#:esession #:pine.edit.session)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:parser #:pine.ts.parser)
                     (#:lisp #:pine.edit.eval)
@@ -213,7 +214,7 @@
   world:*world*)
 
 (defun stop ()
-  (desktop:rest!)
+  (live:leave-all)
   (parser:forget-all)
   (watch:forget-all)
   (when *supervisor*
@@ -247,16 +248,20 @@
 (defun frame (&key (width 80) (height 24))
   (mapcar #'car (render:rows :width width :height height)))
 
-(defun procfs () (sys:install (world:root world:*world*)))
+(defun procfs () (live:attend (sys:install (world:root world:*world*))))
 (defun shell () (sh:install (world:root world:*world*)))
-(defun audio (&optional (name "audio")) (audio:install (world:root world:*world*) name))
-(defun screen (&optional (name "screen")) (screen:install (world:root world:*world*) name))
-(defun power (&optional (name "power")) (power:install (world:root world:*world*) name))
-(defun network (&optional (name "net")) (net-p:install (world:root world:*world*) name))
+(defun audio (&optional (name "audio"))
+  (live:attend (audio:install (world:root world:*world*) name)))
+(defun screen (&optional (name "screen"))
+  (live:attend (screen:install (world:root world:*world*) name)))
+(defun power (&optional (name "power"))
+  (live:attend (power:install (world:root world:*world*) name)))
+(defun network (&optional (name "net"))
+  (live:attend (net-p:install (world:root world:*world*) name)))
 (defun media (&key (name "media") player)
-  (media:install (world:root world:*world*) :name name :player player))
+  (live:attend (media:install (world:root world:*world*) :name name :player player)))
 
-(defun niri (&optional (name "wm")) (wm:install (world:root world:*world*) name))
+(defun niri (&optional (name "wm")) (live:attend (wm:install (world:root world:*world*) name)))
 
 (defun compositor () (compositor:pine-wm world:*world*))
 

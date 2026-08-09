@@ -45,15 +45,21 @@
 
 (defun forget (ssid) (out:sh "nmcli connection delete ~s" ssid) t)
 
+(defun %kid (n name class &rest initargs)
+  (node:child n name
+              (lambda ()
+                (apply #'make-instance class :name (princ-to-string name)
+                       :parent n initargs))))
+
+(defmethod node:announces ((n net-node)) (list "nmcli monitor"))
+
 (defmethod node:nodes ((n net-node))
-  (append (loop :for name :in +readings+
-                :collect (make-instance 'reading-node :name name :parent n))
-          (list (make-instance 'wifi-node :name "wifi" :parent n))))
+  (append (loop :for name :in +readings+ :collect (%kid n name 'reading-node))
+          (list (%kid n "wifi" 'wifi-node))))
 
 (defmethod node:resolve ((n net-node) name)
-  (cond ((member name +readings+ :test #'equal)
-         (make-instance 'reading-node :name name :parent n))
-        ((equal name "wifi") (make-instance 'wifi-node :name "wifi" :parent n))))
+  (cond ((member name +readings+ :test #'equal) (%kid n name 'reading-node))
+        ((equal name "wifi") (%kid n "wifi" 'wifi-node))))
 
 (defmethod node:contents ((n net-node)) (connection))
 
@@ -61,11 +67,10 @@
   (if (equal "connection" (node:name n)) (connection) (online)))
 
 (defmethod node:nodes ((n wifi-node))
-  (loop :for (ssid . nil) :in (wifi)
-        :collect (make-instance 'network-node :name ssid :parent n)))
+  (loop :for (ssid . nil) :in (wifi) :collect (%kid n ssid 'network-node)))
 
 (defmethod node:resolve ((n wifi-node) name)
-  (make-instance 'network-node :name name :parent n))
+  (%kid n name 'network-node))
 
 (defmethod node:contents ((n wifi-node)) (mapcar #'first (wifi)))
 

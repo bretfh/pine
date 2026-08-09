@@ -102,13 +102,19 @@
         ((equal name "user") (user))
         ((equal name "host") (host))))
 
+(defun %kid (n name class &rest initargs)
+  (node:child n name
+              (lambda ()
+                (apply #'make-instance class :name (princ-to-string name)
+                       :parent n initargs))))
+
 (defmethod node:nodes ((n sys-node))
-  (loop :for name :in +parts+
-        :collect (make-instance 'reading-node :name name :parent n)))
+  (loop :for name :in +parts+ :collect (%kid n name 'reading-node)))
+
+(defmethod node:every-seconds ((n sys-node)) 3)
 
 (defmethod node:resolve ((n sys-node) name)
-  (when (member name +parts+ :test #'equal)
-    (make-instance 'reading-node :name name :parent n)))
+  (when (member name +parts+ :test #'equal) (%kid n name 'reading-node)))
 
 (defmethod node:contents ((n sys-node)) +parts+)
 (defmethod node:contents ((n reading-node)) (%reading (node:name n)))

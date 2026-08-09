@@ -1,11 +1,13 @@
 (defpackage #:pine.fs.node
   (:use #:cl)
   (:shadow #:describe)
-  (:local-nicknames (#:c #:pine.run.cell))
+  (:local-nicknames (#:c #:pine.run.cell) (#:d #:pine.data))
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
            #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
            #:dependents #:depend #:invalidate #:*reading* #:reading
-           #:node-named #:make-node #:full-name
+           #:node-named #:make-node #:full-name #:root-of
+           #:kept #:child #:children #:stir #:announces #:every-seconds
+           #:verb #:verbp #:verb-name #:verb-args
            #:slot-node #:object #:slot-of #:slots))
 
 (in-package #:pine.fs.node)
@@ -17,6 +19,7 @@
    (parent     :initarg :parent    :accessor parent     :initform nil)
    (describes  :initarg :describes :accessor describes  :initform nil)
    (under      :initform (c:cell nil) :reader under)
+   (kept       :initform (c:cell nil) :reader kept)
    (dependents :initform (c:cell nil) :reader dependents)))
 
 (defclass value-node (node)
@@ -82,6 +85,55 @@
   (when *reading* (pushnew node (cdr *reading*)))
   node)
 
+(defun child (n name builder)
+  (let ((name (princ-to-string name)))
+    (or (cdr (assoc name (c:held (kept n)) :test #'equal))
+        (let ((made (funcall builder)))
+          (cdr (assoc name
+                      (c:swap (kept n)
+                              (lambda (all)
+                                (if (assoc name all :test #'equal)
+                                    all
+                                    (acons name made all))))
+                      :test #'equal))))))
+
+(defun children (n) (mapcar #'cdr (c:held (kept n))))
+
+(defun root-of (n)
+  (loop :for at := n :then (parent at)
+        :while (parent at)
+        :finally (return at)))
+
+(defgeneric stir (node)
+  (:method ((n node))
+    (invalidate n)
+    (dolist (each (children n) n) (stir each))))
+
+(defgeneric announces (node)
+  (:method ((n node)) (declare (ignore n)) nil))
+
+(defgeneric every-seconds (node)
+  (:method ((n node)) (declare (ignore n)) nil))
+
+(defun verbp (value)
+  (and (d:seqp value) (plusp (d:size value)) (keywordp (d:at value 0))))
+
+(defun verb-name (value) (d:at value 0))
+
+(defun verb-args (value) (d:as :list (d:rest value)))
+
+(defgeneric verb (node name arguments)
+  (:method ((n node) name arguments)
+    (let ((held (contents n)))
+      (setf (contents n)
+            (case name
+              (:set    (cl:first arguments))
+              (:toggle (not held))
+              (:conj   (d:with (or held (d:no-set)) (cl:first arguments)))
+              (:disj   (d:without (or held (d:no-set)) (cl:first arguments)))
+              (:merge  (d:merged (or held (d:no-map)) (cl:first arguments)))
+              (t       (cl:first arguments)))))))
+
 (defgeneric depend (node on)
   (:method ((n node) (on node))
     (c:swap (dependents on) (lambda (all) (adjoin n all)))
@@ -100,6 +152,11 @@
 (defmethod contents :around ((n node))
   (reading n)
   (call-next-method))
+
+(defmethod (setf contents) :around (value (n node))
+  (if (verbp value)
+      (verb n (verb-name value) (verb-args value))
+      (call-next-method)))
 
 (defgeneric (setf contents) (value node)
   (:method (value (n node))

@@ -57,17 +57,22 @@
         ((equal name "position") (position-of))
         ((equal name "length") (length-of))))
 
+(defun %kid (n name class &rest initargs)
+  (node:child n name
+              (lambda ()
+                (apply #'make-instance class :name (princ-to-string name)
+                       :parent n initargs))))
+
+(defmethod node:announces ((n media-node))
+  (list (format nil "playerctl~@[ -p ~a~] --follow status" *player*)))
+
 (defmethod node:nodes ((n media-node))
-  (append (loop :for name :in +readings+
-                :collect (make-instance 'reading-node :name name :parent n))
-          (loop :for name :in +verbs+
-                :collect (make-instance 'verb-node :name name :parent n))))
+  (append (loop :for name :in +readings+ :collect (%kid n name 'reading-node))
+          (loop :for name :in +verbs+ :collect (%kid n name 'verb-node))))
 
 (defmethod node:resolve ((n media-node) name)
-  (cond ((member name +readings+ :test #'equal)
-         (make-instance 'reading-node :name name :parent n))
-        ((member name +verbs+ :test #'equal)
-         (make-instance 'verb-node :name name :parent n))))
+  (cond ((member name +readings+ :test #'equal) (%kid n name 'reading-node))
+        ((member name +verbs+ :test #'equal) (%kid n name 'verb-node))))
 
 (defmethod node:contents ((n media-node)) (status))
 (defmethod node:contents ((n reading-node)) (%reading (node:name n)))

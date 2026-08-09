@@ -52,17 +52,22 @@
       (apply #'out:sh (concatenate 'string "niri msg action " action) arguments)
       t)))
 
+(defun %kid (n name class)
+  (node:child n name
+              (lambda () (make-instance class :name (princ-to-string name) :parent n))))
+
+(defmethod node:announces ((n wm-node)) (list "niri msg --json event-stream"))
+
 (defmethod node:nodes ((n wm-node))
-  (list (make-instance 'workspaces-node :name "workspaces" :parent n)
-        (make-instance 'windows-node :name "windows" :parent n)
-        (make-instance 'focused-node :name "focused" :parent n)))
+  (list (%kid n "workspaces" 'workspaces-node)
+        (%kid n "windows" 'windows-node)
+        (%kid n "focused" 'focused-node)))
 
 (defmethod node:resolve ((n wm-node) name)
-  (cond ((equal name "workspaces") (make-instance 'workspaces-node :name name :parent n))
-        ((equal name "windows") (make-instance 'windows-node :name name :parent n))
-        ((equal name "focused") (make-instance 'focused-node :name name :parent n))
-        ((member name +verbs+ :test #'equal)
-         (make-instance 'verb-node :name name :parent n))))
+  (cond ((equal name "workspaces") (%kid n name 'workspaces-node))
+        ((equal name "windows") (%kid n name 'windows-node))
+        ((equal name "focused") (%kid n name 'focused-node))
+        ((member name +verbs+ :test #'equal) (%kid n name 'verb-node))))
 
 (defmethod node:contents ((n wm-node))
   (list :workspaces (length (workspaces))
@@ -71,12 +76,10 @@
 
 (defmethod node:nodes ((n workspaces-node))
   (loop :for w :in (workspaces)
-        :collect (make-instance 'workspace-node :parent n
-                                :name (princ-to-string (gethash "idx" w)))))
+        :collect (%kid n (princ-to-string (gethash "idx" w)) 'workspace-node)))
 
 (defmethod node:resolve ((n workspaces-node) name)
-  (when (%named (workspaces) "idx" name)
-    (make-instance 'workspace-node :name name :parent n)))
+  (when (%named (workspaces) "idx" name) (%kid n name 'workspace-node)))
 
 (defmethod node:contents ((n workspaces-node))
   (mapcar (lambda (w) (princ-to-string (gethash "idx" w))) (workspaces)))
@@ -94,12 +97,10 @@
 
 (defmethod node:nodes ((n windows-node))
   (loop :for w :in (windows)
-        :collect (make-instance 'window-node :parent n
-                                :name (princ-to-string (gethash "id" w)))))
+        :collect (%kid n (princ-to-string (gethash "id" w)) 'window-node)))
 
 (defmethod node:resolve ((n windows-node) name)
-  (when (%named (windows) "id" name)
-    (make-instance 'window-node :name name :parent n)))
+  (when (%named (windows) "id" name) (%kid n name 'window-node)))
 
 (defmethod node:contents ((n windows-node))
   (mapcar (lambda (w) (princ-to-string (gethash "id" w))) (windows)))

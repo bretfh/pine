@@ -51,15 +51,21 @@
   (out:sh "wpctl set-default ~a" id)
   id)
 
+(defun %kid (n name class &rest initargs)
+  (node:child n name
+              (lambda ()
+                (apply #'make-instance class :name (princ-to-string name)
+                       :parent n initargs))))
+
+(defmethod node:announces ((n audio-node)) (list "pactl subscribe"))
+
 (defmethod node:nodes ((n audio-node))
-  (append (loop :for name :in +leaves+
-                :collect (make-instance 'reading-node :name name :parent n))
-          (list (make-instance 'sinks-node :name "sinks" :parent n))))
+  (append (loop :for name :in +leaves+ :collect (%kid n name 'reading-node))
+          (list (%kid n "sinks" 'sinks-node))))
 
 (defmethod node:resolve ((n audio-node) name)
-  (cond ((member name +leaves+ :test #'equal)
-         (make-instance 'reading-node :name name :parent n))
-        ((equal name "sinks") (make-instance 'sinks-node :name "sinks" :parent n))))
+  (cond ((member name +leaves+ :test #'equal) (%kid n name 'reading-node))
+        ((equal name "sinks") (%kid n "sinks" 'sinks-node))))
 
 (defmethod node:contents ((n audio-node)) (volume))
 
@@ -78,11 +84,10 @@
 
 (defmethod node:nodes ((n sinks-node))
   (loop :for (id . text) :in (%sink-lines)
-        :collect (make-instance 'sink-node :name (princ-to-string id)
-                                           :parent n :id id)))
+        :collect (%kid n (princ-to-string id) 'sink-node :id id)))
 
 (defmethod node:resolve ((n sinks-node) name)
-  (make-instance 'sink-node :name name :parent n :id name))
+  (%kid n name 'sink-node :id name))
 
 (defmethod node:contents ((n sinks-node)) (sinks))
 

@@ -2,13 +2,16 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
                     (#:node #:pine.fs.node) (#:task #:pine.run.task))
-  (:export #:sh-node #:command-node #:install #:ran #:*kept* #:*environment-out*
-           #:output-of #:run-line #:launch))
+  (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
+           #:*environment-out* #:output-of #:run-line #:launch
+           #:streaming #:listen! #:quiet! #:listening #:said #:forget-all #:*sh*))
 
 (in-package #:pine.provider.sh)
 
 (defvar *kept* 100)
 (defvar *ran* (c:cell (d:no-seq)))
+(defvar *sh* nil)
+(defvar *lines-kept* 20)
 
 (defparameter *environment-out*
   '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
@@ -18,6 +21,11 @@
 
 (defclass command-node (node:node)
   ((line :initarg :line :reader line)))
+
+(defclass stream-node (node:node)
+  ((line :initarg :line :reader line)
+   (took :initform (c:cell nil) :reader took)
+   (said :initform (c:cell nil) :reader said)))
 
 (defun ran () (d:as :list (c:held *ran*)))
 
@@ -59,10 +67,64 @@
 
 (defmethod node:nodes ((n sh-node))
   (loop :for line :in (ran)
-        :collect (make-instance 'command-node :name line :parent n :line line)))
+        :collect (node:child n line
+                             (lambda ()
+                               (make-instance 'command-node :name line
+                                                            :parent n :line line)))))
 
 (defmethod node:resolve ((n sh-node) name)
-  (make-instance 'command-node :name name :parent n :line name))
+  (node:child n name
+              (lambda ()
+                (make-instance 'command-node :name name :parent n :line name))))
+
+(defun %reader (n process)
+  (task:spawn (format nil "sh ~a" (line n))
+              (lambda ()
+                (loop :with out := (uiop:process-info-output process)
+                      :for said := (handler-case (read-line out nil nil)
+                                     (stream-error () nil))
+                      :while said
+                      :do (c:swap (said n)
+                                  (lambda (all)
+                                    (let ((next (cons said all)))
+                                      (if (> (length next) *lines-kept*)
+                                          (subseq next 0 *lines-kept*)
+                                          next))))
+                         (node:invalidate n)))))
+
+(defun listening (n) (and (c:held (took n)) t))
+
+(defun listen! (n)
+  (unless (listening n)
+    (let ((process (uiop:launch-program (list "sh" "-c" (line n))
+                                        :output :stream :error-output nil)))
+      (c:put (took n) process)
+      (%reader n process)))
+  n)
+
+(defun quiet! (n)
+  (let ((process (c:held (took n))))
+    (when process
+      (ignore-errors (uiop:terminate-process process :urgent t))
+      (c:put (took n) nil)))
+  n)
+
+(defun streaming (line &optional (root *sh*))
+  (when root
+    (let ((n (node:child root (format nil "stream:~a" line)
+                         (lambda ()
+                           (make-instance 'stream-node :name line :parent root
+                                                       :line line)))))
+      (listen! n))))
+
+(defmethod node:contents ((n stream-node)) (first (c:held (said n))))
+(defmethod node:leafp ((n stream-node)) t)
+(defmethod node:persistp ((n stream-node)) nil)
+(defmethod node:livep ((n stream-node)) t)
+
+(defmethod (setf node:contents) (value (n stream-node))
+  (if value (listen! n) (quiet! n))
+  value)
 
 (defmethod node:contents ((n sh-node)) (ran))
 (defmethod node:contents ((n command-node)) (output-of (line n)))
@@ -78,6 +140,12 @@
 (defmethod node:livep ((n command-node)) t)
 
 (defun install (root)
-  (node:attach (make-instance 'sh-node :name "sh"
-                                       :describes "running something, and what it said")
-               root))
+  (setf *sh* (node:attach (make-instance 'sh-node :name "sh"
+                                                  :describes "running something, and what it said")
+                          root)))
+
+(defun forget-all ()
+  (when *sh*
+    (dolist (each (node:children *sh*))
+      (when (typep each 'stream-node) (quiet! each))))
+  t)

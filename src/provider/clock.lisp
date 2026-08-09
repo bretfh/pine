@@ -8,6 +8,7 @@
 
 (defvar *every* 1)
 (defvar *now* (c:cell 0))
+(defvar *clock* nil)
 
 (defparameter +parts+ '("second" "minute" "hour" "day" "month" "year" "weekday"))
 
@@ -16,9 +17,6 @@
 (defclass part-node (node:node) ())
 
 (defun now () (c:held *now*))
-
-(defun tick ()
-  (c:put *now* (get-universal-time)))
 
 (defun %part (name at)
   (multiple-value-bind (second minute hour day month year weekday)
@@ -31,13 +29,24 @@
           ((equal name "year") year)
           ((equal name "weekday") weekday))))
 
+(defun %part-node (n name)
+  (node:child n name
+              (lambda () (make-instance 'part-node :name name :parent n))))
+
+(defun tick ()
+  (let ((was (c:held *now*)))
+    (c:put *now* (get-universal-time))
+    (when (and *clock* was)
+      (dolist (name +parts+)
+        (unless (equal (%part name was) (%part name (now)))
+          (node:invalidate (%part-node *clock* name))))))
+  (now))
+
 (defmethod node:nodes ((n clock-node))
-  (loop :for name :in +parts+
-        :collect (make-instance 'part-node :name name :parent n)))
+  (loop :for name :in +parts+ :collect (%part-node n name)))
 
 (defmethod node:resolve ((n clock-node) name)
-  (when (member name +parts+ :test #'equal)
-    (make-instance 'part-node :name name :parent n)))
+  (when (member name +parts+ :test #'equal) (%part-node n name)))
 
 (defmethod node:contents ((n clock-node)) (now))
 (defmethod node:contents ((n part-node)) (%part (node:name n) (now)))
@@ -50,9 +59,9 @@
 
 (defun install (root &key supervisor)
   (tick)
-  (node:attach (make-instance 'clock-node :name "clock"
-                                          :describes "the time, as paths")
-               root)
+  (setf *clock* (node:attach (make-instance 'clock-node :name "clock"
+                                                        :describes "the time, as paths")
+                             root))
   (when supervisor
     (let ((p (make-instance 'process:thread-process
                             :name "clock" :every *every* :thunk #'tick)))

@@ -26,12 +26,17 @@
     (out:sh "brightnessctl --class=backlight set ~d%" (max 1 (min 100 percent)))
     percent))
 
+(defmethod node:every-seconds ((n screen-node)) 5)
+
+(defun %kid (n name)
+  (node:child n name
+              (lambda () (make-instance 'reading-node :name name :parent n))))
+
 (defmethod node:nodes ((n screen-node))
-  (list (make-instance 'reading-node :name "brightness" :parent n)))
+  (list (%kid n "brightness")))
 
 (defmethod node:resolve ((n screen-node) name)
-  (when (equal name "brightness")
-    (make-instance 'reading-node :name name :parent n)))
+  (when (equal name "brightness") (%kid n name)))
 
 (defmethod node:contents ((n screen-node)) (brightness))
 (defmethod node:contents ((n reading-node)) (brightness))

@@ -36,17 +36,21 @@
   (let ((line (cdr (assoc what +verbs+ :test #'equal))))
     (when line (out:sh "~a" line) t)))
 
+(defun %kid (n name class &rest initargs)
+  (node:child n name
+              (lambda ()
+                (apply #'make-instance class :name (princ-to-string name)
+                       :parent n initargs))))
+
+(defmethod node:every-seconds ((n power-node)) 10)
+
 (defmethod node:nodes ((n power-node))
-  (append (loop :for name :in +readings+
-                :collect (make-instance 'reading-node :name name :parent n))
-          (loop :for (name . nil) :in +verbs+
-                :collect (make-instance 'verb-node :name name :parent n))))
+  (append (loop :for name :in +readings+ :collect (%kid n name 'reading-node))
+          (loop :for (name . nil) :in +verbs+ :collect (%kid n name 'verb-node))))
 
 (defmethod node:resolve ((n power-node) name)
-  (cond ((member name +readings+ :test #'equal)
-         (make-instance 'reading-node :name name :parent n))
-        ((assoc name +verbs+ :test #'equal)
-         (make-instance 'verb-node :name name :parent n))))
+  (cond ((member name +readings+ :test #'equal) (%kid n name 'reading-node))
+        ((assoc name +verbs+ :test #'equal) (%kid n name 'verb-node))))
 
 (defmethod node:contents ((n power-node)) (battery))
 
