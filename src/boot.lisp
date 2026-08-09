@@ -25,7 +25,8 @@
                     (#:media #:pine.provider.media) (#:esession #:pine.edit.session)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:parser #:pine.ts.parser)
-                    (#:lisp #:pine.edit.eval))
+                    (#:lisp #:pine.edit.eval)
+                    (#:desktop #:pine.app.desktop) (#:surface #:pine.app.surface))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
@@ -51,6 +52,10 @@
     (:pine.fs.node "contents" "nodes" "name" "attach" "describes")
     (:pine.fs.tree "at" "ensure" "place" "erase" "listing")
     (:pine.world.world "*world*" "root")
+    (:pine.app.surface "surface" "defsurface" "show!" "hide!" "toggle!" "surfaces")
+    (:pine.ui.build "column" "row" "label" "icon" "button" "box" "center"
+     "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
+     "calendar" "image" "centerbox" "ring" "cells")
     (:pine.edit.prompt "ask")
     (:pine.run.log "note")
     (:pine.data "map" "seq" "set")))
@@ -185,6 +190,7 @@
     (mount:mount "/" root "file"))
   (edit:install)
   (lisp:install)
+  (desktop:install)
   (term:install)
   (esession:install)
   (%seed-syntax)

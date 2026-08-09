@@ -4,7 +4,7 @@
                     (#:tree #:pine.fs.tree) (#:world #:pine.world.world)
                     (#:mode #:pine.repl.mode) (#:text #:pine.edit.text)
                     (#:d #:pine.data) (#:history #:pine.edit.history))
-  (:export #:buffer #:slot-node #:make-buffer #:buffers #:buffer-named
+  (:export #:buffer #:make-buffer #:buffers #:buffer-named
            #:kill-buffer #:current #:current-buffer #:lines #:point #:mark
            #:mode-of #:minors-of #:file-of #:tick #:properties
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
@@ -18,21 +18,6 @@
 (in-package #:pine.edit.buffer)
 
 (defvar *current* nil)
-
-(defclass slot-node (node:node)
-  ((object  :initarg :object :reader object)
-   (slot-of :initarg :slot   :reader slot-of)))
-
-(defmethod node:contents ((n slot-node))
-  (slot-value (object n) (slot-of n)))
-
-(defmethod (setf node:contents) (value (n slot-node))
-  (setf (slot-value (object n) (slot-of n)) value)
-  (node:invalidate n)
-  value)
-
-(defmethod node:leafp ((n slot-node)) t)
-(defmethod node:persistp ((n slot-node)) t)
 
 (defclass buffer (node:node)
   ((lines      :initform (c:cell (text:lines-of "")) :reader lines)
@@ -77,10 +62,8 @@
   b)
 
 (defun %attach-slots (b)
-  (dolist (spec '(("point-line" point-line) ("point-col" point-col)
-                  ("mode" mode-of) ("file" file-of) ("tick" tick)))
-    (destructuring-bind (name slot) spec
-      (node:attach (make-instance 'slot-node :name name :object b :slot slot) b)))
+  (node:slots b b "point-line" 'point-line "point-col" 'point-col
+                  "mode" 'mode-of "file" 'file-of "tick" 'tick)
   b)
 
 (defun %buffers-node (&optional (w world:*world*))

@@ -5,18 +5,15 @@
 
 (in-package #:pine.fs.computed)
 
-(defvar +unread+ '#:unread)
+(defparameter +unread+ '#:unread)
 
 (defclass computed-node (node:node)
   ((thunk  :initarg :thunk :accessor thunk)
-   (cached :initform (c:cell nil) :reader cached)
+   (cached :initform (c:cell +unread+) :reader cached)
    (reads  :initform (c:cell nil) :accessor reads)))
 
 (defun computed (name thunk &rest initargs)
-  (let ((n (apply #'make-instance 'computed-node :name name :thunk thunk
-                  initargs)))
-    (c:put (cached n) +unread+)
-    n))
+  (apply #'make-instance 'computed-node :name name :thunk thunk initargs))
 
 (defun recompute (n)
   (let ((reading (cons :reading nil)))

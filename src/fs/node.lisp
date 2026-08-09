@@ -5,7 +5,8 @@
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
            #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
            #:dependents #:depend #:invalidate #:*reading* #:reading
-           #:node-named #:make-node #:full-name))
+           #:node-named #:make-node #:full-name
+           #:slot-node #:object #:slot-of #:slots))
 
 (in-package #:pine.fs.node)
 
@@ -20,6 +21,10 @@
 
 (defclass value-node (node)
   ((held :initform (c:cell nil) :reader held)))
+
+(defclass slot-node (node)
+  ((object  :initarg :object :reader object)
+   (slot-of :initarg :slot   :reader slot-of)))
 
 (defmethod print-object ((n node) stream)
   (print-unreadable-object (n stream :type t)
@@ -103,3 +108,20 @@
     (c:put (held n) value)
     (invalidate n)
     value))
+
+(defmethod contents ((n slot-node))
+  (slot-value (object n) (slot-of n)))
+
+(defmethod (setf contents) (value (n slot-node))
+  (setf (slot-value (object n) (slot-of n)) value)
+  (invalidate n)
+  value)
+
+(defmethod leafp ((n slot-node)) t)
+(defmethod persistp ((n slot-node)) t)
+
+(defun slots (of into &rest pairs)
+  (loop :for (name slot) :on pairs :by #'cddr
+        :collect (attach (make-instance 'slot-node :name (string-downcase (string name))
+                                                   :object of :slot slot)
+                         into)))
