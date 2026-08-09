@@ -5,7 +5,7 @@
                     (#:face #:pine.ui.face) (#:render #:pine.edit.render)
                     (#:buffer #:pine.edit.buffer) (#:world #:pine.world.world)
                     (#:node #:pine.fs.node))
-  (:export #:rows #:window #:surfaces #:shot #:*text*))
+  (:export #:rows #:window #:surfaces #:as-frontend #:shot #:*text*))
 
 (in-package #:pine.cairo.shot)
 
@@ -76,6 +76,35 @@
     (loop :for s :in (pine.app.surface:surfaces)
           :for shot := (ignore-errors (surface s :dir dir))
           :collect (or shot (list :failed (node:name s))))))
+
+(defun as-frontend (name &key (dir "/tmp") (width 900) (height 560)
+                             (config (pine:config-file)))
+  (unless world:*world* (pine:start))
+  (when config (pine:load-config config))
+  (let* ((s (pine.app.surface:surface-named name))
+         (wire (and s (let ((render:*cols* (max 1 (floor width 9)))
+                            (render:*rows* (max 2 (floor height 18))))
+                        (pine.ui.wire:node->wire
+                         (pine.fs.computed:recompute s)))))
+         (styles (pine.ui.css:styles))
+         (path (format nil "~a/pine-frontend-~a.png" dir name)))
+    (when wire
+      (setf world:*world* nil)
+      (pine.ui.css:install styles)
+      (let ((tree (pine.ui.wire:wire->node
+                   wire :on-action (lambda (id) (declare (ignore id))
+                                     (lambda (&rest a) (declare (ignore a)) nil)))))
+        (face:with-faces
+          (paint:with-cairo-layout
+            (let ((surface (cairo:create-image-surface :argb32 width height)))
+              (cairo:with-context ((cairo:create-context surface))
+                (cairo:set-source-rgba 0d0 0d0 0d0 0d0)
+                (cairo:paint)
+                (if (pine.ui.wire:arranged-p tree)
+                    (paint:paint-arranged tree)
+                    (paint:paint-tree tree width height)))
+              (cairo:surface-write-to-png surface path))))
+        (list :w width :h height :path path)))))
 
 (defun shot (&key (dir "/tmp") (text *text*))
   (list (rows :path (format nil "~a/pine-rows.png" dir) :text text)

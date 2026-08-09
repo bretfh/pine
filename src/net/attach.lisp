@@ -6,7 +6,8 @@
            #:run-frontend #:client #:client-id #:client-kind #:client-display
            #:client-uri #:client-session #:clients #:push-to
            #:listen-for-attach #:attach-to #:protocol #:acceptable
-           #:reap #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached))
+           #:reap #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached
+           #:attached-at))
 
 (in-package #:pine.net.attach)
 
@@ -73,36 +74,48 @@
 
 (defun attached-p (kind) (and (clients kind) t))
 
-(defun push-to (client &rest message)
-  (let ((to (client-display client)))
-    (when to (sento.actor:tell to message))
-    message))
+(defgeneric push-to (client &rest message)
+  (:method ((c client) &rest message)
+    (let ((to (client-display c)))
+      (when to (sento.actor:tell to message))
+      message)))
+
+(defun attached-at (uri)
+  (find uri *clients* :key #'client-uri :test #'equal))
 
 (defun %accept (s message display-uri)
   (destructuring-bind (&key kind version uri &allow-other-keys) (rest message)
-    (if (not (acceptable version))
-        (progn (sento.actor:tell
-                (sento.remoting:make-remote-ref (server:actor-system s) display-uri)
-                (list :refused :reason :version :version (protocol)))
-               nil)
-        (let* ((display (sento.remoting:make-remote-ref (server:actor-system s)
-                                                       display-uri))
-               (c (make-instance 'client :id (server:next-client-id s)
-                                         :kind kind :display display :uri uri)))
-          (push c *clients*)
-          (push c (server:clients s))
-          (fault:attempt (lambda () (attached kind c))
-                         (format nil "~(~a~) attaching" kind))
-          (sento.actor-context:actor-of (server:actor-system s)
-            :name (format nil "client-~d" (client-id c))
-            :dispatcher :pinned
-            :receive (lambda (m)
-                       (fault:attempt (lambda () (received kind c m))
-                                      (format nil "~(~a~) input" kind))))
-          (sento.actor:tell display (list :attached :id (client-id c)
-                                          :version (protocol)))
-          (log:note "~(~a~) attached as client ~d" kind (client-id c))
-          c))))
+    (let ((held (attached-at uri)))
+      (cond
+        ((not (acceptable version))
+         (sento.actor:tell
+          (sento.remoting:make-remote-ref (server:actor-system s) display-uri)
+          (list :refused :reason :version :version (protocol)))
+         nil)
+        (held
+         (sento.actor:tell (client-display held)
+                           (list :attached :id (client-id held)
+                                 :version (protocol)))
+         held)
+        (t
+         (let* ((display (sento.remoting:make-remote-ref (server:actor-system s)
+                                                         display-uri))
+                (c (make-instance 'client :id (server:next-client-id s)
+                                          :kind kind :display display :uri uri)))
+           (push c *clients*)
+           (push c (server:clients s))
+           (sento.actor-context:actor-of (server:actor-system s)
+             :name (format nil "client-~d" (client-id c))
+             :dispatcher :pinned
+             :receive (lambda (m)
+                        (fault:attempt (lambda () (received kind c m))
+                                       (format nil "~(~a~) input" kind))))
+           (sento.actor:tell display (list :attached :id (client-id c)
+                                           :version (protocol)))
+           (log:note "~(~a~) attached as client ~d" kind (client-id c))
+           (fault:attempt (lambda () (attached kind c))
+                          (format nil "~(~a~) attaching" kind))
+           c))))))
 
 (defun listen-for-attach (s)
   (sento.actor-context:actor-of (server:actor-system s)

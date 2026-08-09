@@ -204,3 +204,77 @@
       (is (= 2 (length rects)))
       (is (/= (second (first rects)) (second (second rects)))
           "beside means they differ in x, not in y"))))
+
+(defclass probe-client (pine.net.attach:client)
+  ((sent :initform nil :accessor sent))
+  (:default-initargs :id 99 :kind :desktop))
+
+(defmethod pine.net.attach:push-to ((c probe-client) &rest message)
+  (push (cons (first message) (rest message)) (sent c))
+  message)
+
+(test a-click-crosses-as-an-id-and-runs-the-thunk-it-stands-for
+  (with-desktop
+    (let ((client (make-instance 'probe-client))
+          (ran nil))
+      (pine.app.surface:surface
+       "probe"
+       (lambda () (pine.ui.build:button :on-click (lambda () (setf ran t))
+                                        (pine.ui.build:label "go")))
+       :as :bar)
+      (let ((s (pine.app.desktop::%attached client)))
+        (let* ((push (find :widgets (sent client) :key #'first))
+               (wire (getf (rest push) :tree)))
+          (is-true push "the surface was pushed")
+          (is (search "ACTION" (princ-to-string wire))
+              "a clickable node crosses the wire as an action with an id")
+          (pine.app.desktop:received client (list :widget-action :id 1 :args nil))
+          (is-true ran "the id the frontend sent back ran the thunk the daemon kept"))
+        (is-true s)))))
+
+(test the-editor-is-not-the-desktops-to-draw
+  (with-desktop
+    (pine.edit.session:surface)
+    (pine.app.surface:surface "bar" (lambda () (pine.ui.build:label "")) :as :bar)
+    (let ((client (make-instance 'probe-client)))
+      (pine.app.desktop::%attached client)
+      (let ((surfaces (loop :for (verb . message) :in (sent client)
+                            :when (eq :widgets verb) :collect (getf message :surface))))
+        (is (member "bar" surfaces :test #'equal))
+        (is (null (member "editor" surfaces :test #'equal))
+            "a toplevel is the editor frontend's, not a layer surface")))))
+
+(test a-surface-that-reads-the-machine-is-repainted-without-being-invalidated
+  (with-desktop
+    (pine:niri)
+    (pine.app.surface:surface
+     "live" (lambda () (pine.ui.build:label
+                        (princ-to-string (pine.fs.node:contents
+                                          (pine.fs.tree:at (pine.app.wm:root) "focused")))))
+     :as :bar)
+    (let ((s (pine.app.surface:surface-named "live")))
+      (pine.fs.node:contents s)
+      (is-true (pine.app.desktop:live-reader-p s)
+               "nothing writes a compositor, so nothing invalidates a surface reading one")
+      (pine.app.surface:surface "still" (lambda () (pine.ui.build:label "x")) :as :bar)
+      (let ((other (pine.app.surface:surface-named "still")))
+        (pine.fs.node:contents other)
+        (is-false (pine.app.desktop:live-reader-p other)
+                  "one that reads only the tree is repainted by the write instead")))))
+
+(test a-click-is-followed-by-a-fresh-tree
+  (with-desktop
+    (let ((client (make-instance 'probe-client))
+          (shown nil))
+      (pine.app.surface:surface
+       "probe"
+       (lambda () (pine.ui.build:button :on-click (lambda () (setf shown t))
+                                        (pine.ui.build:label (if shown "on" "off"))))
+       :as :bar)
+      (pine.app.desktop::%attached client)
+      (setf (sent client) nil)
+      (pine.app.desktop:received client (list :widget-action :id 1 :args nil))
+      (let ((push (find :widgets (sent client) :key #'first)))
+        (is-true push "the surface is pushed again after the click that changed it")
+        (is (search "on" (princ-to-string (getf (rest push) :tree)))
+            "and what it says is what the click made true")))))

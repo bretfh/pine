@@ -31,7 +31,7 @@
                     (#:compositor #:pine.app.compositor))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
-           #:daemon #:spawn-agent #:run-app #:load-config #:config-file
+           #:daemon #:quit #:spawn-agent #:run-app #:load-config #:config-file
            #:user-package #:write-at #:read-at
            #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri #:compositor #:style
            #:frontend #:declare-frontends #:+frontends+))
@@ -57,6 +57,9 @@
     (:pine.world.world "*world*" "root")
     (:pine.app.surface "surface" "defsurface" "show!" "hide!" "toggle!" "surfaces")
     (:pine.edit.render "frame-tree")
+    (:pine.ui.face "color" "metric")
+    (:pine.ui.css "css-glass" "css-rad" "css-mono")
+    (:pine.path.path "leaf")
     (:pine.ui.build "column" "row" "label" "icon" "button" "box" "center"
      "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
      "calendar" "image" "centerbox" "ring" "cells")
@@ -210,6 +213,7 @@
   world:*world*)
 
 (defun stop ()
+  (desktop:rest!)
   (parser:forget-all)
   (watch:forget-all)
   (when *supervisor*
@@ -243,7 +247,7 @@
 (defun frame (&key (width 80) (height 24))
   (mapcar #'car (render:rows :width width :height height)))
 
-(defun procfs () (sys:install (world:root world:*world*) "sys"))
+(defun procfs () (sys:install (world:root world:*world*)))
 (defun shell () (sh:install (world:root world:*world*)))
 (defun audio (&optional (name "audio")) (audio:install (world:root world:*world*) name))
 (defun screen (&optional (name "screen")) (screen:install (world:root world:*world*) name))
@@ -338,6 +342,16 @@
                        (format nil "starting the ~a frontend" verb)))))
   (mapcar #'process:name (super:processes *supervisor*)))
 
+(defun quit (&optional (grace 5))
+  (task:spawn "quit-watchdog"
+              (lambda () (sleep grace) (sb-ext:exit :abort t :code 0)))
+  (task:spawn "quit"
+              (lambda ()
+                (sleep 0.2)
+                (ignore-errors (stop))
+                (sb-ext:exit :abort t :code 0)))
+  t)
+
 (defun daemon (&key store (remoting net:*port*) (config (config-file)))
   (start :store store :remoting remoting)
   (cmd:defcommand "agents" () (:describes "every image attached to this one")
@@ -345,10 +359,7 @@
   (cmd:defcommand "clients" () (:describes "every frontend attached")
     (loop :for c :in (attach:clients)
           :collect (list (attach:client-kind c) (attach:client-id c))))
-  (control:serve *image* :on-quit (lambda ()
-                                    (task:spawn "quit"
-                                                (lambda () (sleep 0.2) (stop)
-                                                  (sb-ext:exit :abort t)))))
+  (control:serve *image* :on-quit #'quit)
   (load-config config)
   (load:note "~a: remoting ~d, ~d command~:p, ~d running"
              (world:name world:*world*)
