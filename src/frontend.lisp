@@ -3,13 +3,15 @@
   (:export #:pump #:make-pump #:close-pump #:pump-wake-in
            #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
            #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run
-           #:attach))
+           #:attach #:answering-p #:*watch*))
 
 (in-package #:pine.frontend)
 
 (defvar *attempts* 60)
 
 (defvar *interval* 2)
+
+(defvar *watch* 3)
 
 (defstruct (pump (:constructor %make-pump))
   "The queue between the daemon's threads and the frontend's own.
@@ -109,7 +111,32 @@ when it has none."
   (loop :repeat *attempts*
         :until (funcall ready)
         :do (pine.net.attach:attach-to sys daemon self :kind kind)
-            (sleep *interval*)))
+            (sleep *interval*))
+  (unless (funcall ready)
+    (format *error-output* "pine: no daemon after ~d tries, giving up~%" *attempts*)
+    (finish-output *error-output*)
+    (uiop:quit 0)))
+
+(defun answering-p (host port)
+  (let ((socket (ignore-errors (usocket:socket-connect host port :timeout 1))))
+    (when socket (usocket:socket-close socket) t)))
+
+(defun %watch-daemon (host port ready)
+  "A frontend outlives nothing: when the daemon it draws for is gone, so is it.
+Without this a killed daemon leaves its windows on the screen for good."
+  (bordeaux-threads:make-thread
+   (lambda ()
+     (loop :until (funcall ready) :do (sleep *interval*))
+     (loop :with missed := 0
+           :do (sleep *watch*)
+               (if (answering-p host port)
+                   (setf missed 0)
+                   (incf missed))
+               (when (>= missed 2)
+                 (format *error-output* "pine: the daemon is gone~%")
+                 (finish-output *error-output*)
+                 (uiop:quit 0))))
+   :name "pine daemon watch"))
 
 (defun attach (kind handler &key (host pine.net.server:*host*)
                                  (port pine.net.server:*port*)
@@ -131,4 +158,5 @@ when it has none."
        (lambda () (%keep-attaching sys daemon self kind
                                    (lambda () (pine.run.cell:held joined))))
        :name "pine attach")
+      (%watch-daemon host port (lambda () (pine.run.cell:held joined)))
       sys)))

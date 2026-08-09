@@ -56,11 +56,14 @@
                           (session:answered e))))))
 
 (defun %status ()
-  (list :ok (format nil "~a: remoting ~d, ~d command~:p, ~d watching"
+  (list :ok (format nil "~a: pid ~d, remoting ~d, ~d command~:p, ~d watching"
                     (world:name world:*world*)
+                    (sb-posix:getpid)
                     (and server:*server* (server:remoting-port server:*server*))
                     (length (cmd:commands))
                     (length (watch:watchers)))))
+
+(defun %pid () (list :ok (princ-to-string (sb-posix:getpid))))
 
 (defun %watch (where uri)
   (let ((n (at where))
@@ -102,6 +105,7 @@
          (:status  (%status))
          (:watch   (%watch (first arguments) (second arguments)))
          (:unwatch (%unwatch (first arguments)))
+         (:pid     (%pid))
          (:ping    (list :ok "pong"))
          (:quit    (log:note "asked to stop")
                    (when *on-quit* (funcall *on-quit*))

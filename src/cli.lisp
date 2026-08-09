@@ -101,10 +101,33 @@
         (format t "pine: ~:[did not come up~;running on ~d~]~%"
                 (running-p) server:*port*))))
 
+(defun %pid ()
+  (let ((answer (ask (list :pid))))
+    (when (and answer (eq :ok (first answer)))
+      (parse-integer (second answer) :junk-allowed t))))
+
+(defun %gone-p (&key (seconds 5))
+  (loop :repeat (round (/ seconds 0.2))
+        :unless (running-p) :do (return t)
+        :do (sleep 0.2)
+        :finally (return (not (running-p)))))
+
 (defun %stop ()
-  (if (running-p)
-      (%say (ask (list :quit)))
-      (format t "pine: not running~%")))
+  (cond
+    ((not (running-p)) (format t "pine: not running~%"))
+    (t
+     (let ((pid (%pid)))
+       (ask (list :quit))
+       (unless (%gone-p)
+         (when pid
+           (format t "pine: ~d did not stop, killing it~%" pid)
+           (ignore-errors (sb-posix:kill pid 15))
+           (unless (%gone-p :seconds 3)
+             (ignore-errors (sb-posix:kill pid 9))
+             (%gone-p :seconds 3))))
+       (if (running-p)
+           (format t "pine: still running on ~d~%" server:*port*)
+           (format t "stopped~%"))))))
 
 (defun main (&optional (arguments (rest sb-ext:*posix-argv*)))
   (quiet)
