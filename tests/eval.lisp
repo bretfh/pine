@@ -85,3 +85,46 @@
       (is (null (pine.repl.mode:handler (pine.repl.mode:mode-named "fundamental")
                                         :definition))
           "a mode that is not a lisp mode answers none of it"))))
+
+(def-suite* :pine.parser :in :pine)
+
+(test a-buffer-is-parsed-by-a-task-and-not-by-whoever-is-drawing
+  (with-lisp-buffer (:text "(defun f (x) x)")
+    (let ((p (pine.ts.parser:parser-for (pine.edit.buffer:current))))
+      (is-true p "lisp mode names a grammar, so the buffer has a parser")
+      (is (equal :commonlisp (pine.ts.parser:language-of p)))
+      (is-true (pine.run.task:task-named "parse scratch")
+               "the parse runs on its own task, off the typing thread"))))
+
+(test the-parse-catches-up-with-the-buffer-it-is-for
+  (with-lisp-buffer (:text "(defun f (x) x)")
+    (let ((b (pine.edit.buffer:current)))
+      (pine.ts.parser:wait b)
+      (is (eql (pine.edit.buffer:tick b)
+               (pine.run.cell:held
+                (pine.ts.parser:parsed (pine.ts.parser:parser-for b)))))
+      (pine.edit.buffer:goto! b 0 15)
+      (pine.edit.buffer:insert! b " ")
+      (pine.ts.parser:wait b)
+      (is (eql (pine.edit.buffer:tick b)
+               (pine.run.cell:held
+                (pine.ts.parser:parsed (pine.ts.parser:parser-for b))))
+          "an edit is followed by a re-parse, without anything asking for one"))))
+
+(test asking-for-highlights-never-waits-for-the-parser
+  (with-lisp-buffer (:text "(defun f (x) x)")
+    (let ((b (pine.edit.buffer:current)))
+      (pine.ts.parser:wait b)
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.edit.buffer:insert! b ";")
+      (let ((found (pine.edit.render:highlights-for b)))
+        (is (hash-table-p found)
+            "the frame is drawn from what the parser last said, stale or not")))))
+
+(test a-buffer-that-is-killed-takes-its-parser-with-it
+  (with-lisp-buffer (:text "(defun f (x) x)")
+    (pine.ts.parser:parser-for (pine.edit.buffer:current))
+    (is-true (pine.run.task:task-named "parse scratch"))
+    (pine.repl.command:run "kill-buffer" (list "scratch"))
+    (is (null (pine.ts.parser:parsers))
+        "the foreign parser is freed rather than left to the image")))

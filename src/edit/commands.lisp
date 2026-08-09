@@ -216,6 +216,7 @@
   (cmd:defcommand "kill-buffer" (name)
       (:describes "forget a buffer"
        :asks '((:prompt "Kill buffer: " :category :buffer :must-match t)))
+    (pine.ts.parser:forget (princ-to-string name))
     (and (buffer:kill-buffer name) t))
   (cmd:defcommand "split-window-below" () (:describes "two windows, one above the other")
     (window:split! (window:focused) :below)

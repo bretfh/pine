@@ -73,15 +73,18 @@
                  (:module "edit"
                           :serial t
                           :components ((:file "text") (:file "history") (:file "buffer")
-                                       (:file "window") (:file "prompt")
-                                       (:file "key") (:file "render")
-                                       (:file "term") (:file "commands") (:file "eval")))
+                                       (:file "window") (:file "prompt")))
+                 (:module "parser"
+                          :serial t :pathname "ts/"
+                          :components ((:file "parser")))
                  (:module "net"
                           :serial t
                           :components ((:file "server") (:file "attach") (:file "agent")))
-                 (:module "session"
+                 (:module "editing"
                           :serial t :pathname "edit/"
-                          :components ((:file "session")))
+                          :components ((:file "key") (:file "render")
+                                       (:file "term") (:file "commands")
+                                       (:file "eval") (:file "session")))
                  (:file "frontend")
                  (:file "boot")))
 

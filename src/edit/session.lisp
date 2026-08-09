@@ -1,12 +1,12 @@
 (defpackage #:pine.edit.session
   (:use #:cl)
   (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:attach #:pine.net.attach)
+                    (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine.ui.css) (#:wire #:pine.ui.wire)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log))
   (:export #:session #:sessions #:install #:push-frame #:received
-           #:cols #:rows #:generation #:client-of #:surface))
+           #:cols #:rows #:generation #:client-of #:surface #:repaint))
 
 (in-package #:pine.edit.session)
 
@@ -77,7 +77,12 @@
   (c:swap *sessions* (lambda (all) (d:without all (attach:client-id client))))
   client)
 
+(defun repaint (&optional b)
+  (declare (ignore b))
+  (dolist (s (sessions)) (fault:attempt (lambda () (push-frame s)) "a frame")))
+
 (defun install ()
+  (setf parser:*on-parse* #'repaint)
   (attach:app :editor
               (d:map :doc "the editor window: buffers, windows, the modeline"
                      :attached #'%attached

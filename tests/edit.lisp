@@ -208,11 +208,11 @@ there")
 
 (test a-lisp-buffer-renders-with-its-faces
   (with-editor (:text "(defun f (x) x)")
-    (setf pine.edit.render:*runtime* (pine.ts.runtime:make-ts-runtime))
-    (pine.ts.runtime:ensure-ts pine.edit.render:*runtime*)
+    (pine.ts.parser:wait (b))
     (let ((found (pine.edit.render:highlights-for (b))))
-      (is (consp found) "lisp mode names a grammar, so the buffer is parsed")
-      (is (find :keyword found :key #'fourth)))))
+      (is (plusp (hash-table-count found))
+          "lisp mode names a grammar, so the buffer is parsed")
+      (is (find :keyword (gethash 0 found) :key #'third)))))
 
 (test a-large-buffer-edits-by-sharing-what-it-did-not-touch
   (let* ((text (with-output-to-string (s)
@@ -275,8 +275,6 @@ three")
 (test a-line-in-lisp-indents-by-what-the-parse-says
   (with-editor (:text "(defun f (x)
 x)")
-    (setf pine.edit.render:*runtime* (pine.ts.runtime:make-ts-runtime))
-    (pine.ts.runtime:ensure-ts pine.edit.render:*runtime*)
     (unwind-protect
          (progn
            (is (eql 2 (pine.edit.render:indent-for (b) 1))
@@ -286,4 +284,4 @@ x)")
            (is (equal "  x)" (pine.edit.buffer:line (b) 1)))
            (is (eql 2 (pine.edit.buffer:point-col (b)))
                "point moved with the text it was sitting in"))
-      (pine.edit.render:forget-parse (b)))))
+      (pine.ts.parser:forget (b)))))

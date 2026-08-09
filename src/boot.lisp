@@ -22,6 +22,7 @@
                     (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
                     (#:media #:pine.provider.media) (#:esession #:pine.edit.session)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
+                    (#:parser #:pine.ts.parser)
                     (#:lisp #:pine.edit.eval))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
@@ -154,9 +155,9 @@
   (let ((runtime (runtime:make-ts-runtime)))
     (fault:attempt (lambda () (runtime:ensure-ts runtime)) "loading tree-sitter")
     (when (runtime:ts-loaded-p runtime)
-      (setf render:*runtime* runtime)
+      (setf parser:*runtime* runtime)
       (syntax:install world:*world*))
-    render:*runtime*))
+    parser:*runtime*))
 
 (defun start (&key (name "pine") store remoting)
   (setf world:*world* (world:make-world :name name)
@@ -195,6 +196,7 @@
   world:*world*)
 
 (defun stop ()
+  (parser:forget-all)
   (when *supervisor*
     (super:unwatch *supervisor*)
     (super:stop-all *supervisor*))
