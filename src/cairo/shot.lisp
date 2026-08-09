@@ -5,7 +5,7 @@
                     (#:face #:pine.ui.face) (#:render #:pine.edit.render)
                     (#:buffer #:pine.edit.buffer) (#:world #:pine.world.world)
                     (#:node #:pine.fs.node))
-  (:export #:rows #:window #:shot #:*text*))
+  (:export #:rows #:window #:surfaces #:shot #:*text*))
 
 (in-package #:pine.cairo.shot)
 
@@ -48,6 +48,34 @@
                               width height)))
         (cairo:surface-write-to-png surface path))))
   path)
+
+(defun %surface-size (as w h)
+  (case as
+    (:bar (values w 1080))
+    (:echo (values 1600 h))
+    (t (values w h))))
+
+(defun surface (s &key (dir "/tmp"))
+  (let ((path (format nil "~a/pine-~a.png" dir (node:name s)))
+        (tree (node:contents s)))
+    (paint:with-cairo-layout
+      (multiple-value-bind (mw mh) (paint:measure-tree tree 480)
+        (multiple-value-bind (w h) (%surface-size (pine.app.surface:as s) mw mh)
+          (let ((surface (cairo:create-image-surface :argb32 (max 1 w) (max 1 h))))
+            (cairo:with-context ((cairo:create-context surface))
+              (cairo:set-source-rgba 0d0 0d0 0d0 0d0)
+              (cairo:paint)
+              (paint:paint-tree tree w h))
+            (cairo:surface-write-to-png surface path)
+            (list :w w :h h :path path)))))))
+
+(defun surfaces (&key (dir "/tmp") (config (pine:config-file)))
+  (unless world:*world* (pine:start))
+  (when config (pine:load-config config))
+  (face:with-faces
+    (loop :for s :in (pine.app.surface:surfaces)
+          :for shot := (ignore-errors (surface s :dir dir))
+          :collect (or shot (list :failed (node:name s))))))
 
 (defun shot (&key (dir "/tmp") (text *text*))
   (list (rows :path (format nil "~a/pine-rows.png" dir) :text text)

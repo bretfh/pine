@@ -27,12 +27,12 @@
                     (#:parser #:pine.ts.parser)
                     (#:lisp #:pine.edit.eval)
                     (#:desktop #:pine.app.desktop) (#:surface #:pine.app.surface)
-                    (#:wmapp #:pine.app.wm))
+                    (#:wmapp #:pine.app.wm) (#:css #:pine.ui.css))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
            #:user-package #:write-at #:read-at
-           #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri
+           #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri #:style
            #:frontend #:declare-frontends #:+frontends+))
 
 (in-package #:pine)
@@ -47,7 +47,8 @@
 
 (defparameter +user-surface+
   '((:pine "declare-frontends" "frontend" "start" "stop" "here" "spawn-agent"
-     "audio" "screen" "power" "network" "media" "procfs" "shell" "niri")
+     "audio" "screen" "power" "network" "media" "procfs" "shell" "niri"
+     "style")
     (:pine.repl.command "defcommand" "command" "command-named" "commands" "run")
     (:pine.repl.mode "mode" "minor" "bind" "handle" "setting" "modes")
     (:pine.fs.node "contents" "nodes" "name" "attach" "describes")
@@ -250,11 +251,23 @@
 
 (defun niri (&optional (name "wm")) (wm:install (world:root world:*world*) name))
 
+(defun style (selector props)
+  (first (css:install (list (list selector props)))))
+
+(defun %place (where)
+  (cond ((node:nodep where) where)
+        ((stringp where) (tree:at (world:root world:*world*) where))
+        (t where)))
+
 (defun write-at (where value)
-  (setf (place:contents where) value))
+  (let ((it (%place where)))
+    (if (node:nodep it)
+        (setf (node:contents it) value)
+        (setf (place:contents it) value))))
 
 (defun read-at (where &optional default)
-  (let ((value (place:contents where)))
+  (let* ((it (%place where))
+         (value (if (node:nodep it) (node:contents it) (place:contents it))))
     (if (null value) default value)))
 
 (defun user-package ()
