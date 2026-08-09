@@ -128,3 +128,70 @@
     (pine.repl.command:run "kill-buffer" (list "scratch"))
     (is (null (pine.ts.parser:parsers))
         "the foreign parser is freed rather than left to the image")))
+
+(def-suite* :pine.motion :in :pine)
+
+(test the-arrows-move-point
+  (with-lisp-buffer (:text "one
+two")
+    (let ((b (pine.edit.buffer:current)))
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.edit.key:dispatch nil (pine.edit.key:parse-key "Right"))
+      (is (equal '(0 1) (pine.edit.buffer:point b)) "Right was unbound before")
+      (pine.edit.key:dispatch nil (pine.edit.key:parse-key "Down"))
+      (is (equal '(1 1) (pine.edit.buffer:point b)))
+      (pine.edit.key:dispatch nil (pine.edit.key:parse-key "Home"))
+      (is (equal '(1 0) (pine.edit.buffer:point b)))
+      (pine.edit.key:dispatch nil (pine.edit.key:parse-key "End"))
+      (is (equal '(1 3) (pine.edit.buffer:point b))))))
+
+(test a-count-says-how-many-times-and-is-spent-once
+  (with-lisp-buffer ()
+    (pine.edit.motion:reset!)
+    (is (eql 1 (pine.edit.motion:times)) "no count means once")
+    (pine.edit.key:dispatch nil (pine.edit.key:parse-key "C-u"))
+    (is (eql 4 (pine.edit.motion:times)) "C-u means four")
+    (is (eql 1 (pine.edit.motion:times)) "and it is spent")
+    (pine.edit.key:dispatch nil (pine.edit.key:parse-key "M-4"))
+    (pine.edit.key:dispatch nil (pine.edit.key:parse-key "M-2"))
+    (is (eql 42 (pine.edit.motion:times)) "the digits are the count")))
+
+(test point-moves-over-a-form-because-the-parse-says-where-it-ends
+  (with-lisp-buffer (:text "(defun f (x) x)
+(probe 1)")
+    (let ((b (pine.edit.buffer:current)))
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.ts.parser:wait b)
+      (is-true (pine.edit.motion:toward b :forward-sexp)
+               "the parse is there and nothing was asking it")
+      (pine.repl.command:run "forward-sexp")
+      (is (equal '(0 15) (pine.edit.buffer:point b))
+          "over the whole defun, not over a word")
+      (pine.edit.buffer:goto! b 1 3)
+      (pine.repl.command:run "beginning-of-defun")
+      (is (equal '(1 0) (pine.edit.buffer:point b))))))
+
+(test the-word-at-point-changes-case
+  (with-lisp-buffer (:text "hello there")
+    (let ((b (pine.edit.buffer:current)))
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.repl.command:run "upcase-word")
+      (is (equal "HELLO there" (pine.fs.node:contents b))))))
+
+(test a-line-is-commented-and-uncommented-by-what-the-mode-says
+  (with-lisp-buffer (:text "(probe)")
+    (let ((b (pine.edit.buffer:current)))
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.repl.command:run "comment-line")
+      (is (equal "; (probe)" (pine.fs.node:contents b)))
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.repl.command:run "comment-line")
+      (is (equal "(probe)" (pine.fs.node:contents b))))))
+
+(test help-goes-into-a-buffer-rather-than-the-echo-line
+  (with-lisp-buffer ()
+    (pine.repl.command:run "describe-bindings")
+    (let ((b (pine.edit.buffer:buffer-named "*help*")))
+      (is-true b "C-h b wrote a buffer")
+      (is (search "C-x C-f" (pine.fs.node:contents b)))
+      (is (search "find-file" (pine.fs.node:contents b))))))
