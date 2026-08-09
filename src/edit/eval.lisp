@@ -1,0 +1,306 @@
+(defpackage #:pine.edit.eval
+  (:use #:cl)
+  (:shadow #:documentation)
+  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+                    (#:session #:pine.repl.session) (#:node #:pine.fs.node)
+                    (#:buffer #:pine.edit.buffer) (#:prompt #:pine.edit.prompt)
+                    (#:log #:pine.run.log) (#:fault #:pine.run.fault)
+                    (#:c #:pine.run.cell))
+  (:export #:install #:token-at #:symbol-at #:package-of #:offset-of #:line-col
+           #:definition #:references #:complete #:arglist #:documentation
+           #:sexp-before #:defun-around #:visit #:went #:*went*))
+
+(in-package #:pine.edit.eval)
+
+(defvar *went* (c:cell nil))
+(defparameter +kinds+ '(:function :macro :generic-function :variable :class))
+(defparameter +delimiters+ "
+()'`,;\"")
+
+(defun delimiterp (ch) (find ch +delimiters+))
+
+(defun offset-of (b &optional (line (buffer:point-line b)) (col (buffer:point-col b)))
+  (let ((at 0))
+    (dotimes (i line)
+      (incf at (1+ (length (buffer:line b i)))))
+    (+ at col)))
+
+(defun line-col (text offset)
+  (let ((line 0) (col 0))
+    (dotimes (i (min offset (length text)) (values line col))
+      (if (char= #\Newline (char text i))
+          (setf line (1+ line) col 0)
+          (incf col)))))
+
+(defun token-at (text offset)
+  (let ((n (length text)))
+    (let ((from (min offset n)) (to (min offset n)))
+      (loop :while (and (plusp from) (not (delimiterp (char text (1- from)))))
+            :do (decf from))
+      (loop :while (and (< to n) (not (delimiterp (char text to))))
+            :do (incf to))
+      (when (< from to) (subseq text from to)))))
+
+(defun token-start (text offset)
+  (let ((from (min offset (length text))))
+    (loop :while (and (plusp from) (not (delimiterp (char text (1- from)))))
+          :do (decf from))
+    from))
+
+(defun package-of (b)
+  (let* ((text (buffer:text-of b))
+         (at (search "(in-package" text :from-end t)))
+    (or (and at
+             (ignore-errors
+              (let ((*package* (find-package :cl-user)))
+                (find-package
+                 (string (second (read-from-string text nil nil :start at)))))))
+        (find-package :pine.user)
+        (find-package :cl-user))))
+
+(defun symbol-at (b &optional of)
+  (let* ((text (buffer:text-of b))
+         (token (or of (token-at text (offset-of b)))))
+    (when token
+      (values (let ((*package* (package-of b)))
+                (ignore-errors (read-from-string token)))
+              token))))
+
+(defun %in-string-p (text at)
+  (let ((in nil) (escaped nil) (comment nil))
+    (dotimes (i (min at (length text)) in)
+      (let ((ch (char text i)))
+        (cond (escaped (setf escaped nil))
+              ((char= ch #\\) (setf escaped t))
+              (comment (when (char= ch #\Newline) (setf comment nil)))
+              ((char= ch #\") (setf in (not in)))
+              ((and (not in) (char= ch #\;)) (setf comment t)))))))
+
+(defun sexp-before (text offset)
+  (let ((at (min offset (length text))))
+    (loop :while (and (plusp at) (member (char text (1- at)) '(#\Space #\Tab #\Newline)))
+          :do (decf at))
+    (when (and (plusp at) (char= #\) (char text (1- at)))
+               (not (%in-string-p text (1- at))))
+      (let ((depth 0))
+        (loop :for i :downfrom (1- at) :to 0
+              :for ch := (char text i)
+              :do (unless (%in-string-p text i)
+                    (case ch
+                      (#\) (incf depth))
+                      (#\( (decf depth)
+                           (when (zerop depth)
+                             (return-from sexp-before (values i at)))))))))
+    (when (plusp at)
+      (let ((from (token-start text at)))
+        (when (< from at) (values from at))))))
+
+(defun defun-around (text offset)
+  (let ((at (min offset (length text))))
+    (let ((from (loop :for i :downfrom (min at (1- (length text))) :to 0
+                      :when (and (char= #\( (char text i))
+                                 (or (zerop i) (char= #\Newline (char text (1- i))))
+                                 (not (%in-string-p text i)))
+                        :do (return i))))
+      (when from
+        (let ((depth 0))
+          (loop :for i :from from :below (length text)
+                :for ch := (char text i)
+                :do (unless (%in-string-p text i)
+                      (case ch
+                        (#\( (incf depth))
+                        (#\) (decf depth)
+                             (when (zerop depth)
+                               (return-from defun-around (values from (1+ i)))))))))))))
+
+(defun %placed (source kind)
+  (let ((file (sb-introspect:definition-source-pathname source))
+        (at (sb-introspect:definition-source-character-offset source)))
+    (when (and file (probe-file file))
+      (multiple-value-bind (line col)
+          (if at
+              (line-col (ignore-errors (uiop:read-file-string file)) at)
+              (values 0 0))
+        (list (namestring file) line col kind)))))
+
+(defun definition (b &optional of)
+  (let ((s (symbol-at b of)))
+    (when (symbolp s)
+      (loop :for kind :in +kinds+
+            :append (loop :for source :in (ignore-errors
+                                           (sb-introspect:find-definition-sources-by-name
+                                            s kind))
+                          :for placed := (%placed source kind)
+                          :when placed :collect placed)))))
+
+(defun references (b &optional of)
+  (let ((s (symbol-at b of)))
+    (when (and s (symbolp s))
+      (loop :for (nil . source) :in (ignore-errors (sb-introspect:who-calls s))
+            :for placed := (%placed source :caller)
+            :when placed :collect placed))))
+
+(defun complete (b &optional (prefix ""))
+  (when (plusp (length prefix))
+    (let ((up (string-upcase prefix)) (out nil))
+      (do-symbols (s (package-of b))
+        (let ((name (string-downcase (symbol-name s))))
+          (when (and (>= (length name) (length prefix))
+                     (string-equal up name :end2 (length up)))
+            (pushnew name out :test #'string=))))
+      (sort out #'string<))))
+
+(defun arglist (b &optional of)
+  (multiple-value-bind (s token) (symbol-at b of)
+    (when (and s (symbolp s) (fboundp s))
+      (format nil "~(~a ~a~)" token
+              (or (ignore-errors (sb-introspect:function-lambda-list s)) "()")))))
+
+(defun documentation (b &optional of)
+  (multiple-value-bind (s token) (symbol-at b of)
+    (when (and s (symbolp s))
+      (let ((said (or (cl:documentation s 'function) (cl:documentation s 'variable)))
+            (args (arglist b of)))
+        (cond ((and args said) (format nil "~a  ~a" args said))
+              (args args)
+              (said (format nil "~a: ~a" token said))
+              (t (format nil "~a is not defined" token)))))))
+
+(defun %answer (b verb &rest arguments)
+  (let ((fn (mode:handler b verb)))
+    (when fn (apply fn b arguments))))
+
+(defun went ()
+  (let ((back (first (c:held *went*))))
+    (when back (c:swap *went* #'rest))
+    back))
+
+(defun %remember (b)
+  (c:swap *went* (lambda (all)
+                   (cons (list (node:name b) (buffer:point-line b)
+                               (buffer:point-col b))
+                         all))))
+
+(defun visit (place)
+  (destructuring-bind (file line col &optional kind) place
+    (declare (ignore kind))
+    (%remember (buffer:current))
+    (cmd:run "find-file" (list file))
+    (buffer:goto! (buffer:current) line col)
+    (log:note "~a:~d" (file-namestring file) (1+ line))
+    place))
+
+(defun %prefix-at (b)
+  (let* ((text (buffer:text-of b))
+         (at (offset-of b))
+         (from (token-start text at)))
+    (subseq text from (min at (length text)))))
+
+(defun %put-completion (b prefix choice)
+  (let ((line (buffer:point-line b)) (col (buffer:point-col b)))
+    (buffer:delete-region! b line (max 0 (- col (length prefix))) line col)
+    (buffer:insert! b choice)))
+
+(defun %evaluate (b text at)
+  (let* ((s (or session:*session*
+                (session:open-session :name (node:name b) :package (package-of b))))
+         (e (session:evaluate s (session:read s text))))
+    (declare (ignorable at))
+    (if (session:fault e)
+        (log:note "~a" (session:fault e))
+        (log:note "~{~s~^, ~}" (session:answered e)))
+    e))
+
+(defun %commands ()
+  (cmd:defcommand "find-definition" () (:describes "go to where what is at point is defined")
+    (let ((found (%answer (buffer:current) :definition)))
+      (if found
+          (visit (first found))
+          (log:note "no definition"))))
+  (cmd:defcommand "go-back" () (:describes "back to where the last jump started")
+    (let ((back (went)))
+      (when back
+        (destructuring-bind (name line col) back
+          (let ((b (buffer:buffer-named name)))
+            (when b
+              (setf (buffer:current) b)
+              (pine.edit.window:show! (pine.edit.window:focused) b)
+              (buffer:goto! b line col)))))))
+  (cmd:defcommand "find-references" () (:describes "every place that mentions what is at point")
+    (let ((found (%answer (buffer:current) :references)))
+      (cond ((null found) (log:note "no references"))
+            ((null (rest found)) (visit (first found)))
+            (t (prompt:ask "Reference: " :must-match t
+                           :candidates (mapcar (lambda (p)
+                                                 (cons (format nil "~a:~d"
+                                                               (file-namestring (first p))
+                                                               (1+ (second p)))
+                                                       (princ-to-string (fourth p))))
+                                               found)
+                           :then (lambda (said)
+                                   (let ((pick (find said found
+                                                     :test #'equal
+                                                     :key (lambda (p)
+                                                            (format nil "~a:~d"
+                                                                    (file-namestring (first p))
+                                                                    (1+ (second p)))))))
+                                     (when pick (visit pick)))))))))
+  (cmd:defcommand "complete-symbol" () (:describes "finish the name at point")
+    (let* ((b (buffer:current))
+           (prefix (%prefix-at b))
+           (found (and (plusp (length prefix)) (%answer b :complete prefix))))
+      (cond ((null found) (log:note "no completions"))
+            ((null (rest found)) (%put-completion b prefix (first found)))
+            (t (prompt:ask "Complete: " :must-match t :candidates found
+                           :then (lambda (choice)
+                                   (%put-completion b prefix choice)))))))
+  (cmd:defcommand "arglist" () (:describes "what the call at point takes")
+    (log:note "~a" (or (%answer (buffer:current) :arglist) "nothing at point takes arguments")))
+  (cmd:defcommand "describe-symbol" () (:describes "what the name at point is")
+    (log:note "~a" (or (%answer (buffer:current) :documentation) "")))
+  (cmd:defcommand "eval-last-expression" () (:describes "evaluate the form before point")
+    (let* ((b (buffer:current))
+           (text (buffer:text-of b)))
+      (multiple-value-bind (from to) (sexp-before text (offset-of b))
+        (if from
+            (%evaluate b (subseq text from to) to)
+            (log:note "no form before point")))))
+  (cmd:defcommand "eval-defun" () (:describes "evaluate the definition point is in")
+    (let* ((b (buffer:current))
+           (text (buffer:text-of b)))
+      (multiple-value-bind (from to) (defun-around text (offset-of b))
+        (if from
+            (%evaluate b (subseq text from to) to)
+            (log:note "point is in no definition")))))
+  (cmd:defcommand "eval-buffer" () (:describes "evaluate every form in this buffer")
+    (let* ((b (buffer:current))
+           (text (buffer:text-of b))
+           (n 0))
+      (fault:attempt
+       (lambda ()
+         (let ((*package* (package-of b)) (at 0))
+           (loop (multiple-value-bind (form next) (read-from-string text nil :eof :start at)
+                   (when (eq form :eof) (return))
+                   (eval form)
+                   (incf n)
+                   (setf at next)))))
+       (format nil "evaluating ~a" (node:name b)))
+      (log:note "~d form~:p" n)
+      n)))
+
+(defun install ()
+  (mode:handle "lisp" :definition #'definition)
+  (mode:handle "lisp" :references #'references)
+  (mode:handle "lisp" :complete #'complete)
+  (mode:handle "lisp" :arglist #'arglist)
+  (mode:handle "lisp" :documentation #'documentation)
+  (%commands)
+  (dolist (pair '(("M-." . "find-definition") ("M-," . "go-back")
+                  ("M-?" . "find-references") ("M-TAB" . "complete-symbol")
+                  ("C-M-i" . "complete-symbol")
+                  ("C-c C-a" . "arglist") ("C-c C-d" . "describe-symbol")
+                  ("C-x C-e" . "eval-last-expression")
+                  ("C-M-x" . "eval-defun")
+                  ("C-c C-k" . "eval-buffer")))
+    (mode:bind "prog" (car pair) (cdr pair)))
+  t)

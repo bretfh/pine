@@ -75,7 +75,7 @@
                           :components ((:file "text") (:file "history") (:file "buffer")
                                        (:file "window") (:file "prompt")
                                        (:file "key") (:file "render")
-                                       (:file "term") (:file "commands")))
+                                       (:file "term") (:file "commands") (:file "eval")))
                  (:module "net"
                           :serial t
                           :components ((:file "server") (:file "attach") (:file "agent")))
@@ -91,7 +91,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

@@ -21,7 +21,8 @@
                     (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
                     (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
                     (#:media #:pine.provider.media) (#:esession #:pine.edit.session)
-                    (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax))
+                    (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
+                    (#:lisp #:pine.edit.eval))
   (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
            #:describe #:commands-node #:command-node #:frame #:type!
            #:daemon #:spawn-agent #:run-app #:load-config #:config-file
@@ -180,6 +181,7 @@
     (clock:install root :supervisor *supervisor*)
     (mount:mount "/" root "file"))
   (edit:install)
+  (lisp:install)
   (term:install)
   (esession:install)
   (%seed-syntax)
