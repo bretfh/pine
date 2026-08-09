@@ -64,7 +64,8 @@
     (:pine.path.path "leaf")
     (:pine.ui.build "column" "row" "label" "icon" "button" "box" "center"
      "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
-     "calendar" "image" "centerbox" "ring" "cells")
+     "calendar" "image" "centerbox" "ring" "cells" "here" "acting")
+    (:pine.fs.node "stir" "child")
     (:pine.edit.prompt "ask")
     (:pine.run.log "note")
     (:pine.data "map" "seq" "set")))

@@ -2,7 +2,7 @@
   (:use #:cl #:pine.ui.node)
   (:shadow #:centerbox #:ring #:box #:center #:scroll #:slider #:calendar
            #:image #:cells #:stack)
-  (:export #:*asking* #:box #:button #:calendar #:cells #:centerbox #:center #:choice
+  (:export #:*asking* #:here #:box #:button #:calendar #:cells #:centerbox #:center #:choice
            #:column #:gap #:icon #:image #:label #:ring #:row
            #:rows #:rule #:scroll #:slider #:grid #:stack
            #:field #:acting #:shown))
@@ -21,6 +21,11 @@ then treat the rest as nodes, dropping nils and splicing lists."
                (setf props (append props (list key (pop rest))))))
     (values props
             (loop for c in rest when c append (if (listp c) c (list c))))))
+
+(defun here ()
+  "The path a row is being built for, inside ROWS. What a listing's row reads
+to say what it stands for."
+  *here*)
 
 (defun shown (x)
   "What a slot shows. A path in place of a value is read, so a widget slot and
