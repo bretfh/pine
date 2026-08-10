@@ -135,7 +135,10 @@
                  (:module "app"
                           :serial t :pathname "wayland/app/"
                           :components ((:file "editor") (:file "keys")
-                                       (:file "desktop") (:file "wm")))))
+                                       (:file "desktop")
+                                       (:file "chrome") (:file "chord")
+                                       (:file "state")
+                                       (:file "wm")))))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"

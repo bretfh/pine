@@ -2,7 +2,8 @@
 
 (def-suite* :pine.style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "edit" "provider" "net" "wayland" "cairo")
+(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "edit"
+                          "provider" "net" "app" "wayland" "wayland/app" "cairo")
   "The v2 modules. Each step adds its own; what is not here has not been ported.")
 
 (defparameter +line-limit+ 400)
@@ -19,12 +20,14 @@
           (directory (merge-pathnames "wayland/protocol/*.lisp" (%module-root)))))
 
 (defun %files ()
-  (append (list (merge-pathnames "boot.lisp" (%module-root))
-                (merge-pathnames "frontend.lisp" (%module-root)))
-          (loop :for module :in +modules+
-                :append (directory (merge-pathnames (format nil "~a/*.lisp" module)
-                                                    (%module-root))))
-          (%lang-files)))
+  (remove-if (lambda (f) (char= #\. (char (file-namestring f) 0)))
+             (append (list (merge-pathnames "boot.lisp" (%module-root))
+                           (merge-pathnames "frontend.lisp" (%module-root)))
+                     (loop :for module :in +modules+
+                           :append (directory
+                                    (merge-pathnames (format nil "~a/*.lisp" module)
+                                                     (%module-root))))
+                     (%lang-files))))
 
 (defun %lines (file)
   (with-open-file (in file)

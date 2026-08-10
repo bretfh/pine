@@ -9,6 +9,7 @@
 (in-package #:pine.app.surface)
 
 (defparameter +roles+ '(:bar :echo :panel :overlay :background :toplevel))
+(defvar *on-declare* nil)
 
 (defclass surface (computed:computed-node)
   ((as     :initarg :as    :accessor as     :initform :panel)
@@ -29,8 +30,6 @@
     (and (typep n 'surface) n)))
 
 (defun panelp (s) (member (as s) '(:panel :overlay)))
-
-(defvar *on-declare* nil)
 
 (defun surface-node (name builds &key (as :panel) (shown (not (member as '(:panel :overlay)))))
   (let ((s (make-instance 'surface :name (princ-to-string name) :thunk builds

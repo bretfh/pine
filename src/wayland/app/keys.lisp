@@ -8,16 +8,16 @@
 (defvar *ekb* (make-hash-table :test 'eq)
   "Editor to (list context keymap state).")
 
-(defun ekb (ed) (gethash ed *ekb*))
-
-(defun mod-active (state name)
-  (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
-
 (defparameter +modifier-keysyms+
   '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"
     "Meta_L" "Meta_R" "Super_L" "Super_R" "Hyper_L" "Hyper_R"
     "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
   "Keysyms that never arm key repeat: holding a bare modifier repeats nothing.")
+
+(defun ekb (ed) (gethash ed *ekb*))
+
+(defun mod-active (state name)
+  (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
 
 (defun modifier-key-p (msg)
   (member (getf (rest msg) :key-str) +modifier-keysyms+ :test #'string=))
