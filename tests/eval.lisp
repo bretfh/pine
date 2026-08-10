@@ -274,3 +274,46 @@ two")
       (pine.ts.parser:wait b)
       (is (null (pine.edit.buffer:edit-of b))
           "the parser takes the edit rather than applying it twice"))))
+
+(test a-fault-under-the-debugger-stands-there-holding-its-restarts
+  (with-lisp-buffer ()
+    (let ((took nil))
+      (pine.run.fault:with-debugger
+        (let ((worker (bordeaux-threads:make-thread
+                       (lambda ()
+                         (pine.run.fault:with-debugger
+                           (pine.run.fault:attempt
+                            (lambda ()
+                              (with-simple-restart (probe-on "carry on")
+                                (error "a probe"))
+                              (setf took :past-it))
+                            "a probe"))))))
+          (loop :repeat 200 :until (pine.run.fault:standing) :do (sleep 0.01))
+          (let ((f (first (pine.run.fault:standing))))
+            (is-true f "the thread is still standing in the fault")
+            (is (member "PROBE-ON" (pine.run.fault:offers f) :test #'equal)
+                "and what it offers is what is still there, not what unwound")
+            (pine.run.fault:resume f "PROBE-ON")
+            (loop :repeat 200 :while (bordeaux-threads:thread-alive-p worker) :do (sleep 0.01))
+            (is (eq :past-it took)
+                "taking the restart let the thread carry on from where it was")))))))
+
+(test the-debugger-buffer-takes-the-restart-for-you
+  (with-lisp-buffer ()
+    (let ((worker (bordeaux-threads:make-thread
+                   (lambda ()
+                     (pine.run.fault:with-debugger
+                       (pine.run.fault:attempt
+                        (lambda ()
+                          (with-simple-restart (probe-on "carry on")
+                            (error "a probe")))
+                        "a probe"))))))
+      (loop :repeat 200 :until (pine.run.fault:standing) :do (sleep 0.01))
+      (pine.repl.command:run "debugger")
+      (let ((b (pine.edit.buffer:buffer-named "*debugger*")))
+        (is-true b)
+        (is (search "PROBE-ON" (pine.fs.node:contents b))
+            "the restarts it lists are the live ones"))
+      (pine.repl.command:run "debugger-restart-0")
+      (loop :repeat 200 :while (bordeaux-threads:thread-alive-p worker) :do (sleep 0.01))
+      (is (null (pine.run.fault:standing)) "and the thread is gone"))))
