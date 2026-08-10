@@ -393,6 +393,8 @@ a test waits for the thread it did run on."
   (with-desktop
     (let* ((client (make-instance 'probe-client))
            (s (pine.edit.session::%attached client)))
+      (is-true (wait-until (lambda () (find :widgets (sent client) :key #'first)))
+               "the first frame is the whole tree")
       (setf (sent client) nil)
       (pine.edit.buffer:insert! (pine.edit.buffer:current) "x")
       (pine.edit.session:push-frame s)
@@ -433,3 +435,31 @@ a test waits for the thread it did run on."
         (is-true ran)
         (is (null (pine.run.task:task-named (pine.run.task:name tk)))
             "and the task it ran on is gone")))))
+
+(test a-slow-command-does-not-hold-up-the-loop-that-reads-keys
+  (with-desktop
+    (let* ((client (make-instance 'probe-client))
+           (s (pine.edit.session::%attached client))
+           (held (bordeaux-threads:make-semaphore)))
+      (is-true (wait-until (lambda () (find :widgets (sent client) :key #'first))))
+      (pine.repl.command:command "probe-slow"
+                                 (lambda ()
+                                   (bordeaux-threads:wait-on-semaphore held
+                                                                       :timeout 5))
+                                 :describes "waits")
+      (pine.repl.mode:bind "text" "C-c C-w" "probe-slow")
+      (unwind-protect
+           (let ((was (get-internal-real-time)))
+             (pine.edit.session:received client (list :key :key-str "c" :ctrl t))
+             (pine.edit.session:received client (list :key :key-str "w" :ctrl t))
+             (pine.edit.session:received client (list :key :key-str "x" :ctrl nil))
+             (is (< (- (get-internal-real-time) was)
+                    internal-time-units-per-second)
+                 "handing the keys over did not wait for the command")
+             (bordeaux-threads:signal-semaphore held)
+             (is-true (wait-until
+                       (lambda ()
+                         (search "x" (pine.fs.node:contents
+                                      (pine.edit.buffer:current)))))
+                      "and the keys behind it landed once it was done, in order"))
+        (pine.repl.command:forget "probe-slow")))))

@@ -281,7 +281,10 @@ there")
                     (dolist (ch '("h" "i"))
                       (pine.edit.session:received
                        c (list :key :key-str ch :ctrl nil :meta nil)))
-                    (is (equal "hi" (pine.fs.node:contents (pine.edit.buffer:current)))
-                        "a key from the wire did not reach the buffer")))
+                    (is-true (wait-until
+                              (lambda ()
+                                (equal "hi" (pine.fs.node:contents
+                                             (pine.edit.buffer:current)))))
+                             "a key from the wire did not reach the buffer")))
              (pine.net.server:stop-server client))))
     (pine:stop)))

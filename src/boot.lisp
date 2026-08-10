@@ -147,6 +147,9 @@
     (super:unwatch *supervisor*)
     (super:stop-all *supervisor*))
   (dolist (s (session:sessions)) (session:close s))
+  (dolist (c (copy-list (attach:clients))) (attach:reap c *image*))
+  (esession:close-all)
+  (desktop:close-all)
   (setf node:*on-write* nil)
   (when *store*
     (ignore-errors (store:snapshot world:*world* *store*))

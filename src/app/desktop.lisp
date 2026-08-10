@@ -7,6 +7,7 @@
                     (#:css #:pine.ui.css) (#:fault #:pine.run.fault)
                     (#:computed #:pine.fs.computed) (#:task #:pine.run.task))
   (:export #:session #:sessions #:install #:push-surface #:push-all #:received
+           #:close-all
            #:client-of #:acting #:mine-p #:upp #:repaint #:restyle #:declared #:*client*))
 
 (in-package #:pine.app.desktop)
@@ -121,6 +122,12 @@ like any other; without this it never reaches the screen."
     (when s (mapc #'watch:unwatch (watching s)))
     (c:swap *sessions* (lambda (all) (d:without all (attach:client-id client))))
     client))
+
+(defun close-all ()
+  "Let go of every attached frontend, and of what each was watching for."
+  (dolist (s (sessions)) (mapc #'watch:unwatch (watching s)))
+  (c:put *sessions* (d:no-map))
+  t)
 
 (defun received (client message)
   (let ((s (%for client)))
