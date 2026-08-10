@@ -19,6 +19,8 @@
   ((client-of  :initarg :client :reader client-of)
    (cols       :initform 80 :accessor cols)
    (rows       :initform 24 :accessor rows)
+   (sent       :initform nil :accessor sent)
+   (inbox      :initform nil :accessor inbox)
    (generation :initform 0  :accessor generation)))
 
 (defmethod print-object ((s session) stream)
@@ -37,16 +39,27 @@
   (let ((render:*cols* (cols s)) (render:*rows* (rows s)))
     (computed:recompute (surface))))
 
-(defun push-frame (s)
+(defun push-frame (s &key whole)
+  "The frame, as what changed since the last one where that can say it. A
+keystroke moves a line or two; shipping the whole tree for each of them is what
+made typing cost what it did."
   (let ((tree (%tree s)))
     (when tree
-      (incf (generation s))
-      (attach:push-to (client-of s) :widgets
-                      :surface *surface*
-                      :tree (wire:node->wire tree)
-                      :as (surface:as (surface))
-                      :generation (generation s))
-      (generation s))))
+      (let* ((form (wire:node->wire tree))
+             (patch (unless whole (wire:rows-patch (sent s) form))))
+        (incf (generation s))
+        (setf (sent s) form)
+        (if patch
+            (attach:push-to (client-of s) :rows-patch
+                            :surface *surface*
+                            :patch patch
+                            :generation (generation s))
+            (attach:push-to (client-of s) :widgets
+                            :surface *surface*
+                            :tree form
+                            :as (surface:as (surface))
+                            :generation (generation s)))
+        (generation s)))))
 
 (defun %key (message)
   (destructuring-bind (&key key-str ctrl meta shift super) (rest message)
@@ -61,19 +74,21 @@
          (destructuring-bind (&key cols rows &allow-other-keys) (rest message)
            (when (and cols rows)
              (setf (cols s) (max 1 cols) (rows s) (max 2 rows)))
-           (push-frame s)))
+           (setf (sent s) nil)
+           (push-frame s :whole t)))
         (:key
          (let ((k (%key message)))
            (when k
              (fault:attempt (lambda () (key:dispatch nil k)) "a key")
              (push-frame s))))
-        (:refresh (push-frame s))
+        (:refresh (setf (sent s) nil) (push-frame s :whole t))
         (t nil)))))
 
 (defun restyle (styles)
   (dolist (s (sessions))
     (attach:push-to (client-of s) :style :styles styles)
-    (push-frame s)))
+    (setf (sent s) nil)
+    (push-frame s :whole t)))
 
 (defun %attached (client)
   (let ((s (make-instance 'session :client client)))
@@ -82,7 +97,7 @@
     (let ((styles (css:styles)))
       (when styles (attach:push-to client :style :styles styles)))
     (log:note "editor attached as client ~d" (attach:client-id client))
-    (push-frame s)
+    (push-frame s :whole t)
     s))
 
 (defun %detached (client)

@@ -138,18 +138,26 @@ Answers the text and the column each character landed in."
                            -1))))
 
 (defun modeline (w)
-  (let ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch))))
-    (build:label
-     (format nil " ~:[  ~;**~] ~a  ~a~{ ~a~}  L~d C~d"
-             (buffer:modified b)
-             (node:name b)
-             (or (mode:setting (buffer:mode-of b) :indicator) (buffer:mode-of b))
-             (remove nil (mapcar (lambda (name)
-                                   (mode:setting (mode:mode-named name) :indicator))
-                                 (buffer:minors-of b)))
-             (1+ (buffer:point-line b))
-             (buffer:point-col b))
-     :class "modeline" :face :modeline)))
+  (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
+         (width (max 1 (window:width-of w)))
+         (text (format nil " ~:[  ~;**~] ~a  ~a~{ ~a~}  L~d C~d"
+                       (buffer:modified b)
+                       (node:name b)
+                       (or (mode:setting (buffer:mode-of b) :indicator)
+                           (buffer:mode-of b))
+                       (remove nil
+                               (mapcar (lambda (name)
+                                         (mode:setting (mode:mode-named name)
+                                                       :indicator))
+                                       (buffer:minors-of b)))
+                       (1+ (buffer:point-line b))
+                       (buffer:point-col b)))
+         (r (raster:make-raster width 1)))
+    (loop :for col :from 0 :below width
+          :do (raster:raster-put r 0 col
+                                 (if (< col (length text)) (char text col) #\space)
+                                 :modeline))
+    (build:cells (cells:rows-of r) :class "modeline")))
 
 (defun window-tree (w)
   (scroll-to-point w)

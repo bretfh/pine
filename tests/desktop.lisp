@@ -381,3 +381,20 @@
         (is-true (pine.edit.prompt:asking-p) "and asks rather than doing nothing")
         (pine.edit.prompt:answer! "now")
         (is (equal "now" (pine.fs.node:contents where)))))))
+
+(test a-keystroke-ships-the-lines-that-moved-and-not-the-whole-frame
+  (with-desktop
+    (let* ((client (make-instance 'probe-client))
+           (s (pine.edit.session::%attached client)))
+      (setf (sent client) nil)
+      (pine.edit.buffer:insert! (pine.edit.buffer:current) "x")
+      (pine.edit.session:push-frame s)
+      (let ((push (first (sent client))))
+        (is (eq :rows-patch (first push))
+            "the second frame is the lines that moved")
+        (is (< (length (princ-to-string push)) 600)
+            "which is a fraction of what the whole tree costs"))
+      (setf (sent client) nil)
+      (pine.edit.session:push-frame s :whole t)
+      (is (eq :widgets (first (first (sent client))))
+          "and a whole one is still there when it is asked for"))))
