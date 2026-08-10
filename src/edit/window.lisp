@@ -3,7 +3,7 @@
   (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:world #:pine.world.world) (#:buffer #:pine.edit.buffer))
   (:export #:window #:make-window #:windows #:window-named #:focused #:focus!
-           #:buffer-of #:scroll-of #:width-of #:height-of #:runs-of #:weight-of #:parts
+           #:buffer-of #:scroll-of #:hscroll-of #:width-of #:height-of #:runs-of #:weight-of #:parts
            #:splitp #:split! #:close! #:only! #:seed! #:show! #:follow))
 
 (in-package #:pine.edit.window)
@@ -13,6 +13,7 @@
 (defclass window (node:node)
   ((buffer-of :initarg :buffer :accessor buffer-of :initform nil)
    (scroll-of :initarg :scroll :accessor scroll-of :initform 0)
+   (hscroll-of :initarg :hscroll :accessor hscroll-of :initform 0)
    (width-of  :initarg :width  :accessor width-of  :initform 80)
    (height-of :initarg :height :accessor height-of :initform 24)
    (runs-of   :initarg :runs   :accessor runs-of   :initform nil)

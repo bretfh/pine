@@ -9,7 +9,7 @@
   (:export #:shown #:modelinep #:buffer-tree #:window-tree #:frame-tree
            #:rows #:modeline #:echo-tree
            #:shown-line #:shown-col
-           #:visible-lines #:scroll-to-point #:highlights-for #:indent-for
+           #:visible-lines #:scroll-to-point #:hscroll-to-point #:caret-col #:highlights-for #:indent-for
            #:*cols* #:*rows*))
 
 (in-package #:pine.edit.render)
@@ -60,7 +60,28 @@ something else."
     (setf (window:scroll-of w)
           (cond ((< line from) line)
                 ((>= line (+ from height)) (1+ (- line height)))
-                (t from)))))
+                (t from)))
+    (hscroll-to-point w)))
+
+(defun caret-col (b)
+  "The column point is drawn in: where it lands once tabs are expanded."
+  (multiple-value-bind (drawn where)
+      (shown-line (buffer:line b (buffer:point-line b))
+                  (max 1 (or (buffer:setting b :tab-width) 8)))
+    (declare (ignore drawn))
+    (shown-col where (buffer:point-col b))))
+
+(defun hscroll-to-point (w)
+  "Keep point in the window sideways too: a long line scrolls under it rather
+than putting the caret where the text is not."
+  (let* ((b (%buffer-of w))
+         (col (caret-col b))
+         (left (window:hscroll-of w))
+         (width (max 1 (window:width-of w))))
+    (setf (window:hscroll-of w)
+          (cond ((< col left) col)
+                ((>= col (+ left width)) (1+ (- col width)))
+                (t left)))))
 
 (defun highlights-for (b)
   (let ((found (make-hash-table :test 'eql)))
@@ -87,7 +108,7 @@ something else."
               (list line col at-line at-col)
               (list at-line at-col line col)))))))
 
-(defun %paint-region (r b from height width)
+(defun %paint-region (r b from height width &optional (left 0))
   (let ((span (%region-span b))
         (bg (face:face-bg :selection)))
     (when (and span bg)
@@ -96,8 +117,10 @@ something else."
           (loop :for line :from (max start-line from)
                   :to (min end-line (1- (+ from height)))
                 :do (loop :for col :from (if (= line start-line) start-col 0)
-                            :below (if (= line end-line) end-col width)
-                          :do (raster:raster-put-bg r (- line from) col br bg bb))))))))
+                            :below (if (= line end-line) end-col (+ left width))
+                          :when (>= col left)
+                            :do (raster:raster-put-bg r (- line from) (- col left)
+                                                      br bg bb))))))))
 
 (defun %at-col (where drawn)
   "Which character of the text is being drawn at this column."
@@ -130,6 +153,7 @@ one in a window beside a buffer."
 
 (defmethod shown ((b buffer:buffer) w)
   (let* ((from (window:scroll-of w))
+         (left (window:hscroll-of w))
          (width (max 1 (window:width-of w)))
          (height (max 1 (window:height-of w)))
          (highlights (highlights-for b))
@@ -140,13 +164,13 @@ one in a window beside a buffer."
           :for row :from 0
           :for line :from from
           :do (multiple-value-bind (drawn where) (shown-line text tab)
-                (loop :for col :from 0 :below (min width (length drawn))
-                      :do (raster:raster-put r row col (char drawn col)
+                (loop :for col :from left :below (min (+ left width) (length drawn))
+                      :do (raster:raster-put r row (- col left) (char drawn col)
                                              (%cell-face b highlights line
                                                          (%at-col where col))))
                 (let ((said (buffer:overlays-at b line)))
                   (when said
-                    (let ((at (min (1- width) (+ 2 (length drawn)))))
+                    (let ((at (min (1- width) (max 0 (- (+ 2 (length drawn)) left)))))
                       (loop :for props :in said
                             :for text := (getf props :after)
                             :do (loop :for i :from 0
@@ -155,17 +179,12 @@ one in a window beside a buffer."
                                                              (char text i)
                                                              (or (getf props :face)
                                                                  :comment)))))))))
-    (%paint-region r b from height width)
+    (%paint-region r b from height width left)
     (build:cells (cells:rows-of r)
                  :class "editor-view" :expand 1
                  :crow (if caret (min (1- height) (max 0 (- (buffer:point-line b) from))) -1)
                  :ccol (if caret
-                           (min (1- width)
-                                (multiple-value-bind (drawn where)
-                                    (shown-line (buffer:line b (buffer:point-line b))
-                                                (max 1 (or (buffer:setting b :tab-width) 8)))
-                                  (declare (ignore drawn))
-                                  (shown-col where (buffer:point-col b))))
+                           (min (1- width) (max 0 (- (caret-col b) left)))
                            -1))))
 
 (defun buffer-tree (w)
