@@ -16,18 +16,29 @@
       (pine.proc.process:stop p))))
 
 (test a-thread-is-a-process-like-anything-else
-  (let* ((n (pine.data:box 0))
-         (p (make-instance 'pine.proc.process:thread-process
-                           :name "probe-thread" :every 0.01
-                           :thunk (lambda () (pine.data:swap! n #'1+)))))
-    (unwind-protect
-         (progn
-           (pine.proc.process:start p)
-           (is-true (pine.proc.process:alivep p))
-           (is-true (wait-until (lambda () (> (pine.data:held n) 2)))))
-      (pine.proc.process:stop p))
-    (is (eq :stopped (pine.proc.process:state p)))
-    (is-false (pine.proc.process:alivep p))))
+  "One that repeats is an entry on the image's clock, not a thread of its own
+sleeping in a loop."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let* ((n (pine.data:box 0))
+                (p (make-instance 'pine.proc.process:thread-process
+                                  :name "probe-thread" :every 0.1
+                                  :thunk (lambda () (pine.data:swap! n #'1+)))))
+           (unwind-protect
+                (progn
+                  (pine.proc.process:start p)
+                  (is-true (pine.proc.process:alivep p))
+                  (is (member "probe-thread" (pine.run.timer:names) :test #'equal)
+                      "it is on the clock")
+                  (is (null (pine.run.task:task-named "probe-thread"))
+                      "and it took no thread of its own")
+                  (is-true (wait-until (lambda () (> (pine.data:held n) 2)))))
+             (pine.proc.process:stop p))
+           (is (eq :stopped (pine.proc.process:state p)))
+           (is-false (pine.proc.process:alivep p))
+           (is (null (member "probe-thread" (pine.run.timer:names) :test #'equal)))))
+    (pine:stop)))
 
 (test what-dies-is-started-again-and-the-backoff-grows
   (let* ((s (pine.proc.supervisor:supervisor))
@@ -59,14 +70,20 @@
            (is (eql 1 (pine.proc.process:attempts p))))
       (pine.proc.supervisor:forget s "probe-once"))))
 
-(test the-supervisor-is-told-by-a-process-of-its-own
-  (let ((s (pine.proc.supervisor:supervisor)))
-    (unwind-protect
-         (progn
-           (pine.proc.supervisor:watch s :every 0.02)
-           (is-true (pine.run.task:alivep (pine.proc.supervisor:attends s))))
-      (pine.proc.supervisor:unwatch s))
-    (is (null (pine.proc.supervisor:attends s)))))
+(test the-supervisor-is-told-by-the-images-clock
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((s (pine.proc.supervisor:supervisor)))
+           (unwind-protect
+                (progn
+                  (pine.proc.supervisor:watch s :every 0.1)
+                  (is (member :supervisor (pine.run.timer:names))
+                      "attending is a tick, not a thread"))
+             (pine.proc.supervisor:unwatch s))
+           (is (null (pine.proc.supervisor:attends s)))
+           (is (null (member :supervisor (pine.run.timer:names))))))
+    (pine:stop)))
 
 (test a-lisp-process-is-a-second-image-evaluated-in
   "An agent was always a process. This is the one that can be evaluated in."

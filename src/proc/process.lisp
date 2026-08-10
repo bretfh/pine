@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.process
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:task #:pine.run.task))
+  (:local-nicknames (#:d #:pine.data) (#:task #:pine.run.task) (#:timer #:pine.run.timer))
   (:export #:process #:program #:thread-process #:name #:state #:attempts
            #:restarts-p #:backoff #:start #:stop #:alivep #:said #:emit
            #:took #:exit-of #:fault #:*out-kept* #:argv #:env #:thunk #:every-seconds))
@@ -88,19 +88,23 @@
 
 (defmethod alivep ((p thread-process))
   (let ((it (took p)))
-    (and it (task:alivep it))))
+    (cond ((every-seconds p) (and (member it (timer:names) :test #'equal) t))
+          (it (task:alivep it))
+          (t nil))))
 
 (defmethod start ((p thread-process))
   (setf (took p)
         (if (every-seconds p)
-            (task:each (name p) (every-seconds p) (thunk p))
+            (timer:every-seconds (every-seconds p) (thunk p)
+                                 :as (name p) :what (name p))
             (task:spawn (name p) (thunk p))))
   p)
 
 (defmethod stop ((p thread-process))
   (let ((it (took p)))
     (when it
-      (task:stop it)
-      (task:join it :timeout 2)
-      (setf (fault p) (task:fault it))))
+      (cond ((every-seconds p) (timer:cancel it))
+            (t (task:stop it)
+               (task:join it :timeout 2)
+               (setf (fault p) (task:fault it))))))
   p)

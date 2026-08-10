@@ -47,16 +47,26 @@ comes out short is the whole reason locks are usually reached for."
     (is-true (wait-until (lambda () (not (pine.run.task:alivep tk)))))
     (is (typep (pine.run.task:fault tk) 'error))))
 
-(test a-task-that-repeats-stops-when-it-is-told
-  (let* ((n (pine.data:box 0))
-         (tk (pine.run.task:each "probe-tick" 0.01
-                                 (lambda () (pine.data:swap! n #'1+)))))
-    (is-true (wait-until (lambda () (> (pine.data:held n) 3))))
-    (pine.run.task:stop tk)
-    (is-true (pine.run.task:join tk))
-    (let ((stopped (pine.data:held n)))
-      (sleep 0.1)
-      (is (eql stopped (pine.data:held n))))))
+(test what-repeats-runs-on-the-images-one-clock
+  "Nothing sleeps in a loop to repeat: the wheel timer the actor system already
+carries is what says when, and a tick runs on a worker rather than on it."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((n (pine.data:box 0))
+               (threads (length (pine.run.task:tasks))))
+           (pine.run.timer:every-seconds 0.05 (lambda () (pine.data:swap! n #'1+))
+                                         :as :probe-tick)
+           (is (member :probe-tick (pine.run.timer:names)))
+           (is-true (wait-until (lambda () (> (pine.data:held n) 3))))
+           (is (eql threads (length (pine.run.task:tasks)))
+               "and it took no thread of its own")
+           (pine.run.timer:cancel :probe-tick)
+           (let ((stopped (pine.data:held n)))
+             (sleep 0.3)
+             (is (<= (- (pine.data:held n) stopped) 1)))
+           (is (null (member :probe-tick (pine.run.timer:names))))))
+    (pine:stop)))
 
 (test a-mailbox-hands-messages-over-in-order
   (let ((m (pine.run.mailbox:mailbox)))
@@ -111,3 +121,26 @@ writing different keys reads the other out of it."
         "the second caller gets what the first put there, not its own")
     (pine.data:clear! table)
     (is-true (pine.data:emptyp (pine.data:all table)))))
+
+(test live-nodes-are-read-on-one-sweep-however-many-are-watched
+  "A watcher is not a thread. Twenty live nodes cost one entry on the clock."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((threads (length (pine.run.task:tasks)))
+               (heard (pine.data:box 0)))
+           (dotimes (i 20)
+             (let ((n (pine.world.world:ensure pine.world.world:*world*
+                                               (format nil "probe-live-~d" i))))
+               (pine.fs.watch:watch n (lambda (of value)
+                                        (declare (ignore of value))
+                                        (pine.data:swap! heard #'1+))
+                                    :every 0.05 :poll t)))
+           (is (= 20 (length (pine.fs.watch:polled))))
+           (is (eql threads (length (pine.run.task:tasks)))
+               "and not one of them took a thread")
+           (is (member :watch (pine.run.timer:names))
+               "they are read on one sweep")
+           (pine.fs.watch:forget-all)
+           (is (null (member :watch (pine.run.timer:names))))))
+    (pine:stop)))

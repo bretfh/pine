@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.supervisor
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:task #:pine.run.task)
+  (:local-nicknames (#:d #:pine.data) (#:timer #:pine.run.timer)
                     (#:process #:pine.proc.process))
   (:export #:supervisor #:supervise #:forget #:processes #:process-named
            #:attend #:attends #:watch #:unwatch #:start-all #:stop-all #:due))
@@ -54,12 +54,14 @@
                          (process:state p) :failed))))))
 
 (defun watch (s &key (every *interval*))
-  (setf (attends s) (task:each "supervisor" every (lambda () (attend s))))
+  (setf (attends s)
+        (timer:every-seconds every (lambda () (attend s))
+                             :as :supervisor :what "attending the processes"))
   s)
 
 (defun unwatch (s)
   (when (attends s)
-    (task:stop (attends s))
+    (timer:cancel (attends s))
     (setf (attends s) nil))
   s)
 

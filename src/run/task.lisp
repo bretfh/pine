@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine.data) (#:box #:pine.run.mailbox))
   (:export #:task #:spawn #:tasks #:task-named #:name #:alivep #:stop #:join
            #:inbox #:fault #:answered #:*tasks* #:actor #:ask #:tell #:reply #:once
-           #:stopping #:each))
+           #:stopping))
 
 (in-package #:pine.run.task)
 
@@ -73,14 +73,6 @@
   "Run THUNK on a thread of its own and let its task go when it is done, so
 work that happens a click at a time does not pile up in the list."
   (spawn name (lambda () (unwind-protect (funcall thunk) (%forget *task*)))))
-
-(defun each (name seconds thunk)
-  (spawn name
-         (lambda ()
-           (loop :until (stoppingp)
-                 :do (handler-case (funcall thunk)
-                       (error (e) (setf (fault *task*) e)))
-                    (sleep seconds)))))
 
 (defun actor (name receive)
   (let ((tk (make-instance 'task :name name)))

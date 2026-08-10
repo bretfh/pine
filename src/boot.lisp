@@ -9,7 +9,8 @@
                     (#:session #:pine.repl.session)
                     (#:process #:pine.proc.process)
                     (#:super #:pine.proc.supervisor)
-                    (#:task #:pine.run.task) (#:ui #:pine.ui.paths)
+                    (#:task #:pine.run.task) (#:timer #:pine.run.timer)
+                    (#:ui #:pine.ui.paths)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:edit #:pine.edit.defaults) (#:key #:pine.edit.key)
                     (#:render #:pine.edit.render)
@@ -87,10 +88,11 @@
 
 (defun start (&key (name "pine") store remoting)
   (setf world:*world* (world:make-world :name name)
-        *supervisor* (super:supervisor))
+        *supervisor* (super:supervisor)
+        *image* (net:start-server :remoting-port remoting)
+        net:*server* *image*)
+  (timer:attend (net:actor-system *image*))
   (when remoting
-    (setf *image* (net:start-server :remoting-port remoting)
-          net:*server* *image*)
     (attach:listen-for-attach *image*)
     (agent:listen-for-agents *image*))
   (node:attach (make-instance 'shell:commands-node :name "cmd"
@@ -130,7 +132,8 @@
     (store:restore world:*world* *store*)
     (store:keeping *store*))
   (super:watch *supervisor*)
-  (task:each "reap" 5 (lambda () (attach:sweep *image*)))
+  (timer:every-seconds 5 (lambda () (attach:sweep *image*))
+                       :as :reap :what "sweeping dead clients")
   world:*world*)
 
 (defun stop ()
@@ -156,6 +159,7 @@
     (ignore-errors (store:close-store *store*))
     (setf *store* nil))
   (dolist (tk (task:tasks)) (task:stop tk))
+  (timer:leave)
   (when *image*
     (ignore-errors (net:stop-server *image*))
     (setf *image* nil net:*server* nil))

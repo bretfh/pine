@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.live
   (:use #:cl)
   (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node)
-                    (#:watch #:pine.fs.watch) (#:task #:pine.run.task)
+                    (#:watch #:pine.fs.watch) (#:timer #:pine.run.timer)
                     (#:sh #:pine.provider.sh) (#:fault #:pine.run.fault))
   (:export #:attend #:leave #:leave-all #:attending #:tending))
 
@@ -39,8 +39,10 @@ and its interval when it has no stream to speak for it."
                                          (node:announces n))))
            (seconds (node:every-seconds n))
            (ticking (when seconds
-                      (task:each (format nil "live ~a" (node:name n)) seconds
-                                 (lambda () (node:stir n)))))
+                      (timer:every-seconds
+                       seconds (lambda () (node:stir n))
+                       :as (list :live (node:full-name n))
+                       :what (format nil "stirring ~a" (node:name n)))))
            (it (make-instance 'tending :of n :watching watching :ticking ticking)))
       (d:swap! *tending* (lambda (all) (cons it all)))))
   n)
@@ -49,12 +51,12 @@ and its interval when it has no stream to speak for it."
   (let ((it (find n (attending) :key #'of)))
     (when it
       (mapc #'watch:unwatch (watching it))
-      (when (ticking it) (task:stop (ticking it)))
+      (when (ticking it) (timer:cancel (ticking it)))
       (d:swap! *tending* (lambda (all) (remove it all))))
     n))
 
 (defun leave-all ()
   (dolist (it (attending) (d:put! *tending* nil))
     (mapc #'watch:unwatch (watching it))
-    (when (ticking it) (task:stop (ticking it))))
+    (when (ticking it) (timer:cancel (ticking it))))
   (sh:forget-all))

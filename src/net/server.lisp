@@ -1,6 +1,6 @@
 (defpackage #:pine.net.server
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:timer #:pine.run.timer) (#:d #:pine.data))
   (:export #:server #:start-server #:stop-server #:*server* #:*host* #:*port*
            #:actor-system #:remoting-port #:clients #:next-client-id
            #:read-environment #:daemon-uri #:local-uri #:workers #:*workers*))
@@ -46,7 +46,8 @@
 
 (defun %config (workers)
   (list :dispatchers (list :shared (list :workers workers :strategy :random))
-        :scheduler (list :enabled :true)))
+        :scheduler (list :enabled :true :max-size 1000
+                         :resolution (round (* 1000 timer:*soonest*)))))
 
 (defun start-server (&key (workers *workers*) (remoting-port nil))
   (let* ((sys (sento.actor-system:make-actor-system (%config workers)))

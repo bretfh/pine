@@ -33,7 +33,6 @@
    (carried :initform (d:box 0)   :reader carried)
    (dropped :initform (d:box 0)   :reader dropped)
    (painted :initform (d:box 0)   :reader painted)
-   (drainer :initform nil     :accessor drainer)
    (reader  :initform nil     :accessor reader)))
 
 (defmethod print-object ((tm terminal) stream)
@@ -135,17 +134,16 @@ until the image dies."
            (b (or (buffer:buffer-named name) (buffer:make-buffer name :mode "term"))))
       (d:keep! *terminals* name tm)
       (setf (reader tm)
-            (task:spawn (format nil "term ~a read" name)
+            (task:spawn (format nil "term ~a" name)
                         (lambda ()
                           (loop
                             (when (pine.vt:pty-wait fd 50)
                               (let ((text (pine.vt:pty-read-string fd 65536)))
                                 (when (or (null text) (zerop (length text)))
                                   (return))
-                                (%carry tm text)))))))
-      (setf (drainer tm)
-            (task:each (format nil "term ~a" name) *pause*
-                       (lambda () (drain tm b))))
+                                (%carry tm text)))
+                            (drain tm b)
+                            (sleep *pause*)))))
       (when supervisor
         (super:supervise supervisor
                          (make-instance 'process:thread-process
@@ -159,7 +157,6 @@ until the image dies."
   (let ((tm (terminal-for name)))
     (when tm
       (when (reader tm) (task:stop (reader tm)))
-      (when (drainer tm) (task:stop (drainer tm)))
       (ignore-errors (pine.vt:pty-kill (pid tm)))
       (ignore-errors (pine.vt:pty-close (fd tm)))
       (ignore-errors (pine.vt:pty-reap (pid tm)))

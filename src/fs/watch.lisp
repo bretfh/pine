@@ -1,9 +1,9 @@
 (defpackage #:pine.fs.watch
   (:use #:cl)
   (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node)
-                    (#:task #:pine.run.task) (#:fault #:pine.run.fault))
+                    (#:timer #:pine.run.timer) (#:fault #:pine.run.fault))
   (:export #:watcher #:watch #:unwatch #:watchers #:watching #:of #:told
-           #:fire #:forget-all #:*every*))
+           #:fire #:sweep #:polled #:attend #:forget-all #:*every*))
 
 (in-package #:pine.fs.watch)
 
@@ -15,7 +15,7 @@
    (told    :initarg :told :reader told)
    (only    :initarg :only :reader only :initform t)
    (was     :initform (d:box '#:unread) :reader was)
-   (polling :initform nil  :accessor polling)))
+   (polling :initarg :poll :reader polling :initform nil)))
 
 (defmethod print-object ((w watcher) stream)
   (print-unreadable-object (w stream :type t)
@@ -36,26 +36,37 @@
   (fire w)
   w)
 
+(defun polled ()
+  (remove-if-not #'polling (watchers)))
+
+(defun sweep ()
+  "Read every watcher that has to be asked, on one tick. A live node is one
+that answers differently without anybody writing it; the ones that announce
+themselves are told by their provider instead."
+  (dolist (w (polled) t) (fire w)))
+
+(defun attend (&key (every *every*))
+  (timer:every-seconds every #'sweep :as :watch :what "reading the live nodes"))
+
 (defun watch (n told &key (every *every*) name (only t) (poll (node:livep n)))
-  (let ((w (make-instance 'watcher :of n :told told :only only
+  (let ((w (make-instance 'watcher :of n :told told :only only :poll poll
                                    :name (or name (node:full-name n)))))
     (node:depend w n)
     (d:swap! *watchers* (lambda (all) (cons w all)))
     (d:put! (was w) (ignore-errors (node:contents n)))
-    (when poll
-      (setf (polling w)
-            (task:each (format nil "watch ~a" (node:name w)) every
-                       (lambda () (fire w)))))
+    (when (and poll (timer:timing)) (attend :every every))
     w))
 
 (defun unwatch (w)
   (d:swap! (node:dependents (of w)) (lambda (all) (d:without all w)))
-  (when (polling w) (task:stop (polling w)))
   (d:swap! *watchers* (lambda (all) (remove w all)))
+  (unless (polled) (timer:cancel :watch))
   w)
 
 (defun forget-all ()
-  (dolist (w (watchers) (d:put! *watchers* nil)) (unwatch w)))
+  (dolist (w (watchers)) (unwatch w))
+  (d:put! *watchers* nil)
+  (timer:cancel :watch))
 
 (defun watching (n)
   (remove n (watchers) :key #'of :test-not #'eq))
