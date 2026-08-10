@@ -5,32 +5,79 @@
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:prompt #:pine.edit.prompt)
                     (#:log #:pine.run.log))
-  (:export #:install #:into #:activate #:listings))
+  (:export #:install #:into #:activate #:listings #:listing #:rows #:acts
+           #:place #:row-at #:step! #:said))
 
 (in-package #:pine.edit.listing)
 
 
 (defvar *listings* (make-hash-table :test 'equal))
 
-(defun into (name text &optional activate)
-  "Put TEXT in a buffer of its own and show it. With ACTIVATE, the buffer is a
-listing: RET on a line hands that line to it."
-  (let ((b (or (buffer:buffer-named name) (buffer:make-buffer name))))
-    (setf (node:contents b) text)
+(defclass listing ()
+  ((rows :initarg :rows :accessor rows :initform nil)
+   (acts :initarg :acts :accessor acts :initform nil)))
+
+(defmethod print-object ((l listing) stream)
+  (print-unreadable-object (l stream :type t)
+    (format stream "~d row~:p~:[~; you can act on~]" (length (rows l)) (acts l))))
+
+(defun listings () *listings*)
+
+(defun %of (b) (gethash (node:name b) *listings*))
+
+(defun said (row) (if (consp row) (car row) (princ-to-string row)))
+
+(defun %place-of (row) (and (consp row) (cdr row)))
+
+(defun row-at (b &optional (line (buffer:point-line b)))
+  "The row point is on: what it says, and what it stands for."
+  (let ((l (%of b)))
+    (when l (nth line (rows l)))))
+
+(defun place (&optional (b (buffer:current)))
+  "The place the row point is on stands for. This is what a key acts on: a row
+names a buffer, a node or a path, so nothing has to read the line back out of
+the text to know what it was about."
+  (%place-of (row-at b)))
+
+(defun %mark (b)
+  (setf (buffer:setting b :selection) (place b))
+  b)
+
+(defun into (name rows &optional acts)
+  "Put ROWS in a buffer of its own and show it. A row is a string, or (TEXT .
+PLACE) where PLACE is what that row stands for. With ACTS, the buffer is a
+listing: RET on a row hands ACTS the place it stands for."
+  (let ((b (or (buffer:buffer-named name) (buffer:make-buffer name)))
+        (rows (if (stringp rows)
+                  (uiop:split-string rows :separator '(#\Newline))
+                  rows)))
+    (setf (node:contents b)
+          (format nil "~{~a~^~%~}" (mapcar #'said rows)))
     (buffer:goto! b 0 0)
     (setf (buffer:minors-of b)
-          (if activate
+          (if acts
               (adjoin "list" (buffer:minors-of b) :test #'equal)
               (remove "list" (buffer:minors-of b) :test #'equal)))
-    (setf (gethash name *listings*) activate)
+    (setf (gethash name *listings*) (make-instance 'listing :rows rows :acts acts))
     (setf (buffer:current) b)
+    (%mark b)
     (node:name b)))
 
 (defun activate ()
-  (let* ((b (%b))
-         (fn (gethash (node:name b) *listings*)))
-    (when fn
-      (funcall fn (buffer:line b (buffer:point-line b))))))
+  (let* ((b (buffer:current))
+         (l (%of b)))
+    (when (and l (acts l))
+      (funcall (acts l) (place b)))))
+
+(defun step! (delta &optional (b (buffer:current)))
+  "The row after this one, or before it, wrapping round the ends."
+  (let* ((l (%of b))
+         (n (length (and l (rows l)))))
+    (when (plusp n)
+      (buffer:goto! b (mod (+ (buffer:point-line b) delta) n) 0)
+      (%mark b)
+      (buffer:point-line b))))
 
 (defun %replacing (b from to)
   (let ((n 0))
@@ -48,18 +95,28 @@ listing: RET on a line hands that line to it."
 
 (defun %b () (buffer:current))
 
+(defun %buffer-rows ()
+  (mapcar (lambda (b)
+            (cons (format nil "~a~30t~a" (node:name b) (or (buffer:file-of b) ""))
+                  b))
+          (buffer:buffers)))
+
 (defun install ()
   (cmd:defcommand "list-buffers" () (:describes "every buffer there is")
-    (into "*buffers*"
-           (with-output-to-string (out)
-             (dolist (b (buffer:buffers))
-               (format out "~a~30t~a~%" (node:name b) (or (buffer:file-of b) ""))))
-           (lambda (line)
-             (let ((name (string-right-trim " " (subseq line 0 (min 30 (length line))))))
-               (when (buffer:buffer-named name)
-                 (setf (buffer:current) (buffer:buffer-named name)))))))
-  (cmd:defcommand "list-activate" () (:describes "open what this line names")
+    (into "*buffers*" (%buffer-rows)
+          (lambda (b) (when (node:nodep b) (setf (buffer:current) b)))))
+  (cmd:defcommand "list-activate" () (:describes "open what this row stands for")
     (activate))
+  (cmd:defcommand "list-next" () (:describes "the row after this one")
+    (step! 1))
+  (cmd:defcommand "list-prev" () (:describes "the row before this one")
+    (step! -1))
+  (cmd:defcommand "list-place" () (:describes "what the row point is on stands for")
+    (let ((it (place)))
+      (log:note "~a" (cond ((null it) "this row stands for nothing")
+                           ((node:nodep it) (node:full-name it))
+                           (t it)))
+      it))
   (cmd:defcommand "query-replace" (from)
       (:describes "replace one string with another"
        :asks '((:prompt "Replace: ")))
@@ -77,19 +134,21 @@ listing: RET on a line hands that line to it."
                                                   (cmd:describes c))
                                         "undefined"))))))
   (cmd:defcommand "describe-bindings" () (:describes "every chord in force here")
-    (into "*help*"
-           (with-output-to-string (out)
-             (format out "chords in force in ~a~%~%" (node:name (%b)))
-             (loop :for (chord . name) :in (sort (key:bindings-of (%b)) #'string<
-                                                 :key #'car)
-                   :do (format out "~16a ~a~%" chord name)))))
+    (let ((of (%b)))
+      (into "*help*"
+            (cons (format nil "chords in force in ~a" (node:name of))
+                  (cons ""
+                        (loop :for (chord . name) :in (sort (key:bindings-of of)
+                                                            #'string< :key #'car)
+                              :collect (cons (format nil "~16a ~a" chord name)
+                                             (cmd:command-named name)))))
+            (lambda (c) (when c (log:note "~a" (or (cmd:describes c) (cmd:name c))))))))
   (cmd:defcommand "describe-mode" () (:describes "what this buffer's mode is")
     (let ((m (mode:mode-named (buffer:mode-of (%b)))))
       (into "*help*"
-             (with-output-to-string (out)
-               (format out "~a~%~%" (buffer:mode-of (%b)))
-               (format out "chain     ~{~a~^ -> ~}~%"
-                       (mapcar #'mode:name (mode:chain m)))
-               (format out "settings  ~a~%" (mode:settings m))
-               (format out "minors    ~a~%" (buffer:minors-of (%b)))))))
+            (list (buffer:mode-of (%b))
+                  ""
+                  (format nil "chain     ~{~a~^ -> ~}" (mapcar #'mode:name (mode:chain m)))
+                  (format nil "settings  ~a" (mode:settings m))
+                  (format nil "minors    ~a" (buffer:minors-of (%b)))))))
   t)

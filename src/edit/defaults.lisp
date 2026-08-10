@@ -61,6 +61,12 @@
   (mode:minor "list" :precedence 15)
   (mode:bind "list" "RET" "list-activate")
   (mode:bind "list" "Return" "list-activate")
+  (mode:bind "list" "n" "list-next")
+  (mode:bind "list" "p" "list-prev")
+  (mode:bind "list" "C-n" "list-next")
+  (mode:bind "list" "C-p" "list-prev")
+  (mode:bind "list" "Down" "list-next")
+  (mode:bind "list" "Up" "list-prev")
   (mode:handle "prog" :newline #'%indenting)
   (mode:handle "overwrite" :insert #'%overwriting))
 
@@ -159,12 +165,12 @@
   (cmd:defcommand "describe-variables" () (:describes "every setting, and what this buffer reads")
     (let ((b (buffer:current)))
       (listing:into "*help*"
-                 (with-output-to-string (out)
-                   (format out "settings in ~a~%~%" (node:name b))
-                   (loop :for (key . says) :in +settings+
-                         :do (format out "~(~16a~) ~12a ~a~%" key
-                                     (or (buffer:setting b key) "")
-                                     says))))))
+                    (cons (format nil "settings in ~a" (node:name b))
+                          (cons ""
+                                (loop :for (key . says) :in +settings+
+                                      :collect (format nil "~(~16a~) ~12a ~a" key
+                                                       (or (buffer:setting b key) "")
+                                                       says)))))))
   (prompt:source :setting
                  (lambda (typed) (declare (ignore typed))
                    (mapcar (lambda (each)
