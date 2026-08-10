@@ -405,3 +405,44 @@ x)")
       (is-true help)
       (is (search "tab-width" (pine.fs.node:contents help)))
       (is (search "4" (pine.fs.node:contents help))))))
+
+(test what-is-marked-on-the-text-moves-with-it
+  (with-editor (:text "one
+two
+three")
+    (let ((b (b)))
+      (pine.edit.buffer:propertize! b 2 0 5 '(:face :match))
+      (pine.edit.buffer:goto! b 0 0)
+      (pine.edit.buffer:insert! b (format nil "zero~%"))
+      (is (equal '((:face :match)) (pine.edit.buffer:properties-at b 3 1))
+          "a mark below an insert moves down with the line it was on")
+      (is (null (pine.edit.buffer:properties-at b 2 1))
+          "and is no longer on the line it used to be"))))
+
+(test a-mark-the-edit-ran-through-is-dropped-rather-than-left-lying
+  (with-editor (:text "one
+two
+three")
+    (let ((b (b)))
+      (pine.edit.buffer:propertize! b 1 0 3 '(:face :match))
+      (pine.edit.buffer:delete-region! b 1 0 2 0)
+      (is (null (pine.edit.buffer:properties-at b 1 1))
+          "the text it described is gone, so the mark is too"))))
+
+(test a-tab-takes-you-to-the-next-stop
+  (with-editor ()
+    (multiple-value-bind (drawn where)
+        (pine.edit.render:shown-line (format nil "a~cb" #\Tab) 8)
+      (is (equal "a       b" drawn) "one tab, eight columns")
+      (is (eql 8 (pine.edit.render:shown-col where 2))
+          "and the character after it is at column eight, not two"))))
+
+(test an-evaluation-says-its-answer-beside-the-form
+  (with-editor (:text "(+ 1 2)")
+    (let ((b (b)))
+      (pine.edit.buffer:goto! b 0 7)
+      (pine.repl.command:run "eval-last-expression")
+      (is (equal '((:after "=> 3" :face :comment))
+                 (pine.edit.buffer:overlays-at b 0)))
+      (is (search "=> 3" (first (pine:frame :width 40 :height 4)))
+          "and it is drawn after the line rather than in the echo alone"))))

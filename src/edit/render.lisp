@@ -7,6 +7,7 @@
                     (#:mode #:pine.repl.mode) (#:parser #:pine.ts.parser)
                     (#:prompt #:pine.edit.prompt))
   (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline #:echo-tree
+           #:shown-line #:shown-col
            #:visible-lines #:scroll-to-point #:highlights-for #:indent-for
            #:*cols* #:*rows*))
 
@@ -19,6 +20,27 @@
 (defun visible-lines (b from height)
   (loop :for n :from from :below (min (buffer:line-count b) (+ from height))
         :collect (buffer:line b n)))
+
+(defun shown-line (text width)
+  "TEXT as it is drawn: a tab takes you to the next stop rather than one cell.
+Answers the text and the column each character landed in."
+  (let ((out (make-string-output-stream))
+        (at 0)
+        (where (make-array (length text) :element-type 'fixnum)))
+    (loop :for ch :across text
+          :for i :from 0
+          :do (setf (aref where i) at)
+              (cond ((char= ch #\Tab)
+                     (let ((to (* width (1+ (floor at width)))))
+                       (dotimes (n (- to at)) (write-char #\Space out))
+                       (setf at to)))
+                    (t (write-char ch out) (incf at))))
+    (values (get-output-stream-string out) where)))
+
+(defun shown-col (where col)
+  (cond ((zerop (length where)) col)
+        ((< col (length where)) (aref where col))
+        (t (1+ (aref where (1- (length where)))))))
 
 (defun scroll-to-point (w)
   (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
@@ -67,6 +89,10 @@
                             :below (if (= line end-line) end-col width)
                           :do (raster:raster-put-bg r (- line from) col br bg bb))))))))
 
+(defun %at-col (where drawn)
+  "Which character of the text is being drawn at this column."
+  (or (position drawn where) (max 0 (1- (length where)))))
+
 (defun %carets-here (w)
   (and (eq w (window:focused)) (not (prompt:asking-p))))
 
@@ -78,17 +104,38 @@
          (highlights (highlights-for b))
          (r (raster:make-raster width height))
          (caret (%carets-here w)))
-    (loop :for text :in (visible-lines b from height)
+    (loop :with tab := (max 1 (or (buffer:setting b :tab-width) 8))
+          :for text :in (visible-lines b from height)
           :for row :from 0
           :for line :from from
-          :do (loop :for col :from 0 :below (min width (length text))
-                    :do (raster:raster-put r row col (char text col)
-                                           (%cell-face b highlights line col))))
+          :do (multiple-value-bind (drawn where) (shown-line text tab)
+                (loop :for col :from 0 :below (min width (length drawn))
+                      :do (raster:raster-put r row col (char drawn col)
+                                             (%cell-face b highlights line
+                                                         (%at-col where col))))
+                (let ((said (buffer:overlays-at b line)))
+                  (when said
+                    (let ((at (min (1- width) (+ 2 (length drawn)))))
+                      (loop :for props :in said
+                            :for text := (getf props :after)
+                            :do (loop :for i :from 0
+                                        :below (min (- width at) (length text))
+                                      :do (raster:raster-put r row (+ at i)
+                                                             (char text i)
+                                                             (or (getf props :face)
+                                                                 :comment)))))))))
     (%paint-region r b from height width)
     (build:cells (cells:rows-of r)
                  :class "editor-view" :expand 1
                  :crow (if caret (min (1- height) (max 0 (- (buffer:point-line b) from))) -1)
-                 :ccol (if caret (min (1- width) (buffer:point-col b)) -1))))
+                 :ccol (if caret
+                           (min (1- width)
+                                (multiple-value-bind (drawn where)
+                                    (shown-line (buffer:line b (buffer:point-line b))
+                                                (max 1 (or (buffer:setting b :tab-width) 8)))
+                                  (declare (ignore drawn))
+                                  (shown-col where (buffer:point-col b))))
+                           -1))))
 
 (defun modeline (w)
   (let ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch))))

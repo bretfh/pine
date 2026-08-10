@@ -14,6 +14,7 @@
            #:past #:undo! #:redo! #:undoable #:redoable
            #:marks #:mark-at #:put-mark! #:drop-mark!
            #:propertize! #:properties-at #:clear-properties! #:edit-of
+           #:overlay! #:overlays-at #:clear-overlays!
            #:indent-line! #:indent-of))
 
 (in-package #:pine.edit.buffer)
@@ -68,8 +69,10 @@
 
 (defun %edited (b was line old-lines new-lines bytes)
   "What the last edit did, for whoever parses this buffer: at LINE, OLD-LINES
-lines became NEW-LINES and it grew by BYTES, counted from WAS."
-  (setf (edit-of b) (list (list line old-lines new-lines bytes) was)))
+lines became NEW-LINES and it grew by BYTES, counted from WAS. What was marked
+on the text moves with it."
+  (setf (edit-of b) (list (list line old-lines new-lines bytes) was))
+  (%properties-after b line old-lines new-lines))
 
 (defun changed (b)
   (setf (modified b) t)
@@ -181,6 +184,46 @@ buffer a command switches to is the buffer on the screen."
 (defun propertize! (b line from to props)
   (setf (properties b) (d:with (properties b) (list line from to props)))
   props)
+
+(defun %adjusted (span line old-lines new-lines)
+  "Where a span sits after an edit at LINE turned OLD-LINES into NEW-LINES.
+A span above is untouched, one below shifts, and one the edit ran through is
+dropped rather than left describing the wrong text."
+  (destructuring-bind (at from to props) span
+    (let ((delta (- new-lines old-lines))
+          (through (+ line old-lines)))
+      (cond ((< at line) span)
+            ((and (>= at line) (< at through))
+             (if (and (= at line) (zerop delta)) span nil))
+            (t (list (+ at delta) from to props))))))
+
+(defun %properties-after (b line old-lines new-lines)
+  (setf (properties b)
+        (d:as :seq
+              (remove nil (mapcar (lambda (span)
+                                    (%adjusted span line old-lines new-lines))
+                                  (d:as :list (properties b)))))))
+
+(defun overlay! (b line text &optional (face :comment))
+  "Text drawn after a line rather than in it: what an evaluation answered, what
+a checker said."
+  (setf (properties b)
+        (d:with (properties b) (list line 0 0 (list :after text :face face))))
+  text)
+
+(defun overlays-at (b line)
+  (let (acc)
+    (d:do-seq (i each (properties b) (nreverse acc))
+      (declare (ignore i))
+      (destructuring-bind (at from to props) each
+        (declare (ignore from to))
+        (when (and (= at line) (getf props :after)) (push props acc))))))
+
+(defun clear-overlays! (b)
+  (setf (properties b)
+        (d:as :seq (remove-if (lambda (span) (getf (fourth span) :after))
+                              (d:as :list (properties b)))))
+  b)
 
 (defun properties-at (b line col)
   (let (acc)
