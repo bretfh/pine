@@ -122,3 +122,37 @@ a node like any other, so it is in the snapshot."
                       "so a crash before the snapshot costs nothing"))
              (pine:stop)))
       (ignore-errors (delete-file file)))))
+
+(test what-a-killed-image-wrote-is-there-when-the-next-one-starts
+  "Not a clean stop: the image is killed outright, so what comes back is what
+the store had already been told, not what a snapshot would have written."
+  (let ((file (merge-pathnames "pine-probe-killed.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (let ((p (make-instance 'pine.proc.lisp:lisp-process
+                            :name "probe-killed" :restarts nil :systems '(:pine))))
+      (unwind-protect
+           (progn
+             (pine.proc.process:start p)
+             (is (eq :written
+                     (pine.proc.lisp:evaluate
+                      p `(progn (pine:start :store ,(namestring file))
+                                (setf (pine.fs.node:contents
+                                       (pine.world.world:ensure
+                                        pine.world.world:*world* "probe"))
+                                      :written))
+                      :timeout 120))
+                 "the other image wrote it")
+             (sb-posix:kill (uiop:process-info-pid (pine.proc.process:took p)) 9)
+             (loop :repeat 200 :while (pine.proc.process:alivep p) :do (sleep 0.01))
+             (is-false (pine.proc.process:alivep p) "and was killed outright"))
+        (ignore-errors (pine.proc.process:stop p))))
+    (unwind-protect
+         (progn
+           (pine:start :store file)
+           (is (eq :written
+                   (pine.fs.node:contents
+                    (pine.fs.tree:at (pine.world.world:root pine.world.world:*world*)
+                                     "probe")))
+               "and it is there for the image that starts next"))
+      (pine:stop)
+      (ignore-errors (delete-file file)))))
