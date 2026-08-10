@@ -1,19 +1,17 @@
 (defpackage #:pine.ui.wire
   (:use #:cl #:pine.ui.node #:pine.ui.raster)
+  (:local-nicknames (#:d #:pine.data))
   (:export #:apply-rows-patch #:arranged-p #:node->wire #:rows-patch
            #:scroll-to-selection #:wire->node #:wire-views #:wire-tag
            #:defwire))
 
 (in-package #:pine.ui.wire)
 
-(defvar *codec* (make-hash-table :test 'equal)
+(defvar *codec* (d:table)
   "What this image's widgets are, both ways: a wire tag to the function that
 rebuilds a node from it, and a node class name to the tag it crosses as.
 
-A registry of what the code can do rather than state anything changes, filled
-by DEFWIRE as the files load and read from every thread after. It is a table
-and not a hash table for that reading: a bare one written from two threads can
-corrupt, and the whole point of a registry is that everyone reads it.")
+Filled by DEFWIRE as the files load and read from every thread after.")
 
 (defparameter +base-skip+ '(:key :of :pad :margin)
   "Base initargs that do not cross: the identity the producer keeps, what a node
@@ -79,7 +77,7 @@ daemon built."
 
 (defun wire-tag (class)
   "The tag CLASS crosses as."
-  (gethash class *codec*))
+  (d:at (d:all *codec*) class))
 
 (defun wire-default (tag key)
   "What TAG's KEY is when the wire does not carry it.
@@ -87,7 +85,7 @@ daemon built."
 The codec leaves a default out, so anything that builds a form -- a patch
 applied to an older one, say -- has to leave it out too, or two forms that say
 the same thing are not the same form."
-  (getf (gethash (cons tag :defaults) *codec*) key))
+  (getf (d:at (d:all *codec*) (cons tag :defaults)) key))
 
 (defun with-prop (props key value default)
   "PROPS with KEY set to VALUE, or without it when VALUE is the default."
@@ -115,8 +113,8 @@ HOW) saying how they come back, with HOW :first or :list. BUILD replaces the
 generated constructor for a class whose forms are not a flat list."
   (let ((keys (mapcar #'first props)))
     `(progn
-       (setf (gethash ',class *codec*) ,tag)
-       (setf (gethash (cons ,tag :defaults) *codec*)
+       (d:keep! *codec* ',class ,tag)
+       (d:keep! *codec* (cons ,tag :defaults)
                       (list ,@(loop :for (key nil . options) :in props
                                     :append (list key (getf options :default)))))
        (defmethod node->wire ((n ,class) &key on-action)
@@ -133,7 +131,7 @@ generated constructor for a class whose forms are not a flat list."
            (list* ,tag (ordered p)
                   (mapcar (lambda (c) (node->wire c :on-action on-action))
                           ,(or nodes nil)))))
-       (setf (gethash ,tag *codec*)
+       (d:keep! *codec* ,tag
              (lambda (props forms on-action)
                (declare (ignorable props forms on-action))
                (let ((nodes (mapcar (lambda (c) (wire->node c :on-action on-action))
@@ -268,7 +266,7 @@ this id back'."
   (when form
     (destructuring-bind (tag props &rest forms) form
       (let ((rect (getf props :rect))
-            (build (gethash tag *codec*)))
+            (build (d:at (d:all *codec*) tag)))
         (unless build (error "No widget crosses the wire as ~s." tag))
         (let ((n (funcall build (props-without props :rect) forms on-action)))
           (when (and n rect)

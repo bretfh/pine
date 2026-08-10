@@ -1,5 +1,6 @@
 (defpackage #:pine.ui.face
   (:use #:cl)
+  (:local-nicknames (#:d #:pine.data))
   (:export
 
    #:face-run #:run-start #:run-end #:run-face
@@ -23,7 +24,7 @@ of one render and never assigned: finding the table is three reads and finding a
 face in it is one, so a paint that asks per cell spends most of its time asking
 where to look.")
 
-(defvar *themes* (make-hash-table :test 'eq)
+(defvar *themes* (d:table)
   "Theme name to theme: what the files said as they loaded, read from every
 thread and added to by nothing else.")
 
@@ -83,10 +84,10 @@ being painted."
   (intern (string-upcase name) :keyword))
 
 (defun register-theme (theme)
-  (setf (gethash (theme-name theme) *themes*) theme))
+  (d:keep! *themes* (theme-name theme) theme))
 
 (defun find-theme (name)
-  (or (gethash (theme-key name) *themes*)
+  (or (d:at (d:all *themes*) (theme-key name))
       (error "unknown theme ~s" name)))
 
 (defun active ()

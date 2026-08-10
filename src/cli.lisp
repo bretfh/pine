@@ -72,13 +72,12 @@
 
 (defun %watch (where)
   (multiple-value-bind (sys name) (%system :name "watch")
-    (sento.actor-context:actor-of sys
-      :name name
-      :dispatcher :pinned
-      :receive (lambda (message)
-                 (when (eq :moved (first message))
-                   (format t "~a ~a~%" (second message) (third message))
-                   (finish-output))))
+    (pine.run.agent:agent name
+                          (lambda (message)
+                            (when (eq :moved (first message))
+                              (format t "~a ~a~%" (second message) (third message))
+                              (finish-output)))
+                          :dispatcher :pinned :in sys)
     (let ((uri (server:local-uri name (sento.remoting:remoting-port sys))))
       (when (%say (ask (list :watch where uri) :system sys))
         (loop (sleep 60))))))

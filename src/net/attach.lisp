@@ -1,6 +1,6 @@
 (defpackage #:pine.net.attach
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server)
+  (:local-nicknames (#:endpoint #:pine.run.agent) (#:d #:pine.data) (#:server #:pine.net.server)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log))
   (:export #:app #:frontend #:kinds #:attached #:received #:detached
            #:run-frontend #:client #:client-id #:client-kind #:client-display
@@ -12,8 +12,8 @@
 (in-package #:pine.net.attach)
 
 (defvar *wire* "ns2")
-(defvar *apps* (d:box (fset:empty-map)))
-(defvar *clients* nil)
+(defvar *apps* (d:table))
+(defvar *clients* (d:box nil))
 (defvar *attempts* 60)
 (defvar *interval* 2)
 
@@ -33,23 +33,19 @@
 (defun acceptable (theirs) (equal theirs (protocol)))
 
 (defun app (kind declaration)
-  (d:swap! *apps* (lambda (all) (fset:with all kind
-                                          (fset:with declaration :kind kind))))
+  (d:keep! *apps* kind (d:with declaration :kind kind))
   kind)
 
 (defun frontend (kind run)
-  (d:swap! *apps*
-          (lambda (all)
-            (fset:with all kind
-                       (fset:with (or (fset:lookup all kind) (fset:empty-map))
-                                  :run run))))
+  (d:keep! *apps* kind
+           (d:with (or (d:at (d:all *apps*) kind) (d:no-map)) :run run))
   kind)
 
-(defun kinds () (fset:convert 'list (fset:domain (d:held *apps*))))
+(defun kinds () (d:keys (d:all *apps*)))
 
 (defun %of (kind key)
-  (let ((it (fset:lookup (d:held *apps*) kind)))
-    (and it (fset:lookup it key))))
+  (let ((it (d:at (d:all *apps*) kind)))
+    (and it (d:at it key))))
 
 (defun attached (kind client)
   (let ((fn (%of kind :attached)))
@@ -70,7 +66,8 @@
         (format t "pine: no ~(~a~) frontend in this build~%" kind))))
 
 (defun clients (&optional kind)
-  (if kind (remove kind *clients* :key #'client-kind :test-not #'eq) *clients*))
+  (let ((all (d:held *clients*)))
+    (if kind (remove kind all :key #'client-kind :test-not #'eq) all)))
 
 (defun attached-p (kind) (and (clients kind) t))
 
@@ -81,7 +78,7 @@
       message)))
 
 (defun attached-at (uri)
-  (find uri *clients* :key #'client-uri :test #'equal))
+  (find uri (d:held *clients*) :key #'client-uri :test #'equal))
 
 (defun %accept (s message display-uri)
   (destructuring-bind (&key kind version uri &allow-other-keys) (rest message)
@@ -102,14 +99,11 @@
                                                          display-uri))
                 (c (make-instance 'client :id (server:next-client-id s)
                                           :kind kind :display display :uri uri)))
-           (push c *clients*)
+           (d:swap! *clients* (lambda (all) (cons c all)))
            (push c (server:clients s))
-           (sento.actor-context:actor-of (server:actor-system s)
-             :name (format nil "client-~d" (client-id c))
-             :dispatcher :pinned
-             :receive (lambda (m)
-                        (fault:attempt (lambda () (received kind c m))
-                                       (format nil "~(~a~) input" kind))))
+           (endpoint:agent (format nil "client-~d" (client-id c))
+                           (lambda (m) (received kind c m))
+                           :dispatcher :pinned :in (server:actor-system s))
            (sento.actor:tell display (list :attached :id (client-id c)
                                            :version (protocol)))
            (log:note "~(~a~) attached as client ~d" kind (client-id c))
@@ -119,17 +113,15 @@
            c))))))
 
 (defun listen-for-attach (s)
-  (sento.actor-context:actor-of (server:actor-system s)
-    :name "attach"
-    :dispatcher :pinned
-    :receive
-    (lambda (message)
-      (case (first message)
-        (:attach (%accept s message (getf (rest message) :display)))
-        (:detach (let ((c (find (getf (rest message) :id) *clients*
-                                :key #'client-id)))
-                   (when c (reap c s))))
-        (t nil)))))
+  (endpoint:agent "attach"
+                  (lambda (message)
+                    (case (first message)
+                      (:attach (%accept s message (getf (rest message) :display)))
+                      (:detach (let ((c (find (getf (rest message) :id)
+                                              (d:held *clients*) :key #'client-id)))
+                                 (when c (reap c s))))
+                      (t nil)))
+                  :dispatcher :pinned :in (server:actor-system s)))
 
 (defun %noting (kind)
   (when pine.world.world:*world*
@@ -141,13 +133,13 @@
 (defun sweep (&optional s)
   "Drop the clients that are not there any more. A frontend that was killed
 must not still be counted, or the one that replaces it is told not to start."
-  (dolist (c (copy-list *clients*) *clients*)
+  (dolist (c (clients) (d:held *clients*))
     (unless (alive-p c) (reap c s))))
 
 (defun reap (c s)
   (fault:attempt (lambda () (detached (client-kind c) c))
                  (format nil "~(~a~) detaching" (client-kind c)))
-  (setf *clients* (remove c *clients*))
+  (d:swap! *clients* (lambda (all) (remove c all)))
   (when s (setf (server:clients s) (remove c (server:clients s))))
   (%noting (client-kind c))
   c)

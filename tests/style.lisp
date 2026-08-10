@@ -105,3 +105,50 @@
                  (not (member (file-namestring file) +declarations+ :test #'equal)))
         (push (file-namestring file) using)))
     (is (null using) "~{~%  ~a declares a readtable~}" (reverse using))))
+
+(defun %naming (what &key (except nil))
+  "The files that name WHAT, other than the ones allowed to."
+  (loop :for file :in (%files)
+        :when (and (find-if (lambda (line) (search what line)) (%lines file))
+                   (not (member (file-namestring file) except :test #'equal)))
+          :collect (file-namestring file)))
+
+(test only-data-knows-what-a-value-is-kept-in
+  "fset is what a value is and sento.atomic is where one is kept. Both are
+behind pine.data, so what pine holds is one idea in one file."
+  (is (null (%naming "fset:" :except '("data.lisp")))
+      "~{~%  ~a names fset~}" (%naming "fset:" :except '("data.lisp")))
+  (is (null (%naming "sento.atomic" :except '("data.lisp")))
+      "~{~%  ~a names sento.atomic~}"
+      (%naming "sento.atomic" :except '("data.lisp"))))
+
+(test nothing-sleeps-in-a-loop-to-repeat
+  "One clock: the actor system's wheel timer, and pine.run.timer over it."
+  (is (null (%naming "schedule-recurring" :except '("timer.lisp")))
+      "~{~%  ~a schedules its own repeat~}"
+      (%naming "schedule-recurring" :except '("timer.lisp"))))
+
+(test a-thread-is-made-only-where-something-blocks
+  "A pty read, a child's stdout and a frontend's loop block. Everything else is
+an endpoint or a tick, so it makes no thread."
+  (is (null (%naming "make-thread" :except '("task.lisp" "frontend.lisp")))
+      "~{~%  ~a makes a thread of its own~}"
+      (%naming "make-thread" :except '("task.lisp" "frontend.lisp"))))
+
+(test an-endpoint-is-sentos-and-not-one-of-our-own
+  "actor-of is what makes one, and pine.run.agent is where that is said."
+  (is (null (%naming "actor-context:actor-of" :except '("agent.lisp" "server.lisp")))
+      "~{~%  ~a makes an actor of its own~}"
+      (%naming "actor-context:actor-of" :except '("agent.lisp" "server.lisp"))))
+
+(test a-registry-is-a-table-and-not-a-hash-table
+  "A hash table is for identity, or for one call's own scratch. Anything two
+threads read is a map in a box."
+  (let ((loose nil))
+    (dolist (file (%files))
+      (dolist (line (%lines file))
+        (when (search "(defvar *" line)
+          (when (search "make-hash-table" line)
+            (push (file-namestring file) loose)))))
+    (is (null loose) "~{~%  ~a keeps a registry in a hash table~}"
+        (reverse loose))))

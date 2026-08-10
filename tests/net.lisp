@@ -84,7 +84,7 @@ remote. Nothing above it knows the difference."
   (with-server (s)
     (let ((c (make-instance 'pine.net.attach:client :id 1 :kind :probe-kind
                                                     :display nil)))
-      (push c pine.net.attach:*clients*)
+      (pine.data:swap! pine.net.attach:*clients* (lambda (all) (cons c all)))
       (push c (pine.net.server:clients s))
       (is (pine.net.attach:attached-p :probe-kind))
       (pine.net.attach:reap c s)

@@ -1,6 +1,6 @@
 (defpackage #:pine.net.agent
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server)
+  (:local-nicknames (#:endpoint #:pine.run.agent) (#:d #:pine.data) (#:server #:pine.net.server)
                     (#:attach #:pine.net.attach) (#:fault #:pine.run.fault)
                     (#:session #:pine.repl.session) (#:log #:pine.run.log))
   (:export #:remote-session #:open-remote #:answer-for #:serve #:agents
@@ -9,7 +9,7 @@
 
 (in-package #:pine.net.agent)
 
-(defvar *agents* (d:box (fset:empty-map)))
+(defvar *agents* (d:table))
 (defvar *timeout* 30)
 
 (defclass agent ()
@@ -26,16 +26,16 @@
 
 (defun register (name there &key uri)
   (let ((a (make-instance 'agent :name name :there there :uri uri)))
-    (d:swap! *agents* (lambda (all) (fset:with all name a)))
+    (d:keep! *agents* name a)
     a))
 
 (defun forget (name)
-  (d:swap! *agents* (lambda (all) (fset:less all name)))
+  (d:drop! *agents* name)
   name)
 
-(defun agents () (fset:convert 'list (fset:range (d:held *agents*))))
+(defun agents () (d:vals (d:all *agents*)))
 
-(defun agent-named (name) (fset:lookup (d:held *agents*) name))
+(defun agent-named (name) (d:at (d:all *agents*) name))
 
 (defun open-remote (a &rest initargs)
   (apply #'make-instance 'remote-session :agent a :name (name a) initargs))
@@ -65,15 +65,13 @@
               :said (get-output-stream-string said))))))
 
 (defun answer-for (sys &key (name "agent"))
-  (sento.actor-context:actor-of sys
-    :name name
-    :dispatcher :pinned
-    :receive
-    (lambda (message)
-      (case (first message)
-        (:evaluate (cons :ok (%evaluate-here (second message))))
-        (:ping (cons :ok :pong))
-        (t (cons :ok nil))))))
+  (endpoint:agent name
+                  (lambda (message)
+                    (case (first message)
+                      (:evaluate (cons :ok (%evaluate-here (second message))))
+                      (:ping (cons :ok :pong))
+                      (t (cons :ok nil))))
+                  :dispatcher :pinned :in sys))
 
 (defun serve (sys &key (name "agent") master-host master-port self-port)
   (answer-for sys :name name)
@@ -87,10 +85,7 @@
       home)))
 
 (defun listen-for-agents (s)
-  (sento.actor-context:actor-of (server:actor-system s)
-    :name "agents"
-    :dispatcher :pinned
-    :receive
+  (endpoint:agent "agents"
     (lambda (message)
       (case (first message)
         (:here (destructuring-bind (&key name uri) (rest message)
@@ -99,4 +94,5 @@
                    (register name there :uri uri)
                    (log:note "agent ~a is here at ~a" name uri))))
         (:gone (forget (getf (rest message) :name)))
-        (t nil)))))
+        (t nil)))
+    :dispatcher :pinned :in (server:actor-system s)))

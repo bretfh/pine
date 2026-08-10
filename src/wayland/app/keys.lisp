@@ -5,9 +5,8 @@
 
 (in-package #:pine.wayland.app.keys)
 
-(defvar *ekb* (make-hash-table :test 'eq)
-  "Editor to (list context keymap state). Keyed by identity and touched only by
-the frontend's own wayland thread.")
+(defvar *ekb* (pine.data:table)
+  "Editor to (list context keymap state).")
 
 (defparameter +modifier-keysyms+
   '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"
@@ -15,7 +14,7 @@ the frontend's own wayland thread.")
     "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
   "Keysyms that never arm key repeat: holding a bare modifier repeats nothing.")
 
-(defun ekb (ed) (gethash ed *ekb*))
+(defun ekb (ed) (pine.data:at (pine.data:all *ekb*) ed))
 
 (defun mod-active (state name)
   (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
@@ -45,7 +44,7 @@ the frontend's own wayland thread.")
     (:keymap (format fd size)
      (assert (eq format :xkb-v1))
      (let* ((cell (or (ekb ed)
-                      (setf (gethash ed *ekb*)
+                      (pine.data:keep! *ekb* ed
                                      (list (xkb:xkb-context-new ()) nil nil))))
             (context (first cell))
             (shmo (shm:make-shm fd)))

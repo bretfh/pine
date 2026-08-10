@@ -1,6 +1,6 @@
 (defpackage #:pine.ui.paths
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:world #:pine.world.world)
                     (#:face #:pine.ui.face) (#:css #:pine.ui.css))
   (:export #:themes-node #:faces-node #:install #:face-plist))
@@ -20,9 +20,7 @@
           :italic (face:italic f) :underline (face:underline f))))
 
 (defun %theme-names ()
-  (let (acc)
-    (maphash (lambda (k v) (declare (ignore v)) (push k acc)) face:*themes*)
-    (sort acc #'string< :key #'symbol-name)))
+  (sort (d:keys (d:all face:*themes*)) #'string< :key #'symbol-name))
 
 (defmethod node:nodes ((n themes-node))
   (loop :for name :in (%theme-names)

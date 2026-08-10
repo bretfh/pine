@@ -38,14 +38,14 @@ symbol macro, so BOUNDP answers about the macro name and is false anywhere."
   "The system this image's endpoints are made in."
   (setf *system* system))
 
-(defun agent (name receive &key (dispatcher :shared))
+(defun agent (name receive &key (dispatcher :shared) (in *system*))
   "An endpoint of its own: messages to it are handled one at a time, in the
 order they were sent. :PINNED gives it a thread, which is what something that
 may park in a fault needs."
   (let* ((a (make-instance
              'agent :name name
              :ref (sento.actor-context:actor-of
-                   *system*
+                   in
                    :name name
                    :dispatcher dispatcher
                    :receive (lambda (message)
