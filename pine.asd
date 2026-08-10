@@ -43,7 +43,7 @@
                  (:module "repl"
                           :serial t
                           :components ((:file "command") (:file "mode")
-                                       (:file "session")))
+                                       (:file "session") (:file "shell")))
                  (:module "path"
                           :serial t
                           :components ((:file "path") (:file "reader")
@@ -90,7 +90,7 @@
                           :serial t :pathname "edit/"
                           :components ((:file "key") (:file "render")
                                        (:file "term") (:file "commands")
-                                       (:file "motion") (:file "listing") (:file "repl") (:file "debugger")
+                                       (:file "motion") (:file "isearch") (:file "listing") (:file "repl") (:file "debugger")
                                        (:file "defaults") (:file "eval")
                                        (:file "session")))
                  (:module "app"
@@ -107,7 +107,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "desktop") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "isearch") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "desktop") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

@@ -101,7 +101,6 @@
                   ("C-x o" . "other-window")))
     (mode:bind "text" (car pair) (cdr pair)))
   (mode:bind "text" "M-x" "run-command")
-  (mode:bind "text" "C-s" "isearch-forward")
   (dolist (pair '(("RET" . "answer") ("C-g" . "cancel") ("TAB" . "complete")
                   ("Return" . "answer") ("Escape" . "cancel") ("Tab" . "complete")
                   ("C-n" . "next-candidate") ("C-p" . "previous-candidate")

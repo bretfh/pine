@@ -4,7 +4,7 @@
   (:shadow #:delete #:search)
   (:export #:lines-of #:text-of #:line-at #:line-count #:clamp
            #:insert #:delete #:region #:newline
-           #:move-by #:word-char-p #:indent-width #:search
+           #:move-by #:word-char-p #:indent-width #:search #:folding-p
            #:beginning-of-line #:end-of-line #:*word-characters*))
 
 (in-package #:pine.edit.text)
@@ -145,14 +145,21 @@
   (or (position-if-not (lambda (c) (member c '(#\Space #\Tab))) text)
       (length text)))
 
-(defun search (lines needle line col &key (forward t))
-  (loop :with n := (d:size lines)
-        :for i := line :then (if forward (1+ i) (1- i))
-        :while (and (>= i 0) (< i n))
-        :for text := (line-at lines i)
-        :for from := (if (= i line) col (if forward 0 (length text)))
-        :for at := (if forward
-                       (cl:search needle text :start2 (min from (length text)))
-                       (cl:search needle text :from-end t
-                                              :end2 (min from (length text))))
-        :when at :do (return (values i at))))
+(defun folding-p (needle)
+  "Whether a search for NEEDLE ignores case: it does until you type a capital,
+which is how you ask for an exact one."
+  (notany #'upper-case-p needle))
+
+(defun search (lines needle line col &key (forward t) (test nil test-p))
+  (let ((test (if test-p test (if (folding-p needle) #'char-equal #'char=))))
+    (loop :with n := (d:size lines)
+          :for i := line :then (if forward (1+ i) (1- i))
+          :while (and (>= i 0) (< i n))
+          :for text := (line-at lines i)
+          :for from := (if (= i line) col (if forward 0 (length text)))
+          :for at := (if forward
+                         (cl:search needle text :test test
+                                    :start2 (min from (length text)))
+                         (cl:search needle text :test test :from-end t
+                                    :end2 (min from (length text))))
+          :when at :do (return (values i at)))))

@@ -51,11 +51,11 @@ lines only that band is given to tree-sitter at all."
     (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport band)
     (setf (pine.edit.buffer:edit-of b) nil)
-    (c:put (banded p) band)
     (c:put (found p)
            (if band
                (hl:parse-highlights ps :from-line (car band) :to-line (cdr band))
                (hl:parse-highlights ps)))
+    (c:put (banded p) band)
     (c:put (parsed p) tick)
     (when *on-parse* (funcall *on-parse* b))
     (c:held (found p))))

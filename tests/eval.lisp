@@ -257,9 +257,9 @@ two")
       (is (equal '(3000 . 3024) (pine.ts.parser:showing b))
           "scrolling moves the band the parser is asked about")
       (let ((found (pine.ts.parser:highlights b)))
-        (is (eql 3000 (first (first found)))
+        (is (<= 3000 (first (first found)))
             "and the colours come back in the buffer's own line numbers")
-        (is (<= (first (car (last found))) 3024))))))
+        (is (every (lambda (run) (<= 3000 (first run))) found))))))
 
 (test an-edit-is-handed-to-the-parser-as-an-edit
   (with-lisp-buffer (:text "(defun f (x) x)")

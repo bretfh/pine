@@ -259,20 +259,6 @@
     (prompt:choose! 1))
   (cmd:defcommand "previous-candidate" () (:describes "the candidate before")
     (prompt:choose! -1))
-  (cmd:defcommand "isearch-forward" () (:describes "search as you type")
-    (let ((from (buffer:point (%b)))
-          (b (%b)))
-      (prompt:ask "I-search: "
-                  :then (lambda (needle)
-                          (multiple-value-bind (line col)
-                              (text:search (pine.run.cell:held (buffer:lines b))
-                                           needle (first from) (second from))
-                            (if line
-                                (progn (buffer:goto! b line col)
-                                       (buffer:propertize! b line col
-                                                           (+ col (length needle))
-                                                           '(:face :match)))
-                                (log:note "not found: ~a" needle)))))))
   (cmd:defcommand "yank-pop" () (:describes "the kill before the one just put back")
     (let ((held (second *kill-ring*)))
       (when held
@@ -281,20 +267,6 @@
           (when (first *kill-ring*)
             (buffer:insert! b (first *kill-ring*)))))
       held))
-  (cmd:defcommand "isearch-backward" () (:describes "search back as you type")
-    (let ((from (buffer:point (%b)))
-          (b (%b)))
-      (prompt:ask "I-search back: "
-                  :history :search
-                  :then (lambda (needle)
-                          (multiple-value-bind (line col)
-                              (text:search (pine.run.cell:held (buffer:lines b))
-                                           needle 0 0)
-                            (declare (ignore col))
-                            (if line
-                                (buffer:goto! b line 0)
-                                (progn (buffer:goto! b (first from) (second from))
-                                       (log:note "not found: ~a" needle))))))))
   (cmd:defcommand "exchange-point-and-mark" () (:describes "point and mark swap places")
     (let* ((b (%b)) (mark (buffer:mark b)) (at (buffer:point b)))
       (when mark

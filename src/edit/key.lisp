@@ -7,6 +7,7 @@
   (:export #:key #:make-key #:key-sym #:key-ctrl #:key-meta #:key-shift
            #:key-super #:key= #:parse-key #:parse-chord #:chord-text
            #:self-insert-p #:dispatch #:pending #:last #:prefix #:*on-insert*
+           #:take-next #:taking
            #:bindings-of #:where))
 
 (in-package #:pine.edit.key)
@@ -16,6 +17,7 @@
 (defvar *last* (c:cell nil))
 (defvar *prefix* (c:cell nil))
 (defvar *on-insert* nil)
+(defvar *taking* (c:cell nil))
 
 (defstruct (key (:constructor %make-key) (:copier nil))
   (sym "" :type string :read-only t)
@@ -93,7 +95,24 @@
                       (string= text chord :end2 (length text))
                       (char= #\Space (char chord (length text))))))
 
+(defun take-next (fn)
+  "Hand the next key to FN instead of the keymap. FN answers :again to keep
+taking them. This is what an incremental search is: a reader that re-installs
+itself until something ends it."
+  (c:put *taking* fn))
+
+(defun taking () (c:held *taking*))
+
 (defun dispatch (session k)
+  (let ((take (taking)))
+    (when take
+      (c:put *taking* nil)
+      (let ((said (fault:attempt (lambda () (funcall take k)) "a key")))
+        (when (eq said :again) (c:put *taking* take))
+        (return-from dispatch (or said :taken)))))
+  (%dispatch session k))
+
+(defun %dispatch (session k)
   (let* ((session (where session))
          (so-far (append (pending) (list k)))
          (text (chord-text so-far))

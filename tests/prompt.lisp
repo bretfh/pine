@@ -183,16 +183,7 @@
                          (pine.edit.buffer:buffer-named "pine-probe-prompt.txt")))))
         (ignore-errors (delete-file file))))))
 
-(test isearch-moves-point-and-marks-what-it-found
-  (with-prompt (:text "one
-two
-three")
-    (press "C-s")
-    (typed "three")
-    (press "RET")
-    (is (equal '(2 0) (pine.edit.buffer:point (pine.edit.buffer:current))))
-    (is (equal '((:face :match))
-               (pine.edit.buffer:properties-at (pine.edit.buffer:current) 2 1)))))
+
 
 (test the-caret-is-on-the-prompt-line-while-pine-is-asking
   (with-prompt (:text "hello")
