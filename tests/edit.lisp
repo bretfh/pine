@@ -338,3 +338,70 @@ x)")
     (pine.repl.command:run "query-replace" (list "one"))
     (pine.edit.prompt:answer! "ONE")
     (is (equal "ONE two ONE" (pine.fs.node:contents (b))))))
+
+(test a-buffer-says-when-it-has-been-changed-and-stops-when-it-is-saved
+  (let ((file (merge-pathnames "pine-probe-modified.txt" (uiop:temporary-directory))))
+    (unwind-protect
+         (with-editor ()
+           (let ((b (b)))
+             (pine.edit.buffer:save! b file)
+             (is-false (pine.edit.buffer:modified b) "saving settles it")
+             (pine.edit.buffer:insert! b "x")
+             (is-true (pine.edit.buffer:modified b) "and typing dirties it again")
+             (is (find-if (lambda (row) (search "**" row))
+                          (pine:frame :width 40 :height 6))
+                 "the modeline says so")
+             (pine.edit.buffer:save! b file)
+             (is-false (pine.edit.buffer:modified b) "saving settles it")))
+      (ignore-errors (delete-file file)))))
+
+(test a-file-comes-back-with-point-where-it-was-left
+  (let ((file (merge-pathnames "pine-probe-place.txt" (uiop:temporary-directory))))
+    (unwind-protect
+         (with-editor ()
+           (with-open-file (out file :direction :output :if-exists :supersede)
+             (format out "one~%two~%three~%"))
+           (pine.repl.command:run "find-file" (list (namestring file)))
+           (pine.edit.buffer:goto! (pine.edit.buffer:current) 2 1)
+           (pine.repl.command:run "switch-to-buffer" (list "scratch"))
+           (pine.repl.command:run "find-file" (list (namestring file)))
+           (is (equal '(2 1) (pine.edit.buffer:point (pine.edit.buffer:current)))
+               "coming back lands where you left, not at the top"))
+      (ignore-errors (delete-file file)))))
+
+(test the-file-again-as-it-is-on-disk
+  (let ((file (merge-pathnames "pine-probe-revert.txt" (uiop:temporary-directory))))
+    (unwind-protect
+         (with-editor ()
+           (with-open-file (out file :direction :output :if-exists :supersede)
+             (write-string "from disk" out))
+           (pine.repl.command:run "find-file" (list (namestring file)))
+           (pine.edit.buffer:insert! (pine.edit.buffer:current) "typed ")
+           (is (search "typed" (pine.fs.node:contents (pine.edit.buffer:current))))
+           (pine.edit.buffer:revert! (pine.edit.buffer:current))
+           (is (equal "from disk"
+                      (string-right-trim (string #\Newline)
+                                         (pine.fs.node:contents
+                                          (pine.edit.buffer:current)))))
+           (is-false (pine.edit.buffer:modified (pine.edit.buffer:current))))
+      (ignore-errors (delete-file file)))))
+
+(test a-setting-is-the-modes-until-this-buffer-says-otherwise
+  (with-editor ()
+    (let ((b (b)))
+      (is (eql 2 (pine.edit.buffer:setting b :indent))
+          "lisp mode says two")
+      (setf (pine.edit.buffer:setting b :indent) 8)
+      (is (eql 8 (pine.edit.buffer:setting b :indent))
+          "and this buffer says eight")
+      (is (eql 2 (pine.repl.mode:setting "lisp" :indent))
+          "without the mode changing for every other buffer"))))
+
+(test what-this-buffer-reads-for-every-setting
+  (with-editor ()
+    (setf (pine.edit.buffer:setting (b) :tab-width) 4)
+    (pine.repl.command:run "describe-variables")
+    (let ((help (pine.edit.buffer:buffer-named "*help*")))
+      (is-true help)
+      (is (search "tab-width" (pine.fs.node:contents help)))
+      (is (search "4" (pine.fs.node:contents help))))))

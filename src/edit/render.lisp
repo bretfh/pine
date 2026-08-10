@@ -93,9 +93,13 @@
 (defun modeline (w)
   (let ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch))))
     (build:label
-     (format nil " ~a  ~a  L~d C~d"
+     (format nil " ~:[  ~;**~] ~a  ~a~{ ~a~}  L~d C~d"
+             (buffer:modified b)
              (node:name b)
              (or (mode:setting (buffer:mode-of b) :indicator) (buffer:mode-of b))
+             (remove nil (mapcar (lambda (name)
+                                   (mode:setting (mode:mode-named name) :indicator))
+                                 (buffer:minors-of b)))
              (1+ (buffer:point-line b))
              (buffer:point-col b))
      :class "modeline" :face :modeline)))

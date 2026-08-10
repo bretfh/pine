@@ -2,10 +2,19 @@
   (:use #:cl)
   (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:node #:pine.fs.node) (#:buffer #:pine.edit.buffer)
-                    (#:prompt #:pine.edit.prompt) (#:edit #:pine.edit.commands))
+                    (#:prompt #:pine.edit.prompt) (#:edit #:pine.edit.commands)
+                    (#:listing #:pine.edit.listing))
   (:export #:install))
 
 (in-package #:pine.edit.defaults)
+
+(defparameter +settings+
+  '((:tab-width      . "how wide a tab is drawn")
+    (:indent         . "how far a body indents")
+    (:comment        . "what starts a comment on a line")
+    (:grammar        . "which language the parse follows")
+    (:indicator      . "what the modeline calls this mode")
+    (:format-on-save . "whether saving reindents first")))
 
 (defun %files (typed) (prompt:files typed))
 
@@ -76,6 +85,7 @@
                   ("M-c" . "capitalize-word")
                   ("C-h k" . "describe-key") ("C-h b" . "describe-bindings")
                   ("C-h m" . "describe-mode") ("C-h c" . "describe-command")
+                  ("C-h v" . "describe-variables")
                   ("C-a" . "beginning-of-line") ("C-e" . "end-of-line")
                   ("M-<" . "beginning-of-buffer") ("M->" . "end-of-buffer")
                   ("RET" . "newline") ("DEL" . "delete-backward-char")
@@ -130,12 +140,42 @@
                        :then (lambda (said) (funcall write-back said)))
   :asking)
 
+(defun %settings ()
+  (cmd:defcommand "set-local" (key value)
+      (:describes "a setting, for this buffer only"
+       :asks '((:prompt "Setting: " :category :setting :must-match t)))
+    (let ((key (if (keywordp key)
+                   key
+                   (intern (string-upcase (princ-to-string key)) :keyword))))
+      (prompt:ask (format nil "~(~a~) here: " key)
+                  :then (lambda (said)
+                          (setf (buffer:setting (buffer:current) key)
+                                (let ((*package* (find-package :keyword)))
+                                  (handler-case (read-from-string said)
+                                    (error () said))))))
+      :asking))
+  (cmd:defcommand "describe-variables" () (:describes "every setting, and what this buffer reads")
+    (let ((b (buffer:current)))
+      (listing:into "*help*"
+                 (with-output-to-string (out)
+                   (format out "settings in ~a~%~%" (node:name b))
+                   (loop :for (key . says) :in +settings+
+                         :do (format out "~(~16a~) ~12a ~a~%" key
+                                     (or (buffer:setting b key) "")
+                                     says))))))
+  (prompt:source :setting
+                 (lambda (typed) (declare (ignore typed))
+                   (mapcar (lambda (each)
+                             (cons (string-downcase (string (car each))) (cdr each)))
+                           +settings+))))
+
 (defun install ()
   (setf pine.ui.build:*asking* #'%confirming
         pine.ui.build:*editing* #'%editing)
   (%modes)
   (edit:commands)
   (%sources)
+  (%settings)
   (%keys)
   (setf cmd:*asking* #'%asking)
   t)

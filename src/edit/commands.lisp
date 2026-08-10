@@ -193,6 +193,13 @@
             (let ((w (window:focused)))
               (when w (window:show! w b)))
             (node:full-name b)))))
+  (cmd:defcommand "revert-buffer" () (:describes "the file again, as it is on disk"
+                                     :asks '((:prompt "Revert from disk? "
+                                              :must-match t)))
+    (let ((b (%b)))
+      (if (buffer:file-of b)
+          (and (buffer:revert! b) (log:note "reverted ~a" (buffer:file-of b)) t)
+          (log:note "~a has no file" (node:name b)))))
   (cmd:defcommand "save-buffer" () (:describes "write the buffer to its file")
     (let ((b (%b)))
       (if (buffer:file-of b)

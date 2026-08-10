@@ -9,7 +9,8 @@
            #:mode-of #:minors-of #:file-of #:tick #:properties
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
            #:delete-region! #:goto! #:move! #:region-of #:mark! #:visit! #:save!
-           #:point-line #:point-col #:changed
+           #:point-line #:point-col #:changed #:modified #:settings #:setting
+           #:visited #:leaving! #:revert!
            #:past #:undo! #:redo! #:undoable #:redoable
            #:marks #:mark-at #:put-mark! #:drop-mark!
            #:propertize! #:properties-at #:clear-properties! #:edit-of
@@ -19,6 +20,7 @@
 
 (defvar *current* nil)
 (defvar *on-current* nil)
+(defvar *places* (d:no-map))
 
 (defclass buffer (node:node)
   ((lines      :initform (c:cell (text:lines-of "")) :reader lines)
@@ -32,7 +34,9 @@
    (past       :initform (history:history) :reader past)
    (marks      :initform (d:no-map) :accessor marks)
    (properties :initform (d:no-seq) :accessor properties)
-   (edit-of    :initform nil :accessor edit-of)))
+   (edit-of    :initform nil :accessor edit-of)
+   (modified   :initform nil :accessor modified)
+   (settings   :initform (d:no-map) :accessor settings)))
 
 (defmethod print-object ((b buffer) stream)
   (print-unreadable-object (b stream :type t)
@@ -68,6 +72,7 @@ lines became NEW-LINES and it grew by BYTES, counted from WAS."
   (setf (edit-of b) (list (list line old-lines new-lines bytes) was)))
 
 (defun changed (b)
+  (setf (modified b) t)
   (incf (tick b))
   (node:invalidate b)
   b)
@@ -116,6 +121,7 @@ still be what every command reads."
 (defun (setf current) (b)
   "What is being typed into. The window with the keyboard follows it, so the
 buffer a command switches to is the buffer on the screen."
+  (when *current* (leaving! *current*))
   (setf *current* (if (stringp b) (buffer-named b) b))
   (when (and *current* *on-current*) (funcall *on-current* *current*))
   *current*)
@@ -251,19 +257,53 @@ buffer a command switches to is the buffer on the screen."
     (destructuring-bind (line col) (mark b)
       (text:region (c:held (lines b)) line col (point-line b) (point-col b)))))
 
+(defun visited (b)
+  "Where point was the last time this file was open."
+  (d:at *places* (file-of b)))
+
 (defun visit! (b path)
   (setf (file-of b) (namestring path))
   (setf (node:contents b)
         (if (probe-file path) (uiop:read-file-string path) ""))
   (let ((m (mode:mode-for path)))
     (when m (setf (mode-of b) (mode:name m))))
-  (goto! b 0 0)
+  (let ((was (visited b)))
+    (if was
+        (goto! b (first was) (second was))
+        (goto! b 0 0)))
+  (setf (modified b) nil)
   b)
+
+(defun leaving! (b)
+  "Remember where point was, so coming back lands where you left."
+  (when (file-of b)
+    (setf *places* (d:with *places* (file-of b) (point b))))
+  b)
+
+(defun revert! (b)
+  "The file again, as it is on disk."
+  (let ((file (file-of b)))
+    (when (and file (probe-file file))
+      (leaving! b)
+      (visit! b file)
+      file)))
+
+(defun setting (b key &optional default)
+  "What this buffer reads for KEY: its own, then its modes', then the default.
+A buffer overrides a setting by holding one of the same name."
+  (multiple-value-bind (held there) (d:at (settings b) key)
+    (declare (ignore there))
+    (or held (mode:setting (mode-of b) key default))))
+
+(defun (setf setting) (value b key)
+  (setf (settings b) (d:with (settings b) key value))
+  value)
 
 (defun save! (b &optional (path (file-of b)))
   (when path
     (with-open-file (out path :direction :output :if-exists :supersede
                               :if-does-not-exist :create :external-format :utf-8)
       (write-string (text-of b) out))
-    (setf (file-of b) (namestring path))
+    (setf (file-of b) (namestring path)
+          (modified b) nil)
     path))
