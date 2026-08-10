@@ -12,7 +12,7 @@
            #:point-line #:point-col #:changed
            #:past #:undo! #:redo! #:undoable #:redoable
            #:marks #:mark-at #:put-mark! #:drop-mark!
-           #:propertize! #:properties-at #:clear-properties!
+           #:propertize! #:properties-at #:clear-properties! #:edit-of
            #:indent-line! #:indent-of))
 
 (in-package #:pine.edit.buffer)
@@ -31,7 +31,8 @@
    (tick       :initform 0   :accessor tick)
    (past       :initform (history:history) :reader past)
    (marks      :initform (d:no-map) :accessor marks)
-   (properties :initform (d:no-seq) :accessor properties)))
+   (properties :initform (d:no-seq) :accessor properties)
+   (edit-of    :initform nil :accessor edit-of)))
 
 (defmethod print-object ((b buffer) stream)
   (print-unreadable-object (b stream :type t)
@@ -43,6 +44,7 @@
 
 (defmethod (setf node:contents) (value (b buffer))
   (%note b)
+  (setf (edit-of b) nil)
   (c:put (lines b) (text:lines-of (princ-to-string value)))
   (changed b)
   value)
@@ -56,6 +58,14 @@
 
 (defmethod mode:setting ((b buffer) key &optional default)
   (mode:setting (mode:mode-named (mode-of b)) key default))
+
+(defun %bytes (text)
+  (length (sb-ext:string-to-octets (or text "") :external-format :utf-8)))
+
+(defun %edited (b was line old-lines new-lines bytes)
+  "What the last edit did, for whoever parses this buffer: at LINE, OLD-LINES
+lines became NEW-LINES and it grew by BYTES, counted from WAS."
+  (setf (edit-of b) (list (list line old-lines new-lines bytes) was)))
 
 (defun changed (b)
   (incf (tick b))
@@ -189,7 +199,9 @@ buffer a command switches to is the buffer on the screen."
                              body)))
     (unless (equal text fresh)
       (%note b)
-      (c:put (lines b) (d:with-at (c:held (lines b)) line fresh))
+      (let ((was (c:held (lines b))))
+        (%edited b was line 1 1 (- (%bytes fresh) (%bytes text)))
+        (c:put (lines b) (d:with-at was line fresh)))
       (when (= line (point-line b))
         (setf (point-col b) (max 0 (+ (point-col b) (- target had)))))
       (changed b))
@@ -197,12 +209,15 @@ buffer a command switches to is the buffer on the screen."
 
 (defun insert! (b string)
   (%note b)
-  (multiple-value-bind (fresh line col)
-      (text:insert (c:held (lines b)) (point-line b) (point-col b) string)
-    (c:put (lines b) fresh)
-    (setf (point-line b) line (point-col b) col)
-    (changed b)
-    (point b)))
+  (let ((was (c:held (lines b)))
+        (at (point-line b)))
+    (multiple-value-bind (fresh line col)
+        (text:insert was (point-line b) (point-col b) string)
+      (%edited b was at 1 (1+ (count #\Newline string)) (%bytes string))
+      (c:put (lines b) fresh)
+      (setf (point-line b) line (point-col b) col)
+      (changed b)
+      (point b))))
 
 (defun newline! (b) (insert! b (string #\Newline)))
 
@@ -219,12 +234,14 @@ buffer a command switches to is the buffer on the screen."
 
 (defun delete-region! (b from-line from-col to-line to-col)
   (%note b)
-  (multiple-value-bind (fresh at-line at-col taken)
-      (text:delete (c:held (lines b)) from-line from-col to-line to-col)
-    (c:put (lines b) fresh)
-    (goto! b at-line at-col)
-    (changed b)
-    taken))
+  (let ((was (c:held (lines b))))
+    (multiple-value-bind (fresh at-line at-col taken)
+        (text:delete was from-line from-col to-line to-col)
+      (%edited b was from-line (1+ (- to-line from-line)) 1 (- (%bytes taken)))
+        (c:put (lines b) fresh)
+      (goto! b at-line at-col)
+      (changed b)
+      taken)))
 
 (defun mark! (b &optional (line (point-line b)) (col (point-col b)))
   (setf (mark b) (list line col)))

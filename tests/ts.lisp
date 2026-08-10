@@ -79,7 +79,7 @@
     (is (find :namespace found :key #'fourth) "a path segment is painted")))
 
 (test the-byte-index-answers-both-ways-over-lines
-  (let ((index (pine.ts.index:build-index '("hello" "there"))))
+  (let ((index (pine.ts.index:build-index (pine.data:seq "hello" "there"))))
     (is (eql 0 (pine.ts.index:line-start index 0)))
     (is (eql 6 (pine.ts.index:line-start index 1)))
     (multiple-value-bind (line col) (pine.ts.index:source-line-col index 8)

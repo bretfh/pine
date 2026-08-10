@@ -66,22 +66,21 @@ bounded per-query cost against an amortised per-edit one.")
 
 (defun build-index (lines)
   "A fresh index over LINES, with no pending edits."
-  (let* ((n (length lines))
+  (let* ((n (pine.data:size lines))
          (starts (make-array (1+ n) :element-type '(unsigned-byte 62)))
          (offset 0)
          (i 0))
     (declare (type (unsigned-byte 62) offset))
-    (dolist (line lines)
+    (pine.data:do-each (line lines)
       (setf (aref starts i) offset)
       (incf offset (%line-byte-length line))
-
       (when (< i (1- n)) (incf offset))
       (incf i))
     (setf (aref starts n) offset)
     (%make-index :base-lines lines :starts starts :base-total offset :lines lines)))
 
 (defun index-line-count (index)
-  (length (byte-index-lines index)))
+  (pine.data:size (byte-index-lines index)))
 
 (defun %shift (index line)
   "The byte shift the pending edits apply at LINE, and the base line LINE came
@@ -111,8 +110,8 @@ from."
 (defun line-bytes (index line)
   "LINE's own byte length, without its newline."
   (let ((lines (byte-index-lines index)))
-    (if (< line (length lines))
-        (%line-byte-length (nth line lines))
+    (if (< line (pine.data:size lines))
+        (%line-byte-length (pine.data:at lines line))
         0)))
 
 (defun byte-line (index byte)
@@ -153,8 +152,8 @@ asked for, which a walk asks about once per node."
   (if (= line (byte-index-memo-line index))
       (byte-index-memo-text index)
       (let* ((lines (byte-index-lines index))
-             (text (if (and (>= line 0) (< line (length lines)))
-                       (nth line lines)
+             (text (if (and (>= line 0) (< line (pine.data:size lines)))
+                       (pine.data:at lines line)
                        "")))
         (setf (byte-index-memo-line index) line
               (byte-index-memo-text index) text

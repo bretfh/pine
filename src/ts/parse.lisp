@@ -91,10 +91,10 @@ in, so a macro defined in the buffer's own package is found."
 how many were written, which is zero at the end of the buffer."
   (multiple-value-bind (line offset) (pine.ts.index:byte-line index byte)
     (let ((written 0)
-          (n (length lines)))
+          (n (pine.data:size lines)))
       (block filling
         (loop :while (< line n)
-              :do (let* ((octets (sb-ext:string-to-octets (nth line lines)
+              :do (let* ((octets (sb-ext:string-to-octets (pine.data:at lines line)
                                                           :external-format :utf-8))
                          (len (length octets)))
                     (loop :for i :from (min offset len) :below len
@@ -203,7 +203,7 @@ the next highlight call, or any failure here, marks the cache stale."
 
 (defun %band (lines viewport)
   "The line band to parse for VIEWPORT over LINES, or NIL for all of them."
-  (let ((n (length lines)))
+  (let ((n (pine.data:size lines)))
     (when (and viewport (> n +whole-file-lines+))
       (cons (max 0 (* +band-lines+ (floor (car viewport) +band-lines+)))
             (min (1- n) (1- (* +band-lines+ (ceiling (1+ (cdr viewport))
@@ -211,7 +211,10 @@ the next highlight call, or any failure here, marks the cache stale."
 
 (defun %band-lines (lines band)
   "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
-  (if band (subseq lines (car band) (min (length lines) (1+ (cdr band)))) lines))
+  (if band
+      (pine.data:subseq lines (car band)
+                        (min (pine.data:size lines) (1+ (cdr band))))
+      lines))
 
 (defun %parse-band (ps lines band band-lines same-band edit)
   (let* ((old-tree (ps-tree ps))
@@ -219,7 +222,7 @@ the next highlight call, or any failure here, marks the cache stale."
          (shifted (and edit old-index old-tree same-band
                        (<= (car (or band '(0))) (first edit))
                        (< (first edit) (+ (or (and band (car band)) 0)
-                                          (length band-lines)))))
+                                          (pine.data:size band-lines)))))
          (index nil))
     (when shifted
       (destructuring-bind (line old-lines new-lines byte-delta) edit
@@ -247,7 +250,7 @@ the next highlight call, or any failure here, marks the cache stale."
                             :format-control "the ~(~a~) parser answered no tree ~
                                              for ~d line~:p"
                             :format-arguments (list (ps-language ps)
-                                                    (length band-lines)))
+                                                    (pine.data:size band-lines)))
             "parsing")
            nil)
           (t (if incremental
