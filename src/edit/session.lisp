@@ -4,13 +4,15 @@
                     (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine.ui.css) (#:wire #:pine.ui.wire)
+                    (#:layout #:pine.ui.layout)
                     (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
                     (#:surface #:pine.app.surface)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log)
                     (#:task #:pine.run.task) (#:box #:pine.run.mailbox))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
-           #:cols #:rows #:generation #:client-of #:surface #:repaint #:restyle))
+           #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h
+           #:generation #:client-of #:surface #:repaint #:restyle))
 
 (in-package #:pine.edit.session)
 
@@ -21,6 +23,10 @@
   ((client-of  :initarg :client :reader client-of)
    (cols       :initform 80 :accessor cols)
    (rows       :initform 24 :accessor rows)
+   (px-width   :initform nil :accessor px-width)
+   (px-height  :initform nil :accessor px-height)
+   (cell-w     :initform nil :accessor cell-w)
+   (cell-h     :initform nil :accessor cell-h)
    (sent       :initform nil :accessor sent)
    (drawing    :initform nil :accessor drawing)
    (generation :initform 0  :accessor generation)))
@@ -41,11 +47,31 @@
   (let ((render:*cols* (cols s)) (render:*rows* (rows s)))
     (computed:recompute (surface))))
 
+(defun %cell-metric (s)
+  "Measuring for a monospace grid: what the frontend told us one cell is."
+  (let ((cw (cell-w s)) (ch (cell-h s)))
+    (lambda (text font-px)
+      (declare (ignore font-px))
+      (values (* (length text) cw) ch))))
+
+(defun %arrange (s tree)
+  "Arrange the frame in pixels when the frontend has said what its cells
+measure, so the rects cross the wire and are painted as they are: chrome that
+is not the cell grid lines up with it instead of being laid out twice."
+  (when (and tree (cell-w s) (cell-h s) (px-width s) (px-height s)
+             (plusp (cell-w s)) (plusp (cell-h s)))
+    (let ((layout:*text-size* (%cell-metric s))
+          (width (px-width s))
+          (height (px-height s)))
+      (layout:measure tree width height)
+      (layout:arrange tree 0 0 width height)))
+  tree)
+
 (defun push-frame (s &key whole)
   "The frame, as what changed since the last one where that can say it. A
 keystroke moves a line or two; shipping the whole tree for each of them is what
 made typing cost what it did."
-  (let ((tree (%tree s)))
+  (let ((tree (%arrange s (%tree s))))
     (when tree
       (let* ((form (wire:node->wire tree))
              (patch (unless whole (wire:rows-patch (sent s) form))))
@@ -74,9 +100,15 @@ of it rather than one frame each."
   (case (first message)
     (:key (fault:attempt (lambda () (key:dispatch nil (second message))) "a key"))
     (:resize
-     (destructuring-bind (&key cols rows &allow-other-keys) (rest message)
+     (destructuring-bind (&key cols rows width height cell-w cell-h
+                          &allow-other-keys)
+         (rest message)
        (when (and cols rows)
-         (setf (cols s) (max 1 cols) (rows s) (max 2 rows))))
+         (setf (cols s) (max 1 cols) (rows s) (max 2 rows)))
+       (when (and width height (plusp width) (plusp height))
+         (setf (px-width s) width (px-height s) height))
+       (when (and cell-w cell-h (plusp cell-w) (plusp cell-h))
+         (setf (cell-w s) cell-w (cell-h s) cell-h)))
      (setf (sent s) nil))
     (:refresh (setf (sent s) nil)))
   (%draw s))

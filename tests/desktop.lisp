@@ -463,3 +463,20 @@ a test waits for the thread it did run on."
                                       (pine.edit.buffer:current)))))
                       "and the keys behind it landed once it was done, in order"))
         (pine.repl.command:forget "probe-slow")))))
+
+(test the-frame-is-arranged-in-pixels-once-the-frontend-says-what-a-cell-is
+  (with-desktop
+    (let* ((client (make-instance 'probe-client))
+           (s (pine.edit.session::%attached client)))
+      (is-true (wait-until (lambda () (find :widgets (sent client) :key #'first))))
+      (pine.edit.session::%work s (list :resize :cols 80 :rows 24
+                                        :width 720 :height 432
+                                        :cell-w 9 :cell-h 18))
+      (let* ((push (find :widgets (sent client) :key #'first))
+             (form (getf (rest push) :tree))
+             (view (first (pine.ui.wire:wire-views form))))
+        (is-true view)
+        (destructuring-bind (sl sc el ec) (getf (second view) :rect)
+          (declare (ignore sl sc))
+          (is (= 720 ec) "the frame was arranged in pixels, not in cells")
+          (is (> el 24) "and so was its height"))))))
