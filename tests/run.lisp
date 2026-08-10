@@ -68,31 +68,52 @@ carries is what says when, and a tick runs on a worker rather than on it."
            (is (null (member :probe-tick (pine.run.timer:names))))))
     (pine:stop)))
 
-(test a-mailbox-hands-messages-over-in-order
-  (let ((m (pine.run.mailbox:mailbox)))
-    (pine.run.mailbox:send m :one)
-    (pine.run.mailbox:send m :two)
-    (is (eql 2 (pine.run.mailbox:count m)))
-    (is (eq :one (pine.run.mailbox:take m)))
-    (is (eq :two (pine.run.mailbox:take m)))
-    (is-true (pine.run.mailbox:emptyp m))))
+(test an-endpoint-takes-messages-in-order-and-answers-what-it-is-asked
+  "An agent is a sento actor: one at a time, in the order they were sent."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let* ((seen (pine.data:box nil))
+                (a (pine.run.agent:agent
+                    "probe-agent"
+                    (lambda (message)
+                      (if (eq :ping message)
+                          (list :answered message)
+                          (pine.data:swap! seen (lambda (all) (cons message all))))))))
+           (unwind-protect
+                (progn
+                  (pine.run.agent:tell a :one)
+                  (pine.run.agent:tell a :two)
+                  (is-true (wait-until (lambda () (= 2 (length (pine.data:held seen))))))
+                  (is (equal '(:one :two) (reverse (pine.data:held seen))))
+                  (is (equal '(:answered :ping) (pine.run.agent:ask a :ping)))
+                  (is (eq a (pine.run.agent:agent-named "probe-agent"))))
+             (pine.run.agent:stop a))
+           (is (null (pine.run.agent:agent-named "probe-agent")))))
+    (pine:stop)))
 
-(test an-actor-is-a-task-with-an-inbox
-  (let* ((seen (pine.data:box nil))
-         (tk (pine.run.task:actor
-              "probe-actor"
-              (lambda (message)
-                (if (and (consp message) (eq :ask (first message)))
-                    (pine.run.task:reply (second message)
-                                         (list :answered (third message)))
-                    (pine.data:swap! seen (lambda (all) (cons message all))))))))
-    (unwind-protect
-         (progn
-           (pine.run.task:tell tk :hello)
-           (is-true (wait-until (lambda () (pine.data:held seen))))
-           (is (equal '(:hello) (pine.data:held seen)))
-           (is (equal '(:answered :ping) (pine.run.task:ask tk :ping :timeout 5))))
-      (pine.run.task:stop tk))))
+(test asking-from-inside-a-receive-is-refused-rather-than-hung
+  "A receive owes its mailbox an answer, so it may not wait for one."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let* ((said (pine.data:box nil))
+                (a nil))
+           (setf a (pine.run.agent:agent
+                    "probe-blocking"
+                    (lambda (message)
+                      (declare (ignore message))
+                      (pine.data:put!
+                       said
+                       (handler-case (pine.run.agent:ask a :ping :timeout 1)
+                         (pine.run.agent:blocking-ask () :refused))))))
+           (unwind-protect
+                (progn
+                  (pine.run.agent:tell a :go)
+                  (is-true (wait-until (lambda () (pine.data:held said))))
+                  (is (eq :refused (pine.data:held said))))
+             (pine.run.agent:stop a))))
+    (pine:stop)))
 
 (test two-threads-writing-one-table-both-land
   "A table is a map in a box, so a write is a swap and neither of two threads

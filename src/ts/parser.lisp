@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.parser
   (:use #:cl)
-  (:local-nicknames (#:task #:pine.run.task)
+  (:local-nicknames (#:agent #:pine.run.agent)
                     (#:node #:pine.fs.node) (#:mode #:pine.repl.mode)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:hl #:pine.ts.highlight) (#:d #:pine.data))
@@ -81,8 +81,9 @@ what its mode says."
       (let ((p (make-instance 'parser :buffer b :language language :state ps
                                       :task nil)))
         (setf (slot-value p 'running)
-              (task:actor (format nil "parse ~a" (node:name b))
-                          (lambda (message) (%receive p message))))
+              (agent:agent (format nil "parse-~a" (node:name b))
+                           (lambda (message) (%receive p message))
+                           :dispatcher :parse))
         p)))))
 
 (defun parser-for (b)
@@ -96,7 +97,7 @@ what its mode says."
           (let ((p (%make b language)))
             (when p
               (d:keep! *parsers* (node:name b) p)
-              (task:tell (running p) (list :parse (pine.edit.buffer:tick b)))
+              (agent:tell (running p) (list :parse (pine.edit.buffer:tick b)))
               p))))))
 
 (defun note (b)
@@ -105,7 +106,7 @@ showing lines it has not been asked about."
   (let ((p (parser-for b)))
     (when (and p (or (/= (d:held (parsed p)) (pine.edit.buffer:tick b))
                      (not (equal (d:held (banded p)) (showing b)))))
-      (task:tell (running p) (list :parse (pine.edit.buffer:tick b))))
+      (agent:tell (running p) (list :parse (pine.edit.buffer:tick b))))
     p))
 
 (defun highlights (b)
@@ -131,12 +132,12 @@ showing lines it has not been asked about."
   (let* ((name (if (stringp b) b (node:name b)))
          (p (d:at (d:all *parsers*) name)))
     (when p
-      (task:tell (running p) (list :stop))
-      (task:stop (running p))
+      (agent:tell (running p) (list :stop))
+      (agent:stop (running p))
       (d:drop! *parsers* name))
     p))
 
 (defun forget-all ()
   (dolist (p (parsers) (d:put! *parsers* (d:no-map)))
-    (task:tell (running p) (list :stop))
-    (task:stop (running p))))
+    (agent:tell (running p) (list :stop))
+    (agent:stop (running p))))

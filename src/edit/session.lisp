@@ -7,7 +7,7 @@
                     (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
                     (#:surface #:pine.app.surface)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log)
-                    (#:task #:pine.run.task) (#:box #:pine.run.mailbox))
+                    (#:agent #:pine.run.agent))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
            #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h
@@ -89,11 +89,7 @@ made typing cost what it did."
         (generation s)))))
 
 (defun %draw (s)
-  "Draw, unless there is more waiting: a burst of keys is one frame at the end
-of it rather than one frame each."
-  (let ((tk (drawing s)))
-    (when (or (null tk) (box:emptyp (task:inbox tk)))
-      (fault:attempt (lambda () (push-frame s :whole (null (sent s)))) "a frame"))))
+  (fault:attempt (lambda () (push-frame s :whole (null (sent s)))) "a frame"))
 
 (defun %work (s message)
   (case (first message)
@@ -113,12 +109,14 @@ of it rather than one frame each."
   (%draw s))
 
 (defun %drawing (s)
-  "The session's own thread. Keys are dispatched and frames drawn on it, so
+  "The session's own endpoint. Keys are dispatched and frames drawn there, so
 neither a slow command nor a slow frame holds up the loop reading from the
-client, and the keys still land in the order they were typed."
+client, and the keys still land in the order they were typed. Pinned: a command
+can stand in a fault, and a receive that parks takes its worker with it."
   (setf (drawing s)
-        (task:actor (format nil "editor ~d" (attach:client-id (client-of s)))
-                    (lambda (message) (%work s message)))))
+        (agent:agent (format nil "editor-~d" (attach:client-id (client-of s)))
+                     (lambda (message) (%work s message))
+                     :dispatcher :pinned)))
 
 (defun %key (message)
   (destructuring-bind (&key key-str ctrl meta shift super) (rest message)
@@ -129,17 +127,17 @@ client, and the keys still land in the order they were typed."
   (let ((s (%for client)))
     (when s
       (case (first message)
-        (:resize (task:tell (drawing s) message))
+        (:resize (agent:tell (drawing s) message))
         (:key (let ((k (%key message)))
-                (when k (task:tell (drawing s) (list :key k)))))
-        (:refresh (task:tell (drawing s) (list :refresh)))
+                (when k (agent:tell (drawing s) (list :key k)))))
+        (:refresh (agent:tell (drawing s) (list :refresh)))
         (t nil)))))
 
 (defun restyle (styles)
   (dolist (s (sessions))
     (attach:push-to (client-of s) :style :styles styles)
     (if (drawing s)
-        (task:tell (drawing s) (list :refresh))
+        (agent:tell (drawing s) (list :refresh))
         (progn (setf (sent s) nil) (push-frame s :whole t)))))
 
 (defun %attached (client)
@@ -150,12 +148,12 @@ client, and the keys still land in the order they were typed."
       (when styles (attach:push-to client :style :styles styles)))
     (log:note "editor attached as client ~d" (attach:client-id client))
     (%drawing s)
-    (task:tell (drawing s) (list :refresh))
+    (agent:tell (drawing s) (list :refresh))
     s))
 
 (defun %detached (client)
   (let ((s (%for client)))
-    (when (and s (drawing s)) (task:stop (drawing s))))
+    (when (and s (drawing s)) (agent:stop (drawing s))))
   (d:drop! *sessions* (attach:client-id client))
   client)
 
@@ -163,7 +161,7 @@ client, and the keys still land in the order they were typed."
   "Let go of every attached editor. The threads they draw on are this image's,
 so they go when it does rather than outliving it stopped."
   (dolist (s (sessions))
-    (when (drawing s) (task:stop (drawing s))))
+    (when (drawing s) (agent:stop (drawing s))))
   (d:put! *sessions* (d:no-map))
   t)
 
@@ -171,7 +169,7 @@ so they go when it does rather than outliving it stopped."
   (declare (ignore b))
   (dolist (s (sessions))
     (if (drawing s)
-        (task:tell (drawing s) (list :draw))
+        (agent:tell (drawing s) (list :draw))
         (fault:attempt (lambda () (push-frame s)) "a frame"))))
 
 (defun install ()

@@ -10,6 +10,7 @@
                     (#:process #:pine.proc.process)
                     (#:super #:pine.proc.supervisor)
                     (#:task #:pine.run.task) (#:timer #:pine.run.timer)
+                    (#:endpoint #:pine.run.agent)
                     (#:ui #:pine.ui.paths)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:edit #:pine.edit.defaults) (#:key #:pine.edit.key)
@@ -92,6 +93,7 @@
         *image* (net:start-server :remoting-port remoting)
         net:*server* *image*)
   (timer:attend (net:actor-system *image*))
+  (endpoint:attend (net:actor-system *image*))
   (when remoting
     (attach:listen-for-attach *image*)
     (agent:listen-for-agents *image*))

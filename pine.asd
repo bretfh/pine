@@ -26,9 +26,9 @@
                 ((:file "data")
                  (:module "run"
                           :serial t
-                          :components ((:file "mailbox")
-                                       (:file "task") (:file "fault")
-                                       (:file "timer") (:file "log")))
+                          :components ((:file "task") (:file "fault")
+                                       (:file "timer") (:file "agent")
+                                       (:file "log")))
                  (:module "fs"
                           :serial t
                           :components ((:file "node") (:file "computed")

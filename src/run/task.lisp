@@ -1,20 +1,17 @@
 (defpackage #:pine.run.task
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:box #:pine.run.mailbox))
+  (:local-nicknames (#:d #:pine.data))
   (:export #:task #:spawn #:tasks #:task-named #:name #:alivep #:stop #:join
-           #:inbox #:fault #:answered #:*tasks* #:actor #:ask #:tell #:reply #:once
-           #:stopping))
+           #:fault #:answered #:*tasks* #:once #:stopping))
 
 (in-package #:pine.run.task)
 
 (defvar *tasks* (d:box nil))
 (defvar *task* nil)
-(defvar *ask-timeout* 5)
 
 (defclass task ()
   ((name     :initarg :name   :reader name)
    (thread   :initform nil    :accessor thread)
-   (inbox    :initform nil    :accessor inbox)
    (answered :initform nil    :accessor answered)
    (fault    :initform nil    :accessor fault)
    (stopping :initform (d:box nil) :reader stopping)))
@@ -44,7 +41,6 @@
 (defgeneric stop (task)
   (:method ((tk task))
     (d:put! (stopping tk) t)
-    (when (inbox tk) (box:close-mailbox (inbox tk)))
     tk))
 
 (defgeneric join (task &key timeout)
@@ -74,34 +70,3 @@
 work that happens a click at a time does not pile up in the list."
   (spawn name (lambda () (unwind-protect (funcall thunk) (%forget *task*)))))
 
-(defun actor (name receive)
-  (let ((tk (make-instance 'task :name name)))
-    (setf (inbox tk) (box:mailbox))
-    (%remember tk)
-    (setf (thread tk)
-          (bordeaux-threads:make-thread
-           (lambda ()
-             (let ((*task* tk))
-               (loop :until (stoppingp)
-                     :for message := (box:take (inbox tk) :timeout 0.1)
-                     :when message
-                       :do (handler-case (funcall receive message)
-                             (error (e) (setf (fault tk) e))))))
-           :name (format nil "pine ~a" name)))
-    tk))
-
-(defgeneric tell (task message)
-  (:method ((name string) message) (tell (task-named name) message))
-  (:method ((tk task) message) (box:send (inbox tk) message)))
-
-(defgeneric ask (task message &key timeout)
-  (:method ((name string) message &key timeout)
-    (ask (task-named name) message :timeout timeout))
-  (:method ((tk task) message &key (timeout *ask-timeout*))
-    (let ((answer (box:mailbox)))
-      (tell tk (list :ask answer message))
-      (box:take answer :timeout timeout))))
-
-(defun reply (to value)
-  (box:send to value)
-  value)

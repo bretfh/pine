@@ -45,7 +45,8 @@
   (format nil "sento://~a:~d/user/~a" host port actor))
 
 (defun %config (workers)
-  (list :dispatchers (list :shared (list :workers workers :strategy :random))
+  (list :dispatchers (list :shared (list :workers workers :strategy :random)
+                           :parse (list :workers 2 :strategy :random))
         :scheduler (list :enabled :true :max-size 1000
                          :resolution (round (* 1000 timer:*soonest*)))))
 
