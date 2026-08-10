@@ -4,7 +4,7 @@
                     (#:world #:pine.world.world) (#:buffer #:pine.edit.buffer))
   (:export #:window #:make-window #:windows #:window-named #:focused #:focus!
            #:buffer-of #:scroll-of #:width-of #:height-of #:runs-of #:parts
-           #:splitp #:split! #:close! #:only! #:seed! #:show!))
+           #:splitp #:split! #:close! #:only! #:seed! #:show! #:follow))
 
 (in-package #:pine.edit.window)
 
@@ -65,6 +65,15 @@
   (setf (buffer:current) (buffer-of w))
   (node:invalidate w)
   w)
+
+(defun follow (b)
+  (let ((w (focused)))
+    (when (and w (not (eq b (buffer-of w))))
+      (setf (buffer-of w) b)
+      (node:invalidate w))
+    w))
+
+(setf buffer:*on-current* #'follow)
 
 (defun split! (w side)
   (let* ((runs (if (member side '(:beside :right :left)) :row :column))

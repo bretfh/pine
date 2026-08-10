@@ -21,7 +21,7 @@
         :collect (buffer:line b n)))
 
 (defun scroll-to-point (w)
-  (let* ((b (window:buffer-of w))
+  (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
          (line (buffer:point-line b))
          (from (window:scroll-of w))
          (height (max 1 (window:height-of w))))
@@ -71,7 +71,7 @@
   (and (eq w (window:focused)) (not (prompt:asking-p))))
 
 (defun buffer-tree (w)
-  (let* ((b (window:buffer-of w))
+  (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
          (from (window:scroll-of w))
          (width (max 1 (window:width-of w)))
          (height (max 1 (window:height-of w)))
@@ -91,7 +91,7 @@
                  :ccol (if caret (min (1- width) (buffer:point-col b)) -1))))
 
 (defun modeline (w)
-  (let ((b (window:buffer-of w)))
+  (let ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch))))
     (build:label
      (format nil " ~a  ~a  L~d C~d"
              (node:name b)

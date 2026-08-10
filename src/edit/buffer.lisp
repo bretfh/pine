@@ -5,7 +5,7 @@
                     (#:mode #:pine.repl.mode) (#:text #:pine.edit.text)
                     (#:d #:pine.data) (#:history #:pine.edit.history))
   (:export #:buffer #:make-buffer #:buffers #:buffer-named
-           #:kill-buffer #:current #:current-buffer #:lines #:point #:mark
+           #:kill-buffer #:scratch #:current #:current-buffer #:*on-current* #:lines #:point #:mark
            #:mode-of #:minors-of #:file-of #:tick #:properties
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
            #:delete-region! #:goto! #:move! #:region-of #:mark! #:visit! #:save!
@@ -18,6 +18,7 @@
 (in-package #:pine.edit.buffer)
 
 (defvar *current* nil)
+(defvar *on-current* nil)
 
 (defclass buffer (node:node)
   ((lines      :initform (c:cell (text:lines-of "")) :reader lines)
@@ -83,11 +84,19 @@
   (let ((n (tree:at (%buffers-node w) (princ-to-string name))))
     (and (typep n 'buffer) n)))
 
+(defun scratch ()
+  "The buffer there is always one of. Killing the last one makes a fresh one
+rather than leaving the editor with nothing to type into."
+  (or (buffer-named "scratch") (make-buffer "scratch" :mode "lisp")))
+
 (defun kill-buffer (name)
+  "Forget a buffer, and leave something current. A buffer that is gone must not
+still be what every command reads."
   (let ((b (buffer-named name)))
     (when b
-      (when (eq b *current*) (setf *current* nil))
-      (node:detach (%buffers-node) (node:name b)))
+      (node:detach (%buffers-node) (node:name b))
+      (when (eq b *current*)
+        (setf *current* (or (first (buffers)) (scratch)))))
     b))
 
 (defun current () *current*)
@@ -95,7 +104,11 @@
 (defun current-buffer () *current*)
 
 (defun (setf current) (b)
-  (setf *current* (if (stringp b) (buffer-named b) b)))
+  "What is being typed into. The window with the keyboard follows it, so the
+buffer a command switches to is the buffer on the screen."
+  (setf *current* (if (stringp b) (buffer-named b) b))
+  (when (and *current* *on-current*) (funcall *on-current* *current*))
+  *current*)
 
 (defun line (b n) (text:line-at (c:held (lines b)) n))
 

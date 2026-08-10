@@ -271,7 +271,10 @@ typed, so walking back to the end gives it back."
 
 (defun %close ()
   (let ((was (and *prompt* (was *prompt*))))
-    (when was (setf (buffer:current) was)))
+    (setf (buffer:current)
+          (if (and was (buffer:buffer-named (node:name was)))
+              was
+              (or (buffer:current) (buffer:scratch)))))
   (setf *prompt* nil)
   (when world:*world*
     (setf (node:contents (world:ensure world:*world* "prompt")) nil))

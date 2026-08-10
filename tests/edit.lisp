@@ -285,3 +285,34 @@ x)")
            (is (eql 2 (pine.edit.buffer:point-col (b)))
                "point moved with the text it was sitting in"))
       (pine.ts.parser:forget (b)))))
+
+(test killing-a-buffer-leaves-something-to-type-into
+  (with-editor (:text "hello")
+    (pine.repl.command:run "kill-buffer" (list "scratch"))
+    (is-true (pine.edit.buffer:current) "there is always a buffer")
+    (is (eq (pine.edit.buffer:current)
+            (pine.edit.window:buffer-of (pine.edit.window:focused)))
+        "and the window is showing it, not the one that was killed")
+    (pine.edit.key:dispatch nil (pine.edit.key:make-key "x"))
+    (is (equal "x" (pine.fs.node:contents (pine.edit.buffer:current)))
+        "so typing still reaches a buffer")))
+
+(test the-window-follows-what-is-current
+  (with-editor ()
+    (let ((other (pine.edit.buffer:make-buffer "other")))
+      (setf (pine.edit.buffer:current) other)
+      (is (eq other (pine.edit.window:buffer-of (pine.edit.window:focused)))
+          "a command that switches buffers switches what is on the screen"))))
+
+(test a-buffer-with-no-file-is-asked-where-to-write-it
+  (with-editor (:text "hello")
+    (is (eq :asking (pine.repl.command:run "save-buffer")))
+    (is (equal "Write file: "
+               (pine.edit.prompt:question (pine.edit.prompt:asking))))
+    (pine.edit.prompt:cancel!)))
+
+(test a-directory-is-not-a-file-to-open
+  (with-editor ()
+    (pine.repl.command:run "find-file" (list "/tmp"))
+    (is (equal "scratch" (pine.fs.node:name (pine.edit.buffer:current)))
+        "opening a directory says so rather than filling a buffer with a fault")))
