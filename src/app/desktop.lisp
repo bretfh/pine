@@ -7,7 +7,7 @@
                     (#:css #:pine.ui.css) (#:fault #:pine.run.fault)
                     (#:computed #:pine.fs.computed))
   (:export #:session #:sessions #:install #:push-surface #:push-all #:received
-           #:client-of #:acting #:mine-p #:upp #:repaint #:*client*))
+           #:client-of #:acting #:mine-p #:upp #:repaint #:restyle #:declared #:*client*))
 
 (in-package #:pine.app.desktop)
 
@@ -82,17 +82,33 @@
         (push-surface s surface))
       (when (surface:panelp surface) (%shown s surface)))))
 
+(defun %watch-one (s surface)
+  (let ((w (watch:watch surface (lambda (of value)
+                                  (declare (ignore value))
+                                  (%moved of)))))
+    (push w (watching s))
+    w))
+
 (defun %watch-surfaces (s)
-  (setf (watching s)
-        (mapcar (lambda (surface)
-                  (watch:watch surface (lambda (of value)
-                                         (declare (ignore value))
-                                         (%moved of))))
-                (surface:surfaces))))
+  (setf (watching s) nil)
+  (dolist (surface (surface:surfaces) (watching s))
+    (%watch-one s surface)))
+
+(defun declared (surface)
+  "A surface a config declared after a frontend attached is watched and shown
+like any other; without this it never reaches the screen."
+  (dolist (s (sessions) surface)
+    (%watch-one s surface)
+    (when (upp surface) (push-surface s surface))))
+
+(defun restyle (styles)
+  (dolist (s (sessions))
+    (attach:push-to (client-of s) :style :styles styles)))
 
 (defun %attached (client)
   (let ((s (make-instance 'session :client client)))
     (c:swap *sessions* (lambda (all) (d:with all (attach:client-id client) s)))
+    (pushnew #'restyle css:*listeners*)
     (let ((styles (css:styles)))
       (when styles (attach:push-to client :style :styles styles)))
     (%watch-surfaces s)
@@ -139,6 +155,7 @@
   (cmd:defcommand "reload-desktop" () (:describes "push every surface again")
     (repaint)
     t)
+  (setf surface:*on-declare* #'declared)
   (attach:app :desktop
               (d:map :doc "the bar, the echo strip and the panels"
                      :attached #'%attached

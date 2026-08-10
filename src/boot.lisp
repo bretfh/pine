@@ -272,7 +272,8 @@
 (defun compositor () (compositor:pine-wm world:*world*))
 
 (defun style (selector props)
-  (first (css:install (list (list selector props)))))
+  (prog1 (first (css:install (list (list selector props))))
+    (css:broadcast)))
 
 (defun %place (where)
   (cond ((node:nodep where) where)

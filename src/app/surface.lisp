@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
                     (#:world #:pine.world.world) (#:tree #:pine.fs.tree))
-  (:export #:surface #:defsurface #:surfaces #:surface-named #:surface-node #:root
+  (:export #:*on-declare* #:surface #:defsurface #:surfaces #:surface-named #:surface-node #:root
            #:as #:shownp #:builds #:show! #:hide! #:toggle! #:only!
            #:panelp #:forget))
 
@@ -30,12 +30,15 @@
 
 (defun panelp (s) (member (as s) '(:panel :overlay)))
 
+(defvar *on-declare* nil)
+
 (defun surface-node (name builds &key (as :panel) (shown (not (member as '(:panel :overlay)))))
   (let ((s (make-instance 'surface :name (princ-to-string name) :thunk builds
                                    :as as :shown shown
                                    :describes "a widget tree wayland shows")))
     (node:attach s (root))
     (node:slots s s "as" 'as "shown" 'shownp)
+    (when *on-declare* (funcall *on-declare* s))
     s))
 
 (defun surface (name builds &rest initargs)

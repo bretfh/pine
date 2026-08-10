@@ -153,10 +153,10 @@ field needs no editing of its own and no focus to hold."
         (ask (hint node)))
     (when write-back
       (lambda ()
-        (setf (pine.path.place:contents (pine.path.path:parse "/echo"))
-              (list :prompt (format nil "~a " (or ask "New value:"))
-                    :initial had
-                    :then write-back))))))
+        (if pine.ui.build:*editing*
+            (funcall pine.ui.build:*editing*
+                     (format nil "~a " (or ask "New value:")) had write-back)
+            (pine.run.log:note "nothing here can ask for a value"))))))
 
 (defun click-thunk (root line col)
   "A nullary thunk for a click at (LINE COL) on arranged ROOT, or nil where

@@ -8,7 +8,7 @@
                     (#:surface #:pine.app.surface)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log))
   (:export #:session #:sessions #:install #:push-frame #:received
-           #:cols #:rows #:generation #:client-of #:surface #:repaint))
+           #:cols #:rows #:generation #:client-of #:surface #:repaint #:restyle))
 
 (in-package #:pine.edit.session)
 
@@ -70,9 +70,15 @@
         (:refresh (push-frame s))
         (t nil)))))
 
+(defun restyle (styles)
+  (dolist (s (sessions))
+    (attach:push-to (client-of s) :style :styles styles)
+    (push-frame s)))
+
 (defun %attached (client)
   (let ((s (make-instance 'session :client client)))
     (c:swap *sessions* (lambda (all) (d:with all (attach:client-id client) s)))
+    (pushnew #'restyle css:*listeners*)
     (let ((styles (css:styles)))
       (when styles (attach:push-to client :style :styles styles)))
     (log:note "editor attached as client ~d" (attach:client-id client))

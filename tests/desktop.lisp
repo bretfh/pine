@@ -347,3 +347,37 @@
         (funcall thunk)
         (pine.edit.prompt:answer! "yes")
         (is-true ran)))))
+
+(test a-surface-declared-after-a-frontend-attached-still-reaches-it
+  (with-desktop
+    (let ((client (make-instance 'probe-client)))
+      (pine.app.desktop::%attached client)
+      (setf (sent client) nil)
+      (pine.app.surface:surface "late" (lambda () (pine.ui.build:label "late"))
+                                :as :bar)
+      (let ((push (find :widgets (sent client) :key #'first)))
+        (is-true push "a surface a config declares later is pushed, not stranded")
+        (is (equal "late" (getf (rest push) :surface)))))))
+
+(test restyling-reaches-the-frontends
+  (with-desktop
+    (let ((client (make-instance 'probe-client)))
+      (pine.app.desktop::%attached client)
+      (setf (sent client) nil)
+      (pine:style ".probe" (list :color "#ff0000"))
+      (let ((push (find :style (sent client) :key #'first)))
+        (is-true push "a style written at runtime is broadcast")
+        (is (search "probe" (princ-to-string (getf (rest push) :styles))))))))
+
+(test a-field-asks-for-its-new-value
+  (with-desktop
+    (let* ((where (pine.world.world:ensure pine.world.world:*world* "probe"))
+           (field (pine.ui.build:field (pine.path.path:parse "/probe")
+                                       :hint "Probe")))
+      (setf (pine.fs.node:contents where) "was")
+      (let ((thunk (pine.ui.layout:clicked field 0)))
+        (is-true thunk "a field is clickable")
+        (funcall thunk)
+        (is-true (pine.edit.prompt:asking-p) "and asks rather than doing nothing")
+        (pine.edit.prompt:answer! "now")
+        (is (equal "now" (pine.fs.node:contents where)))))))

@@ -2,7 +2,7 @@
   (:use #:cl #:pine.ui.node)
   (:shadow #:centerbox #:ring #:box #:center #:scroll #:slider #:calendar
            #:image #:cells #:stack)
-  (:export #:*asking* #:here #:box #:button #:calendar #:cells #:centerbox #:center #:choice
+  (:export #:*asking* #:*editing* #:here #:box #:button #:calendar #:cells #:centerbox #:center #:choice
            #:column #:gap #:icon #:image #:label #:ring #:row
            #:rows #:rule #:scroll #:slider #:grid #:stack
            #:field #:acting #:shown))
@@ -11,6 +11,7 @@
 
 (defvar *here* nil)
 (defvar *asking* nil)
+(defvar *editing* nil)
 
 (defun %parse-args (args)
   "(values props nodes): peel the leading keyword/value prop pairs into a map,

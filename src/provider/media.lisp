@@ -45,7 +45,7 @@
 
 (defun act (what)
   (when (member what +verbs+ :test #'equal)
-    (%playerctl "~a" (if (equal what "pause") "play-pause" what))
+    (%playerctl "~a" what)
     t))
 
 (defun %reading (name)

@@ -59,7 +59,7 @@ symbols a compound (.a.b), a string the selector DSL as written."))
   (format nil ".~(~a~)" (symbol-name sel)))
 
 (defmethod selector ((sel cons))
-  (format nil "~(list .~(~a~)~)" (mapcar #'symbol-name sel)))
+  (format nil "~{.~(~a~)~}" (mapcar #'symbol-name sel)))
 
 (defun install (styles)
   "Put STYLES (a list of (selector props)) at /style/?selector, replacing

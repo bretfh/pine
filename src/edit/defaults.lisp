@@ -126,8 +126,14 @@
               :then (lambda (said) (when (equal "yes" said) (funcall thunk))))
   :asking)
 
+(defun %editing (question had write-back)
+  (prompt:ask question :initial (princ-to-string (or had ""))
+                       :then (lambda (said) (funcall write-back said)))
+  :asking)
+
 (defun install ()
-  (setf pine.ui.build:*asking* #'%confirming)
+  (setf pine.ui.build:*asking* #'%confirming
+        pine.ui.build:*editing* #'%editing)
   (%modes)
   (edit:commands)
   (%sources)
