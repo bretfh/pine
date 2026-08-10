@@ -81,3 +81,36 @@ its job: nothing in the key dispatcher knows what a terminal is."
            (pine.repl.command:run "close-terminal" (list "probe-cmd"))
            (is (null (pine.repl.command:run "terminals")))))
     (pine:stop)))
+
+(test a-terminal-takes-every-key-except-the-one-that-gets-you-out
+  (unwind-protect
+       (progn
+         (pine:start)
+         (pine.edit.term:open-terminal "probe" :command "/bin/sh")
+         (sleep 0.5)
+         (let ((b (pine.edit.buffer:buffer-named "probe")))
+           (setf (pine.edit.buffer:current) b)
+           (is-true (pine.edit.term:typing b (pine.edit.key:parse-key "C-c"))
+                    "C-c reaches the shell rather than the keymap")
+           (is-true (pine.edit.term:typing b (pine.edit.key:parse-key "Up")))
+           (is (null (pine.edit.term:typing b (pine.edit.key:parse-key "C-x")))
+               "and C-x is still the editor's, so you can leave")))
+    (pine.edit.term:close-terminal "probe")
+    (pine:stop)))
+
+(test what-the-shell-says-faster-than-the-screen-can-show-is-bounded
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((tm (pine.edit.term:open-terminal "probe" :command "/bin/sh"))
+               (pine.edit.term:*carry* 64))
+           (let ((b (pine.edit.buffer:buffer-named "probe")))
+             (dotimes (i 20) (pine.edit.term::%carry tm (format nil "~40,'x<~d~>" i)))
+             (is (<= (pine.run.cell:held (pine.edit.term::carried tm))
+                     (* 2 pine.edit.term:*carry*))
+                 "it drops what is oldest rather than growing without end")
+             (is (plusp (pine.run.cell:held (pine.edit.term:dropped tm))))
+             (pine.edit.term:drain tm b)
+             (is-true b))))
+    (pine.edit.term:close-terminal "probe")
+    (pine:stop)))

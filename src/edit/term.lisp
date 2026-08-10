@@ -7,12 +7,17 @@
                     (#:super #:pine.proc.supervisor) (#:fault #:pine.run.fault))
   (:export #:terminal #:terminal-for #:open-terminal #:close-terminal
            #:terminals #:send #:screen #:resize #:fd #:pid #:term-of
-           #:install #:*shell* #:key->bytes))
+           #:install #:*shell* #:key->bytes #:drain #:typing #:waiting
+           #:dropped #:*budget* #:*carry* #:*pause* #:*on-refresh*))
 
 (in-package #:pine.edit.term)
 
 (defvar *shell* (or (uiop:getenv "SHELL") "/bin/sh"))
 (defvar *terminals* (c:cell (d:no-map)))
+(defvar *budget* 8192)
+(defvar *carry* (* 4 1024 1024))
+(defvar *pause* 1/30)
+(defvar *on-refresh* nil)
 
 (defparameter +named+
   '(("RET" . :enter) ("TAB" . :tab) ("DEL" . :backspace) ("ESC" . :escape)
@@ -25,6 +30,11 @@
    (fd      :initarg :fd      :reader fd)
    (pid     :initarg :pid     :reader pid)
    (term-of :initarg :term    :reader term-of)
+   (waiting :initform (c:cell nil) :reader waiting)
+   (carried :initform (c:cell 0)   :reader carried)
+   (dropped :initform (c:cell 0)   :reader dropped)
+   (painted :initform (c:cell 0)   :reader painted)
+   (drainer :initform nil     :accessor drainer)
    (reader  :initform nil     :accessor reader)))
 
 (defmethod print-object ((tm terminal) stream)
@@ -48,6 +58,46 @@
                                           (screen tm))))
   (buffer:goto! b (pine.vt:term-cursor-y (term-of tm))
                 (pine.vt:term-cursor-x (term-of tm))))
+
+(defun %carry (tm text)
+  "Hold what the shell said until the drain gets to it. A command that prints
+faster than the screen can show it drops what is oldest rather than growing
+until the image dies."
+  (c:swap (waiting tm) (lambda (all) (cons text all)))
+  (c:swap (carried tm) (lambda (n) (+ n (length text))))
+  (loop :while (> (c:held (carried tm)) *carry*)
+        :do (let ((oldest (car (last (c:held (waiting tm))))))
+              (when (null oldest) (return))
+              (c:swap (waiting tm) (lambda (all) (butlast all)))
+              (c:swap (carried tm) (lambda (n) (max 0 (- n (length oldest)))))
+              (c:swap (dropped tm) (lambda (n) (+ n (length oldest))))))
+  tm)
+
+(defun %take (tm)
+  "Up to a budget of what is waiting, oldest first."
+  (let ((held (c:held (waiting tm))))
+    (when held
+      (let* ((oldest (reverse held))
+             (taken nil)
+             (size 0))
+        (loop :for chunk :in oldest
+              :while (< size *budget*)
+              :do (push chunk taken)
+                  (incf size (length chunk)))
+        (let ((kept (nthcdr (length taken) oldest)))
+          (c:put (waiting tm) (reverse kept))
+          (c:put (carried tm) (reduce #'+ kept :key #'length :initial-value 0)))
+        (apply #'concatenate 'string (nreverse taken))))))
+
+(defun drain (tm b)
+  "Feed the emulator what it can take now, and repaint if anything landed."
+  (let ((text (%take tm)))
+    (when (and text (plusp (length text)))
+      (fault:attempt (lambda () (pine.vt:term-process-output (term-of tm) text))
+                     "terminal output")
+      (%refresh tm b)
+      (when *on-refresh* (funcall *on-refresh* b))
+      t)))
 
 (defun send (tm text)
   (pine.vt:pty-write-string (fd tm) text)
@@ -86,18 +136,17 @@
            (b (or (buffer:buffer-named name) (buffer:make-buffer name :mode "term"))))
       (c:swap *terminals* (lambda (all) (d:with all name tm)))
       (setf (reader tm)
-            (task:spawn (format nil "term ~a" name)
+            (task:spawn (format nil "term ~a read" name)
                         (lambda ()
                           (loop
                             (when (pine.vt:pty-wait fd 50)
-                              (let ((text (pine.vt:pty-read-string fd 8192)))
+                              (let ((text (pine.vt:pty-read-string fd 65536)))
                                 (when (or (null text) (zerop (length text)))
                                   (return))
-                                (fault:attempt
-                                 (lambda ()
-                                   (pine.vt:term-process-output term text)
-                                   (%refresh tm b))
-                                 "terminal output")))))))
+                                (%carry tm text)))))))
+      (setf (drainer tm)
+            (task:each (format nil "term ~a" name) *pause*
+                       (lambda () (drain tm b))))
       (when supervisor
         (super:supervise supervisor
                          (make-instance 'process:thread-process
@@ -111,6 +160,7 @@
   (let ((tm (terminal-for name)))
     (when tm
       (when (reader tm) (task:stop (reader tm)))
+      (when (drainer tm) (task:stop (drainer tm)))
       (ignore-errors (pine.vt:pty-kill (pid tm)))
       (ignore-errors (pine.vt:pty-close (fd tm)))
       (ignore-errors (pine.vt:pty-reap (pid tm)))
@@ -125,11 +175,18 @@
         (when bytes (send tm bytes))
         t))))
 
+(defun typing (b k)
+  "A terminal takes every key except the ones the editor needs to stay usable:
+a prefix chord, and the chord that gets you out."
+  (let ((tm (terminal-for (node:name b))))
+    (when (and tm (not (pine.edit.key:pending))
+               (not (pine.edit.key:key= k (pine.edit.key:parse-key "C-x"))))
+      (let ((bytes (key->bytes tm k)))
+        (when bytes (send tm bytes) :sent)))))
+
 (defun install ()
   (mode:mode "term" :parent "text" :settings '(:indicator "Term"))
-  (mode:handle "term" :insert (lambda (b text)
-                                (let ((tm (terminal-for (node:name b))))
-                                  (when tm (send tm text)))))
+  (mode:handle "term" :key #'typing)
   (cmd:defcommand "terminal" (&optional name)
       (:describes "a shell in a buffer")
     (let ((it (or name (format nil "term-~d" (1+ (length (terminals)))))))

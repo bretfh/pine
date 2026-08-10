@@ -94,7 +94,8 @@
   (dolist (s (sessions)) (fault:attempt (lambda () (push-frame s)) "a frame")))
 
 (defun install ()
-  (setf parser:*on-parse* #'repaint)
+  (setf parser:*on-parse* #'repaint
+        pine.edit.term:*on-refresh* #'repaint)
   (attach:app :editor
               (d:map :doc "the editor window: buffers, windows, the modeline"
                      :attached #'%attached

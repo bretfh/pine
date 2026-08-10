@@ -117,7 +117,11 @@ itself until something ends it."
          (so-far (append (pending) (list k)))
          (text (chord-text so-far))
          (found (mode:binding session text)))
-    (cond (found
+    (cond ((mode:claimed session :key k)
+           (c:put *pending* nil)
+           (c:put *last* "the mode took it")
+           :taken)
+          (found
            (c:put *pending* nil)
            (c:put *last* (cmd:name found))
            (fault:attempt (lambda () (cmd:run found)) (cmd:name found)))
