@@ -130,6 +130,7 @@
     (store:restore world:*world* *store*)
     (store:keeping *store*))
   (super:watch *supervisor*)
+  (task:each "reap" 5 (lambda () (attach:sweep *image*)))
   world:*world*)
 
 (defun stop ()
@@ -266,7 +267,8 @@
 
 (defun declare-frontends (&optional (which +frontends+))
   (dolist (verb which)
-    (unless (super:process-named *supervisor* verb)
+    (unless (or (super:process-named *supervisor* verb)
+                (attach:attached-p (intern (string-upcase verb) :keyword)))
       (let ((p (frontend verb)))
         (super:supervise *supervisor* p)
         (setf (node:contents (world:ensure world:*world* "proc" verb)) :declared)
@@ -291,6 +293,8 @@
   (cmd:defcommand "clients" () (:describes "every frontend attached")
     (loop :for c :in (attach:clients)
           :collect (list (attach:client-kind c) (attach:client-id c))))
+  (setf control:*on-reload* (lambda () (load-config config) :reloaded)
+        control:*agents* (lambda () (mapcar #'agent:name (agent:agents))))
   (control:serve *image* :on-quit #'quit)
   (load-config config)
   (load:note "~a: remoting ~d, ~d command~:p, ~d running"

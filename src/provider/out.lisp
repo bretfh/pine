@@ -1,11 +1,19 @@
 (defpackage #:pine.provider.out
   (:use #:cl)
-  (:export #:sh #:lines #:words #:number-in #:firstp #:has #:each-line))
+  (:export #:sh #:lines #:words #:number-in #:firstp #:has #:each-line
+           #:*through*))
 
 (in-package #:pine.provider.out)
 
+(defvar *through* nil)
+
 (defun sh (format &rest arguments)
+  "Run a line and answer what it said. Through /sh when there is one, so a
+provider's shell-outs are visible there and two providers asking the same
+question in the same breath ask it once."
   (let ((line (apply #'format nil format arguments)))
+    (when *through*
+      (return-from sh (funcall *through* line)))
     (multiple-value-bind (out err code)
         (ignore-errors
          (uiop:run-program (list "sh" "-c" line)

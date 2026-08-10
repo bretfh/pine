@@ -3,7 +3,7 @@
   (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:world #:pine.world.world) (#:buffer #:pine.edit.buffer))
   (:export #:window #:make-window #:windows #:window-named #:focused #:focus!
-           #:buffer-of #:scroll-of #:width-of #:height-of #:runs-of #:parts
+           #:buffer-of #:scroll-of #:width-of #:height-of #:runs-of #:weight-of #:parts
            #:splitp #:split! #:close! #:only! #:seed! #:show! #:follow))
 
 (in-package #:pine.edit.window)
@@ -15,7 +15,8 @@
    (scroll-of :initarg :scroll :accessor scroll-of :initform 0)
    (width-of  :initarg :width  :accessor width-of  :initform 80)
    (height-of :initarg :height :accessor height-of :initform 24)
-   (runs-of   :initarg :runs   :accessor runs-of   :initform nil)))
+   (runs-of   :initarg :runs   :accessor runs-of   :initform nil)
+   (weight-of :initarg :weight :accessor weight-of :initform 1)))
 
 (defmethod print-object ((w window) stream)
   (print-unreadable-object (w stream :type t)

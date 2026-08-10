@@ -6,7 +6,7 @@
            #:run-frontend #:client #:client-id #:client-kind #:client-display
            #:client-uri #:client-session #:clients #:push-to
            #:listen-for-attach #:attach-to #:protocol #:acceptable
-           #:reap #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached
+           #:reap #:sweep #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached
            #:attached-at))
 
 (in-package #:pine.net.attach)
@@ -113,6 +113,7 @@
            (sento.actor:tell display (list :attached :id (client-id c)
                                            :version (protocol)))
            (log:note "~(~a~) attached as client ~d" kind (client-id c))
+           (%noting kind)
            (fault:attempt (lambda () (attached kind c))
                           (format nil "~(~a~) attaching" kind))
            c))))))
@@ -130,11 +131,25 @@
                    (when c (reap c s))))
         (t nil)))))
 
+(defun %noting (kind)
+  (when pine.world.world:*world*
+    (setf (pine.fs.node:contents
+           (pine.world.world:ensure pine.world.world:*world* "attached"
+                                    (string-downcase (string kind))))
+          (length (clients kind)))))
+
+(defun sweep (&optional s)
+  "Drop the clients that are not there any more. A frontend that was killed
+must not still be counted, or the one that replaces it is told not to start."
+  (dolist (c (copy-list *clients*) *clients*)
+    (unless (alive-p c) (reap c s))))
+
 (defun reap (c s)
   (fault:attempt (lambda () (detached (client-kind c) c))
                  (format nil "~(~a~) detaching" (client-kind c)))
-  (setf *clients* (remove c *clients*)
-        (server:clients s) (remove c (server:clients s)))
+  (setf *clients* (remove c *clients*))
+  (when s (setf (server:clients s) (remove c (server:clients s))))
+  (%noting (client-kind c))
   c)
 
 (defun alive-p (c)

@@ -156,12 +156,20 @@
 
 (defun frame-tree (&key (cols *cols*) (rows *rows*) echo)
   (let* ((windows (window:windows))
-         (share (max 2 (floor (max 2 (1- rows)) (max 1 (length windows))))))
+         (weight (reduce #'+ windows :key #'window:weight-of :initial-value 0))
+         (room (max 2 (1- rows))))
     (dolist (w windows)
       (setf (window:width-of w) (max 1 cols)
-            (window:height-of w) (max 1 (1- share))))
+            (window:height-of w)
+            (max 1 (1- (max 2 (floor (* room (window:weight-of w))
+                                     (max 1 weight)))))))
     (apply #'build:column :align :stretch :class "editor"
-           (append (mapcar #'window-tree windows)
+           (append (loop :for w :in windows
+                         :for first := t :then nil
+                         :append (if first
+                                     (list (window-tree w))
+                                     (list (build:rule :face :border-inactive)
+                                           (window-tree w))))
                    (list (echo-tree cols echo))))))
 
 (defun rows (&key (width 80) (height 24) echo)

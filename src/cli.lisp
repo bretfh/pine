@@ -14,8 +14,13 @@
   watch WHERE           say so whenever it moves, until interrupted
   eval FORM             evaluate a form in the daemon
   run NAME [ARG...]     run one of the daemon's commands
+  diff WHERE OTHER      what is under one that is not under the other
   status                what the daemon is
-  start | stop          the daemon itself
+  reload                read the config again
+  agents                every image attached to this one
+  spawn NAME LINE       run a program under the supervisor
+  kill NAME             stop one
+  start | stop | restart   the daemon itself
   daemon                a daemon in this terminal
   editor | desktop | wm a frontend, attached to the daemon
   shell                 a repl in this terminal, with no daemon")
@@ -142,6 +147,13 @@
       ((equal verb "eval")   (%say (ask (list :eval (first rest)))))
       ((equal verb "run")    (%say (ask (list* :run rest))))
       ((equal verb "status") (%say (ask (list :status))))
+      ((equal verb "diff")   (%say (ask (list :diff (first rest) (second rest)))))
+      ((equal verb "reload") (%say (ask (list :reload))))
+      ((equal verb "agents") (%say (ask (list :agents))))
+      ((equal verb "spawn")  (%say (ask (list :run "spawn" (first rest)
+                                              (second rest)))))
+      ((equal verb "kill")   (%say (ask (list :run "kill" (first rest)))))
+      ((equal verb "restart") (%stop) (sleep 1) (%start))
       ((equal verb "watch")  (%watch (first rest)))
       ((equal verb "start")  (%start))
       ((equal verb "stop")   (%stop))

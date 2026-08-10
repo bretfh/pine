@@ -60,3 +60,18 @@
   (is (search "usage: pine" (pine.cli:usage)))
   (is (null (pine.cli:ask (list :ping) :port 17099))
       "no daemon on that port, and asking is not an error"))
+
+(test what-is-under-one-place-and-not-the-other
+  (with-pine
+    (asked :write "/probe/a" "1")
+    (asked :write "/probe/b" "2")
+    (asked :write "/other/a" "1")
+    (asked :write "/other/c" "3")
+    (let ((said (second (asked :diff "/probe" "/other"))))
+      (is (search "+ /probe/b" said) "here and not there")
+      (is (search "- /other/c" said) "there and not here")
+      (is (null (search "/probe/a" said)) "and what is the same is not said"))))
+
+(test the-daemon-can-be-told-to-read-its-config-again
+  (with-pine
+    (is (equal '(:ok "RELOADED") (asked :reload)))))

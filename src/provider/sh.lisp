@@ -4,7 +4,7 @@
                     (#:node #:pine.fs.node) (#:task #:pine.run.task))
   (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
            #:*environment-out* #:output-of #:run-line #:launch
-           #:streaming #:listen! #:quiet! #:listening #:said #:forget-all #:*sh*))
+           #:streaming #:listen! #:quiet! #:listening #:said #:asked #:forget-all #:*sh*))
 
 (in-package #:pine.provider.sh)
 
@@ -139,10 +139,21 @@
 (defmethod node:livep ((n sh-node)) t)
 (defmethod node:livep ((n command-node)) t)
 
+(defun asked (line)
+  "What a command says, remembered while a provider is reading it, so a bar
+that reads five things out of one command runs it once."
+  (let ((n (node:child *sh* line
+                       (lambda ()
+                         (make-instance 'command-node :name line :parent *sh*
+                                                      :line line)))))
+    (node:contents n)))
+
 (defun install (root)
   (setf *sh* (node:attach (make-instance 'sh-node :name "sh"
                                                   :describes "running something, and what it said")
-                          root)))
+                          root))
+  (setf pine.provider.out:*through* #'asked)
+  *sh*)
 
 (defun forget-all ()
   (when *sh*

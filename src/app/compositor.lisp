@@ -105,14 +105,20 @@
 
 (defun %leaf (w)
   (build:cells nil :of w :as 'pine.ui.node:os-window-view
-                   :expand 1 :margin (%margin)))
+                   :expand (max 1 (window:weight-of w)) :margin (%margin)))
 
 (defun %node (w)
   (if (window:splitp w)
       (let ((row (eq :row (window:runs-of w))))
         (apply (if row #'build:row #'build:column)
-               :align :stretch :expand 1
-               (mapcar #'%node (window:parts w))))
+               :align :stretch :expand (max 1 (window:weight-of w))
+               (loop :for part :in (window:parts w)
+                     :for first := t :then nil
+                     :append (if first
+                                 (list (%node part))
+                                 (list (build:rule :vertical row
+                                                   :face :border-inactive)
+                                       (%node part))))))
       (%leaf w)))
 
 (defun %tree (n)

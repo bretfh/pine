@@ -5,11 +5,14 @@
                     (#:world #:pine.world.world) (#:server #:pine.net.server)
                     (#:cmd #:pine.repl.command) (#:session #:pine.repl.session)
                     (#:log #:pine.run.log) (#:fault #:pine.run.fault))
-  (:export #:serve #:received #:*on-quit* #:said #:at))
+  (:export #:serve #:received #:*on-quit* #:*on-reload* #:*agents*
+           #:said #:at))
 
 (in-package #:pine.net.control)
 
 (defvar *on-quit* nil)
+(defvar *on-reload* (lambda () nil))
+(defvar *agents* (lambda () nil))
 (defvar *watches* (c:cell nil))
 
 (defun said (value)
@@ -86,6 +89,45 @@
       (c:swap *watches* (lambda (all) (remove held all))))
     (list :ok "")))
 
+(defun %listing (where)
+  "Every path under WHERE that holds something, with what it holds."
+  (let ((n (at where))
+        (acc nil))
+    (when n
+      (tree:walk n (lambda (each)
+                     (let ((held (ignore-errors (node:contents each))))
+                       (when (and held (node:leafp each))
+                         (push (cons (node:full-name each) (said held)) acc))))
+                 :into (complement #'node:livep))
+      (nreverse acc))))
+
+(defun %diff (where against)
+  "What is under WHERE that is not the same under AGAINST."
+  (let ((here (%listing where))
+        (there (%listing against)))
+    (list :ok
+          (with-output-to-string (out)
+            (dolist (each here)
+              (let ((match (assoc (%rebase (car each) where against)
+                                  there :test #'equal)))
+                (cond ((null match) (format out "+ ~a ~a~%" (car each) (cdr each)))
+                      ((not (equal (cdr match) (cdr each)))
+                       (format out "~~ ~a ~a -> ~a~%" (car each)
+                               (cdr match) (cdr each))))))
+            (dolist (each there)
+              (unless (assoc (%rebase (car each) against where)
+                             here :test #'equal)
+                (format out "- ~a ~a~%" (car each) (cdr each))))))))
+
+(defun %rebase (path from to)
+  (let ((from (string-right-trim "/" (princ-to-string from)))
+        (to (string-right-trim "/" (princ-to-string to))))
+    (if (and (plusp (length from))
+             (>= (length path) (length from))
+             (string= from path :end2 (length from)))
+        (concatenate 'string to (subseq path (length from)))
+        path)))
+
 (defun %run (name arguments)
   (let ((c (cmd:command-named name)))
     (if c
@@ -103,6 +145,9 @@
          (:eval    (%evaluate (first arguments)))
          (:run     (%run (first arguments) (rest arguments)))
          (:status  (%status))
+         (:diff    (%diff (first arguments) (second arguments)))
+         (:reload  (list :ok (princ-to-string (funcall *on-reload*))))
+         (:agents  (list :ok (said (funcall *agents*))))
          (:watch   (%watch (first arguments) (second arguments)))
          (:unwatch (%unwatch (first arguments)))
          (:pid     (%pid))
