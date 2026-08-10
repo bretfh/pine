@@ -85,3 +85,30 @@
                  "a fault in the other image comes back as a value")))
       (pine.proc.process:stop p))
     (is-false (pine.proc.process:alivep p))))
+
+(test a-fault-in-the-other-image-comes-home-with-its-restarts
+  "The other image does not unwind: it stands in the fault and says what it is
+still offering, so taking one of those resumes the thread over there."
+  (let ((p (make-instance 'pine.proc.lisp:lisp-process
+                          :name "probe-fault" :restarts nil :systems nil)))
+    (pine.run.fault:forget-faults)
+    (unwind-protect
+         (progn
+           (pine.proc.process:start p)
+           (multiple-value-bind (value said offers)
+               (pine.proc.lisp:evaluate p '(error "over there"))
+             (is (null value))
+             (is (search "over there" said))
+             (is (member "ABORT" offers :test #'equal)
+                 "the restarts that image is still standing in"))
+           (let ((f (first (pine.run.fault:faults))))
+             (is (search "over there" (princ-to-string (pine.run.fault:condition-of f)))
+                 "and the fault joined this image's own")
+             (is (eq p (pine.proc.lisp:there f)) "knowing where it came from")
+             (is (member "ABORT" (pine.run.fault:offers f) :test #'equal))
+             (pine.run.fault:resume f "ABORT")
+             (loop :repeat 200 :while (pine.proc.lisp:there f) :do (sleep 0.01))
+             (is (eql 4 (pine.proc.lisp:evaluate p '(+ 2 2)))
+                 "and taking one here let the thread there carry on")))
+      (pine.run.fault:forget-faults)
+      (pine.proc.process:stop p))))

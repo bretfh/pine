@@ -3,7 +3,8 @@
   (:local-nicknames (#:c #:pine.run.cell))
   (:export #:fault #:faults #:report #:attempt #:with-debugger #:forget-faults
            #:condition-of #:label #:backtrace-of #:at-time #:offers #:standing
-           #:resume #:attend #:attended #:forget #:parked #:*kept* #:*on-fault*
+           #:resume #:attend #:attended #:taken #:forget #:parked #:elsewhere #:await
+           #:*kept* #:*on-fault*
            #:*waiting* #:*debugging*))
 
 (in-package #:pine.run.fault)
@@ -70,6 +71,18 @@ signalled -- which is why this runs under handler-bind and not handler-case."
   (%noted (make-instance 'fault :condition condition :label label
                                 :backtrace (%backtrace)
                                 :offers (%offers condition))))
+
+(defun elsewhere (condition offers &optional label)
+  "A fault another image is standing in. It stands here too, offering what it
+offers there, so taking one of them is one act in both."
+  (%noted (make-instance 'fault :condition condition :label label
+                                :offers offers
+                                :parked (make-instance 'parked :restarts offers))))
+
+(defun await (f &optional (seconds *waiting*))
+  "Wait for someone to take one of the restarts F is standing in, and say which."
+  (let ((p (parked f)))
+    (when p (%park f p seconds))))
 
 (defun attend (f)
   (setf (attended f) t)
