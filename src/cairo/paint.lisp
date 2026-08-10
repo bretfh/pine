@@ -261,12 +261,16 @@ reports for one cell, so a window measures and paints at the same grid."
 
 (defmethod paint-px ((n view-node) chain)
   (multiple-value-bind (x y w h) (node-rect n)
-    (destructuring-bind (br bg bb) (pine.ui.face:face-bg :window)
-      (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0)
-                             (float (or (pine.ui.style:st-opacity
-                                         (styled n chain (hovered n)))
-                                        (view-opacity n))
-                                    1d0)))
+    (let* ((style (styled n chain (hovered n)))
+           (said (pine.ui.style:st-bg style)))
+      (destructuring-bind (br bg bb)
+          (if said
+              (mapcar (lambda (c) (round (* 255 c))) (subseq said 0 3))
+              (pine.ui.face:face-bg :window))
+        (cairo:set-source-rgba (/ br 255.0) (/ bg 255.0) (/ bb 255.0)
+                               (float (or (pine.ui.style:st-opacity style)
+                                          (view-opacity n))
+                                      1d0))))
     (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
     (cairo:fill-path)
     (let ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
