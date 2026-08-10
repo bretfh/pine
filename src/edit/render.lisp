@@ -5,8 +5,9 @@
                     (#:raster #:pine.ui.raster) (#:face #:pine.ui.face)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:mode #:pine.repl.mode) (#:parser #:pine.ts.parser)
-                    (#:prompt #:pine.edit.prompt))
-  (:export #:buffer-tree #:window-tree #:frame-tree #:rows #:modeline #:echo-tree
+                    (#:prompt #:pine.edit.prompt) (#:ui #:pine.ui.node))
+  (:export #:shown #:modelinep #:buffer-tree #:window-tree #:frame-tree
+           #:rows #:modeline #:echo-tree
            #:shown-line #:shown-col
            #:visible-lines #:scroll-to-point #:highlights-for #:indent-for
            #:*cols* #:*rows*))
@@ -42,8 +43,17 @@ Answers the text and the column each character landed in."
         ((< col (length where)) (aref where col))
         (t (1+ (aref where (1- (length where)))))))
 
+(defun %buffer-of (w)
+  "The buffer W is showing, or the one it stands in for while it shows
+something else."
+  (let ((it (window:buffer-of w)))
+    (or (and (stringp it) (buffer:buffer-named it))
+        (and (typep it 'buffer:buffer) it)
+        (buffer:current)
+        (buffer:scratch))))
+
 (defun scroll-to-point (w)
-  (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
+  (let* ((b (%buffer-of w))
          (line (buffer:point-line b))
          (from (window:scroll-of w))
          (height (max 1 (window:height-of w))))
@@ -96,9 +106,30 @@ Answers the text and the column each character landed in."
 (defun %carets-here (w)
   (and (eq w (window:focused)) (not (prompt:asking-p))))
 
-(defun buffer-tree (w)
-  (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
-         (from (window:scroll-of w))
+(defgeneric shown (content w)
+  (:documentation "The cells window W shows of what it holds. A buffer, a
+widget tree and the name of a buffer are all things a window can hold, and
+another kind of content is a method someone else writes: nothing here has to
+know about it.")
+  (:method (content w)
+    (declare (ignore content))
+    (build:cells (cells:rows-of (raster:make-raster (max 1 (window:width-of w))
+                                                    (max 1 (window:height-of w))))
+                 :class "editor-view" :expand 1 :crow -1 :ccol -1)))
+
+(defmethod shown ((content string) w)
+  "A name is the buffer it names."
+  (shown (or (buffer:buffer-named content) (buffer:scratch)) w))
+
+(defmethod shown ((content ui:node) w)
+  "A widget tree renders to cells like any surface does, so a config can put
+one in a window beside a buffer."
+  (build:cells (cells:render content (max 1 (window:width-of w))
+                             :height (max 1 (window:height-of w)))
+               :class "editor-view" :expand 1 :crow -1 :ccol -1))
+
+(defmethod shown ((b buffer:buffer) w)
+  (let* ((from (window:scroll-of w))
          (width (max 1 (window:width-of w)))
          (height (max 1 (window:height-of w)))
          (highlights (highlights-for b))
@@ -137,8 +168,19 @@ Answers the text and the column each character landed in."
                                   (shown-col where (buffer:point-col b))))
                            -1))))
 
+(defun buffer-tree (w)
+  "What window W is showing, whatever it holds."
+  (shown (or (window:buffer-of w) (buffer:current) (buffer:scratch)) w))
+
+(defun modelinep (w)
+  "Whether what this window holds has a modeline: a buffer says what line you
+are on and a widget tree has nothing of the sort to say."
+  (let ((it (window:buffer-of w)))
+    (or (null it) (typep it 'buffer:buffer)
+        (and (stringp it) (buffer:buffer-named it)))))
+
 (defun modeline (w)
-  (let* ((b (or (window:buffer-of w) (buffer:current) (buffer:scratch)))
+  (let* ((b (%buffer-of w))
          (width (max 1 (window:width-of w)))
          (text (format nil " ~:[  ~;**~] ~a  ~a~{ ~a~}  L~d C~d"
                        (buffer:modified b)
@@ -161,9 +203,12 @@ Answers the text and the column each character landed in."
 
 (defun window-tree (w)
   (scroll-to-point w)
-  (build:column :align :stretch :class "window" :expand 1
-                (buffer-tree w)
-                (modeline w)))
+  (if (modelinep w)
+      (build:column :align :stretch :class "window" :expand 1
+                    (buffer-tree w)
+                    (modeline w))
+      (build:column :align :stretch :class "window" :expand 1
+                    (buffer-tree w))))
 
 (defun candidates-shown ()
   (let ((p (prompt:asking)))
@@ -216,8 +261,9 @@ Answers the text and the column each character landed in."
     (dolist (w windows)
       (setf (window:width-of w) (max 1 cols)
             (window:height-of w)
-            (max 1 (1- (max 2 (floor (* room (window:weight-of w))
-                                     (max 1 weight)))))))
+            (let ((share (max 2 (floor (* room (window:weight-of w))
+                                       (max 1 weight)))))
+              (max 1 (if (modelinep w) (1- share) share)))))
     (apply #'build:column :align :stretch :class "editor"
            (append (loop :for w :in windows
                          :for first := t :then nil

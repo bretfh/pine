@@ -28,6 +28,10 @@
   (let ((it (buffer-of w)))
     (if (node:nodep it) (node:name it) it)))
 
+(defmethod (setf node:contents) (value (w window))
+  (show! w value)
+  value)
+
 (defmethod node:persistp ((w window)) nil)
 
 (defun %root (&optional (world world:*world*))
@@ -61,15 +65,20 @@
   (setf (node:contents (tree:ensure of "focused")) (node:name w))
   w)
 
-(defun show! (w b)
-  (setf (buffer-of w) (if (stringp b) (buffer:buffer-named b) b))
-  (setf (buffer:current) (buffer-of w))
-  (node:invalidate w)
-  w)
+(defun show! (w it)
+  "Put something in a window: a buffer, the name of one, or a widget tree. What
+a window holds is only what its renderer has a method for, so a config that
+puts a bar inside a window needs nothing here."
+  (let ((content (if (stringp it) (or (buffer:buffer-named it) it) it)))
+    (setf (buffer-of w) content)
+    (when (typep content 'buffer:buffer) (setf (buffer:current) content))
+    (node:invalidate w)
+    w))
 
 (defun follow (b)
   (let ((w (focused)))
-    (when (and w (not (eq b (buffer-of w))))
+    (when (and w (typep (buffer-of w) '(or null buffer:buffer))
+               (not (eq b (buffer-of w))))
       (setf (buffer-of w) b)
       (node:invalidate w))
     w))
