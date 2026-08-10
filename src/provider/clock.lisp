@@ -10,7 +10,8 @@
 (defvar *now* (c:cell 0))
 (defvar *clock* nil)
 
-(defparameter +parts+ '("second" "minute" "hour" "day" "month" "year" "weekday"))
+(defparameter +parts+
+  '("second" "minute" "min" "hour" "day" "month" "year" "weekday"))
 
 (defclass clock-node (node:node) ())
 
@@ -22,7 +23,8 @@
   (multiple-value-bind (second minute hour day month year weekday)
       (decode-universal-time at)
     (cond ((equal name "second") second)
-          ((equal name "minute") (format nil "~2,'0d" minute))
+          ((member name '("minute" "min") :test #'equal)
+           (format nil "~2,'0d" minute))
           ((equal name "hour") (format nil "~2,'0d" hour))
           ((equal name "day") day)
           ((equal name "month") month)

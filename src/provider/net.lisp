@@ -1,12 +1,14 @@
 (defpackage #:pine.provider.net
   (:use #:cl)
   (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
-  (:export #:net-node #:install #:connection #:online #:wifi #:rescan
+  (:export #:net-node #:install #:connection #:online #:wifi #:saved #:rescan
+           #:*asking*
            #:connect #:disconnect #:forget))
 
 (in-package #:pine.provider.net)
 
 (defparameter +readings+ '("connection" "online"))
+(defvar *asking* nil)
 
 (defclass net-node (node:node) ())
 (defclass reading-node (node:node) ())
@@ -19,6 +21,10 @@
 
 (defun online ()
   (and (search "connected" (out:sh "nmcli -t -f STATE general")) t))
+
+(defun saved ()
+  (remove "" (out:lines (out:sh "nmcli -t -f NAME connection show"))
+          :test #'equal))
 
 (defun wifi ()
   (loop :for line :in (out:lines
@@ -79,13 +85,22 @@
   (rescan))
 
 (defmethod node:contents ((n network-node))
-  (rest (assoc (node:name n) (wifi) :test #'equal)))
+  (let ((it (rest (assoc (node:name n) (wifi) :test #'equal))))
+    (when it
+      (append it (list :saved (and (member (node:name n) (saved) :test #'equal) t))))))
 
 (defmethod (setf node:contents) (value (n network-node))
-  (cond ((null value) (disconnect (node:name n)))
-        ((eq value :forget) (forget (node:name n)))
-        ((stringp value) (connect (node:name n) value))
-        (t (connect (node:name n))))
+  "Connect, disconnect or forget. A secured network nobody has saved needs a
+password, and asking for one is the frontend's business, not this file's."
+  (let ((ssid (node:name n)))
+    (cond ((null value) (disconnect ssid))
+          ((eq value :forget) (forget ssid))
+          ((stringp value) (connect ssid value))
+          ((and *asking*
+                (getf (node:contents n) :secure)
+                (not (getf (node:contents n) :saved)))
+           (funcall *asking* ssid (lambda (password) (connect ssid password))))
+          (t (connect ssid))))
   value)
 
 (defmethod node:leafp ((n reading-node)) t)

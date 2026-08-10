@@ -135,7 +135,8 @@
 (defun stop ()
   (setf cmd:*asking* nil
         pine.ui.build:*asking* nil
-        pine.ui.build:*editing* nil)
+        pine.ui.build:*editing* nil
+        net-p:*asking* nil)
   (key:take-next nil)
   (isearch:took-all)
   (live:leave-all)

@@ -169,9 +169,14 @@
                              (cons (string-downcase (string (car each))) (cdr each)))
                            +settings+))))
 
+(defun %password (ssid then)
+  (prompt:ask (format nil "Password for ~a: " ssid) :then then)
+  :asking)
+
 (defun install ()
   (setf pine.ui.build:*asking* #'%confirming
-        pine.ui.build:*editing* #'%editing)
+        pine.ui.build:*editing* #'%editing
+        pine.provider.net:*asking* #'%password)
   (%modes)
   (edit:commands)
   (%sources)

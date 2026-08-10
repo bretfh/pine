@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine.fs.node) (#:c #:pine.run.cell)
                     (#:sh #:pine.provider.sh))
-  (:export #:sys-node #:install #:cpu #:ram #:temp #:disk #:uptime #:load-average
+  (:export #:sys-node #:install #:mounts #:cpu #:ram #:temp #:disk #:uptime #:load-average
            #:host #:user))
 
 (in-package #:pine.provider.sys)
@@ -105,13 +105,45 @@
                 (apply #'make-instance class :name (princ-to-string name)
                        :parent n initargs))))
 
+(defclass disks-node (node:node) ())
+(defclass disk-node (node:node) ())
+
+(defun mounts ()
+  (remove nil
+          (mapcar (lambda (line)
+                    (let ((words (remove "" (uiop:split-string line :separator '(#\Space))
+                                         :test #'equal)))
+                      (sixth words)))
+                  (rest (%lines (sh:output-of "df -P -x tmpfs -x devtmpfs"))))))
+
 (defmethod node:nodes ((n sys-node))
-  (loop :for name :in +parts+ :collect (%kid n name 'reading-node)))
+  (append (loop :for name :in +parts+ :collect (%kid n name 'reading-node))
+          (list (node:child n "disks"
+                            (lambda () (make-instance 'disks-node :name "disks"
+                                                                  :parent n))))))
+
+(defmethod node:nodes ((n disks-node))
+  (loop :for where :in (mounts)
+        :collect (node:child n where
+                             (lambda () (make-instance 'disk-node :name where
+                                                                  :parent n)))))
+
+(defmethod node:resolve ((n disks-node) name)
+  (node:child n name (lambda () (make-instance 'disk-node :name name :parent n))))
+
+(defmethod node:contents ((n disks-node)) (mounts))
+(defmethod node:contents ((n disk-node)) (disk (node:name n)))
+(defmethod node:leafp ((n disk-node)) t)
+(defmethod node:livep ((n disks-node)) t)
+(defmethod node:livep ((n disk-node)) t)
 
 (defmethod node:every-seconds ((n sys-node)) 3)
 
 (defmethod node:resolve ((n sys-node) name)
-  (when (member name +parts+ :test #'equal) (%kid n name 'reading-node)))
+  (cond ((member name +parts+ :test #'equal) (%kid n name 'reading-node))
+        ((equal name "disks")
+         (node:child n name (lambda () (make-instance 'disks-node :name name
+                                                                  :parent n))))))
 
 (defmethod node:contents ((n sys-node)) +parts+)
 (defmethod node:contents ((n reading-node)) (%reading (node:name n)))

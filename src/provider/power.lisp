@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.power
   (:use #:cl)
   (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
-  (:export #:power-node #:install #:battery #:charging #:act))
+  (:export #:power-node #:install #:battery #:charging #:state #:act))
 
 (in-package #:pine.provider.power)
 
@@ -12,25 +12,35 @@
     ("poweroff" . "systemctl poweroff")
     ("logout" . "loginctl terminate-session $XDG_SESSION_ID")))
 
-(defparameter +readings+ '("battery" "charging"))
+(defparameter +readings+ '("battery" "charging" "state"))
 
 (defclass power-node (node:node) ())
 (defclass reading-node (node:node) ())
 (defclass verb-node (node:node) ())
 
 (defun %supply ()
-  (first (directory "/sys/class/power_supply/BAT*/")))
+  (or (first (directory "/sys/class/power_supply/BAT*/"))
+      (first (remove-if-not
+              (lambda (each) (probe-file (merge-pathnames "capacity" each)))
+              (directory "/sys/class/power_supply/*/")))))
 
 (defun battery ()
   (let ((where (%supply)))
     (when where
       (out:number-in (out:sh "cat ~acapacity 2>/dev/null" (namestring where))))))
 
-(defun charging ()
+(defun state ()
+  "What the battery is doing: charging, discharging, full, idle, or unknown."
   (let ((where (%supply)))
     (when where
-      (let ((state (out:sh "cat ~astatus 2>/dev/null" (namestring where))))
-        (and (search "Charging" state) t)))))
+      (let ((said (out:sh "cat ~astatus 2>/dev/null" (namestring where))))
+        (cond ((search "Charging" said) :charging)
+              ((search "Discharging" said) :discharging)
+              ((search "Full" said) :full)
+              ((search "Not charging" said) :idle)
+              ((plusp (length said)) :unknown))))))
+
+(defun charging () (eq :charging (state)))
 
 (defun act (what)
   (let ((line (cdr (assoc what +verbs+ :test #'equal))))
@@ -55,7 +65,10 @@
 (defmethod node:contents ((n power-node)) (battery))
 
 (defmethod node:contents ((n reading-node))
-  (if (equal "battery" (node:name n)) (battery) (charging)))
+  (let ((name (node:name n)))
+    (cond ((equal "battery" name) (battery))
+          ((equal "state" name) (state))
+          (t (charging)))))
 
 (defmethod node:contents ((n verb-node)) (node:name n))
 
