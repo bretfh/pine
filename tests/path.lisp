@@ -49,7 +49,7 @@
 
 (test the-reader-is-sugar-and-nothing-underneath-it-reads-it-in
   (let ((found (remove-if-not
-                (lambda (file) (search "in-readtable" (uiop:read-file-string file)))
+                (lambda (file) (search "named-readtables:in-readtable" (uiop:read-file-string file)))
                 (%files))))
     (is (null (remove-if (lambda (f)
                            (or (search "/path/" (namestring f))

@@ -10,6 +10,7 @@
   (syntax:language
    {:grammar {:lib "libtree-sitter-pine" :fn "tree_sitter_pine"}
     :indent {:width 2}
+    :readtable 'pine.path.reader:syntax
     :doc "pine"}
 
    (/node/map_lit  {:delimiters t :rest :form})

@@ -48,6 +48,7 @@ lines only that band is given to tree-sitter at all."
          (lines (%lines b))
          (edit (pine.edit.buffer:edit-of b))
          (band (showing b)))
+    (setf (runtime:ps-package ps) (pine.edit.buffer:package-of b))
     (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport band)
     (setf (pine.edit.buffer:edit-of b) nil)
@@ -67,7 +68,10 @@ lines only that band is given to tree-sitter at all."
     (t nil)))
 
 (defun %grammar (b)
-  (mode:setting (pine.edit.buffer:mode-of b) :grammar))
+  "Which language a buffer is parsed as: what it says it is written in, else
+what its mode says."
+  (or (syntax:for-readtable (pine.edit.buffer:readtable-of b))
+      (mode:setting (pine.edit.buffer:mode-of b) :grammar)))
 
 (defun %make (b language)
   (multiple-value-bind (lib fn) (syntax:grammar-of language)
@@ -82,9 +86,13 @@ lines only that band is given to tree-sitter at all."
         p)))))
 
 (defun parser-for (b)
-  (let ((language (%grammar b)))
+  (let* ((language (%grammar b))
+         (had (d:at (c:held *parsers*) (node:name b))))
+    (when (and had (not (eq language (language-of had))))
+      (forget b)
+      (setf had nil))
     (when (and language *runtime*)
-      (or (d:at (c:held *parsers*) (node:name b))
+      (or had
           (let ((p (%make b language)))
             (when p
               (c:swap *parsers* (lambda (all) (d:with all (node:name b) p)))

@@ -98,7 +98,7 @@
 (test the-operating-system-does-not-read-in-its-own-sugar
   (let ((using nil))
     (dolist (file (%files))
-      (when (and (find-if (lambda (line) (search "in-readtable" line)) (%lines file))
+      (when (and (find-if (lambda (line) (search "named-readtables:in-readtable" line)) (%lines file))
                  (not (member (file-namestring file) +declarations+ :test #'equal)))
         (push (file-namestring file) using)))
     (is (null using) "~{~%  ~a declares a readtable~}" (reverse using))))

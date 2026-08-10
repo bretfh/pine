@@ -3,7 +3,8 @@
   (:shadow #:read #:print #:close)
   (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode))
   (:export #:session #:open-session #:sessions #:*session* #:*history-kept*
-           #:*prompt* #:name #:owner #:package-of #:node-of #:mode-of #:minors
+           #:*prompt* #:name #:owner #:package-of #:readtable-of #:node-of
+           #:mode-of #:minors
            #:history #:input #:output #:openp
            #:read #:evaluate #:print #:interact #:close
            #:evaluation #:form #:answered #:fault #:said #:at-time))
@@ -31,6 +32,7 @@
    (owner      :initarg :owner   :reader owner      :initform nil)
    (package-of :initarg :package :accessor package-of
                :initform (find-package :cl-user))
+   (readtable-of :initarg :readtable :accessor readtable-of :initform nil)
    (node-of    :initarg :node    :accessor node-of  :initform nil)
    (mode-of    :initarg :mode    :accessor mode-of  :initform nil)
    (minors     :initarg :minors  :accessor minors   :initform nil)
@@ -65,7 +67,8 @@
 
 (defgeneric read (session &optional from)
   (:method ((s session) &optional from)
-    (let ((*package* (package-of s)))
+    (let ((*package* (package-of s))
+          (*readtable* (or (readtable-of s) *readtable*)))
       (if from
           (cl:read-from-string from)
           (cl:read (input s) nil :eof)))))
@@ -107,6 +110,7 @@
            (%attempt
             (lambda ()
               (let ((*package* (package-of s))
+                    (*readtable* (or (readtable-of s) *readtable*))
                     (*session* s))
                 (if c
                     (let ((args (if given

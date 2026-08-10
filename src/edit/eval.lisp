@@ -6,7 +6,7 @@
                     (#:buffer #:pine.edit.buffer) (#:prompt #:pine.edit.prompt)
                     (#:log #:pine.run.log) (#:fault #:pine.run.fault)
                     (#:c #:pine.run.cell))
-  (:export #:install #:token-at #:symbol-at #:package-of #:offset-of #:line-col
+  (:export #:install #:token-at #:symbol-at #:offset-of #:line-col
            #:definition #:references #:complete #:arglist #:documentation
            #:sexp-before #:defun-around #:visit #:went #:*went*))
 
@@ -48,22 +48,11 @@
           :do (decf from))
     from))
 
-(defun package-of (b)
-  (let* ((text (buffer:text-of b))
-         (at (search "(in-package" text :from-end t)))
-    (or (and at
-             (ignore-errors
-              (let ((*package* (find-package :cl-user)))
-                (find-package
-                 (string (second (read-from-string text nil nil :start at)))))))
-        (find-package :pine.user)
-        (find-package :cl-user))))
-
 (defun symbol-at (b &optional of)
   (let* ((text (buffer:text-of b))
          (token (or of (token-at text (offset-of b)))))
     (when token
-      (values (let ((*package* (package-of b)))
+      (values (multiple-value-bind (*package* *readtable*) (buffer:reading b)
                 (ignore-errors (read-from-string token)))
               token))))
 
@@ -144,7 +133,7 @@
 (defun complete (b &optional (prefix ""))
   (when (plusp (length prefix))
     (let ((up (string-upcase prefix)) (out nil))
-      (do-symbols (s (package-of b))
+      (do-symbols (s (buffer:package-of b))
         (let ((name (string-downcase (symbol-name s))))
           (when (and (>= (length name) (length prefix))
                      (string-equal up name :end2 (length up)))
@@ -205,7 +194,9 @@
 
 (defun %evaluate (b text at)
   (let* ((s (or session:*session*
-                (session:open-session :name (node:name b) :package (package-of b))))
+                (session:open-session :name (node:name b)
+                                      :package (buffer:package-of b)
+                                      :readtable (buffer:readtable-of b))))
          (e (session:evaluate s (session:read s text)))
          (said (if (session:fault e)
                    (format nil "~a" (session:fault e))
@@ -284,12 +275,14 @@
            (n 0))
       (fault:attempt
        (lambda ()
-         (let ((*package* (package-of b)) (at 0))
-           (loop (multiple-value-bind (form next) (read-from-string text nil :eof :start at)
-                   (when (eq form :eof) (return))
-                   (eval form)
-                   (incf n)
-                   (setf at next)))))
+         (multiple-value-bind (*package* *readtable*) (buffer:reading b)
+           (let ((at 0))
+             (loop (multiple-value-bind (form next)
+                       (read-from-string text nil :eof :start at)
+                     (when (eq form :eof) (return))
+                     (eval form)
+                     (incf n)
+                     (setf at next))))))
        (format nil "evaluating ~a" (node:name b)))
       (log:note "~d form~:p" n)
       n)))

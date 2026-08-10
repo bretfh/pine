@@ -4,6 +4,7 @@
                     (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:world #:pine.world.world) (#:path #:pine.path.path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
+           #:for-readtable #:readtable-of
            #:install #:compute-highlights #:hl-dump #:hl-dump-file
            #:*inferrers*))
 
@@ -123,6 +124,19 @@
 (defun languages ()
   (sort (loop :for k :being :the :hash-keys :of *compiled* :collect k)
         #'string< :key #'string))
+
+(defun readtable-of (name)
+  "The readtable a language is written in, when it says: a language whose
+reader is not the standard one names it here."
+  (let ((said (pl:at (pl:at (%raw name) :options) :readtable)))
+    (when said (ignore-errors (named-readtables:find-readtable said)))))
+
+(defun for-readtable (readtable)
+  "The language written in READTABLE. This is what a buffer's own
+(in-readtable) picks: the file says what it is written in, and the grammar
+follows it rather than the path it happens to be under."
+  (when readtable
+    (find-if (lambda (name) (eq readtable (readtable-of name))) (languages))))
 
 (defun grammar-of (name)
   (let* ((lang (for name))

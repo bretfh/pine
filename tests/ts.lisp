@@ -91,3 +91,50 @@
          (rule (gethash "str_lit" (pine.ts.highlight:lang-nodes lang))))
     (is-true (pine.data:mapp rule) "a node rule is a map, looked up by key")
     (is (eq :string (pine.data:at rule :face)))))
+
+(test a-buffer-says-what-it-is-written-in
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((b (pine.edit.buffer:make-buffer "probe-syntax")))
+           (setf (pine.fs.node:contents b) "(in-package #:pine.test)
+(defun f () 1)")
+           (is (eq (find-package :pine.test) (pine.edit.buffer:package-of b))
+               "the package its own (in-package) names")
+           (is (null (pine.edit.buffer:readtable-of b))
+               "and nothing else, where it says nothing else")
+           (setf (pine.fs.node:contents b)
+                 "(in-package #:pine.test)
+(named-readtables:in-readtable pine.path.reader:syntax)
+(defun f () /probe/one)")
+           (is (eq (named-readtables:find-readtable 'pine.path.reader:syntax)
+                   (pine.edit.buffer:readtable-of b))
+               "the readtable its own (in-readtable) names")
+           (is (eq :pine (pine.ts.parser::%grammar b))
+               "so it is parsed as pine, whatever path it is under")
+           (multiple-value-bind (package readtable) (pine.edit.buffer:reading b)
+             (is (eq (find-package :pine.test) package))
+             (is-true (pine.path.path:pathp
+                       (eval (let ((*package* package) (*readtable* readtable))
+                               (read-from-string "/probe/one"))))
+                      "and a form in it reads in that readtable"))))
+    (pine:stop)))
+
+(test a-macro-of-the-buffers-own-package-indents-like-the-macro-it-is
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((b (pine.edit.buffer:make-buffer "probe-indent")))
+           (setf (pine.edit.buffer:mode-of b) "lisp")
+           (setf (pine.fs.node:contents b) "(in-package #:pine.test)
+(probe-two-then-body 1 2
+x)")
+           (is (eql 2 (pine.ts.parser:indent b 2 :width 2))
+               "the parse reads the head in the buffer's own package")
+           (setf (pine.fs.node:contents b) "(in-package #:cl-user)
+(probe-two-then-body 1 2
+x)")
+           (pine.ts.parser:wait b)
+           (is (> (pine.ts.parser:indent b 2 :width 2) 2)
+               "and where it is not a macro it lines up like a call")))
+    (pine:stop)))
