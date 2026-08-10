@@ -5,7 +5,7 @@
                     (#:surface #:pine.app.surface) (#:attach #:pine.net.attach)
                     (#:cmd #:pine.repl.command) (#:wire #:pine.ui.wire)
                     (#:css #:pine.ui.css) (#:fault #:pine.run.fault)
-                    (#:computed #:pine.fs.computed))
+                    (#:computed #:pine.fs.computed) (#:task #:pine.run.task))
   (:export #:session #:sessions #:install #:push-surface #:push-all #:received
            #:client-of #:acting #:mine-p #:upp #:repaint #:restyle #:declared #:*client*))
 
@@ -13,6 +13,7 @@
 
 (defvar *sessions* (c:cell (d:no-map)))
 (defvar *client* nil)
+(defvar *acts* 0)
 
 
 (defclass session ()
@@ -128,10 +129,7 @@ like any other; without this it never reaches the screen."
         (:widget-action
          (destructuring-bind (&key id args) (rest message)
            (let ((thunk (gethash id (acting s))))
-             (when thunk
-               (let ((*client* client))
-                 (fault:attempt (lambda () (if args (apply thunk args) (funcall thunk)))
-                                "a widget"))))))
+             (when thunk (%act client thunk args)))))
         (:refresh (push-all s))
         (:hint
          (destructuring-bind (&key text) (rest message)
@@ -139,6 +137,17 @@ like any other; without this it never reaches the screen."
                                                         "echo" "hint"))
                  (or text ""))))
         (t nil)))))
+
+(defun %act (client thunk args)
+  "A widget's action runs on a thread of its own: one that shells out, asks a
+question or stands in a fault holds up neither this client's next message nor
+anybody else's."
+  (task:once (format nil "widget ~d" (incf *acts*))
+             (lambda ()
+               (let ((*client* client))
+                 (fault:attempt (lambda ()
+                                  (if args (apply thunk args) (funcall thunk)))
+                                "a widget")))))
 
 (defun install ()
   (cmd:defcommand "show-surface" (name) (:describes "put a surface up")

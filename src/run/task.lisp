@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:c #:pine.run.cell) (#:box #:pine.run.mailbox))
   (:export #:task #:spawn #:tasks #:task-named #:name #:alivep #:stop #:join
-           #:inbox #:fault #:answered #:*tasks* #:actor #:ask #:tell #:reply
+           #:inbox #:fault #:answered #:*tasks* #:actor #:ask #:tell #:reply #:once
            #:stopping #:each))
 
 (in-package #:pine.run.task)
@@ -68,6 +68,11 @@
                  (error (e) (setf (fault tk) e)))))
            :name (format nil "pine ~a" name)))
     tk))
+
+(defun once (name thunk)
+  "Run THUNK on a thread of its own and let its task go when it is done, so
+work that happens a click at a time does not pile up in the list."
+  (spawn name (lambda () (unwind-protect (funcall thunk) (%forget *task*)))))
 
 (defun each (name seconds thunk)
   (spawn name

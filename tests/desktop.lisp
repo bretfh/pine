@@ -213,6 +213,13 @@
   (push (cons (first message) (rest message)) (sent c))
   message)
 
+(defun acted (client id)
+  "A widget's action is not run on the thread that told the daemon about it, so
+a test waits for the thread it did run on."
+  (let ((tk (pine.app.desktop:received client (list :widget-action :id id :args nil))))
+    (when (typep tk 'pine.run.task:task) (pine.run.task:join tk))
+    tk))
+
 (test a-click-crosses-as-an-id-and-runs-the-thunk-it-stands-for
   (with-desktop
     (let ((client (make-instance 'probe-client))
@@ -228,7 +235,7 @@
           (is-true push "the surface was pushed")
           (is (search "ACTION" (princ-to-string wire))
               "a clickable node crosses the wire as an action with an id")
-          (pine.app.desktop:received client (list :widget-action :id 1 :args nil))
+          (acted client 1)
           (is-true ran "the id the frontend sent back ran the thunk the daemon kept"))
         (is-true s)))))
 
@@ -299,7 +306,7 @@
        :as :bar)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
-      (pine.app.desktop:received client (list :widget-action :id 1 :args nil))
+      (acted client 1)
       (let ((push (find :widgets (sent client) :key #'first)))
         (is-true push "the write the click made is what pushed the surface")
         (is (search "on" (princ-to-string (getf (rest push) :tree)))
@@ -398,3 +405,31 @@
       (pine.edit.session:push-frame s :whole t)
       (is (eq :widgets (first (first (sent client))))
           "and a whole one is still there when it is asked for"))))
+
+(test a-widget-that-blocks-holds-up-nothing-else
+  (with-desktop
+    (let ((client (make-instance 'probe-client))
+          (held (bordeaux-threads:make-semaphore))
+          (ran nil))
+      (pine.app.surface:surface
+       "probe"
+       (lambda ()
+         (pine.ui.build:button
+          :on-click (lambda ()
+                      (bordeaux-threads:wait-on-semaphore held :timeout 5)
+                      (setf ran t))
+          (pine.ui.build:label "go")))
+       :as :bar)
+      (pine.app.desktop::%attached client)
+      (let ((tk (pine.app.desktop:received client
+                                           (list :widget-action :id 1 :args nil))))
+        (setf (sent client) nil)
+        (pine.app.desktop:received client (list :refresh))
+        (is-true (find :widgets (sent client) :key #'first)
+                 "the next message was answered while the click was still in it")
+        (is (null ran))
+        (bordeaux-threads:signal-semaphore held)
+        (pine.run.task:join tk)
+        (is-true ran)
+        (is (null (pine.run.task:task-named (pine.run.task:name tk)))
+            "and the task it ran on is gone")))))
