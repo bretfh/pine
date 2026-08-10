@@ -1,6 +1,6 @@
 (defpackage #:pine.run.fault
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell))
+  (:local-nicknames (#:d #:pine.data))
   (:export #:fault #:faults #:report #:attempt #:with-debugger #:forget-faults
            #:condition-of #:label #:backtrace-of #:at-time #:offers #:standing
            #:resume #:attend #:attended #:taken #:forget #:parked #:elsewhere #:await
@@ -10,7 +10,7 @@
 (in-package #:pine.run.fault)
 
 (defvar *kept* 50)
-(defvar *faults* (c:cell nil))
+(defvar *faults* (d:box nil))
 (defvar *on-fault* nil)
 (defvar *debugging* nil)
 (defvar *waiting* 120)
@@ -36,17 +36,17 @@
     (format stream "~@[~a: ~]~a~:[~; standing~]" (label f) (condition-of f)
             (parked f))))
 
-(defun faults () (c:held *faults*))
+(defun faults () (d:held *faults*))
 
 (defun standing ()
   "The faults whose thread is still there, waiting to be told what to do."
   (remove-if-not (lambda (f) (and (parked f) (null (taken f)))) (faults)))
 
 (defun forget (f)
-  (c:swap *faults* (lambda (all) (remove f all)))
+  (d:swap! *faults* (lambda (all) (remove f all)))
   f)
 
-(defun forget-faults () (c:put *faults* nil))
+(defun forget-faults () (d:put! *faults* nil))
 
 (defun %backtrace ()
   (handler-case
@@ -58,7 +58,7 @@
           (remove nil (compute-restarts condition) :key #'restart-name)))
 
 (defun %noted (f)
-  (c:swap *faults*
+  (d:swap! *faults*
           (lambda (all)
             (let ((next (cons f all)))
               (if (> (length next) *kept*) (subseq next 0 *kept*) next))))

@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.motion
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:buffer #:pine.edit.buffer)
                     (#:parser #:pine.ts.parser) (#:runtime #:pine.ts.runtime)
                     (#:log #:pine.run.log))
@@ -9,13 +9,13 @@
 
 (in-package #:pine.edit.motion)
 
-(defvar *count* (c:cell nil))
+(defvar *count* (d:box nil))
 (defparameter +kinds+
   '(:forward-sexp :backward-sexp :beginning-of-defun :end-of-defun))
 
-(defun counting () (c:held *count*))
+(defun counting () (d:held *count*))
 
-(defun reset! () (c:put *count* nil))
+(defun reset! () (d:put! *count* nil))
 
 (defun times (&optional (default 1))
   "How many times the next command runs, and forget it. A prefix argument is
@@ -29,19 +29,19 @@ spent by whoever asks for it."
 
 (defun universal! ()
   (let ((held (counting)))
-    (c:put *count* (cond ((null held) :more)
+    (d:put! *count* (cond ((null held) :more)
                          ((eq held :more) 16)
                          ((integerp held) (* held 4))
                          (t :more)))))
 
 (defun digit! (n)
-  (c:swap *count* (lambda (held)
+  (d:swap! *count* (lambda (held)
                     (cond ((integerp held) (+ (* 10 held) n))
                           ((eq held :minus) (- n))
                           (t n)))))
 
 (defun negative! ()
-  (c:swap *count* (lambda (held) (if (integerp held) (- held) :minus))))
+  (d:swap! *count* (lambda (held) (if (integerp held) (- held) :minus))))
 
 (defun toward (b kind)
   "Where KIND says to go from point, asked of the parse. Nil when the buffer is

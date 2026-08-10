@@ -1,14 +1,14 @@
 (defpackage #:pine.run.mailbox
   (:use #:cl)
   (:shadow #:count)
-  (:local-nicknames (#:c #:pine.run.cell))
+  (:local-nicknames (#:d #:pine.data))
   (:export #:mailbox #:send #:take #:peek #:count #:drain #:emptyp #:closed
            #:close-mailbox #:closedp))
 
 (in-package #:pine.run.mailbox)
 
 (defclass mailbox ()
-  ((queue     :initform (c:cell nil) :reader queue)
+  ((queue     :initform (d:box nil) :reader queue)
    (lock      :initform (bordeaux-threads:make-lock "mailbox") :reader lock)
    (arrived   :initform (bordeaux-threads:make-condition-variable) :reader arrived)
    (closedp   :initform nil :accessor closedp)))
@@ -20,25 +20,25 @@
 (defun mailbox () (make-instance 'mailbox))
 
 (defgeneric count (mailbox)
-  (:method ((m mailbox)) (length (c:held (queue m)))))
+  (:method ((m mailbox)) (length (d:held (queue m)))))
 
 (defgeneric emptyp (mailbox)
-  (:method ((m mailbox)) (null (c:held (queue m)))))
+  (:method ((m mailbox)) (null (d:held (queue m)))))
 
 (defgeneric send (mailbox message)
   (:method ((m mailbox) message)
-    (c:swap (queue m) (lambda (q) (append q (list message))))
+    (d:swap! (queue m) (lambda (q) (append q (list message))))
     (bordeaux-threads:with-lock-held ((lock m))
       (bordeaux-threads:condition-notify (arrived m)))
     message))
 
 (defgeneric peek (mailbox)
-  (:method ((m mailbox)) (first (c:held (queue m)))))
+  (:method ((m mailbox)) (first (d:held (queue m)))))
 
 (defun %pull (m)
-  (loop :for q := (c:held (queue m))
+  (loop :for q := (d:held (queue m))
         :while q
-        :when (c:cas (queue m) q (rest q))
+        :when (d:cas (queue m) q (rest q))
           :do (return (first q))))
 
 (defgeneric take (mailbox &key timeout)
@@ -53,8 +53,8 @@
 
 (defgeneric drain (mailbox)
   (:method ((m mailbox))
-    (loop :for q := (c:held (queue m))
-          :when (c:cas (queue m) q nil) :do (return q))))
+    (loop :for q := (d:held (queue m))
+          :when (d:cas (queue m) q nil) :do (return q))))
 
 (defgeneric close-mailbox (mailbox)
   (:method ((m mailbox))

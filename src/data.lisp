@@ -8,7 +8,9 @@
            #:as #:same #:merged #:union #:contains
            #:first #:last #:rest #:append #:subseq #:reverse #:sort
            #:find #:position #:some #:every #:remove
-           #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at))
+           #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at
+           #:box #:held #:swap! #:cas #:put!
+           #:table #:all #:keep! #:drop! #:claim #:clear!))
 
 (in-package #:pine.data)
 
@@ -187,3 +189,48 @@
 (defun some (predicate c) (fset:some predicate c))
 (defun every (predicate c) (fset:every predicate c))
 (defun remove (item c) (fset:remove item c))
+
+(defun box (&optional value)
+  "A place one value stands in, that any thread may replace without a lock.
+
+Every value in pine is immutable; a box is where one of them is kept while it
+is the current one."
+  (sento.atomic:make-atomic-reference :value value))
+
+(defun held (box) (sento.atomic:atomic-get box))
+
+(defun swap! (box function &rest arguments)
+  "Replace what BOX holds with FUNCTION of it, and answer that. FUNCTION runs
+again if another thread got there first, so it must be pure, and it must not
+answer :END, which is how the swap is told to give up."
+  (apply #'sento.atomic:atomic-swap box function arguments))
+
+(defun cas (box old new)
+  "Put NEW in BOX if OLD is still what it holds. Answers whether it was."
+  (and (sento.atomic:atomic-cas box old new) t))
+
+(defun put! (box value)
+  (swap! box (lambda (had) (declare (ignore had)) value))
+  value)
+
+(defun table ()
+  "A name-to-thing table nothing has to lock to touch: a map in a box."
+  (box +no-map+))
+
+(defun all (table) (held table))
+
+(defun keep! (table key value)
+  (swap! table (lambda (m) (fset:with m key value)))
+  value)
+
+(defun drop! (table key)
+  (swap! table (lambda (m) (fset:less m key)))
+  nil)
+
+(defun claim (table key value)
+  "Put VALUE at KEY unless something is there already, and answer whatever is
+there afterwards, so the loser of a race gets the winner's object."
+  (fset:lookup (swap! table (lambda (m) (if (fset:lookup m key) m (fset:with m key value))))
+               key))
+
+(defun clear! (table) (put! table +no-map+))

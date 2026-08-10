@@ -13,17 +13,17 @@
             (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
 
 (defun %grammars (runtime)
-  (pine.run.cell:held (grammars runtime)))
+  (pine.data:held (grammars runtime)))
 
 (defun %note-loaded (runtime language entry)
-  (pine.run.cell:swap
+  (pine.data:swap!
    (grammars runtime)
    (lambda (state)
      (pl:with state :loaded
               (pl:with (pl:at state :loaded) language entry)))))
 
 (defun %note-missing (runtime language)
-  (pine.run.cell:swap
+  (pine.data:swap!
    (grammars runtime)
    (lambda (state)
      (pl:with state :missing

@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.process
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:task #:pine.run.task))
+  (:local-nicknames (#:d #:pine.data) (#:task #:pine.run.task))
   (:export #:process #:program #:thread-process #:name #:state #:attempts
            #:restarts-p #:backoff #:start #:stop #:alivep #:said #:emit
            #:took #:exit-of #:fault #:*out-kept* #:argv #:env #:thunk #:every-seconds))
@@ -18,7 +18,7 @@
    (took        :initform nil      :accessor took)
    (exit-of     :initform nil      :accessor exit-of)
    (fault       :initform nil      :accessor fault)
-   (said        :initform (c:cell nil) :reader said)))
+   (said        :initform (d:box nil) :reader said)))
 
 (defclass program (process)
   ((argv :initarg :argv :accessor argv)
@@ -33,7 +33,7 @@
     (format stream "~a ~a" (name p) (state p))))
 
 (defun emit (p line)
-  (c:swap (said p)
+  (d:swap! (said p)
           (lambda (all)
             (let ((next (cons line all)))
               (if (> (length next) *out-kept*)

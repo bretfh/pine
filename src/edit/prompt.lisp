@@ -1,7 +1,6 @@
 (defpackage #:pine.edit.prompt
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:node #:pine.fs.node) (#:world #:pine.world.world)
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:world #:pine.world.world)
                     (#:buffer #:pine.edit.buffer) (#:log #:pine.run.log)
                     (#:fault #:pine.run.fault))
   (:export #:prompt #:asking #:asking-p #:ask #:answer! #:cancel! #:said
@@ -15,7 +14,7 @@
 (in-package #:pine.edit.prompt)
 
 (defvar *prompt* nil)
-(defvar *sources* (c:cell (d:no-map)))
+(defvar *sources* (d:table))
 (defvar *shown* 12)
 (defvar *history-kept* 200)
 (defparameter +buffer+ "*prompt*")
@@ -50,15 +49,15 @@
     (if b (buffer:text-of b) "")))
 
 (defun source (category function)
-  (c:swap *sources* (lambda (all) (d:with all category function)))
+  (d:keep! *sources* category function)
   category)
 
-(defun sources () (d:keys (c:held *sources*)))
+(defun sources () (d:keys (d:all *sources*)))
 
 (defun candidates (&optional (p *prompt*))
   (when p
     (or (given p)
-        (let ((fn (d:at (c:held *sources*) (category p))))
+        (let ((fn (d:at (d:all *sources*) (category p))))
           (when fn (fault:attempt (lambda () (funcall fn (said))) "the candidates"))))))
 
 (defun name-of (each) (princ-to-string (if (consp each) (first each) each)))

@@ -1,13 +1,13 @@
 (defpackage #:pine.run.task
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:box #:pine.run.mailbox))
+  (:local-nicknames (#:d #:pine.data) (#:box #:pine.run.mailbox))
   (:export #:task #:spawn #:tasks #:task-named #:name #:alivep #:stop #:join
            #:inbox #:fault #:answered #:*tasks* #:actor #:ask #:tell #:reply #:once
            #:stopping #:each))
 
 (in-package #:pine.run.task)
 
-(defvar *tasks* (c:cell nil))
+(defvar *tasks* (d:box nil))
 (defvar *task* nil)
 (defvar *ask-timeout* 5)
 
@@ -17,24 +17,24 @@
    (inbox    :initform nil    :accessor inbox)
    (answered :initform nil    :accessor answered)
    (fault    :initform nil    :accessor fault)
-   (stopping :initform (c:cell nil) :reader stopping)))
+   (stopping :initform (d:box nil) :reader stopping)))
 
 (defmethod print-object ((tk task) stream)
   (print-unreadable-object (tk stream :type t)
     (format stream "~a ~:[stopped~;running~]" (name tk) (alivep tk))))
 
-(defun tasks () (c:held *tasks*))
+(defun tasks () (d:held *tasks*))
 
 (defun task-named (name)
   (find name (tasks) :key #'name :test #'equal))
 
 (defun %remember (tk)
-  (c:swap *tasks* (lambda (all) (cons tk (remove (name tk) all
+  (d:swap! *tasks* (lambda (all) (cons tk (remove (name tk) all
                                                  :key #'name :test #'equal))))
   tk)
 
 (defun %forget (tk)
-  (c:swap *tasks* (lambda (all) (remove tk all)))
+  (d:swap! *tasks* (lambda (all) (remove tk all)))
   tk)
 
 (defgeneric alivep (task)
@@ -43,7 +43,7 @@
 
 (defgeneric stop (task)
   (:method ((tk task))
-    (c:put (stopping tk) t)
+    (d:put! (stopping tk) t)
     (when (inbox tk) (box:close-mailbox (inbox tk)))
     tk))
 
@@ -55,7 +55,7 @@
     (not (alivep tk))))
 
 (defun stoppingp (&optional (tk *task*))
-  (and tk (c:held (stopping tk))))
+  (and tk (d:held (stopping tk))))
 
 (defun spawn (name thunk)
   (let ((tk (make-instance 'task :name name)))

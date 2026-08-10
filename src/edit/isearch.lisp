@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.isearch
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:node #:pine.fs.node)
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:key #:pine.edit.key) (#:log #:pine.run.log))
@@ -9,8 +9,8 @@
 
 (in-package #:pine.edit.isearch)
 
-(defvar *search* (c:cell nil))
-(defvar *last* (c:cell ""))
+(defvar *search* (d:box nil))
+(defvar *last* (d:box ""))
 
 (defclass standing ()
   ((of      :initarg :of      :reader of)
@@ -23,7 +23,7 @@
   (print-unreadable-object (s stream :type t)
     (format stream "~:[back~;forward~] ~s" (forward s) (needle s))))
 
-(defun searching () (c:held *search*))
+(defun searching () (d:held *search*))
 
 (defun said (&optional (s (searching)))
   (when s
@@ -38,7 +38,7 @@
         (and line t))))
 
 (defun %look (s line col &key (forward (forward s)))
-  (text:search (c:held (buffer:lines (of s))) (needle s) line col :forward forward))
+  (text:search (d:held (buffer:lines (of s))) (needle s) line col :forward forward))
 
 (defun %show (s)
   (log:note "~a" (said s))
@@ -84,7 +84,7 @@
   "Again, in this direction. With nothing typed yet, the last search comes back."
   (setf (forward s) forward)
   (when (zerop (length (needle s)))
-    (setf (needle s) (c:held *last*)))
+    (setf (needle s) (d:held *last*)))
   (unless (zerop (length (needle s)))
     (let ((b (of s)))
       (buffer:goto! b (buffer:point-line b)
@@ -97,8 +97,8 @@
   (let ((b (of s)))
     (buffer:clear-properties! b)
     (unless keep (buffer:goto! b (first (from s)) (second (from s))))
-    (when (plusp (length (needle s))) (c:put *last* (needle s)))
-    (c:put *search* nil)
+    (when (plusp (length (needle s))) (d:put! *last* (needle s)))
+    (d:put! *search* nil)
     (log:note "~:[quit~;~a~]" keep (needle s))
     b))
 
@@ -126,7 +126,7 @@ RET keeps where it landed and C-g goes back."
   (let* ((b (buffer:current))
          (s (make-instance 'standing :of b :forward forward
                                      :from (buffer:point b))))
-    (c:put *search* s)
+    (d:put! *search* s)
     (key:take-next #'%reading)
     (%show s)
     s))
@@ -134,7 +134,7 @@ RET keeps where it landed and C-g goes back."
 (defun took-all ()
   (let ((s (searching)))
     (when s (ignore-errors (took s)))
-    (c:put *search* nil))
+    (d:put! *search* nil))
   t)
 
 (defun install ()

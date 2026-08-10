@@ -1,6 +1,6 @@
 (defpackage #:pine.net.agent
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:server #:pine.net.server)
+  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server)
                     (#:attach #:pine.net.attach) (#:fault #:pine.run.fault)
                     (#:session #:pine.repl.session) (#:log #:pine.run.log))
   (:export #:remote-session #:open-remote #:answer-for #:serve #:agents
@@ -9,7 +9,7 @@
 
 (in-package #:pine.net.agent)
 
-(defvar *agents* (c:cell (fset:empty-map)))
+(defvar *agents* (d:box (fset:empty-map)))
 (defvar *timeout* 30)
 
 (defclass agent ()
@@ -26,16 +26,16 @@
 
 (defun register (name there &key uri)
   (let ((a (make-instance 'agent :name name :there there :uri uri)))
-    (c:swap *agents* (lambda (all) (fset:with all name a)))
+    (d:swap! *agents* (lambda (all) (fset:with all name a)))
     a))
 
 (defun forget (name)
-  (c:swap *agents* (lambda (all) (fset:less all name)))
+  (d:swap! *agents* (lambda (all) (fset:less all name)))
   name)
 
-(defun agents () (fset:convert 'list (fset:range (c:held *agents*))))
+(defun agents () (fset:convert 'list (fset:range (d:held *agents*))))
 
-(defun agent-named (name) (fset:lookup (c:held *agents*) name))
+(defun agent-named (name) (fset:lookup (d:held *agents*) name))
 
 (defun open-remote (a &rest initargs)
   (apply #'make-instance 'remote-session :agent a :name (name a) initargs))

@@ -1,7 +1,7 @@
 (defpackage #:pine.edit.key
   (:use #:cl)
   (:shadow #:last)
-  (:local-nicknames (#:c #:pine.run.cell) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:buffer #:pine.edit.buffer)
                     (#:fault #:pine.run.fault) (#:prompt #:pine.edit.prompt))
   (:export #:key #:make-key #:key-sym #:key-ctrl #:key-meta #:key-shift
@@ -13,11 +13,11 @@
 (in-package #:pine.edit.key)
 
 (defvar *keys* (make-hash-table :test 'equal))
-(defvar *pending* (c:cell nil))
-(defvar *last* (c:cell nil))
-(defvar *prefix* (c:cell nil))
+(defvar *pending* (d:box nil))
+(defvar *last* (d:box nil))
+(defvar *prefix* (d:box nil))
 (defvar *on-insert* nil)
-(defvar *taking* (c:cell nil))
+(defvar *taking* (d:box nil))
 
 (defstruct (key (:constructor %make-key) (:copier nil))
   (sym "" :type string :read-only t)
@@ -69,9 +69,9 @@
        (not (key-ctrl k)) (not (key-meta k)) (not (key-super k))
        (graphic-char-p (char (key-sym k) 0))))
 
-(defun pending () (c:held *pending*))
-(defun last () (c:held *last*))
-(defun prefix () (c:held *prefix*))
+(defun pending () (d:held *pending*))
+(defun last () (d:held *last*))
+(defun prefix () (d:held *prefix*))
 
 (defun where (session)
   (let ((b (or session (buffer:current))))
@@ -99,16 +99,16 @@
   "Hand the next key to FN instead of the keymap. FN answers :again to keep
 taking them. This is what an incremental search is: a reader that re-installs
 itself until something ends it."
-  (c:put *taking* fn))
+  (d:put! *taking* fn))
 
-(defun taking () (c:held *taking*))
+(defun taking () (d:held *taking*))
 
 (defun dispatch (session k)
   (let ((take (taking)))
     (when take
-      (c:put *taking* nil)
+      (d:put! *taking* nil)
       (let ((said (fault:attempt (lambda () (funcall take k)) "a key")))
-        (when (eq said :again) (c:put *taking* take))
+        (when (eq said :again) (d:put! *taking* take))
         (return-from dispatch (or said :taken)))))
   (%dispatch session k))
 
@@ -118,23 +118,23 @@ itself until something ends it."
          (text (chord-text so-far))
          (found (mode:binding session text)))
     (cond ((mode:claimed session :key k)
-           (c:put *pending* nil)
-           (c:put *last* "the mode took it")
+           (d:put! *pending* nil)
+           (d:put! *last* "the mode took it")
            :taken)
           (found
-           (c:put *pending* nil)
-           (c:put *last* (cmd:name found))
+           (d:put! *pending* nil)
+           (d:put! *last* (cmd:name found))
            (fault:attempt (lambda () (cmd:run found)) (cmd:name found)))
           ((%prefixp session text)
-           (c:put *pending* so-far)
+           (d:put! *pending* so-far)
            :pending)
           ((and (null (pending)) (self-insert-p k))
-           (c:put *last* "self-insert")
+           (d:put! *last* "self-insert")
            (let ((b (buffer:current)))
              (unless (mode:claimed session :insert (key-sym k))
                (when b (buffer:insert! b (key-sym k))))
              (when *on-insert* (funcall *on-insert* k))
              :inserted))
           (t
-           (c:put *pending* nil)
+           (d:put! *pending* nil)
            :unbound))))

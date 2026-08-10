@@ -1,6 +1,6 @@
 (defpackage #:pine.net.control
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:node #:pine.fs.node)
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node)
                     (#:tree #:pine.fs.tree) (#:watch #:pine.fs.watch)
                     (#:world #:pine.world.world) (#:server #:pine.net.server)
                     (#:cmd #:pine.repl.command) (#:session #:pine.repl.session)
@@ -13,7 +13,7 @@
 (defvar *on-quit* nil)
 (defvar *on-reload* (lambda () nil))
 (defvar *agents* (lambda () nil))
-(defvar *watches* (c:cell nil))
+(defvar *watches* (d:box nil))
 
 (defun said (value)
   (typecase value
@@ -79,14 +79,14 @@
                                       (sento.actor:tell
                                        there (list :moved (node:full-name of)
                                                    (said value)))))))
-             (c:swap *watches* (lambda (all) (cons (cons uri w) all)))
+             (d:swap! *watches* (lambda (all) (cons (cons uri w) all)))
              (list :ok (format nil "watching ~a" (node:full-name n))))))))
 
 (defun %unwatch (uri)
-  (let ((held (assoc uri (c:held *watches*) :test #'equal)))
+  (let ((held (assoc uri (d:held *watches*) :test #'equal)))
     (when held
       (watch:unwatch (cdr held))
-      (c:swap *watches* (lambda (all) (remove held all))))
+      (d:swap! *watches* (lambda (all) (remove held all))))
     (list :ok "")))
 
 (defun %listing (where)

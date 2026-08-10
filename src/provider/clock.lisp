@@ -1,13 +1,13 @@
 (defpackage #:pine.provider.clock
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
-                    (#:c #:pine.run.cell) (#:process #:pine.proc.process))
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
+                    (#:process #:pine.proc.process))
   (:export #:clock-node #:install #:now #:tick #:*every*))
 
 (in-package #:pine.provider.clock)
 
 (defvar *every* 1)
-(defvar *now* (c:cell 0))
+(defvar *now* (d:box 0))
 (defvar *clock* nil)
 
 (defparameter +parts+
@@ -17,7 +17,7 @@
 
 (defclass part-node (node:node) ())
 
-(defun now () (c:held *now*))
+(defun now () (d:held *now*))
 
 (defun %part (name at)
   (multiple-value-bind (second minute hour day month year weekday)
@@ -36,8 +36,8 @@
               (lambda () (make-instance 'part-node :name name :parent n))))
 
 (defun tick ()
-  (let ((was (c:held *now*)))
-    (c:put *now* (get-universal-time))
+  (let ((was (d:held *now*)))
+    (d:put! *now* (get-universal-time))
     (when (and *clock* was)
       (dolist (name +parts+)
         (unless (equal (%part name was) (%part name (now)))

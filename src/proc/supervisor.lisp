@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.supervisor
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:task #:pine.run.task)
+  (:local-nicknames (#:d #:pine.data) (#:task #:pine.run.task)
                     (#:process #:pine.proc.process))
   (:export #:supervisor #:supervise #:forget #:processes #:process-named
            #:attend #:attends #:watch #:unwatch #:start-all #:stop-all #:due))
@@ -10,7 +10,7 @@
 (defvar *interval* 1)
 
 (defclass supervisor ()
-  ((held    :initform (c:cell nil) :reader held)
+  ((held    :initform (d:box nil) :reader held)
    (attends :initform nil          :accessor attends)))
 
 (defmethod print-object ((s supervisor) stream)
@@ -19,13 +19,13 @@
 
 (defun supervisor () (make-instance 'supervisor))
 
-(defun processes (s) (c:held (held s)))
+(defun processes (s) (d:held (held s)))
 
 (defun process-named (s name)
   (find name (processes s) :key #'process:name :test #'equal))
 
 (defun supervise (s p)
-  (c:swap (held s)
+  (d:swap! (held s)
           (lambda (all)
             (append (remove (process:name p) all
                             :key #'process:name :test #'equal)
@@ -36,7 +36,7 @@
   (let ((p (process-named s name)))
     (when p
       (ignore-errors (process:stop p))
-      (c:swap (held s) (lambda (all) (remove p all))))
+      (d:swap! (held s) (lambda (all) (remove p all))))
     p))
 
 (defun due (p now)

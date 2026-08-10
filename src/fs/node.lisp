@@ -1,7 +1,7 @@
 (defpackage #:pine.fs.node
   (:use #:cl)
   (:shadow #:describe)
-  (:local-nicknames (#:c #:pine.run.cell) (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine.data))
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
            #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
            #:dependents #:depend #:invalidate #:*reading* #:reading #:*on-write*
@@ -19,12 +19,12 @@
   ((name       :initarg :name      :reader name)
    (parent     :initarg :parent    :accessor parent     :initform nil)
    (describes  :initarg :describes :accessor describes  :initform nil)
-   (under      :initform (c:cell nil) :reader under)
-   (kept       :initform (c:cell nil) :reader kept)
-   (dependents :initform (c:cell nil) :reader dependents)))
+   (under      :initform (d:box nil) :reader under)
+   (kept       :initform (d:box nil) :reader kept)
+   (dependents :initform (d:box nil) :reader dependents)))
 
 (defclass value-node (node)
-  ((held :initform (c:cell nil) :reader held)))
+  ((held :initform (d:box nil) :reader held)))
 
 (defclass slot-node (node)
   ((object  :initarg :object :reader object)
@@ -47,7 +47,7 @@
     (if names (format nil "/~{~a~^/~}" (reverse names)) "/")))
 
 (defgeneric nodes (node)
-  (:method ((n node)) (c:held (under n))))
+  (:method ((n node)) (d:held (under n))))
 
 (defgeneric resolve (node name)
   (:method ((n node) name)
@@ -56,7 +56,7 @@
 (defgeneric attach (node into)
   (:method ((n node) (into node))
     (setf (parent n) into)
-    (c:swap (under into)
+    (d:swap! (under into)
             (lambda (all)
               (append (remove (name n) all :key #'name :test #'equal) (list n))))
     n))
@@ -65,7 +65,7 @@
   (:method ((n node) name)
     (let ((gone (resolve n name)))
       (when gone
-        (c:swap (under n) (lambda (all) (remove gone all)))
+        (d:swap! (under n) (lambda (all) (remove gone all)))
         (setf (parent gone) nil))
       gone)))
 
@@ -88,17 +88,17 @@
 
 (defun child (n name builder)
   (let ((name (princ-to-string name)))
-    (or (cdr (assoc name (c:held (kept n)) :test #'equal))
+    (or (cdr (assoc name (d:held (kept n)) :test #'equal))
         (let ((made (funcall builder)))
           (cdr (assoc name
-                      (c:swap (kept n)
+                      (d:swap! (kept n)
                               (lambda (all)
                                 (if (assoc name all :test #'equal)
                                     all
                                     (acons name made all))))
                       :test #'equal))))))
 
-(defun children (n) (mapcar #'cdr (c:held (kept n))))
+(defun children (n) (mapcar #'cdr (d:held (kept n))))
 
 (defun root-of (n)
   (loop :for at := n :then (parent at)
@@ -137,18 +137,18 @@
 
 (defgeneric depend (node on)
   (:method ((n node) (on node))
-    (c:swap (dependents on) (lambda (all) (adjoin n all)))
+    (d:swap! (dependents on) (lambda (all) (adjoin n all)))
     n))
 
 (defgeneric invalidate (node)
   (:method ((n node))
-    (dolist (d (c:held (dependents n)))
+    (dolist (d (d:held (dependents n)))
       (invalidate d))
     n))
 
 (defgeneric contents (node)
   (:method ((n node)) nil)
-  (:method ((n value-node)) (c:held (held n))))
+  (:method ((n value-node)) (d:held (held n))))
 
 (defmethod contents :around ((n node))
   (reading n)
@@ -163,7 +163,7 @@
   (:method (value (n node))
     (error "~a holds nothing that can be written." (full-name n)))
   (:method (value (n value-node))
-    (c:put (held n) value)
+    (d:put! (held n) value)
     (invalidate n)
     (when *on-write* (funcall *on-write* n))
     value))

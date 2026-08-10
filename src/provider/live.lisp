@@ -1,13 +1,13 @@
 (defpackage #:pine.provider.live
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:node #:pine.fs.node)
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node)
                     (#:watch #:pine.fs.watch) (#:task #:pine.run.task)
                     (#:sh #:pine.provider.sh) (#:fault #:pine.run.fault))
   (:export #:attend #:leave #:leave-all #:attending #:tending))
 
 (in-package #:pine.provider.live)
 
-(defvar *tending* (c:cell nil))
+(defvar *tending* (d:box nil))
 
 (defclass tending ()
   ((of       :initarg :of      :reader of)
@@ -18,7 +18,7 @@
   (print-unreadable-object (n stream :type t)
     (write-string (node:full-name (of n)) stream)))
 
-(defun attending () (c:held *tending*))
+(defun attending () (d:held *tending*))
 
 (defun %listen (n line)
   (let ((stream (sh:streaming line)))
@@ -42,7 +42,7 @@ and its interval when it has no stream to speak for it."
                       (task:each (format nil "live ~a" (node:name n)) seconds
                                  (lambda () (node:stir n)))))
            (it (make-instance 'tending :of n :watching watching :ticking ticking)))
-      (c:swap *tending* (lambda (all) (cons it all)))))
+      (d:swap! *tending* (lambda (all) (cons it all)))))
   n)
 
 (defun leave (n)
@@ -50,11 +50,11 @@ and its interval when it has no stream to speak for it."
     (when it
       (mapc #'watch:unwatch (watching it))
       (when (ticking it) (task:stop (ticking it)))
-      (c:swap *tending* (lambda (all) (remove it all))))
+      (d:swap! *tending* (lambda (all) (remove it all))))
     n))
 
 (defun leave-all ()
-  (dolist (it (attending) (c:put *tending* nil))
+  (dolist (it (attending) (d:put! *tending* nil))
     (mapc #'watch:unwatch (watching it))
     (when (ticking it) (task:stop (ticking it))))
   (sh:forget-all))

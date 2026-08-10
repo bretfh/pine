@@ -26,7 +26,7 @@
                 ((:file "data")
                  (:module "run"
                           :serial t
-                          :components ((:file "cell") (:file "mailbox")
+                          :components ((:file "mailbox")
                                        (:file "task") (:file "fault") (:file "log")))
                  (:module "fs"
                           :serial t

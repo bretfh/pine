@@ -1,6 +1,6 @@
 (defpackage #:pine.net.server
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell))
+  (:local-nicknames (#:d #:pine.data))
   (:export #:server #:start-server #:stop-server #:*server* #:*host* #:*port*
            #:actor-system #:remoting-port #:clients #:next-client-id
            #:read-environment #:daemon-uri #:local-uri #:workers #:*workers*))
@@ -19,7 +19,7 @@
   ((actor-system  :initarg :actor-system  :accessor actor-system  :initform nil)
    (remoting-port :initarg :remoting-port :accessor remoting-port :initform nil)
    (clients       :initform nil           :accessor clients)
-   (client-ids    :initform (c:cell 0)    :reader client-ids)
+   (client-ids    :initform (d:box 0)    :reader client-ids)
    (workers       :initarg :workers       :reader workers :initform 4)))
 
 (defmethod print-object ((s server) stream)
@@ -36,7 +36,7 @@
         *workers* (or (%env-int "PINE_WORKERS") *workers*))
   (values *port* *workers*))
 
-(defun next-client-id (s) (c:swap (client-ids s) #'1+))
+(defun next-client-id (s) (d:swap! (client-ids s) #'1+))
 
 (defun daemon-uri (actor &key (host *host*) (port *port*))
   (format nil "sento://~a:~d/user/~a" host port actor))

@@ -7,34 +7,34 @@
         :when (funcall test) :do (return t)
         :do (sleep 0.02)))
 
-(test a-cell-is-replaced-by-a-pure-function-of-what-it-held
-  (let ((c (pine.run.cell:cell 1)))
-    (is (eql 1 (pine.run.cell:held c)))
-    (is (eql 2 (pine.run.cell:swap c #'1+)))
-    (is (eql 2 (pine.run.cell:held c)))
-    (is (eql 5 (pine.run.cell:swap c #'+ 3)))))
+(test a-box-is-replaced-by-a-pure-function-of-what-it-held
+  (let ((c (pine.data:box 1)))
+    (is (eql 1 (pine.data:held c)))
+    (is (eql 2 (pine.data:swap! c #'1+)))
+    (is (eql 2 (pine.data:held c)))
+    (is (eql 5 (pine.data:swap! c #'+ 3)))))
 
-(test a-hundred-threads-swapping-one-cell-lose-nothing
+(test a-hundred-threads-swapping-one-box-lose-nothing
   "No locks anywhere: the value is immutable and the swap retries. A count that
 comes out short is the whole reason locks are usually reached for."
-  (let ((c (pine.run.cell:cell 0))
+  (let ((c (pine.data:box 0))
         (tasks nil))
     (dotimes (i 100)
       (push (pine.run.task:spawn (format nil "probe-~d" i)
                                  (lambda ()
                                    (dotimes (n 100)
-                                     (pine.run.cell:swap c #'1+))))
+                                     (pine.data:swap! c #'1+))))
             tasks))
     (is-true (wait-until (lambda () (notany #'pine.run.task:alivep tasks))
                          :seconds 30))
-    (is (eql 10000 (pine.run.cell:held c)))
+    (is (eql 10000 (pine.data:held c)))
     (mapc #'pine.run.task:stop tasks)))
 
 (test a-cas-that-loses-the-race-says-so
-  (let ((c (pine.run.cell:cell :a)))
-    (is-true (pine.run.cell:cas c :a :b))
-    (is-false (pine.run.cell:cas c :a :c))
-    (is (eq :b (pine.run.cell:held c)))))
+  (let ((c (pine.data:box :a)))
+    (is-true (pine.data:cas c :a :b))
+    (is-false (pine.data:cas c :a :c))
+    (is (eq :b (pine.data:held c)))))
 
 (test a-task-runs-and-answers
   (let ((tk (pine.run.task:spawn "probe-answer" (lambda () (+ 1 2)))))
@@ -48,15 +48,15 @@ comes out short is the whole reason locks are usually reached for."
     (is (typep (pine.run.task:fault tk) 'error))))
 
 (test a-task-that-repeats-stops-when-it-is-told
-  (let* ((n (pine.run.cell:cell 0))
+  (let* ((n (pine.data:box 0))
          (tk (pine.run.task:each "probe-tick" 0.01
-                                 (lambda () (pine.run.cell:swap n #'1+)))))
-    (is-true (wait-until (lambda () (> (pine.run.cell:held n) 3))))
+                                 (lambda () (pine.data:swap! n #'1+)))))
+    (is-true (wait-until (lambda () (> (pine.data:held n) 3))))
     (pine.run.task:stop tk)
     (is-true (pine.run.task:join tk))
-    (let ((stopped (pine.run.cell:held n)))
+    (let ((stopped (pine.data:held n)))
       (sleep 0.1)
-      (is (eql stopped (pine.run.cell:held n))))))
+      (is (eql stopped (pine.data:held n))))))
 
 (test a-mailbox-hands-messages-over-in-order
   (let ((m (pine.run.mailbox:mailbox)))
@@ -68,18 +68,46 @@ comes out short is the whole reason locks are usually reached for."
     (is-true (pine.run.mailbox:emptyp m))))
 
 (test an-actor-is-a-task-with-an-inbox
-  (let* ((seen (pine.run.cell:cell nil))
+  (let* ((seen (pine.data:box nil))
          (tk (pine.run.task:actor
               "probe-actor"
               (lambda (message)
                 (if (and (consp message) (eq :ask (first message)))
                     (pine.run.task:reply (second message)
                                          (list :answered (third message)))
-                    (pine.run.cell:swap seen (lambda (all) (cons message all))))))))
+                    (pine.data:swap! seen (lambda (all) (cons message all))))))))
     (unwind-protect
          (progn
            (pine.run.task:tell tk :hello)
-           (is-true (wait-until (lambda () (pine.run.cell:held seen))))
-           (is (equal '(:hello) (pine.run.cell:held seen)))
+           (is-true (wait-until (lambda () (pine.data:held seen))))
+           (is (equal '(:hello) (pine.data:held seen)))
            (is (equal '(:answered :ping) (pine.run.task:ask tk :ping :timeout 5))))
       (pine.run.task:stop tk))))
+
+(test two-threads-writing-one-table-both-land
+  "A table is a map in a box, so a write is a swap and neither of two threads
+writing different keys reads the other out of it."
+  (let ((table (pine.data:table))
+        (tasks nil))
+    (dotimes (i 20)
+      (let ((i i))
+        (push (pine.run.task:spawn
+               (format nil "probe-table-~d" i)
+               (lambda () (dotimes (n 50)
+                            (pine.data:keep! table (format nil "~d-~d" i n) n))))
+              tasks)))
+    (is-true (wait-until (lambda () (notany #'pine.run.task:alivep tasks))
+                         :seconds 30))
+    (is (eql 1000 (pine.data:size (pine.data:all table))))
+    (is (eql 7 (pine.data:at (pine.data:all table) "3-7")))
+    (pine.data:drop! table "3-7")
+    (is (null (pine.data:at (pine.data:all table) "3-7")))
+    (mapc #'pine.run.task:stop tasks)))
+
+(test claiming-a-place-hands-the-loser-the-winners-object
+  (let ((table (pine.data:table)))
+    (is (eq :first (pine.data:claim table "probe" :first)))
+    (is (eq :first (pine.data:claim table "probe" :second))
+        "the second caller gets what the first put there, not its own")
+    (pine.data:clear! table)
+    (is-true (pine.data:emptyp (pine.data:all table)))))

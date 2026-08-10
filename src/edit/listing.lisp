@@ -83,7 +83,7 @@ listing: RET on a row hands ACTS the place it stands for."
   (let ((n 0))
     (loop
       (multiple-value-bind (line col)
-          (text:search (pine.run.cell:held (buffer:lines b)) from
+          (text:search (pine.data:held (buffer:lines b)) from
                        (buffer:point-line b) (buffer:point-col b))
         (unless line (return))
         (buffer:goto! b line col)

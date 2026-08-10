@@ -1,7 +1,6 @@
 (defpackage #:pine.app.desktop
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:node #:pine.fs.node) (#:watch #:pine.fs.watch)
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:watch #:pine.fs.watch)
                     (#:surface #:pine.app.surface) (#:attach #:pine.net.attach)
                     (#:cmd #:pine.repl.command) (#:wire #:pine.ui.wire)
                     (#:css #:pine.ui.css) (#:fault #:pine.run.fault)
@@ -12,7 +11,7 @@
 
 (in-package #:pine.app.desktop)
 
-(defvar *sessions* (c:cell (d:no-map)))
+(defvar *sessions* (d:table))
 (defvar *client* nil)
 (defvar *acts* 0)
 
@@ -29,9 +28,9 @@
     (format stream "client ~d, ~d action~:p"
             (attach:client-id (client-of s)) (hash-table-count (acting s)))))
 
-(defun sessions () (d:vals (c:held *sessions*)))
+(defun sessions () (d:vals (d:all *sessions*)))
 
-(defun %for (client) (d:at (c:held *sessions*) (attach:client-id client)))
+(defun %for (client) (d:at (d:all *sessions*) (attach:client-id client)))
 
 (defun %forget-actions (s name)
   (dolist (id (gethash name (ids s)))
@@ -109,7 +108,7 @@ like any other; without this it never reaches the screen."
 
 (defun %attached (client)
   (let ((s (make-instance 'session :client client)))
-    (c:swap *sessions* (lambda (all) (d:with all (attach:client-id client) s)))
+    (d:keep! *sessions* (attach:client-id client) s)
     (pushnew #'restyle css:*listeners*)
     (let ((styles (css:styles)))
       (when styles (attach:push-to client :style :styles styles)))
@@ -120,13 +119,13 @@ like any other; without this it never reaches the screen."
 (defun %detached (client)
   (let ((s (%for client)))
     (when s (mapc #'watch:unwatch (watching s)))
-    (c:swap *sessions* (lambda (all) (d:without all (attach:client-id client))))
+    (d:drop! *sessions* (attach:client-id client))
     client))
 
 (defun close-all ()
   "Let go of every attached frontend, and of what each was watching for."
   (dolist (s (sessions)) (mapc #'watch:unwatch (watching s)))
-  (c:put *sessions* (d:no-map))
+  (d:put! *sessions* (d:no-map))
   t)
 
 (defun received (client message)

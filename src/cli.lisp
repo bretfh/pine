@@ -1,6 +1,6 @@
 (defpackage #:pine.cli
   (:use #:cl)
-  (:local-nicknames (#:server #:pine.net.server) (#:c #:pine.run.cell))
+  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server) )
   (:export #:main #:usage #:ask #:running-p #:quiet #:*usage*))
 
 (in-package #:pine.cli)
@@ -26,7 +26,7 @@
   shell                 a repl in this terminal, with no daemon")
 
 (defvar *timeout* 5)
-(defvar *heard* (c:cell nil))
+(defvar *heard* (d:box nil))
 
 (defun usage () *usage*)
 

@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.repl
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:node #:pine.fs.node)
                     (#:session #:pine.repl.session) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:log #:pine.run.log))
@@ -8,18 +8,18 @@
 
 (in-package #:pine.edit.repl)
 
-(defvar *sessions* (c:cell nil))
+(defvar *sessions* (d:box nil))
 (defparameter *name* "*repl*")
 (defparameter +prompt+ "pine> ")
 
-(defun sessions () (c:held *sessions*))
+(defun sessions () (d:all *sessions*))
 
 (defun session-for (name)
   (or (cdr (assoc name (sessions) :test #'equal))
       (let ((s (session:open-session
                 :name name
                 :package (or (find-package :pine.user) (find-package :cl-user)))))
-        (c:swap *sessions* (lambda (all) (acons name s all)))
+        (d:swap! *sessions* (lambda (all) (acons name s all)))
         s)))
 
 (defun %say (b text)

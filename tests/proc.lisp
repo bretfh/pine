@@ -9,22 +9,22 @@
     (unwind-protect
          (progn
            (pine.proc.process:start p)
-           (is-true (wait-until (lambda () (pine.run.cell:held
+           (is-true (wait-until (lambda () (pine.data:held
                                             (pine.proc.process:said p)))))
            (is (equal '("from the process")
-                      (pine.run.cell:held (pine.proc.process:said p)))))
+                      (pine.data:held (pine.proc.process:said p)))))
       (pine.proc.process:stop p))))
 
 (test a-thread-is-a-process-like-anything-else
-  (let* ((n (pine.run.cell:cell 0))
+  (let* ((n (pine.data:box 0))
          (p (make-instance 'pine.proc.process:thread-process
                            :name "probe-thread" :every 0.01
-                           :thunk (lambda () (pine.run.cell:swap n #'1+)))))
+                           :thunk (lambda () (pine.data:swap! n #'1+)))))
     (unwind-protect
          (progn
            (pine.proc.process:start p)
            (is-true (pine.proc.process:alivep p))
-           (is-true (wait-until (lambda () (> (pine.run.cell:held n) 2)))))
+           (is-true (wait-until (lambda () (> (pine.data:held n) 2)))))
       (pine.proc.process:stop p))
     (is (eq :stopped (pine.proc.process:state p)))
     (is-false (pine.proc.process:alivep p))))

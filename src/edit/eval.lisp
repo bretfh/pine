@@ -1,18 +1,18 @@
 (defpackage #:pine.edit.eval
   (:use #:cl)
   (:shadow #:documentation)
-  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:session #:pine.repl.session) (#:node #:pine.fs.node)
                     (#:buffer #:pine.edit.buffer) (#:prompt #:pine.edit.prompt)
                     (#:log #:pine.run.log) (#:fault #:pine.run.fault)
-                    (#:c #:pine.run.cell))
+                    )
   (:export #:install #:token-at #:symbol-at #:offset-of #:line-col
            #:definition #:references #:complete #:arglist #:documentation
            #:sexp-before #:defun-around #:visit #:went #:*went*))
 
 (in-package #:pine.edit.eval)
 
-(defvar *went* (c:cell nil))
+(defvar *went* (d:box nil))
 (defparameter +kinds+ '(:function :macro :generic-function :variable :class))
 (defparameter +merged+ '(:references :complete))
 (defparameter +delimiters+ "
@@ -162,12 +162,12 @@
       (apply #'mode:claimed b verb arguments)))
 
 (defun went ()
-  (let ((back (first (c:held *went*))))
-    (when back (c:swap *went* #'rest))
+  (let ((back (first (d:held *went*))))
+    (when back (d:swap! *went* #'rest))
     back))
 
 (defun %remember (b)
-  (c:swap *went* (lambda (all)
+  (d:swap! *went* (lambda (all)
                    (cons (list (node:name b) (buffer:point-line b)
                                (buffer:point-col b))
                          all))))

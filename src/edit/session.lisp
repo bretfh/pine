@@ -1,7 +1,6 @@
 (defpackage #:pine.edit.session
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
+  (:local-nicknames (#:d #:pine.data) (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine.ui.css) (#:wire #:pine.ui.wire)
                     (#:layout #:pine.ui.layout)
@@ -16,7 +15,7 @@
 
 (in-package #:pine.edit.session)
 
-(defvar *sessions* (c:cell (d:no-map)))
+(defvar *sessions* (d:table))
 (defvar *surface* "editor")
 
 (defclass session ()
@@ -35,9 +34,9 @@
   (print-unreadable-object (s stream :type t)
     (format stream "~dx~d gen ~d" (cols s) (rows s) (generation s))))
 
-(defun sessions () (d:vals (c:held *sessions*)))
+(defun sessions () (d:vals (d:all *sessions*)))
 
-(defun %for (client) (d:at (c:held *sessions*) (attach:client-id client)))
+(defun %for (client) (d:at (d:all *sessions*) (attach:client-id client)))
 
 (defun surface ()
   (or (surface:surface-named *surface*)
@@ -145,7 +144,7 @@ client, and the keys still land in the order they were typed."
 
 (defun %attached (client)
   (let ((s (make-instance 'session :client client)))
-    (c:swap *sessions* (lambda (all) (d:with all (attach:client-id client) s)))
+    (d:keep! *sessions* (attach:client-id client) s)
     (pushnew #'restyle css:*listeners*)
     (let ((styles (css:styles)))
       (when styles (attach:push-to client :style :styles styles)))
@@ -157,7 +156,7 @@ client, and the keys still land in the order they were typed."
 (defun %detached (client)
   (let ((s (%for client)))
     (when (and s (drawing s)) (task:stop (drawing s))))
-  (c:swap *sessions* (lambda (all) (d:without all (attach:client-id client))))
+  (d:drop! *sessions* (attach:client-id client))
   client)
 
 (defun close-all ()
@@ -165,7 +164,7 @@ client, and the keys still land in the order they were typed."
 so they go when it does rather than outliving it stopped."
   (dolist (s (sessions))
     (when (drawing s) (task:stop (drawing s))))
-  (c:put *sessions* (d:no-map))
+  (d:put! *sessions* (d:no-map))
   t)
 
 (defun repaint (&optional b)

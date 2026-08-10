@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.buffer
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:node #:pine.fs.node)
+  (:local-nicknames (#:node #:pine.fs.node)
                     (#:tree #:pine.fs.tree) (#:world #:pine.world.world)
                     (#:mode #:pine.repl.mode) (#:text #:pine.edit.text)
                     (#:d #:pine.data) (#:history #:pine.edit.history))
@@ -24,7 +24,7 @@
 (defvar *places* (d:no-map))
 
 (defclass buffer (node:node)
-  ((lines      :initform (c:cell (text:lines-of "")) :reader lines)
+  ((lines      :initform (d:box (text:lines-of "")) :reader lines)
    (point-line :initform 0   :accessor point-line)
    (point-col  :initform 0   :accessor point-col)
    (mark       :initform nil :accessor mark)
@@ -45,12 +45,12 @@
 
 (defun point (b) (list (point-line b) (point-col b)))
 
-(defmethod node:contents ((b buffer)) (text:text-of (c:held (lines b))))
+(defmethod node:contents ((b buffer)) (text:text-of (d:held (lines b))))
 
 (defmethod (setf node:contents) (value (b buffer))
   (%note b)
   (setf (edit-of b) nil)
-  (c:put (lines b) (text:lines-of (princ-to-string value)))
+  (d:put! (lines b) (text:lines-of (princ-to-string value)))
   (changed b)
   value)
 
@@ -129,25 +129,25 @@ buffer a command switches to is the buffer on the screen."
   (when (and *current* *on-current*) (funcall *on-current* *current*))
   *current*)
 
-(defun line (b n) (text:line-at (c:held (lines b)) n))
+(defun line (b n) (text:line-at (d:held (lines b)) n))
 
-(defun line-count (b) (text:line-count (c:held (lines b))))
+(defun line-count (b) (text:line-count (d:held (lines b))))
 
-(defun text-of (b) (text:text-of (c:held (lines b))))
+(defun text-of (b) (text:text-of (d:held (lines b))))
 
 (defun goto! (b line col)
-  (multiple-value-bind (line col) (text:clamp (c:held (lines b)) line col)
+  (multiple-value-bind (line col) (text:clamp (d:held (lines b)) line col)
     (setf (point-line b) line (point-col b) col)
     (node:invalidate b)
     (point b)))
 
 (defun move! (b unit n)
   (multiple-value-bind (line col)
-      (text:move-by unit (c:held (lines b)) (point-line b) (point-col b) n)
+      (text:move-by unit (d:held (lines b)) (point-line b) (point-col b) n)
     (goto! b line col)))
 
 (defun %note (b)
-  (history:remember (past b) (c:held (lines b)) (point-line b) (point-col b))
+  (history:remember (past b) (d:held (lines b)) (point-line b) (point-col b))
   b)
 
 (defun undoable (b) (history:undoable (past b)))
@@ -155,7 +155,7 @@ buffer a command switches to is the buffer on the screen."
 
 (defun %restore (b was)
   (when was
-    (c:put (lines b) (history:state-lines was))
+    (d:put! (lines b) (history:state-lines was))
     (setf (point-line b) (history:state-line was)
           (point-col b) (history:state-col was))
     (changed b))
@@ -163,12 +163,12 @@ buffer a command switches to is the buffer on the screen."
 
 (defun undo! (b)
   (%restore b (history:undo (past b)
-                            (history:state (c:held (lines b))
+                            (history:state (d:held (lines b))
                                            (point-line b) (point-col b)))))
 
 (defun redo! (b)
   (%restore b (history:redo (past b)
-                            (history:state (c:held (lines b))
+                            (history:state (d:held (lines b))
                                            (point-line b) (point-col b)))))
 
 (defun mark-at (b name) (d:at (marks b) name))
@@ -248,9 +248,9 @@ a checker said."
                              body)))
     (unless (equal text fresh)
       (%note b)
-      (let ((was (c:held (lines b))))
+      (let ((was (d:held (lines b))))
         (%edited b was line 1 1 (- (%bytes fresh) (%bytes text)))
-        (c:put (lines b) (d:with-at was line fresh)))
+        (d:put! (lines b) (d:with-at was line fresh)))
       (when (= line (point-line b))
         (setf (point-col b) (max 0 (+ (point-col b) (- target had)))))
       (changed b))
@@ -258,12 +258,12 @@ a checker said."
 
 (defun insert! (b string)
   (%note b)
-  (let ((was (c:held (lines b)))
+  (let ((was (d:held (lines b)))
         (at (point-line b)))
     (multiple-value-bind (fresh line col)
         (text:insert was (point-line b) (point-col b) string)
       (%edited b was at 1 (1+ (count #\Newline string)) (%bytes string))
-      (c:put (lines b) fresh)
+      (d:put! (lines b) fresh)
       (setf (point-line b) line (point-col b) col)
       (changed b)
       (point b))))
@@ -273,21 +273,21 @@ a checker said."
 (defun delete-back! (b &optional (n 1))
   (%note b)
   (multiple-value-bind (line col)
-      (text:move-by :char (c:held (lines b)) (point-line b) (point-col b) (- n))
+      (text:move-by :char (d:held (lines b)) (point-line b) (point-col b) (- n))
     (multiple-value-bind (fresh at-line at-col taken)
-        (text:delete (c:held (lines b)) line col (point-line b) (point-col b))
-      (c:put (lines b) fresh)
+        (text:delete (d:held (lines b)) line col (point-line b) (point-col b))
+      (d:put! (lines b) fresh)
       (setf (point-line b) at-line (point-col b) at-col)
       (changed b)
       taken)))
 
 (defun delete-region! (b from-line from-col to-line to-col)
   (%note b)
-  (let ((was (c:held (lines b))))
+  (let ((was (d:held (lines b))))
     (multiple-value-bind (fresh at-line at-col taken)
         (text:delete was from-line from-col to-line to-col)
       (%edited b was from-line (1+ (- to-line from-line)) 1 (- (%bytes taken)))
-        (c:put (lines b) fresh)
+        (d:put! (lines b) fresh)
       (goto! b at-line at-col)
       (changed b)
       taken)))
@@ -298,7 +298,7 @@ a checker said."
 (defun region-of (b)
   (when (mark b)
     (destructuring-bind (line col) (mark b)
-      (text:region (c:held (lines b)) line col (point-line b) (point-col b)))))
+      (text:region (d:held (lines b)) line col (point-line b) (point-col b)))))
 
 (defun visited (b)
   "Where point was the last time this file was open."

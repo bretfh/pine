@@ -1,7 +1,6 @@
 (defpackage #:pine.edit.term
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:node #:pine.fs.node) (#:buffer #:pine.edit.buffer)
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:buffer #:pine.edit.buffer)
                     (#:mode #:pine.repl.mode) (#:cmd #:pine.repl.command)
                     (#:process #:pine.proc.process) (#:task #:pine.run.task)
                     (#:super #:pine.proc.supervisor) (#:fault #:pine.run.fault))
@@ -13,7 +12,7 @@
 (in-package #:pine.edit.term)
 
 (defvar *shell* (or (uiop:getenv "SHELL") "/bin/sh"))
-(defvar *terminals* (c:cell (d:no-map)))
+(defvar *terminals* (d:table))
 (defvar *budget* 8192)
 (defvar *carry* (* 4 1024 1024))
 (defvar *pause* 1/30)
@@ -30,10 +29,10 @@
    (fd      :initarg :fd      :reader fd)
    (pid     :initarg :pid     :reader pid)
    (term-of :initarg :term    :reader term-of)
-   (waiting :initform (c:cell nil) :reader waiting)
-   (carried :initform (c:cell 0)   :reader carried)
-   (dropped :initform (c:cell 0)   :reader dropped)
-   (painted :initform (c:cell 0)   :reader painted)
+   (waiting :initform (d:box nil) :reader waiting)
+   (carried :initform (d:box 0)   :reader carried)
+   (dropped :initform (d:box 0)   :reader dropped)
+   (painted :initform (d:box 0)   :reader painted)
    (drainer :initform nil     :accessor drainer)
    (reader  :initform nil     :accessor reader)))
 
@@ -41,9 +40,9 @@
   (print-unreadable-object (tm stream :type t)
     (format stream "~a pid ~a" (name tm) (pid tm))))
 
-(defun terminals () (d:vals (c:held *terminals*)))
+(defun terminals () (d:vals (d:all *terminals*)))
 
-(defun terminal-for (name) (d:at (c:held *terminals*) name))
+(defun terminal-for (name) (d:at (d:all *terminals*) name))
 
 (defun screen (tm)
   (let ((term (term-of tm)))
@@ -63,19 +62,19 @@
   "Hold what the shell said until the drain gets to it. A command that prints
 faster than the screen can show it drops what is oldest rather than growing
 until the image dies."
-  (c:swap (waiting tm) (lambda (all) (cons text all)))
-  (c:swap (carried tm) (lambda (n) (+ n (length text))))
-  (loop :while (> (c:held (carried tm)) *carry*)
-        :do (let ((oldest (car (last (c:held (waiting tm))))))
+  (d:swap! (waiting tm) (lambda (all) (cons text all)))
+  (d:swap! (carried tm) (lambda (n) (+ n (length text))))
+  (loop :while (> (d:held (carried tm)) *carry*)
+        :do (let ((oldest (car (last (d:held (waiting tm))))))
               (when (null oldest) (return))
-              (c:swap (waiting tm) (lambda (all) (butlast all)))
-              (c:swap (carried tm) (lambda (n) (max 0 (- n (length oldest)))))
-              (c:swap (dropped tm) (lambda (n) (+ n (length oldest))))))
+              (d:swap! (waiting tm) (lambda (all) (butlast all)))
+              (d:swap! (carried tm) (lambda (n) (max 0 (- n (length oldest)))))
+              (d:swap! (dropped tm) (lambda (n) (+ n (length oldest))))))
   tm)
 
 (defun %take (tm)
   "Up to a budget of what is waiting, oldest first."
-  (let ((held (c:held (waiting tm))))
+  (let ((held (d:held (waiting tm))))
     (when held
       (let* ((oldest (reverse held))
              (taken nil)
@@ -85,8 +84,8 @@ until the image dies."
               :do (push chunk taken)
                   (incf size (length chunk)))
         (let ((kept (nthcdr (length taken) oldest)))
-          (c:put (waiting tm) (reverse kept))
-          (c:put (carried tm) (reduce #'+ kept :key #'length :initial-value 0)))
+          (d:put! (waiting tm) (reverse kept))
+          (d:put! (carried tm) (reduce #'+ kept :key #'length :initial-value 0)))
         (apply #'concatenate 'string (nreverse taken))))))
 
 (defun drain (tm b)
@@ -134,7 +133,7 @@ until the image dies."
     (let* ((term (pine.vt:make-term :width cols :height rows))
            (tm (make-instance 'terminal :name name :fd fd :pid pid :term term))
            (b (or (buffer:buffer-named name) (buffer:make-buffer name :mode "term"))))
-      (c:swap *terminals* (lambda (all) (d:with all name tm)))
+      (d:keep! *terminals* name tm)
       (setf (reader tm)
             (task:spawn (format nil "term ~a read" name)
                         (lambda ()
@@ -164,7 +163,7 @@ until the image dies."
       (ignore-errors (pine.vt:pty-kill (pid tm)))
       (ignore-errors (pine.vt:pty-close (fd tm)))
       (ignore-errors (pine.vt:pty-reap (pid tm)))
-      (c:swap *terminals* (lambda (all) (d:without all name))))
+      (d:drop! *terminals* name))
     tm))
 
 (defun %typed (k)

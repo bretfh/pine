@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.debugger
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:node #:pine.fs.node)
                     (#:fault #:pine.run.fault) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:log #:pine.run.log))
@@ -9,7 +9,7 @@
 
 (in-package #:pine.edit.debugger)
 
-(defvar *standing* (c:cell nil))
+(defvar *standing* (d:box nil))
 (defparameter *name* "*debugger*")
 
 (defclass standing ()
@@ -22,7 +22,7 @@
   (print-unreadable-object (s stream :type t)
     (format stream "~a, ~d restart~:p" (of s) (length (restarts s)))))
 
-(defun standing () (c:held *standing*))
+(defun standing () (d:held *standing*))
 
 (defun %text (s)
   (with-output-to-string (out)
@@ -51,7 +51,7 @@
          (b (or (buffer:buffer-named *name*)
                 (buffer:make-buffer *name* :mode "debugger"))))
     (when fault (fault:attend fault))
-    (c:put *standing* s)
+    (d:put! *standing* s)
     (setf (buffer:mode-of b) "debugger")
     (setf (node:contents b) (%text s))
     (buffer:goto! b 0 0)
@@ -66,7 +66,7 @@
       (let ((name (nth n (restarts s)))
             (taken (taken s))
             (f (fault-of s)))
-        (c:put *standing* nil)
+        (d:put! *standing* nil)
         (cond (f (fault:resume f name)
                  (log:note "took ~a" name))
               (taken (funcall taken n))
@@ -82,7 +82,7 @@
     (when f (show (fault:condition-of f) :fault f))))
 
 (defun %away ()
-  (c:put *standing* nil)
+  (d:put! *standing* nil)
   (let ((b (buffer:buffer-named *name*)))
     (when b (pine.repl.command:run "kill-buffer" (list *name*))))
   t)

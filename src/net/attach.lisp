@@ -1,6 +1,6 @@
 (defpackage #:pine.net.attach
   (:use #:cl)
-  (:local-nicknames (#:c #:pine.run.cell) (#:server #:pine.net.server)
+  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server)
                     (#:fault #:pine.run.fault) (#:log #:pine.run.log))
   (:export #:app #:frontend #:kinds #:attached #:received #:detached
            #:run-frontend #:client #:client-id #:client-kind #:client-display
@@ -12,7 +12,7 @@
 (in-package #:pine.net.attach)
 
 (defvar *wire* "ns2")
-(defvar *apps* (c:cell (fset:empty-map)))
+(defvar *apps* (d:box (fset:empty-map)))
 (defvar *clients* nil)
 (defvar *attempts* 60)
 (defvar *interval* 2)
@@ -33,22 +33,22 @@
 (defun acceptable (theirs) (equal theirs (protocol)))
 
 (defun app (kind declaration)
-  (c:swap *apps* (lambda (all) (fset:with all kind
+  (d:swap! *apps* (lambda (all) (fset:with all kind
                                           (fset:with declaration :kind kind))))
   kind)
 
 (defun frontend (kind run)
-  (c:swap *apps*
+  (d:swap! *apps*
           (lambda (all)
             (fset:with all kind
                        (fset:with (or (fset:lookup all kind) (fset:empty-map))
                                   :run run))))
   kind)
 
-(defun kinds () (fset:convert 'list (fset:domain (c:held *apps*))))
+(defun kinds () (fset:convert 'list (fset:domain (d:held *apps*))))
 
 (defun %of (kind key)
-  (let ((it (fset:lookup (c:held *apps*) kind)))
+  (let ((it (fset:lookup (d:held *apps*) kind)))
     (and it (fset:lookup it key))))
 
 (defun attached (kind client)

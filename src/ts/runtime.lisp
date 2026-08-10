@@ -143,7 +143,7 @@ compiled in.")
    (loading     :reader loading
                 :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
-                :initform (pine.run.cell:cell
+                :initform (pine.data:box
                            (pl:map :loaded (pl:no-map) :missing (pl:no-set)))))
   (:documentation "The grammars this image has loaded: {:loaded {LANGUAGE ENTRY}
 :missing #{LANGUAGE}} in an atomic reference. A hit is a slot read."))

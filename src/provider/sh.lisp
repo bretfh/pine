@@ -1,7 +1,6 @@
 (defpackage #:pine.provider.sh
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:c #:pine.run.cell)
-                    (#:node #:pine.fs.node) (#:task #:pine.run.task))
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:task #:pine.run.task))
   (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
            #:*environment-out* #:output-of #:run-line #:launch
            #:streaming #:listen! #:quiet! #:listening #:said #:asked #:forget-all #:*sh*))
@@ -9,7 +8,7 @@
 (in-package #:pine.provider.sh)
 
 (defvar *kept* 100)
-(defvar *ran* (c:cell (d:no-seq)))
+(defvar *ran* (d:box (d:no-seq)))
 (defvar *sh* nil)
 (defvar *lines-kept* 20)
 
@@ -24,13 +23,13 @@
 
 (defclass stream-node (node:node)
   ((line :initarg :line :reader line)
-   (took :initform (c:cell nil) :reader took)
-   (said :initform (c:cell nil) :reader said)))
+   (took :initform (d:box nil) :reader took)
+   (said :initform (d:box nil) :reader said)))
 
-(defun ran () (d:as :list (c:held *ran*)))
+(defun ran () (d:as :list (d:held *ran*)))
 
 (defun %note (line)
-  (c:swap *ran*
+  (d:swap! *ran*
           (lambda (all)
             (let ((next (d:insert-at all 0 line)))
               (if (> (d:size next) *kept*) (d:subseq next 0 *kept*) next))))
@@ -84,7 +83,7 @@
                       :for said := (handler-case (read-line out nil nil)
                                      (stream-error () nil))
                       :while said
-                      :do (c:swap (said n)
+                      :do (d:swap! (said n)
                                   (lambda (all)
                                     (let ((next (cons said all)))
                                       (if (> (length next) *lines-kept*)
@@ -92,21 +91,21 @@
                                           next))))
                          (node:invalidate n)))))
 
-(defun listening (n) (and (c:held (took n)) t))
+(defun listening (n) (and (d:held (took n)) t))
 
 (defun listen! (n)
   (unless (listening n)
     (let ((process (uiop:launch-program (list "sh" "-c" (line n))
                                         :output :stream :error-output nil)))
-      (c:put (took n) process)
+      (d:put! (took n) process)
       (%reader n process)))
   n)
 
 (defun quiet! (n)
-  (let ((process (c:held (took n))))
+  (let ((process (d:held (took n))))
     (when process
       (ignore-errors (uiop:terminate-process process :urgent t))
-      (c:put (took n) nil)))
+      (d:put! (took n) nil)))
   n)
 
 (defun streaming (line &optional (root *sh*))
@@ -117,7 +116,7 @@
                                                        :line line)))))
       (listen! n))))
 
-(defmethod node:contents ((n stream-node)) (first (c:held (said n))))
+(defmethod node:contents ((n stream-node)) (first (d:held (said n))))
 (defmethod node:leafp ((n stream-node)) t)
 (defmethod node:persistp ((n stream-node)) nil)
 (defmethod node:livep ((n stream-node)) t)

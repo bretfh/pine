@@ -1,13 +1,12 @@
 (defpackage #:pine.provider.sys
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:c #:pine.run.cell)
-                    (#:sh #:pine.provider.sh))
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:sh #:pine.provider.sh))
   (:export #:sys-node #:install #:mounts #:cpu #:ram #:temp #:disk #:uptime #:load-average
            #:host #:user))
 
 (in-package #:pine.provider.sys)
 
-(defvar *sampled* (c:cell nil))
+(defvar *sampled* (d:box nil))
 
 (defparameter +parts+
   '("cpu" "ram" "temp" "disk" "uptime" "load" "user" "host"))
@@ -46,8 +45,8 @@
                         :when n :collect n))
          (total (reduce #'+ numbers :initial-value 0))
          (idle (+ (or (nth 3 numbers) 0) (or (nth 4 numbers) 0)))
-         (had (c:held *sampled*)))
-    (c:put *sampled* (cons total idle))
+         (had (d:held *sampled*)))
+    (d:put! *sampled* (cons total idle))
     (if (and had (consp had) (plusp (- total (car had))))
         (let ((moved (- total (car had)))
               (still (- idle (cdr had))))

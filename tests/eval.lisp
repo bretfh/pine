@@ -101,13 +101,13 @@
     (let ((b (pine.edit.buffer:current)))
       (pine.ts.parser:wait b)
       (is (eql (pine.edit.buffer:tick b)
-               (pine.run.cell:held
+               (pine.data:held
                 (pine.ts.parser:parsed (pine.ts.parser:parser-for b)))))
       (pine.edit.buffer:goto! b 0 15)
       (pine.edit.buffer:insert! b " ")
       (pine.ts.parser:wait b)
       (is (eql (pine.edit.buffer:tick b)
-               (pine.run.cell:held
+               (pine.data:held
                 (pine.ts.parser:parsed (pine.ts.parser:parser-for b))))
           "an edit is followed by a re-parse, without anything asking for one"))))
 

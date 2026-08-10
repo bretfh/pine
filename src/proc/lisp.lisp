@@ -1,7 +1,6 @@
 (defpackage #:pine.proc.lisp
   (:use #:cl)
-  (:local-nicknames (#:process #:pine.proc.process) (#:c #:pine.run.cell)
-                    (#:fault #:pine.run.fault) (#:task #:pine.run.task))
+  (:local-nicknames (#:d #:pine.data) (#:process #:pine.proc.process) (#:fault #:pine.run.fault) (#:task #:pine.run.task))
   (:export #:lisp-process #:evaluate #:answered-by #:ready-p #:wait-ready
            #:take-there #:there #:*elsewhere*
            #:*sbcl* #:*load-form*))
@@ -11,11 +10,11 @@
 (defvar *sbcl* (namestring sb-ext:*runtime-pathname*))
 (defvar *load-form* "(require :asdf)")
 (defvar *ready* "pine-process-ready")
-(defvar *elsewhere* (c:cell nil))
+(defvar *elsewhere* (d:box nil))
 
 (defclass lisp-process (process:program)
   ((systems :initarg :systems :accessor systems :initform '(:pine))
-   (readyp  :initform (c:cell nil) :reader readyp)))
+   (readyp  :initform (d:box nil) :reader readyp)))
 
 (defun %argv (p)
   (list *sbcl* "--noinform" "--no-userinit" "--disable-debugger"
@@ -66,14 +65,14 @@
 (defun %in (p) (uiop:process-info-input (process:took p)))
 (defun %out (p) (uiop:process-info-output (process:took p)))
 
-(defun ready-p (p) (c:held (readyp p)))
+(defun ready-p (p) (d:held (readyp p)))
 
 (defun wait-ready (p &key (timeout 60))
   (loop :repeat (round (/ timeout 0.05))
         :for line := (read-line (%out p) nil nil)
         :do (cond ((null line) (sleep 0.05))
                   ((search *ready* line)
-                   (c:put (readyp p) t)
+                   (d:put! (readyp p) t)
                    (return t))
                   (t (process:emit p line)))
         :finally (return nil)))
@@ -103,18 +102,18 @@ case it gives up -- is what the thread over there is told."
                                             (list (process:name p) said))
                             offers
                             (format nil "in ~a" (process:name p)))))
-    (c:swap *elsewhere* (lambda (all) (cons (cons f p) (remove f all :key #'car))))
+    (d:swap! *elsewhere* (lambda (all) (cons (cons f p) (remove f all :key #'car))))
     (task:spawn (format nil "~a fault" (process:name p))
                 (lambda ()
                   (unwind-protect
                        (take-there p (or (fault:await f) "ABORT"))
-                    (c:swap *elsewhere*
+                    (d:swap! *elsewhere*
                             (lambda (all) (remove f all :key #'car))))))
     f))
 
 (defun there (f)
   "The image a fault came home from."
-  (cdr (assoc f (c:held *elsewhere*))))
+  (cdr (assoc f (d:held *elsewhere*))))
 
 (defun answered-by (line)
   "What a line from the child says: a value, or a fault with the restarts that
