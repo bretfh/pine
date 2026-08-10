@@ -63,3 +63,62 @@ a node like any other, so it is in the snapshot."
       (pine.world.world:place w '("ok") 1)
       (pine.world.world:place w '("live") (lambda () :a-closure))
       (is (eql 1 (pine.world.store:snapshot w s))))))
+
+(test a-structured-value-goes-into-the-store-and-comes-back-as-itself
+  (let ((file (merge-pathnames "pine-probe-store.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (let ((held (pine.data:map :a (pine.data:seq 1 2 3)
+                                    :b (pine.data:set :x :y))))
+           (unwind-protect
+                (progn
+                  (pine:start :store file)
+                  (setf (pine.fs.node:contents
+                         (pine.world.world:ensure pine.world.world:*world* "probe"))
+                        held))
+             (pine:stop))
+           (unwind-protect
+                (progn
+                  (pine:start :store file)
+                  (let ((back (pine.fs.node:contents
+                               (pine.fs.tree:at (pine.world.world:root
+                                                 pine.world.world:*world*)
+                                                "probe"))))
+                    (is-true (pine.data:mapp back)
+                             "a map goes in as a map and comes back as one")
+                    (is (equal '(1 2 3) (pine.data:as :list (pine.data:at back :a))))
+                    (is-true (pine.data:contains (pine.data:at back :b) :x))))
+             (pine:stop)))
+      (ignore-errors (delete-file file)))))
+
+(test what-was-written-is-in-the-store-before-anything-stops
+  (let ((file (merge-pathnames "pine-probe-crash.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (progn
+           (unwind-protect
+                (progn
+                  (pine:start :store file)
+                  (setf (pine.fs.node:contents
+                         (pine.world.world:ensure pine.world.world:*world* "probe"))
+                        :written)
+                  (let ((rows (sqlite:execute-to-list
+                               (pine.world.store::db pine:*store*)
+                               "select path, value from node where path = '/probe'")))
+                    (is-true rows
+                             "it is on disk already, not waiting for a clean stop")))
+             (setf pine.fs.node:*on-write* nil)
+             (ignore-errors (pine.world.store:close-store pine:*store*))
+             (setf pine:*store* nil)
+             (pine:stop))
+           (unwind-protect
+                (progn
+                  (pine:start :store file)
+                  (is (eq :written
+                          (pine.fs.node:contents
+                           (pine.fs.tree:at (pine.world.world:root
+                                             pine.world.world:*world*)
+                                            "probe")))
+                      "so a crash before the snapshot costs nothing"))
+             (pine:stop)))
+      (ignore-errors (delete-file file)))))

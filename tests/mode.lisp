@@ -3,10 +3,14 @@
 (def-suite* :pine.mode :in :pine)
 
 (defmacro with-modes (&body body)
-  `(unwind-protect (progn ,@body)
-     (dolist (m (pine.repl.mode:modes))
-       (when (eql 0 (search "probe" (pine.repl.mode:name m)))
-         (pine.repl.mode:unmode (pine.repl.mode:name m))))))
+  "Only the modes this test declares, so what pine itself ships cannot answer
+for it."
+  `(let ((had (pine.repl.mode:modes)))
+     (dolist (m had) (pine.repl.mode:unmode (pine.repl.mode:name m)))
+     (unwind-protect (progn ,@body)
+       (dolist (m (pine.repl.mode:modes))
+         (pine.repl.mode:unmode (pine.repl.mode:name m)))
+       (dolist (m had) (pine.repl.mode:remode m)))))
 
 (test a-mode-falls-back-to-its-parent
   (with-modes

@@ -1,7 +1,8 @@
 (defpackage #:pine.repl.mode
   (:use #:cl)
   (:local-nicknames (#:cmd #:pine.repl.command))
-  (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:mode-for
+  (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:remode
+           #:mode-for
            #:name #:parent #:indicator #:settings #:claims #:claimsp
            #:precedence #:chain #:setting #:handle #:handler #:claimants
            #:bind #:binding #:in-force #:globp #:keys #:handlers
@@ -49,6 +50,10 @@
 (defun unmode (name)
   (remhash name *modes*)
   name)
+
+(defun remode (m)
+  "Put a mode back, with the keys and handlers it already had."
+  (setf (gethash (name m) *modes*) m))
 
 (defun globp (pattern text)
   (labels ((walk (p n)

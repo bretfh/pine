@@ -127,11 +127,15 @@
   (when store
     (setf *store* (store:open-store store))
     (setf shell:*store* *store*)
-    (store:restore world:*world* *store*))
+    (store:restore world:*world* *store*)
+    (store:keeping *store*))
   (super:watch *supervisor*)
   world:*world*)
 
 (defun stop ()
+  (setf cmd:*asking* nil
+        pine.ui.build:*asking* nil
+        pine.ui.build:*editing* nil)
   (key:take-next nil)
   (isearch:took-all)
   (live:leave-all)
@@ -141,6 +145,7 @@
     (super:unwatch *supervisor*)
     (super:stop-all *supervisor*))
   (dolist (s (session:sessions)) (session:close s))
+  (setf node:*on-write* nil)
   (when *store*
     (ignore-errors (store:snapshot world:*world* *store*))
     (ignore-errors (store:close-store *store*))

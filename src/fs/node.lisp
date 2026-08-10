@@ -4,7 +4,7 @@
   (:local-nicknames (#:c #:pine.run.cell) (#:d #:pine.data))
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
            #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
-           #:dependents #:depend #:invalidate #:*reading* #:reading
+           #:dependents #:depend #:invalidate #:*reading* #:reading #:*on-write*
            #:node-named #:make-node #:full-name #:root-of
            #:kept #:child #:children #:stir #:announces #:every-seconds
            #:verb #:verbp #:verb-name #:verb-args
@@ -13,6 +13,7 @@
 (in-package #:pine.fs.node)
 
 (defvar *reading* nil)
+(defvar *on-write* nil)
 
 (defclass node ()
   ((name       :initarg :name      :reader name)
@@ -164,6 +165,7 @@
   (:method (value (n value-node))
     (c:put (held n) value)
     (invalidate n)
+    (when *on-write* (funcall *on-write* n))
     value))
 
 (defmethod contents ((n slot-node))
