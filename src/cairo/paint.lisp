@@ -304,58 +304,6 @@ reports for one cell, so a window measures and paints at the same grid."
           (cairo:set-line-width 1.5d0) (cairo:stroke))
         (cairo:restore)))))
 
-(defun %days-in-month (mo y)
-  (if (= mo 2)
-      (if (or (and (zerop (mod y 4)) (plusp (mod y 100))) (zerop (mod y 400))) 29 28)
-      (aref #(31 28 31 30 31 30 31 31 30 31 30 31) (1- mo))))
-
-(defun %first-dow (mo y)
-  (multiple-value-bind (s m h d dm yr dow)
-      (decode-universal-time (encode-universal-time 0 0 12 1 mo y))
-    (declare (ignore s m h d dm yr))
-    (mod (1+ dow) 7)))
-
-(defmethod pine.ui.layout:measure ((n calendar) aw ah)
-  (declare (ignore aw ah))
-  (let* ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
-         (cw (+ 10 (nth-value 0 (pine.ui.layout:text-size "00" fpx))))
-         (ch (+ 8 (pine.ui.layout:line-height fpx))))
-    (values (* 7 cw) (* 8 ch))))
-
-(defun draw-cell-text (s cx cy cw ch role &optional bold)
-  (cairo:select-font-face *cairo-font* :normal (if bold :bold :normal))
-  (multiple-value-bind (r g b) (pine.ui.face:hex-rgb (pine.ui.face:color role))
-    (cairo:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)))
-  (multiple-value-bind (xb yb tw th ax) (cairo:text-extents s)
-    (declare (ignore xb yb tw th))
-    (let* ((fe (cairo:get-font-extents)) (asc (cairo:font-ascent fe))
-           (lh (+ asc (cairo:font-descent fe))))
-      (cairo:move-to (float (+ cx (/ (- cw ax) 2.0)) 1d0)
-                     (float (+ cy (/ (- ch lh) 2.0) asc) 1d0))
-      (cairo:show-text s))))
-
-(defmethod paint-px ((n calendar) chain)
-  (declare (ignore chain))
-  (multiple-value-bind (x y w h) (node-rect n)
-    (let* ((fpx (or (font-px n) pine.ui.layout:*default-font-px*))
-           (cw (/ w 7.0)) (ch (/ h 8.0))
-           (year (cal-year n)) (mo (cal-month n)) (day (cal-day n))
-           (ndays (%days-in-month mo year)) (fdow (%first-dow mo year)))
-      (cairo:set-font-size (float fpx 1d0))
-      (draw-cell-text (format nil "~a ~d" (aref +cal-months+ (1- mo)) year)
-                      x y w ch :accent t)
-      (loop for lbl in '("Su" "Mo" "Tu" "We" "Th" "Fr" "Sa") for col from 0
-            do (draw-cell-text lbl (+ x (* col cw)) (+ y ch) cw ch :fg-dim))
-      (loop for d from 1 to ndays
-            for pos = (+ fdow (1- d))
-            for cx = (+ x (* (mod pos 7) cw))
-            for cy = (+ y (* (+ 2 (floor pos 7)) ch))
-            do (when (= d day)
-                 (rounded-rect (+ cx 2) (+ cy 2) (- cw 4) (- ch 4) 6)
-                 (set-hex (pine.ui.face:color :accent)) (cairo:fill-path))
-               (draw-cell-text (princ-to-string d) cx cy cw ch
-                               (if (= d day) :accent-fg :fg))))))
-
 (defmacro with-cairo-layout (&body body)
   "Bind the dynamic state the cairo layout pass needs: the theme font, the
 *text-size* hook (pixel measurement), and a fresh per-render style cache."

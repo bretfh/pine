@@ -116,7 +116,8 @@
                 :depends-on (#:pine #:cl-cairo2)
                 :serial t
                 :pathname "src/cairo/"
-                :components ((:file "grid") (:file "paint") (:file "shot")))
+                :components ((:file "grid") (:file "paint") (:file "calendar")
+                             (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
                 :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
