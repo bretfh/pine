@@ -6,7 +6,8 @@
 (in-package #:pine.wayland.app.keys)
 
 (defvar *ekb* (make-hash-table :test 'eq)
-  "Editor to (list context keymap state).")
+  "Editor to (list context keymap state). Keyed by identity and touched only by
+the frontend's own wayland thread.")
 
 (defparameter +modifier-keysyms+
   '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"

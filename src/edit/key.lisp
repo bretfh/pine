@@ -12,7 +12,7 @@
 
 (in-package #:pine.edit.key)
 
-(defvar *keys* (make-hash-table :test 'equal))
+(defvar *keys* (d:table))
 (defvar *pending* (d:box nil))
 (defvar *last* (d:box nil))
 (defvar *prefix* (d:box nil))
@@ -27,11 +27,11 @@
   (super nil :read-only t))
 
 (defun make-key (sym &key ctrl meta shift super)
+  "The one key object for this chord. Two threads parsing the same chord get
+the same object, which is what lets KEY= be EQ."
   (let ((id (list sym ctrl meta shift super)))
-    (or (gethash id *keys*)
-        (setf (gethash id *keys*)
-              (%make-key :sym sym :ctrl ctrl :meta meta
-                         :shift shift :super super)))))
+    (d:claim *keys* id (%make-key :sym sym :ctrl ctrl :meta meta
+                                  :shift shift :super super))))
 
 (defun key= (a b) (eq a b))
 
@@ -84,10 +84,8 @@
     b))
 
 (defun bindings-of (session)
-  (let (acc)
-    (dolist (m (mode:in-force session) (nreverse acc))
-      (maphash (lambda (chord name) (push (cons chord name) acc))
-               (mode:keys m)))))
+  (loop :for m :in (mode:in-force session)
+        :append (d:pairs (d:all (mode:keys m)))))
 
 (defun %prefixp (session text)
   (loop :for (chord . nil) :in (bindings-of session)

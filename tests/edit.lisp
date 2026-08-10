@@ -482,7 +482,7 @@ three")
     (pine.repl.command:run "list-buffers")
     (let* ((b (pine.edit.buffer:current))
            (n (length (pine.edit.listing:rows
-                       (gethash "*buffers*" (pine.edit.listing:listings))))))
+                       (pine.data:at (pine.edit.listing:listings) "*buffers*")))))
       (is (typep (pine.edit.listing:place b) 'pine.edit.buffer:buffer)
           "the row point is on stands for a buffer, not for its text")
       (is (eq (pine.edit.listing:place b)

@@ -32,7 +32,7 @@
 (defmethod node:invalidate ((n computed-node))
   (unless (eq (d:held (cached n)) +unread+)
     (d:put! (cached n) +unread+)
-    (dolist (d (d:held (node:dependents n)))
+    (d:do-each (d (d:held (node:dependents n)))
       (node:invalidate d)))
   n)
 

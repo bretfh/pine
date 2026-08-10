@@ -18,29 +18,29 @@
 
 (defclass session ()
   ((client-of :initarg :client :reader client-of)
-   (acting    :initform (make-hash-table) :reader acting)
-   (ids       :initform (make-hash-table :test 'equal) :reader ids)
+   (acting    :initform (d:table) :reader acting)
+   (ids       :initform (d:table) :reader ids)
    (watching  :initform nil :accessor watching)
    (counter   :initform 0 :accessor counter)))
 
 (defmethod print-object ((s session) stream)
   (print-unreadable-object (s stream :type t)
     (format stream "client ~d, ~d action~:p"
-            (attach:client-id (client-of s)) (hash-table-count (acting s)))))
+            (attach:client-id (client-of s)) (d:size (d:all (acting s))))))
 
 (defun sessions () (d:vals (d:all *sessions*)))
 
 (defun %for (client) (d:at (d:all *sessions*) (attach:client-id client)))
 
 (defun %forget-actions (s name)
-  (dolist (id (gethash name (ids s)))
-    (remhash id (acting s)))
-  (setf (gethash name (ids s)) nil))
+  (dolist (id (d:at (d:all (ids s)) name))
+    (d:drop! (acting s) id))
+  (d:drop! (ids s) name))
 
 (defun %keep (s name thunk)
   (let ((id (incf (counter s))))
-    (setf (gethash id (acting s)) thunk)
-    (push id (gethash name (ids s)))
+    (d:keep! (acting s) id thunk)
+    (d:keep! (ids s) name (cons id (d:at (d:all (ids s)) name)))
     id))
 
 (defun push-surface (s surface)
@@ -134,7 +134,7 @@ like any other; without this it never reaches the screen."
       (case (first message)
         (:widget-action
          (destructuring-bind (&key id args) (rest message)
-           (let ((thunk (gethash id (acting s))))
+           (let ((thunk (d:at (d:all (acting s)) id)))
              (when thunk (%act client thunk args)))))
         (:refresh (push-all s))
         (:hint

@@ -192,10 +192,7 @@
 (defun bindings ()
   (let ((m (mode:mode-named "wm")))
     (when m
-      (let (acc)
-        (maphash (lambda (chord command) (push (cons chord command) acc))
-                 (mode:keys m))
-        (nreverse acc)))))
+      (d:pairs (d:all (mode:keys m))))))
 
 (defun %run-chord (chord)
   (let ((command (and (mode:mode-named "wm")

@@ -19,9 +19,9 @@
   ((name       :initarg :name      :reader name)
    (parent     :initarg :parent    :accessor parent     :initform nil)
    (describes  :initarg :describes :accessor describes  :initform nil)
-   (under      :initform (d:box nil) :reader under)
-   (kept       :initform (d:box nil) :reader kept)
-   (dependents :initform (d:box nil) :reader dependents)))
+   (under      :initform (d:box (d:no-seq)) :reader under)
+   (kept       :initform (d:table)           :reader kept)
+   (dependents :initform (d:box (d:no-set))  :reader dependents)))
 
 (defclass value-node (node)
   ((held :initform (d:box nil) :reader held)))
@@ -47,7 +47,7 @@
     (if names (format nil "/~{~a~^/~}" (reverse names)) "/")))
 
 (defgeneric nodes (node)
-  (:method ((n node)) (d:held (under n))))
+  (:method ((n node)) (d:as :list (d:held (under n)))))
 
 (defgeneric resolve (node name)
   (:method ((n node) name)
@@ -57,15 +57,17 @@
   (:method ((n node) (into node))
     (setf (parent n) into)
     (d:swap! (under into)
-            (lambda (all)
-              (append (remove (name n) all :key #'name :test #'equal) (list n))))
+             (lambda (all)
+               (d:with (d:as :seq (cl:remove (name n) (d:as :list all)
+                                             :key #'name :test #'equal))
+                       n)))
     n))
 
 (defgeneric detach (node name)
   (:method ((n node) name)
     (let ((gone (resolve n name)))
       (when gone
-        (d:swap! (under n) (lambda (all) (remove gone all)))
+        (d:swap! (under n) (lambda (all) (d:remove gone all)))
         (setf (parent gone) nil))
       gone)))
 
@@ -87,18 +89,13 @@
   node)
 
 (defun child (n name builder)
+  "The child N keeps under NAME, made once. Two threads asking at once both
+answer the one that landed."
   (let ((name (princ-to-string name)))
-    (or (cdr (assoc name (d:held (kept n)) :test #'equal))
-        (let ((made (funcall builder)))
-          (cdr (assoc name
-                      (d:swap! (kept n)
-                              (lambda (all)
-                                (if (assoc name all :test #'equal)
-                                    all
-                                    (acons name made all))))
-                      :test #'equal))))))
+    (or (d:at (d:all (kept n)) name)
+        (d:claim (kept n) name (funcall builder)))))
 
-(defun children (n) (mapcar #'cdr (d:held (kept n))))
+(defun children (n) (d:vals (d:all (kept n))))
 
 (defun root-of (n)
   (loop :for at := n :then (parent at)
@@ -137,13 +134,13 @@
 
 (defgeneric depend (node on)
   (:method ((n node) (on node))
-    (d:swap! (dependents on) (lambda (all) (adjoin n all)))
+    (d:swap! (dependents on) (lambda (all) (d:with all n)))
     n))
 
 (defgeneric invalidate (node)
   (:method ((n node))
-    (dolist (d (d:held (dependents n)))
-      (invalidate d))
+    (d:do-each (each (d:held (dependents n)))
+      (invalidate each))
     n))
 
 (defgeneric contents (node)

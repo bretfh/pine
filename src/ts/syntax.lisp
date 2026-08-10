@@ -11,7 +11,7 @@
 (in-package #:pine.ts.syntax)
 (named-readtables:in-readtable pine.path.reader:syntax)
 
-(defvar *compiled* (make-hash-table :test 'equal))
+(defvar *compiled* (pl:table))
 
 (defparameter *inferrers* nil)
 
@@ -108,7 +108,7 @@
 
 (defun declare-language (name raw &key parent)
   (let ((full (%inherit (and parent (%raw parent)) raw)))
-    (setf (gethash name *compiled*) (cons full (%compile name full)))
+    (pl:keep! *compiled* name (cons full (%compile name full)))
     (when world:*world*
       (setf (node:contents (world:ensure world:*world* "syntax"
                                          (string-downcase (string name))))
@@ -116,14 +116,13 @@
     name))
 
 (defun %raw (name)
-  (car (gethash name *compiled*)))
+  (car (pl:at (pl:all *compiled*) name)))
 
 (defun for (name)
-  (cdr (gethash name *compiled*)))
+  (cdr (pl:at (pl:all *compiled*) name)))
 
 (defun languages ()
-  (sort (loop :for k :being :the :hash-keys :of *compiled* :collect k)
-        #'string< :key #'string))
+  (sort (pl:keys (pl:all *compiled*)) #'string< :key #'string))
 
 (defun readtable-of (name)
   "The readtable a language is written in, when it says: a language whose

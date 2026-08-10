@@ -1,6 +1,6 @@
 (defpackage #:pine.repl.mode
   (:use #:cl)
-  (:local-nicknames (#:cmd #:pine.repl.command))
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command))
   (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:remode
            #:mode-for
            #:name #:parent #:indicator #:settings #:claims #:claimsp
@@ -10,15 +10,15 @@
 
 (in-package #:pine.repl.mode)
 
-(defvar *modes* (make-hash-table :test 'equal))
+(defvar *modes* (d:table))
 
 (defclass mode ()
   ((name      :initarg :name      :reader name)
    (parent    :initarg :parent    :accessor parent    :initform nil)
    (indicator :initarg :indicator :accessor indicator :initform nil)
    (settings  :initarg :settings  :accessor settings  :initform nil)
-   (handlers  :initform (make-hash-table :test 'eq) :reader handlers)
-   (keys      :initform (make-hash-table :test 'equal) :reader keys)
+   (handlers  :initform (d:table) :reader handlers)
+   (keys      :initform (d:table) :reader keys)
    (claims    :initarg :claims    :accessor claims    :initform nil)))
 
 (defclass minor-mode (mode)
@@ -31,7 +31,7 @@
 (defun mode (name &rest initargs &key (class 'mode) &allow-other-keys)
   (let ((m (apply #'make-instance class :name name
                   (alexandria:remove-from-plist initargs :class))))
-    (setf (gethash name *modes*) m)))
+    (d:keep! *modes* name m)))
 
 (defun minor (name &rest initargs)
   (apply #'mode name :class 'minor-mode initargs))
@@ -40,20 +40,19 @@
   (etypecase name
     (null nil)
     (mode name)
-    (string (gethash name *modes*))
-    (symbol (gethash (string-downcase (symbol-name name)) *modes*))))
+    (string (d:at (d:all *modes*) name))
+    (symbol (d:at (d:all *modes*) (string-downcase (symbol-name name))))))
 
 (defun modes ()
-  (sort (loop :for m :being :the :hash-values :of *modes* :collect m)
-        #'string< :key #'name))
+  (sort (d:vals (d:all *modes*)) #'string< :key #'name))
 
 (defun unmode (name)
-  (remhash name *modes*)
+  (d:drop! *modes* name)
   name)
 
 (defun remode (m)
   "Put a mode back, with the keys and handlers it already had."
-  (setf (gethash (name m) *modes*) m))
+  (d:keep! *modes* (name m) m))
 
 (defun globp (pattern text)
   (labels ((walk (p n)
@@ -105,12 +104,12 @@
 (defgeneric handle (mode verb function)
   (:method ((name string) verb function) (handle (mode-named name) verb function))
   (:method ((m mode) verb function)
-    (setf (gethash verb (handlers m)) function)))
+    (d:keep! (handlers m) verb function)))
 
 (defgeneric bind (mode chord command)
   (:method ((name string) chord command) (bind (mode-named name) chord command))
   (:method ((m mode) chord command)
-    (setf (gethash chord (keys m)) command)))
+    (d:keep! (keys m) chord command)))
 
 (defgeneric in-force (of)
   (:method ((m null)) nil)
@@ -119,7 +118,7 @@
 (defgeneric claimants (of verb)
   (:method (of verb)
     (loop :for link :in (in-force of)
-          :for fn := (gethash verb (handlers link))
+          :for fn := (d:at (d:all (handlers link)) verb)
           :when fn :collect fn)))
 
 (defgeneric handler (of verb)
@@ -141,5 +140,5 @@ and finally whoever asked does it itself."
 (defgeneric binding (of chord)
   (:method (of chord)
     (loop :for link :in (in-force of)
-          :for c := (gethash chord (keys link))
+          :for c := (d:at (d:all (keys link)) chord)
           :when c :do (return (cmd:command-named c)))))

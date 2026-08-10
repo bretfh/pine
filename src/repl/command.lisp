@@ -1,13 +1,14 @@
 (defpackage #:pine.repl.command
   (:use #:cl)
   (:shadow #:describe)
+  (:local-nicknames (#:d #:pine.data))
   (:export #:command #:commandp #:defcommand #:command-named #:commands
            #:forget #:name #:action #:describes #:asks #:arguments #:run
            #:word #:unknown-command #:name-of #:*asking*))
 
 (in-package #:pine.repl.command)
 
-(defvar *commands* (make-hash-table :test 'equal))
+(defvar *commands* (d:table))
 
 (defvar *asking* nil)
 
@@ -28,24 +29,23 @@
 (defun commandp (x) (typep x 'command))
 
 (defun command (name action &key (describes "") asks)
-  (setf (gethash name *commands*)
-        (make-instance 'command :name name :action action
-                                :describes describes :asks asks)))
+  (d:keep! *commands* name
+           (make-instance 'command :name name :action action
+                                   :describes describes :asks asks)))
 
 (defun forget (name)
-  (remhash name *commands*)
+  (d:drop! *commands* name)
   name)
 
 (defun command-named (name)
   (etypecase name
     (null nil)
     (command name)
-    (string (gethash name *commands*))
-    (symbol (gethash (string-downcase (symbol-name name)) *commands*))))
+    (string (d:at (d:all *commands*) name))
+    (symbol (d:at (d:all *commands*) (string-downcase (symbol-name name))))))
 
 (defun commands ()
-  (sort (loop :for c :being :the :hash-values :of *commands* :collect c)
-        #'string< :key #'name))
+  (sort (d:vals (d:all *commands*)) #'string< :key #'name))
 
 (defmacro defcommand (name lambda-list options &body body)
   `(command ,name (lambda ,lambda-list ,@body) ,@options))

@@ -49,7 +49,7 @@
     w))
 
 (defun unwatch (w)
-  (d:swap! (node:dependents (of w)) (lambda (all) (remove w all)))
+  (d:swap! (node:dependents (of w)) (lambda (all) (d:without all w)))
   (when (polling w) (task:stop (polling w)))
   (d:swap! *watchers* (lambda (all) (remove w all)))
   w)

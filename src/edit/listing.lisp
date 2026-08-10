@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.listing
   (:use #:cl)
-  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:node #:pine.fs.node) (#:key #:pine.edit.key)
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:prompt #:pine.edit.prompt)
@@ -11,7 +11,7 @@
 (in-package #:pine.edit.listing)
 
 
-(defvar *listings* (make-hash-table :test 'equal))
+(defvar *listings* (d:table))
 
 (defclass listing ()
   ((rows :initarg :rows :accessor rows :initform nil)
@@ -21,9 +21,9 @@
   (print-unreadable-object (l stream :type t)
     (format stream "~d row~:p~:[~; you can act on~]" (length (rows l)) (acts l))))
 
-(defun listings () *listings*)
+(defun listings () (d:all *listings*))
 
-(defun %of (b) (gethash (node:name b) *listings*))
+(defun %of (b) (d:at (d:all *listings*) (node:name b)))
 
 (defun said (row) (if (consp row) (car row) (princ-to-string row)))
 
@@ -59,7 +59,7 @@ listing: RET on a row hands ACTS the place it stands for."
           (if acts
               (adjoin "list" (buffer:minors-of b) :test #'equal)
               (remove "list" (buffer:minors-of b) :test #'equal)))
-    (setf (gethash name *listings*) (make-instance 'listing :rows rows :acts acts))
+    (d:keep! *listings* name (make-instance 'listing :rows rows :acts acts))
     (setf (buffer:current) b)
     (%mark b)
     (node:name b)))
