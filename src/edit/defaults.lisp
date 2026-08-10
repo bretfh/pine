@@ -50,6 +50,8 @@
   (mode:minor "prompt" :precedence 20)
   (mode:minor "overwrite" :precedence 10 :settings '(:indicator "Ovwrt"))
   (mode:minor "list" :precedence 15)
+  (mode:bind "list" "RET" "list-activate")
+  (mode:bind "list" "Return" "list-activate")
   (mode:handle "prog" :newline #'%indenting)
   (mode:handle "overwrite" :insert #'%overwriting))
 

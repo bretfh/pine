@@ -195,12 +195,21 @@
   <div class="wrap narrow">
     <h2>get it</h2>
     <p class="big">Runs on Linux and Wayland.</p>
-    <p class="lead dim">Built with Guix and SBCL. One command brings up the daemon with the editor and
-      desktop attached.</p>
-    <pre class="mono"><code><span class="cm"># the substrate, the editor, and the desktop, together</span>
+    <p class="lead dim">Built with Guix and SBCL. One binary is the daemon, the frontends, the shell
+      and the verbs you talk to it with; what runs is what your config declares.</p>
+    <pre class="mono"><code><span class="cm"># build the one binary</span>
 git clone https://github.com/bretfh/pine
 <span class="pr">cd</span> pine
-make dev</code></pre>
+make bin
+
+<span class="cm"># the daemon reads ~/.config/pine/init.lisp and starts what it declares</span>
+./pine start
+./pine status
+
+<span class="cm"># and it is a namespace you can talk to</span>
+./pine read /audio/volume
+./pine watch /media/title
+./pine eval <span class="pr">'(+ 1 2)'</span></code></pre>
     <div class="cta" style="justify-content:flex-start">
       <a class="btn solid" href="https://github.com/bretfh/pine">Read the source</a>
     </div>

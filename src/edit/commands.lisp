@@ -32,14 +32,6 @@
         (let ((word (buffer:delete-region! b line col to-line to-col)))
           (buffer:insert! b (funcall by word)))))))
 
-(defun %into (name text)
-  (let ((b (or (buffer:buffer-named name) (buffer:make-buffer name))))
-    (setf (node:contents b) text)
-    (buffer:goto! b 0 0)
-    (setf (buffer:current) b)
-    (window:show! (window:focused) b)
-    (node:name b)))
-
 (defun %session ()
   (or *evaluating*
       (setf *evaluating*
@@ -221,8 +213,6 @@
            (b (or (buffer:buffer-named name) (buffer:make-buffer name))))
       (setf (buffer:current) b)
       (node:full-name b)))
-  (cmd:defcommand "list-buffers" () (:describes "every buffer there is")
-    (mapcar #'node:name (buffer:buffers)))
   (cmd:defcommand "kill-buffer" (&optional name)
       (:describes "forget a buffer"
        :asks '((:prompt "Kill buffer: " :category :buffer :must-match t)))
@@ -343,30 +333,6 @@
     (%case-word #'string-downcase))
   (cmd:defcommand "capitalize-word" () (:describes "the word after point, capitalised")
     (%case-word #'string-capitalize))
-  (cmd:defcommand "describe-key" () (:describes "what a chord runs")
-    (prompt:ask "Describe key: "
-                :then (lambda (chord)
-                        (let ((c (mode:binding (%b) chord)))
-                          (log:note "~a: ~a" chord
-                                    (if c (format nil "~a, ~a" (cmd:name c)
-                                                  (cmd:describes c))
-                                        "undefined"))))))
-  (cmd:defcommand "describe-bindings" () (:describes "every chord in force here")
-    (%into "*help*"
-           (with-output-to-string (out)
-             (format out "chords in force in ~a~%~%" (node:name (%b)))
-             (loop :for (chord . name) :in (sort (key:bindings-of (%b)) #'string<
-                                                 :key #'car)
-                   :do (format out "~16a ~a~%" chord name)))))
-  (cmd:defcommand "describe-mode" () (:describes "what this buffer's mode is")
-    (let ((m (mode:mode-named (buffer:mode-of (%b)))))
-      (%into "*help*"
-             (with-output-to-string (out)
-               (format out "~a~%~%" (buffer:mode-of (%b)))
-               (format out "chain     ~{~a~^ -> ~}~%"
-                       (mapcar #'mode:name (mode:chain m)))
-               (format out "settings  ~a~%" (mode:settings m))
-               (format out "minors    ~a~%" (buffer:minors-of (%b)))))))
   (cmd:defcommand "other-window" () (:describes "move the keyboard to the next window")
     (let* ((all (window:windows))
            (at (or (position (window:focused) all) 0)))
