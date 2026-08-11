@@ -4,7 +4,8 @@
   (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree))
   (:export #:path #:pathp #:segments #:text #:parse #:leaf #:parent #:rootp
            #:patternp #:binders #:match #:under #:prefixp #:join
-           #:literal #:binding #:any #:deep #:segment #:kind #:value))
+           #:literal #:binding #:any #:deep #:segment #:segment-text #:kind
+           #:value))
 
 (in-package #:pine.path.path)
 
@@ -50,10 +51,15 @@
 
 (defun parse (text) (path text))
 
+(defgeneric segment-text (segment)
+  (:documentation "A segment as it was written, so a path prints as it reads.")
+  (:method ((s segment)) (value s))
+  (:method ((s binding)) (concatenate 'string "?" (value s))))
+
 (defun text (p)
   (if (rootp p)
       "/"
-      (format nil "~{/~a~}" (mapcar #'value (segments p)))))
+      (format nil "~{/~a~}" (mapcar #'segment-text (segments p)))))
 
 (defun rootp (p) (null (segments p)))
 

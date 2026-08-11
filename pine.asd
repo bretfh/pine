@@ -109,7 +109,7 @@
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
                              (:file "run") (:file "vt") (:file "layout") (:file "fs") (:file "world")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "isearch") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "desktop") (:file "boot"))
+                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "isearch") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "desktop") (:file "stress") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

@@ -56,3 +56,55 @@
                                (search "/ts/" (namestring f))))
                          found))
         "only path/ and the language declarations may declare the readtable")))
+
+(test a-path-is-built-from-pieces-and-splices-what-it-is-given
+  (let ((p (pine.path.path:path "buf" "scratch" "text")))
+    (is (equal "/buf/scratch/text" (pine.path.path:text p)))
+    (is (equal "/buf/scratch/text/of"
+               (pine.path.path:text (pine.path.path:join p "of"))))
+    (is (equal "/buf/scratch"
+               (pine.path.path:text
+                (pine.path.path:path (pine.path.path:parse "/buf") "scratch")))
+        "a path in the pieces is spliced, not printed into a name")))
+
+(test the-root-is-a-path-with-nothing-in-it
+  (let ((root (pine.path.path:parse "/")))
+    (is-true (pine.path.path:rootp root))
+    (is (equal "/" (pine.path.path:text root)))
+    (is (null (pine.path.path:leaf root)))
+    (is-true (pine.path.path:rootp (pine.path.path:parent root))
+             "the parent of the root is the root")))
+
+(test a-prefix-says-what-is-under-it
+  (let ((buf (pine.path.path:parse "/buf"))
+        (text (pine.path.path:parse "/buf/scratch/text")))
+    (is-true (pine.path.path:prefixp buf text))
+    (is-false (pine.path.path:prefixp text buf))
+    (is (equal "/scratch/text" (pine.path.path:text (pine.path.path:under buf text))))
+    (is-false (pine.path.path:prefixp (pine.path.path:parse "/win") text))))
+
+(test a-deep-wildcard-covers-any-depth-and-a-star-covers-one-name
+  (let ((one (pine.path.path:parse "/buf/*/text"))
+        (deep (pine.path.path:parse "/buf/**")))
+    (is-true (pine.path.path:patternp one))
+    (is-true (pine.path.path:match one (pine.path.path:parse "/buf/scratch/text")))
+    (is-false (pine.path.path:match one (pine.path.path:parse "/buf/a/b/text"))
+              "one star is one name")
+    (is-true (pine.path.path:match deep (pine.path.path:parse "/buf/a/b/text")))
+    (is-true (pine.path.path:match deep (pine.path.path:parse "/buf/a")))))
+
+(test a-binder-says-what-it-bound
+  (let ((pattern (pine.path.path:parse "/buf/?name/text")))
+    (is (equal '("NAME") (mapcar #'symbol-name (pine.path.path:binders pattern))))
+    (let ((bound (pine.path.path:match pattern
+                                       (pine.path.path:parse "/buf/scratch/text"))))
+      (is-true bound)
+      (is (equal "scratch"
+                 (cdr (assoc (first (pine.path.path:binders pattern)) bound)))
+          "what it matched is on the name it bound"))
+    (is-false (pine.path.path:match pattern (pine.path.path:parse "/win/scratch/text")))))
+
+(test a-path-reads-back-as-what-it-printed
+  (dolist (text '("/" "/buf" "/buf/scratch/text" "/buf/?name/text" "/buf/*/text"))
+    (is (equal text (pine.path.path:text (pine.path.path:parse text)))
+        "~a did not survive the round trip" text)))
