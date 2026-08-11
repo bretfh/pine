@@ -5,7 +5,7 @@
   (:export #:*asking* #:*editing* #:here #:box #:button #:calendar #:cells #:centerbox #:center #:choice
            #:column #:gap #:icon #:image #:label #:ring #:row
            #:rows #:rule #:scroll #:slider #:grid #:stack
-           #:field #:acting #:shown))
+           #:field #:acting #:shown #:placep #:held))
 
 (in-package #:pine.ui.build)
 
@@ -28,10 +28,25 @@ then treat the rest as nodes, dropping nils and splicing lists."
 to say what it stands for."
   *here*)
 
+(defun placep (x)
+  "Whether X is somewhere a value is kept rather than a value: a node, or a
+path naming one."
+  (or (pine.fs.node:nodep x) (pine.path.path:pathp x)))
+
+(defun held (x)
+  (if (pine.fs.node:nodep x)
+      (pine.fs.node:contents x)
+      (pine.path.place:contents x)))
+
+(defun (setf held) (value x)
+  (if (pine.fs.node:nodep x)
+      (setf (pine.fs.node:contents x) value)
+      (setf (pine.path.place:contents x) value)))
+
 (defun shown (x)
-  "What a slot shows. A path in place of a value is read, so a widget slot and
+  "What a slot shows. A place in place of a value is read, so a widget slot and
 the place it shows are one thing."
-  (cond ((pine.path.path:pathp x) (let ((v (pine.path.place:contents x))) (if (null v) "" v)))
+  (cond ((placep x) (let ((v (held x))) (if (null v) "" v)))
         ((null x) "")
         (t x)))
 
@@ -40,7 +55,7 @@ the place it shows are one thing."
 config can say what a click does without writing a closure."
   (lambda ()
     (pine.data:do-pairs (where value m)
-      (setf (pine.path.place:contents where) value))
+      (setf (held where) value))
     t))
 
 (defun acting (click)
@@ -50,10 +65,7 @@ so clicking one writes it, the way clicking a path writes what it names."
   (cond ((null click) nil)
         ((functionp click) click)
         ((pine.data:mapp click) (%writing click))
-        ((pine.fs.node:nodep click)
-         (lambda () (setf (pine.fs.node:contents click) t)))
-        ((pine.path.path:pathp click)
-         (lambda () (setf (pine.path.place:contents click) t)))
+        ((placep click) (lambda () (setf (held click) t)))
         (t (lambda () (pine.repl.command:run click)))))
 
 (defun %click (props)
@@ -163,10 +175,10 @@ never pushes the end past the surface. (centerbox :orient :v :start .. :end ..)"
   "A slider. Given a path as its subject it shows that path and dragging writes
 it, so there is no :value and no :on-change."
   (let ((subject (first args)))
-    (cond ((pine.path.path:pathp subject)
+    (cond ((placep subject)
            (apply #'make-instance 'pine.ui.node:slider
-                  :value (or (pine.path.place:contents subject) 0)
-                  :on-change (lambda (v) (setf (pine.path.place:contents subject) v))
+                  :value (or (held subject) 0)
+                  :on-change (lambda (v) (setf (held subject) v))
                   (rest args)))
           ((keywordp subject) (apply #'make-instance 'pine.ui.node:slider args))
           (t (apply #'make-instance 'pine.ui.node:slider :value subject (rest args))))))
@@ -179,9 +191,9 @@ typed into it is written back there. No :value and no :on-change."
   (let ((props raw-props))
     (apply #'make-instance 'text-node
            :content (princ-to-string (shown subject))
-           :of (when (pine.path.path:pathp subject) subject)
-           :on-change (when (pine.path.path:pathp subject)
-                        (lambda (v) (setf (pine.path.place:contents subject) v)))
+           :of (when (placep subject) subject)
+           :on-change (when (placep subject)
+                        (lambda (v) (setf (held subject) v)))
            :class (or (getf props :class) "field")
            (%without props :class))))
 
@@ -213,9 +225,7 @@ are painted in the order they were written."
         (multiple-value-bind (props items) (%parse-args (rest args))
           (apply #'make-instance 'pine.ui.node:ring
                  :node (first items)
-                 :value (if (pine.path.path:pathp subject)
-                            (or (pine.path.place:contents subject) 0)
-                            subject)
+                 :value (if (placep subject) (or (held subject) 0) subject)
                  props)))))
 
 (defun calendar (&rest props)
