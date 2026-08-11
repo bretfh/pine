@@ -13,10 +13,13 @@
 
    #:layer-surface #:open-layer-surface #:measure-panel
    #:ls-conn #:ls-wl-surface #:ls-layer-surf #:ls-width #:ls-height
-   #:ls-tree-fn #:ls-tree #:ls-hover #:ls-on-closed
-   #:build-tree #:paint-surface))
+   #:ls-tree-fn #:ls-tree #:ls-hover #:ls-said #:ls-on-closed
+   #:build-tree #:paint-surface #:*rebuilt*))
 
 (in-package #:pine.wayland.surface)
+
+(defvar *rebuilt* nil
+  "Told a surface whose tree was just built again, so hover can be found on it.")
 
 (defstruct wl-conn
   display backing compositor shm shell seat pointer
@@ -36,12 +39,18 @@
    (tree-fn    :initarg :tree-fn :accessor ls-tree-fn)
    (tree       :initform nil :accessor ls-tree)
    (hover      :initform nil :accessor ls-hover)
+   (said       :initform nil :accessor ls-said)
    (on-closed  :initarg :on-closed :accessor ls-on-closed :initform nil)))
 
 (defun build-tree (ls)
-  "(Re)build LS's node tree from its builder, dropping stale hover."
+  "(Re)build LS's node tree from its builder. The pointer has not moved because
+a surface was pushed again, so what it is over is found again on the new tree
+rather than dropped: a bar that repaints twice a second would otherwise light
+up under the pointer only while the pointer is moving."
   (setf (ls-hover ls) nil
-        (ls-tree ls) (funcall (ls-tree-fn ls))))
+        (ls-tree ls) (funcall (ls-tree-fn ls)))
+  (when *rebuilt* (funcall *rebuilt* ls))
+  ls)
 
 (defun paint-surface (ls)
   "Render LS's retained tree into a fresh shm buffer and commit it. Builds the

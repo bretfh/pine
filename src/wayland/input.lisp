@@ -91,6 +91,8 @@
       (when *on-hover* (funcall *on-hover* nil))
       (paint-surface ls))))
 
+(defun %hint-of (n) (or (and n (node:hint n)) ""))
+
 (defun update-hover (conn)
   (a:when-let ((ls (wl-conn-focus conn)))
     (let ((hit (pointer-node conn)))
@@ -98,8 +100,25 @@
         (when (ls-hover ls) (setf (node:hovered (ls-hover ls)) nil))
         (when hit (setf (node:hovered hit) t))
         (setf (ls-hover ls) hit)
-        (when *on-hover* (funcall *on-hover* hit))
+        (let ((said (%hint-of hit)))
+          (unless (equal said (ls-said ls))
+            (setf (ls-said ls) said)
+            (when *on-hover* (funcall *on-hover* hit))))
         (paint-surface ls)))))
+
+(defun rehover (ls)
+  "Find what the pointer is over on a tree that was just built again. The
+daemon is not told: nothing moved, and telling it would push the surface again,
+which would build the tree again."
+  (let ((conn (ls-conn ls)))
+    (when (eq ls (wl-conn-focus conn))
+      (let ((hit (lay:node-at (ls-tree ls)
+                              (round (wl-conn-ptr-y conn))
+                              (round (wl-conn-ptr-x conn)))))
+        (when hit (setf (node:hovered hit) t))
+        (setf (ls-hover ls) hit)))))
+
+(setf pine.wayland.surface:*rebuilt* #'rehover)
 
 (defun pointer-press (conn)
   "Left press: a slider starts a drag (live scrub, fire on release); anything

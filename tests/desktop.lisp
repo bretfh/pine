@@ -561,3 +561,32 @@ something else happens to rebuild it."
                                    (equal "probe-panel" (getf (rest m) :surface))))
                             (sent client))
                    "and it has the tree to put in it"))))))
+
+(test what-the-pointer-is-over-survives-the-surface-being-pushed-again
+  "A bar reading a clock rebuilds its tree several times a second. The pointer
+has not moved, so what it is over is found again on the new tree; dropping it
+is why a hint lit up only while the pointer was moving."
+  (let* ((built 0)
+         (tree-fn (lambda ()
+                    (incf built)
+                    (pine.ui.build:column
+                     (pine.ui.build:button :hint "one" :on-click (lambda () nil)
+                                           (pine.ui.build:label "one"))
+                     (pine.ui.build:button :hint "two" :on-click (lambda () nil)
+                                           (pine.ui.build:label "two")))))
+         (tree (funcall tree-fn)))
+    (pine.ui.layout:measure tree 20 4)
+    (pine.ui.layout:arrange tree 0 0 20 4)
+    (let ((over (pine.ui.layout:node-at tree 1 1)))
+      (is-true over "the pointer is over something")
+      (setf (pine.ui.node:hovered over) t)
+      (let ((again (funcall tree-fn)))
+        (pine.ui.layout:measure again 20 4)
+        (pine.ui.layout:arrange again 0 0 20 4)
+        (let ((now (pine.ui.layout:node-at again 1 1)))
+          (is (not (eq now over)) "the tree was built again, so the node is new")
+          (is (equal (pine.ui.node:hint over) (pine.ui.node:hint now))
+              "and the same place under the pointer means the same thing")
+          (is (null (pine.ui.node:hovered now))
+              "which is why the frontend puts the flag back rather than waiting
+for the pointer to move"))))))
