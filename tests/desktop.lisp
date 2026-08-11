@@ -235,7 +235,7 @@ a test waits for the thread it did run on."
           (is-true push "the surface was pushed")
           (is (search "ACTION" (princ-to-string wire))
               "a clickable node crosses the wire as an action with an id")
-          (acted client 1)
+          (acted client "probe/0")
           (is-true ran "the id the frontend sent back ran the thunk the daemon kept"))
         (is-true s)))))
 
@@ -306,7 +306,7 @@ a test waits for the thread it did run on."
        :as :bar)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
-      (acted client 1)
+      (acted client "probe/0")
       (let ((push (find :widgets (sent client) :key #'first)))
         (is-true push "the write the click made is what pushed the surface")
         (is (search "on" (princ-to-string (getf (rest push) :tree)))
@@ -424,7 +424,7 @@ a test waits for the thread it did run on."
        :as :bar)
       (pine.app.desktop::%attached client)
       (let ((tk (pine.app.desktop:received client
-                                           (list :widget-action :id 1 :args nil))))
+                                           (list :widget-action :id "probe/0" :args nil))))
         (setf (sent client) nil)
         (pine.app.desktop:received client (list :refresh))
         (is-true (find :widgets (sent client) :key #'first)
@@ -503,3 +503,35 @@ it is painted into."
         (is (equal '(900 540) (frame-at 900 540)))
         (is (equal '(900 545) (frame-at 900 545))
             "eight more pixels is the same 30 rows and a different frame")))))
+
+(test a-click-lands-even-though-the-surface-was-pushed-again
+  "A bar is pushed several times a second because it reads a clock. The id a
+pointer sends back names where the widget is, not which push it came from, so
+a click that crossed during a repaint still means what it looks like it means."
+  (with-desktop
+    (let ((client (make-instance 'probe-client))
+          (where (pine.world.world:ensure pine.world.world:*world* "probe"))
+          (ticks (pine.world.world:ensure pine.world.world:*world* "probe-tick")))
+      (setf (pine.fs.node:contents where) nil
+            (pine.fs.node:contents ticks) 0)
+      (pine.app.surface:surface
+       "probe"
+       (lambda ()
+         (pine.ui.build:row
+          (pine.ui.build:label (format nil "~a" (pine.fs.node:contents ticks)))
+          (pine.ui.build:button
+           :on-click (lambda () (setf (pine.fs.node:contents where) t))
+           (pine.ui.build:label "go"))))
+       :as :bar)
+      (let ((s (pine.app.desktop::%attached client)))
+        (let ((id (block found
+                    (dolist (each (pine.data:keys
+                                   (pine.data:all (pine.app.desktop::acting s))))
+                      (return-from found each)))))
+          (is-true id "the surface registered a click")
+          (dotimes (n 20)
+            (setf (pine.fs.node:contents ticks) n)
+            (pine.app.desktop:push-surface s (pine.app.surface:surface-named "probe")))
+          (acted client id)
+          (is (eq t (pine.fs.node:contents where))
+              "the id from twenty pushes ago still names the same button"))))))

@@ -19,9 +19,7 @@
 (defclass session ()
   ((client-of :initarg :client :reader client-of)
    (acting    :initform (d:table) :reader acting)
-   (ids       :initform (d:table) :reader ids)
-   (watching  :initform nil :accessor watching)
-   (counter   :initform 0 :accessor counter)))
+   (watching  :initform nil :accessor watching)))
 
 (defmethod print-object ((s session) stream)
   (print-unreadable-object (s stream :type t)
@@ -32,29 +30,40 @@
 
 (defun %for (client) (d:at (d:all *sessions*) (attach:client-id client)))
 
-(defun %forget-actions (s name)
-  (dolist (id (d:at (d:all (ids s)) name))
-    (d:drop! (acting s) id))
-  (d:drop! (ids s) name))
+(defun %id (name at) (format nil "~a/~d" name at))
 
-(defun %keep (s name thunk)
-  (let ((id (incf (counter s))))
+(defun %keep (s name index thunk)
+  "What clicking the widget being built means, under the name of where it sits.
+
+A surface is pushed again whenever anything it reads moves, several times a
+second. An id that counted pushes was forgotten before the pointer could send
+it back, so a click landed on nothing; the same button in the same place keeps
+its id, and what it means is whatever the latest push says."
+  (let ((id (%id name (d:swap! index #'1+))))
     (d:keep! (acting s) id thunk)
-    (d:keep! (ids s) name (cons id (d:at (d:all (ids s)) name)))
     id))
+
+(defun %trim (s name from)
+  "Drop the actions of a surface that has fewer widgets than it had."
+  (loop :for at :from from
+        :for id := (%id name at)
+        :while (d:at (d:all (acting s)) id)
+        :do (d:drop! (acting s) id)))
 
 (defun push-surface (s surface)
   (let ((name (node:name surface))
+        (index (d:box -1))
         (*client* (client-of s)))
-    (%forget-actions s name)
     (let ((tree (fault:attempt (lambda () (node:contents surface))
                                (format nil "building ~a" name))))
       (when tree
-        (attach:push-to (client-of s) :widgets
-                        :surface name
-                        :tree (wire:node->wire
-                               tree :on-action (lambda (thunk) (%keep s name thunk)))
-                        :as (surface:as surface))
+        (let ((wire (wire:node->wire
+                     tree :on-action (lambda (thunk) (%keep s name index thunk)))))
+          (%trim s name (1+ (d:held index)))
+          (attach:push-to (client-of s) :widgets
+                          :surface name
+                          :tree wire
+                          :as (surface:as surface)))
         name))))
 
 (defun mine-p (surface)
