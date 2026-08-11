@@ -4,7 +4,7 @@
   (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:buffer #:pine.edit.buffer)
                     (#:fault #:pine.run.fault) (#:prompt #:pine.edit.prompt))
-  (:export #:key #:make-key #:key-sym #:key-ctrl #:key-meta #:key-shift
+  (:export #:key #:make-key #:named #:key-sym #:key-ctrl #:key-meta #:key-shift
            #:key-super #:key= #:parse-key #:parse-chord #:chord-text
            #:self-insert-p #:dispatch #:pending #:last #:prefix #:*on-insert*
            #:take-next #:taking
@@ -13,6 +13,15 @@
 (in-package #:pine.edit.key)
 
 (defvar *keys* (d:table))
+
+(defparameter +names+
+  '(("space" . "SPC") ("Space" . "SPC")
+    ("Return" . "RET") ("Enter" . "RET") ("KP_Enter" . "RET")
+    ("Tab" . "TAB") ("ISO_Left_Tab" . "TAB")
+    ("BackSpace" . "DEL")
+    ("Esc" . "Escape")
+    ("Prior" . "PageUp") ("Next" . "PageDown"))
+  "What a key is called here, whatever it was called where it came from.")
 (defvar *pending* (d:box nil))
 (defvar *last* (d:box nil))
 (defvar *prefix* (d:box nil))
@@ -26,10 +35,19 @@
   (shift nil :read-only t)
   (super nil :read-only t))
 
+(defun named (sym)
+  "One name for a key however it was spelled. A frontend says what xkb calls
+it, a config says what emacs calls it, and C-SPC in a keymap has to be the key
+xkb hands over as `space'."
+  (if (< (length sym) 2)
+      sym
+      (or (cdr (assoc sym +names+ :test #'string-equal)) sym)))
+
 (defun make-key (sym &key ctrl meta shift super)
   "The one key object for this chord. Two threads parsing the same chord get
 the same object, which is what lets KEY= be EQ."
-  (let ((id (list sym ctrl meta shift super)))
+  (let* ((sym (named sym))
+         (id (list sym ctrl meta shift super)))
     (d:claim *keys* id (%make-key :sym sym :ctrl ctrl :meta meta
                                   :shift shift :super super))))
 

@@ -571,3 +571,27 @@ x)")
     (pine.repl.command:run "format-buffer")
     (is (plusp (pine.edit.buffer:indent-of (b) 1))
         "a line inside a form is not left at column zero")))
+
+(test a-key-is-one-key-however-it-was-spelled
+  "A frontend says what xkb calls it and a config says what emacs calls it.
+C-SPC in a keymap has to be the key that arrives as `space', or there is no
+mark and so no region."
+  (is (pine.edit.key:key= (pine.edit.key:make-key "space" :ctrl t)
+                          (pine.edit.key:parse-key "C-SPC")))
+  (is (pine.edit.key:key= (pine.edit.key:make-key "Return")
+                          (pine.edit.key:parse-key "RET")))
+  (is (pine.edit.key:key= (pine.edit.key:make-key "BackSpace")
+                          (pine.edit.key:parse-key "DEL")))
+  (is (pine.edit.key:key= (pine.edit.key:make-key "Tab")
+                          (pine.edit.key:parse-key "TAB")))
+  (is-true (pine.edit.key:self-insert-p (pine.edit.key:make-key " "))
+           "and a space typed on its own is still a space"))
+
+(test the-mark-is-set-by-the-key-a-frontend-sends
+  (with-editor (:text "hello there")
+    (pine.edit.buffer:goto! (b) 0 0)
+    (pine.edit.key:dispatch nil (pine.edit.key:make-key "space" :ctrl t))
+    (is-true (pine.edit.buffer:mark (b)) "C-space put the mark down")
+    (pine.edit.buffer:goto! (b) 0 5)
+    (is (equal "hello" (pine.repl.command:run "kill-region"))
+        "so there is a region to kill")))
