@@ -97,3 +97,31 @@ left every surface transparent."
              (dolist (class '("editor" "editor-view" "modeline" "echo"))
                (is (search class text) "the frame has no ~a" class)))))
     (pine:stop)))
+
+(test a-centerbox-keeps-its-middle-out-of-its-ends
+  "A bar's start grows with the workspaces there are. The middle sits in what
+is left, not in the middle of the whole box, or the two draw on each other."
+  (let* ((start (pine.ui.build:column
+                 (pine.ui.build:label "a") (pine.ui.build:label "b")
+                 (pine.ui.build:label "c") (pine.ui.build:label "d")))
+         (middle (pine.ui.build:column (pine.ui.build:label "m")))
+         (end (pine.ui.build:column (pine.ui.build:label "z")))
+         (box (pine.ui.build:centerbox :orient :v :start start
+                                       :center middle :end end)))
+    (pine.ui.layout:measure box 10 10)
+    (pine.ui.layout:arrange box 0 0 10 10)
+    (is (< (pine.ui.node:end-line start) (pine.ui.node:start-line middle))
+        "the middle begins after the start ends")
+    (is (< (pine.ui.node:end-line middle) (pine.ui.node:start-line end))
+        "and ends before the end begins")))
+
+(test a-node-a-config-holds-is-written-by-clicking-it
+  "(at (root *world*) \"wm\" \"workspaces\" n) is a node, and clicking a widget
+that carries one writes it."
+  (let* ((w (pine.world.world:make-world))
+         (n (pine.world.world:ensure w "probe"))
+         (thunk (pine.ui.build:acting n)))
+    (setf (pine.fs.node:contents n) nil)
+    (is-true thunk "a node is something a click can mean")
+    (funcall thunk)
+    (is (eq t (pine.fs.node:contents n)))))

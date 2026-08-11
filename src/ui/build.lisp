@@ -44,10 +44,14 @@ config can say what a click does without writing a closure."
     t))
 
 (defun acting (click)
-  "What a :click does: a function, a write-map, a path, or a command's name."
+  "What a :click does: a function, a write-map, a node, a path, or a command's
+name. A config holds nodes -- (at (root *world*) \"wm\" \"workspaces\" n) is one --
+so clicking one writes it, the way clicking a path writes what it names."
   (cond ((null click) nil)
         ((functionp click) click)
         ((pine.data:mapp click) (%writing click))
+        ((pine.fs.node:nodep click)
+         (lambda () (setf (pine.fs.node:contents click) t)))
         ((pine.path.path:pathp click)
          (lambda () (setf (pine.path.place:contents click) t)))
         (t (lambda () (pine.repl.command:run click)))))

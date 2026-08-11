@@ -314,15 +314,20 @@ arranged width (start/end-col hold pixels or cells, whichever it was laid out in
       (multiple-value-bind (cw ch) (measure c aw ah) (setf w (max w cw)) (incf h ch)))
     (values w h)))
 (defmethod arrange ((n centerbox) x y w h)
+  "Start at one end, end at the other, and the middle centred in what is left
+between them. Centring it in the whole box instead is what puts a bar's apps
+on top of its workspaces once there are enough workspaces."
   (call-next-method)
   (multiple-value-bind (x y w h) (%inner n x y w h)
-    (let ((s (cb-start n)) (c (cb-center n)) (e (cb-end n)))
-      (when s (multiple-value-bind (sw sh) (measure s w h) (declare (ignore sw))
-                (arrange s x y w sh)))
-      (when e (multiple-value-bind (ew eh) (measure e w h) (declare (ignore ew))
-                (arrange e x (+ y (- h eh)) w eh)))
-      (when c (multiple-value-bind (cw ch) (measure c w h) (declare (ignore cw))
-                (arrange c x (+ y (max 0 (floor (- h ch) 2))) w ch))))))
+    (let* ((s (cb-start n)) (c (cb-center n)) (e (cb-end n))
+           (sh (if s (nth-value 1 (measure s w h)) 0))
+           (eh (if e (nth-value 1 (measure e w h)) 0)))
+      (when s (arrange s x y w sh))
+      (when e (arrange e x (+ y (- h eh)) w eh))
+      (when c
+        (let* ((ch (nth-value 1 (measure c w h)))
+               (room (max 0 (- h sh eh))))
+          (arrange c x (+ y sh (max 0 (floor (- room ch) 2))) w ch))))))
 (defmethod paint ((n centerbox) r) (dolist (c (centerbox-parts n)) (paint c r)))
 
 (defmethod measure ((n scroll) aw ah)
