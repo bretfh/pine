@@ -135,6 +135,7 @@
 
 (defun main (&optional (arguments (rest sb-ext:*posix-argv*)))
   (quiet)
+  (pine.run.libs:attend)
   (server:read-environment)
   (let ((verb (first arguments))
         (rest (rest arguments)))

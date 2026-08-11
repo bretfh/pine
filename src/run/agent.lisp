@@ -41,18 +41,23 @@ symbol macro, so BOUNDP answers about the macro name and is false anywhere."
 (defun agent (name receive &key (dispatcher :shared) (in *system*))
   "An endpoint of its own: messages to it are handled one at a time, in the
 order they were sent. :PINNED gives it a thread, which is what something that
-may park in a fault needs."
-  (let* ((a (make-instance
-             'agent :name name
-             :ref (sento.actor-context:actor-of
-                   in
-                   :name name
-                   :dispatcher dispatcher
-                   :receive (lambda (message)
-                              (fault:attempt (lambda () (funcall receive message))
-                                             name))))))
-    (d:keep! *agents* name a)
-    a))
+may park in a fault needs.
+
+A name is one endpoint: asking again for a name that is taken replaces it,
+rather than faulting the caller who asked."
+  (let ((had (agent-named name)))
+    (when had (stop had))
+    (let ((a (make-instance
+              'agent :name name
+              :ref (sento.actor-context:actor-of
+                    in
+                    :name name
+                    :dispatcher dispatcher
+                    :receive (lambda (message)
+                               (fault:attempt (lambda () (funcall receive message))
+                                              name))))))
+      (d:keep! *agents* name a)
+      a)))
 
 (defgeneric tell (to message)
   (:method ((name string) message) (tell (agent-named name) message))
@@ -69,7 +74,7 @@ may park in a fault needs."
 (defgeneric stop (it)
   (:method ((name string) ) (stop (agent-named name)))
   (:method ((a agent))
-    (ignore-errors (sento.actor:tell (ref a) :stop))
+    (ignore-errors (sento.actor-context:stop *system* (ref a) :wait t))
     (d:drop! *agents* (name a))
     a)
   (:method ((it null)) nil))

@@ -26,7 +26,7 @@
                 ((:file "data")
                  (:module "run"
                           :serial t
-                          :components ((:file "task") (:file "fault")
+                          :components ((:file "libs") (:file "task") (:file "fault")
                                        (:file "timer") (:file "agent")
                                        (:file "log")))
                  (:module "fs"

@@ -165,3 +165,16 @@ writing different keys reads the other out of it."
            (pine.fs.watch:forget-all)
            (is (null (member :watch (pine.run.timer:names))))))
     (pine:stop)))
+
+(test the-image-knows-where-its-c-libraries-are
+  "A binary is run from a terminal that never entered the build environment.
+It carries the profile it was built against, so tree-sitter is there and a
+buffer highlights."
+  (is-true (pine.run.libs:dirs))
+  (is (find "tree-sitter" (pine.run.libs:dirs) :test #'search)
+      "the grammars sit under lib/tree-sitter, not lib")
+  (pine.run.libs:attend)
+  (is (every (lambda (dir) (member (pathname dir) cffi:*foreign-library-directories*
+                                   :test #'equal))
+             (pine.run.libs:dirs))
+      "and the loader is told about each of them"))

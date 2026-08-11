@@ -79,6 +79,7 @@ puts a bar inside a window needs nothing here."
 (defun follow (b)
   (let ((w (focused)))
     (when (and w (typep (buffer-of w) '(or null buffer:buffer))
+               (not (buffer:asidep b))
                (not (eq b (buffer-of w))))
       (setf (buffer-of w) b)
       (node:invalidate w))

@@ -42,7 +42,10 @@
 (defun asking-p () (and *prompt* t))
 
 (defun answer-buffer ()
-  (or (buffer:buffer-named +buffer+) (buffer:make-buffer +buffer+)))
+  (or (buffer:buffer-named +buffer+)
+      (let ((b (buffer:make-buffer +buffer+)))
+        (setf (buffer:setting b :aside) t)
+        b)))
 
 (defun said ()
   (let ((b (buffer:buffer-named +buffer+)))

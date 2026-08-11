@@ -14,6 +14,7 @@
 (defvar *parsers* (d:table))
 (defvar *runtime* nil)
 (defvar *on-parse* nil)
+(defvar *counter* 0)
 (defparameter +settle+ 2)
 
 (defclass parser ()
@@ -73,6 +74,9 @@ what its mode says."
   (or (syntax:for-readtable (pine.edit.buffer:readtable-of b))
       (mode:setting (pine.edit.buffer:mode-of b) :grammar)))
 
+(defun %name-for (b)
+  (format nil "parse-~a-~d" (node:name b) (incf *counter*)))
+
 (defun %make (b language)
   (multiple-value-bind (lib fn) (syntax:grammar-of language)
    (let ((ps (and lib (runtime:make-parse-state *runtime* language lib fn
@@ -81,12 +85,20 @@ what its mode says."
       (let ((p (make-instance 'parser :buffer b :language language :state ps
                                       :task nil)))
         (setf (slot-value p 'running)
-              (agent:agent (format nil "parse-~a" (node:name b))
+              (agent:agent (%name-for b)
                            (lambda (message) (%receive p message))
                            :dispatcher :parse))
         p)))))
 
+(defun %dispose (p)
+  (agent:stop (running p))
+  (runtime:free-parse-state (state-of p))
+  p)
+
 (defun parser-for (b)
+  "The parser for B, made once. The thread drawing a frame and the one that
+just finished a parse both ask, so the one that lands is the one everybody
+gets and the other is freed rather than left holding a foreign parser."
   (let* ((language (%grammar b))
          (had (d:at (d:all *parsers*) (node:name b))))
     (when (and had (not (eq language (language-of had))))
@@ -94,11 +106,14 @@ what its mode says."
       (setf had nil))
     (when (and language *runtime*)
       (or had
-          (let ((p (%make b language)))
-            (when p
-              (d:keep! *parsers* (node:name b) p)
-              (agent:tell (running p) (list :parse (pine.edit.buffer:tick b)))
-              p))))))
+          (let ((mine (%make b language)))
+            (when mine
+              (let ((kept (d:claim *parsers* (node:name b) mine)))
+                (cond ((eq kept mine)
+                       (agent:tell (running mine)
+                                   (list :parse (pine.edit.buffer:tick b)))
+                       mine)
+                      (t (%dispose mine) kept)))))))))
 
 (defun note (b)
   "Tell the parser it has fallen behind: the buffer moved, or the window is

@@ -93,9 +93,10 @@
     (let ((p (pine.ts.parser:parser-for (pine.edit.buffer:current))))
       (is-true p "lisp mode names a grammar, so the buffer has a parser")
       (is (equal :commonlisp (pine.ts.parser:language-of p)))
-      (is-true (pine.run.agent:agent-named "parse-scratch")
+      (is-true (find "scratch" (pine.run.agent:agents)
+                     :key #'pine.run.agent:name :test #'search)
                "the parse runs at its own endpoint, off the typing thread")
-      (is (null (pine.run.task:task-named "parse-scratch"))
+      (is (null (pine.run.task:task-named "parse scratch"))
           "and it costs no thread of its own: the parse dispatcher is shared"))))
 
 (test the-parse-catches-up-with-the-buffer-it-is-for
@@ -126,11 +127,13 @@
 (test a-buffer-that-is-killed-takes-its-parser-with-it
   (with-lisp-buffer (:text "(defun f (x) x)")
     (pine.ts.parser:parser-for (pine.edit.buffer:current))
-    (is-true (pine.run.agent:agent-named "parse-scratch"))
+    (is-true (find "scratch" (pine.run.agent:agents)
+                   :key #'pine.run.agent:name :test #'search))
     (pine.repl.command:run "kill-buffer" (list "scratch"))
     (is (null (pine.ts.parser:parsers))
         "the foreign parser is freed rather than left to the image")
-    (is (null (pine.run.agent:agent-named "parse-scratch"))
+    (is (null (find "scratch" (pine.run.agent:agents)
+                    :key #'pine.run.agent:name :test #'search))
         "and its endpoint is gone with it")))
 
 (def-suite* :pine.motion :in :pine)

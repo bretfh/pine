@@ -10,6 +10,7 @@
                     (#:process #:pine.proc.process)
                     (#:super #:pine.proc.supervisor)
                     (#:task #:pine.run.task) (#:timer #:pine.run.timer)
+                    (#:libs #:pine.run.libs)
                     (#:endpoint #:pine.run.agent)
                     (#:ui #:pine.ui.paths)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
@@ -88,6 +89,7 @@
     parser:*runtime*))
 
 (defun start (&key (name "pine") store remoting)
+  (libs:attend)
   (setf world:*world* (world:make-world :name name)
         *supervisor* (super:supervisor)
         *image* (net:start-server :remoting-port remoting)

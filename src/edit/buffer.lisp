@@ -5,7 +5,7 @@
                     (#:mode #:pine.repl.mode) (#:text #:pine.edit.text)
                     (#:d #:pine.data) (#:history #:pine.edit.history))
   (:export #:buffer #:make-buffer #:buffers #:buffer-named
-           #:kill-buffer #:scratch #:current #:current-buffer #:*on-current* #:lines #:point #:mark
+           #:kill-buffer #:scratch #:current #:current-buffer #:asidep #:*on-current* #:lines #:point #:mark
            #:mode-of #:minors-of #:file-of #:tick #:properties
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
            #:delete-region! #:goto! #:move! #:region-of #:mark! #:visit! #:save!
@@ -87,6 +87,11 @@ on the text moves with it."
 
 (defun %buffers-node (&optional (w world:*world*))
   (world:ensure w "buf"))
+
+(defun asidep (b)
+  "Whether B is shown somewhere other than a window: the prompt is drawn on the
+echo line, so a window goes on showing what it was showing while one is up."
+  (and (typep b 'buffer) (setting b :aside) t))
 
 (defun make-buffer (name &rest initargs &key &allow-other-keys)
   (let ((b (apply #'make-instance 'buffer :name name initargs)))
