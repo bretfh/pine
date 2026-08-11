@@ -152,3 +152,16 @@ threads read is a map in a box."
             (push (file-namestring file) loose)))))
     (is (null loose) "~{~%  ~a keeps a registry in a hash table~}"
         (reverse loose))))
+
+(test a-frontend-says-its-size-in-one-place
+  "Two places built the :resize message and one of them left out the font size,
+so the daemon laid the frame out for a grid the frontend was not drawing. What
+a frontend tells the daemon about its geometry is written once."
+  (let ((sites nil))
+    (dolist (file (%files))
+      (loop :for line :in (%lines file)
+            :for n :from 1
+            :when (search "(list :resize" line)
+              :do (push (format nil "~a:~d" (file-namestring file) n) sites)))
+    (is (<= (length sites) 1) "~d place~:p build a resize message:~{~%  ~a~}"
+        (length sites) (reverse sites))))

@@ -102,22 +102,29 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
             (ed-ascent ed) (c:font-ascent fe)))
     (setf (ed-metricsp ed) t)))
 
-(defun maybe-resize (ed)
-  "Say how big this surface is whenever it changes at all. The daemon arranges
-in pixels, so a window that grew by less than a cell still has to be told: what
-it lays out is what gets painted, and a frame laid out for the size before is
-cut off by the surface it lands in."
+(defun say-size (ed)
+  "Tell the daemon how big this surface is and what it is drawing text at. One
+place says it: a second one that left something out is a frame laid out for
+one grid and painted on another."
   (let ((cc (ed-cols ed)) (rr (ed-rows ed))
         (w (ed-width ed)) (h (ed-height ed)))
-    (unless (and (= cc (ed-sent-cols ed)) (= rr (ed-sent-rows ed))
-                 (= w (ed-sent-width ed)) (= h (ed-sent-height ed)))
-      (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr
-            (ed-sent-width ed) w (ed-sent-height ed) h)
-      (send-input ed (list :resize :cols cc :rows rr
-                           :width w :height h
-                           :cell-w (round (ed-cell-w ed))
-                           :cell-h (round (ed-cell-h ed))
-                           :font-px (round (font-px)))))))
+    (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr
+          (ed-sent-width ed) w (ed-sent-height ed) h)
+    (send-input ed (list :resize :cols cc :rows rr
+                         :width w :height h
+                         :cell-w (round (ed-cell-w ed))
+                         :cell-h (round (ed-cell-h ed))
+                         :font-px (round (font-px))))))
+
+(defun maybe-resize (ed)
+  "Say it again whenever it changes at all. The daemon arranges in pixels, so a
+window that grew by less than a cell still has to be told: what it lays out is
+what gets painted, and a frame laid out for the size before is cut off by the
+surface it lands in."
+  (unless (and (= (ed-cols ed) (ed-sent-cols ed)) (= (ed-rows ed) (ed-sent-rows ed))
+               (= (ed-width ed) (ed-sent-width ed))
+               (= (ed-height ed) (ed-sent-height ed)))
+    (say-size ed)))
 
 (defun paint-editor (ed)
   (with-slots (shm wl-surface width height) ed
@@ -205,12 +212,8 @@ cut off by the surface it lands in."
 (defun handle-editor-message (ed msg)
   (case (first msg)
     (:attached
-     (progn
-       (setf (ed-ref ed) (pine.net.attach:accept-attached (ed-sys ed) msg))
-       (send-input ed (list :resize :cols (ed-cols ed) :rows (ed-rows ed)
-                            :width (ed-width ed) :height (ed-height ed)
-                            :cell-w (round (ed-cell-w ed))
-                            :cell-h (round (ed-cell-h ed))))))
+     (setf (ed-ref ed) (pine.net.attach:accept-attached (ed-sys ed) msg))
+     (say-size ed))
     (:style
      (destructuring-bind (&key styles) (rest msg)
        (pine.ui.css:install styles)
