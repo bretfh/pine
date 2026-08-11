@@ -116,7 +116,8 @@ cut off by the surface it lands in."
       (send-input ed (list :resize :cols cc :rows rr
                            :width w :height h
                            :cell-w (round (ed-cell-w ed))
-                           :cell-h (round (ed-cell-h ed)))))))
+                           :cell-h (round (ed-cell-h ed))
+                           :font-px (round (font-px)))))))
 
 (defun paint-editor (ed)
   (with-slots (shm wl-surface width height) ed

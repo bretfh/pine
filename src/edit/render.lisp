@@ -10,13 +10,14 @@
            #:rows #:modeline #:echo-tree
            #:shown-line #:shown-col
            #:visible-lines #:scroll-to-point #:hscroll-to-point #:caret-col #:highlights-for #:indent-for
-           #:*cols* #:*rows*))
+           #:*cols* #:*rows* #:*font-px*))
 
 (in-package #:pine.edit.render)
 
 (defparameter +candidates-shown+ 12)
 (defvar *cols* 80)
 (defvar *rows* 24)
+(defvar *font-px* nil)
 
 (defun visible-lines (b from height)
   (loop :for n :from from :below (min (buffer:line-count b) (+ from height))
@@ -138,7 +139,8 @@ know about it.")
     (declare (ignore content))
     (build:cells (cells:rows-of (raster:make-raster (max 1 (window:width-of w))
                                                     (max 1 (window:height-of w))))
-                 :class "editor-view" :expand 1 :crow -1 :ccol -1)))
+                 :class "editor-view" :expand 1 :font-px *font-px*
+                 :crow -1 :ccol -1)))
 
 (defmethod shown ((content string) w)
   "A name is the buffer it names."
@@ -149,7 +151,8 @@ know about it.")
 one in a window beside a buffer."
   (build:cells (cells:render content (max 1 (window:width-of w))
                              :height (max 1 (window:height-of w)))
-               :class "editor-view" :expand 1 :crow -1 :ccol -1))
+               :class "editor-view" :expand 1 :font-px *font-px*
+               :crow -1 :ccol -1))
 
 (defmethod shown ((b buffer:buffer) w)
   (let* ((from (window:scroll-of w))
@@ -181,7 +184,7 @@ one in a window beside a buffer."
                                                                  :comment)))))))))
     (%paint-region r b from height width left)
     (build:cells (cells:rows-of r)
-                 :class "editor-view" :expand 1
+                 :class "editor-view" :expand 1 :font-px *font-px*
                  :crow (if caret (min (1- height) (max 0 (- (buffer:point-line b) from))) -1)
                  :ccol (if caret
                            (min (1- width) (max 0 (- (caret-col b) left)))
@@ -218,7 +221,7 @@ are on and a widget tree has nothing of the sort to say."
           :do (raster:raster-put r 0 col
                                  (if (< col (length text)) (char text col) #\space)
                                  :modeline))
-    (build:cells (cells:rows-of r) :class "modeline")))
+    (build:cells (cells:rows-of r) :class "modeline" :font-px *font-px*)))
 
 (defun window-tree (w)
   (scroll-to-point w)
@@ -265,7 +268,7 @@ are on and a widget tree has nothing of the sort to say."
         (build:cells (if found
                          (append (%candidate-rows found from width) rows)
                          rows)
-                     :class "echo" :base 1
+                     :class "echo" :base 1 :font-px *font-px*
                      :crow (if p 0 -1)
                      :ccol (if p
                                (min (1- width)

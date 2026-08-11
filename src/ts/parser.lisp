@@ -22,7 +22,7 @@
    (language-of :initarg :language :reader language-of)
    (state-of    :initarg :state    :reader state-of)
    (running     :initarg :task     :reader running)
-   (found       :initform (d:box nil) :reader found)
+   (found       :initform (d:box (d:no-map)) :reader found)
    (banded      :initform (d:box nil) :reader banded)
    (parsed      :initform (d:box -1)  :reader parsed)))
 
@@ -37,11 +37,45 @@
 
 (defun showing (b)
   "The band some window shows of B, or nil when none does. Past a few thousand
-lines only that band is given to tree-sitter at all."
+lines only that band is given to tree-sitter at all.
+
+A screen either side of what is on screen, so paging lands on lines that were
+walked already instead of on plain text waiting to be coloured."
   (let ((w (find b (pine.edit.window:windows) :key #'pine.edit.window:buffer-of)))
     (when w
-      (let ((from (pine.edit.window:scroll-of w)))
-        (cons from (+ from (max 1 (pine.edit.window:height-of w))))))))
+      (let* ((from (pine.edit.window:scroll-of w))
+             (height (max 1 (pine.edit.window:height-of w))))
+        (cons (max 0 (- from height)) (+ from (* 2 height)))))))
+
+(defun %kept (had edit)
+  "What stays of the runs already walked. An edit moves every line under it, so
+those go; a scroll moves nothing, so they all stay."
+  (cond ((null had) (d:no-map))
+        ((null edit) had)
+        (t (let ((line (first (first edit)))
+                 (out (d:no-map)))
+             (d:do-map (at runs had out)
+               (when (and line (< at line)) (setf out (d:with out at runs))))))))
+
+(defun %merged (had runs band)
+  "HAD with the band walked again: the lines in it are what the walk says now,
+and the lines outside it are what they were."
+  (let ((out had))
+    (when band
+      (d:do-map (at runs had)
+        (declare (ignore runs))
+        (when (and (>= at (car band)) (< at (cdr band)))
+          (setf out (d:without out at)))))
+    (dolist (run runs out)
+      (destructuring-bind (line from to face) run
+        (setf out (d:with out line (cons (list from to face)
+                                         (or (d:at out line) nil))))))))
+
+(defun %flat (map)
+  (let ((out nil))
+    (d:do-map (line runs map out)
+      (dolist (run runs)
+        (push (cons line run) out)))))
 
 (defun %recompute (p tick)
   (let* ((b (buffer-of p))
@@ -53,14 +87,15 @@ lines only that band is given to tree-sitter at all."
     (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport band)
     (setf (pine.edit.buffer:edit-of b) nil)
-    (d:put! (found p)
-           (if band
-               (hl:parse-highlights ps :from-line (car band) :to-line (cdr band))
-               (hl:parse-highlights ps)))
+    (let ((runs (if band
+                    (hl:parse-highlights ps :from-line (car band) :to-line (cdr band))
+                    (hl:parse-highlights ps))))
+      (d:swap! (found p)
+               (lambda (had) (%merged (%kept had edit) runs band))))
     (d:put! (banded p) band)
     (d:put! (parsed p) tick)
     (when *on-parse* (funcall *on-parse* b))
-    (d:held (found p))))
+    (%flat (d:held (found p)))))
 
 (defun %receive (p message)
   (case (first message)
@@ -125,8 +160,11 @@ showing lines it has not been asked about."
     p))
 
 (defun highlights (b)
+  "Every run walked so far, the band just walked included. What was coloured
+before stays coloured while the next band is being walked, so paging does not
+blink through plain text."
   (let ((p (note b)))
-    (when p (d:held (found p)))))
+    (when p (%flat (d:held (found p))))))
 
 (defun wait (b &key (seconds +settle+))
   (let ((p (note b)))
@@ -135,7 +173,7 @@ showing lines it has not been asked about."
             :until (and (= (d:held (parsed p)) (pine.edit.buffer:tick b))
                         (equal (d:held (banded p)) (showing b)))
             :do (sleep 0.01))
-      (d:held (found p)))))
+      (%flat (d:held (found p))))))
 
 (defun indent (b line &key (width 2))
   (let ((p (note b)))

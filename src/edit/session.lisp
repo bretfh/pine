@@ -10,7 +10,7 @@
                     (#:agent #:pine.run.agent))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
-           #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h
+           #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h #:font-px
            #:generation #:client-of #:surface #:repaint #:restyle))
 
 (in-package #:pine.edit.session)
@@ -26,6 +26,7 @@
    (px-height  :initform nil :accessor px-height)
    (cell-w     :initform nil :accessor cell-w)
    (cell-h     :initform nil :accessor cell-h)
+   (font-px    :initform nil :accessor font-px)
    (sent       :initform nil :accessor sent)
    (drawing    :initform nil :accessor drawing)
    (generation :initform 0  :accessor generation)))
@@ -43,7 +44,8 @@
       (surface:surface *surface* (lambda () (render:frame-tree)) :as :toplevel)))
 
 (defun %tree (s)
-  (let ((render:*cols* (cols s)) (render:*rows* (rows s)))
+  (let ((render:*cols* (cols s)) (render:*rows* (rows s))
+        (render:*font-px* (font-px s)))
     (computed:recompute (surface))))
 
 (defun %cell-metric (s)
@@ -95,7 +97,7 @@ made typing cost what it did."
   (case (first message)
     (:key (fault:attempt (lambda () (key:dispatch nil (second message))) "a key"))
     (:resize
-     (destructuring-bind (&key cols rows width height cell-w cell-h
+     (destructuring-bind (&key cols rows width height cell-w cell-h font-px
                           &allow-other-keys)
          (rest message)
        (when (and cols rows)
@@ -103,7 +105,8 @@ made typing cost what it did."
        (when (and width height (plusp width) (plusp height))
          (setf (px-width s) width (px-height s) height))
        (when (and cell-w cell-h (plusp cell-w) (plusp cell-h))
-         (setf (cell-w s) cell-w (cell-h s) cell-h)))
+         (setf (cell-w s) cell-w (cell-h s) cell-h))
+       (when (and font-px (plusp font-px)) (setf (font-px s) font-px)))
      (setf (sent s) nil))
     (:refresh (setf (sent s) nil)))
   (%draw s))
