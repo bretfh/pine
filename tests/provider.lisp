@@ -173,3 +173,52 @@ nothing will ever release."
       (pine:stop))
     (loop :repeat 40 :while (%alive-p pid) :do (sleep 0.05))
     (is-false (%alive-p pid) "stopping takes the streams with it")))
+
+(test how-busy-the-machine-is-does-not-change-because-two-things-asked
+  "A bar and a panel read it a moment apart. Sampling per read leaves the
+second one no ticks to divide by, and it answers zero: the number twitches
+between nothing and the truth."
+  (let ((readings (loop :repeat 8 :collect (pine.provider.sys:cpu))))
+    (is (every (lambda (n) (and (integerp n) (<= 0 n 100))) readings))
+    (is (= 1 (length (remove-duplicates readings)))
+        "eight reads in one instant are one reading, not eight: ~s" readings)))
+
+(test a-write-a-provider-turned-into-an-action-still-says-it-moved
+  "Dragging a slider writes /audio/volume, the provider tells the mixer, and
+what is watching has to hear about it or the slider snaps back to what the
+world held before."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let* ((n (pine.world.world:ensure pine.world.world:*world* "probe-act"))
+                (told 0))
+           (pine.fs.watch:watch n (lambda (of value)
+                                    (declare (ignore of value))
+                                    (incf told))
+                                :only nil :poll nil)
+           (setf (pine.fs.node:contents n) 41)
+           (is (= 1 told) "one write, one telling")
+           (setf (pine.fs.node:contents n) 42)
+           (is (= 2 told))))
+    (pine.fs.watch:forget-all)
+    (pine:stop)))
+
+(test one-question-in-one-breath-is-asked-once
+  "A media panel reads the player's status, title and position. That is one
+command, not three, and building the panel twice in a frame is not six."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let* ((file (merge-pathnames "pine-probe-asked" (uiop:temporary-directory)))
+                (line (format nil "sh -c 'echo x >> ~a; echo said'"
+                              (namestring file))))
+           (ignore-errors (delete-file file))
+           (dotimes (n 5) (is (equal "said" (pine.provider.out:sh "~a" line))))
+           (is (= 1 (length (uiop:read-file-lines file)))
+               "five reads in one breath ran it once")
+           (let ((pine.provider.sh:*breath* 0))
+             (pine.provider.out:sh "~a" line))
+           (is (= 2 (length (uiop:read-file-lines file)))
+               "and the next breath asks again")
+           (ignore-errors (delete-file file))))
+    (pine:stop)))

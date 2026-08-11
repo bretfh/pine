@@ -307,6 +307,7 @@ a test waits for the thread it did run on."
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
       (acted client "probe/0")
+      (pine.app.desktop:flush (pine.app.desktop::%for client))
       (let ((push (find :widgets (sent client) :key #'first)))
         (is-true push "the write the click made is what pushed the surface")
         (is (search "on" (princ-to-string (getf (rest push) :tree)))
@@ -550,6 +551,7 @@ something else happens to rebuild it."
       (let ((shown (pine.fs.tree:at (pine.app.surface:root) "probe-panel/shown")))
         (is-true shown "a surface says whether it is shown at a path")
         (setf (pine.fs.node:contents shown) t)
+        (pine.app.desktop:flush (pine.app.desktop::%for client))
         (let ((told (find-if (lambda (m)
                                (and (eq :panel (first m))
                                     (equal "probe-panel" (getf (rest m) :name))))
@@ -590,3 +592,28 @@ is why a hint lit up only while the pointer was moving."
           (is (null (pine.ui.node:hovered now))
               "which is why the frontend puts the flag back rather than waiting
 for the pointer to move"))))))
+
+(test a-surface-that-says-what-it-said-is-not-pushed-again
+  "The world behind a bar moves dozens of times a second and the bar reads the
+same as before. Pushing that is what made hovering flicker and a hint cost
+twenty frames."
+  (with-desktop
+    (let ((client (make-instance 'probe-client))
+          (where (pine.world.world:ensure pine.world.world:*world* "probe")))
+      (setf (pine.fs.node:contents where) "one")
+      (pine.app.surface:surface "probe-bar"
+                                (lambda () (pine.ui.build:label
+                                            (pine.fs.node:contents where)))
+                                :as :bar)
+      (let ((s (pine.app.desktop::%attached client)))
+        (setf (sent client) nil)
+        (dotimes (n 20) (pine.app.desktop:push-surface s (pine.app.surface:surface-named "probe-bar")))
+        (is (zerop (count :widgets (sent client) :key #'first))
+            "twenty pushes of a surface that did not move are none")
+        (setf (pine.fs.node:contents where) "two")
+        (pine.app.desktop:flush s)
+        (is (= 1 (count :widgets (sent client) :key #'first))
+            "and one that did is one")
+        (is (search "two" (princ-to-string
+                           (getf (rest (find :widgets (sent client) :key #'first))
+                                 :tree))))))))

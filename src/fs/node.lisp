@@ -143,6 +143,13 @@ answer the one that landed."
       (invalidate each))
     n))
 
+(defmethod (setf contents) :after (value (n node))
+  "Whatever a node did with a write, it moved: a provider that turned one into
+an action on the world still has to tell what is watching, or a slider is left
+showing what the world held before it was dragged."
+  (declare (ignore value))
+  (invalidate n))
+
 (defgeneric contents (node)
   (:method ((n node)) nil)
   (:method ((n value-node)) (d:held (held n))))
@@ -161,7 +168,6 @@ answer the one that landed."
     (error "~a holds nothing that can be written." (full-name n)))
   (:method (value (n value-node))
     (d:put! (held n) value)
-    (invalidate n)
     (when *on-write* (funcall *on-write* n))
     value))
 
@@ -169,10 +175,9 @@ answer the one that landed."
   (slot-value (object n) (slot-of n)))
 
 (defmethod (setf contents) (value (n slot-node))
-  "Writing a slot moves the node that holds it: whether a surface is shown is
-written at /surface/ctl/shown, and what is watching is the surface."
+  "Writing a slot moves the node that holds it too: whether a surface is shown
+is written at /surface/ctl/shown, and what is watching is the surface."
   (setf (slot-value (object n) (slot-of n)) value)
-  (invalidate n)
   (let ((of (object n)))
     (when (and (nodep of) (not (eq of n))) (invalidate of)))
   value)

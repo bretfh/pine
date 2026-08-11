@@ -3,13 +3,18 @@
   (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:task #:pine.run.task))
   (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
            #:*environment-out* #:output-of #:run-line #:launch
-           #:streaming #:listen! #:quiet! #:listening #:said #:asked #:forget-all #:*sh*))
+           #:streaming #:listen! #:quiet! #:listening #:said #:asked #:tethered
+           #:forget-all #:*sh* #:*breath*))
 
 (in-package #:pine.provider.sh)
 
 (defvar *kept* 100)
 (defvar *ran* (d:box (d:no-seq)))
 (defvar *sh* nil)
+(defvar *asked* (d:table))
+(defparameter *breath* 1/4
+  "Seconds an answer stands for. What a bar reads is read again next frame,
+not three times in this one.")
 (defvar *lines-kept* 20)
 
 (defparameter *environment-out*
@@ -155,13 +160,21 @@ nothing will ever ask it to let go of.")
 (defmethod node:livep ((n command-node)) t)
 
 (defun asked (line)
-  "What a command says, remembered while a provider is reading it, so a bar
-that reads five things out of one command runs it once."
-  (let ((n (node:child *sh* line
-                       (lambda ()
-                         (make-instance 'command-node :name line :parent *sh*
-                                                      :line line)))))
-    (node:contents n)))
+  "What a command says, remembered for a moment, so a panel reading three
+things out of playerctl runs it once rather than three times, and a bar built
+twice in the same breath does not fork twice."
+  (let* ((n (node:child *sh* line
+                        (lambda ()
+                          (make-instance 'command-node :name line :parent *sh*
+                                                       :line line))))
+         (now (get-internal-real-time))
+         (had (d:at (d:all *asked*) line)))
+    (cond ((and had (< (- now (cdr had))
+                       (* *breath* internal-time-units-per-second)))
+           (car had))
+          (t (let ((said (node:contents n)))
+               (d:keep! *asked* line (cons said now))
+               said)))))
 
 (defun install (root)
   (setf *sh* (node:attach (make-instance 'sh-node :name "sh"

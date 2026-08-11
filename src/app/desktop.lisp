@@ -4,8 +4,9 @@
                     (#:surface #:pine.app.surface) (#:attach #:pine.net.attach)
                     (#:cmd #:pine.repl.command) (#:wire #:pine.ui.wire)
                     (#:css #:pine.ui.css) (#:fault #:pine.run.fault)
-                    (#:computed #:pine.fs.computed) (#:task #:pine.run.task))
-  (:export #:session #:sessions #:install #:push-surface #:push-all #:received
+                    (#:computed #:pine.fs.computed) (#:task #:pine.run.task)
+                    (#:timer #:pine.run.timer))
+  (:export #:session #:sessions #:install #:push-surface #:push-all #:received #:flush
            #:close-all
            #:client-of #:acting #:mine-p #:upp #:repaint #:restyle #:declared #:*client*))
 
@@ -14,12 +15,18 @@
 (defvar *sessions* (d:table))
 (defvar *client* nil)
 (defvar *acts* 0)
+(defparameter *pace* 1/20
+  "How often a surface that moved is pushed. A bar reads a clock, a mixer and a
+window title; the world behind those moves dozens of times a second and the
+screen does not need to. What changed is remembered and sent on the next tick.")
 
 
 (defclass session ()
   ((client-of :initarg :client :reader client-of)
    (acting    :initform (d:table) :reader acting)
-   (watching  :initform nil :accessor watching)))
+   (watching  :initform nil :accessor watching)
+   (dirty     :initform (d:box (d:no-set)) :reader dirty)
+   (sent      :initform (d:table) :reader sent)))
 
 (defmethod print-object ((s session) stream)
   (print-unreadable-object (s stream :type t)
@@ -51,6 +58,9 @@ its id, and what it means is whatever the latest push says."
         :do (d:drop! (acting s) id)))
 
 (defun push-surface (s surface)
+  "Push what the surface says now, unless it says what it said last time. What
+the world behind a bar does between two ticks is not news if the bar reads the
+same as before."
   (let ((name (node:name surface))
         (index (d:box -1))
         (*client* (client-of s)))
@@ -60,11 +70,14 @@ its id, and what it means is whatever the latest push says."
         (let ((wire (wire:node->wire
                      tree :on-action (lambda (thunk) (%keep s name index thunk)))))
           (%trim s name (1+ (d:held index)))
-          (attach:push-to (client-of s) :widgets
-                          :surface name
-                          :tree wire
-                          :as (surface:as surface)))
-        name))))
+          (cond ((equal wire (d:at (d:all (sent s)) name))
+                 nil)
+                (t (d:keep! (sent s) name wire)
+                   (attach:push-to (client-of s) :widgets
+                                   :surface name
+                                   :tree wire
+                                   :as (surface:as surface))
+                   name)))))))
 
 (defun mine-p (surface)
   (not (eq :toplevel (surface:as surface))))
@@ -86,11 +99,33 @@ its id, and what it means is whatever the latest push says."
                   :show (and (surface:shownp surface) t)))
 
 (defun %moved (surface)
+  "Say the surface moved. Whether it is a panel that just came up is told at
+once; its tree goes on the next tick."
   (when (mine-p surface)
     (dolist (s (sessions))
-      (when (or (not (surface:panelp surface)) (surface:shownp surface))
-        (push-surface s surface))
+      (d:swap! (dirty s) (lambda (all) (d:with all (node:name surface))))
       (when (surface:panelp surface) (%shown s surface)))))
+
+(defun %took-dirty (s)
+  (loop :for had := (d:held (dirty s))
+        :when (d:cas (dirty s) had (d:no-set)) :do (return had)))
+
+(defun flush (s)
+  "Push what moved since the last tick."
+  (let ((names (%took-dirty s)))
+    (d:do-each (name names names)
+      (let ((surface (surface:surface-named name)))
+        (when (and surface (upp surface))
+          (fault:attempt (lambda () (push-surface s surface))
+                         (format nil "pushing ~a" name)))))))
+
+(defun %pacing (s)
+  (timer:every-seconds *pace* (lambda () (flush s))
+                       :as (list :desktop (attach:client-id (client-of s)))
+                       :what "pushing what moved"))
+
+(defun %unpacing (s)
+  (timer:cancel (list :desktop (attach:client-id (client-of s)))))
 
 (defun %watch-one (s surface)
   (let ((w (watch:watch surface (lambda (of value)
@@ -123,17 +158,18 @@ like any other; without this it never reaches the screen."
       (when styles (attach:push-to client :style :styles styles)))
     (%watch-surfaces s)
     (push-all s)
+    (%pacing s)
     s))
 
 (defun %detached (client)
   (let ((s (%for client)))
-    (when s (mapc #'watch:unwatch (watching s)))
+    (when s (%unpacing s) (mapc #'watch:unwatch (watching s)))
     (d:drop! *sessions* (attach:client-id client))
     client))
 
 (defun close-all ()
   "Let go of every attached frontend, and of what each was watching for."
-  (dolist (s (sessions)) (mapc #'watch:unwatch (watching s)))
+  (dolist (s (sessions)) (%unpacing s) (mapc #'watch:unwatch (watching s)))
   (d:put! *sessions* (d:no-map))
   t)
 
@@ -145,7 +181,7 @@ like any other; without this it never reaches the screen."
          (destructuring-bind (&key id args) (rest message)
            (let ((thunk (d:at (d:all (acting s)) id)))
              (when thunk (%act client thunk args)))))
-        (:refresh (push-all s))
+        (:refresh (d:clear! (sent s)) (push-all s))
         (:hint
          (destructuring-bind (&key text) (rest message)
            (setf (node:contents (pine.world.world:ensure pine.world.world:*world*

@@ -7,6 +7,9 @@
 (in-package #:pine.provider.sys)
 
 (defvar *sampled* (d:box nil))
+(defvar *busy* (d:box nil))
+(defparameter *window* 1
+  "Seconds a reading of how busy the machine is stands for.")
 
 (defparameter +parts+
   '("cpu" "ram" "temp" "disk" "uptime" "load" "user" "host"))
@@ -34,7 +37,7 @@
   (and (>= (length text) (length prefix))
        (string= prefix text :end2 (length prefix))))
 
-(defun cpu ()
+(defun %busy ()
   (let* ((line (first (%lines (%file "/proc/stat"))))
          (numbers (loop :for word :in (rest (uiop:split-string
                                              (string-trim " " (or line ""))
@@ -52,6 +55,19 @@
               (still (- idle (cdr had))))
           (max 0 (min 100 (round (* 100 (- moved still)) moved))))
         0)))
+
+(defun cpu ()
+  "How busy the machine is. Two readers a moment apart are asking about the
+same moment: sampling per read gives the second one no ticks to divide by and
+it answers zero, which is a number that reads as a fact and is not one."
+  (let ((now (get-internal-real-time))
+        (had (d:held *busy*)))
+    (cond ((and had (< (- now (cdr had))
+                       (* *window* internal-time-units-per-second)))
+           (car had))
+          (t (let ((said (%busy)))
+               (d:put! *busy* (cons said now))
+               said)))))
 
 (defun ram ()
   (let ((total 0) (available 0))
