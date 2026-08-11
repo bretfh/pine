@@ -127,3 +127,49 @@ down when pipewire is not running."
       (dolist (verb '("lock" "suspend" "reboot" "poweroff" "logout"))
         (is (member verb (pine.fs.tree:listing power) :test #'equal)
             "~a should be a node under /power" verb)))))
+
+(defun %alive-p (pid)
+  (and pid (zerop (nth-value 2 (uiop:run-program (list "kill" "-0" (princ-to-string pid))
+                                                 :ignore-error-status t)))))
+
+(test a-stream-dies-with-the-image-that-asked-for-it
+  "A provider that listens to the world holds a process. Pine going -- stopped,
+crashed, or killed outright -- has to take it along, or the next run adds
+another and a machine ends up with hundreds of them holding connections
+nothing will ever release."
+  (let ((p (make-instance 'pine.proc.lisp:lisp-process
+                          :name "probe-tether" :restarts nil :systems '(:pine)))
+        (line "sh -c 'while true; do echo tick; sleep 5; done'"))
+    (unwind-protect
+         (progn
+           (pine.proc.process:start p)
+           (let ((pid (pine.proc.lisp:evaluate
+                       p `(progn (pine:start)
+                                 (let ((n (pine.provider.sh:streaming ,line)))
+                                   (pine.provider.sh:listen! n)
+                                   (sleep 0.5)
+                                   (uiop:process-info-pid
+                                    (pine.data:held (pine.provider.sh::took n)))))
+                       :timeout 180)))
+             (is-true (%alive-p pid) "the other image is listening")
+             (sb-posix:kill (uiop:process-info-pid (pine.proc.process:took p)) 9)
+             (loop :repeat 100 :while (pine.proc.process:alivep p) :do (sleep 0.05))
+             (is-false (pine.proc.process:alivep p) "and was killed outright")
+             (loop :repeat 40 :while (%alive-p pid) :do (sleep 0.05))
+             (is-false (%alive-p pid) "so what it was listening with is gone too")))
+      (ignore-errors (pine.proc.process:stop p)))))
+
+(test a-clean-stop-leaves-no-stream-behind
+  (let (pid)
+    (unwind-protect
+         (progn
+           (pine:start)
+           (let ((n (pine.provider.sh:streaming
+                     "sh -c 'while true; do echo tick; sleep 5; done'")))
+             (pine.provider.sh:listen! n)
+             (sleep 0.3)
+             (setf pid (uiop:process-info-pid (pine.data:held (pine.provider.sh::took n))))
+             (is-true (%alive-p pid))))
+      (pine:stop))
+    (loop :repeat 40 :while (%alive-p pid) :do (sleep 0.05))
+    (is-false (%alive-p pid) "stopping takes the streams with it")))

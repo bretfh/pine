@@ -16,6 +16,16 @@
   '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
     "LD_LIBRARY_PATH"))
 
+(defparameter +tethered+
+  "~a & pine_child=$!; trap 'kill $pine_child 2>/dev/null' EXIT; ~
+   cat >/dev/null; kill $pine_child 2>/dev/null"
+  "A stream, tied to the image that asked for it.
+
+The shell holding it reads the pipe pine keeps the other end of. Pine going --
+stopped, crashed or killed outright -- closes that end, the read ends, and the
+stream is killed rather than left running for weeks holding a bus connection
+nothing will ever ask it to let go of.")
+
 (defclass sh-node (node:node) ())
 
 (defclass command-node (node:node)
@@ -93,9 +103,13 @@
 
 (defun listening (n) (and (d:held (took n)) t))
 
+(defun tethered (line)
+  (list "sh" "-c" (format nil +tethered+ line)))
+
 (defun listen! (n)
   (unless (listening n)
-    (let ((process (uiop:launch-program (list "sh" "-c" (line n))
+    (let ((process (uiop:launch-program (tethered (line n))
+                                        :input :stream
                                         :output :stream :error-output nil)))
       (d:put! (took n) process)
       (%reader n process)))
@@ -104,7 +118,9 @@
 (defun quiet! (n)
   (let ((process (d:held (took n))))
     (when process
+      (ignore-errors (close (uiop:process-info-input process)))
       (ignore-errors (uiop:terminate-process process :urgent t))
+      (ignore-errors (uiop:wait-process process))
       (d:put! (took n) nil)))
   n)
 
