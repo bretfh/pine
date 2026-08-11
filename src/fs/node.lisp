@@ -169,8 +169,12 @@ answer the one that landed."
   (slot-value (object n) (slot-of n)))
 
 (defmethod (setf contents) (value (n slot-node))
+  "Writing a slot moves the node that holds it: whether a surface is shown is
+written at /surface/ctl/shown, and what is watching is the surface."
   (setf (slot-value (object n) (slot-of n)) value)
   (invalidate n)
+  (let ((of (object n)))
+    (when (and (nodep of) (not (eq of n))) (invalidate of)))
   value)
 
 (defmethod leafp ((n slot-node)) t)

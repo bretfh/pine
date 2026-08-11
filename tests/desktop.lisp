@@ -535,3 +535,29 @@ a click that crossed during a repaint still means what it looks like it means."
           (acted client id)
           (is (eq t (pine.fs.node:contents where))
               "the id from twenty pushes ago still names the same button"))))))
+
+(test showing-a-panel-tells-the-frontend-when-the-write-is-to-its-slot
+  "A config toggles a panel by writing /surface/ctl/shown. What is watching is
+the surface, so the slot's write has to move it, or the panel opens whenever
+something else happens to rebuild it."
+  (with-desktop
+    (let ((client (make-instance 'probe-client)))
+      (pine.app.surface:surface "probe-panel"
+                                (lambda () (pine.ui.build:label "here"))
+                                :as :panel)
+      (pine.app.desktop::%attached client)
+      (setf (sent client) nil)
+      (let ((shown (pine.fs.tree:at (pine.app.surface:root) "probe-panel/shown")))
+        (is-true shown "a surface says whether it is shown at a path")
+        (setf (pine.fs.node:contents shown) t)
+        (let ((told (find-if (lambda (m)
+                               (and (eq :panel (first m))
+                                    (equal "probe-panel" (getf (rest m) :name))))
+                             (sent client))))
+          (is-true told "the frontend was told to put the panel up")
+          (is (eq t (getf (rest told) :show)))
+          (is-true (find-if (lambda (m)
+                              (and (eq :widgets (first m))
+                                   (equal "probe-panel" (getf (rest m) :surface))))
+                            (sent client))
+                   "and it has the tree to put in it"))))))
