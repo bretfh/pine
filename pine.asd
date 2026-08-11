@@ -76,6 +76,7 @@
                  (:module "edit"
                           :serial t
                           :components ((:file "text") (:file "history") (:file "buffer")
+                                       (:file "language")
                                        (:file "window") (:file "prompt")))
                  (:module "parser"
                           :serial t :pathname "ts/"

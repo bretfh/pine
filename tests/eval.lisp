@@ -17,7 +17,7 @@
 (test a-buffer-reads-in-the-package-it-declares
   (with-lisp-buffer ()
     (is (eq (find-package :cl-user)
-            (pine.edit.buffer:package-of (pine.edit.buffer:current))))))
+            (pine.edit.language:package-of (pine.edit.buffer:current))))))
 
 (test the-image-says-where-a-symbol-is-defined
   (with-lisp-buffer ()

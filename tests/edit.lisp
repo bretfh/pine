@@ -526,3 +526,48 @@ three")
       (pine.edit.render:scroll-to-point w)
       (is (= 0 (pine.edit.window:hscroll-of w))
           "and coming back brings it home"))))
+
+(test the-commands-v1-had-are-here
+  (with-editor ()
+    (dolist (name '("find-recent" "format-buffer" "jobs" "load-file"
+                    "set-eval-target" "insert-tab" "overwrite-mode"))
+      (is-true (pine.repl.command:command-named name) "~a is missing" name))))
+
+(test a-tab-is-a-tab-width-of-spaces-where-one-is-asked-for
+  (with-editor (:text "")
+    (pine.repl.command:run "insert-tab")
+    (is (equal (make-string (or (pine.edit.buffer:setting (b) :tab-width) 8)
+                            :initial-element #\Space)
+               (pine.fs.node:contents (b))))))
+
+(test overwrite-is-a-minor-mode-you-can-turn-on-and-off
+  (with-editor ()
+    (is-true (pine.repl.command:run "overwrite-mode"))
+    (is (member "overwrite" (pine.edit.buffer:minors-of (b)) :test #'equal))
+    (is-false (pine.repl.command:run "overwrite-mode"))
+    (is (null (member "overwrite" (pine.edit.buffer:minors-of (b)) :test #'equal)))))
+
+(test the-files-opened-here-are-remembered-newest-first
+  (let ((one (merge-pathnames "pine-probe-recent-1.lisp" (uiop:temporary-directory)))
+        (two (merge-pathnames "pine-probe-recent-2.lisp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (dolist (f (list one two))
+             (with-open-file (out f :direction :output :if-exists :supersede)
+               (write-string "(defun f () 1)" out)))
+           (with-editor ()
+             (pine.repl.command:run "find-file" (list (namestring one)))
+             (pine.repl.command:run "find-file" (list (namestring two)))
+             (is (equal (list (namestring two) (namestring one))
+                        (subseq (pine.edit.buffer:recent) 0 2))
+                 "the last one opened is the first offered")))
+      (mapc (lambda (f) (ignore-errors (delete-file f))) (list one two)))))
+
+(test formatting-a-buffer-indents-every-line-of-it
+  (with-editor (:text "(defun f (x)
+x
+x)")
+    (setf (pine.edit.buffer:mode-of (b)) "lisp")
+    (pine.repl.command:run "format-buffer")
+    (is (plusp (pine.edit.buffer:indent-of (b) 1))
+        "a line inside a form is not left at column zero")))

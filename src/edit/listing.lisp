@@ -102,6 +102,29 @@ listing: RET on a row hands ACTS the place it stands for."
           (buffer:buffers)))
 
 (defun install ()
+  (cmd:defcommand "jobs" () (:describes "what this image is running")
+    (into "*jobs*"
+          (append
+           (list (format nil "~16a ~10a ~a" "what" "state" "name") "")
+           (loop :for p :in (pine.proc.supervisor:processes
+                             pine.repl.shell:*supervisor*)
+                 :collect (cons (format nil "~16a ~10a ~a" "process"
+                                        (pine.proc.process:state p)
+                                        (pine.proc.process:name p))
+                                p))
+           (loop :for tk :in (pine.run.task:tasks)
+                 :collect (cons (format nil "~16a ~10a ~a" "thread"
+                                        (if (pine.run.task:alivep tk) :running :done)
+                                        (pine.run.task:name tk))
+                                tk))
+           (loop :for a :in (pine.run.agent:agents)
+                 :collect (cons (format nil "~16a ~10a ~a" "endpoint" :running
+                                        (pine.run.agent:name a))
+                                a))
+           (loop :for name :in (pine.run.timer:names)
+                 :collect (format nil "~16a ~10a ~a" "tick" :running name)))
+          (lambda (it)
+            (log:note "~a" (or it "that row is a heading")))))
   (cmd:defcommand "list-buffers" () (:describes "every buffer there is")
     (into "*buffers*" (%buffer-rows)
           (lambda (b) (when (node:nodep b) (setf (buffer:current) b)))))

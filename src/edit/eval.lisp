@@ -1,18 +1,19 @@
 (defpackage #:pine.edit.eval
   (:use #:cl)
   (:shadow #:documentation)
-  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:language #:pine.edit.language) (#:d #:pine.data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:session #:pine.repl.session) (#:node #:pine.fs.node)
                     (#:buffer #:pine.edit.buffer) (#:prompt #:pine.edit.prompt)
                     (#:log #:pine.run.log) (#:fault #:pine.run.fault)
                     )
   (:export #:install #:token-at #:symbol-at #:offset-of #:line-col
            #:definition #:references #:complete #:arglist #:documentation
-           #:sexp-before #:defun-around #:visit #:went #:*went*))
+           #:sexp-before #:defun-around #:visit #:went #:*went* #:*target*))
 
 (in-package #:pine.edit.eval)
 
 (defvar *went* (d:box nil))
+(defvar *target* nil)
 (defparameter +kinds+ '(:function :macro :generic-function :variable :class))
 (defparameter +merged+ '(:references :complete))
 (defparameter +delimiters+ "
@@ -52,7 +53,7 @@
   (let* ((text (buffer:text-of b))
          (token (or of (token-at text (offset-of b)))))
     (when token
-      (values (multiple-value-bind (*package* *readtable*) (buffer:reading b)
+      (values (multiple-value-bind (*package* *readtable*) (language:reading b)
                 (ignore-errors (read-from-string token)))
               token))))
 
@@ -133,7 +134,7 @@
 (defun complete (b &optional (prefix ""))
   (when (plusp (length prefix))
     (let ((up (string-upcase prefix)) (out nil))
-      (do-symbols (s (buffer:package-of b))
+      (do-symbols (s (language:package-of b))
         (let ((name (string-downcase (symbol-name s))))
           (when (and (>= (length name) (length prefix))
                      (string-equal up name :end2 (length up)))
@@ -192,21 +193,34 @@
     (buffer:delete-region! b line (max 0 (- col (length prefix))) line col)
     (buffer:insert! b choice)))
 
+(defun %there (b text)
+  "Evaluate in the image SET-EVAL-TARGET named, and say what it said the way a
+session here would."
+  (let ((a (pine.net.agent:agent-named *target*)))
+    (cond ((null a) (format nil "no image named ~a" *target*))
+          (t (multiple-value-bind (*package* *readtable*) (language:reading b)
+               (let ((answer (pine.net.agent:evaluate-there
+                              a (cl:read-from-string text))))
+                 (if (getf answer :fault)
+                     (format nil "~a" (getf answer :fault))
+                     (format nil "~{~s~^, ~}" (getf answer :answered)))))))))
+
 (defun %evaluate (b text at)
-  (let* ((s (or session:*session*
-                (session:open-session :name (node:name b)
-                                      :package (buffer:package-of b)
-                                      :readtable (buffer:readtable-of b))))
-         (e (session:evaluate s (session:read s text)))
-         (said (if (session:fault e)
-                   (format nil "~a" (session:fault e))
-                   (format nil "~{~s~^, ~}" (session:answered e)))))
+  (let* ((s (unless *target*
+              (or session:*session*
+                  (session:open-session :name (node:name b)
+                                        :package (language:package-of b)
+                                        :readtable (language:readtable-of b)))))
+         (e (when s (session:evaluate s (session:read s text))))
+         (said (cond (*target* (%there b text))
+                     ((session:fault e) (format nil "~a" (session:fault e)))
+                     (t (format nil "~{~s~^, ~}" (session:answered e))))))
     (log:note "~a" said)
     (buffer:clear-overlays! b)
     (buffer:overlay! b (line-col (buffer:text-of b) at)
                      (format nil "=> ~a" said)
-                     (if (session:fault e) :error :comment))
-    e))
+                     (if (and e (session:fault e)) :error :comment))
+    (or e said)))
 
 (defun %commands ()
   (cmd:defcommand "find-definition" () (:describes "go to where what is at point is defined")
@@ -269,13 +283,32 @@
         (if from
             (%evaluate b (subseq text from to) to)
             (log:note "point is in no definition")))))
+  (cmd:defcommand "load-file" () (:describes "compile this buffer's file and load it")
+    (let* ((b (buffer:current))
+           (file (buffer:file-of b)))
+      (cond ((null file) (log:note "~a has no file" (node:name b)))
+            (t (fault:attempt
+                (lambda ()
+                  (multiple-value-bind (*package* *readtable*) (language:reading b)
+                    (load (compile-file file))))
+                (format nil "loading ~a" file))
+               (log:note "loaded ~a" file)
+               file))))
+  (cmd:defcommand "set-eval-target" () (:describes "which image a form is evaluated in")
+    (let ((names (cons "local" (mapcar #'pine.net.agent:name
+                                       (pine.net.agent:agents)))))
+      (prompt:ask "Eval in: " :must-match t :candidates names
+                  :then (lambda (said)
+                          (setf *target* (unless (equal said "local") said))
+                          (log:note "evaluating in ~a" (or *target* "this image"))))
+      :asking))
   (cmd:defcommand "eval-buffer" () (:describes "evaluate every form in this buffer")
     (let* ((b (buffer:current))
            (text (buffer:text-of b))
            (n 0))
       (fault:attempt
        (lambda ()
-         (multiple-value-bind (*package* *readtable*) (buffer:reading b)
+         (multiple-value-bind (*package* *readtable*) (language:reading b)
            (let ((at 0))
              (loop (multiple-value-bind (form next)
                        (read-from-string text nil :eof :start at)

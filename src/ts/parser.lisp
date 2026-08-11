@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.parser
   (:use #:cl)
-  (:local-nicknames (#:agent #:pine.run.agent)
+  (:local-nicknames (#:language #:pine.edit.language) (#:agent #:pine.run.agent)
                     (#:node #:pine.fs.node) (#:mode #:pine.repl.mode)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:hl #:pine.ts.highlight) (#:d #:pine.data))
@@ -83,7 +83,7 @@ and the lines outside it are what they were."
          (lines (%lines b))
          (edit (pine.edit.buffer:edit-of b))
          (band (showing b)))
-    (setf (runtime:ps-package ps) (pine.edit.buffer:package-of b))
+    (setf (runtime:ps-package ps) (pine.edit.language:package-of b))
     (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport band)
     (setf (pine.edit.buffer:edit-of b) nil)
@@ -106,7 +106,7 @@ and the lines outside it are what they were."
 (defun %grammar (b)
   "Which language a buffer is parsed as: what it says it is written in, else
 what its mode says."
-  (or (syntax:for-readtable (pine.edit.buffer:readtable-of b))
+  (or (syntax:for-readtable (pine.edit.language:readtable-of b))
       (mode:setting (pine.edit.buffer:mode-of b) :grammar)))
 
 (defun %name-for (b)
