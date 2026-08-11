@@ -38,6 +38,8 @@ buffer rows were laid out for."
    (metricsp :initform nil :accessor ed-metricsp)
    (sent-cols :initform -1 :accessor ed-sent-cols)
    (sent-rows :initform -1 :accessor ed-sent-rows)
+   (sent-width  :initform -1 :accessor ed-sent-width)
+   (sent-height :initform -1 :accessor ed-sent-height)
    (pump    :initarg :pump :reader ed-pump)
    (wire    :initform nil :accessor ed-wire)
    (generation :initform 0 :accessor ed-generation)
@@ -101,11 +103,18 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
     (setf (ed-metricsp ed) t)))
 
 (defun maybe-resize (ed)
-  (let ((cc (ed-cols ed)) (rr (ed-rows ed)))
-    (unless (and (= cc (ed-sent-cols ed)) (= rr (ed-sent-rows ed)))
-      (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr)
+  "Say how big this surface is whenever it changes at all. The daemon arranges
+in pixels, so a window that grew by less than a cell still has to be told: what
+it lays out is what gets painted, and a frame laid out for the size before is
+cut off by the surface it lands in."
+  (let ((cc (ed-cols ed)) (rr (ed-rows ed))
+        (w (ed-width ed)) (h (ed-height ed)))
+    (unless (and (= cc (ed-sent-cols ed)) (= rr (ed-sent-rows ed))
+                 (= w (ed-sent-width ed)) (= h (ed-sent-height ed)))
+      (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr
+            (ed-sent-width ed) w (ed-sent-height ed) h)
       (send-input ed (list :resize :cols cc :rows rr
-                           :width (ed-width ed) :height (ed-height ed)
+                           :width w :height h
                            :cell-w (round (ed-cell-w ed))
                            :cell-h (round (ed-cell-h ed)))))))
 
