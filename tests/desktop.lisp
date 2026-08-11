@@ -480,3 +480,26 @@ a test waits for the thread it did run on."
           (declare (ignore sl sc))
           (is (= 720 ec) "the frame was arranged in pixels, not in cells")
           (is (> el 24) "and so was its height"))))))
+
+(test a-window-that-grew-by-less-than-a-cell-is-still-laid-out-for-its-size
+  "The frame is arranged in pixels, so the size it was laid out for has to be
+the size it lands in: a frame drawn for a smaller window is cut off by the one
+it is painted into."
+  (with-desktop
+    (let* ((client (make-instance 'probe-client))
+           (s (pine.edit.session::%attached client)))
+      (is-true (wait-until (lambda () (find :widgets (sent client) :key #'first))))
+      (flet ((frame-at (w h)
+               (pine.edit.session::%work
+                s (list :resize :cols (floor w 9) :rows (floor h 18)
+                        :width w :height h :cell-w 9 :cell-h 18))
+               (setf (sent client) nil)
+               (pine.edit.session::%work s (list :refresh))
+               (let ((tree (pine.ui.wire:wire->node
+                            (getf (rest (find :widgets (sent client) :key #'first))
+                                  :tree))))
+                 (list (pine.ui.node:end-col tree)
+                       (1+ (pine.ui.node:end-line tree))))))
+        (is (equal '(900 540) (frame-at 900 540)))
+        (is (equal '(900 545) (frame-at 900 545))
+            "eight more pixels is the same 30 rows and a different frame")))))
