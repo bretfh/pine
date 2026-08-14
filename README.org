@@ -2,10 +2,13 @@
 
 Pine Is Not Emacs.
 
-One live Common Lisp image: the editor, the desktop, and the code you run. You
-rewrite it while it runs, and what might crash runs somewhere it cannot take
-the rest with it. See [[file:doc/architecture.org][doc/architecture.org]] for
-what it is and how it is put together.
+A personal computing environment. One live Common Lisp image you work inside
+and change from inside, while it runs. Whatever you do here is done in the same
+world, addressable the same way and redefinable at any point, and what might
+crash runs where it cannot take the rest with it.
+
+[[file:doc/architecture.org][doc/architecture.org]] is what it is and how it is
+put together.
 
 * Running it
 
