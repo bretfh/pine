@@ -1,0 +1,110 @@
+digraph pine {
+  rankdir=TB; splines=spline; compound=true;
+  graph [fontname="sans-serif", fontsize=22, ranksep=1.0, nodesep=0.5,
+         bgcolor="#232025", labelloc=t, fontcolor="#efd5c5",
+         label=<<table border="0" cellborder="0" cellspacing="0" cellpadding="3">
+           <tr><td colspan="2"><font point-size="24" color="#efd5c5">pine: one tree, one image that decides</font></td></tr>
+           <tr><td align="right"><font color="#51b04f" point-size="16">==</font></td>
+               <td align="left"><font color="#8f8886" point-size="13">read / write / watch a node</font></td></tr>
+           <tr><td align="right"><font color="#ffaacf" point-size="16">==</font></td>
+               <td align="left"><font color="#8f8886" point-size="13">the daemon pushes what changed</font></td></tr>
+           <tr><td align="right"><font color="#57b0ff" point-size="16">==</font></td>
+               <td align="left"><font color="#8f8886" point-size="13">a frontend sends what happened</font></td></tr>
+           <tr><td colspan="2"><font color="#8f8886" point-size="12">a dashed border is an operating-system process of its own. every arrow across one<br/>carries data and nothing else, so neither side can hang or crash the other</font></td></tr>
+         </table>>];
+  node  [fontname="sans-serif", fontsize=14, shape=box, style="rounded,filled",
+         color="#635850", fontcolor="#efd5c5", fillcolor="#322f34",
+         margin="0.20,0.12"];
+  edge  [fontname="sans-serif", fontsize=12, color="#8f8886",
+         fontcolor="#8f8886", penwidth=1.2];
+
+  subgraph cluster_daemon {
+    label="the daemon: one headless image, no display";
+    labeljust=l; fontsize=17; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+
+    tree [shape=none, margin=0, label=<
+      <table border="0" cellborder="1" cellspacing="0" cellpadding="7"
+             bgcolor="#322f34" color="#635850">
+        <tr><td bgcolor="#3b393e" colspan="2">
+          <font color="#efd5c5" point-size="17"><b>the tree</b></font><br/>
+          <font color="#8f8886" point-size="11">every addressable thing is a node, reached by path</font>
+        </td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/buf/?name</font></td>
+            <td align="left"><font color="#8f8886">text, point, mark, mode, file, settings</font></td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/win/?n</font></td>
+            <td align="left"><font color="#8f8886">what is shown where; a split is a write</font></td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/surface/?name</font></td>
+            <td align="left"><font color="#8f8886">a widget tree and whether it is up</font></td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/audio /net /sys /clock</font></td>
+            <td align="left"><font color="#8f8886">what answers from the world</font></td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/cmd /mode /sh /proc</font></td>
+            <td align="left"><font color="#8f8886">what can be run, and what is running</font></td></tr>
+      </table>>];
+
+    values [label="values\lfset in a box, no locks\lone table per registry\l", fillcolor="#3b393e"];
+    conc   [label="sento\lendpoints, one wheel timer\lthreads only where it blocks\l", fillcolor="#3b393e"];
+    prov   [label="providers\lsh, clock, sys, audio, net\lmedia, power, screen, wm\l", fillcolor="#3b393e"];
+    store  [label="store: sqlite\lwrite-through, one table\l", fillcolor="#3b393e"];
+    edit   [label="the editor\lbuffers, windows, keys\ltree-sitter, the prompt\l", fillcolor="#3b393e"];
+    faults [label="faults\lthe thread stands where it broke\lits restarts are what you take\l", fillcolor="#3b393e"];
+
+    { rank=same; prov; store; values; conc; }
+    { rank=same; edit; faults; }
+    tree -> prov   [color="#51b04f", dir=both, label="stir / read"];
+    tree -> store  [color="#51b04f", label="keep"];
+    tree -> values [style=invis];
+    tree -> conc   [style=invis];
+    tree -> edit   [color="#51b04f", dir=both];
+    faults -> edit [color="#8f8886", constraint=false, label="the debugger buffer"];
+  }
+
+  subgraph cluster_editor {
+    label="editor frontend"; labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    ed [label="one xdg toplevel\lpaints cells with cairo\lsays its size and its font\l"];
+  }
+
+  subgraph cluster_desktop {
+    label="desktop frontend"; labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    de [label="layer surfaces\lthe bar, the echo strip\lthe panels\l"];
+  }
+
+  subgraph cluster_wm {
+    label="window manager"; labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    wm [label="pine manages the windows\lover river, borders and all\l"];
+  }
+
+  subgraph cluster_agent {
+    label="an agent: another image, here or on another machine";
+    labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    ag [label="evaluated in over the wire\lstands in its own faults\l"];
+  }
+
+  cli [label="pine read / write / watch / eval\lthe same tree, from a terminal\l",
+       fillcolor="#2b282d"];
+
+  edit -> ed [color="#ffaacf", label="a frame, or\lthe rows that changed\l"];
+  ed -> edit [color="#57b0ff", label="a key,\la resize\l"];
+
+  edit -> de [style=invis];
+  faults -> wm [style=invis];
+
+  tree -> de [color="#ffaacf", ltail=cluster_daemon, constraint=false,
+              label="a surface,\lwhen it changes\l"];
+  de -> tree [color="#57b0ff", lhead=cluster_daemon, constraint=false,
+              label="a click,\la hover\l"];
+
+  tree -> wm [color="#ffaacf", ltail=cluster_daemon, constraint=false,
+              label="where each\lwindow goes\l"];
+  wm -> tree [color="#57b0ff", lhead=cluster_daemon, constraint=false,
+              label="what the\lcompositor did\l"];
+
+  faults -> ag [color="#57b0ff", dir=both,
+                label="a fault comes home\lwith its restarts\l"];
+
+  cli -> tree [color="#51b04f", dir=both, lhead=cluster_daemon];
+}

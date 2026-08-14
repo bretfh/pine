@@ -1,0 +1,154 @@
+#+TITLE: pine: the point, and the shape it takes
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+* The one idea
+
+Pine is the Lisp Machine you cannot crash and can distribute.
+
+Genera ran a whole operating system in one Lisp image: the editor, the network,
+the window system, all of it live and redefinable from inside while it ran. An
+error did not kill the machine. It dropped that one process into the debugger
+while everything else carried on, and you looked at the frames, patched a
+definition, took a restart, and went on. That is the part to keep.
+
+What it did not have is a hard boundary. One address space on one machine: a
+runaway allocation took everyone down with it, and a computation could not live
+somewhere else. Emacs kept the malleable world and dropped the concurrency
+instead: one thread, so a loop in elisp freezes everything, and one process, so
+there is nowhere to put anything dangerous.
+
+Pine wears the daemon shape emacs wears, and its ancestor is the Lisp Machine.
+It restores the concurrency, and adds the boundary: a computation can live in
+another image, on another machine, and when it faults its restarts come home to
+the debugger you are sitting in.
+
+* What follows from it
+
+** Everything addressable is a node
+
+One tree, reached by path. A buffer is a node, so is a window, a surface, a
+provider's reading, a command, a running process. They answer the same
+generics: =contents=, =(setf contents)=, =nodes=, =resolve=, =describe=,
+=leafp=. There is no registry beside the tree.
+
+: pine read /audio/volume
+: pine write /surface/audio/shown '(:toggle)'
+: pine watch /media/title
+
+A provider says when the world behind it moved rather than being polled:
+=announces= names the shell lines whose output stirs it, =every-seconds= the
+interval for the ones with no stream. A write it turns into an action on the
+world still announces, because dragging a slider has to leave the slider
+showing where it was dragged to.
+
+A reading stands for a moment, not for the instant it was asked in. Two things
+reading =/sys/cpu= a moment apart are asking about the same moment.
+
+** Values are immutable, and what holds one is a box
+
+=pine.data= is the only file that names fset or =sento.atomic=. It says what a
+value is and where one is kept: =box=, =held=, =swap!=, =cas=, =put!=, and
+=table= for a registry, which is a map in a box. Nothing takes a lock.
+
+The same value serves twice: shared by reference inside an image, and rendered
+to plain lists at the edge to cross a wire. That is what lets a second image
+hold the same world without sharing memory with it.
+
+** Concurrency is sento, not our own
+
+One actor system per image, made whether or not remoting is on.
+
+- Something that has to take messages in order is an endpoint, over
+  =ac:actor-of=. Pinned where it may stand in a fault, since a receive that
+  parks would take its worker with it.
+- Something that repeats is a tick on that system's wheel timer. Nothing
+  sleeps in a loop.
+- A thread is made only where something blocks: a pty read, a child's stdout, a
+  frontend's own loop.
+
+A receive never waits for an answer. Asking from inside one is an error rather
+than a hang.
+
+** The daemon decides, the frontends paint
+
+The daemon is a headless image that never draws. It owns the tree, the
+providers, the store, the parse, the editor's buffers and windows. A frontend
+is a painter that is told what to paint and sends back what happened.
+
+What crosses:
+
+- the daemon pushes a surface as a wire tree, or the rows that changed in one;
+- a frontend sends a key, a resize, or a widget action;
+- a widget action names *where* the widget sits in its surface, so a click that
+  crossed while the surface was being pushed again still means the button it
+  was on;
+- a key crosses under one name however the frontend spelled it. =C-SPC= in a
+  keymap is the key xkb hands over as =space=.
+
+The daemon lays a frame out in pixels once the frontend has said what its cell
+and font are, so the frame is painted at the size it was laid out for. A
+surface is pushed when what it shows changes, on a tick: the world behind a bar
+moves dozens of times a second and reads the same.
+
+** Failure is a value you can act on
+
+=fault:attempt= runs work and keeps what broke. With the debugger on, the
+thread stops where it faulted and stands there holding its restarts, so what
+you are offered is what is really still there. Taking one resumes that thread.
+
+Across images it is the same act: a child image stands in its fault and says
+what it is offering, the fault joins this image's own, and taking one of its
+restarts is sent back to the thread standing there.
+
+** What pine starts dies with pine
+
+A stream a provider listens to holds a pipe the image owns. Stopping, crashing
+or being killed outright closes it and the child goes. Anything that outlives
+the image that started it is a leak with no upper bound.
+
+** The store is write-through
+
+Sqlite, one table. A write lands as it is made, not at a clean shutdown, so a
+crash costs nothing since the last write. What comes back is what the tree
+held, fset values included.
+
+* The shape of a running pine
+
+See =architecture.dot= beside this file; =make docs= renders it.
+
+Four kinds of operating-system process:
+
+| the daemon        | the tree, the providers, the store, the editor, no display |
+| the editor        | one wayland toplevel, paints frames, sends keys             |
+| the desktop       | layer surfaces: the bar, the echo strip, the panels         |
+| the window manager | pine as the compositor's own manager, over river           |
+
+and a fifth on demand: an agent, another sbcl image pine spawned, evaluated in
+over the same protocol, whose faults come home.
+
+* The config is Lisp
+
+=~/.config/pine/init.lisp= is read by the daemon. It declares surfaces, styles,
+commands, bindings, and which frontends to start. It is the same language and
+the same tree, so a config says =(read /audio/volume)= and =(at (root *world*)
+"wm" "workspaces" n)= and hands either to a widget.
+
+* Where the code is
+
+| =src/data.lisp=  | values, boxes, tables: fset and sento.atomic, named nowhere else |
+| =src/run/=       | tasks, timer, endpoints, faults, log, where the C libraries are  |
+| =src/fs/=        | the node, computed nodes, the tree, mounts, watchers             |
+| =src/world/=     | the world and the store                                          |
+| =src/proc/=      | processes, the supervisor, another sbcl image                    |
+| =src/repl/=      | commands, modes, sessions, the shell                             |
+| =src/path/=      | paths and the reader that makes them sugar                       |
+| =src/ui/=        | widgets, layout, styles, cells, the wire                         |
+| =src/ts/=        | tree-sitter: the runtime, the parse, highlighting, indentation   |
+| =src/provider/=  | what answers from the world: sh, clock, sys, audio, net, media   |
+| =src/edit/=      | buffers, windows, keys, the prompt, rendering, the session       |
+| =src/app/=       | surfaces, the desktop, the window manager, the compositor        |
+| =src/net/=       | the server, attaching, agents, the control socket                |
+| =src/cairo/=     | painting cells and widgets                                       |
+| =src/wayland/=   | the frontends: editor, desktop, wm                               |
+| =vt/=            | the terminal emulator                                            |
