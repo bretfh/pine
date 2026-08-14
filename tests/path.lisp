@@ -1,231 +1,110 @@
 (in-package :pine.test)
-(named-readtables:in-readtable pine.path:syntax)
 
 (def-suite* :pine.path :in :pine)
 
-(defun rdp (string)
-  "Read STRING under pine's path syntax, at run time."
-  (let ((*readtable* (named-readtables:find-readtable 'pine.path:syntax)))
-    (read-from-string string)))
+(test a-path-is-read-as-sugar-and-means-a-list-of-segments
+  (let ((p (pine.path.path:parse "/buf/scratch/text")))
+    (is (equal "/buf/scratch/text" (pine.path.path:text p)))
+    (is (equal "text" (pine.path.path:leaf p)))
+    (is (equal "/buf/scratch" (pine.path.path:text (pine.path.path:parent p))))
+    (is-false (pine.path.path:patternp p))))
 
-;;;; literals
+(test a-pattern-binds-what-it-matched
+  (let ((p (pine.path.path:parse "/buf/?name/text")))
+    (is-true (pine.path.path:patternp p))
+    (is (equal '(name) (pine.path.path:binders p)))
+    (is (equal '((name . "scratch"))
+               (pine.path.path:match p (pine.path.path:parse "/buf/scratch/text"))))
+    (is (null (pine.path.path:match p (pine.path.path:parse "/win/scratch/text"))))))
 
-(test a-path-literal-is-its-segments
-  (let ((p /audio/volume))
-    (is (pine.path:pathp p))
-    (is (equal '("audio" "volume") (pine.path:segments p)))
-    (is (string= "/audio/volume" (pine.path:text p)))))
+(test a-star-covers-one-name-and-two-cover-any-run
+  (is (pine.path.path:match (pine.path.path:parse "/buf/*/text")
+                            (pine.path.path:parse "/buf/scratch/text")))
+  (is (null (pine.path.path:match (pine.path.path:parse "/buf/*/text")
+                                  (pine.path.path:parse "/buf/a/b/text"))))
+  (is (pine.path.path:match (pine.path.path:parse "/buf/**/text")
+                            (pine.path.path:parse "/buf/a/b/text"))))
 
-(test the-root-has-no-segments
-  (is (pine.path:rootp (pine.path:root)))
-  (is (string= "/" (pine.path:text (pine.path:root))))
-  (is (pine.path:rootp (eval (rdp "/")))))
+(test the-sugar-and-the-generics-mean-the-same-node
+  (let ((w (pine.world.world:make-world)))
+    (pine.world.world:place w '("buf" "scratch" "text") "hello")
+    (is (eq (pine.world.world:at w "buf/scratch/text")
+            (pine.path.place:at (pine.path.path:parse "/buf/scratch/text") w)))
+    (is (equal "hello" (pine.path.place:contents
+                        (pine.path.path:parse "/buf/scratch/text") w)))
+    (setf (pine.path.place:contents (pine.path.path:parse "/buf/scratch/text") w)
+          "written through the sugar")
+    (is (equal "written through the sugar"
+               (pine.fs.node:contents (pine.world.world:at w "buf/scratch/text"))))))
 
-(test a-path-prints-as-it-reads
-  (dolist (text '("/audio/volume" "/buf/scratch/point" "/win/0/weight" "/"))
-    (is (string= text (pine.path:text (eval (rdp text)))))))
+(test a-pattern-answers-every-node-it-covers
+  (let ((w (pine.world.world:make-world)))
+    (pine.world.world:place w '("buf" "a" "text") 1)
+    (pine.world.world:place w '("buf" "b" "text") 2)
+    (pine.world.world:place w '("win" "c" "text") 3)
+    (is (equal '("/buf/a/text" "/buf/b/text")
+               (mapcar #'pine.fs.node:full-name
+                       (pine.path.place:matching
+                        (pine.path.path:parse "/buf/?name/text") w))))))
 
-(test a-literal-path-is-a-constant
-  "No interpolation means the object exists at read time, so it can be a
-hash key and a fasl constant."
-  (is (pine.path:pathp (rdp "/a/b")))
-  (is (not (pine.path:patternp /a/b))))
+(test the-reader-is-sugar-and-nothing-underneath-it-reads-it-in
+  (let ((found (remove-if-not
+                (lambda (file) (search "named-readtables:in-readtable" (uiop:read-file-string file)))
+                (%files))))
+    (is (null (remove-if (lambda (f)
+                           (or (search "/path/" (namestring f))
+                               (search "/ts/" (namestring f))))
+                         found))
+        "only path/ and the language declarations may declare the readtable")))
 
-;;;; taking one apart
+(test a-path-is-built-from-pieces-and-splices-what-it-is-given
+  (let ((p (pine.path.path:path "buf" "scratch" "text")))
+    (is (equal "/buf/scratch/text" (pine.path.path:text p)))
+    (is (equal "/buf/scratch/text/of"
+               (pine.path.path:text (pine.path.path:join p "of"))))
+    (is (equal "/buf/scratch"
+               (pine.path.path:text
+                (pine.path.path:path (pine.path.path:parse "/buf") "scratch")))
+        "a path in the pieces is spliced, not printed into a name")))
 
-(test parent-leaf-and-under
-  (let ((p /buf/scratch/point))
-    (is (string= "/buf/scratch" (pine.path:text (pine.path:parent p))))
-    (is (string= "point" (pine.path:leaf p)))
-    (is (string= "/buf/scratch/point/x"
-                 (pine.path:text (pine.path:path p "x"))))
-    (is (equal '("scratch" "point") (pine.path:under /buf p)))
-    (is (null (pine.path:under /win p)))
-    (is (pine.path:prefixp /buf p))
-    (is (not (pine.path:prefixp /win p)))))
+(test the-root-is-a-path-with-nothing-in-it
+  (let ((root (pine.path.path:parse "/")))
+    (is-true (pine.path.path:rootp root))
+    (is (equal "/" (pine.path.path:text root)))
+    (is (null (pine.path.path:leaf root)))
+    (is-true (pine.path.path:rootp (pine.path.path:parent root))
+             "the parent of the root is the root")))
 
-(test the-parent-of-the-root-is-the-root
-  (is (pine.path:rootp (pine.path:parent (pine.path:root)))))
+(test a-prefix-says-what-is-under-it
+  (let ((buf (pine.path.path:parse "/buf"))
+        (text (pine.path.path:parse "/buf/scratch/text")))
+    (is-true (pine.path.path:prefixp buf text))
+    (is-false (pine.path.path:prefixp text buf))
+    (is (equal "/scratch/text" (pine.path.path:text (pine.path.path:under buf text))))
+    (is-false (pine.path.path:prefixp (pine.path.path:parse "/win") text))))
 
-(test path-splices-paths-and-lists-and-names-anything-else
-  (is (string= "/a/b/c" (pine.path:text (pine.path:path /a/b "c"))))
-  (is (string= "/a/b/c" (pine.path:text (pine.path:path '("a" "b") "c"))))
-  (is (string= "/win/3/buf" (pine.path:text (pine.path:path /win 3 :buf)))
-      "an integer names its decimal, a keyword its lowercase")
-  (is (string= "/a/b" (pine.path:text (pine.path:parse "/a/b")))))
+(test a-deep-wildcard-covers-any-depth-and-a-star-covers-one-name
+  (let ((one (pine.path.path:parse "/buf/*/text"))
+        (deep (pine.path.path:parse "/buf/**")))
+    (is-true (pine.path.path:patternp one))
+    (is-true (pine.path.path:match one (pine.path.path:parse "/buf/scratch/text")))
+    (is-false (pine.path.path:match one (pine.path.path:parse "/buf/a/b/text"))
+              "one star is one name")
+    (is-true (pine.path.path:match deep (pine.path.path:parse "/buf/a/b/text")))
+    (is-true (pine.path.path:match deep (pine.path.path:parse "/buf/a")))))
 
-;;;; interpolation
+(test a-binder-says-what-it-bound
+  (let ((pattern (pine.path.path:parse "/buf/?name/text")))
+    (is (equal '("NAME") (mapcar #'symbol-name (pine.path.path:binders pattern))))
+    (let ((bound (pine.path.path:match pattern
+                                       (pine.path.path:parse "/buf/scratch/text"))))
+      (is-true bound)
+      (is (equal "scratch"
+                 (cdr (assoc (first (pine.path.path:binders pattern)) bound)))
+          "what it matched is on the name it bound"))
+    (is-false (pine.path.path:match pattern (pine.path.path:parse "/win/scratch/text")))))
 
-(test one-segment-interpolates
-  (let ((n 3) (which "volume"))
-    (is (string= "/win/3/buf" (pine.path:text /win/${n}/buf)))
-    (is (string= "/audio/volume" (pine.path:text /audio/${which})))))
-
-(test a-splice-takes-several-segments
-  (let ((p /a/b) (s "x/y"))
-    (is (string= "/root/a/b/leaf" (pine.path:text /root/$@{p}/leaf)))
-    (is (string= "/root/x/y" (pine.path:text /root/$@{s})))
-    (is (string= "/root/x/y" (pine.path:text /root/$@{'("x" "y")})))))
-
-(test an-interpolated-value-is-one-segment-even-when-it-splits
-  (let ((s "a/b"))
-    (is (string= "/x/a/b" (pine.path:text /x/${s}))
-        "name does not split; only $@ splices")))
-
-(test an-interpolation-needs-a-brace
-  (signals error (rdp "/a/$b")))
-
-;;;; patterns
-
-(test a-wildcard-matches-one-segment
-  (is (pine.path:patternp /proc/*))
-  (is (pine.path:match /proc/* /proc/editor))
-  (is (not (pine.path:match /proc/* /proc/editor/state)))
-  (is (not (pine.path:match /proc/* /buf/editor))))
-
-(test a-deep-wildcard-matches-any-depth
-  (is (pine.path:match /proc/** /proc))
-  (is (pine.path:match /proc/** /proc/editor))
-  (is (pine.path:match /proc/** /proc/editor/state))
-  (is (pine.path:match /**/err /host/box/err))
-  (is (pine.path:match /**/err /err))
-  (is (not (pine.path:match /**/err /host/box/log))))
-
-(test alternation-matches-one-of-the-names
-  (is (pine.path:match /audio/{volume,muted} /audio/volume))
-  (is (pine.path:match /audio/{volume,muted} /audio/muted))
-  (is (not (pine.path:match /audio/{volume,muted} /audio/sink))))
-
-(test a-binder-matches-and-binds
-  (multiple-value-bind (ok bindings) (pine.path:match /net/wifi/?ssid/signal
-                                                      /net/wifi/home/signal)
-    (is-true ok)
-    (is (string= "home" (fset:lookup bindings 'ssid)))))
-
-(test a-rest-binder-takes-what-is-left
-  (multiple-value-bind (ok bindings) (pine.path:match /file/?@rest
-                                                      /file/etc/hosts)
-    (is-true ok)
-    (is (equal '("etc" "hosts") (fset:lookup bindings 'rest))))
-  (multiple-value-bind (ok bindings) (pine.path:match /file/?@rest /file)
-    (is-true ok)
-    (is (null (fset:lookup bindings 'rest)))))
-
-(test a-pattern-never-matches-a-pattern-segment-by-accident
-  (is (not (pine.path:match /proc/editor /proc/desktop))))
-
-;;;; constraints
-
-(defun stub-value (table)
-  "A namespace lookup for tests: TABLE is an alist of path text to value."
-  (lambda (p) (cdr (assoc (pine.path:text p) table :test #'string=))))
-
-(test a-constraint-tests-the-value-at-each-place-under-it
-  (let ((value (stub-value '(("/proc/editor/state" . :running)
-                             ("/proc/backup/state" . :failed)))))
-    (is (pine.path:match /proc/*[state = :failed] /proc/backup :value value))
-    (is (not (pine.path:match /proc/*[state = :failed] /proc/editor :value value)))))
-
-(test a-constraint-set-is-membership
-  (let ((value (stub-value '(("/proc/a/state" . :stopped)
-                             ("/proc/b/state" . :running)))))
-    (is (pine.path:match /proc/*[state = #{:failed :stopped}] /proc/a :value value))
-    (is (not (pine.path:match /proc/*[state = #{:failed :stopped}] /proc/b
-                              :value value)))))
-
-(test a-constraint-form-is-lisp-over-percent
-  (let ((value (stub-value '(("/net/wifi/near/signal" . 80)
-                             ("/net/wifi/far/signal" . 20)))))
-    (is (pine.path:match /net/wifi/*[signal = (> % 60)] /net/wifi/near
-                         :value value))
-    (is (not (pine.path:match /net/wifi/*[signal = (> % 60)] /net/wifi/far
-                              :value value)))))
-
-(test a-constraint-form-can-be-anything-lisp-can-say
-  (let ((value (stub-value '(("/buf/a/file" . "x.lisp")
-                             ("/buf/b/file" . "x.py")
-                             ("/buf/c/file" . nil)))))
-    (flet ((lispy (n) (pine.path:match
-                       /buf/*[file = (and % (string= "lisp" (pathname-type %)))]
-                       n :value value)))
-      (is (lispy /buf/a))
-      (is (not (lispy /buf/b)))
-      (is (not (lispy /buf/c))))))
-
-(test a-constraint-binds-too
-  (let ((value (stub-value '(("/buf/notes/mode" . :lisp)))))
-    (multiple-value-bind (ok bindings)
-        (pine.path:match /buf/*[mode = ?m] /buf/notes :value value)
-      (is-true ok)
-      (is (eq :lisp (fset:lookup bindings 'm))))))
-
-(test several-constraints-must-all-hold
-  (let ((value (stub-value '(("/buf/a/modified" . t) ("/buf/a/file" . "x")
-                             ("/buf/b/modified" . t) ("/buf/b/file" . nil)))))
-    (is (pine.path:match /buf/*[modified][file] /buf/a
-                         :value value))
-    (is (not (pine.path:match /buf/*[modified][file] /buf/b
-                              :value value)))))
-
-(test a-literal-segment-can-carry-a-constraint
-  (let ((value (stub-value '(("/buf/scratch/modified" . t)))))
-    (is (pine.path:match /buf/scratch[modified = t] /buf/scratch :value value))
-    (is (not (pine.path:match /buf/scratch[modified = nil] /buf/scratch
-                              :value value)))))
-
-;;;; paths as data
-
-(test a-path-is-an-fset-key
-  (let ((m (fset:with (fset:with (fset:empty-map) /a/b 1) /a/c 2)))
-    (is (= 1 (fset:lookup m /a/b)))
-    (is (= 2 (fset:lookup m /a/c)))
-    (is (= 2 (fset:size m)))
-    (is (null (fset:lookup m /a/d)))))
-
-(test equal-paths-are-equal-however-they-were-built
-  (let ((n 3))
-    (is (fset:equal? /win/3/buf /win/${n}/buf))
-    (is (fset:equal? /a/b (pine.path:parse "/a/b")))
-    (is (not (fset:equal? /a/b /a/c)))))
-
-(test a-parsed-star-is-the-pattern-the-reader-would-have-built
-  "A path parsed out of text means what the same text means written down, so a
-provider that reads /surface/* through PARSE walks the surfaces rather than
-looking for one called star."
-  (is (pine.path:patternp (pine.path:parse "/surface/*")))
-  (is (fset:equal? /surface/* (pine.path:parse "/surface/*")))
-  (is (fset:equal? /buf/** (pine.path:parse "/buf/**"))))
-
-(test a-relative-path-hangs-off-the-one-being-answered-for
-  "A lone dot is CL's dotted pair, so the segment is written with the slash on
-the front and the path reader owns it like any other."
-  (let ((pine.path:*here* /net/wifi/home))
-    (is (fset:equal? /net/wifi/home (eval (rdp "/."))))
-    (is (fset:equal? /net/wifi/home/signal (eval (rdp "/./signal"))))
-    (is (fset:equal? /net/wifi (eval (rdp "/.."))))
-    (is (fset:equal? /net/wifi/other (eval (rdp "/../other"))))
-    (is (string= "home" (pine.path:leaf (pine.path:here))))))
-
-(test a-binder-inside-a-group-names-every-place-and-says-which
-  "/key/wm/s-?n{1..9} is nine chords and one expression that knows which."
-  (let ((p /key/wm/s-?n{1..9}))
-    (is (pine.path:patternp p))
-    (is (equal '(n) (pine.path:binders p)))
-    (is (= 9 (length (pine.path:expansions p))))
-    (is (find "/key/wm/s-5" (pine.path:expansions p)
-              :key #'pine.path:text :test #'string=))
-    (multiple-value-bind (ok bindings) (pine.path:match p /key/wm/s-5)
-      (is-true ok)
-      (is (string= "5" (fset:lookup bindings 'n))))
-    (is (not (pine.path:match p /key/wm/s-0)))))
-
-(test a-group-names-its-places-whether-or-not-they-are-there
-  (is (= 3 (length (pine.path:expansions /audio/{volume,muted,sink}))))
-  (is (null (pine.path:expansions /proc/*/state))
-      "a wildcard has to be looked up, so it names nothing on its own"))
-
-(test a-name-with-stars-in-it-is-still-a-name
-  (is (not (pine.path:patternp (pine.path:parse "/buf/*scratch*/text"))))
-  (is (string= "*scratch*"
-               (pine.path:leaf (pine.path:parent
-                                (pine.path:parse "/buf/*scratch*/text"))))))
+(test a-path-reads-back-as-what-it-printed
+  (dolist (text '("/" "/buf" "/buf/scratch/text" "/buf/?name/text" "/buf/*/text"))
+    (is (equal text (pine.path.path:text (pine.path.path:parse text)))
+        "~a did not survive the round trip" text)))

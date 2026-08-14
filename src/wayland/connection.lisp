@@ -5,13 +5,6 @@
 
 (in-package #:pine.wayland.connection)
 
-;;;; The compositor connection and the wait.
-;;;;
-;;;; A frontend waits on two things: this connection, and the work its own
-;;;; threads queue for it, since only this thread may touch a proxy. Both are
-;;;; descriptors, so the wait is one poll(2) over the pair and an idle
-;;;; frontend costs nothing.
-
 (defconstant +af-unix+ 1 "AF_UNIX.")
 (defconstant +sock-stream+ 1 "SOCK_STREAM.")
 (defconstant +pollin+ 1 "POLLIN.")

@@ -2,122 +2,115 @@
 
 (def-suite* :pine.term :in :pine)
 
-;;;; The drain is what stands between a flooding program and the UI thread, so
-;;;; it is exercised with chunks pushed straight onto the terminal rather than
-;;;; through a pty.
+(defmacro with-terminal ((var &key (command "/bin/sh")) &body body)
+  `(unwind-protect
+        (progn
+          (pine:start)
+          (let ((,var (pine.edit.term:open-terminal "probe" :command ,command)))
+            (unwind-protect (progn (sleep 0.6) ,@body)
+              (pine.edit.term:close-terminal "probe"))))
+     (pine:stop)))
 
-(defun detached-terminal (&key (width 20) (height 4))
-  (pine.term::%make-terminal
-   :buffer nil :fd -1 :pid -1
-   :term (pine.vt:make-term :width width :height height)))
+(defun term-text ()
+  (pine.fs.node:contents (pine.edit.buffer:buffer-named "probe")))
 
-(defun push-pending (terminal &rest chunks)
-  (dolist (c chunks terminal)
-    (push c (pine.term::terminal-pending terminal))))
+(defun settle (test &key (seconds 5))
+  (loop :repeat (round (/ seconds 0.05))
+        :when (funcall test) :do (return t)
+        :do (sleep 0.05)))
 
-(defun terminal-row (terminal y)
-  (string-right-trim " " (pine.vt:term-dump-row-string
-                          (pine.term:terminal-term terminal) y)))
+(test a-terminal-is-a-buffer-and-the-shell-writes-into-it
+  (with-terminal (tm)
+    (is (typep tm 'pine.edit.term:terminal))
+    (is (typep (pine.edit.buffer:buffer-named "probe") 'pine.edit.buffer:buffer))
+    (is (equal "term" (pine.edit.buffer:mode-of (pine.edit.buffer:buffer-named "probe"))))
+    (is-true (settle (lambda () (search "$" (term-text))))
+             "the shell's prompt reached the buffer")))
 
-(test a-drain-feeds-the-pending-output-into-the-emulator
-  (let ((terminal (detached-terminal)))
-    (push-pending terminal "hello")
-    (is-true (pine.term::%drain-one terminal))
-    (is (string= "hello" (terminal-row terminal 0)))
-    (is (null (pine.term::terminal-pending terminal)))))
+(test what-is-typed-goes-to-the-pty-and-what-it-said-comes-back
+  (with-terminal (tm)
+    (pine.edit.term:send tm (format nil "echo probe-output~%"))
+    (is-true (settle (lambda () (search "probe-output" (term-text)))))
+    (is (search "echo probe-output" (term-text)) "the echoed line is there too")))
 
-(test a-drain-with-nothing-pending-reports-nothing
-  (is-false (pine.term::%drain-one (detached-terminal))))
+(test typing-in-a-term-buffer-reaches-the-shell-rather-than-the-buffer
+  "The mode's :insert handler takes the key, which is the handler chain doing
+its job: nothing in the key dispatcher knows what a terminal is."
+  (with-terminal (tm)
+    (settle (lambda () (search "$" (term-text))))
+    (let ((before (term-text)))
+      (loop :for ch :across "echo typed-through"
+            :do (pine.edit.key:dispatch nil (pine.edit.key:make-key (string ch))))
+      (pine.edit.key:dispatch nil (pine.edit.key:parse-key "RET"))
+      (is-true (settle (lambda () (search "typed-through" (term-text)))))
+      (is (not (equal before (term-text)))))))
 
-(test the-oldest-chunk-is-fed-first
-  (let ((terminal (detached-terminal)))
-    (push-pending terminal "one " "two")
-    (pine.term::%drain-one terminal)
-    (is (string= "one two" (terminal-row terminal 0)))))
+(test a-control-key-crosses-as-its-escape-sequence
+  (with-terminal (tm)
+    (is (equal (string (code-char 3))
+               (pine.edit.term:key->bytes tm (pine.edit.key:parse-key "C-c"))))
+    (is (equal (string #\Return)
+               (pine.edit.term:key->bytes tm (pine.edit.key:parse-key "RET"))))
+    (is (equal (string #\Tab)
+               (pine.edit.term:key->bytes tm (pine.edit.key:parse-key "TAB"))))))
 
-(test a-drain-stops-at-its-budget-and-carries-the-rest
-  (let ((terminal (detached-terminal))
-        (pine.term::*drain-budget* 4))
-    (push-pending terminal "abcde" "fghij")
-    (pine.term::%drain-one terminal)
-    (is (string= "abcde" (terminal-row terminal 0)))
-    (is (equal '("fghij") (pine.term::terminal-carry terminal)))
-    (pine.term::%drain-one terminal)
-    (is (string= "abcdefghij" (terminal-row terminal 0)))
-    (is (null (pine.term::terminal-carry terminal)))))
+(test the-screen-is-the-emulator-not-a-log-of-bytes
+  (with-terminal (tm)
+    (pine.edit.term:send tm (format nil "printf 'aaa\\rZ\\n'~%"))
+    (is-true (settle (lambda () (search "Zaa" (term-text))))
+             "the carriage return moved the cursor and Z overwrote the first a")))
 
-(test a-carried-backlog-past-the-cap-drops-its-oldest
-  (let ((terminal (detached-terminal))
-        (pine.term::*drain-budget* 1)
-        (pine.term::*carry-cap* 6))
-    (push-pending terminal "aaa" "bbb" "ccc" "ddd")
-    (pine.term::%drain-one terminal)
-    (is (string= "aaa" (terminal-row terminal 0)))
-    (is (equal '("ccc" "ddd") (pine.term::terminal-carry terminal)))))
+(test closing-a-terminal-stops-its-reader-and-forgets-it
+  (unwind-protect
+       (progn
+         (pine:start)
+         (pine.edit.term:open-terminal "probe" :command "/bin/sh")
+         (is (= 1 (length (pine.edit.term:terminals))))
+         (pine.edit.term:close-terminal "probe")
+         (is (null (pine.edit.term:terminals)))
+         (is (null (pine.edit.term:terminal-for "probe"))))
+    (pine:stop)))
 
-(test a-named-key-becomes-its-escape-sequence
-  (let ((term (pine.vt:make-term :width 10 :height 2)))
-    (is (string= (esc "[A")
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "Up"))))
-    (is (string= (esc "[3~")
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "Delete"))))
-    (is (string= (string #\Return)
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "Return"))))
-    (is (string= (esc "[1;5A")
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "C-Up"))))))
+(test the-terminal-is-a-command
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((name (pine.repl.command:run "terminal" (list "probe-cmd"))))
+           (is (equal "probe-cmd" name))
+           (is (member "probe-cmd" (pine.repl.command:run "terminals") :test #'equal))
+           (pine.repl.command:run "close-terminal" (list "probe-cmd"))
+           (is (null (pine.repl.command:run "terminals")))))
+    (pine:stop)))
 
-(test a-control-key-becomes-its-control-character
-  (let ((term (pine.vt:make-term :width 10 :height 2)))
-    (is (string= (string (code-char 1))
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "C-a"))))
-    (is (string= (string (code-char 3))
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "C-c"))))))
+(test a-terminal-takes-every-key-except-the-one-that-gets-you-out
+  (unwind-protect
+       (progn
+         (pine:start)
+         (pine.edit.term:open-terminal "probe" :command "/bin/sh")
+         (sleep 0.5)
+         (let ((b (pine.edit.buffer:buffer-named "probe")))
+           (setf (pine.edit.buffer:current) b)
+           (is-true (pine.edit.term:typing b (pine.edit.key:parse-key "C-c"))
+                    "C-c reaches the shell rather than the keymap")
+           (is-true (pine.edit.term:typing b (pine.edit.key:parse-key "Up")))
+           (is (null (pine.edit.term:typing b (pine.edit.key:parse-key "C-x")))
+               "and C-x is still the editor's, so you can leave")))
+    (pine.edit.term:close-terminal "probe")
+    (pine:stop)))
 
-(test a-meta-key-is-escape-then-the-character
-  (let ((term (pine.vt:make-term :width 10 :height 2)))
-    (is (string= (esc "f")
-                 (pine.term::key->pty-bytes term (pine.key:parse-key "M-f"))))))
-
-(test a-plain-key-is-itself-and-an-unknown-key-is-nothing
-  (let ((term (pine.vt:make-term :width 10 :height 2)))
-    (is (string= "a" (pine.term::key->pty-bytes term (pine.key:parse-key "a"))))
-    (is (null (pine.term::key->pty-bytes term (pine.key:parse-key "F13"))))))
-
-(test terminal-mode-answers-get-text-from-the-emulator-grid
-  (let ((terminal (detached-terminal :width 6 :height 2)))
-    (push-pending terminal "ab")
-    (pine.term::%drain-one terminal)
-    (is (string= (format nil "ab    ~%      ") (pine.term:gterm-text terminal)))))
-
-(test a-buffer-with-no-terminal-has-none
-  (with-fixture substrate ()
-    (is (null (pine.term:terminal-for-buffer
-               (pine.buf:live "scratch"))))))
-
-(defun open-fds ()
-  "How many descriptors this image holds."
-  (length (directory "/proc/self/fd/*")))
-
-(test opening-and-closing-terminals-gives-everything-back
-  "A terminal holds a descriptor, a pid and a reader thread. Closing it gave
-back none of them: nothing removed the entry, closed the fd, reaped the pid or
-stopped the reader, so a session that opened terminals leaked all three."
-  (with-fixture substrate ()
-    (within-seconds 120
-      (let ((fds (open-fds))
-            (threads (length (sb-thread:list-all-threads))))
-        (dotimes (i 30)
-          (let ((name (format nil "term-probe-~d" i)))
-            (pine.editor.frame::make-buffer name)
-            (pine.term:open-terminal name :command "cat")
-            (is (not (null (pine.term:terminal-for-buffer name)))
-                "the terminal was not there after opening it")
-            (pine.term:close-terminal name)
-            (pine.editor.frame::kill-buffer name)))
-        (is (wait-for (lambda () (< (open-fds) (+ fds 8))) :seconds 30)
-            "30 terminals left ~d descriptors behind" (- (open-fds) fds))
-        (is (wait-for (lambda () (< (length (sb-thread:list-all-threads))
-                                    (+ threads 8)))
-                      :seconds 30)
-            "30 terminals left ~d threads behind"
-            (- (length (sb-thread:list-all-threads)) threads))))))
+(test what-the-shell-says-faster-than-the-screen-can-show-is-bounded
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((tm (pine.edit.term:open-terminal "probe" :command "/bin/sh"))
+               (pine.edit.term:*carry* 64))
+           (let ((b (pine.edit.buffer:buffer-named "probe")))
+             (dotimes (i 20) (pine.edit.term::%carry tm (format nil "~40,'x<~d~>" i)))
+             (is (<= (pine.data:held (pine.edit.term::carried tm))
+                     (* 2 pine.edit.term:*carry*))
+                 "it drops what is oldest rather than growing without end")
+             (is (plusp (pine.data:held (pine.edit.term:dropped tm))))
+             (pine.edit.term:drain tm b)
+             (is-true b))))
+    (pine.edit.term:close-terminal "probe")
+    (pine:stop)))

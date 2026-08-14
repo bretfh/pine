@@ -1,80 +1,13 @@
 (defpackage #:pine.wayland.app.wm
-  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection)
-  (:export #:run-wm))
+  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
+        #:pine.wayland.app.state)
+  (:local-nicknames (#:chrome #:pine.wayland.app.chrome)
+                    (#:chord #:pine.wayland.app.chord))
+  (:export #:run-wm #:+unavailable+))
 
 (in-package #:pine.wayland.app.wm)
 
-;;;; The river window manager frontend: bind the global, answer every manage
-;;;; and render sequence, and carry policy between the compositor and the
-;;;; daemon. The daemon (pine.wm) decides what the chords are and what they
-;;;; do; this process registers them with the compositor, reports presses,
-;;;; and applies the actions it is told to, always inside the sequence the
-;;;; protocol requires. design/wm.org is the design.
-
-
-(defstruct (wm (:constructor %make-wm))
-  display
-  manager
-  bindings-global                       ; river_xkb_bindings_v1
-  layer-shell                           ; river_layer_shell_v1
-  (layer-focus :none)                   ; :none, :exclusive or :non-exclusive
-  (windows nil)                         ; newest first
-  (outputs nil)                         ; newest first
-  (seats nil)
-  (bindings nil)                        ; chord string -> binding proxy
-  (staged nil)
-  (rects nil)                           ; (id x y w h) for this generation
-  (focus-id nil)                        ; identifier the daemon focused
-  (border nil)                          ; the daemon's border width and colours
-  (staged-focus nil)
-  (dirty nil)                           ; a manage sequence has been asked for
-  (pending nil)                         ; thunks to run in the next manage seq
-  backing                               ; the connection, as something to wait on
-  pump                                  ; the queue the daemon's threads fill
-  (focus nil)
-  (ref nil)                             ; daemon client actor
-  (sys nil)
-  (done nil))
-
-(defstruct win proxy node id title app-id width height
-                hint                    ; the client's decoration_hint
-                framed)                 ; whether it has been told to use ssd
-(defstruct out proxy x y width height
-                shell                   ; river_layer_shell_output_v1
-                area)                   ; (X Y WIDTH HEIGHT) left by layer surfaces
-
-;;;; The mirror: the arrangement the daemon computed, keyed by the protocol's
-;;;; window identifier. Sequences are answered from this and nothing else, so
-;;;; the compositor never waits on the daemon.
-
-(defun %rect (wm w)
-  "(values X Y WIDTH HEIGHT) for W from the daemon's arrangement, or nil."
-  (let ((entry (and (win-id w) (assoc (win-id w) (wm-rects wm) :test #'equal))))
-    (when entry
-      (values-list (rest entry)))))
-
-(defun %find-win (wm proxy)
-  (find proxy (wm-windows wm) :key #'win-proxy :test #'eq))
-
-(defun %screen (wm)
-  "The output windows tile onto: the first one announced."
-  (first (last (wm-outputs wm))))
-
-(defun %tiled (wm)
-  "Windows in tree order (oldest first), the order they tile in."
-  (reverse (wm-windows wm)))
-
-;;;; Two queues, for two different reasons.
-;;;;
-;;;; The inbox crosses threads: messages from the daemon arrive on a sento
-;;;; actor thread, and the wayland connection belongs to the thread running
-;;;; the dispatch loop. Nothing touches a proxy off that thread; the actor
-;;;; only enqueues, exactly as the editor frontend does.
-;;;;
-;;;; The pending queue crosses sequences: close, focus, and binding enables
-;;;; are window management state, which the protocol allows only inside a
-;;;; manage sequence, so work arriving between sequences waits for one and
-;;;; manage_dirty asks the compositor to start it.
+(defparameter +unavailable+ 3)
 
 (defun %enqueue (wm thunk)
   "Hand THUNK to the wayland thread and wake it."
@@ -97,28 +30,10 @@ for sequences that have nothing left to do."
     (setf (wm-pending wm) nil)
     (dolist (thunk pending) (funcall thunk))))
 
-;;;; Bindings. A chord string from the daemon's keymap becomes an xkbcommon
-;;;; keysym plus river's modifier mask; the compositor then delivers that
-;;;; chord to us instead of to the focused window.
-
-(defun %chord-keysym+modifiers (chord)
-  "(values KEYSYM MODIFIERS) for a pine chord string such as \"s-Return\", or
-nil when xkbcommon does not know the key name. MODIFIERS is the keyword list
-river_seat_v1.modifiers is written in: pine's meta is the protocol's mod1 and
-pine's super is its mod4."
-  (let* ((key (pine.key:parse-key chord))
-         (keysym (xkb:xkb-keysym-from-name (pine.key:key-sym key) '(:no-flags)))
-         (modifiers (append (when (pine.key:key-shift key) '(:shift))
-                            (when (pine.key:key-ctrl key)  '(:ctrl))
-                            (when (pine.key:key-meta key)  '(:mod1))
-                            (when (pine.key:key-super key) '(:mod4)))))
-    (when (and keysym (plusp keysym))
-      (values keysym modifiers))))
-
 (defun %register-binding (wm seat chord command)
   "Create and enable the compositor-side binding for CHORD. Enabling is
 window management state, so it runs inside a manage sequence."
-  (multiple-value-bind (keysym modifiers) (%chord-keysym+modifiers chord)
+  (multiple-value-bind (keysym modifiers) (chord:keysym+modifiers chord)
     (cond
       ((null keysym)
        (format *error-output* "pine wm: unknown key in chord ~a (for ~a)~%"
@@ -156,9 +71,6 @@ window management state, so it runs inside a manage sequence."
                (hash-table-count (wm-bindings wm)))
        (finish-output *error-output*)))))
 
-;;;; Actions the daemon asks for. Running a command is not one of them: that is
-;;;; a write to /sh, which is the one place a command line is run.
-
 (defun %apply-action (wm plist)
   (destructuring-bind (&key action id &allow-other-keys) plist
     (case action
@@ -171,8 +83,6 @@ window management state, so it runs inside a manage sequence."
       (:exit
        (river-window-manager-v1.exit-session (wm-manager wm)))
       (t (format *error-output* "pine wm: unknown action ~s~%" action)))))
-
-;;;; The daemon seam.
 
 (defun %send (wm message)
   "Report MESSAGE to the daemon. A message sent before the daemon is reachable
@@ -196,7 +106,7 @@ whole output."
 
 (defun %report-area (wm)
   "Tell the daemon the area to arrange windows in."
-  (let ((area (and (%screen wm) (%area (%screen wm)))))
+  (let ((area (and (screen wm) (%area (screen wm)))))
     (when area
       (destructuring-bind (x y width height) area
         (%send wm (list :output :x x :y y :width width :height height))))))
@@ -207,7 +117,7 @@ and any existing windows arrive before the attach completes, and after a
 respawn were never sent at all, so the frontend replays them whenever it
 gains a daemon."
   (%report-area wm)
-  (dolist (w (%tiled wm))
+  (dolist (w (tiled wm))
     (when (win-id w)
       (%send wm (list :window-added :id (win-id w)
                       :title (win-title w) :app-id (win-app-id w))))))
@@ -218,7 +128,7 @@ the wayland thread."
   (case (first message)
     (:attached
      (progn
-       (setf (wm-ref wm) (pine.core.attach:accept-attached (wm-sys wm) message))
+       (setf (wm-ref wm) (pine.net.attach:accept-attached (wm-sys wm) message))
        (%enqueue wm (lambda () (%report-state wm)))))
     (:bindings
      (destructuring-bind (&key table) (rest message)
@@ -233,8 +143,6 @@ the wayland thread."
      (let ((plist (rest message)))
        (%enqueue wm (lambda () (%apply-action wm plist)))))
     (t nil)))
-
-;;;; The protocol pump.
 
 (defun handle-window (wm w &rest event)
   (event-case event
@@ -289,7 +197,7 @@ surfaces land on when they name none themselves."
     (push (lambda (&rest ev) (apply #'handle-layer-output wm o ev))
           (wl-proxy-hooks shell))
     (%defer wm (lambda ()
-                 (when (eq o (%screen wm))
+                 (when (eq o (screen wm))
                    (river-layer-shell-output-v1.set-default shell))))))
 
 (defun handle-layer-seat (wm &rest event)
@@ -305,54 +213,24 @@ take focus back from a panel that asked for it."
   (declare (ignore seat))
   (event-case event
     (:window-interaction (window)
-     (let ((w (%find-win wm window)))
+     (let ((w (find-win wm window)))
        (when (and w (win-id w))
          (%send wm (list :window-focused :id (win-id w))))))
     (t (&rest args) (declare (ignore args)))))
 
-;;;; Chrome. Every window is framed the same way: the client is asked to draw
-;;;; no decorations of its own, and the compositor draws the border pine's
-;;;; theme names. The window's dimensions are its content, and borders are
-;;;; drawn outside that, in the room the daemon's arrangement leaves.
-
-(defun %draws-own-chrome-p (w)
-  "True when W's client cannot be talked out of decorating itself.
-
-The compositor only carries a decoration mode to a client that bound
-xdg-decoration; one that never did is reported as `only_supports_csd', and
-asking it to use server side decorations does nothing at all."
-  (eq (win-hint w) :only-supports-csd))
-
-(defun %take-chrome (wm w)
-  "Ask W's client to leave its decorations to us. Window management state, so
-this belongs to a manage sequence."
-  (declare (ignore wm))
+(defun %take-chrome (w)
+  "Ask W's client to leave its decorations to us, once."
   (unless (win-framed w)
     (setf (win-framed w) t)
-    (if (%draws-own-chrome-p w)
-        (river-window-v1.use-csd (win-proxy w))
-        (river-window-v1.use-ssd (win-proxy w)))
-    (river-window-v1.set-tiled (win-proxy w) '(:top :bottom :left :right))))
-
-(defun %border-rgba (colour)
-  "(values R G B A) for an (R G B) theme COLOUR, in the channels set_borders
-takes.
-
-The protocol's channels are 32 bit and premultiplied. A theme colour is eight
-bit and the border is opaque, so premultiplying is the identity here."
-  (destructuring-bind (r g b) colour
-    (flet ((scale (c) (floor (* c #xFFFFFFFF) 255)))
-      (values (scale r) (scale g) (scale b) #xFFFFFFFF))))
+    (chrome:take! (win-proxy w) (win-hint w))))
 
 (defun %draw-borders (wm w)
-  "Border W in the colour that says whether it holds focus. Rendering state."
+  "Border W in the colour that says whether it holds focus."
   (let ((border (wm-border wm)))
     (when border
-      (multiple-value-bind (r g b a)
-          (%border-rgba (fset:lookup border
-                                     (if (eq w (wm-focus wm)) :active :inactive)))
-        (river-window-v1.set-borders (win-proxy w) '(:top :bottom :left :right)
-                                     (fset:lookup border :width) r g b a)))))
+      (chrome:borders! (win-proxy w) (pine.data:at border :width)
+                       (pine.data:at border
+                                     (if (eq w (wm-focus wm)) :active :inactive))))))
 
 (defun manage (wm)
   "One manage sequence: run whatever was deferred, propose each window the
@@ -366,9 +244,9 @@ finishes."
           (wm-focus-id wm) (wm-staged-focus wm)
           (wm-staged wm) nil))
   (%drain wm)
-  (dolist (w (%tiled wm))
-    (%take-chrome wm w)
-    (multiple-value-bind (x y width height) (%rect wm w)
+  (dolist (w (tiled wm))
+    (%take-chrome w)
+    (multiple-value-bind (x y width height) (rect wm w)
       (declare (ignore x y))
       (when width
         (river-window-v1.propose-dimensions (win-proxy w) width height))))
@@ -385,8 +263,8 @@ finishes."
 (defun render (wm)
   "One render sequence: put every window where the daemon placed it and border
 it. Always finishes."
-  (dolist (w (%tiled wm))
-    (multiple-value-bind (x y width height) (%rect wm w)
+  (dolist (w (tiled wm))
+    (multiple-value-bind (x y width height) (rect wm w)
       (declare (ignore width height))
       (when x
         (%draw-borders wm w)
@@ -451,13 +329,13 @@ it. Always finishes."
     (wl-display-roundtrip (wm-display wm))
     (wl-display-roundtrip (wm-display wm))))
 
-(defun run-wm (&key (host pine.core.server:*host*) (port pine.core.server:*port*))
+(defun run-wm (&key (host pine.net.server:*host*) (port pine.net.server:*port*))
   "Drive the compositor's window management: bind the global, attach to the
 daemon for policy, and run the sequence loop until the server finishes with
 us. Errors out plainly when the compositor is not river or another window
 manager holds the global."
   (let* ((backing (connect-display))
-         (wm (%make-wm :display (display backing) :backing backing
+         (wm (make-wm :display (display backing) :backing backing
                        :pump (pine.frontend:make-pump))))
     (connect-wm wm)
     (unless (wm-manager wm)
@@ -466,15 +344,14 @@ manager holds the global."
               "pine wm: no river_window_manager_v1 global; this compositor ~
 offers no window management, or another manager holds it~%")
       (finish-output *error-output*)
-      (uiop:quit pine:+frontend-unavailable+))
+      (uiop:quit +unavailable+))
     (setf (wm-sys wm) (pine.frontend:attach
                        :wm (lambda (msg) (handle-wm-message wm msg))
-                       :host host :port port
-                       :ready (lambda () (and (wm-ref wm) t))))
+                       :host host :port port))
     (unwind-protect
          (pine.frontend:run (wm-backing wm) (wm-pump wm)
                             :done (lambda () (wm-done wm)))
       (pine.frontend:close-pump (wm-pump wm))
       (pine.frontend:shutdown backing))))
 
-(pine.core.attach:frontend :wm #'run-wm)
+(pine.net.attach:frontend :wm #'run-wm)

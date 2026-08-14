@@ -1,184 +1,190 @@
 (defpackage #:pine.provider.sh
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:export #:*ran-kept*))
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:task #:pine.run.task))
+  (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
+           #:*environment-out* #:output-of #:run-line #:launch
+           #:streaming #:listen! #:quiet! #:listening #:said #:asked #:tethered
+           #:forget-all #:*sh* #:*breath*))
 
 (in-package #:pine.provider.sh)
-(named-readtables:in-readtable pine.path:syntax)
 
-;;;; Commands. Reading and doing are different acts and take different forms,
-;;;; and in both the value carries the information: nothing writes t to mean go.
-;;;;
-;;;;   (read  /sh/${"hostname"})            run it, answer what it said
-;;;;   (write /sh [:run "setsid" "-f" "x"]) argv, so nothing is shell quoted
-;;;;   (write /sh [:sh "cd ~ && x | y"])    when you want the shell's own syntax
-;;;;
-;;;; A read runs where pine runs. A write is the user's own program and gets
-;;;; their login environment and their home directory instead.
-;;;;
-;;;; What has run and what is streaming are the space's, kept by the server:
-;;;; every path under /sh is a command, so /sh/0 would be the command "0".
+(defvar *kept* 100)
+(defvar *ran* (d:box (d:no-seq)))
+(defvar *sh* nil)
+(defvar *asked* (d:table))
+(defparameter *breath* 1/4
+  "Seconds an answer stands for. What a bar reads is read again next frame,
+not three times in this one.")
+(defvar *lines-kept* 20)
 
-(defparameter *ran-kept* 100
-  "How many commands /sh remembers having run.")
-
-;;;; Running something for the person at the machine is not the same act as
-;;;; asking the machine a question. A read runs where pine runs; a launch is
-;;;; the user's own program and gets their login environment, their home
-;;;; directory, and nothing of the environment pine was built in.
-
-(defparameter +build-environment+
+(defparameter *environment-out*
   '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
-    "LD_LIBRARY_PATH")
-  "Variables that belong to the environment pine itself was built and run in. A
-daemon started inside one, such as a guix shell over the repo's manifest, would
-otherwise hand it to everything it launches, and a terminal would open in pine's
-build environment rather than the session.")
+    "LD_LIBRARY_PATH"))
+
+(defparameter +tethered+
+  "~a & pine_child=$!; trap 'kill $pine_child 2>/dev/null' EXIT; ~
+   cat >/dev/null; kill $pine_child 2>/dev/null"
+  "A stream, tied to the image that asked for it.
+
+The shell holding it reads the pipe pine keeps the other end of. Pine going --
+stopped, crashed or killed outright -- closes that end, the read ends, and the
+stream is killed rather than left running for weeks holding a bus connection
+nothing will ever ask it to let go of.")
+
+(defclass sh-node (node:node) ())
+
+(defclass command-node (node:node)
+  ((line :initarg :line :reader line)))
+
+(defclass stream-node (node:node)
+  ((line :initarg :line :reader line)
+   (took :initform (d:box nil) :reader took)
+   (said :initform (d:box nil) :reader said)))
+
+(defun ran () (d:as :list (d:held *ran*)))
+
+(defun %note (line)
+  (d:swap! *ran*
+          (lambda (all)
+            (let ((next (d:insert-at all 0 line)))
+              (if (> (d:size next) *kept*) (d:subseq next 0 *kept*) next))))
+  line)
+
+(defun output-of (line)
+  (multiple-value-bind (out err code)
+      (uiop:run-program (list "sh" "-c" line)
+                        :output '(:string :stripped t)
+                        :error-output nil
+                        :ignore-error-status t)
+    (declare (ignore err code))
+    out))
 
 (defun %session-environment ()
-  "This process's environment, less what belongs to pine's build."
   (remove-if (lambda (entry)
                (some (lambda (name)
                        (let ((prefix (concatenate 'string name "=")))
                          (and (>= (length entry) (length prefix))
                               (string= prefix entry :end2 (length prefix)))))
-                     +build-environment+))
+                     *environment-out*))
              (sb-ext:posix-environ)))
 
-(defun %launch (argv)
-  "Start ARGV as the user's own program."
+(defun launch (argv)
   (uiop:launch-program argv
                        :environment (%session-environment)
                        :directory (user-homedir-pathname)
                        :output nil :error-output nil))
 
-(defun %launch-line (line)
-  "Start LINE through a login shell, so it is run the way the person's own
-shell would run it."
-  (%launch (list "sh" "-l" "-c" (concatenate 'string "exec " line))))
+(defun run-line (line)
+  (%note line)
+  (launch (list "sh" "-l" "-c" (concatenate 'string "exec " line)))
+  t)
 
-(defun %output (argv)
-  (multiple-value-bind (out err code)
-      (uiop:run-program argv :output '(:string :stripped t)
-                             :error-output nil
-                             :ignore-error-status t)
-    (declare (ignore err code))
-    out))
+(defmethod node:nodes ((n sh-node))
+  (loop :for line :in (ran)
+        :collect (node:child n line
+                             (lambda ()
+                               (make-instance 'command-node :name line
+                                                            :parent n :line line)))))
 
-(defun %cell (which)
-  (let ((kept (ns:kept :sh)))
-    (and (fset:map? kept) (fset:lookup kept which))))
+(defmethod node:resolve ((n sh-node) name)
+  (node:child n name
+              (lambda ()
+                (make-instance 'command-node :name name :parent n :line name))))
 
-(defun ran ()
-  (let ((cell (%cell :ran)))
-    (if cell (sento.atomic:atomic-get cell) (fset:empty-seq))))
+(defun %reader (n process)
+  (task:spawn (format nil "sh ~a" (line n))
+              (lambda ()
+                (loop :with out := (uiop:process-info-output process)
+                      :for said := (handler-case (read-line out nil nil)
+                                     (stream-error () nil))
+                      :while said
+                      :do (d:swap! (said n)
+                                  (lambda (all)
+                                    (let ((next (cons said all)))
+                                      (if (> (length next) *lines-kept*)
+                                          (subseq next 0 *lines-kept*)
+                                          next))))
+                         (node:invalidate n)))))
 
-(defun %note (command)
-  (let ((cell (%cell :ran)))
-    (when cell
-      (sento.atomic:atomic-swap
-       cell
-       (lambda (seq)
-         (let ((next (fset:with-first seq command)))
-           (if (> (fset:size next) *ran-kept*)
-               (fset:subseq next 0 *ran-kept*)
-               next))))))
-  command)
+(defun listening (n) (and (d:held (took n)) t))
 
-;;;; Watching a command runs it and writes each line it says. A command that
-;;;; nobody is listening to is not running: the stream starts when the first
-;;;; watch appears and stops when the last one goes.
+(defun tethered (line)
+  (list "sh" "-c" (format nil +tethered+ line)))
 
-(defun %streams () (%cell :streams))
+(defun listen! (n)
+  (unless (listening n)
+    (let ((process (uiop:launch-program (tethered (line n))
+                                        :input :stream
+                                        :output :stream :error-output nil)))
+      (d:put! (took n) process)
+      (%reader n process)))
+  n)
 
-(defun %held ()
-  (let ((cell (%streams)))
-    (if cell (sento.atomic:atomic-get cell) (fset:empty-map))))
-
-(defun %stream (command)
-  "Run COMMAND and write each line it says to its own path."
-  (let ((cell (%streams))
-        (space ns:*space*)
-        (at (p:path /sh command))
-        (process (uiop:launch-program (list "sh" "-c" command)
-                                      :output :stream :error-output nil)))
-    (when cell
-      (sento.atomic:atomic-swap cell (lambda (m) (fset:with m command process))))
-    ;; the cell and the space are taken now, not looked up in the reader: this
-    ;; thread outlives the call and the space it belongs to is not whichever
-    ;; one is current when a line arrives
-    (bordeaux-threads:make-thread
-     (lambda ()
-       (let ((ns:*space* space))
-         (unwind-protect
-              (loop :with out = (uiop:process-info-output process)
-                    :for line = (read-line out nil nil)
-                    :while line
-                    :do (ns:write at line))
-           (when cell
-             (sento.atomic:atomic-swap cell (lambda (m) (fset:less m command)))))))
-     :name (format nil "pine-sh ~a" command))
-    process))
-
-(defun %streamingp (command)
-  (and (fset:lookup (%held) command) t))
-
-(defun %quiet (command)
-  (let ((cell (%streams))
-        (process (fset:lookup (%held) command)))
+(defun quiet! (n)
+  (let ((process (d:held (took n))))
     (when process
-      (when cell
-        (sento.atomic:atomic-swap cell (lambda (m) (fset:less m command))))
-      (ignore-errors (uiop:terminate-process process :urgent t)))
-    nil))
+      (ignore-errors (close (uiop:process-info-input process)))
+      (ignore-errors (uiop:terminate-process process :urgent t))
+      (ignore-errors (uiop:wait-process process))
+      (d:put! (took n) nil)))
+  n)
 
-(defun %listen (command listening)
-  (cond ((and listening (not (fset:lookup (%held) command))) (%stream command))
-        ((not listening) (%quiet command))))
+(defun streaming (line &optional (root *sh*))
+  (when root
+    (let ((n (node:child root (format nil "stream:~a" line)
+                         (lambda ()
+                           (make-instance 'stream-node :name line :parent root
+                                                       :line line)))))
+      (listen! n))))
 
-(defun provider ()
-  (ns:provider
-   (/sh/?command
-    {:read (pine.data:fn []
-             ;; a command that is streaming is not run again to be read: what
-             ;; it last said is what it says
-             (if (%streamingp command)
-                 (ns:held (p:path /sh command))
-                 (%output (list "sh" "-c" command))))
-     :in (pine.data:fn [v]
-           (if (stringp v)
-               v
-               (progn (%note command)
-                      (%launch-line command)
-                      (ns:held (p:path /sh command)))))
-     :watch (pine.data:fn [listening] (%listen command listening))
-     :doc "what the command says on its output; write it to run it, watch it
-for each line"})
-   (/sh
-    {:read (pine.data:fn [] (ran))
-     :verbs {:run (pine.data:fn [&rest argv]
-                    (%note (format nil "~{~a~^ ~}" argv))
-                    (%launch argv)
-                    t)
-             :sh (pine.data:fn [line]
-                   (%note line)
-                   (%launch-line line)
-                   t)}
-     :doc "what has run, newest first; [:run ARGV...] or [:sh LINE] to run one"})))
+(defmethod node:contents ((n stream-node)) (first (d:held (said n))))
+(defmethod node:leafp ((n stream-node)) t)
+(defmethod node:persistp ((n stream-node)) nil)
+(defmethod node:livep ((n stream-node)) t)
 
-(ns:serve :sh
-  {:at [/sh]
-   :doc "running something, and what it said"
-   ;; the cells this space keeps: what it ran, and the commands it is
-   ;; subscribed to
-   :up (lambda ()
-         (ns:write /sh (provider))
-         {:ran (sento.atomic:make-atomic-reference :value (fset:empty-seq))
-          :streams (sento.atomic:make-atomic-reference :value (fset:empty-map))})
-   ;; a process nobody is listening to is not running
-   :down (lambda (cells)
-           (let ((cell (and cells (fset:lookup cells :streams))))
-             (when cell
-               (fset:do-map (command process (sento.atomic:atomic-get cell))
-                 (declare (ignore command))
-                 (ignore-errors (uiop:terminate-process process :urgent t))))))})
+(defmethod (setf node:contents) (value (n stream-node))
+  (if value (listen! n) (quiet! n))
+  value)
+
+(defmethod node:contents ((n sh-node)) (ran))
+(defmethod node:contents ((n command-node)) (output-of (line n)))
+(defmethod node:leafp ((n command-node)) t)
+(defmethod node:persistp ((n sh-node)) nil)
+(defmethod node:persistp ((n command-node)) nil)
+
+(defmethod (setf node:contents) (value (n command-node))
+  (declare (ignore value))
+  (run-line (line n)))
+
+(defmethod node:livep ((n sh-node)) t)
+(defmethod node:livep ((n command-node)) t)
+
+(defun asked (line)
+  "What a command says, remembered for a moment, so a panel reading three
+things out of playerctl runs it once rather than three times, and a bar built
+twice in the same breath does not fork twice."
+  (let* ((n (node:child *sh* line
+                        (lambda ()
+                          (make-instance 'command-node :name line :parent *sh*
+                                                       :line line))))
+         (now (get-internal-real-time))
+         (had (d:at (d:all *asked*) line)))
+    (cond ((and had (< (- now (cdr had))
+                       (* *breath* internal-time-units-per-second)))
+           (car had))
+          (t (let ((said (node:contents n)))
+               (d:keep! *asked* line (cons said now))
+               said)))))
+
+(defun install (root)
+  (setf *sh* (node:attach (make-instance 'sh-node :name "sh"
+                                                  :describes "running something, and what it said")
+                          root))
+  (setf pine.provider.out:*through* #'asked)
+  *sh*)
+
+(defun forget-all ()
+  (when *sh*
+    (dolist (each (node:children *sh*))
+      (when (typep each 'stream-node) (quiet! each))))
+  t)

@@ -1,26 +1,35 @@
 (defpackage #:pine.ui.face
   (:use #:cl)
+  (:local-nicknames (#:d #:pine.data))
   (:export
-   ;; attributed text
+
    #:face-run #:run-start #:run-end #:run-face
    #:display-line #:make-display-line #:display-text #:display-runs
-   ;; a face, and the faces in force
+
    #:face #:fg #:bg #:bold #:italic #:underline
    #:faces #:with-faces #:find-face #:face-attr-bits #:face-fg #:face-bg
-   ;; themes
+
    #:theme #:theme-name #:theme-palette #:theme-faces #:theme-metrics
    #:theme-key #:register-theme #:find-theme #:active
    #:*themes* #:+default-theme+
    #:theme-color #:color #:theme-metric #:metric #:resolve-color #:hex-rgb
-   ;; what the :theme server keeps
-   #:memo #:remembered))
+
+   #:memo))
 
 (in-package #:pine.ui.face)
 
-;;;; What text looks like: a face is fg, bg and three attributes; a theme is a
-;;;; palette, some metrics and a table of them. The theme in force is /theme and
-;;;; the overrides on it are /face/?name, so two spaces in one image style
-;;;; themselves separately.
+(defvar *in-force* nil
+  "The face table for the render running on this thread. Bound for the extent
+of one render and never assigned: finding the table is three reads and finding a
+face in it is one, so a paint that asks per cell spends most of its time asking
+where to look.")
+
+(defvar *themes* (d:table)
+  "Theme name to theme: what the files said as they loaded, read from every
+thread and added to by nothing else.")
+
+(defparameter +default-theme+ :ef-dream
+  "The theme a space that has not said resolves in.")
 
 (defclass face-run ()
   ((start-col :initarg :start :accessor run-start :initform 0)
@@ -43,42 +52,27 @@
    (palette :initarg :palette :reader theme-palette :initform nil)
    (metrics :initarg :metrics :reader theme-metrics :initform nil)
    (faces   :initarg :faces   :reader theme-faces
-            :initform (pine.data:table))))
+            :initform (make-hash-table :test 'eq))))
 
-(defvar *in-force* nil
-  "The face table for the render running on this thread. Bound for the extent
-of one render and never assigned: finding the table is three reads and finding a
-face in it is one, so a paint that asks per cell spends most of its time asking
-where to look.")
-
-(defvar *themes* (pine.data:table)
-  "Theme name to theme: what the files said as they loaded, read from every
-thread and added to by nothing else.")
-
-(defparameter +default-theme+ :ef-dream
-  "The theme a space that has not said resolves in.")
-
-(defun memo (which)
+(defun memo (which thunk)
   "The cell the :THEME server keeps for WHICH, or NIL before it is raised. Only
 read here: making one is a write to the space, and this runs while a cell is
 being painted."
-  (let ((kept (pine.ns:kept :theme)))
-    (and (fset:map? kept) (fset:lookup kept which))))
 
-(defun remembered (cell thunk)
-  "THUNK's answer, worked out again only when the tree has moved. A write
-supersedes rather than mutates, so EQ on the root is the whole of \"is this
-still true\". With no cell it is worked out every time."
-  (if (null cell)
-      (funcall thunk)
-      (let ((had (sento.atomic:atomic-get cell))
-            (root (pine.ns:root)))
-        (if (and had (eq root (car had)))
-            (cdr had)
-            (let ((fresh (funcall thunk)))
-              (sento.atomic:atomic-swap cell (lambda (old) (declare (ignore old))
-                                               (cons root fresh)))
-              fresh)))))
+  (let ((root (and pine.world.world:*world*
+                   (pine.world.world:root pine.world.world:*world*))))
+    (if (null root)
+        (funcall thunk)
+        (let* ((name (string-downcase (symbol-name which)))
+               (under (or (pine.fs.node:resolve root "memo")
+                          (pine.fs.node:attach
+                           (pine.fs.node:make-node "memo" :class 'pine.fs.node:node)
+                           root)))
+               (n (pine.fs.node:resolve under name)))
+          (unless n
+            (setf n (pine.fs.computed:computed name thunk))
+            (pine.fs.node:attach n under))
+          (pine.fs.node:contents n)))))
 
 (defgeneric theme-key (name)
   (:documentation "NAME as the keyword a theme is known by."))
@@ -90,15 +84,18 @@ still true\". With no cell it is worked out every time."
   (intern (string-upcase name) :keyword))
 
 (defun register-theme (theme)
-  (pine.data:put *themes* (theme-name theme) theme))
+  (d:keep! *themes* (theme-name theme) theme))
 
 (defun find-theme (name)
-  (or (pine.data:at *themes* (theme-key name))
+  (or (d:at (d:all *themes*) (theme-key name))
       (error "unknown theme ~s" name)))
 
 (defun active ()
   "The theme in force here: /theme, which is a value like any other."
-  (or (pine.ns:read (pine.path:parse "/theme")) +default-theme+))
+  (or (and pine.world.world:*world*
+           (let ((n (pine.world.world:at pine.world.world:*world* "active-theme")))
+             (and n (pine.fs.node:contents n))))
+      +default-theme+))
 
 (defgeneric resolve-color (color palette)
   (:documentation "COLOR as the hex it stands for: a literal, or a role PALETTE
@@ -121,10 +118,10 @@ names."))
                        collect (cons role hex)))
         (metrics (loop for (key val) on metrics-plist by #'cddr
                        collect (cons key val)))
-        (faces   (pine.data:table)))
+        (faces   (make-hash-table :test 'eq)))
     (dolist (spec face-specs)
       (destructuring-bind (fname &key fg bg bold italic underline) spec
-        (pine.data:put faces fname
+        (setf (gethash fname faces)
                        (make-instance 'face
                                       :fg (resolve-color fg palette)
                                       :bg (resolve-color bg palette)
@@ -135,39 +132,42 @@ names."))
 
 (defun %as-face (m)
   "A written {:fg .. :bg ..} as a face, or NIL when it is not one."
-  (when (fset:map? m)
-    (make-instance 'face :fg (fset:lookup m :fg) :bg (fset:lookup m :bg)
-                         :bold (fset:lookup m :bold)
-                         :italic (fset:lookup m :italic)
-                         :underline (fset:lookup m :underline))))
+  (when (and (consp m) (keywordp (first m)))
+    (make-instance 'face :fg (getf m :fg) :bg (getf m :bg)
+                         :bold (getf m :bold)
+                         :italic (getf m :italic)
+                         :underline (getf m :underline))))
 
 (defun %resolve ()
   "The active theme's faces with whatever was written at /face/?name on top.
 HELD rather than READ, because /face is served: what is asked for here is what
 someone put there, and the provider answers by asking this."
-  (let ((out (pine.data:all (theme-faces (find-theme (active)))))
-        (written (pine.ns:held (pine.path:parse "/face"))))
-    (when (fset:map? written)
-      (fset:do-map (key value written)
-        (let ((f (%as-face value)))
+  (let ((out (make-hash-table :test 'eq))
+        (written (and pine.world.world:*world*
+                      (pine.world.world:at pine.world.world:*world* "face"))))
+    (maphash (lambda (k v) (setf (gethash k out) v))
+             (theme-faces (find-theme (active))))
+    (when written
+      (dolist (each (pine.fs.node:nodes written))
+        (let ((f (%as-face (pine.fs.node:contents each))))
           (when f
-            (setf out (fset:with out
-                                 (intern (string-upcase (pine.path:name key)) :keyword)
-                                 f))))))
+            (setf (gethash (intern (string-upcase (pine.fs.node:name each)) :keyword)
+                           out)
+                  f)))))
     out))
 
 (defun faces ()
   "Face name to face, for the theme in force and the overrides on it. Worked out
 once and kept until the tree moves: FIND-FACE is on the path every painted cell
 takes."
-  (or *in-force* (remembered (memo :faces) #'%resolve)))
+  (or *in-force* (memo :faces #'%resolve)))
 
 (defmacro with-faces (&body body)
   "Run BODY with the faces in force worked out once."
   `(let ((*in-force* (faces))) ,@body))
 
 (defun find-face (name)
-  (fset:lookup (faces) name))
+  (gethash name (faces)))
 
 (defun face-attr-bits (face)
   "bit 0 bold, bit 1 italic, bit 2 underline."
@@ -204,7 +204,7 @@ takes."
          (hex (or (and f (fg f))
                   (let ((d (find-face :default))) (and d (fg d))))))
     (multiple-value-bind (r g b) (hex-rgb hex)
-      (if r (list r g b) '(205 214 244))))) ; only reached before a theme loads
+      (if r (list r g b) '(205 214 244)))))
 
 (defun face-bg (name)
   "FACE NAME's background as an (r g b) list, or NIL when it has none."
@@ -218,10 +218,6 @@ takes."
     :runs (or runs
               (list (make-instance 'face-run
                       :start 0 :end (length text) :face :default)))))
-
-;;;; The theme pine ships with. Registering it puts it in *THEMES*; it is in
-;;;; force only where /theme says so, or where nothing said and +DEFAULT-THEME+
-;;;; stands.
 
 (register-theme
  (build-theme

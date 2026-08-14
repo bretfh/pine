@@ -39,7 +39,7 @@ eyes for the editor frame: no window, an offscreen cairo image surface."
                           (if (logtest attr 1) :bold :normal)))
 
 (defun paint-rows (grid cell-w cell-h ascent x0)
-  ;; backgrounds
+
   (loop for row in grid for r from 0
         for text = (car row) for runs = (cdr row) do
     (loop for (run . more) on runs do
@@ -51,7 +51,7 @@ eyes for the editor frame: no window, an offscreen cairo image surface."
             (cairo:rectangle (+ x0 (* col cell-w)) (* r cell-h)
                              (* (- end col) cell-w) cell-h)
             (cairo:fill-path))))))
-  ;; text runs
+
   (loop for row in grid for r from 0
         for text = (car row) for runs = (cdr row)
         for len = (length text) do
@@ -93,4 +93,3 @@ eyes for the editor frame: no window, an offscreen cairo image surface."
              (when (logtest attr 4)
                (cairo:rectangle x (+ y 1d0) cell-w 1d0)
                (cairo:fill-path)))))
-

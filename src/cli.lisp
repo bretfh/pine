@@ -1,143 +1,165 @@
-;; pine presents some verbs against the running daemon, plus the lifecycle it
-;; cannot express from inside itself.
-;;
-;;   pine read  /audio/volume
-;;   pine read  '/proc/*/state'
-;;   pine write /audio/volume 40
-;;   pine write -y '/buf/*/tab-width' 4
-;;   pine write /buf/scratch/text '[:insert "hello"]'
-;;   pine watch /media/title
-;;   pine diff  /was/-1h /
-;;
-;;   pine start | stop | restart | status
-;;   pine eval  '(any lisp form)'
-;;
-;; It holds no state and knows nothing about what it is asking for: a path is
-;; text and a lisp value.
-
 (defpackage #:pine.cli
   (:use #:cl)
-  (:local-nicknames (#:server #:pine.core.server))
-  (:export #:main #:usage))
+  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server) )
+  (:export #:main #:usage #:ask #:running-p #:quiet #:*usage*))
 
 (in-package #:pine.cli)
 
-
 (defparameter *usage*
-  "usage: pine {read PATH | write [-y] PATH VALUE | watch PATH | diff FROM TO |
-             start | stop | restart | daemon | editor | desktop | wm |
-             session [DISPLAY] | status | eval FORM | reload | agents |
-             spawn NAME | kill NAME}")
+  "usage: pine VERB [ARGUMENT...]
+
+  read WHERE            what a node holds
+  write WHERE VALUE     write a node
+  ls [WHERE]            what is under a node
+  watch WHERE           say so whenever it moves, until interrupted
+  eval FORM             evaluate a form in the daemon
+  run NAME [ARG...]     run one of the daemon's commands
+  diff WHERE OTHER      what is under one that is not under the other
+  status                what the daemon is
+  reload                read the config again
+  agents                every image attached to this one
+  spawn NAME LINE       run a program under the supervisor
+  kill NAME             stop one
+  start | stop | restart   the daemon itself
+  daemon                a daemon in this terminal
+  editor | desktop | wm a frontend, attached to the daemon
+  shell                 a repl in this terminal, with no daemon")
+
+(defvar *timeout* 5)
+(defvar *heard* (d:box nil))
 
 (defun usage () *usage*)
 
-(defun %system ()
-  "An actor system for this one command. The process exits after, so nothing
-here is torn down."
-  (let ((sys (sento.actor-system:make-actor-system
-              (server:actor-config :workers 1 :scheduler nil))))
+(defun quiet ()
+  (ignore-errors (log4cl-impl:log-config :warn))
+  t)
+
+(defun %system (&key (name "cli"))
+  (quiet)
+  (let ((sys (sento.actor-system:make-actor-system)))
     (sento.remoting:enable-remoting sys :host server:*host* :port 0)
-    sys))
+    (values sys name)))
 
 (defun %control (sys &key (host server:*host*) (port server:*port*))
   (sento.remoting:make-remote-ref
    sys (server:daemon-uri "control" :host host :port port)))
 
-(defun ask (message &key (host server:*host*) (port server:*port*) (print t))
-  "Ask the daemon MESSAGE, print what it said, and answer it."
+(defun ask (message &key (host server:*host*) (port server:*port*) (system nil))
   (handler-case
-      (let ((answer (pine.core.actor:ask (%control (%system) :host host :port port)
-                                         message :timeout 5)))
-        (when print (format t "~a~%" answer))
-        answer)
-    (error () (format t "pine: no daemon at ~a:~d~%" host port) nil)))
+      (let* ((sys (or system (%system)))
+             (answer (sento.actor:ask-s (%control sys :host host :port port)
+                                        message :time-out *timeout*)))
+        (if (and (consp answer) (member (first answer) '(:ok :no)))
+            answer
+            (list :no (format nil "~a" answer))))
+    (error () nil)))
 
-;; Verbs. Reading and writing are one ask each; watching stands up an actor of
-;; its own and stays.
+(defun running-p (&key (port server:*port*))
+  (let ((answer (ask (list :ping) :port port)))
+    (and answer (eq :ok (first answer)))))
 
-(defun read-path (text) (ask (list :read text)))
+(defun %say (answer)
+  (cond ((null answer)
+         (format t "pine: no daemon at ~a:~d~%" server:*host* server:*port*)
+         nil)
+        ((eq :no (first answer))
+         (format t "pine: ~a~%" (second answer))
+         nil)
+        (t
+         (let ((text (second answer)))
+           (when (plusp (length text)) (format t "~a~%" text)))
+         t)))
 
-(defun %agreed (paths)
-  "List PATHS and ask. A write that lands in more than one place says which
-before it does, because the shell is where a pattern is easiest to mistype."
-  (format t "this writes ~d paths:~%~{  ~a~%~}proceed? [y/N] " (length paths) paths)
-  (finish-output)
-  (let ((line (read-line *standard-input* nil "")))
-    (and (plusp (length line)) (char-equal #\y (char line 0)))))
+(defun %watch (where)
+  (multiple-value-bind (sys name) (%system :name "watch")
+    (pine.run.agent:agent name
+                          (lambda (message)
+                            (when (eq :moved (first message))
+                              (format t "~a ~a~%" (second message) (third message))
+                              (finish-output)))
+                          :dispatcher :pinned :in sys)
+    (let ((uri (server:local-uri name (sento.remoting:remoting-port sys))))
+      (when (%say (ask (list :watch where uri) :system sys))
+        (loop (sleep 60))))))
 
-(defun write-path (text value &key force)
-  (let ((matches (unless force (ask (list :matches text) :print nil))))
-    (if (and (consp matches) (rest matches) (not (%agreed matches)))
-        (format t "pine: nothing written~%")
-        (ask (list :write text value force)))))
+(defun %self ()
+  (let ((self (first sb-ext:*posix-argv*)))
+    (if (and self (not (search "sbcl" (namestring self))))
+        (list self)
+        (list (namestring sb-ext:*runtime-pathname*)
+              "--noinform" "--no-userinit" "--non-interactive"
+              "--eval" "(require :asdf)"
+              "--eval" "(asdf:load-system :pine/wayland)"
+              "--eval" "(pine.cli:main (rest sb-ext:*posix-argv*))"
+              "--end-toplevel-options"))))
 
-(defun diff-paths (from to) (ask (list :diff from to)))
+(defun %start ()
+  (if (running-p)
+      (format t "pine: already running on ~d~%" server:*port*)
+      (progn
+        (uiop:launch-program (append (%self) (list "daemon"))
+                             :output nil :error-output nil)
+        (loop :repeat 60
+              :until (running-p)
+              :do (sleep 0.5))
+        (format t "pine: ~:[did not come up~;running on ~d~]~%"
+                (running-p) server:*port*))))
 
-(defun watch-path (text &key (host server:*host*) (port server:*port*))
-  "Print what a path says whenever it moves, until this process is stopped."
-  (let* ((sys (%system))
-         (name (format nil "watch-~a" (sb-unix:unix-getpid)))
-         (uri (server:local-uri name (sento.remoting:remoting-port sys))))
-    (sento.actor-context:actor-of
-     sys :name name :dispatcher :pinned
-     :receive (lambda (message)
-                (when (eq :moved (first message))
-                  (format t "~a ~a~%" (second message) (third message))
-                  (finish-output))
-                nil))
-    (handler-case
-        (pine.core.actor:ask (%control sys :host host :port port)
-                             (list :watch text uri) :timeout 5)
-      (error ()
-        (format t "pine: no daemon at ~a:~d~%" host port)
-        (return-from watch-path nil)))
-    (loop (sleep 3600))))
+(defun %pid ()
+  (let ((answer (ask (list :pid))))
+    (when (and answer (eq :ok (first answer)))
+      (parse-integer (second answer) :junk-allowed t))))
 
-;; Lifecycle: what the daemon cannot do to itself.
+(defun %gone-p (&key (seconds 5))
+  (loop :repeat (round (/ seconds 0.2))
+        :unless (running-p) :do (return t)
+        :do (sleep 0.2)
+        :finally (return (not (running-p)))))
 
-(defun stop-daemon (&key (port server:*port*))
-  "Ask the daemon to shut down, taking its frontends with it, then make sure
-the port is free even if it was an old or wedged daemon."
-  (ignore-errors
-   (pine.core.actor:ask (%control (%system) :port port) '(:stop) :timeout 3))
-  (sleep 0.4)
-  (unless (pine:port-free-p port) (pine:kill-port port))
-  (format t "pine: stopped~%"))
+(defun %stop ()
+  (cond
+    ((not (running-p)) (format t "pine: not running~%"))
+    (t
+     (let ((pid (%pid)))
+       (ask (list :quit))
+       (unless (%gone-p)
+         (when pid
+           (format t "pine: ~d did not stop, killing it~%" pid)
+           (ignore-errors (sb-posix:kill pid 15))
+           (unless (%gone-p :seconds 3)
+             (ignore-errors (sb-posix:kill pid 9))
+             (%gone-p :seconds 3))))
+       (if (running-p)
+           (format t "pine: still running on ~d~%" server:*port*)
+           (format t "stopped~%"))))))
 
-(defun restart-daemon (&key (port server:*port*))
-  (stop-daemon :port port)
-  (loop :repeat 40 :until (pine:port-free-p port) :do (sleep 0.25))
-  (pine:run-all))
-
-(defun main (&optional (args (rest sb-ext:*posix-argv*)))
-  (log:config :error)
-  ;; this image may have been saved on another machine, and it answered
-  ;; PINE_PORT and the core count when it was built
+(defun main (&optional (arguments (rest sb-ext:*posix-argv*)))
+  (quiet)
+  (pine.run.libs:attend)
   (server:read-environment)
-  (let ((verb (first args)) (more (rest args)))
+  (let ((verb (first arguments))
+        (rest (rest arguments)))
     (cond
       ((null verb) (format t "~a~%" *usage*))
-      ((string= verb "read") (read-path (first more)))
-      ((string= verb "write")
-       (let ((force (member "-y" more :test #'string=)))
-         (let ((rest (remove "-y" more :test #'string=)))
-           (write-path (first rest) (format nil "~{~a~^ ~}" (cl:rest rest))
-                       :force (and force t)))))
-      ((string= verb "watch") (watch-path (first more)))
-      ((string= verb "diff") (diff-paths (first more) (second more)))
-      ;; the lifecycle
-      ((string= verb "start") (pine:run-all))
-      ((string= verb "stop") (stop-daemon))
-      ((string= verb "restart") (restart-daemon))
-      ((string= verb "daemon") (pine:run-daemon))
-      ((member verb '("editor" "desktop" "wm") :test #'string=)
-       (pine:run-app verb))
-      ((string= verb "status") (ask '(:status)))
-      ((string= verb "eval") (ask (list :eval (format nil "~{~a~^ ~}" more))))
-      ((string= verb "session")
-       (ask (list :session (or (first more) (uiop:getenv "WAYLAND_DISPLAY")))))
-      ((string= verb "reload") (ask '(:reload)))
-      ((string= verb "agents") (ask '(:agents)))
-      ((string= verb "spawn") (ask (list :spawn (first more))))
-      ((string= verb "kill") (ask (list :kill (first more))))
-      (t (format t "pine: unknown verb ~a~%~a~%" verb *usage*)))))
+      ((equal verb "read")   (%say (ask (list :read (first rest)))))
+      ((equal verb "write")  (%say (ask (list :write (first rest) (second rest)))))
+      ((equal verb "ls")     (%say (ask (list :ls (first rest)))))
+      ((equal verb "eval")   (%say (ask (list :eval (first rest)))))
+      ((equal verb "run")    (%say (ask (list* :run rest))))
+      ((equal verb "status") (%say (ask (list :status))))
+      ((equal verb "diff")   (%say (ask (list :diff (first rest) (second rest)))))
+      ((equal verb "reload") (%say (ask (list :reload))))
+      ((equal verb "agents") (%say (ask (list :agents))))
+      ((equal verb "spawn")  (%say (ask (list :run "spawn" (first rest)
+                                              (second rest)))))
+      ((equal verb "kill")   (%say (ask (list :run "kill" (first rest)))))
+      ((equal verb "restart") (%stop) (sleep 1) (%start))
+      ((equal verb "watch")  (%watch (first rest)))
+      ((equal verb "start")  (%start))
+      ((equal verb "stop")   (%stop))
+      ((equal verb "daemon") (pine:daemon) (loop (sleep 60)))
+      ((equal verb "shell")  (pine:main))
+      ((member verb '("editor" "desktop" "wm") :test #'equal) (pine:run-app verb))
+      ((equal verb "help")   (format t "~a~%" *usage*))
+      (t (format t "pine: no verb ~a~%~a~%" verb *usage*)))
+    (finish-output)))

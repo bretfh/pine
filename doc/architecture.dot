@@ -1,22 +1,16 @@
-// The shape of a running pine. Four operating-system processes and one data
-// structure. Everything that decides anything is in the daemon; every frontend
-// is a painter that is told what to paint.
-//
-// Generated with `make docs'. Colours are pine's own shipped theme, ef-dream.
-
 digraph pine {
-  rankdir=LR; splines=spline; compound=true; newrank=true;
-  graph [fontname="sans-serif", fontsize=22, ranksep=1.1, nodesep=0.45,
+  rankdir=TB; splines=spline; compound=true;
+  graph [fontname="sans-serif", fontsize=22, ranksep=1.0, nodesep=0.5,
          bgcolor="#232025", labelloc=t, fontcolor="#efd5c5",
          label=<<table border="0" cellborder="0" cellspacing="0" cellpadding="3">
-           <tr><td colspan="2"><font point-size="24" color="#efd5c5">pine &#8212; four processes, one tree</font></td></tr>
-           <tr><td align="right"><font color="#51b04f" point-size="16">&#9473;&#9473;</font></td>
-               <td align="left"><font color="#8f8886" point-size="13">read / write / watch</font></td></tr>
-           <tr><td align="right"><font color="#ffaacf" point-size="16">&#9473;&#9473;</font></td>
-               <td align="left"><font color="#8f8886" point-size="13">the daemon pushes a surface</font></td></tr>
-           <tr><td align="right"><font color="#57b0ff" point-size="16">&#9473;&#9473;</font></td>
+           <tr><td colspan="2"><font point-size="24" color="#efd5c5">pine: one tree, one image that decides</font></td></tr>
+           <tr><td align="right"><font color="#51b04f" point-size="16">==</font></td>
+               <td align="left"><font color="#8f8886" point-size="13">read / write / watch a node</font></td></tr>
+           <tr><td align="right"><font color="#ffaacf" point-size="16">==</font></td>
+               <td align="left"><font color="#8f8886" point-size="13">the daemon pushes what changed</font></td></tr>
+           <tr><td align="right"><font color="#57b0ff" point-size="16">==</font></td>
                <td align="left"><font color="#8f8886" point-size="13">a frontend sends what happened</font></td></tr>
-           <tr><td colspan="2"><font color="#8f8886" point-size="12">a dashed border is an operating-system process of its own, and every<br/>arrow across one is an asynchronous tell both ways, so neither side<br/>can hang the other and only data crosses</font></td></tr>
+           <tr><td colspan="2"><font color="#8f8886" point-size="12">a dashed border is an operating-system process of its own. every arrow across one<br/>carries data and nothing else, so neither side can hang or crash the other</font></td></tr>
          </table>>];
   node  [fontname="sans-serif", fontsize=14, shape=box, style="rounded,filled",
          color="#635850", fontcolor="#efd5c5", fillcolor="#322f34",
@@ -25,87 +19,92 @@ digraph pine {
          fontcolor="#8f8886", penwidth=1.2];
 
   subgraph cluster_daemon {
-    label="the daemon - one headless image, no display";
+    label="the daemon: one headless image, no display";
     labeljust=l; fontsize=17; fontcolor="#b0a0cf";
     color="#635850"; style="rounded,dashed"; penwidth=2;
-
-    prov [label="providers\lfile, sh, env, out, clock\lprocfs, pipewire, backlight\llogind, networkmanager\lmpris, niri\l",
-          fillcolor="#3b393e"];
-    store [label="store: sqlite\lone table, one thread\l:keep persists, code never does\l",
-           fillcolor="#3b393e"];
 
     tree [shape=none, margin=0, label=<
       <table border="0" cellborder="1" cellspacing="0" cellpadding="7"
              bgcolor="#322f34" color="#635850">
         <tr><td bgcolor="#3b393e" colspan="2">
           <font color="#efd5c5" point-size="17"><b>the tree</b></font><br/>
-          <font color="#8f8886" point-size="11">one nested persistent map, one atomic reference</font>
+          <font color="#8f8886" point-size="11">every addressable thing is a node, reached by path</font>
         </td></tr>
         <tr><td align="left"><font color="#b0a0cf">/buf/?name</font></td>
-            <td align="left"><font color="#8f8886">text point mark mode file prop readtable view selection</font></td></tr>
+            <td align="left"><font color="#8f8886">text, point, mark, mode, file, settings</font></td></tr>
         <tr><td align="left"><font color="#b0a0cf">/win/?n</font></td>
-            <td align="left"><font color="#8f8886">the arrangement; a split is a write</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/proc/?name</font></td>
-            <td align="left"><font color="#8f8886">everything that runs, at any blast radius</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/err/?id</font></td>
-            <td align="left"><font color="#8f8886">a fault, its restarts still live</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/syntax/?lang</font></td>
-            <td align="left"><font color="#8f8886">a language: its grammar and what it paints</font></td></tr>
+            <td align="left"><font color="#8f8886">what is shown where; a split is a write</font></td></tr>
         <tr><td align="left"><font color="#b0a0cf">/surface/?name</font></td>
-            <td align="left"><font color="#8f8886">what wayland shows</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/key/?map/?chord</font></td>
-            <td align="left"><font color="#8f8886">bindings, as places</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/sh/${cmd}</font></td>
-            <td align="left"><font color="#8f8886">the one place a command line runs</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/theme /face /style</font></td>
-            <td align="left"><font color="#8f8886">resolved on read; a selector names its own path</font></td></tr>
-        <tr><td align="left"><font color="#b0a0cf">/host/?name</font></td>
-            <td align="left"><font color="#8f8886">another node, mirrored</font></td></tr>
-        <tr><td bgcolor="#3b393e" align="left"><font color="#efd5c5">read</font></td>
-            <td bgcolor="#3b393e" align="left"><font color="#8f8886">a slot read and a walk; no lock, safe in any receive</font></td></tr>
-        <tr><td bgcolor="#3b393e" align="left"><font color="#efd5c5">write</font></td>
-            <td bgcolor="#3b393e" align="left"><font color="#8f8886">a compare-and-swap onto a new root</font></td></tr>
+            <td align="left"><font color="#8f8886">a widget tree and whether it is up</font></td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/audio /net /sys /clock</font></td>
+            <td align="left"><font color="#8f8886">what answers from the world</font></td></tr>
+        <tr><td align="left"><font color="#b0a0cf">/cmd /mode /sh /proc</font></td>
+            <td align="left"><font color="#8f8886">what can be run, and what is running</font></td></tr>
       </table>>];
 
-    prov  -> tree [dir=both, color="#51b04f", fontcolor="#8f8886",
-                   label="clauses at a subtree\l:read :write :verbs :ls :doc\l"];
-    store -> tree [dir=both, color="#51b04f", label=":keep  :max"];
-    { rank=same; prov; store; }
+    values [label="values\lfset in a box, no locks\lone table per registry\l", fillcolor="#3b393e"];
+    conc   [label="sento\lendpoints, one wheel timer\lthreads only where it blocks\l", fillcolor="#3b393e"];
+    prov   [label="providers\lsh, clock, sys, audio, net\lmedia, power, screen, wm\l", fillcolor="#3b393e"];
+    store  [label="store: sqlite\lwrite-through, one table\l", fillcolor="#3b393e"];
+    edit   [label="the editor\lbuffers, windows, keys\ltree-sitter, the prompt\l", fillcolor="#3b393e"];
+    faults [label="faults\lthe thread stands where it broke\lits restarts are what you take\l", fillcolor="#3b393e"];
+
+    { rank=same; prov; store; values; conc; }
+    { rank=same; edit; faults; }
+    tree -> prov   [color="#51b04f", dir=both, label="stir / read"];
+    tree -> store  [color="#51b04f", label="keep"];
+    tree -> values [style=invis];
+    tree -> conc   [style=invis];
+    tree -> edit   [color="#51b04f", dir=both];
+    faults -> edit [color="#8f8886", constraint=false, label="the debugger buffer"];
   }
 
   subgraph cluster_editor {
-    label="editor"; labeljust=l; fontsize=14; fontcolor="#b0a0cf";
-    color="#635850"; style="rounded,dashed";
-    ed [label="its own SBCL image\lxdg-shell toplevel, cairo into shm\lpanes, mode line, echo line\lxkb keys, client-side repeat\l"];
+    label="editor frontend"; labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    ed [label="one xdg toplevel\lpaints cells with cairo\lsays its size and its font\l"];
   }
+
   subgraph cluster_desktop {
-    label="desktop"; labeljust=l; fontsize=14; fontcolor="#b0a0cf";
-    color="#635850"; style="rounded,dashed";
-    de [label="its own SBCL image\lwlr-layer-shell surfaces\lbar, echo strip, toggled panels\l"];
+    label="desktop frontend"; labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    de [label="layer surfaces\lthe bar, the echo strip\lthe panels\l"];
   }
+
   subgraph cluster_wm {
-    label="window manager"; labeljust=l; fontsize=14; fontcolor="#b0a0cf";
-    color="#635850"; style="rounded,dashed";
-    wm [label="its own SBCL image\lriver window-management protocol\lpolicy is /wm; the compositor obeys\l"];
-  }
-  subgraph cluster_cli {
-    label="pine - the command line"; labeljust=l; fontsize=14;
-    fontcolor="#b0a0cf"; color="#635850"; style="rounded,dashed";
-    cli [label="read write watch diff eval\lstart stop restart status\l"];
+    label="window manager"; labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    wm [label="pine manages the windows\lover river, borders and all\l"];
   }
 
-  tree -> ed [color="#ffaacf", label="  :widgets  :rows-patch"];
-  ed -> tree [color="#57b0ff", label="  :key  :resize  :refresh"];
-  tree -> de [color="#ffaacf", label="  :widgets  :panel  :style"];
-  de -> tree [color="#57b0ff", label="  :widget-action  :hint"];
-  tree -> wm [color="#ffaacf", label="  the layout it computed"];
-  wm -> tree [color="#57b0ff", label="  what the compositor has"];
-  tree -> cli [dir=both, color="#51b04f", label="  one ask, one answer"];
+  subgraph cluster_agent {
+    label="an agent: another image, here or on another machine";
+    labeljust=l; fontsize=15; fontcolor="#b0a0cf";
+    color="#635850"; style="rounded,dashed"; penwidth=2;
+    ag [label="evaluated in over the wire\lstands in its own faults\l"];
+  }
 
-  node2 [label="another pine, another machine\lmirrored, not queried\l",
-         fillcolor="#3b393e", fontcolor="#8f8886"];
-  tree -> node2 [dir=both, color="#51b04f",
-                 label="  each commit ships the paths that moved"];
+  cli [label="pine read / write / watch / eval\lthe same tree, from a terminal\l",
+       fillcolor="#2b282d"];
 
+  edit -> ed [color="#ffaacf", label="a frame, or\lthe rows that changed\l"];
+  ed -> edit [color="#57b0ff", label="a key,\la resize\l"];
 
+  edit -> de [style=invis];
+  faults -> wm [style=invis];
+
+  tree -> de [color="#ffaacf", ltail=cluster_daemon, constraint=false,
+              label="a surface,\lwhen it changes\l"];
+  de -> tree [color="#57b0ff", lhead=cluster_daemon, constraint=false,
+              label="a click,\la hover\l"];
+
+  tree -> wm [color="#ffaacf", ltail=cluster_daemon, constraint=false,
+              label="where each\lwindow goes\l"];
+  wm -> tree [color="#57b0ff", lhead=cluster_daemon, constraint=false,
+              label="what the\lcompositor did\l"];
+
+  faults -> ag [color="#57b0ff", dir=both,
+                label="a fault comes home\lwith its restarts\l"];
+
+  cli -> tree [color="#51b04f", dir=both, lhead=cluster_daemon];
 }

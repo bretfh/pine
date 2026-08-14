@@ -2,10 +2,6 @@
 
 (def-suite* :pine.vt :in :pine)
 
-;;;; The emulator is driven through TERM-PROCESS-OUTPUT with the byte
-;;;; sequences a program actually writes, so the parser and the operations are
-;;;; under test together and through the surface pine.term uses.
-
 (defun esc (&rest parts)
   (format nil "~c~{~a~}" #\Escape parts))
 

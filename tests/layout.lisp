@@ -179,9 +179,6 @@
     (funcall (pine.ui.layout:click-thunk meter 0 5))
     (is (= 50 got))))
 
-;;;; Tree surgery. The editor's window commands and pine.wm both mutate their
-;;;; arrangement through these, so the shapes are asserted here once.
-
 (test a-split-joins-a-matching-parent-flat
   (let* ((a (pine.ui.build:label "a"))
          (b (pine.ui.build:label "b"))
@@ -247,57 +244,52 @@
   (is (equal '("nm-row" "sel") (pine.ui.cells:class-names "nm-row sel")))
   (is (null (pine.ui.cells:class-names nil))))
 
-;;;; Content: the three rules a config is written under, and the vocabulary
-;;;; the doc names. A widget slot and the place it shows are one thing, so a
-;;;; config that reads a path into a widget has nothing to keep in step.
+(test a-widget-takes-a-node-in-place-of-a-value
+  (let* ((w (pine.world.world:make-world))
+         (title (pine.world.world:ensure w "media" "title")))
+    (setf (pine.fs.node:contents title) "Ligeia")
+    (is (string= "Ligeia" (pine.ui.node:content (pine.ui.build:label title))))
+    (let ((nothing (pine.world.world:ensure w "media" "nothing")))
+      (is (string= "" (pine.ui.node:content (pine.ui.build:label nothing)))
+          "a node holding nothing shows nothing, not the word NIL"))))
 
-(test a-slot-takes-a-path-in-place-of-a-value
-  (pine.ns:with-space ()
-    (pine.ns:write (pine.path:parse "/media/title") "Ligeia")
-    (is (string= "Ligeia"
-                 (pine.ui.node:content
-                  (pine.ui.build:label (pine.path:parse "/media/title")))))
-    (is (string= "" (pine.ui.node:content
-                     (pine.ui.build:label (pine.path:parse "/media/nothing"))))
-        "a path with nothing there shows nothing, not the word NIL")))
-
-(test a-control-takes-the-path-it-edits-as-its-subject
-  "No :value and no :on-change: the display and the edit are one path."
-  (pine.ns:with-space ()
-    (pine.ns:write (pine.path:parse "/audio/volume") 40)
-    (let ((slider (pine.ui.build:slider (pine.path:parse "/audio/volume")
-                                       :min 0 :max 100)))
+(test a-control-takes-the-node-it-edits-as-its-subject
+  "No :value and no :on-change: the display and the edit are one node."
+  (let* ((w (pine.world.world:make-world))
+         (volume (pine.world.world:ensure w "audio" "volume")))
+    (setf (pine.fs.node:contents volume) 40)
+    (let ((slider (pine.ui.build:slider volume :min 0 :max 100)))
       (is (= 40 (pine.ui.node:value slider)))
       (funcall (pine.ui.node:on-change slider) 75)
-      (is (= 75 (pine.ns:read (pine.path:parse "/audio/volume")))
-          "dragging it did not write the path it shows"))))
+      (is (= 75 (pine.fs.node:contents volume))
+          "dragging it did not write the node it shows"))))
 
-(test a-field-shows-a-path-and-writes-it-back
-  (pine.ns:with-space ()
-    (pine.ns:write (pine.path:parse "/echo/input") "hel")
-    (let ((f (pine.ui.build:field (pine.path:parse "/echo/input"))))
+(test a-field-shows-a-node-and-writes-it-back
+  (let* ((w (pine.world.world:make-world))
+         (input (pine.world.world:ensure w "echo" "input")))
+    (setf (pine.fs.node:contents input) "hel")
+    (let ((f (pine.ui.build:field input)))
       (is (string= "hel" (pine.ui.node:content f)))
       (funcall (pine.ui.node:on-change f) "hello")
-      (is (string= "hello" (pine.ns:read (pine.path:parse "/echo/input")))))))
+      (is (string= "hello" (pine.fs.node:contents input))))))
 
 (test something-that-acts-takes-writes
-  "A click is a command path, a write-map or a fn, and nothing else."
-  (pine.ns:with-space ()
-    (pine.ns:write (pine.path:parse "/audio/muted") nil)
-    (let ((b (pine.ui.build:button
-              :click (fset:map ((pine.path:parse "/audio/muted")
-                                (fset:seq :toggle)))
-              (pine.ui.build:label "mute"))))
+  "A click is a node, a command name, a write-map or a function."
+  (let* ((w (pine.world.world:make-world))
+         (muted (pine.world.world:ensure w "audio" "muted")))
+    (setf (pine.fs.node:contents muted) nil)
+    (let ((b (pine.ui.build:button :click muted (pine.ui.build:label "mute"))))
       (funcall (pine.ui.node:callback b))
-      (is (eq t (pine.ns:read (pine.path:parse "/audio/muted")))))
-    (pine.ns:up :cmd)
+      (is (eq t (pine.fs.node:contents muted))))
     (let ((ran nil))
-      (pine.ns:write (pine.path:parse "/cmd/probe-click")
-                     (lambda () (setf ran t) (fset:empty-map)))
-      (funcall (pine.ui.node:callback
-                (pine.ui.build:button :click (pine.path:parse "/cmd/probe-click")
-                                      (pine.ui.build:label "go"))))
-      (is (eq t ran) "a command path did not run"))))
+      (pine.repl.command:command "probe-click" (lambda () (setf ran t)))
+      (unwind-protect
+           (progn
+             (funcall (pine.ui.node:callback
+                       (pine.ui.build:button :click "probe-click"
+                                             (pine.ui.build:label "go"))))
+             (is (eq t ran) "a command name did not run"))
+        (pine.repl.command:forget "probe-click")))))
 
 (test a-grid-is-rows-of-columns
   (let ((g (pine.ui.build:grid :columns 2
@@ -306,28 +298,31 @@
     (is (= 2 (length (pine.ui.node:nodes g))) "three cells two wide are two rows")
     (is (= 2 (length (pine.ui.node:nodes (first (pine.ui.node:nodes g))))))))
 
-(test a-field-is-the-path-it-shows
-  "The display and the edit are one path: a field shows what its path holds, and
-what is typed into the prompt it opens is written back there. No :value and no
-:on-change anywhere in a config."
-  (with-fixture substrate ()
-    (let ((at (pine.path:parse "/probe-field")))
-      (pine.ns:write at "foot")
-      (let ((f (pine.ui.build:field at :hint "Terminal:")))
-        (is (equal "foot" (pine.ui.node:content f))
-            "a field did not show what its path holds")
-        (pine.ui.layout:arrange f 0 0 10 1)
-        (let ((thunk (pine.ui.layout:click-thunk f 0 0)))
-          (is (not (null thunk)) "a field answered no click, so it cannot be edited")
-          (funcall thunk)
-          (is (pine.echo:prompt-p) "clicking a field did not ask for a value")
-          (is (equal "foot" (pine.echo:input))
-              "the prompt did not start from the value it is showing")
-          (pine.echo:set-input "alacritty")
-          (pine.echo:accept)
-          (is (equal "alacritty" (pine.ns:read at))
-              "what was typed did not reach the path the field shows")))
-      (pine.ns:write at nil))))
+(test a-field-is-the-node-it-shows
+  "The display and the edit are one node: a field shows what its node holds,
+and what is typed into the prompt it opens is written back there. No :value and
+no :on-change anywhere in a config."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((at (pine.world.world:ensure pine.world.world:*world* "probe-field")))
+           (setf (pine.fs.node:contents at) "foot")
+           (let ((f (pine.ui.build:field at :hint "Terminal:")))
+             (is (equal "foot" (pine.ui.node:content f))
+                 "a field did not show what its node holds")
+             (pine.ui.layout:arrange f 0 0 10 1)
+             (let ((thunk (pine.ui.layout:click-thunk f 0 0)))
+               (is (not (null thunk))
+                   "a field answered no click, so it cannot be edited")
+               (funcall thunk)
+               (is-true (pine.edit.prompt:asking-p)
+                        "clicking a field did not ask for a value")
+               (is (equal "foot" (pine.edit.prompt:said))
+                   "the prompt did not start from the value it is showing")
+               (pine.edit.prompt:answer! "alacritty")
+               (is (equal "alacritty" (pine.fs.node:contents at))
+                   "what was typed did not reach the node the field shows")))))
+    (pine:stop)))
 
 (test a-stack-puts-every-node-in-one-place
   "A stack is the one container that does not divide its space: each node gets

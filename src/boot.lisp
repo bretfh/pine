@@ -1,411 +1,335 @@
-;; Frontends. The editor and the desktop are not part of this process: each
-;; is its own OS image -- `pine editor' / `pine desktop', the same binary
-;; re-invoked -- so one can crash, be killed, or hang without touching the
-;; daemon or the other. Each attaches back over remoting and renders the
-;; surfaces the daemon builds from init.lisp.
-;;
-;; They are declarations under /proc like anything else that runs.
 (defpackage #:pine
-  (:use :cl)
-  (:export
-   #:main
-   #:start-daemon
-   #:run-daemon
-   #:run-all
-   #:run-app
-   #:frontend
-   #:stop
-   #:port-free-p
-   #:kill-port
-   #:load-config
-   #:+frontend-unavailable+))
+  (:use #:cl)
+  (:shadow #:describe)
+  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
+                    (#:mount #:pine.fs.mount) (#:computed #:pine.fs.computed)
+                    (#:watch #:pine.fs.watch)
+                    (#:world #:pine.world.world) (#:store #:pine.world.store)
+                    (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+                    (#:session #:pine.repl.session)
+                    (#:process #:pine.proc.process)
+                    (#:super #:pine.proc.supervisor)
+                    (#:task #:pine.run.task) (#:timer #:pine.run.timer)
+                    (#:libs #:pine.run.libs)
+                    (#:endpoint #:pine.run.agent)
+                    (#:ui #:pine.ui.paths)
+                    (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
+                    (#:edit #:pine.edit.defaults) (#:key #:pine.edit.key)
+                    (#:render #:pine.edit.render)
+                    (#:net #:pine.net.server) (#:attach #:pine.net.attach)
+                    (#:control #:pine.net.control)
+                    (#:agent #:pine.net.agent) (#:plisp #:pine.proc.lisp)
+                    (#:sh #:pine.provider.sh) (#:env #:pine.provider.env)
+                    (#:clock #:pine.provider.clock) (#:sys #:pine.provider.sys)
+                    (#:term #:pine.edit.term) (#:fault #:pine.run.fault)
+                    (#:load #:pine.run.log) (#:place #:pine.path.place)
+                    (#:audio #:pine.provider.audio) (#:screen #:pine.provider.screen)
+                    (#:power #:pine.provider.power) (#:net-p #:pine.provider.net)
+                    (#:media #:pine.provider.media) (#:wm #:pine.provider.wm)
+                    (#:live #:pine.provider.live) (#:esession #:pine.edit.session)
+                    (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
+                    (#:parser #:pine.ts.parser)
+                    (#:lisp #:pine.edit.eval) (#:motion #:pine.edit.motion) (#:shell #:pine.repl.shell) (#:listing #:pine.edit.listing) (#:isearch #:pine.edit.isearch)
+                    (#:erepl #:pine.edit.repl) (#:debugger #:pine.edit.debugger)
+                    (#:desktop #:pine.app.desktop) (#:surface #:pine.app.surface)
+                    (#:wmapp #:pine.app.wm) (#:css #:pine.ui.css)
+                    (#:compositor #:pine.app.compositor))
+  (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
+           #:describe #:frame #:type!
+           #:daemon #:quit #:spawn-agent #:run-app #:load-config #:config-file
+           #:user-package #:write-at #:read-at
+           #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri #:compositor #:style
+           #:frontend #:declare-frontends #:+frontends+))
 
 (in-package #:pine)
-(named-readtables:in-readtable pine.path:syntax)
 
-(defparameter +frontends+ '("desktop" "editor")
-  "The frontend verbs pine ships, each its own process.
+(defvar *supervisor* nil)
 
-Which of them a machine runs is not decided here: they are declarations under
-/proc, so a config that wants one and not the other writes (write /proc/desktop
-nil), the way it would stop anything else.")
+(defvar *store* nil)
 
-(defun daemon-is-binary-p ()
-  "True when this daemon runs from the built `pine' binary, which can re-invoke
-itself with a verb. Under `make daemon' argv0 is sbcl, which cannot."
-  (let ((self (first sb-ext:*posix-argv*)))
-    (and self (not (search "sbcl" (namestring self))))))
+(defvar *image* nil)
 
-(defun frontend-command (verb)
-  "The command that starts frontend VERB as its own process. From the binary
-that is the binary and the verb. From source it is this same sbcl run again on
-the wayland system: argv0 is sbcl and takes no verb, but the process it spawns inherits the
-environment that made this image loadable, so it can load what this one did."
-  (if (daemon-is-binary-p)
-      (list (first sb-ext:*posix-argv*) verb)
-      (list (namestring sb-ext:*runtime-pathname*)
-            "--no-userinit" "--non-interactive"
-            "--eval" "(require :asdf)"
-            "--eval" "(asdf:load-system :pine/wayland)"
-            "--eval" (format nil "(pine:run-app ~s)" verb))))
+(defparameter +frontends+ '("editor" "desktop"))
 
-(defun frontend-environment ()
-  "This daemon's environment, with PINE_PORT naming the port it listens on."
-  (let ((prefix "PINE_PORT="))
-    (cons (format nil "~a~d" prefix pine.core.server:*port*)
-          (remove-if (lambda (entry)
-                       (and (>= (length entry) (length prefix))
-                            (string= prefix entry :end2 (length prefix))))
-                     (sb-ext:posix-environ)))))
+(defparameter +user-surface+
+  '((:pine "declare-frontends" "frontend" "start" "stop" "here" "spawn-agent"
+     "audio" "screen" "power" "network" "media" "procfs" "shell" "niri" "compositor"
+     "style")
+    (:pine.repl.command "defcommand" "command" "command-named" "commands" "run")
+    (:pine.repl.mode "mode" "minor" "bind" "handle" "setting" "modes")
+    (:pine.fs.node "contents" "nodes" "name" "attach" "describes")
+    (:pine.fs.tree "at" "ensure" "place" "erase" "listing")
+    (:pine.world.world "*world*" "root")
+    (:pine.app.surface "surface" "defsurface" "show!" "hide!" "toggle!" "surfaces")
+    (:pine.edit.render "frame-tree")
+    (:pine.ui.face "color" "metric")
+    (:pine.ui.css "css-glass" "css-rad" "css-mono")
+    (:pine.path.path "leaf")
+    (:pine.ui.build "column" "row" "label" "icon" "button" "box" "center"
+     "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
+     "calendar" "image" "centerbox" "ring" "cells" "here" "acting")
+    (:pine.fs.node "stir" "child")
+    (:pine.edit.prompt "ask")
+    (:pine.run.log "note")
+    (:pine.data "map" "seq" "set")))
 
-(defconstant +frontend-unavailable+ 70
-  "Exit status a frontend uses to say it cannot run in this session.
+(defun %seed-modes ()
+  (mode:mode "text" :settings '(:tab-width 8 :indicator "Text"))
+  (mode:mode "prog" :parent "text" :settings '(:indent 2 :comment ";"))
+  (mode:mode "lisp" :parent "prog" :settings '(:indicator "Lisp")
+                    :claims '((:files "*.lisp" "*.asd" "*.cl")))
+  (mode:mode "shell" :settings '(:indicator "Shell")))
 
-The window manager exits with it under a compositor that offers no window
-management. Nothing starts that frontend again until the display changes.")
+(defun %seed-syntax ()
+  (let ((runtime (runtime:make-ts-runtime)))
+    (fault:attempt (lambda () (runtime:ensure-ts runtime)) "loading tree-sitter")
+    (when (runtime:ts-loaded-p runtime)
+      (setf parser:*runtime* runtime)
+      (syntax:install world:*world*))
+    parser:*runtime*))
 
-(defun frontend (verb)
-  "The /proc declaration that keeps frontend VERB running: what to run, the
-environment to run it in, and the two rules that are not just liveness -- it
-needs a display, and it does not run when a frontend of its kind has attached
-from somewhere else. A config declaring one pine does not ship writes
-(write /proc/wm (frontend \"wm\"))."
-  (let ((kind (string-downcase verb)))
-    (fset:map (:run (fset:convert 'fset:seq (frontend-command verb)))
-              (:env (fset:convert 'fset:seq (frontend-environment)))
-              (:needs (fset:seq /display))
-              (:unless (fset:seq (pine.path:path /attached kind))))))
-
-(defun declare-frontends ()
-  "Declare the frontends pine ships, unless the config already said. It is
-loaded before this runs, so what it declared -- another command, another
-frontend, or nothing at all -- is what stands."
-  (dolist (verb +frontends+)
-    (let ((at (pine.path:path /proc (string-downcase verb))))
-      (unless (pine.ns:held at)
-        (pine.ns:write at (frontend verb))))))
-
-(defun watch-unavailable ()
-  "A frontend that says it cannot run here is not started again until the
-display changes."
-  (pine.ns:watch /proc
-                 (lambda (value)
-                   (declare (ignore value))
-                   (let ((stop (fset:empty-map)))
-                     (dolist (verb +frontends+ stop)
-                       (let ((at (pine.path:path /proc (string-downcase verb))))
-                         (when (eql +frontend-unavailable+
-                                    (pine.ns:read (pine.path:path at "exit")))
-                           (setf stop (fset:with stop at (fset:seq :stop))))))))
-                 :as :frontend-unavailable)
-  (pine.ns:watch /display
-                 (lambda (value)
-                   (declare (ignore value))
-                   (let ((start (fset:empty-map)))
-                     (dolist (verb +frontends+ start)
-                       (setf start (fset:with start
-                                              (pine.path:path /proc
-                                                              (string-downcase verb))
-                                              (fset:seq :start))))))
-                 :as :frontend-display))
-
-(defun declare-reaper ()
-  "Remoting says nothing when a peer dies, so an app that was killed would hold
-its kind forever and the :unless rule above would never let another start. The
-check is a socket connect, so it is declared on an interval like anything else
-that runs."
-  (pine.ns:write /proc/reap
-                 (fset:map (:every 5)
-                           (:thread (lambda () (pine.core.attach:reap-clients))))))
-
-(defun start-frontends ()
-  "Keep the frontends running, one process each, attended with everything else."
-  (pine.ns:write /display (session-display))
-  (declare-frontends)
-  (declare-reaper)
-  (watch-unavailable))
-
-(defun stop-frontends ()
-  "Stop every frontend this daemon declared, so a daemon shutdown takes its
-editor and desktop down with it."
-  (dolist (verb +frontends+)
-    (pine.ns:write (pine.path:path /proc (string-downcase verb)) nil)))
-
-(defun kill-port (port)
-  "Kill whatever process holds PORT. Version-independent, so `pine stop' works
-even on an old or wedged daemon that has no clean :stop."
-  (ignore-errors
-   (uiop:run-program (list "fuser" "-k" (format nil "~d/tcp" port))
-                     :ignore-error-status t :output nil :error-output nil)))
-
-(defun port-free-p (port)
-  "True when nothing listens on PORT (the daemon is down)."
-  (multiple-value-bind (o e code)
-      (ignore-errors (uiop:run-program (list "fuser" (format nil "~d/tcp" port))
-                                       :ignore-error-status t :output nil :error-output nil))
-    (declare (ignore o e))
-    (not (eql code 0))))                     ; fuser: 0 = held, nonzero = free
+(defun start (&key (name "pine") store remoting)
+  (libs:attend)
+  (setf world:*world* (world:make-world :name name)
+        *supervisor* (super:supervisor)
+        *image* (net:start-server :remoting-port remoting)
+        net:*server* *image*)
+  (timer:attend (net:actor-system *image*))
+  (endpoint:attend (net:actor-system *image*))
+  (when remoting
+    (attach:listen-for-attach *image*)
+    (agent:listen-for-agents *image*))
+  (node:attach (make-instance 'shell:commands-node :name "cmd"
+                                                   :describes "every command there is")
+               (world:root world:*world*))
+  (world:ensure world:*world* "buf")
+  (world:ensure world:*world* "win")
+  (setf shell:*supervisor* *supervisor* shell:*store* *store*)
+  (shell:install)
+  (%seed-modes)
+  (ui:install world:*world*)
+  (let ((root (world:root world:*world*)))
+    (sh:install root)
+    (env:install root)
+    (sys:install root)
+    (clock:install root :supervisor *supervisor*)
+    (mount:mount "/" root "file"))
+  (edit:install)
+  (motion:install)
+  (listing:install)
+  (isearch:install)
+  (erepl:install)
+  (debugger:install)
+  (lisp:install)
+  (desktop:install)
+  (wmapp:install)
+  (compositor:install)
+  (term:install)
+  (esession:install)
+  (%seed-syntax)
+  (let ((scratch (buffer:make-buffer "scratch" :mode "lisp")))
+    (setf (buffer:current) scratch)
+    (window:seed! scratch))
+  (when store
+    (setf *store* (store:open-store store))
+    (setf shell:*store* *store*)
+    (store:restore world:*world* *store*)
+    (store:keeping *store*))
+  (super:watch *supervisor*)
+  (timer:every-seconds 5 (lambda () (attach:sweep *image*))
+                       :as :reap :what "sweeping dead clients")
+  world:*world*)
 
 (defun stop ()
-  "Take the daemon down: the hooks first, so what wants a last write gets one,
-then everything it serves.
+  (setf cmd:*asking* nil
+        pine.ui.build:*asking* nil
+        pine.ui.build:*editing* nil
+        net-p:*asking* nil)
+  (key:take-next nil)
+  (isearch:took-all)
+  (live:leave-all)
+  (parser:forget-all)
+  (watch:forget-all)
+  (when *supervisor*
+    (super:unwatch *supervisor*)
+    (super:stop-all *supervisor*))
+  (dolist (s (session:sessions)) (session:close s))
+  (dolist (c (copy-list (attach:clients))) (attach:reap c *image*))
+  (esession:close-all)
+  (desktop:close-all)
+  (setf node:*on-write* nil)
+  (when *store*
+    (ignore-errors (store:snapshot world:*world* *store*))
+    (ignore-errors (store:close-store *store*))
+    (setf *store* nil))
+  (dolist (tk (task:tasks)) (task:stop tk))
+  (timer:leave)
+  (when *image*
+    (ignore-errors (net:stop-server *image*))
+    (setf *image* nil net:*server* nil))
+  t)
 
-What comes off is what the registry says went up, so a subsystem added since
-cannot be left running by a shutdown that never heard of it. /proc goes with
-it, which is what stops the frontends and everything else declared."
-  (pine.core.hooks:run-shutdown-hooks)
-  (pine.ns:down-all))
+(defun main (&key store)
+  (start :store store)
+  (let ((s (session:open-session :name "console" :mode "shell"
+                                 :node (world:root world:*world*)
+                                 :package (find-package :pine))))
+    (unwind-protect (session:interact s)
+      (stop))))
 
+(defun type! (text &optional (session session:*session*))
+  (declare (ignore session))
+  (loop :for ch :across text
+        :do (key:dispatch nil (key:make-key (string ch))))
+  (buffer:point (buffer:current)))
 
+(defun frame (&key (width 80) (height 24))
+  (mapcar #'car (render:rows :width width :height height)))
 
-(defun main (&key (workers pine.core.server:*workers*) (remoting-port 0))
-  "Start the whole daemon in this image, for REPL use: (pine:main)."
-  (start-daemon :workers workers :remoting-port remoting-port))
+(defun procfs () (live:attend (sys:install (world:root world:*world*))))
+(defun shell () (sh:install (world:root world:*world*)))
+(defun audio (&optional (name "audio"))
+  (live:attend (audio:install (world:root world:*world*) name)))
+(defun screen (&optional (name "screen"))
+  (live:attend (screen:install (world:root world:*world*) name)))
+(defun power (&optional (name "power"))
+  (live:attend (power:install (world:root world:*world*) name)))
+(defun network (&optional (name "net"))
+  (live:attend (net-p:install (world:root world:*world*) name)))
+(defun media (&key (name "media") player)
+  (live:attend (media:install (world:root world:*world*) :name name :player player)))
 
-(defun start-daemon (&key (workers pine.core.server:*workers*) (remoting-port 0)
-                       (config (config-directory)))
-  (let ((srv (pine.core.server:start-server :workers workers :remoting-port remoting-port)))
-    (setf pine.core.server:*server* srv)
-    (setf (pine.core.server:ts-runtime srv) (pine.ts.runtime:make-ts-runtime))
-    (handler-case (pine.ts.runtime:ensure-ts (pine.core.server:ts-runtime srv))
-      (error () nil))
-    (pine.core.actor:start-agent-registry srv)
-    (pine.core.actor:start-local-agent srv)
-    (pine.core.actor:start-agent-debug srv)
-    ;; everything pine serves, in the order the declarations say. There is no
-    ;; list here to fall behind the one the tests bring up.
-    (let ((up (pine.ns:up-all
-               {:system (pine.core.server:actor-system srv)
-               :runtime (pine.core.server:ts-runtime srv)})))
-      (setf (pine.core.server:proc srv) (fset:lookup up :proc)
-            (pine.core.server:store srv) (fset:lookup up :store)))
-    ;; the clock an :every write asks for. The namespace says what was asked;
-    ;; the thing with a scheduler is what asks it again
-    (setf (pine.ns:on-interval)
-          (let ((timer (sento.actor-system:scheduler
-                        (pine.core.server:actor-system srv))))
-            (lambda (path seconds)
-              (let ((key (list :every (pine.path:text path))))
-                (ignore-errors (sento.wheel-timer:cancel timer key))
-                (sento.wheel-timer:schedule-recurring
-                 timer seconds seconds
-                 (lambda ()
-                   (pine.err:attempt (lambda () (pine.ns:again path))
-                                     (format nil "~a every ~ds"
-                                             (pine.path:text path) seconds)))
-                 key)))))
-    (pine.core.attach:start-attach-listener srv)
-    (start-control srv)
-    (pine.core.hooks:add-shutdown-hook :store
-                                       (lambda () (pine.buf:record-places)))
-    (load-init config)
-    (pine.log:note "daemon ready [remoting ~a]" (pine.core.server:remoting-port srv))
-    srv))
+(defun niri (&optional (name "wm")) (live:attend (wm:install (world:root world:*world*) name)))
 
-(defun %setenv (name value)
-  (cffi:foreign-funcall "setenv" :string name :string value :int 1 :int))
+(defun compositor () (compositor:pine-wm world:*world*))
 
-(defun session-display ()
-  "Return the wayland display the daemon may start frontends on, or NIL.
+(defun style (selector props)
+  (prog1 (first (css:install (list (list selector props))))
+    (css:broadcast)))
 
-Only what the environment says. The daemon never picks a display for itself:
-a guess can land on a compositor that is not this session's, and frontends
-would open somewhere nobody asked for. A session announces itself with
-`pine session'."
-  (let ((display (uiop:getenv "WAYLAND_DISPLAY")))
-    (when (and display (plusp (length display))) display)))
+(defun %place (where)
+  (cond ((node:nodep where) where)
+        ((stringp where) (tree:at (world:root world:*world*) where))
+        (t where)))
 
-(defun set-session-display (display)
-  "Adopt DISPLAY as the session's, for frontends started from now on."
-  (when (and display (plusp (length display)))
-    (%setenv "WAYLAND_DISPLAY" display)
-    (pine.ns:write /display display)
-    display))
+(defun write-at (where value)
+  (let ((it (%place where)))
+    (if (node:nodep it)
+        (setf (node:contents it) value)
+        (setf (place:contents it) value))))
 
-(defun handle-termination ()
-  "Take the frontends down with the daemon when the supervisor stops it.
+(defun read-at (where &optional default)
+  (let* ((it (%place where))
+         (value (if (node:nodep it) (node:contents it) (place:contents it))))
+    (if (null value) default value)))
 
-`pine stop' does this through the control actor, but a service manager sends a
-signal, and a daemon that exits on one leaves its frontends attached to nothing
-and outliving every restart."
-  (sb-sys:enable-interrupt
-   sb-unix:sigterm
-   (lambda (&rest args)
-     (declare (ignore args))
-     (handler-case (stop-frontends)
-       (error (c) (format *error-output* "pine: ~a~%" c)))
-     (stop)
-     (sb-ext:exit :code 0 :abort t))))
+(defun user-package ()
+  (or (find-package :pine.user)
+      (let ((p (make-package :pine.user :use '(:cl))))
+        (dolist (entry +user-surface+)
+          (dolist (name (rest entry))
+            (let ((symbol (find-symbol (string-upcase name) (first entry))))
+              (when symbol (shadowing-import symbol p)))))
+        (shadow '("WRITE" "READ") p)
+        (setf (fdefinition (intern "WRITE" p)) #'write-at
+              (fdefinition (intern "READ" p)) #'read-at)
+        (export (list (intern "WRITE" p) (intern "READ" p)) p)
+        p)))
 
-(defun daemon-listening-p (port)
-  (ignore-errors
-   (let ((s (usocket:socket-connect pine.core.server:*host* port :timeout 1)))
-     (usocket:socket-close s) t)))
+(defun config-file ()
+  (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home)))
+
+(defun load-config (&optional (file (config-file)))
+  (user-package)
+  (when (and file (probe-file file))
+    (let ((*package* (user-package))
+          (*readtable* (named-readtables:find-readtable 'pine.path.reader:syntax))
+          (before (length (fault:faults))))
+      (load:note "reading ~a" file)
+      (fault:attempt (lambda () (load file)) (format nil "reading ~a" file))
+      (let ((broke (- (length (fault:faults)) before)))
+        (when (plusp broke)
+          (load:note "~a did not load: ~a" file
+                     (fault:condition-of (first (fault:faults)))))
+        (zerop broke)))))
+
+(defun %frontend-command (verb)
+  (let ((self (first sb-ext:*posix-argv*)))
+    (if (and self (not (search "sbcl" (namestring self))))
+        (list self verb)
+        (list (namestring sb-ext:*runtime-pathname*)
+              "--noinform" "--no-userinit" "--non-interactive"
+              "--eval" "(require :asdf)"
+              "--eval" "(asdf:load-system :pine/wayland)"
+              "--eval" (format nil "(pine:run-app ~s)" verb)))))
+
+(defun %frontend-environment ()
+  (cons (format nil "PINE_PORT=~d" net:*port*)
+        (remove-if (lambda (entry)
+                     (and (>= (length entry) 10)
+                          (string= "PINE_PORT=" entry :end2 10)))
+                   (sb-ext:posix-environ))))
+
+(defun frontend (verb)
+  (make-instance 'process:program
+                 :name verb
+                 :argv (%frontend-command verb)
+                 :env (%frontend-environment)))
+
+(defun declare-frontends (&optional (which +frontends+))
+  (dolist (verb which)
+    (unless (or (super:process-named *supervisor* verb)
+                (attach:attached-p (intern (string-upcase verb) :keyword)))
+      (let ((p (frontend verb)))
+        (super:supervise *supervisor* p)
+        (setf (node:contents (world:ensure world:*world* "proc" verb)) :declared)
+        (fault:attempt (lambda () (process:start p))
+                       (format nil "starting the ~a frontend" verb)))))
+  (mapcar #'process:name (super:processes *supervisor*)))
+
+(defun quit (&optional (grace 5))
+  (task:spawn "quit-watchdog"
+              (lambda () (sleep grace) (sb-ext:exit :abort t :code 0)))
+  (task:spawn "quit"
+              (lambda ()
+                (sleep 0.2)
+                (ignore-errors (stop))
+                (sb-ext:exit :abort t :code 0)))
+  t)
+
+(defun daemon (&key store (remoting net:*port*) (config (config-file)))
+  (start :store store :remoting remoting)
+  (cmd:defcommand "agents" () (:describes "every image attached to this one")
+    (mapcar #'agent:name (agent:agents)))
+  (cmd:defcommand "clients" () (:describes "every frontend attached")
+    (loop :for c :in (attach:clients)
+          :collect (list (attach:client-kind c) (attach:client-id c))))
+  (setf control:*on-reload* (lambda () (load-config config) :reloaded)
+        control:*agents* (lambda () (mapcar #'agent:name (agent:agents))))
+  (control:serve *image* :on-quit #'quit)
+  (load-config config)
+  (load:note "~a: remoting ~d, ~d command~:p, ~d running"
+             (world:name world:*world*)
+             (net:remoting-port *image*)
+             (length (cmd:commands))
+             (length (super:processes *supervisor*)))
+  *image*)
+
+(defun spawn-agent (name)
+  (let ((p (make-instance 'plisp:lisp-process :name name :systems '(:pine))))
+    (super:supervise *supervisor* p)
+    (process:start p)
+    p))
 
 (defun run-app (verb)
-  "Run the frontend VERB names, in this image.
+  (net:read-environment)
+  (attach:run-frontend (intern (string-upcase verb) :keyword)))
 
-What a kind is, from the daemon's side, is declared where it lives; how it runs
-in this image is the backing's to say. A build without one says so rather than
-the CLI guessing."
-  (pine.core.attach:run-frontend (intern (string-upcase verb) :keyword)))
-
-(defun run-all (&key (port pine.core.server:*port*))
-  "`pine start': the shim. Kick the daemon in its own process if it is not already
-up, then return. The daemon reads init.lisp and spawns + supervises the frontends
-(editor + desktop) as their own processes -- this shim renders nothing itself, so
-the daemon, the editor, and the desktop are three separate images."
-  (if (daemon-listening-p port)
-      (format t "pine: daemon already up on ~a:~d~%" pine.core.server:*host* port)
-      (progn
-        (let ((self (first sb-ext:*posix-argv*)))
-          (uiop:launch-program (list self "daemon")
-                               :output "/tmp/pine-daemon.log"
-                               :error-output "/tmp/pine-daemon.log"
-                               :if-output-exists :supersede
-                               :if-error-output-exists :supersede))
-        (loop repeat 120 when (daemon-listening-p port) do (return)
-              do (sleep 0.5)
-              finally (format t "pine: daemon did not come up (log /tmp/pine-daemon.log)~%")
-                      (return-from run-all))
-        (format t "pine: daemon up on ~a:~d -- editor + desktop spawning.~%"
-                pine.core.server:*host* port)))
-  (finish-output))
-
-(defun run-daemon (&key (port pine.core.server:*port*))
-  (setf pine.core.server:*port* port)
-  (start-daemon :remoting-port port)
-  (handle-termination)
-  (start-frontends)
-  (pine.log:note "daemon up on ~a:~d, frontends supervised"
-                 pine.core.server:*host* port)
-  (loop (sleep 3600)))
-
-;;;; The user's init.lisp: the config that defines their surfaces, sources,
-;;;; commands, and theme. Loaded in :pine.user. An error is surfaced, not fatal:
-;;;; the daemon stays up with whatever loaded before it.
-
-(defun config-directory ()
-  "Where a configuration lives, when the caller does not say."
-  (merge-pathnames "pine/" (uiop:xdg-config-home)))
-
-(defun register-config-systems (dir)
-  "Add DIR to the ASDF registry, so a configuration that is a system of its own
-is found by (asdf:load-system :mine)."
-  (when (probe-file dir)
-    (pushnew dir asdf:*central-registry* :test #'equal)))
-
-(defun load-config (path)
-  "Load PATH as a configuration: in PINE.USER, and in pine's own readtable, so
-a config does not have to ask for the language it is written in."
-  (let ((*package* (find-package :pine.user))
-        (*readtable* (named-readtables:find-readtable 'pine.path:syntax)))
-    (load path)))
-
-(defun load-init (&optional (dir (config-directory)))
-  "Load DIR's init.lisp. An error is reported and the daemon keeps whatever
-loaded before it."
-  (register-config-systems dir)
-  (let ((path (merge-pathnames "init.lisp" dir)))
-    (when (probe-file path)
-      (handler-case
-          (progn (load-config path)
-                 (pine.log:note "loaded ~a" path))
-        (error (e)
-          (pine.log:note "init.lisp error: ~a" e))))))
-
-;;;; The control endpoint. The CLI connects, asks one message, prints, exits.
-;;;;
-;;;; What crosses is text: a path is text, and a value goes over as readable
-;;;; lisp, so the CLI needs nothing of this image but the socket.
-
-(defun %said (value)
-  "VALUE as the CLI will print it."
-  (pine.data:serialize value))
-
-(defun %heard (text)
-  "The value TEXT says."
-  (pine.data:deserialize text 'pine.path:data))
-
-(defun %watcher (uri)
-  "The remote the CLI is listening on, or NIL when it has gone."
-  (ignore-errors
-   (sento.remoting:make-remote-ref
-    (pine.core.server:actor-system pine.core.server:*server*) uri)))
-
-(defun %watch-for (server text uri)
-  "Watch what TEXT names and tell URI each change, until the telling fails.
-
-The watch is named by the uri, so a CLI that asks twice replaces its own rather
-than doubling it, and a `pine watch' that goes away takes its watch with it."
-  (declare (ignore server))
-  (let ((at (pine.path:parse text))
-        (ref (%watcher uri)))
-    (when ref
-      (pine.ns:watch
-       at
-       (lambda (value)
-         (handler-case (sento.actor:tell ref (list :moved
-                                                   (pine.path:text (pine.ns:here))
-                                                   (%said value)))
-           (error () (pine.ns:watch at nil :as uri)))
-         nil)
-       :as uri)
-      "watching")))
-
-(defun start-control (server)
-  (sento.actor-context:actor-of
-   (pine.core.server:actor-system server) :name "control"
-   :dispatcher :pinned
-   :receive
-   (lambda (msg)
-     (flet ((r (x) (sento.actor:reply x)))
-       (handler-case
-           (case (first msg)
-             (:read (r (%said (pine.ns:read (pine.path:parse (second msg))))))
-             (:write (pine.ns:write (pine.path:parse (second msg))
-                                    (%heard (third msg))
-                                    :force (fourth msg))
-              (r "ok"))
-             ;; what a write to this path would touch, so the caller can say
-             ;; where it lands before it lands
-             (:matches (r (mapcar #'pine.path:text
-                                  (pine.ns:matches
-                                   (pine.path:parse (second msg))))))
-             (:watch (r (or (%watch-for server (second msg) (third msg))
-                            "nowhere to send it")))
-             (:diff (r (%said (pine.ns:diff (pine.path:parse (second msg))
-                                            (pine.path:parse (third msg))))))
-             (:status
-              (r (format nil "pine up  port ~a  agents ~d"
-                         (pine.core.server:remoting-port server)
-                         (length (pine.core.actor:list-agents server)))))
-             ;; the same language a config is written in, so a form typed at
-             ;; the shell may say /audio/volume like one in init.lisp
-             (:eval
-              (let ((*package* (find-package :pine.user))
-                    (*readtable* (named-readtables:find-readtable 'pine.path:syntax)))
-                (r (princ-to-string (eval (read-from-string (second msg)))))))
-             (:stop
-              (r "stopping")
-              ;; reply first, then tear down off the actor thread: kill the
-              ;; frontends this daemon spawned, then exit the image.
-              (bordeaux-threads:make-thread
-               (lambda ()
-                 (ignore-errors (stop-frontends))
-                 (sleep 0.2)
-                 (sb-ext:exit :code 0 :abort t))
-               :name "pine-shutdown"))
-             (:session
-              (r (or (set-session-display (second msg))
-                     "no display given")))
-             ;; nothing here tells anyone what moved: a config is writes, and
-             ;; what watches those paths hears about them
-             (:reload (load-init)
-              (ignore-errors (pine.desktop:refresh-all))
-              (r "reloaded"))
-             (:agents (r (mapcar #'pine.core.actor:agent-info-name (pine.core.actor:list-agents server))))
-             (:spawn (pine.core.actor:spawn-agent server (second msg)) (r "spawned"))
-             (:kill (pine.core.actor:kill-agent server (second msg)) (r "killed"))
-             (t (r (list :unknown (first msg)))))
-         (error (e) (r (format nil "error: ~a" e))))))))
+(defun describe (where)
+  (let ((n (shell:resolve nil where)))
+    (when n
+      (list :name (node:full-name n)
+            :class (class-name (class-of n))
+            :describes (node:describe n)
+            :under (tree:listing n)
+            :persists (node:persistp n)))))

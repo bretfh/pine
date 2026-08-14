@@ -5,24 +5,19 @@
 
 (in-package #:pine.wayland.app.keys)
 
-;;;; xkb keyboard for the wayland editor. Sets *keyboard-handler* at load time so
-;;;; run-editor types. A key becomes a printable utf8 string, or else the keysym
-;;;; name, plus the ctrl/meta/shift/super modifier flags. Per-editor xkb context,
-;;;; keymap, and state live in *ekb* keyed by the editor.
-
 (defvar *ekb* (pine.data:table)
   "Editor to (list context keymap state).")
-
-(defun ekb (ed) (pine.data:at *ekb* ed))
-
-(defun mod-active (state name)
-  (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
 
 (defparameter +modifier-keysyms+
   '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"
     "Meta_L" "Meta_R" "Super_L" "Super_R" "Hyper_L" "Hyper_R"
     "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
   "Keysyms that never arm key repeat: holding a bare modifier repeats nothing.")
+
+(defun ekb (ed) (pine.data:at (pine.data:all *ekb*) ed))
+
+(defun mod-active (state name)
+  (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
 
 (defun modifier-key-p (msg)
   (member (getf (rest msg) :key-str) +modifier-keysyms+ :test #'string=))
@@ -49,7 +44,7 @@
     (:keymap (format fd size)
      (assert (eq format :xkb-v1))
      (let* ((cell (or (ekb ed)
-                      (pine.data:put *ekb* ed
+                      (pine.data:keep! *ekb* ed
                                      (list (xkb:xkb-context-new ()) nil nil))))
             (context (first cell))
             (shmo (shm:make-shm fd)))
@@ -72,8 +67,7 @@
         (a:when-let ((cell (ekb ed)))
           (let ((msg (key->wire (third cell) (+ 8 key))))
             (send-input ed msg)
-            ;; arm repeat for this key; repeat resends the message built at
-            ;; press time, so held modifiers travel with it
+
             (if (modifier-key-p msg)
                 (setf (ed-held-msg ed) nil (ed-held-keycode ed) nil)
                 (setf (ed-held-keycode ed) key

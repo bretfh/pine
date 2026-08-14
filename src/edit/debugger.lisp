@@ -1,0 +1,126 @@
+(defpackage #:pine.edit.debugger
+  (:use #:cl)
+  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
+                    (#:mode #:pine.repl.mode) (#:node #:pine.fs.node)
+                    (#:fault #:pine.run.fault) (#:buffer #:pine.edit.buffer)
+                    (#:window #:pine.edit.window) (#:log #:pine.run.log))
+  (:export #:install #:show #:standing #:choose #:next #:fault-of
+           #:*name* #:*standing*))
+
+(in-package #:pine.edit.debugger)
+
+(defvar *standing* (d:box nil))
+(defparameter *name* "*debugger*")
+
+(defclass standing ()
+  ((of       :initarg :of       :reader of)
+   (restarts :initarg :restarts :reader restarts :initform nil)
+   (taken    :initarg :taken    :reader taken    :initform nil)
+   (fault    :initarg :fault    :reader fault-of :initform nil)))
+
+(defmethod print-object ((s standing) stream)
+  (print-unreadable-object (s stream :type t)
+    (format stream "~a, ~d restart~:p" (of s) (length (restarts s)))))
+
+(defun standing () (d:held *standing*))
+
+(defun %text (s)
+  (with-output-to-string (out)
+    (let ((all (fault:standing)))
+      (when (rest all)
+        (format out "fault ~d of ~d (Tab: next)~%~%"
+                (1+ (or (position (fault-of s) all) 0)) (length all))))
+    (format out "~a~%~%" (of s))
+    (loop :for r :in (restarts s)
+          :for i :from 0
+          :do (format out "~d  ~a~%" i r))
+    (format out "~%a abort   q quit   0-9 a restart~%")
+    (let ((f (or (fault-of s) (first (fault:faults)))))
+      (when (and f (fault:backtrace-of f))
+        (format out "~%~a~%" (fault:backtrace-of f))))))
+
+(defun show (condition &key restarts taken fault)
+  "Put a fault up as a buffer you can act on rather than a line you cannot."
+  (let* ((s (make-instance 'standing :of condition
+                                     :restarts (or restarts
+                                                   (and fault (fault:offers fault))
+                                                   (mapcar #'princ-to-string
+                                                           (compute-restarts condition)))
+                                     :taken taken
+                                     :fault fault))
+         (b (or (buffer:buffer-named *name*)
+                (buffer:make-buffer *name* :mode "debugger"))))
+    (when fault (fault:attend fault))
+    (d:put! *standing* s)
+    (setf (buffer:mode-of b) "debugger")
+    (setf (node:contents b) (%text s))
+    (buffer:goto! b 0 0)
+    (setf (buffer:current) b)
+    (window:show! (window:focused) b)
+    b))
+
+(defun choose (n)
+  "Take the nth restart: the thread standing in the fault is handed it and goes."
+  (let ((s (standing)))
+    (when (and s (nth n (restarts s)))
+      (let ((name (nth n (restarts s)))
+            (taken (taken s))
+            (f (fault-of s)))
+        (d:put! *standing* nil)
+        (cond (f (fault:resume f name)
+                 (log:note "took ~a" name))
+              (taken (funcall taken n))
+              (t (log:note "~a" name)))
+        name))))
+
+(defun next ()
+  "The fault after this one, of the ones still standing."
+  (let* ((all (fault:standing))
+         (s (standing))
+         (at (position (and s (fault-of s)) all))
+         (f (nth (mod (1+ (or at -1)) (max 1 (length all))) all)))
+    (when f (show (fault:condition-of f) :fault f))))
+
+(defun %away ()
+  (d:put! *standing* nil)
+  (let ((b (buffer:buffer-named *name*)))
+    (when b (pine.repl.command:run "kill-buffer" (list *name*))))
+  t)
+
+(defun install ()
+  (mode:mode "debugger" :parent "text" :settings '(:indicator "Debug"))
+  (cmd:defcommand "debugger-abort" () (:describes "leave the fault alone")
+    (%away))
+  (cmd:defcommand "debugger-quit" () (:describes "put the debugger away")
+    (%away))
+  (cmd:defcommand "debugger-restart" (n) (:describes "take one of the restarts")
+    (choose (if (integerp n) n (or (parse-integer (princ-to-string n) :junk-allowed t) 0))))
+  (cmd:defcommand "debugger" () (:describes "the last fault, as a buffer")
+    (let ((f (or (first (fault:standing)) (first (fault:faults)))))
+      (if f
+          (node:name (show (fault:condition-of f) :fault f))
+          (log:note "nothing has faulted"))))
+  (cmd:defcommand "debugger-next" () (:describes "the fault after this one")
+    (and (next) t))
+  (cmd:defcommand "toggle-debug-on-error" ()
+      (:describes "whether a fault stops its thread or unwinds")
+    (setf fault:*debugging* (not fault:*debugging*))
+    (log:note "the debugger is ~:[off~;on~]" fault:*debugging*)
+    fault:*debugging*)
+  (mode:bind "debugger" "a" "debugger-abort")
+  (mode:bind "debugger" "q" "debugger-quit")
+  (mode:bind "debugger" "TAB" "debugger-next")
+  (mode:bind "debugger" "Tab" "debugger-next")
+  (dolist (n '(0 1 2 3 4 5 6 7 8 9))
+    (let ((n n))
+      (cmd:command (format nil "debugger-restart-~d" n)
+                   (lambda () (choose n))
+                   :describes "take this restart")
+      (mode:bind "debugger" (princ-to-string n)
+                 (format nil "debugger-restart-~d" n))))
+  (setf fault:*on-fault*
+        (lambda (f)
+          (if (fault:parked f)
+              (ignore-errors (show (fault:condition-of f) :fault f))
+              (log:note "~a" (fault:condition-of f)))))
+  t)

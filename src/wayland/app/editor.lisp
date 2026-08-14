@@ -4,24 +4,12 @@
                     (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint))
   (:export
    #:editor #:run-editor
-   ;; the keyboard seam: the xkb file installs the handler and drives repeat
+
    #:*keyboard-handler* #:send-input #:now-ms
    #:ed-held-keycode #:ed-held-msg #:ed-held-since-ms #:ed-last-repeat-ms
    #:ed-repeat-rate #:ed-repeat-delay-ms))
 
 (in-package #:pine.wayland.app.editor)
-
-;;;; The editor frontend: an xdg-shell toplevel that attaches to the daemon as
-;;;; :kind :editor and renders the `editor' surface -- one (:widgets ...) widget
-;;;; tree (a window on the current buffer, a mode line, an echo line) -- through
-;;;; the shared pine.ui.node / cairo pass into an shm buffer, exactly like the
-;;;; desktop client. It measures its monospace cell from the theme font and tells
-;;;; the daemon (:resize :cols :rows) when the window size changes. Keyboard is
-;;;; routed to *keyboard-handler* (set by the xkb keys file, which needs cl-xkb);
-;;;; without it the window renders but does not type.
-;;;;
-;;;; Threading matches the desktop client: the sento display actor only enqueues
-;;;; wayland work; the loop drains it between non-blocking dispatches.
 
 (defvar *keyboard-handler* nil
   "When set, a function of (editor &rest wl-keyboard-event) -- the xkb keys file
@@ -40,28 +28,27 @@ buffer rows were laid out for."
    (compositor :initform nil) (shm :initform nil) (xdg-wm-base :initform nil)
    (seat :initform nil) (keyboard :initform nil)
    (wl-surface :initform nil) (xdg-surface :initform nil) (xdg-toplevel :initform nil)
-   (ref     :initform nil :accessor ed-ref)             ; daemon client actor
+   (ref     :initform nil :accessor ed-ref)
    (width   :initform 800 :accessor ed-width)
    (height  :initform 500 :accessor ed-height)
-   (tree    :initform nil :accessor ed-tree)          ; the editor surface's widget tree
+   (tree    :initform nil :accessor ed-tree)
    (cell-w  :initform 9d0 :accessor ed-cell-w)
    (cell-h  :initform 18d0 :accessor ed-cell-h)
    (ascent  :initform 14d0 :accessor ed-ascent)
    (metricsp :initform nil :accessor ed-metricsp)
    (sent-cols :initform -1 :accessor ed-sent-cols)
    (sent-rows :initform -1 :accessor ed-sent-rows)
+   (sent-width  :initform -1 :accessor ed-sent-width)
+   (sent-height :initform -1 :accessor ed-sent-height)
    (pump    :initarg :pump :reader ed-pump)
-   (wire    :initform nil :accessor ed-wire)   ; the frame being held
+   (wire    :initform nil :accessor ed-wire)
    (generation :initform 0 :accessor ed-generation)
    (dirty   :initform nil :accessor ed-dirty)
-   ;; no buffer may be attached before the first xdg_surface.configure --
-   ;; river enforces this where some compositors tolerate it
+
    (configured :initform nil :accessor ed-configured)
    (done    :initform nil :accessor ed-done)
-   ;; client-side key repeat: wayland compositors do not repeat for clients.
-   ;; The compositor's repeat_info sets rate/delay; a held key resends its wire
-   ;; message from the run-loop tick until release or focus loss.
-   (repeat-rate     :initform 25 :accessor ed-repeat-rate)   ; keys/sec, 0 = off
+
+   (repeat-rate     :initform 25 :accessor ed-repeat-rate)
    (repeat-delay-ms :initform 400 :accessor ed-repeat-delay-ms)
    (held-keycode    :initform nil :accessor ed-held-keycode)
    (held-msg        :initform nil :accessor ed-held-msg)
@@ -115,16 +102,29 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
             (ed-ascent ed) (c:font-ascent fe)))
     (setf (ed-metricsp ed) t)))
 
-(defun maybe-resize (ed)
-  (let ((cc (ed-cols ed)) (rr (ed-rows ed)))
-    (unless (and (= cc (ed-sent-cols ed)) (= rr (ed-sent-rows ed)))
-      (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr)
-      (send-input ed (list :resize :cols cc :rows rr
-                           :width (ed-width ed) :height (ed-height ed)
-                           :cell-w (round (ed-cell-w ed))
-                           :cell-h (round (ed-cell-h ed)))))))
+(defun say-size (ed)
+  "Tell the daemon how big this surface is and what it is drawing text at. One
+place says it: a second one that left something out is a frame laid out for
+one grid and painted on another."
+  (let ((cc (ed-cols ed)) (rr (ed-rows ed))
+        (w (ed-width ed)) (h (ed-height ed)))
+    (setf (ed-sent-cols ed) cc (ed-sent-rows ed) rr
+          (ed-sent-width ed) w (ed-sent-height ed) h)
+    (send-input ed (list :resize :cols cc :rows rr
+                         :width w :height h
+                         :cell-w (round (ed-cell-w ed))
+                         :cell-h (round (ed-cell-h ed))
+                         :font-px (round (font-px))))))
 
-;;;; Paint a frame into an shm buffer.
+(defun maybe-resize (ed)
+  "Say it again whenever it changes at all. The daemon arranges in pixels, so a
+window that grew by less than a cell still has to be told: what it lays out is
+what gets painted, and a frame laid out for the size before is cut off by the
+surface it lands in."
+  (unless (and (= (ed-cols ed) (ed-sent-cols ed)) (= (ed-rows ed) (ed-sent-rows ed))
+               (= (ed-width ed) (ed-sent-width ed))
+               (= (ed-height ed) (ed-sent-height ed)))
+    (say-size ed)))
 
 (defun paint-editor (ed)
   (with-slots (shm wl-surface width height) ed
@@ -146,9 +146,7 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
                   (if (uiw:arranged-p (ed-tree ed))
                       (paint:paint-arranged (ed-tree ed))
                       (paint:paint-tree (ed-tree ed) width height)))))
-            ;; ground-truth eyes: with PINE_FRAME_DUMP set, every committed
-            ;; frame is also written as pine painted it, so a corrupted
-            ;; display can be split into painter vs compositor halves
+
             (when (uiop:getenv "PINE_FRAME_DUMP")
               (ignore-errors
                (c:with-surface-and-context
@@ -159,8 +157,6 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
             (wl-surface.commit wl-surface)
             (push (evelambda (:release () (destroy-proxy buffer))) (wl-proxy-hooks buffer)))))
       (setf (ed-dirty ed) nil))))
-
-;;;; Connect + xdg surface.
 
 (defun connect-editor (ed)
   (with-slots (display compositor shm xdg-wm-base seat) ed
@@ -213,23 +209,16 @@ does, so a frame laid out at N cols x rows lands exactly in the cells."
     (xdg-toplevel.set-title xdg-toplevel "pine")
     (wl-surface.commit wl-surface)))
 
-;;;; Frames from the daemon.
-
 (defun handle-editor-message (ed msg)
   (case (first msg)
     (:attached
-     (progn
-       (setf (ed-ref ed) (pine.core.attach:accept-attached (ed-sys ed) msg))
-       (send-input ed (list :resize :cols (ed-cols ed) :rows (ed-rows ed)
-                            :width (ed-width ed) :height (ed-height ed)
-                            :cell-w (round (ed-cell-w ed))
-                            :cell-h (round (ed-cell-h ed))))))
+     (setf (ed-ref ed) (pine.net.attach:accept-attached (ed-sys ed) msg))
+     (say-size ed))
     (:style
      (destructuring-bind (&key styles) (rest msg)
        (pine.ui.css:install styles)
        (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
-    ;; the editor surface: a widget tree (window + modeline + echo). Rebuild it
-    ;; -- the buffer's rows ride inside the window node -- and repaint.
+
     (:widgets
      (destructuring-bind (&key surface tree as generation) (rest msg)
        (declare (ignore surface as))
@@ -276,7 +265,7 @@ for a whole one instead of applying."
    :pending (lambda () (and (ed-dirty ed) (ed-configured ed)))
    :deadline (lambda () (repeat-deadline ed))))
 
-(defun run-editor (&key (host pine.core.server:*host*) (port pine.core.server:*port*))
+(defun run-editor (&key (host pine.net.server:*host*) (port pine.net.server:*port*))
   "Attach an editor window to the daemon at HOST:PORT and paint the frames it
 pushes. The daemon must be up."
   (let* ((backing (connect-display))
@@ -291,4 +280,4 @@ pushes. The daemon must be up."
       (pine.frontend:close-pump (ed-pump ed))
       (pine.frontend:shutdown backing))))
 
-(pine.core.attach:frontend :editor #'run-editor)
+(pine.net.attach:frontend :editor #'run-editor)

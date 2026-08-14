@@ -1,58 +1,49 @@
 (defpackage #:pine.provider.out
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path))
-  (:shadow #:number)
-  (:export #:sh #:run #:file #:int-file #:lines #:split #:starts-with
-           #:number #:percent #:json #:field))
+  (:export #:sh #:lines #:words #:number-in #:firstp #:has #:each-line
+           #:*through*))
 
 (in-package #:pine.provider.out)
-(named-readtables:in-readtable pine.path:syntax)
 
-(defun sh (control &rest arguments)
-  (let ((command (if arguments (apply #'format nil control arguments) control)))
-    (or (ns:read (p:path /sh command)) "")))
+(defvar *through* nil)
 
-(defun run (control &rest arguments)
-  (let ((command (if arguments (apply #'format nil control arguments) control)))
-    (ns:write (p:path /sh command) t)))
-
-(defun file (path)
-  (ns:read (p:path /file (p:spliced path))))
-
-(defun split (text ch &optional limit)
-  (pine.data:split text :on ch :limit (and limit (1- limit))))
+(defun sh (format &rest arguments)
+  "Run a line and answer what it said. Through /sh when there is one, so a
+provider's shell-outs are visible there and two providers asking the same
+question in the same breath ask it once."
+  (let ((line (apply #'format nil format arguments)))
+    (when *through*
+      (return-from sh (funcall *through* line)))
+    (multiple-value-bind (out err code)
+        (ignore-errors
+         (uiop:run-program (list "sh" "-c" line)
+                           :output '(:string :stripped t)
+                           :error-output nil
+                           :ignore-error-status t))
+      (declare (ignore err code))
+      (or out ""))))
 
 (defun lines (text)
-  (pine.data:split text :on #\newline :empties nil))
+  (remove "" (uiop:split-string (or text "") :separator '(#\Newline))
+          :test #'string=))
 
-(defun starts-with (text prefix)
-  (and (>= (length text) (length prefix))
-       (string= text prefix :end1 (length prefix))))
+(defun words (text &optional (on #\Space))
+  (remove "" (uiop:split-string (or text "") :separator (list on))
+          :test #'string=))
 
-(defun number (text)
-  (let ((start (position-if (lambda (c) (or (digit-char-p c) (char= c #\.)))
-                            text)))
+(defun number-in (text)
+  (let* ((text (or text ""))
+         (start (position-if (lambda (c) (or (digit-char-p c) (char= c #\-))) text)))
     (when start
-      (let ((end (or (position-if-not (lambda (c) (or (digit-char-p c)
-                                                      (char= c #\.)))
-                                      text :start start)
+      (let ((end (or (position-if-not (lambda (c) (or (digit-char-p c) (char= c #\.)))
+                                      text :start (1+ start))
                      (length text))))
         (ignore-errors (read-from-string (subseq text start end)))))))
 
-(defun int-file (path)
-  (let ((text (file path)))
-    (when (stringp text)
-      (let ((n (number text))) (and n (round n))))))
+(defun has (command)
+  (plusp (length (sh "command -v ~a 2>/dev/null" command))))
 
-(defun percent (value)
-  (let ((n (if (stringp value) (number value) value)))
-    (when n
-      (max 0 (min 100 (round (if (<= n 1) (* 100 n) n)))))))
+(defun firstp (text) (first (lines text)))
 
-(defun field (text name &optional (separator #\:))
-  (loop :for line :in (lines text)
-        :when (starts-with (string-left-trim " " line) name)
-          :return (string-trim " " (second (split line separator 2)))))
-
-(defun json (text)
-  (ignore-errors (com.inuoe.jzon:parse text)))
+(defun each-line (text function)
+  (mapcar function (lines text)))

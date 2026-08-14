@@ -1,248 +1,131 @@
 (in-package :pine.test)
-(named-readtables:in-readtable pine.path:syntax)
 
 (def-suite* :pine.proc :in :pine)
 
-(defmacro with-proc ((&key system) &body body)
-  "A space of its own with /proc served, bound to PROC and torn down afterwards."
-  `(pine.ns:with-space ()
-     (let ((proc (pine.ns:up :proc {:system ,system})))
-       (declare (ignorable proc))
-       (unwind-protect (progn ,@body)
-         (pine.ns:down :proc)))))
-
-(defun settle (proc predicate &key (seconds 5))
-  (let ((deadline (+ (get-internal-real-time)
-                     (* seconds internal-time-units-per-second))))
-    (loop :when (funcall predicate) :return t
-          :when (> (get-internal-real-time) deadline) :return nil
-          :do (pine.proc:tick proc)
-              (sleep 0.05))))
-
-;;;; declaring is starting
-
-(test declaring-a-thread-starts-it
-  (with-proc ()
-    (let ((ran nil))
-      (pine.ns:write /proc/probe {:thread (pine.data:fn []
-                                            (setf ran t)
-                                            (sleep 30))})
-      (is-true (settle proc (lambda () ran)))
-      (is (eq :running (pine.ns:read /proc/probe/state))))))
-
-(test a-thread-says-things-where-a-subprocess-says-them
-  "A subprocess says things by writing its stdout and pine rings the lines. A
-:thread has no stdout, so EMIT puts them in the same place, and nothing reading
-/proc/?name/out has to know which kind it was."
-  (with-proc ()
-    (pine.ns:write /proc/probe
-                   {:thread (pine.data:fn []
-                              (pine.proc:emit "first")
-                              (pine.proc:emit "~a of ~d" "second" 2)
-                              (sleep 30))})
-    (is-true (settle proc (lambda ()
-                            (equal "second of 2"
-                                   (pine.ns:read /proc/probe/out)))))
-    (is (equal "first" (pine.ns:read /proc/probe/out/1))
-        "the earlier line is behind it in the ring")))
-
-(test emit-outside-a-process-is-nothing
-  "There is nowhere for it to go, so it goes nowhere rather than guessing."
-  (with-proc ()
-    (is (null (pine.proc:emit "into the void")))))
-
-(test the-table-is-the-only-list-of-what-runs
-  (with-proc ()
-    (pine.ns:write /proc/one {:thread (pine.data:fn [] (sleep 30))})
-    (pine.ns:write /proc/two {:thread (pine.data:fn [] (sleep 30))})
-    (let ((names (mapcar #'pine.path:leaf (pine.data:keys (pine.ns:read /proc/*)))))
-      (is (equal '("one" "two") (sort names #'string<))))))
-
-(test a-declaration-reads-back
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is (fset:equal? ["sleep" "30"] (fset:lookup (pine.ns:read /proc/probe) :run)))))
-
-(test writing-nil-stops-it-and-drops-it
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/probe/state)))))
-    (pine.ns:write /proc/probe nil)
-    (is (null (pine.ns:read /proc/probe/state)))
-    (is (fset:empty? (pine.ns:read /proc/* {})))))
-
-(test declaring-the-same-thing-again-leaves-it-running
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (pine.ns:read /proc/probe/pid))))
-    (let ((pid (pine.ns:read /proc/probe/pid)))
-      (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-      (is (eql pid (pine.ns:read /proc/probe/pid))
-          "an idempotent write must not churn what is up"))))
-
-;;;; a subprocess
-
-(test a-subprocess-runs-and-reports-its-pid
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/probe/state)))))
-    (is (integerp (pine.ns:read /proc/probe/pid)))))
-
-(test what-a-process-says-lands-in-its-ring
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sh" "-c" "echo hello; echo again; sleep 30"]})
-    (is-true (settle proc (lambda () (equal "again" (pine.ns:read /proc/probe/out)))))
-    (is (= 2 (fset:size (pine.ns:read /proc/probe/out/*))))
-    (is (string= "hello" (pine.ns:read /proc/probe/out/1)))))
-
-;;;; the verbs
-
-(test stop-and-start
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/probe/state)))))
-    (pine.ns:write /proc/probe [:stop])
-    (is (eq :stopped (pine.ns:read /proc/probe/state)))
-    (pine.proc:tick proc)
-    (is (eq :stopped (pine.ns:read /proc/probe/state))
-        "a pass does not bring back what was stopped on purpose")
-    (pine.ns:write /proc/probe [:start])
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/probe/state)))))))
-
-(test restart-gives-it-a-new-process
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (pine.ns:read /proc/probe/pid))))
-    (let ((pid (pine.ns:read /proc/probe/pid)))
-      (pine.ns:write /proc/probe [:restart])
-      (is-true (settle proc (lambda () (and (pine.ns:read /proc/probe/pid)
-                                       (not (eql pid (pine.ns:read /proc/probe/pid))))))))))
-
-;;;; keeping it alive
-
-(test what-dies-comes-back
-  "Writing the declaration is what keeps it alive; there is no supervisor to
-declare separately."
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (pine.ns:read /proc/probe/pid))))
-    (let ((pid (pine.ns:read /proc/probe/pid)))
-      (uiop:run-program (list "kill" "-9" (princ-to-string pid))
-                        :ignore-error-status t)
-      (is-true (settle proc (lambda () (let ((now (pine.ns:read /proc/probe/pid)))
-                                    (and now (not (eql pid now)))))
-                       :seconds 10)))))
-
-(test something-that-keeps-dying-is-backed-off-rather-than-spun
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sh" "-c" "exit 1"]})
-    (settle proc (lambda () nil) :seconds 1)
-    (let ((entry-attempts (length (pine.data:keys (pine.ns:read /proc/*)))))
-      (is (= 1 entry-attempts))
-      (dotimes (i 20) (pine.proc:tick proc))
-      (is (member (pine.ns:read /proc/probe/state) '(:running :failed))
-          "it is either up or known to be down, never spinning"))))
-
-;;;; needs
-
-(test a-declaration-waits-for-what-it-needs
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sleep" "30"] :needs [/display]})
-    (pine.proc:tick proc)
-    (is (not (eq :running (pine.ns:read /proc/probe/state)))
-        "nothing to run on yet")
-    (pine.ns:write /display "wayland-1")
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/probe/state)))))))
-
-(test a-declaration-stands-down-for-what-is-already-there
-  "The rule that kept a second editor from starting was a condition inside a
-loop. It is a path now."
-  (with-proc ()
-    (pine.ns:write /attached/probe t)
-    (pine.ns:write /proc/probe {:run ["sleep" "30"] :unless [/attached/probe]})
-    (pine.proc:tick proc)
-    (is (not (eq :running (pine.ns:read /proc/probe/state))))
-    (pine.ns:write /attached/probe nil)
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/probe/state)))))))
-
-(test what-a-process-said-on-its-way-out-is-readable
-  "A frontend says it cannot run here by exiting 70. Pine records what it said
-rather than deciding what it meant."
-  (with-proc ()
-    (pine.ns:write /proc/probe {:run ["sh" "-c" "exit 70"]})
-    (is-true (settle proc (lambda () (eql 70 (pine.ns:read /proc/probe/exit)))))))
-
-(test the-environment-a-declaration-asks-for-reaches-it
-  (with-proc ()
-    ;; the environment given replaces the one inherited, so it carries
-    ;; everything the command needs to run at all
-    (pine.ns:write /proc/probe
-                   {:run ["sh" "-c" "echo $PINE_PROBE; sleep 30"]
-                    :env (fset:convert 'fset:seq
-                                       (cons "PINE_PROBE=here"
-                                             (sb-ext:posix-environ)))})
-    (is-true (settle proc (lambda () (equal "here" (pine.ns:read /proc/probe/out)))))))
-
-;;;; an interval instead of staying up
-
-(test an-interval-runs-it-again-rather-than-keeping-it-up
-  (with-proc ()
-    (let ((runs 0))
-      (pine.ns:write /proc/probe {:every 1 :thread (pine.data:fn [] (incf runs))})
-      (is-true (settle proc (lambda () (>= runs 1))))
-      (is-true (settle proc (lambda () (>= runs 2)) :seconds 6))
-      (is (not (eq :failed (pine.ns:read /proc/probe/state)))
-          "finishing is not failing when it runs on an interval"))))
-
-;;;; an image without one to start
-
-(test asking-for-an-image-with-no-way-to-start-one-says-so
-  "A start that does not take is something about the process, so it reads
-where the process is read rather than being raised as a fault in pine."
-  (with-proc ()
-    (pine.ns:write /proc/probe {:image "pine editor"})
-    (pine.proc:tick proc)
-    (is (eq :failed (pine.ns:read /proc/probe/state)))
-    (is (search "image" (pine.ns:read /proc/probe/error)))))
-
-;;;; the pass runs on the actor system's timer
-
-(test the-table-is-attended-on-sentos-wheel-timer
-  "The interval belongs to the wheel timer. A thread that sleeps in a loop is
-a supervisor nobody asked for."
-  (let ((server (pine.core.server:start-server :workers 1))
-        (interval (pine.ns:read (pine.path:parse "/proc-interval"))))
+(test a-program-runs-and-says-what-it-said
+  (let ((p (make-instance 'pine.proc.process:program
+                          :name "probe-echo" :restarts nil
+                          :argv '("sh" "-c" "echo from the process"))))
     (unwind-protect
-         (pine.ns:with-space ()
-           (pine.ns:write (pine.path:parse "/proc-interval") 1)
-           (let ((proc (pine.ns:up :proc
-                        {:system (pine.core.server:actor-system server)})))
-             (declare (ignorable proc))
-             (unwind-protect
-                  (progn
-                    (pine.ns:write /proc/probe {:run ["sleep" "30"]})
-                    (let ((deadline (+ (get-internal-real-time)
-                                       (* 8 internal-time-units-per-second))))
-                      ;; nothing here calls tick: the timer has to
-                      (is-true (loop :when (eq :running (pine.ns:read /proc/probe/state))
-                                       :return t
-                                     :when (> (get-internal-real-time) deadline)
-                                       :return nil
-                                     :do (sleep 0.1)))))
-               (pine.ns:down :proc))))
-      (pine.ns:write (pine.path:parse "/proc-interval") interval)
-      (pine.core.server:stop-server server))))
+         (progn
+           (pine.proc.process:start p)
+           (is-true (wait-until (lambda () (pine.data:held
+                                            (pine.proc.process:said p)))))
+           (is (equal '("from the process")
+                      (pine.data:held (pine.proc.process:said p)))))
+      (pine.proc.process:stop p))))
 
-;;;; a path under /proc is readable from the thread that owns the table
+(test a-thread-is-a-process-like-anything-else
+  "One that repeats is an entry on the image's clock, not a thread of its own
+sleeping in a loop."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let* ((n (pine.data:box 0))
+                (p (make-instance 'pine.proc.process:thread-process
+                                  :name "probe-thread" :every 0.1
+                                  :thunk (lambda () (pine.data:swap! n #'1+)))))
+           (unwind-protect
+                (progn
+                  (pine.proc.process:start p)
+                  (is-true (pine.proc.process:alivep p))
+                  (is (member "probe-thread" (pine.run.timer:names) :test #'equal)
+                      "it is on the clock")
+                  (is (null (pine.run.task:task-named "probe-thread"))
+                      "and it took no thread of its own")
+                  (is-true (wait-until (lambda () (> (pine.data:held n) 2)))))
+             (pine.proc.process:stop p))
+           (is (eq :stopped (pine.proc.process:state p)))
+           (is-false (pine.proc.process:alivep p))
+           (is (null (member "probe-thread" (pine.run.timer:names) :test #'equal)))))
+    (pine:stop)))
 
-(test a-declaration-may-wait-on-a-path-under-proc
-  "A read of an owned table is a snapshot, not a message, so a :needs that
-names /proc cannot ask the thread that is already running it."
-  (with-proc ()
-    (pine.ns:write /proc/first {:run ["sleep" "30"]})
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/first/state)))))
-    (pine.ns:write /proc/second {:run ["sleep" "30"]
-                                 :needs [/proc/first/pid]})
-    (is-true (settle proc (lambda () (eq :running (pine.ns:read /proc/second/state)))
-                     :seconds 5)
-             "it started rather than wedging")))
+(test what-dies-is-started-again-and-the-backoff-grows
+  (let* ((s (pine.proc.supervisor:supervisor))
+         (p (make-instance 'pine.proc.process:program
+                           :name "probe-dies" :argv '("sh" "-c" "exit 0"))))
+    (unwind-protect
+         (progn
+           (pine.proc.supervisor:supervise s p)
+           (pine.proc.process:start p)
+           (is (eql 1 (pine.proc.process:attempts p)))
+           (is-true (wait-until (lambda () (not (pine.proc.process:alivep p)))))
+           (pine.proc.supervisor:attend s)
+           (is (>= (pine.proc.process:attempts p) 2)
+               "the supervisor started it again")
+           (is (> (pine.proc.process:backoff p) 1)))
+      (pine.proc.supervisor:forget s "probe-dies"))))
+
+(test a-process-that-says-it-does-not-restart-is-left-alone
+  (let* ((s (pine.proc.supervisor:supervisor))
+         (p (make-instance 'pine.proc.process:program
+                           :name "probe-once" :restarts nil
+                           :argv '("sh" "-c" "exit 0"))))
+    (unwind-protect
+         (progn
+           (pine.proc.supervisor:supervise s p)
+           (pine.proc.process:start p)
+           (is-true (wait-until (lambda () (not (pine.proc.process:alivep p)))))
+           (pine.proc.supervisor:attend s)
+           (is (eql 1 (pine.proc.process:attempts p))))
+      (pine.proc.supervisor:forget s "probe-once"))))
+
+(test the-supervisor-is-told-by-the-images-clock
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((s (pine.proc.supervisor:supervisor)))
+           (unwind-protect
+                (progn
+                  (pine.proc.supervisor:watch s :every 0.1)
+                  (is (member :supervisor (pine.run.timer:names))
+                      "attending is a tick, not a thread"))
+             (pine.proc.supervisor:unwatch s))
+           (is (null (pine.proc.supervisor:attends s)))
+           (is (null (member :supervisor (pine.run.timer:names))))))
+    (pine:stop)))
+
+(test a-lisp-process-is-a-second-image-evaluated-in
+  "An agent was always a process. This is the one that can be evaluated in."
+  (let ((p (make-instance 'pine.proc.lisp:lisp-process
+                          :name "probe-lisp" :restarts nil :systems nil)))
+    (unwind-protect
+         (progn
+           (pine.proc.process:start p)
+           (is-true (pine.proc.lisp:ready-p p))
+           (is (eql 4 (pine.proc.lisp:evaluate p '(+ 2 2))))
+           (is (equal "SBCL" (pine.proc.lisp:evaluate p '(lisp-implementation-type))))
+           (multiple-value-bind (value fault)
+               (pine.proc.lisp:evaluate p '(error "over there"))
+             (is (null value))
+             (is (search "over there" fault)
+                 "a fault in the other image comes back as a value")))
+      (pine.proc.process:stop p))
+    (is-false (pine.proc.process:alivep p))))
+
+(test a-fault-in-the-other-image-comes-home-with-its-restarts
+  "The other image does not unwind: it stands in the fault and says what it is
+still offering, so taking one of those resumes the thread over there."
+  (let ((p (make-instance 'pine.proc.lisp:lisp-process
+                          :name "probe-fault" :restarts nil :systems nil)))
+    (pine.run.fault:forget-faults)
+    (unwind-protect
+         (progn
+           (pine.proc.process:start p)
+           (multiple-value-bind (value said offers)
+               (pine.proc.lisp:evaluate p '(error "over there"))
+             (is (null value))
+             (is (search "over there" said))
+             (is (member "ABORT" offers :test #'equal)
+                 "the restarts that image is still standing in"))
+           (let ((f (first (pine.run.fault:faults))))
+             (is (search "over there" (princ-to-string (pine.run.fault:condition-of f)))
+                 "and the fault joined this image's own")
+             (is (eq p (pine.proc.lisp:there f)) "knowing where it came from")
+             (is (member "ABORT" (pine.run.fault:offers f) :test #'equal))
+             (pine.run.fault:resume f "ABORT")
+             (loop :repeat 200 :while (pine.proc.lisp:there f) :do (sleep 0.01))
+             (is (eql 4 (pine.proc.lisp:evaluate p '(+ 2 2)))
+                 "and taking one here let the thread there carry on")))
+      (pine.run.fault:forget-faults)
+      (pine.proc.process:stop p))))

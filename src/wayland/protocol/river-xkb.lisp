@@ -1,6 +1,3 @@
-;;;; river_xkb_bindings_v1: compositor-side keyboard chords delivered to
-;;;; the window manager.
-
 (in-package #:pine.wayland.protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include

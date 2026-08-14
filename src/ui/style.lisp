@@ -7,18 +7,6 @@
            #:st-opacity))
 
 (in-package #:pine.ui.style)
-(named-readtables:in-readtable pine.data:syntax)
-
-;;;; The style resolver. pine.ui.css:stylesheet is CSS-as-data: a selector
-;;;; and a map of CSS property to CSS string. A node is identified by its class
-;;;; chain root..node and its hover state, matched against those rules the way a
-;;;; browser cascades them (source order, later wins), and the matched values
-;;;; interpreted into a STYLE. Bare element selectors never match a layout node,
-;;;; since nodes carry classes only, so those rules drop out.
-;;;;
-;;;; A selector is comma-separated groups; a group is whitespace-separated
-;;;; segments, the descendant combinator; a segment is a run of .classes with an
-;;;; optional :pseudo, or `*', or a bare element name.
 
 (defstruct (style (:conc-name st-))
   bg gradient fg (border-w 0) border-color (radius 0) pad-x pad-y min-w min-h
@@ -28,14 +16,14 @@
   (remove "" (uiop:split-string s :separator '(#\space #\tab)) :test #'string=))
 
 (defun parse-segment (s)
-  (cond ((string= s "*") {:universal t})
+  (cond ((string= s "*") (list :universal t))
         ((find #\. s)
          (let* ((colon (position #\: s))
                 (pseudo (and colon (subseq s (1+ colon))))
                 (body   (subseq s 0 (or colon (length s))))
                 (classes (remove "" (uiop:split-string body :separator ".") :test #'string=)))
-           {:classes classes :pseudo pseudo}))
-        (t {:element t})))                      ; button / trough / calendar ...
+           (list :classes classes :pseudo pseudo)))
+        (t (list :element t))))
 
 (defun parse-selector (s)
   (mapcar #'parse-segment (split-ws s)))
@@ -44,36 +32,27 @@
   (mapcar (lambda (g) (parse-selector (string-trim " " g)))
           (uiop:split-string sel-string :separator '(#\,))))
 
-;;;; Compiling the stylesheet is expensive and every painted node asks for it,
-;;;; so it is worked out once and kept until the tree moves. What it is built
-;;;; from -- the theme and the rules a config wrote -- are both values in the
-;;;; tree, so EQ on the root is the whole of "is this still true", and the memo
-;;;; belongs to the space through what the :THEME server keeps.
-
 (defun compiled-rules ()
-  (pine.ui.face:remembered
-   (pine.ui.face:memo :stylesheet)
+  (pine.ui.face:memo
+   :stylesheet
    (lambda ()
      (loop :for (sel props) :in (pine.ui.css:stylesheet)
            :collect (cons (parse-rule-selectors sel) props)))))
 
 (defun reset-rules ()
-  "Forget the compiled rules, so the next paint builds them again."
-  (let ((cell (pine.ui.face:memo :stylesheet)))
-    (when cell
-      (sento.atomic:atomic-swap cell (lambda (old) (declare (ignore old)) nil))))
+  (let* ((w pine.world.world:*world*)
+         (n (and w (pine.world.world:at w "memo/stylesheet"))))
+    (when n (pine.fs.node:invalidate n)))
   nil)
-
-;;;; Matching.
 
 (defun pseudo-ok (pseudo hover)
   (or (null pseudo) (and (string= pseudo "hover") hover)))
 
 (defun seg-match (seg classes hover)
-  (cond ((fset:lookup seg :element) nil)
-        ((fset:lookup seg :universal) (pseudo-ok (fset:lookup seg :pseudo) hover))
-        (t (and (subsetp (fset:lookup seg :classes) classes :test #'string=)
-                (pseudo-ok (fset:lookup seg :pseudo) hover)))))
+  (cond ((getf seg :element) nil)
+        ((getf seg :universal) (pseudo-ok (getf seg :pseudo) hover))
+        (t (and (subsetp (getf seg :classes) classes :test #'string=)
+                (pseudo-ok (getf seg :pseudo) hover)))))
 
 (defun ancestors-match (segs ancestors)
   "Each seg matches some ancestor, left to right, ancestors root-first."
@@ -93,13 +72,12 @@
 
 (defun matched-props (chain hover)
   "The props of every rule matching CHAIN, merged in source order, later wins."
-  (let ((merged (fset:empty-map)))
+  (let ((merged nil))
     (loop for (selectors . props) in (compiled-rules)
           when (some (lambda (sel) (selector-match sel chain hover)) selectors)
-            do (fset:do-map (k v props) (setf merged (fset:with merged k v))))
+            do (loop for (k v) on props by #'cddr
+                     do (setf (getf merged k) v)))
     merged))
-
-;;;; CSS value parsing.
 
 (defun parts-nth (parts i) (string-trim " " (nth i parts)))
 
@@ -146,10 +124,10 @@ ignored). A value shape a back end brings of its own is a method.")
     (case (length l)
       (0 (values nil nil))
       (1 (values (first l) (first l)))
-      (2 (values (second l) (first l)))                       ; v h
+      (2 (values (second l) (first l)))
       (3 (values (second l) (round (+ (first l) (third l)) 2)))
       (t (values (round (+ (second l) (fourth l)) 2)
-                 (round (+ (first l) (third l)) 2))))))        ; t r b l
+                 (round (+ (first l) (third l)) 2))))))
 
 (defun parse-radius (s)
   (cond ((null s) 0)
@@ -181,7 +159,7 @@ form is the separate PARSE-SHADOW."
   "A CSS drop shadow (<ox> <oy> <blur> <spread> <colour>) -> (list ox oy blur
 (r g b a)), or NIL. The inset form is PARSE-INSET's; this is the panel float."
   (when (and s (not (search "inset" s)) (search "px" s))
-    (let* ((lens (parse-lengths s))                       ; ox oy blur spread
+    (let* ((lens (parse-lengths s))
            (toks (split-ws s))
            (c (multiple-value-list (parse-color (car (last toks))))))
       (when (and (>= (length lens) 3) (first c))
@@ -194,9 +172,9 @@ expanded per CSS rules; NIL when none."
     (case (length l)
       (0 nil)
       (1 (list (first l) (first l) (first l) (first l)))
-      (2 (list (first l) (second l) (first l) (second l)))          ; v h
-      (3 (list (first l) (second l) (third l) (second l)))          ; t h b
-      (t (subseq l 0 4)))))                                          ; t r b l
+      (2 (list (first l) (second l) (first l) (second l)))
+      (3 (list (first l) (second l) (third l) (second l)))
+      (t (subseq l 0 4)))))
 
 (defun resolve-margin (prop)
   "Merge the :margin shorthand with any per-side :margin-* overrides into
@@ -222,7 +200,7 @@ expanded per CSS rules; NIL when none."
   "Resolve the merged style for a node given its class CHAIN (root..node)."
   (let* ((p (matched-props chain hover))
          (st (make-style)))
-    (flet ((prop (k) (fset:lookup p k)))
+    (flet ((prop (k) (getf p k)))
       (multiple-value-bind (r g b a) (parse-color (prop :background-color))
         (when r (setf (st-bg st) (list r g b a))))
       (setf (st-gradient st) (parse-gradient (prop :background-image)))

@@ -1,17 +1,10 @@
 (defpackage #:pine.ts.lang.scheme
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:syntax #:pine.ts.syntax))
+  (:local-nicknames (#:syntax #:pine.ts.syntax))
   (:export #:scheme))
 
 (in-package #:pine.ts.lang.scheme)
-(named-readtables:in-readtable pine.path:syntax)
-
-;;;; Scheme, as a declaration and nothing else.
-;;;;
-;;;; There is no scheme walker any more, and there never needs to be another
-;;;; walker for anything: this file is the proof that a language is data. What
-;;;; it cannot do is ask the image what a head is, because the image holds no
-;;;; scheme, so the keywords are written down.
+(named-readtables:in-readtable pine.path.reader:syntax)
 
 (defun scheme ()
   (syntax:language
@@ -59,8 +52,4 @@
    (/head/guard     {:face :keyword :rest :body})
    (/head/syntax-rules {:face :keyword :rest :body})))
 
-(ns:serve :syntax-scheme
-  {:at [/syntax/scheme]
-   :after [:syntax]
-   :doc "Scheme's rules, at /syntax/scheme"
-   :up (lambda () (ns:write /syntax/scheme (scheme)) nil)})
+(syntax:declare-language :scheme (scheme))

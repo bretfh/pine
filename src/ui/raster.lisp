@@ -8,8 +8,6 @@
 
 (in-package #:pine.ui.raster)
 
-;;;; Faces -> cell colours
-
 (defun face-cell-rgb (designator)
   "(values fr fg fb br bg bb attr) for a face DESIGNATOR; bg -1 means none, attr
 is the packed bold/italic/underline bits. DESIGNATOR is a face name resolved
@@ -28,10 +26,6 @@ lists or nil -- installed by RESOLVE-STYLES! for the cell render."
         (values (first fg) (second fg) (third fg)
                 (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
                 attr))))
-
-
-;;;; Raster -- a cell buffer widgets paint into. Cells are the flat 10-slot
-;;;; [row col code fr fg fb br bg bb bold] format the surface painter draws.
 
 (defstruct (raster (:constructor %make-raster)) cols rows cells (clip nil))
 

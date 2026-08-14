@@ -1,36 +1,44 @@
 (defpackage #:pine.provider.env
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns)))
+  (:local-nicknames (#:node #:pine.fs.node))
+  (:export #:env-node #:variable-node #:install #:names))
 
 (in-package #:pine.provider.env)
-(named-readtables:in-readtable pine.path:syntax)
 
-;;;; The environment this image was started with, and what it hands to the
-;;;; ones it starts.
+(defclass env-node (node:node) ())
 
-(defun %set (name value)
-  (cffi:foreign-funcall "setenv" :string name :string (princ-to-string value)
-                                 :int 1 :int)
+(defclass variable-node (node:node) ())
+
+(defun names ()
+  (sort (mapcar (lambda (entry) (subseq entry 0 (position #\= entry)))
+                (sb-ext:posix-environ))
+        #'string<))
+
+(defmethod node:nodes ((n env-node))
+  (loop :for name :in (names)
+        :collect (make-instance 'variable-node :name name :parent n)))
+
+(defmethod node:resolve ((n env-node) name)
+  (make-instance 'variable-node :name name :parent n))
+
+(defmethod node:contents ((n env-node)) (names))
+
+(defmethod node:contents ((n variable-node)) (uiop:getenv (node:name n)))
+
+(defmethod (setf node:contents) (value (n variable-node))
+  (if (null value)
+      (sb-posix:unsetenv (node:name n))
+      (sb-posix:setenv (node:name n) (princ-to-string value) 1))
   value)
 
-(defun %unset (name)
-  (cffi:foreign-funcall "unsetenv" :string name :int)
-  nil)
+(defmethod node:leafp ((n variable-node)) t)
+(defmethod node:persistp ((n env-node)) nil)
+(defmethod node:persistp ((n variable-node)) nil)
 
-(defun %names ()
-  (mapcar (lambda (entry) (subseq entry 0 (position #\= entry)))
-          (sb-ext:posix-environ)))
+(defmethod node:livep ((n env-node)) t)
+(defmethod node:livep ((n variable-node)) t)
 
-(defun provider ()
-  (ns:provider
-   (/env/?name
-    {:read (pine.data:fn [] (uiop:getenv name))
-     :write (pine.data:fn [v] (if (null v) (%unset name) (%set name v)))
-     :doc "an environment variable; nil unsets it"})
-   (/env {:ls (pine.data:fn [] (%names))
-          :doc "every name in the environment"})))
-
-(ns:serve :env
-  {:at [/env]
-   :doc "the environment this image was started in"
-   :up (lambda () (ns:write /env (provider)))})
+(defun install (root)
+  (node:attach (make-instance 'env-node :name "env"
+                                        :describes "the environment this image was started in")
+               root))

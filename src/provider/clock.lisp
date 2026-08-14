@@ -1,53 +1,72 @@
 (defpackage #:pine.provider.clock
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns))
-  (:export #:tick))
+  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
+                    (#:process #:pine.proc.process))
+  (:export #:clock-node #:install #:now #:tick #:*every*))
 
 (in-package #:pine.provider.clock)
-(named-readtables:in-readtable pine.path:syntax)
 
+(defvar *every* 1)
+(defvar *now* (d:box 0))
+(defvar *clock* nil)
 
-;;;; Time, as paths. A surface that shows the hour reads /clock/hour and is
-;;;; rebuilt when it changes, which is once an hour rather than once a second.
+(defparameter +parts+
+  '("second" "minute" "min" "hour" "day" "month" "year" "weekday"))
 
-(defparameter +key+ :pine-clock)
+(defclass clock-node (node:node) ())
+
+(defclass part-node (node:node) ())
+
+(defun now () (d:held *now*))
+
+(defun %part (name at)
+  (multiple-value-bind (second minute hour day month year weekday)
+      (decode-universal-time at)
+    (cond ((equal name "second") second)
+          ((member name '("minute" "min") :test #'equal)
+           (format nil "~2,'0d" minute))
+          ((equal name "hour") (format nil "~2,'0d" hour))
+          ((equal name "day") day)
+          ((equal name "month") month)
+          ((equal name "year") year)
+          ((equal name "weekday") weekday))))
+
+(defun %part-node (n name)
+  (node:child n name
+              (lambda () (make-instance 'part-node :name name :parent n))))
 
 (defun tick ()
-  "Put the time where anything watching it will see it."
-  (multiple-value-bind (second minute hour day month year weekday)
-      (decode-universal-time (get-universal-time))
-    (ns:write /clock (fset:map (:at (get-universal-time))
-                               (:second second)
-                               (:min (format nil "~2,'0d" minute))
-                               (:hour (format nil "~2,'0d" hour))
-                               (:day day)
-                               (:month month)
-                               (:year year)
-                               (:weekday weekday)))))
+  (let ((was (d:held *now*)))
+    (d:put! *now* (get-universal-time))
+    (when (and *clock* was)
+      (dolist (name +parts+)
+        (unless (equal (%part name was) (%part name (now)))
+          (node:invalidate (%part-node *clock* name))))))
+  (now))
 
-(defun provider ()
-  "What /clock is. A clause that says only what a path is for leaves the value
-in the tree, so the time is still written, watched and read like anything else."
-  (ns:provider
-   (/clock {:doc "the time: :at :second :min :hour :day :month :year :weekday"})))
+(defmethod node:nodes ((n clock-node))
+  (loop :for name :in +parts+ :collect (%part-node n name)))
 
-(ns:serve :clock
-  {:at [/clock]
-   :doc "the time, as paths, kept current on the actor system's own timer. A
-paced tick is a timer, not a thread that sleeps."
-   ;; the timer is what the space keeps: a registration is a thing to cancel,
-   ;; not a value
-   :up (lambda ()
-         (ns:write /clock (provider))
-         (tick)
-         (let ((system (ns:given :system))
-               (every (or (ns:given :every) 1)))
-           (when system
-             (let ((timer (sento.actor-system:scheduler system)))
-               (sento.wheel-timer:schedule-recurring
-                timer every every
-                (lambda () (pine.err:attempt #'tick "the clock")) +key+)
-               timer))))
-   :down (lambda (timer)
-           (when timer
-             (ignore-errors (sento.wheel-timer:cancel timer +key+))))})
+(defmethod node:resolve ((n clock-node) name)
+  (when (member name +parts+ :test #'equal) (%part-node n name)))
+
+(defmethod node:contents ((n clock-node)) (now))
+(defmethod node:contents ((n part-node)) (%part (node:name n) (now)))
+(defmethod node:leafp ((n part-node)) t)
+(defmethod node:persistp ((n clock-node)) nil)
+(defmethod node:persistp ((n part-node)) nil)
+
+(defmethod node:livep ((n clock-node)) t)
+(defmethod node:livep ((n part-node)) t)
+
+(defun install (root &key supervisor)
+  (tick)
+  (setf *clock* (node:attach (make-instance 'clock-node :name "clock"
+                                                        :describes "the time, as paths")
+                             root))
+  (when supervisor
+    (let ((p (make-instance 'process:thread-process
+                            :name "clock" :every *every* :thunk #'tick)))
+      (pine.proc.supervisor:supervise supervisor p)
+      (process:start p)
+      p)))

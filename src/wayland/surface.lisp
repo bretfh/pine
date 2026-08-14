@@ -3,43 +3,32 @@
   (:local-nicknames (#:c #:cl-cairo2) (#:shm #:posix-shm)
                     (#:paint #:pine.cairo.paint))
   (:export
-   ;; the connection and its bound globals
+
    #:wl-conn #:wl-conn-p #:make-wl-conn
    #:wl-conn-display #:wl-conn-backing #:wl-conn-compositor #:wl-conn-shm
    #:wl-conn-shell #:wl-conn-seat #:wl-conn-pointer #:wl-conn-surfaces
-   ;; the live pointer state
+
    #:wl-conn-focus #:wl-conn-ptr-x #:wl-conn-ptr-y #:wl-conn-ptr-serial
    #:wl-conn-drag #:conn-surface->ls
-   ;; a layer surface and the tree it last built
+
    #:layer-surface #:open-layer-surface #:measure-panel
    #:ls-conn #:ls-wl-surface #:ls-layer-surf #:ls-width #:ls-height
-   #:ls-tree-fn #:ls-tree #:ls-hover #:ls-on-closed
-   #:build-tree #:paint-surface))
+   #:ls-tree-fn #:ls-tree #:ls-hover #:ls-said #:ls-on-closed
+   #:build-tree #:paint-surface #:*rebuilt*))
 
 (in-package #:pine.wayland.surface)
 
-;;;; A wayland layer surface painted by the cairo backend. We bind
-;;;; zwlr_layer_shell_v1 directly, ask the compositor to anchor us (bar on the
-;;;; left, echo at the bottom, panels as overlays), and
-;;;; paint the pine.ui.node tree into an shm buffer with cairo -- the same tree
-;;;; the daemon builds and the same paint pass the headless PNGs use. Input
-;;;; (pointer hit-testing) lives in input.lisp.
-
-;;;; The connection: the display plus the bound globals, a registry of
-;;;; surface->layer-surface for pointer focus, and the live pointer state.
+(defvar *rebuilt* nil
+  "Told a surface whose tree was just built again, so hover can be found on it.")
 
 (defstruct wl-conn
   display backing compositor shm shell seat pointer
-  (surfaces nil)                        ; alist (wl-surface-proxy . layer-surface)
+  (surfaces nil)
   focus (ptr-x 0) (ptr-y 0) (ptr-serial 0)
-  drag)                                 ; a slider being scrubbed, or nil
+  drag)
 
 (defun conn-surface->ls (conn surface)
   (cdr (assoc surface (wl-conn-surfaces conn))))
-
-;;;; A layer surface retains the node tree it last built, so pointer hit-testing
-;;;; and hover run against exactly what is on screen; a rebuild happens only when
-;;;; an action may have changed it.
 
 (defclass layer-surface ()
   ((conn       :initarg :conn       :reader ls-conn)
@@ -47,17 +36,21 @@
    (layer-surf :accessor ls-layer-surf)
    (width      :initarg :width  :accessor ls-width  :initform 0)
    (height     :initarg :height :accessor ls-height :initform 0)
-   (tree-fn    :initarg :tree-fn :accessor ls-tree-fn)   ; () -> layout node
-   (tree       :initform nil :accessor ls-tree)          ; the built root
-   (hover      :initform nil :accessor ls-hover)         ; hovered node, or nil
+   (tree-fn    :initarg :tree-fn :accessor ls-tree-fn)
+   (tree       :initform nil :accessor ls-tree)
+   (hover      :initform nil :accessor ls-hover)
+   (said       :initform nil :accessor ls-said)
    (on-closed  :initarg :on-closed :accessor ls-on-closed :initform nil)))
 
 (defun build-tree (ls)
-  "(Re)build LS's node tree from its builder, dropping stale hover."
+  "(Re)build LS's node tree from its builder. The pointer has not moved because
+a surface was pushed again, so what it is over is found again on the new tree
+rather than dropped: a bar that repaints twice a second would otherwise light
+up under the pointer only while the pointer is moving."
   (setf (ls-hover ls) nil
-        (ls-tree ls) (funcall (ls-tree-fn ls))))
-
-;;;; Painting: the layout tree -> shm buffer via cairo.
+        (ls-tree ls) (funcall (ls-tree-fn ls)))
+  (when *rebuilt* (funcall *rebuilt* ls))
+  ls)
 
 (defun paint-surface (ls)
   "Render LS's retained tree into a fresh shm buffer and commit it. Builds the
@@ -74,7 +67,7 @@ tree first if there is none. Leaves it arranged so hit-testing is exact."
               (c:with-surface-and-context
                   (surf (c:create-image-surface-for-data data :argb32 width height stride))
                 (paint:with-cairo-layout
-                  (c:set-operator :source)              ; start fully transparent
+                  (c:set-operator :source)
                   (c:set-source-rgba 0d0 0d0 0d0 0d0) (c:paint)
                   (c:set-operator :over)
                   (paint:paint-tree (ls-tree ls) width height)))
@@ -82,8 +75,6 @@ tree first if there is none. Leaves it arranged so hit-testing is exact."
               (wl-surface.damage-buffer surface 0 0 width height)
               (wl-surface.commit surface)
               (push (evelambda (:release () (destroy-proxy buffer))) (wl-proxy-hooks buffer)))))))))
-
-;;;; Opening a layer surface.
 
 (defun open-layer-surface (conn tree-fn
                            &key (layer :top) (anchor '(:top :left))
@@ -117,7 +108,7 @@ rules commonly match on."
             (:closed ()
              (when (ls-on-closed ls) (funcall (ls-on-closed ls)))))
           (wl-proxy-hooks lsurf))
-    (wl-surface.commit surface)                          ; first commit: no buffer
+    (wl-surface.commit surface)
     ls))
 
 (defun measure-panel (tree-fn &key (avail-w 460))

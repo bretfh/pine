@@ -4,13 +4,6 @@
 
 (in-package #:pine.ui.cells)
 
-;;;; The cell render: the same node tree the desktop paints in pixels,
-;;;; rendered to styled cells for a buffer or the chrome. Styling is the ONE
-;;;; resolution: a node's CSS classes through pine.ui.style (the desktop's
-;;;; the stylesheet), else its face name through the theme faces -- both terminate
-;;;; in the same (fg bg attr) run values. The arranged tree rides along so any
-;;;; rendered (line col) maps back to its node with no side table.
-
 (defgeneric class-names (c)
   (:documentation "A :class value as a list of class-name strings.")
   (:method ((c null)) nil))

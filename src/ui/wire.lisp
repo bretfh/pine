@@ -1,27 +1,17 @@
 (defpackage #:pine.ui.wire
   (:use #:cl #:pine.ui.node #:pine.ui.raster)
+  (:local-nicknames (#:d #:pine.data))
   (:export #:apply-rows-patch #:arranged-p #:node->wire #:rows-patch
            #:scroll-to-selection #:wire->node #:wire-views #:wire-tag
            #:defwire))
 
 (in-package #:pine.ui.wire)
 
+(defvar *codec* (d:table)
+  "What this image's widgets are, both ways: a wire tag to the function that
+rebuilds a node from it, and a node class name to the tag it crosses as.
 
-;;;; Wire codec: a widget tree <-> data, so a declarative UI can cross the
-;;;; attach wire. CLOS nodes and closure click-handlers do not serialize, so a
-;;;; node becomes (TAG PROPS . NODES) with PROPS a plist, and any handler is
-;;;; replaced by an :action id -- the producer keeps the closure keyed by id,
-;;;; the renderer sends the id back on interaction.
-;;;;
-;;;; A class says how it crosses once, in a DEFWIRE, and that one form is both
-;;;; directions: what goes out, what comes back, and the default each side
-;;;; assumes. Two statements of the same thing are two things that can drift,
-;;;; which is what a hand-written pair of an ETYPECASE and an ECASE is.
-;;;;
-;;;; A widget declared outside this file crosses the wire by adding a DEFWIRE
-;;;; beside its class, in its own file.
-
-;;;; The base every node carries, read off the class itself.
+Filled by DEFWIRE as the files load and read from every thread after.")
 
 (defparameter +base-skip+ '(:key :of :pad :margin)
   "Base initargs that do not cross: the identity the producer keeps, what a node
@@ -85,20 +75,9 @@ daemon built."
                                                         (symbol-name (car pair))))
           :append (list k v))))
 
-;;;; The declaration
-
-(defvar *codec* (pine.data:table)
-  "What this image's widgets are, both ways: a wire tag to the function that
-rebuilds a node from it, and a node class name to the tag it crosses as.
-
-A registry of what the code can do rather than state anything changes, filled
-by DEFWIRE as the files load and read from every thread after. It is a table
-and not a hash table for that reading: a bare one written from two threads can
-corrupt, and the whole point of a registry is that everyone reads it.")
-
 (defun wire-tag (class)
   "The tag CLASS crosses as."
-  (pine.data:at *codec* class))
+  (d:at (d:all *codec*) class))
 
 (defun wire-default (tag key)
   "What TAG's KEY is when the wire does not carry it.
@@ -106,7 +85,7 @@ corrupt, and the whole point of a registry is that everyone reads it.")
 The codec leaves a default out, so anything that builds a form -- a patch
 applied to an older one, say -- has to leave it out too, or two forms that say
 the same thing are not the same form."
-  (getf (pine.data:at *codec* (cons tag :defaults)) key))
+  (getf (d:at (d:all *codec*) (cons tag :defaults)) key))
 
 (defun with-prop (props key value default)
   "PROPS with KEY set to VALUE, or without it when VALUE is the default."
@@ -134,8 +113,8 @@ HOW) saying how they come back, with HOW :first or :list. BUILD replaces the
 generated constructor for a class whose forms are not a flat list."
   (let ((keys (mapcar #'first props)))
     `(progn
-       (pine.data:put *codec* ',class ,tag)
-       (pine.data:put *codec* (cons ,tag :defaults)
+       (d:keep! *codec* ',class ,tag)
+       (d:keep! *codec* (cons ,tag :defaults)
                       (list ,@(loop :for (key nil . options) :in props
                                     :append (list key (getf options :default)))))
        (defmethod node->wire ((n ,class) &key on-action)
@@ -152,7 +131,7 @@ generated constructor for a class whose forms are not a flat list."
            (list* ,tag (ordered p)
                   (mapcar (lambda (c) (node->wire c :on-action on-action))
                           ,(or nodes nil)))))
-       (pine.data:put *codec* ,tag
+       (d:keep! *codec* ,tag
              (lambda (props forms on-action)
                (declare (ignorable props forms on-action))
                (let ((nodes (mapcar (lambda (c) (wire->node c :on-action on-action))
@@ -178,8 +157,6 @@ generated constructor for a class whose forms are not a flat list."
                                         (if (eq (second take) :first) '(first nodes) 'nodes)))
                               (props-without props ,@keys))))))
        ,tag)))
-
-;;;; Leaves
 
 (defwire :label text-node
   ((:content (content n) :default "")
@@ -213,8 +190,6 @@ generated constructor for a class whose forms are not a flat list."
    (:opacity (view-opacity n) :default 1.0)
    (:base (view-base n))))
 
-;;;; One node
-
 (defwire :ring pine.ui.node:ring
   ((:value (value n) :default 0)
    (:min (min-of n) :initarg :min :default 0)
@@ -233,8 +208,7 @@ generated constructor for a class whose forms are not a flat list."
 
 (defwire :choice selectable
   ((:selected (selectedp n) :initarg :selected)
-   ;; a row is clickable on a surface as well as choosable in a listing, so what
-   ;; it does crosses the way an action's does
+
    (:action (click n) :initarg :click :action t)
    (:prefix-selected (prefix-selected n) :default "> ")
    (:prefix-unselected (prefix-unselected n) :default "  "))
@@ -256,8 +230,6 @@ generated constructor for a class whose forms are not a flat list."
   :nodes (and (node n) (list (node n)))
   :take (:node :first))
 
-;;;; Many forms
-
 (defwire :column vstack
   ((:spacing (spacing n) :default 0)
    (:align (align n) :default :start))
@@ -274,13 +246,6 @@ generated constructor for a class whose forms are not a flat list."
   :nodes (nodes n)
   :take (:nodes :list))
 
-;;;; Nodes that are not a flat list
-;;;;
-;;;; A list's rows are built by a closure, and a closure does not cross: what
-;;;; goes out is the rows it built, and what comes back is those rows. It keeps
-;;;; its own tag rather than borrowing a column's, so the round trip says what
-;;;; it was.
-
 (defwire :list list-node ()
   :nodes (pine.ui.layout:list-items n)
   :build (apply #'make-instance 'vstack :nodes nodes :spacing 0 :align :start
@@ -294,8 +259,6 @@ generated constructor for a class whose forms are not a flat list."
                 :start (first nodes) :center (second nodes) :end (third nodes)
                 (props-without props :orient)))
 
-;;;; Back
-
 (defun wire->node (form &key on-action)
   "Rebuild a node from wire FORM, restoring its arranged rect when the wire
 carries one. ON-ACTION, given an id, answers a handler -- the renderer's 'send
@@ -303,7 +266,7 @@ this id back'."
   (when form
     (destructuring-bind (tag props &rest forms) form
       (let ((rect (getf props :rect))
-            (build (pine.data:at *codec* tag)))
+            (build (d:at (d:all *codec*) tag)))
         (unless build (error "No widget crosses the wire as ~s." tag))
         (let ((n (funcall build (props-without props :rect) forms on-action)))
           (when (and n rect)
@@ -315,14 +278,6 @@ this id back'."
 (defun arranged-p (n)
   "True when N carries an arranged rect (from its own arrange, or the wire)."
   (or (plusp (end-col n)) (plusp (end-line n))))
-
-;;;; Sending only what moved.
-;;;;
-;;;; Nearly all of an editor frame is the rendered lines inside its window
-;;;; nodes, and a keystroke changes one of them. These compare two wire forms
-;;;; and produce the lines that differ, so a push can carry those instead of
-;;;; the screen. Everything here is plain data, the same as the wire itself.
-
 
 (defun view-tag ()
   "What a window crosses as. Asked of the codec rather than written out, so a
@@ -371,9 +326,7 @@ different tree, a different number of lines, or no previous form at all."
               :for n-rows := (prop (second n) :rows)
               :unless (= (length o-rows) (length n-rows))
                 :do (return-from rows-patch nil)
-              ;; read through the default, so a window whose cursor is where the
-              ;; wire leaves it out carries that value rather than nothing, and
-              ;; the patched form is the form again
+
               :collect (list index
                              (prop (second n) :crow (wire-default tag :crow))
                              (prop (second n) :ccol (wire-default tag :ccol))
@@ -410,8 +363,6 @@ different tree, a different number of lines, or no previous form at all."
                        (list* (first f) (second f) (mapcar #'patched (cddr f))))
                    f)))
       (patched form))))
-
-;;;; Scroll helper
 
 (defun scroll-to-selection (sel offset max-vis)
   (when (minusp sel)

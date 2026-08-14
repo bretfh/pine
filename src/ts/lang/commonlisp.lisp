@@ -1,18 +1,10 @@
 (defpackage #:pine.ts.lang.commonlisp
   (:use #:cl)
-  (:local-nicknames (#:ns #:pine.ns) (#:p #:pine.path) (#:syntax #:pine.ts.syntax))
+  (:local-nicknames (#:syntax #:pine.ts.syntax))
   (:export #:commonlisp))
 
 (in-package #:pine.ts.lang.commonlisp)
-(named-readtables:in-readtable pine.path:syntax)
-
-;;;; Common Lisp, as a declaration.
-;;;;
-;;;; What is written here is only what the shape of the language says. Whether
-;;;; a symbol is a macro, a special operator, a builtin or a constant is not
-;;;; written down anywhere: the daemon holds the code, so it is asked. That is
-;;;; the difference between this file and the ~250 hand-typed symbol names it
-;;;; replaces -- the image knows all of CL, and it knows the user's macros too.
+(named-readtables:in-readtable pine.path.reader:syntax)
 
 (defun commonlisp ()
   (syntax:language
@@ -26,7 +18,6 @@
                  "most-positive-short-float" "most-negative-short-float"
                  "most-positive-long-float" "most-negative-long-float"}}
 
-   ;; ---- what each node type paints -------------------------------------
    (/node/comment          {:face :comment})
    (/node/block_comment    {:face :comment})
    (/node/dis_expr         {:face :comment})
@@ -36,16 +27,16 @@
    (/node/kwd_lit          {:face :constant})
    (/node/nil_lit          {:face :constant})
    (/node/path_lit         {:face :string})
-   ;; format directives are named nodes painted over the string body
+
    (/node/str_lit          {:face :string :inner :escape})
-   ;; only the context can name a symbol's face
+
    (/node/sym_lit          {:role :operand})
    (/node/package_lit      {:role :package})
-   ;; a list is a form: its delimiters by depth, then its head decides
+
    (/node/list_lit         {:delimiters t :head t})
-   ;; a set has no head, so every element is an element
+
    (/node/set_lit          {:delimiters 2 :rest :form})
-   ;; the grammar gives a defun a header of its own; it is part of the form
+
    (/node/defun            {:shape {0 :here} :rest :body})
    (/node/defun_header     {:fields {"keyword" :keyword
                                      "function_name" :name
@@ -64,9 +55,6 @@
                                         :as :function-name}})
    (/otherwise             {:rest :here})
 
-   ;; ---- what a head does to the form it heads ---------------------------
-   ;; only forms with a shape are here. Whether a head is a macro, a special
-   ;; operator or a builtin is asked of the image.
    (/head/let              {:face :keyword :shape {1 :bindings} :rest :body})
    (/head/let*             {:face :keyword :shape {1 :bindings} :rest :body})
    (/head/do               {:face :keyword :shape {1 :bindings} :rest :body})
@@ -110,17 +98,10 @@
                             :shape {1 :name} :rest :body})
    (/head/in-package       {:face :keyword :name-face :namespace :shape {1 :name}})
 
-   ;; the few the image cannot answer for: DECLARE has no function binding and
-   ;; is not a special operator, so nothing about the running image says it is
-   ;; anything at all
    (/head/declare          {:face :keyword})
    (/head/declaim          {:face :keyword :rest :body})
    (/head/proclaim         {:face :keyword :rest :body})
    (/head/otherwise        {:face :keyword})
    (/head/t                {:face :keyword})))
 
-(ns:serve :syntax-commonlisp
-  {:at [/syntax/commonlisp]
-   :after [:syntax]
-   :doc "Common Lisp's rules, at /syntax/commonlisp"
-   :up (lambda () (ns:write /syntax/commonlisp (commonlisp)) nil)})
+(syntax:declare-language :commonlisp (commonlisp))

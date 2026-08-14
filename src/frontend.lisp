@@ -3,23 +3,15 @@
   (:export #:pump #:make-pump #:close-pump #:pump-wake-in
            #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
            #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run
-           #:attach)
-  (:documentation "The client interface: what every frontend is, with no
-platform in it. Bootstraps the actor system and the daemon attachment, and
-owns the queue the daemon's threads hand work across."))
+           #:attach #:answering-p #:*watch*))
 
 (in-package #:pine.frontend)
 
-(defparameter *attach-attempts* 60
-  "How many times a frontend re-announces itself while the daemon is silent.")
+(defvar *attempts* 60)
 
-(defparameter *attach-interval* 2
-  "Seconds between those attempts.")
+(defvar *interval* 2)
 
-;;;; What every frontend is, whatever it draws on. Two things: the way it
-;;;; joins the daemon, and the queue the daemon's threads hand work across.
-;;;; The backing owns the loop that drains that queue, because only the
-;;;; backing knows what else it must wait on.
+(defvar *watch* 3)
 
 (defstruct (pump (:constructor %make-pump))
   "The queue between the daemon's threads and the frontend's own.
@@ -79,9 +71,6 @@ remaining ones still run."
   (sb-unix:unix-close (pump-wake-in pump))
   (sb-unix:unix-close (pump-wake-out pump)))
 
-;;;; The backing: whatever a frontend draws on and waits for. The loop is here
-;;;; because it is the same everywhere; only the waiting differs.
-
 (defclass backing ()
   ()
   (:documentation "What a frontend draws on. A backing waits for work and
@@ -118,54 +107,55 @@ when it has none."
                                    (or (and deadline (funcall deadline)) -1))
                 (drain-wake pump)))))
 
-;;;; Joining the daemon.
-
 (defun %keep-attaching (sys daemon self kind ready)
+  (loop :repeat *attempts*
+        :until (funcall ready)
+        :do (pine.net.attach:attach-to sys daemon self :kind kind)
+            (sleep *interval*))
+  (unless (funcall ready)
+    (format *error-output* "pine: no daemon after ~d tries, giving up~%" *attempts*)
+    (finish-output *error-output*)
+    (uiop:quit 0)))
+
+(defun answering-p (host port)
+  (let ((socket (ignore-errors (usocket:socket-connect host port :timeout 1))))
+    (when socket (usocket:socket-close socket) t)))
+
+(defun %watch-daemon (host port ready)
+  "A frontend outlives nothing: when the daemon it draws for is gone, so is it.
+Without this a killed daemon leaves its windows on the screen for good."
   (bordeaux-threads:make-thread
    (lambda ()
-     (loop :repeat *attach-attempts*
-           :until (funcall ready)
-           :do (pine.core.attach:attach-to-daemon sys daemon self :kind kind)
-               (sleep *attach-interval*))
-     (unless (funcall ready)
-       (format *error-output* "pine ~(~a~): no daemon answered at ~a~%" kind daemon)
-       (finish-output *error-output*)))
-   :name "pine-attach"))
+     (loop :until (funcall ready) :do (sleep *interval*))
+     (loop :with missed := 0
+           :do (sleep *watch*)
+               (if (answering-p host port)
+                   (setf missed 0)
+                   (incf missed))
+               (when (>= missed 2)
+                 (format *error-output* "pine: the daemon is gone~%")
+                 (finish-output *error-output*)
+                 (uiop:quit 0))))
+   :name "pine daemon watch"))
 
-(defun attach (kind handler &key (host pine.core.server:*host*) (port pine.core.server:*port*)
-                                 ready)
-  "Bring this image up as a frontend of KIND and join the daemon at HOST:PORT.
-
-HANDLER takes the daemon's messages, on an actor thread; anything it does to
-the backing belongs on the queue. Returns the actor system, which also serves
-this image as an agent named for its kind, so the daemon can evaluate in it.
-
-READY, when given, says whether the daemon has answered. A frontend the
-compositor starts before the session is up passes it, and the attach is
-repeated until it does."
-  (unless pine.core.server:*server*
-    (setf pine.core.server:*server* (make-instance 'pine.core.server:server)))
-  (let* ((name (string-downcase (symbol-name kind)))
-         (sys (sento.actor-system:make-actor-system pine.core.server:*app-actor-config*)))
-    (sento.remoting:enable-remoting sys :host pine.core.server:*host* :port 0)
-    (sento.actor-context:actor-of sys :name "display"
-      :dispatcher :pinned
-      :receive (lambda (msg)
-                 ;; a daemon that speaks a different protocol says so instead of
-                 ;; leaving this image waiting for an :attached that is not
-                 ;; coming. Loud here, because a frontend has nowhere to show it.
-                 (when (eq (first msg) :refused)
-                   (format *error-output* "pine ~(~a~): the daemon refused: ~a~%"
-                           kind (getf (rest msg) :reason))
-                   (finish-output *error-output*))
-                 (funcall handler msg)
-                 nil))
+(defun attach (kind handler &key (host pine.net.server:*host*)
+                                 (port pine.net.server:*port*)
+                                 (name "display"))
+  (let ((sys (sento.actor-system:make-actor-system))
+        (joined (pine.data:box nil)))
+    (sento.remoting:enable-remoting sys :host pine.net.server:*host* :port 0)
+    (pine.run.agent:agent name
+                          (lambda (message)
+                            (when (member (first message) '(:attached :refused))
+                              (pine.data:put! joined t))
+                            (funcall handler message))
+                          :dispatcher :pinned :in sys)
     (let* ((self-port (sento.remoting:remoting-port sys))
-           (daemon (pine.core.server:daemon-uri "attach" :host host :port port))
-           (self (pine.core.server:local-uri "display" self-port)))
-      (if ready
-          (%keep-attaching sys daemon self kind ready)
-          (pine.core.attach:attach-to-daemon sys daemon self :kind kind))
-      (pine.core.agent:serve sys :name name :master-host host :master-port port
-                            :self-port self-port))
-    sys))
+           (daemon (pine.net.server:daemon-uri "attach" :host host :port port))
+           (self (pine.net.server:local-uri name self-port :host host)))
+      (bordeaux-threads:make-thread
+       (lambda () (%keep-attaching sys daemon self kind
+                                   (lambda () (pine.data:held joined))))
+       :name "pine attach")
+      (%watch-daemon host port (lambda () (pine.data:held joined)))
+      sys)))
