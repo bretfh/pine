@@ -84,6 +84,43 @@ A provider says when the world behind it moved: `announces` names the shell
 lines whose output stirs it, `every-seconds` the interval for the ones with no
 stream. Nothing polls a provider that has a stream.
 
+A write says so too. A provider that turns `(setf contents)` into an action on
+the world has still moved, so `(setf contents)` announces once for every node:
+without it a slider goes on showing what the world held before it was dragged.
+
+A reading stands for a moment, not for the instant it was asked in. Two things
+reading `/sys/cpu` a moment apart are asking about the same moment, so the
+answer is remembered for a window rather than recomputed per read. The same
+goes for a shell-out: `pine.provider.out:sh` remembers what a line said for a
+breath, so a panel reading three things out of one command runs it once.
+
+## Processes
+
+A process pine starts dies with pine. A stream holds a pipe the image owns, so
+stopping, crashing or being killed outright closes it and the child goes.
+Anything that outlives the image that asked for it is a leak with no upper
+bound: three hundred of them took a session's whole D-Bus allowance.
+
+`pine.run.task:spawn` is for something that blocks. Everything else is an
+endpoint or a tick.
+
+## Frontends
+
+The daemon lays out and the frontend paints. Whatever the daemon lays out for
+is what the frontend has to be drawing at, so a frontend says its size and its
+font in one place, and the frame carries the font it was laid out for.
+
+A frontend is pushed when what it shows changes, on a tick, not on every
+invalidation. The world behind a bar moves dozens of times a second and reads
+the same; pushing that is what makes a pointer flicker.
+
+What crosses back names a place, not a moment: a widget's id is where it sits
+in its surface, so a click that crossed during a repaint still means the
+button it was on.
+
+A key has one name here whatever it was called where it came from. `C-SPC` in
+a keymap is the key xkb hands over as `space`.
+
 ## Defining is registering
 
 `defcommand` registers. `mode` registers. `defsurface` registers. Bindings are

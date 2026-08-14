@@ -101,3 +101,36 @@
     (with-console (s)
       (is (equal '("where this session is") (ran s '(help pwd))))
       (is (< 10 (length (first (ran s 'help))))))))
+
+(test the-example-config-is-one-a-config-can-be-copied-from
+  "What ships as the example has to load and build against the code as it is,
+or it is a document about a system that no longer exists."
+  (let ((file (merge-pathnames "examples/init.lisp"
+                               (asdf:system-source-directory :pine))))
+    (unwind-protect
+         (progn
+           (pine:start)
+           (let ((text (uiop:read-file-string file))
+                 (scratch (merge-pathnames "pine-probe-example.lisp"
+                                           (uiop:temporary-directory))))
+             (with-open-file (out scratch :direction :output :if-exists :supersede)
+               (write-string (pine.edit.text:text-of
+                              (pine.data:as :seq
+                                            (remove-if
+                                             (lambda (line)
+                                               (search "declare-frontends" line))
+                                             (uiop:split-string
+                                              text :separator '(#\Newline)))))
+                             out))
+             (pine:load-config scratch)
+             (is (member "bar" (mapcar #'pine.fs.node:name
+                                       (pine.app.surface:surfaces))
+                         :test #'equal)
+                 "the surfaces it declares are there")
+             (is (plusp (length (pine.ui.css:styles)))
+                 "and the styles it writes are installed")
+             (is-true (pine.fs.computed:recompute
+                       (pine.app.surface:surface-named "bar"))
+                      "and its bar builds")
+             (ignore-errors (delete-file scratch))))
+      (pine:stop))))
