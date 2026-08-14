@@ -1,3 +1,88 @@
 #+TITLE: pine
 
 Pine Is Not Emacs.
+
+One live Common Lisp image: the editor, the desktop, and the code you run. You
+rewrite it while it runs, and what might crash runs somewhere it cannot take
+the rest with it. See [[file:doc/architecture.org][doc/architecture.org]] for
+what it is and how it is put together.
+
+* Running it
+
+Linux and wayland. Guix is what pine develops against:
+
+: git clone https://github.com/bretfh/pine
+: cd pine
+: make bin        # one binary: the daemon, the frontends, the cli
+: ./pine start    # reads ~/.config/pine/init.lisp and starts what it declares
+: ./pine status
+
+Without guix, on a linux without it or on a mac (untested), =FOREIGN=1= builds
+against ocicl and your own package manager. =make foreign= says what is
+missing and how to get it:
+
+: make foreign                    # what is missing, and how to get it
+: make foreign-deps FOREIGN=1     # the lisp systems, through ocicl
+: make foreign-wayflan FOREIGN=1  # one patch wayflan needs
+: make foreign-libs FOREIGN=1     # the tree-sitter grammars and the pty shim
+: make bin FOREIGN=1
+
+What it needs either way: sbcl, cairo, tree-sitter, sqlite, libffi,
+libxkbcommon, a C compiler, pkg-config, graphviz for the diagrams, and a
+wayland compositor. A mac has no wayland of its own; Wawona is one.
+
+* Talking to it
+
+The tree is the interface, from Lisp or from a terminal:
+
+: ./pine read /audio/volume
+: ./pine write /surface/audio/shown '(:toggle)'
+: ./pine watch /media/title
+: ./pine eval '(+ 1 2)'
+: ./pine run list-buffers
+
+=./pine= with no verb says what else it takes: =ls=, =diff=, =reload=,
+=agents=, =spawn=, =kill=, =restart=.
+
+The frontends attach to a running daemon and can be started by hand:
+
+: ./pine editor     # one window: buffers, windows, the modeline
+: ./pine desktop    # the bar, the echo strip, the panels
+: ./pine wm         # pine manages the windows, over river
+
+Or declared in the config, and the daemon starts and supervises them.
+
+* Making it yours
+
+=~/.config/pine/init.lisp= is read by the daemon. It is the same language and
+the same tree, so a surface reads a node and a click writes one:
+
+#+begin_src lisp
+  (defsurface bar (:as :bar)
+    (column :align :center :spacing 10
+      (icon #x0F028 :class "icon" :hint "Volume"
+                    :click (map /surface/audio/shown (seq :toggle)))
+      (label (format nil "~a:~a" (read /clock/hour) (read /clock/minute))
+             :class "clock")))
+
+  (style ".bar" (list :background-color (css-glass :bg) :color (color :fg)))
+
+  (bind "wm" "s-Return" "wm-terminal")
+
+  (declare-frontends '("editor" "desktop"))
+#+end_src
+
+[[file:examples/init.lisp][examples/init.lisp]] is a working one to copy: a bar
+with workspaces and launchers, an echo strip, an audio panel, styles, and
+bindings. The suite loads it, so it stays a config you can copy.
+
+* Hacking on it
+
+: make check       # load both systems, warning free
+: make test        # the suite
+: make shot        # render frames to png, headless
+: make docs        # doc/*.dot -> the png and svg beside them
+: ./pine shell     # a repl in this terminal, no daemon
+
+[[file:STYLEGUIDE.md][STYLEGUIDE.md]] is how the code is written and what the
+tests enforce.
