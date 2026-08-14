@@ -595,3 +595,28 @@ mark and so no region."
     (pine.edit.buffer:goto! (b) 0 5)
     (is (equal "hello" (pine.repl.command:run "kill-region"))
         "so there is a region to kill")))
+
+(test killing-the-region-takes-the-region-with-it
+  "The text goes and so does the region: leaving the mark down paints a
+selection over text that was never selected, and the only way out is C-g."
+  (with-editor (:text "hello there")
+    (pine.edit.buffer:goto! (b) 0 0)
+    (pine.edit.buffer:mark! (b))
+    (pine.edit.buffer:goto! (b) 0 5)
+    (is (equal "hello" (pine.repl.command:run "kill-region")))
+    (is (equal " there" (pine.fs.node:contents (b))))
+    (is (null (pine.edit.buffer:mark (b))) "and nothing is left selected")
+    (is (null (pine.edit.buffer:region-of (b))))))
+
+(test copying-the-region-leaves-the-text-and-drops-the-selection
+  (with-editor (:text "hello there")
+    (pine.edit.buffer:goto! (b) 0 0)
+    (pine.edit.buffer:mark! (b))
+    (pine.edit.buffer:goto! (b) 0 5)
+    (is (equal "hello" (pine.repl.command:run "copy-region")))
+    (is (equal "hello there" (pine.fs.node:contents (b))) "the text stays")
+    (is (null (pine.edit.buffer:mark (b))) "the selection does not")
+    (pine.edit.buffer:goto! (b) 0 11)
+    (pine.repl.command:run "yank")
+    (is (equal "hello therehello" (pine.fs.node:contents (b)))
+        "and what it kept is still there to put back")))
