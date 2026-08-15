@@ -1,5 +1,5 @@
 .PHONY: foreign foreign-deps foreign-libs foreign-wayflan
-.PHONY: repl check test probe eval docs daemon editor shot bin
+.PHONY: repl check test probe bench eval docs daemon editor shot bin
 
 # Two ways to get what pine needs, and every target below works under either.
 # Guix is what pine develops against and what plain `make' uses. FOREIGN=1 is
@@ -65,6 +65,13 @@ test:
 # failure: make probe SUITE=pine/repl TIMES=10
 probe:
 	$(IN) '$(ENV) SUITE="$(SUITE)" TIMES="$(TIMES)" $(SBCL) --non-interactive --load bench/probe.lisp'
+
+# a workload, driving the paths a person waits on, printing the same table a
+# running daemon answers with `pine run metrics':
+#   make bench WORK=typing SIZE=20000
+#   make bench WORK=idle FOR=20
+bench:
+	$(IN) '$(ENV) WORK="$(WORK)" SIZE="$(SIZE)" FOR="$(FOR)" $(SBCL) --non-interactive --load bench/workload.lisp'
 
 # evaluate one form in an image with the test system loaded, in PINE.TEST, with
 # the debugger left on so a fault prints its backtrace: make eval FORM='(...)'

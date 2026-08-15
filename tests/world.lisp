@@ -204,3 +204,32 @@ is the only way one can be laid beside the other."
                "and it prints through one report, with what it is about")))
     (pine/run/meter:reset)
     (pine:stop)))
+
+(test a-workload-leaves-samples-on-what-it-says-it-drives
+  "The point of a workload is that it walks the same paths a person does. If it
+claims to drive the frame and the frame has no samples, the workload is lying
+and the table would say nothing about pine."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (pine/run/meter:reset)
+         (let ((b (pine/edit/buffer:current))
+               (w (pine/edit/window:focused)))
+           (setf (pine/edit/buffer:mode-of b) "lisp")
+           (setf (pine/fs/node:contents b) "(defun f (x) x)")
+           (setf (pine/edit/window:width-of w) 40
+                 (pine/edit/window:height-of w) 10)
+           (dotimes (n 10)
+             (pine/edit/key:dispatch nil (pine/edit/key:make-key "x"))
+             (pine/edit/render:frame-tree :cols 40 :rows 12)))
+         (dolist (name '(:key :frame))
+           (let ((said (pine/run/meter:reading name)))
+             (is-true said "~a has no samples, so nothing drove it" name)
+             (is (= 10 (getf said :count)) "~a" name)))
+         (let ((rows (pine/run/meter:said)))
+           (is (every (lambda (row) (getf row :name)) rows)
+               "every row says which instrument it is")
+           (is (every (lambda (row) (plusp (getf row :count))) rows)
+               "and none of them is an instrument with no samples")))
+    (pine/run/meter:reset)
+    (pine:stop)))

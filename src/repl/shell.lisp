@@ -109,6 +109,17 @@
       (:describes "start a fresh window of samples")
     (pine/run/meter:reset)
     :reset)
+  (cmd:defcommand "metrics-save" (&optional where)
+      (:describes "write what this daemon is doing, to lay beside a workload")
+    (let ((file (or where (merge-pathnames "pine/metrics.lisp-data"
+                                           (uiop:xdg-cache-home)))))
+      (ensure-directories-exist file)
+      (with-open-file (out file :direction :output :if-exists :supersede)
+        (write (list :workload "live" :size nil :for nil
+                     :image (lisp-implementation-version)
+                     :seconds nil :rows (pine/run/meter:said))
+               :stream out))
+      (namestring file)))
   (cmd:defcommand "tasks" () (:describes "every task in this image")
     (loop :for tk :in (task:tasks)
           :collect (list (task:name tk) (task:alivep tk)))))
