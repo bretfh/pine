@@ -25,7 +25,7 @@ eyes for the editor frame: no window, an offscreen cairo image surface."
            (w (max 1 (ceiling (+ (* cols cell-w) (* 2 x0)))))
            (h (max 1 (ceiling (* (length rows) cell-h)))))
       (cairo:with-png-file (path :argb32 w h)
-        (destructuring-bind (r g b) (pine.ui.face:face-bg :window)
+        (destructuring-bind (r g b) (pine/ui/face:face-bg :window)
           (cairo:set-source-rgb (/ r 255d0) (/ g 255d0) (/ b 255d0)))
         (cairo:paint)
         (cairo:select-font-face *font-family* :normal :normal)

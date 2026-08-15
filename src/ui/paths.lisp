@@ -1,11 +1,10 @@
-(defpackage #:pine.ui.paths
+(defpackage #:pine/ui/paths
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine/world/world)
-                    (#:face #:pine.ui.face) (#:css #:pine.ui.css))
+                    (#:face #:pine/ui/face) (#:css #:pine/ui/css))
   (:export #:themes-node #:faces-node #:install #:face-plist))
-
-(in-package #:pine.ui.paths)
+(in-package #:pine/ui/paths)
 
 (defclass themes-node (node:node) ())
 (defclass theme-node (node:node)

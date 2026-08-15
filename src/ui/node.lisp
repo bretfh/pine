@@ -1,4 +1,4 @@
-(defpackage #:pine.ui.node
+(defpackage #:pine/ui/node
   (:use #:cl)
   (:export
 
@@ -24,8 +24,7 @@
    #:view-node #:view-rows #:view-crow #:view-ccol #:view-opacity
    #:view-base
    #:buffer-view #:modeline-view #:echo-view #:os-window-view))
-
-(in-package #:pine.ui.node)
+(in-package #:pine/ui/node)
 
 (defclass node ()
   ((key-of  :initarg :key    :accessor key-of  :initform nil)

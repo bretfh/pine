@@ -1,8 +1,7 @@
-(defpackage #:pine.ui.cells
-  (:use #:cl #:pine.ui.node #:pine.ui.raster)
+(defpackage #:pine/ui/cells
+  (:use #:cl #:pine/ui/node #:pine/ui/raster)
   (:export #:class-names #:node-classes #:render #:rows-of))
-
-(in-package #:pine.ui.cells)
+(in-package #:pine/ui/cells)
 
 (defgeneric class-names (c)
   (:documentation "A :class value as a list of class-name strings.")
@@ -21,24 +20,24 @@
   (class-names (css-class n)))
 
 (defun %scale-rgb (c)
-  "pine.ui.style colours are 0..1; cells carry 0..255."
+  "pine/ui/style colours are 0..1; cells carry 0..255."
   (list (round (* 255 (first c))) (round (* 255 (second c))) (round (* 255 (third c)))))
 
 (defun %node-cell-style (n full)
   "The (FG BG ATTR) cell tuple for N from CSS matched on the class chain FULL,
 falling back per-part to N's face name; nil when CSS contributes nothing (the
 face name, if any, then resolves as usual at paint)."
-  (let* ((st (pine.ui.style:resolve full))
-         (css-fg (pine.ui.style:st-fg st))
-         (css-bg (pine.ui.style:st-bg st))
-         (bold (pine.ui.style:st-bold st))
+  (let* ((st (pine/ui/style:resolve full))
+         (css-fg (pine/ui/style:st-fg st))
+         (css-bg (pine/ui/style:st-bg st))
+         (bold (pine/ui/style:st-bold st))
          (name (and (keywordp (face n)) (face n))))
     (when (or css-fg css-bg bold)
-      (list (if css-fg (%scale-rgb css-fg) (and name (pine.ui.face:face-fg name)))
-            (if css-bg (%scale-rgb css-bg) (and name (pine.ui.face:face-bg name)))
+      (list (if css-fg (%scale-rgb css-fg) (and name (pine/ui/face:face-fg name)))
+            (if css-bg (%scale-rgb css-bg) (and name (pine/ui/face:face-bg name)))
             (logior (if bold 1 0)
                     (if name
-                        (pine.ui.face:face-attr-bits (pine.ui.face:find-face name))
+                        (pine/ui/face:face-attr-bits (pine/ui/face:find-face name))
                         0))))))
 
 (defun resolve-styles! (root &optional chain)
@@ -55,7 +54,7 @@ at build time; the rendered tree is read-only afterwards."
                (when classes
                  (let ((tuple (%node-cell-style n full)))
                    (when tuple (setf (face n) tuple))))
-               (dolist (c (pine.ui.layout:nodes-of n)) (walk c full)))))
+               (dolist (c (pine/ui/layout:nodes-of n)) (walk c full)))))
     (walk root chain))
   root)
 
@@ -84,16 +83,16 @@ format, TREE the arranged root whose rects make node-at a position->node map.
 The returned tree is read-only: selection is an input here, never a mutation of
 a published tree. UI buffers use static nodes (vstack), not list-node
 item functions, which build only at measure."
-  (pine.ui.face:with-faces
-   (let ((pine.ui.layout:*text-size* nil))
+  (pine/ui/face:with-faces
+   (let ((pine/ui/layout:*text-size* nil))
     (when selection
-      (loop for s in (pine.ui.layout:collect-selectables root) for i from 0
+      (loop for s in (pine/ui/layout:collect-selectables root) for i from 0
             do (setf (selectedp s) (= i selection))))
     (resolve-styles! root)
-    (multiple-value-bind (mw mh) (pine.ui.layout:measure root width (or height 1000))
+    (multiple-value-bind (mw mh) (pine/ui/layout:measure root width (or height 1000))
       (declare (ignore mw))
       (let* ((h (max 1 (or height mh)))
              (r (make-raster width h)))
-        (pine.ui.layout:arrange root 0 0 width h)
-        (pine.ui.layout:paint root r)
+        (pine/ui/layout:arrange root 0 0 width h)
+        (pine/ui/layout:paint root r)
         (values (rows-of r) root))))))

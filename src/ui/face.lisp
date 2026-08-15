@@ -1,4 +1,4 @@
-(defpackage #:pine.ui.face
+(defpackage #:pine/ui/face
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data))
   (:export
@@ -15,8 +15,7 @@
    #:theme-color #:color #:theme-metric #:metric #:resolve-color #:hex-rgb
 
    #:memo))
-
-(in-package #:pine.ui.face)
+(in-package #:pine/ui/face)
 
 (defvar *in-force* nil
   "The face table for the render running on this thread. Bound for the extent

@@ -61,12 +61,12 @@ there are no `package.lisp` files; the `.asd` is the module structure.
 
 A file opens with its own `defpackage`, then `in-package`, then the code. Name
 what it needs with `:local-nicknames` or `:use` when it builds on a vocabulary
-(`pine.ui.node`); qualify otherwise. A file's dependencies belong at its top,
+(`pine/ui/node`); qualify otherwise. A file's dependencies belong at its top,
 where you are already looking.
 
 A file may only name packages that load before it. When two files need each
 other, the layering is wrong: one of them takes a hook (`pine.ts.parser:*on-parse*`,
-`pine.edit.buffer:*on-current*`, `pine.ui.build:*asking*`) and the other fills
+`pine.edit.buffer:*on-current*`, `pine/ui/build:*asking*`) and the other fills
 it in.
 
 ## Nodes
@@ -163,8 +163,8 @@ Loop keywords take the colon: `(loop :for k :in list :collect ...)`.
 abbreviation already means something else in this tree before adopting it.
 
 Lose redundant nouns: `place!` not `paint-tile!`. A constructor and the class
-it makes may share a name across two packages -- `pine.ui.build:ring` makes a
-`pine.ui.node:ring` -- and the constructor package shadows it explicitly.
+it makes may share a name across two packages -- `pine/ui/build:ring` makes a
+`pine/ui/node:ring` -- and the constructor package shadows it explicitly.
 
 ## The surface language
 

@@ -1,12 +1,11 @@
-(defpackage #:pine.ui.raster
-  (:use #:cl #:pine.ui.node)
+(defpackage #:pine/ui/raster
+  (:use #:cl #:pine/ui/node)
   (:export
    #:raster #:raster-p #:make-raster
    #:raster-cols #:raster-rows #:raster-cells #:raster-clip #:cell-offset
    #:raster-put #:raster-put-bg #:raster-put-rgb #:blit-row #:with-clip
    #:face-cell-rgb))
-
-(in-package #:pine.ui.raster)
+(in-package #:pine/ui/raster)
 
 (defun face-cell-rgb (designator)
   "(values fr fg fb br bg bb attr) for a face DESIGNATOR; bg -1 means none, attr
@@ -15,14 +14,14 @@ through the active theme, or a precomputed (FG BG ATTR) tuple -- FG/BG (r g b)
 lists or nil -- installed by RESOLVE-STYLES! for the cell render."
   (if (consp designator)
       (destructuring-bind (fg bg attr) designator
-        (let ((f (or fg (pine.ui.face:face-fg :default))))
+        (let ((f (or fg (pine/ui/face:face-fg :default))))
           (values (first f) (second f) (third f)
                   (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
                   (or attr 0))))
-      (let ((fg (pine.ui.face:face-fg designator))
-            (bg (pine.ui.face:face-bg designator))
-            (attr (let ((f (ignore-errors (pine.ui.face:find-face designator))))
-                    (if f (pine.ui.face:face-attr-bits f) 0))))
+      (let ((fg (pine/ui/face:face-fg designator))
+            (bg (pine/ui/face:face-bg designator))
+            (attr (let ((f (ignore-errors (pine/ui/face:find-face designator))))
+                    (if f (pine/ui/face:face-attr-bits f) 0))))
         (values (first fg) (second fg) (third fg)
                 (if bg (first bg) -1) (if bg (second bg) -1) (if bg (third bg) -1)
                 attr))))

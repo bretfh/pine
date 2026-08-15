@@ -1,8 +1,8 @@
 (defpackage #:pine.wayland.input
   (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
         #:pine.wayland.surface)
-  (:local-nicknames (#:a #:alexandria) (#:node #:pine.ui.node)
-                    (#:lay #:pine.ui.layout))
+  (:local-nicknames (#:a #:alexandria) (#:widget #:pine/ui/node)
+                    (#:layout #:pine/ui/layout))
   (:export #:*on-hover* #:clear-hover #:connect-desktop #:drag-to #:handle-desktop-seat #:handle-pointer #:pointer-click #:pointer-node #:pointer-press #:pointer-release #:update-hover))
 
 (in-package #:pine.wayland.input)
@@ -82,23 +82,23 @@
   "The interactive node under the cursor on the focused surface, or nil."
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-tree ls)
-      (lay:node-at (ls-tree ls) (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn))))))
+      (layout:node-at (ls-tree ls) (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn))))))
 
 (defun clear-hover (conn)
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-hover ls)
-      (setf (node:hovered (ls-hover ls)) nil (ls-hover ls) nil)
+      (setf (widget:hovered (ls-hover ls)) nil (ls-hover ls) nil)
       (when *on-hover* (funcall *on-hover* nil))
       (paint-surface ls))))
 
-(defun %hint-of (n) (or (and n (node:hint n)) ""))
+(defun %hint-of (n) (or (and n (widget:hint n)) ""))
 
 (defun update-hover (conn)
   (a:when-let ((ls (wl-conn-focus conn)))
     (let ((hit (pointer-node conn)))
       (unless (eq hit (ls-hover ls))
-        (when (ls-hover ls) (setf (node:hovered (ls-hover ls)) nil))
-        (when hit (setf (node:hovered hit) t))
+        (when (ls-hover ls) (setf (widget:hovered (ls-hover ls)) nil))
+        (when hit (setf (widget:hovered hit) t))
         (setf (ls-hover ls) hit)
         (let ((said (%hint-of hit)))
           (unless (equal said (ls-said ls))
@@ -112,10 +112,10 @@ daemon is not told: nothing moved, and telling it would push the surface again,
 which would build the tree again."
   (let ((conn (ls-conn ls)))
     (when (eq ls (wl-conn-focus conn))
-      (let ((hit (lay:node-at (ls-tree ls)
+      (let ((hit (layout:node-at (ls-tree ls)
                               (round (wl-conn-ptr-y conn))
                               (round (wl-conn-ptr-x conn)))))
-        (when hit (setf (node:hovered hit) t))
+        (when hit (setf (widget:hovered hit) t))
         (setf (ls-hover ls) hit)))))
 
 (setf pine.wayland.surface:*rebuilt* #'rehover)
@@ -125,7 +125,7 @@ which would build the tree again."
 else runs its action now and rebuilds the surface."
   (let ((hit (pointer-node conn)))
     (cond
-      ((typep hit 'node:slider)
+      ((typep hit 'widget:slider)
        (setf (wl-conn-drag conn) hit)
        (drag-to conn))
       (t (pointer-click conn)))))
@@ -134,15 +134,15 @@ else runs its action now and rebuilds the surface."
   "Move the dragged slider's knob to the cursor and repaint, without firing the
 callback (that waits for release, so a scrub does not spam the action)."
   (a:when-let ((slider (wl-conn-drag conn)) (ls (wl-conn-focus conn)))
-    (setf (node:value slider) (lay:slider-value-at slider (round (wl-conn-ptr-x conn))))
+    (setf (widget:value slider) (layout:slider-value-at slider (round (wl-conn-ptr-x conn))))
     (paint-surface ls)))
 
 (defun pointer-release (conn)
   "End a drag: fire the slider's on-change once with the final value."
   (a:when-let ((slider (wl-conn-drag conn)))
     (setf (wl-conn-drag conn) nil)
-    (a:when-let ((fn (node:on-change slider)))
-      (pine/run/fault:attempt (lambda () (funcall fn (node:value slider)))
+    (a:when-let ((fn (widget:on-change slider)))
+      (pine/run/fault:attempt (lambda () (funcall fn (widget:value slider)))
                          "slider drag"))))
 
 (defun pointer-click (conn)
@@ -150,7 +150,7 @@ callback (that waits for release, so a scrub does not spam the action)."
 action may have changed the refs the tree reads)."
   (a:when-let ((ls (wl-conn-focus conn)))
     (when (ls-tree ls)
-      (let ((thunk (lay:click-thunk (ls-tree ls)
+      (let ((thunk (layout:click-thunk (ls-tree ls)
                                   (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn)))))
         (when thunk
           (pine/run/fault:attempt thunk "widget action")

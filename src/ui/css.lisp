@@ -1,9 +1,8 @@
-(defpackage #:pine.ui.css
-  (:use #:cl #:pine.ui.face)
+(defpackage #:pine/ui/css
+  (:use #:cl #:pine/ui/face)
   (:export #:styles #:stylesheet #:install #:broadcast #:selector
            #:css-color #:css-glass #:css-mono #:css-rad #:*listeners* #:*given*))
-
-(in-package #:pine.ui.css)
+(in-package #:pine/ui/css)
 
 (defvar *listeners* nil)
 

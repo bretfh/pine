@@ -1,5 +1,5 @@
-(defpackage #:pine.ui.layout
-  (:use #:cl #:pine.ui.node #:pine.ui.raster)
+(defpackage #:pine/ui/layout
+  (:use #:cl #:pine/ui/node #:pine/ui/raster)
   (:export
 
    #:measure #:arrange #:paint #:nodes-of
@@ -12,8 +12,7 @@
    #:placep
 
    #:centerbox-parts #:list-items #:view-overlay-count))
-
-(in-package #:pine.ui.layout)
+(in-package #:pine/ui/layout)
 
 (defvar *text-size* nil
   "When bound to a function of (text font-px) -> (values w h), text leaves
@@ -66,8 +65,6 @@ interactive node says only what it does with a hit.")
 
 (defun %margin-x (n) (let ((m (node-margin n))) (if m (+ (fourth m) (second m)) 0)))
 (defun %margin-y (n) (let ((m (node-margin n))) (if m (+ (first m) (third m)) 0)))
-(defun %margin-l (n) (let ((m (node-margin n))) (if m (fourth m) 0)))
-(defun %margin-t (n) (let ((m (node-margin n))) (if m (first m) 0)))
 
 (defmethod measure :around ((n node) aw ah)
   "Wrap the intrinsic measure with the CSS box model: content is measured in the
@@ -82,10 +79,11 @@ min-w/min-h for the border-box) and then adds margin for the outer size."
 (defmethod arrange :around ((n node) x y w h)
   "Inset the allocated rect by the node's margin before the primary arrange, so
 the node's border-box (and everything it lays out inside) sits within its margin."
-  (if (node-margin n)
-      (call-next-method n (+ x (%margin-l n)) (+ y (%margin-t n))
-                        (max 0 (- w (%margin-x n))) (max 0 (- h (%margin-y n))))
-      (call-next-method)))
+  (let ((m (node-margin n)))
+    (if m
+        (call-next-method n (+ x (fourth m)) (+ y (first m))
+                          (max 0 (- w (%margin-x n))) (max 0 (- h (%margin-y n))))
+        (call-next-method))))
 
 (defun %inner (n x y w h)
   "The content rect of N inside its padding."
@@ -143,7 +141,7 @@ the node's border-box (and everything it lays out inside) sits within its margin
 container's arrange (:align :stretch), never from the available space --
 reporting AW/AH here would eat the whole axis as natural size."
   (declare (ignore aw ah))
-  (let ((px (max 1 (pine.ui.face:metric :border 2))))
+  (let ((px (max 1 (pine/ui/face:metric :border 2))))
     (if (sep-vertical n)
         (values (if *text-size* px 1) 1)
         (values 1 (if *text-size* px 1)))))

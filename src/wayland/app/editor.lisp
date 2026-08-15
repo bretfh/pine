@@ -1,7 +1,7 @@
 (defpackage #:pine.wayland.app.editor
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection)
   (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:uiw #:pine.ui.wire) (#:paint #:pine.cairo.paint))
+                    (#:wire #:pine/ui/wire) (#:paint #:pine.cairo.paint))
   (:export
    #:editor #:run-editor
 
@@ -19,7 +19,7 @@ installs it. Nil means keyboard events are ignored (render-only).")
   "The editor cell font size, from the one theme metric the daemon's window nodes
 also use -- so the frontend measures its :resize cell grid at the same size the
 buffer rows were laid out for."
-  (float (pine.ui.face:metric :font-px 15) 1d0))
+  (float (pine/ui/face:metric :font-px 15) 1d0))
 
 (defclass editor ()
   ((sys        :initarg :sys :accessor ed-sys :initform nil)
@@ -143,7 +143,7 @@ surface it lands in."
               (maybe-resize ed)
               (when (ed-tree ed)
                 (paint:with-cairo-layout
-                  (if (uiw:arranged-p (ed-tree ed))
+                  (if (wire:arranged-p (ed-tree ed))
                       (paint:paint-arranged (ed-tree ed))
                       (paint:paint-tree (ed-tree ed) width height)))))
 
@@ -216,7 +216,7 @@ surface it lands in."
      (say-size ed))
     (:style
      (destructuring-bind (&key styles) (rest msg)
-       (pine.ui.css:install styles)
+       (pine/ui/css:install styles)
        (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
 
     (:widgets
@@ -230,7 +230,7 @@ surface it lands in."
 
 (defun %build-tree (ed form)
   (setf (ed-wire ed) form
-        (ed-tree ed) (uiw:wire->node form :on-action
+        (ed-tree ed) (wire:wire->node form :on-action
                                    (lambda (id) (declare (ignore id))
                                      (lambda (&rest args) (declare (ignore args)) nil)))
         (ed-dirty ed) t))
@@ -249,7 +249,7 @@ for a whole one instead of applying."
   (cond
     ((and (ed-wire ed) (eql generation (1+ (ed-generation ed))))
      (setf (ed-generation ed) generation)
-     (%build-tree ed (uiw:apply-rows-patch (ed-wire ed) patch)))
+     (%build-tree ed (wire:apply-rows-patch (ed-wire ed) patch)))
     (t
      (format *error-output* "pine editor: frame ~a does not follow ~a, refetching~%"
              generation (ed-generation ed))

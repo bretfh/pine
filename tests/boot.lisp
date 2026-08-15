@@ -127,7 +127,7 @@ or it is a document about a system that no longer exists."
                                        (pine.app.surface:surfaces))
                          :test #'equal)
                  "the surfaces it declares are there")
-             (is (plusp (length (pine.ui.css:styles)))
+             (is (plusp (length (pine/ui/css:styles)))
                  "and the styles it writes are installed")
              (is-true (pine/fs/computed:recompute
                        (pine.app.surface:surface-named "bar"))

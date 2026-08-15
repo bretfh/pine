@@ -1,12 +1,11 @@
-(defpackage #:pine.ui.style
+(defpackage #:pine/ui/style
   (:use #:cl)
   (:export #:resolve #:style
            #:st-bg #:st-gradient #:st-fg #:st-border-w #:st-border-color
            #:st-radius #:st-pad-x #:st-pad-y #:st-min-w #:st-min-h
            #:st-font-px #:st-bold #:st-inset #:st-margin #:st-shadow
            #:st-opacity))
-
-(in-package #:pine.ui.style)
+(in-package #:pine/ui/style)
 
 (defstruct (style (:conc-name st-))
   bg gradient fg (border-w 0) border-color (radius 0) pad-x pad-y min-w min-h
@@ -33,10 +32,10 @@
           (uiop:split-string sel-string :separator '(#\,))))
 
 (defun compiled-rules ()
-  (pine.ui.face:memo
+  (pine/ui/face:memo
    :stylesheet
    (lambda ()
-     (loop :for (sel props) :in (pine.ui.css:stylesheet)
+     (loop :for (sel props) :in (pine/ui/css:stylesheet)
            :collect (cons (parse-rule-selectors sel) props)))))
 
 (defun reset-rules ()
@@ -94,7 +93,7 @@
   (cond
     ((or (null s) (string= s "transparent") (string= s "none")) nil)
     ((and (plusp (length s)) (char= (char s 0) #\#))
-     (multiple-value-bind (r g b) (pine.ui.face:hex-rgb s)
+     (multiple-value-bind (r g b) (pine/ui/face:hex-rgb s)
        (when r (values (/ r 255.0) (/ g 255.0) (/ b 255.0) 1.0))))
     ((eql 0 (search "rgba(" s)) (parse-rgb-func s 4))
     ((eql 0 (search "rgb(" s))  (parse-rgb-func s 3))

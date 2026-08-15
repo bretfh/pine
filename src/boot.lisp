@@ -1,7 +1,7 @@
 (defpackage #:pine
   (:use #:cl)
   (:shadow #:describe)
-  (:local-nicknames (#:build #:pine.ui.build) (#:data #:pine/data)
+  (:local-nicknames (#:build #:pine/ui/build) (#:data #:pine/data)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:mount #:pine/fs/mount) (#:watch #:pine/fs/watch)
                     (#:world #:pine/world/world) (#:store #:pine/world/store)
@@ -14,7 +14,7 @@
                     (#:endpoint #:pine/run/agent) (#:fault #:pine/run/fault)
                     (#:libs #:pine/run/libs) (#:log #:pine/run/log)
                     (#:place #:pine/path/place)
-                    (#:ui #:pine.ui.paths) (#:css #:pine.ui.css)
+                    (#:ui #:pine/ui/paths) (#:css #:pine/ui/css)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:parser #:pine.ts.parser)
                     (#:sh #:pine.provider.sh) (#:env #:pine.provider.env)
@@ -63,10 +63,10 @@
     (:pine/world/world "*world*" "root")
     (:pine.app.surface "surface" "defsurface" "show!" "hide!" "toggle!" "surfaces")
     (:pine.edit.render "frame-tree")
-    (:pine.ui.face "color" "metric")
-    (:pine.ui.css "css-glass" "css-rad" "css-mono")
+    (:pine/ui/face "color" "metric")
+    (:pine/ui/css "css-glass" "css-rad" "css-mono")
     (:pine/path/path "leaf")
-    (:pine.ui.build "column" "row" "label" "icon" "button" "box" "center"
+    (:pine/ui/build "column" "row" "label" "icon" "button" "box" "center"
      "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
      "calendar" "image" "centerbox" "ring" "cells" "here" "acting")
     (:pine/fs/node "stir" "child")

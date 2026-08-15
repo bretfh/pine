@@ -2,8 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine/world/world) (#:window #:pine.edit.window)
-                    (#:build #:pine.ui.build) (#:layout #:pine.ui.layout)
-                    (#:face #:pine.ui.face) (#:mode #:pine/repl/mode)
+                    (#:build #:pine/ui/build) (#:layout #:pine/ui/layout)
+                    (#:face #:pine/ui/face) (#:mode #:pine/repl/mode)
                     (#:attach #:pine.net.attach) (#:wm #:pine.app.wm)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:compositor #:install #:pine-wm #:output-of #:splits #:arrange
@@ -103,7 +103,7 @@
     (list border border border border)))
 
 (defun %leaf (w)
-  (build:cells nil :of w :as 'pine.ui.node:os-window-view
+  (build:cells nil :of w :as 'pine/ui/node:os-window-view
                    :expand (max 1 (window:weight-of w)) :margin (%margin)))
 
 (defun %node (w)
@@ -139,15 +139,15 @@
           (layout:arrange tree (or x 0) (or y 0) width height))
         (let (acc)
           (labels ((walk (node)
-                     (when (typep node 'pine.ui.node:os-window-view)
-                       (let ((w (pine.ui.node:of node)))
+                     (when (typep node 'pine/ui/node:os-window-view)
+                       (let ((w (pine/ui/node:of node)))
                          (push (list (%id w)
-                                     (pine.ui.node:start-col node)
-                                     (pine.ui.node:start-line node)
-                                     (- (pine.ui.node:end-col node)
-                                        (pine.ui.node:start-col node))
-                                     (1+ (- (pine.ui.node:end-line node)
-                                            (pine.ui.node:start-line node))))
+                                     (pine/ui/node:start-col node)
+                                     (pine/ui/node:start-line node)
+                                     (- (pine/ui/node:end-col node)
+                                        (pine/ui/node:start-col node))
+                                     (1+ (- (pine/ui/node:end-line node)
+                                            (pine/ui/node:start-line node))))
                                acc)))
                      (mapc #'walk (layout:nodes-of node))))
             (walk tree))

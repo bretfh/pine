@@ -1,11 +1,11 @@
 (defpackage #:pine.edit.render
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine.ui.build)
-                    (#:cells #:pine.ui.cells) (#:layout #:pine.ui.layout)
-                    (#:raster #:pine.ui.raster) (#:face #:pine.ui.face)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine/ui/build)
+                    (#:cells #:pine/ui/cells) (#:layout #:pine/ui/layout)
+                    (#:raster #:pine/ui/raster) (#:face #:pine/ui/face)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
                     (#:mode #:pine/repl/mode) (#:parser #:pine.ts.parser)
-                    (#:prompt #:pine.edit.prompt) (#:ui #:pine.ui.node))
+                    (#:prompt #:pine.edit.prompt) (#:widget #:pine/ui/node))
   (:export #:shown #:modelinep #:buffer-tree #:window-tree #:frame-tree
            #:rows #:modeline #:echo-tree
            #:shown-line #:shown-col
@@ -146,7 +146,7 @@ know about it.")
   "A name is the buffer it names."
   (shown (or (buffer:buffer-named content) (buffer:scratch)) w))
 
-(defmethod shown ((content ui:node) w)
+(defmethod shown ((content widget:node) w)
   "A widget tree renders to cells like any surface does, so a config can put
 one in a window beside a buffer."
   (build:cells (cells:render content (max 1 (window:width-of w))
@@ -237,7 +237,7 @@ are on and a widget tree has nothing of the sort to say."
     (when p
       (let* ((found (prompt:matching p))
              (n (length found))
-             (from (pine.ui.wire:scroll-to-selection (prompt:chosen p) 0
+             (from (pine/ui/wire:scroll-to-selection (prompt:chosen p) 0
                                                      +candidates-shown+)))
         (values (subseq found (min from n) (min (+ from +candidates-shown+) n))
                 from)))))

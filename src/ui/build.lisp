@@ -1,13 +1,12 @@
-(defpackage #:pine.ui.build
-  (:use #:cl #:pine.ui.node)
+(defpackage #:pine/ui/build
+  (:use #:cl #:pine/ui/node)
   (:shadow #:centerbox #:ring #:box #:center #:scroll #:slider #:calendar
            #:image #:cells #:stack)
   (:export #:*asking* #:*editing* #:here #:box #:button #:calendar #:cells #:centerbox #:center #:choice
            #:column #:gap #:icon #:image #:label #:ring #:row
            #:rows #:rule #:scroll #:slider #:grid #:stack
            #:field #:acting #:shown #:placep #:held))
-
-(in-package #:pine.ui.build)
+(in-package #:pine/ui/build)
 
 (defvar *here* nil)
 (defvar *asking* nil)
@@ -137,7 +136,7 @@ clickable node, which centres the glyph.
   "eww centerbox: three slots pinned start / centre / end along ORIENT (:v or :h).
 The centre floats in the slack; the ends stay anchored, so an oversize start
 never pushes the end past the surface. (centerbox :orient :v :start .. :end ..)"
-  (make-instance 'pine.ui.node:centerbox :orient (or orient :v) :class class :hint hint
+  (make-instance 'pine/ui/node:centerbox :orient (or orient :v) :class class :hint hint
                  :expand (or expand 0) :start start :center center :end end))
 
 (defun button (&rest args)
@@ -151,17 +150,17 @@ never pushes the end past the surface. (centerbox :orient :v :start .. :end ..)"
 (defun box (&rest args)
   "A fixed-width cell. Props :width :align :pad :face; one node."
   (multiple-value-bind (props items) (%parse-args args)
-    (apply #'make-instance 'pine.ui.node:box :node (first items) props)))
+    (apply #'make-instance 'pine/ui/node:box :node (first items) props)))
 
 (defun center (&rest args)
   "Centre one node in the space it is given."
   (multiple-value-bind (props items) (%parse-args args)
-    (apply #'make-instance 'pine.ui.node:center :node (first items) props)))
+    (apply #'make-instance 'pine/ui/node:center :node (first items) props)))
 
 (defun scroll (&rest args)
   "A clipped, scrollable window onto a taller node. Props :height :offset."
   (multiple-value-bind (props items) (%parse-args args)
-    (apply #'make-instance 'pine.ui.node:scroll :node (first items) props)))
+    (apply #'make-instance 'pine/ui/node:scroll :node (first items) props)))
 
 (defun gap (&rest props)
   "Flexible empty space. (gap :expand 2)"
@@ -176,12 +175,12 @@ never pushes the end past the surface. (centerbox :orient :v :start .. :end ..)"
 it, so there is no :value and no :on-change."
   (let ((subject (first args)))
     (cond ((placep subject)
-           (apply #'make-instance 'pine.ui.node:slider
+           (apply #'make-instance 'pine/ui/node:slider
                   :value (or (held subject) 0)
                   :on-change (lambda (v) (setf (held subject) v))
                   (rest args)))
-          ((keywordp subject) (apply #'make-instance 'pine.ui.node:slider args))
-          (t (apply #'make-instance 'pine.ui.node:slider :value subject (rest args))))))
+          ((keywordp subject) (apply #'make-instance 'pine/ui/node:slider args))
+          (t (apply #'make-instance 'pine/ui/node:slider :value subject (rest args))))))
 
 (defun field (subject &rest raw-props)
   "A one-line editable field over the path it edits.
@@ -201,7 +200,7 @@ typed into it is written back there. No :value and no :on-change."
   "Nodes in one place, the last on top: each is given the whole rect and they
 are painted in the order they were written."
   (multiple-value-bind (props items) (%parse-args args)
-    (apply #'make-instance 'pine.ui.node:stack :nodes items
+    (apply #'make-instance 'pine/ui/node:stack :nodes items
            props)))
 
 (defun grid (&rest args)
@@ -221,16 +220,16 @@ are painted in the order they were written."
   (let ((subject (first args)))
     (if (keywordp subject)
         (multiple-value-bind (props items) (%parse-args args)
-          (apply #'make-instance 'pine.ui.node:ring :node (first items) props))
+          (apply #'make-instance 'pine/ui/node:ring :node (first items) props))
         (multiple-value-bind (props items) (%parse-args (rest args))
-          (apply #'make-instance 'pine.ui.node:ring
+          (apply #'make-instance 'pine/ui/node:ring
                  :node (first items)
                  :value (if (placep subject) (or (held subject) 0) subject)
                  props)))))
 
 (defun calendar (&rest props)
   "A month calendar. Props :year :month :day."
-  (apply #'make-instance 'pine.ui.node:calendar props))
+  (apply #'make-instance 'pine/ui/node:calendar props))
 
 (defun image (path &rest props)
   "An image. PATH may be a path, which is read."
@@ -241,7 +240,7 @@ are painted in the order they were written."
 class it is, :OF the content it shows, :CROW and :CCOL the caret. Measure and
 arrange are O(1); paint blits the rows."
   (apply #'make-instance
-         (or (getf props :as) 'pine.ui.node:view-node)
+         (or (getf props :as) 'pine/ui/node:view-node)
          :rows rows (%without-key props :as)))
 
 (defun rows (items item-fn &rest props)
@@ -270,8 +269,8 @@ saying which line was which."
                                       item
                                       *here*)))
                             (let ((row (funcall item-fn)))
-                              (when (and row (null (pine.ui.node:of row)))
-                                (setf (pine.ui.node:of row) *here*))
+                              (when (and row (null (pine/ui/node:of row)))
+                                (setf (pine/ui/node:of row) *here*))
                               row)))
                         item-fn)
            props)))

@@ -1,8 +1,8 @@
 (defpackage #:pine.cairo.shot
   (:use #:cl)
   (:local-nicknames (#:cairo #:cl-cairo2) (#:paint #:pine.cairo.paint)
-                    (#:grid #:pine.cairo.grid) (#:layout #:pine.ui.layout)
-                    (#:face #:pine.ui.face) (#:render #:pine.edit.render)
+                    (#:grid #:pine.cairo.grid) (#:layout #:pine/ui/layout)
+                    (#:face #:pine/ui/face) (#:render #:pine.edit.render)
                     (#:buffer #:pine.edit.buffer) (#:world #:pine/world/world)
                     (#:node #:pine/fs/node))
   (:export #:rows #:window #:surfaces #:as-frontend #:shot #:*text*))
@@ -84,14 +84,14 @@
   (let* ((s (pine.app.surface:surface-named name))
          (wire (and s (let ((render:*cols* (max 1 (floor width 9)))
                             (render:*rows* (max 2 (floor height 18))))
-                        (pine.ui.wire:node->wire
+                        (pine/ui/wire:node->wire
                          (pine/fs/computed:recompute s)))))
-         (styles (pine.ui.css:styles))
+         (styles (pine/ui/css:styles))
          (path (format nil "~a/pine-frontend-~a.png" dir name)))
     (when wire
       (setf world:*world* nil)
-      (pine.ui.css:install styles)
-      (let ((tree (pine.ui.wire:wire->node
+      (pine/ui/css:install styles)
+      (let ((tree (pine/ui/wire:wire->node
                    wire :on-action (lambda (id) (declare (ignore id))
                                      (lambda (&rest a) (declare (ignore a)) nil)))))
         (face:with-faces
@@ -100,7 +100,7 @@
               (cairo:with-context ((cairo:create-context surface))
                 (cairo:set-source-rgba 0d0 0d0 0d0 0d0)
                 (cairo:paint)
-                (if (pine.ui.wire:arranged-p tree)
+                (if (pine/ui/wire:arranged-p tree)
                     (paint:paint-arranged tree)
                     (paint:paint-tree tree width height)))
               (cairo:surface-write-to-png surface path))))

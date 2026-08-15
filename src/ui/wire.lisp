@@ -1,11 +1,10 @@
-(defpackage #:pine.ui.wire
-  (:use #:cl #:pine.ui.node #:pine.ui.raster)
+(defpackage #:pine/ui/wire
+  (:use #:cl #:pine/ui/node #:pine/ui/raster)
   (:local-nicknames (#:d #:pine/data))
   (:export #:apply-rows-patch #:arranged-p #:node->wire #:rows-patch
            #:scroll-to-selection #:wire->node #:wire-views #:wire-tag
            #:defwire))
-
-(in-package #:pine.ui.wire)
+(in-package #:pine/ui/wire)
 
 (defvar *codec* (d:table)
   "What this image's widgets are, both ways: a wire tag to the function that
@@ -27,7 +26,7 @@ holding the thing it stands for.")
 sent as a patch; anything else has to go whole.")
 
 (defparameter +base+
-  (let ((class (find-class 'pine.ui.node:node)))
+  (let ((class (find-class 'pine/ui/node:node)))
     (c2mop:ensure-finalized class)
     (loop :for slot :in (c2mop:class-direct-slots class)
           :for key := (first (c2mop:slot-definition-initargs slot))
@@ -190,7 +189,7 @@ generated constructor for a class whose forms are not a flat list."
    (:opacity (view-opacity n) :default 1.0)
    (:base (view-base n))))
 
-(defwire :ring pine.ui.node:ring
+(defwire :ring pine/ui/node:ring
   ((:value (value n) :default 0)
    (:min (min-of n) :initarg :min :default 0)
    (:max (max-of n) :initarg :max :default 100)
@@ -247,14 +246,14 @@ generated constructor for a class whose forms are not a flat list."
   :take (:nodes :list))
 
 (defwire :list list-node ()
-  :nodes (pine.ui.layout:list-items n)
+  :nodes (pine/ui/layout:list-items n)
   :build (apply #'make-instance 'vstack :nodes nodes :spacing 0 :align :start
                 (props-without props)))
 
-(defwire :centerbox pine.ui.node:centerbox
+(defwire :centerbox pine/ui/node:centerbox
   ((:orient (cb-orient n) :initarg :orient :default :v))
   :nodes (list (cb-start n) (cb-center n) (cb-end n))
-  :build (apply #'make-instance 'pine.ui.node:centerbox
+  :build (apply #'make-instance 'pine/ui/node:centerbox
                 :orient (prop props :orient :v)
                 :start (first nodes) :center (second nodes) :end (third nodes)
                 (props-without props :orient)))

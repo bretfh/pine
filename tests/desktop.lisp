@@ -10,26 +10,26 @@
 (test a-surface-is-a-node-and-its-contents-is-the-tree-it-builds
   (with-desktop
     (pine.app.surface:surface "probe"
-                              (lambda () (pine.ui.build:label "hello"))
+                              (lambda () (pine/ui/build:label "hello"))
                               :as :bar)
     (let ((s (surface-of "probe")))
       (is-true s)
       (is (eq :bar (pine.app.surface:as s)))
-      (is (typep (pine/fs/node:contents s) 'pine.ui.node:node))
+      (is (typep (pine/fs/node:contents s) 'pine/ui/node:node))
       (is (equal '("hello")
                  (mapcar (lambda (row) (string-right-trim " " (car row)))
-                         (pine.ui.cells:render (pine/fs/node:contents s) 20)))))))
+                         (pine/ui/cells:render (pine/fs/node:contents s) 20)))))))
 
 (test what-a-surface-reads-is-what-rebuilds-it
   (with-desktop
     (let ((where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface
-       "reading" (lambda () (pine.ui.build:label (pine/fs/node:contents where))))
+       "reading" (lambda () (pine/ui/build:label (pine/fs/node:contents where))))
       (let ((s (surface-of "reading")))
-        (is (equal "one" (pine.ui.node:content (pine/fs/node:contents s))))
+        (is (equal "one" (pine/ui/node:content (pine/fs/node:contents s))))
         (setf (pine/fs/node:contents where) "two")
-        (is (equal "two" (pine.ui.node:content (pine/fs/node:contents s)))
+        (is (equal "two" (pine/ui/node:content (pine/fs/node:contents s)))
             "nothing subscribed: the surface read it, so the write invalidated it")))))
 
 (test a-surface-that-moves-tells-whoever-is-watching-it
@@ -38,7 +38,7 @@
           (told 0))
       (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface
-       "reading" (lambda () (pine.ui.build:label (pine/fs/node:contents where))))
+       "reading" (lambda () (pine/ui/build:label (pine/fs/node:contents where))))
       (pine/fs/node:contents (surface-of "reading"))
       (pine/fs/watch:watch (surface-of "reading")
                            (lambda (of value) (declare (ignore of value)) (incf told)))
@@ -47,8 +47,8 @@
 
 (test the-placement-is-wayland-vocabulary-and-the-content-is-not
   (with-desktop
-    (pine.app.surface:surface "bar" (lambda () (pine.ui.build:label "")) :as :bar)
-    (pine.app.surface:surface "audio" (lambda () (pine.ui.build:label "")) :as :panel)
+    (pine.app.surface:surface "bar" (lambda () (pine/ui/build:label "")) :as :bar)
+    (pine.app.surface:surface "audio" (lambda () (pine/ui/build:label "")) :as :panel)
     (is-true (pine.app.surface:shownp (surface-of "bar"))
              "furniture is up as soon as it is declared")
     (is-false (pine.app.surface:shownp (surface-of "audio"))
@@ -59,7 +59,7 @@
 (test toggling-a-panel-puts-the-other-one-away
   (with-desktop
     (dolist (name '("audio" "network" "media"))
-      (pine.app.surface:surface name (lambda () (pine.ui.build:label name))
+      (pine.app.surface:surface name (lambda () (pine/ui/build:label name))
                                 :as :panel))
     (pine/repl/command:run "toggle-surface" (list "audio"))
     (is-true (pine.app.surface:shownp (surface-of "audio")))
@@ -72,7 +72,7 @@
 
 (test a-surface-slot-is-a-node-so-a-config-can-write-it
   (with-desktop
-    (pine.app.surface:surface "probe" (lambda () (pine.ui.build:label "")) :as :panel)
+    (pine.app.surface:surface "probe" (lambda () (pine/ui/build:label "")) :as :panel)
     (let ((shown (pine/fs/tree:at (pine.app.surface:root) "probe/shown")))
       (is-true shown)
       (setf (pine/fs/node:contents shown) t)
@@ -82,7 +82,7 @@
 
 (test the-desktop-verbs-are-commands-like-any-other
   (with-desktop
-    (pine.app.surface:surface "probe" (lambda () (pine.ui.build:label "")) :as :panel)
+    (pine.app.surface:surface "probe" (lambda () (pine/ui/build:label "")) :as :panel)
     (is (equal '(("probe" :panel nil)) (pine/repl/command:run "surfaces")))
     (pine/repl/command:run "show-surface" (list "probe"))
     (is (equal '(("probe" :panel t)) (pine/repl/command:run "surfaces")))))
@@ -129,12 +129,12 @@
   (with-desktop
     (pine.app.surface:surface
      "editor"
-     (lambda () (pine.ui.build:column :class "chrome"
-                                      (pine.ui.build:label "pine")
+     (lambda () (pine/ui/build:column :class "chrome"
+                                      (pine/ui/build:label "pine")
                                       (pine.edit.render:frame-tree)))
      :as :toplevel)
     (let ((tree (pine/fs/node:contents (pine.edit.session:surface))))
-      (is (equal "chrome" (pine.ui.node:css-class tree))
+      (is (equal "chrome" (pine/ui/node:css-class tree))
           "the editor pushes the surface, so a config replacing it is what ships")
       (is-true (%classed tree "editor-view")
                "and the frame is still in there, because the config put it there"))))
@@ -226,8 +226,8 @@ a test waits for the thread it did run on."
           (ran nil))
       (pine.app.surface:surface
        "probe"
-       (lambda () (pine.ui.build:button :on-click (lambda () (setf ran t))
-                                        (pine.ui.build:label "go")))
+       (lambda () (pine/ui/build:button :on-click (lambda () (setf ran t))
+                                        (pine/ui/build:label "go")))
        :as :bar)
       (let ((s (pine.app.desktop::%attached client)))
         (let* ((push (find :widgets (sent client) :key #'first))
@@ -242,7 +242,7 @@ a test waits for the thread it did run on."
 (test the-editor-is-not-the-desktops-to-draw
   (with-desktop
     (pine.edit.session:surface)
-    (pine.app.surface:surface "bar" (lambda () (pine.ui.build:label "")) :as :bar)
+    (pine.app.surface:surface "bar" (lambda () (pine/ui/build:label "")) :as :bar)
     (let ((client (make-instance 'probe-client)))
       (pine.app.desktop::%attached client)
       (let ((surfaces (loop :for (verb . message) :in (sent client)
@@ -265,7 +265,7 @@ a test waits for the thread it did run on."
     (let ((told 0)
           (s (pine.app.surface:surface
               "live"
-              (lambda () (pine.ui.build:label
+              (lambda () (pine/ui/build:label
                           (princ-to-string
                            (pine/fs/node:contents
                             (pine/fs/tree:at (pine.app.wm:root) "focused")))))
@@ -300,9 +300,9 @@ a test waits for the thread it did run on."
       (pine.app.surface:surface
        "probe"
        (lambda ()
-         (pine.ui.build:button
+         (pine/ui/build:button
           :on-click (lambda () (setf (pine/fs/node:contents where) t))
-          (pine.ui.build:label (if (pine/fs/node:contents where) "on" "off"))))
+          (pine/ui/build:label (if (pine/fs/node:contents where) "on" "off"))))
        :as :bar)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
@@ -317,15 +317,15 @@ a test waits for the thread it did run on."
   (with-desktop
     (let ((where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) nil)
-      (let ((by-map (pine.ui.build:acting
+      (let ((by-map (pine/ui/build:acting
                      (pine/data:map (pine/path/path:parse "/probe") 41))))
         (funcall by-map)
         (is (eql 41 (pine/fs/node:contents where))
             "a write-map is a click, so a config declares one without a closure"))
-      (let ((by-path (pine.ui.build:acting (pine/path/path:parse "/probe"))))
+      (let ((by-path (pine/ui/build:acting (pine/path/path:parse "/probe"))))
         (funcall by-path)
         (is (eq t (pine/fs/node:contents where))))
-      (let ((by-name (pine.ui.build:acting "pwd")))
+      (let ((by-name (pine/ui/build:acting "pwd")))
         (is (equal "/" (funcall by-name))
             "a command's name is a click too")))))
 
@@ -346,7 +346,7 @@ a test waits for the thread it did run on."
 (test asking-before-a-dangerous-click-goes-through-the-prompt
   (with-desktop
     (let ((ran nil))
-      (let ((thunk (pine.ui.build::%click
+      (let ((thunk (pine/ui/build::%click
                     (list :on-click (lambda () (setf ran t)) :confirm "Really?"))))
         (funcall thunk)
         (is-true (pine.edit.prompt:asking-p) "it asked instead of acting")
@@ -361,7 +361,7 @@ a test waits for the thread it did run on."
     (let ((client (make-instance 'probe-client)))
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
-      (pine.app.surface:surface "late" (lambda () (pine.ui.build:label "late"))
+      (pine.app.surface:surface "late" (lambda () (pine/ui/build:label "late"))
                                 :as :bar)
       (let ((push (find :widgets (sent client) :key #'first)))
         (is-true push "a surface a config declares later is pushed, not stranded")
@@ -380,10 +380,10 @@ a test waits for the thread it did run on."
 (test a-field-asks-for-its-new-value
   (with-desktop
     (let* ((where (pine/world/world:ensure pine/world/world:*world* "probe"))
-           (field (pine.ui.build:field (pine/path/path:parse "/probe")
+           (field (pine/ui/build:field (pine/path/path:parse "/probe")
                                        :hint "Probe")))
       (setf (pine/fs/node:contents where) "was")
-      (let ((thunk (pine.ui.layout:clicked field 0)))
+      (let ((thunk (pine/ui/layout:clicked field 0)))
         (is-true thunk "a field is clickable")
         (funcall thunk)
         (is-true (pine.edit.prompt:asking-p) "and asks rather than doing nothing")
@@ -417,11 +417,11 @@ a test waits for the thread it did run on."
       (pine.app.surface:surface
        "probe"
        (lambda ()
-         (pine.ui.build:button
+         (pine/ui/build:button
           :on-click (lambda ()
                       (bordeaux-threads:wait-on-semaphore held :timeout 5)
                       (setf ran t))
-          (pine.ui.build:label "go")))
+          (pine/ui/build:label "go")))
        :as :bar)
       (pine.app.desktop::%attached client)
       (let ((tk (pine.app.desktop:received client
@@ -475,7 +475,7 @@ a test waits for the thread it did run on."
                                         :cell-w 9 :cell-h 18))
       (let* ((push (find :widgets (sent client) :key #'first))
              (form (getf (rest push) :tree))
-             (view (first (pine.ui.wire:wire-views form))))
+             (view (first (pine/ui/wire:wire-views form))))
         (is-true view)
         (destructuring-bind (sl sc el ec) (getf (second view) :rect)
           (declare (ignore sl sc))
@@ -496,11 +496,11 @@ it is painted into."
                         :width w :height h :cell-w 9 :cell-h 18))
                (setf (sent client) nil)
                (pine.edit.session::%work s (list :refresh))
-               (let ((tree (pine.ui.wire:wire->node
+               (let ((tree (pine/ui/wire:wire->node
                             (getf (rest (find :widgets (sent client) :key #'first))
                                   :tree))))
-                 (list (pine.ui.node:end-col tree)
-                       (1+ (pine.ui.node:end-line tree))))))
+                 (list (pine/ui/node:end-col tree)
+                       (1+ (pine/ui/node:end-line tree))))))
         (is (equal '(900 540) (frame-at 900 540)))
         (is (equal '(900 545) (frame-at 900 545))
             "eight more pixels is the same 30 rows and a different frame")))))
@@ -518,11 +518,11 @@ a click that crossed during a repaint still means what it looks like it means."
       (pine.app.surface:surface
        "probe"
        (lambda ()
-         (pine.ui.build:row
-          (pine.ui.build:label (format nil "~a" (pine/fs/node:contents ticks)))
-          (pine.ui.build:button
+         (pine/ui/build:row
+          (pine/ui/build:label (format nil "~a" (pine/fs/node:contents ticks)))
+          (pine/ui/build:button
            :on-click (lambda () (setf (pine/fs/node:contents where) t))
-           (pine.ui.build:label "go"))))
+           (pine/ui/build:label "go"))))
        :as :bar)
       (let ((s (pine.app.desktop::%attached client)))
         (let ((id (block found
@@ -544,7 +544,7 @@ something else happens to rebuild it."
   (with-desktop
     (let ((client (make-instance 'probe-client)))
       (pine.app.surface:surface "probe-panel"
-                                (lambda () (pine.ui.build:label "here"))
+                                (lambda () (pine/ui/build:label "here"))
                                 :as :panel)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
@@ -571,25 +571,25 @@ is why a hint lit up only while the pointer was moving."
   (let* ((built 0)
          (tree-fn (lambda ()
                     (incf built)
-                    (pine.ui.build:column
-                     (pine.ui.build:button :hint "one" :on-click (lambda () nil)
-                                           (pine.ui.build:label "one"))
-                     (pine.ui.build:button :hint "two" :on-click (lambda () nil)
-                                           (pine.ui.build:label "two")))))
+                    (pine/ui/build:column
+                     (pine/ui/build:button :hint "one" :on-click (lambda () nil)
+                                           (pine/ui/build:label "one"))
+                     (pine/ui/build:button :hint "two" :on-click (lambda () nil)
+                                           (pine/ui/build:label "two")))))
          (tree (funcall tree-fn)))
-    (pine.ui.layout:measure tree 20 4)
-    (pine.ui.layout:arrange tree 0 0 20 4)
-    (let ((over (pine.ui.layout:node-at tree 1 1)))
+    (pine/ui/layout:measure tree 20 4)
+    (pine/ui/layout:arrange tree 0 0 20 4)
+    (let ((over (pine/ui/layout:node-at tree 1 1)))
       (is-true over "the pointer is over something")
-      (setf (pine.ui.node:hovered over) t)
+      (setf (pine/ui/node:hovered over) t)
       (let ((again (funcall tree-fn)))
-        (pine.ui.layout:measure again 20 4)
-        (pine.ui.layout:arrange again 0 0 20 4)
-        (let ((now (pine.ui.layout:node-at again 1 1)))
+        (pine/ui/layout:measure again 20 4)
+        (pine/ui/layout:arrange again 0 0 20 4)
+        (let ((now (pine/ui/layout:node-at again 1 1)))
           (is (not (eq now over)) "the tree was built again, so the node is new")
-          (is (equal (pine.ui.node:hint over) (pine.ui.node:hint now))
+          (is (equal (pine/ui/node:hint over) (pine/ui/node:hint now))
               "and the same place under the pointer means the same thing")
-          (is (null (pine.ui.node:hovered now))
+          (is (null (pine/ui/node:hovered now))
               "which is why the frontend puts the flag back rather than waiting
 for the pointer to move"))))))
 
@@ -602,7 +602,7 @@ twenty frames."
           (where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface "probe-bar"
-                                (lambda () (pine.ui.build:label
+                                (lambda () (pine/ui/build:label
                                             (pine/fs/node:contents where)))
                                 :as :bar)
       (let ((s (pine.app.desktop::%attached client)))

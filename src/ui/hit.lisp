@@ -1,4 +1,4 @@
-(in-package #:pine.ui.layout)
+(in-package #:pine/ui/layout)
 
 (defun node-parent (root node)
   "NODE's parent under ROOT, or nil for the root itself."
@@ -54,9 +54,9 @@ split."
        (setf (expand-of leaf) weight)
        (let* ((nodes (if divider (list leaf divider new) (list leaf new)))
               (container (ecase orient
-                           (:column (apply #'pine.ui.build:column :align :stretch
+                           (:column (apply #'pine/ui/build:column :align :stretch
                                                     :expand weight nodes))
-                           (:row (apply #'pine.ui.build:row :align :stretch :spacing 0
+                           (:row (apply #'pine/ui/build:row :align :stretch :spacing 0
                                              :expand weight nodes)))))
          (cond ((eq root leaf) container)
                ((and parent (replace-node parent leaf container)) root)
@@ -153,8 +153,8 @@ field needs no editing of its own and no focus to hold."
         (ask (hint node)))
     (when write-back
       (lambda ()
-        (if pine.ui.build:*editing*
-            (funcall pine.ui.build:*editing*
+        (if pine/ui/build:*editing*
+            (funcall pine/ui/build:*editing*
                      (format nil "~a " (or ask "New value:")) had write-back)
             (pine/run/log:note "nothing here can ask for a value"))))))
 

@@ -1,8 +1,8 @@
 (defpackage #:pine.wayland.app.desktop
   (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
         #:pine.wayland.surface #:pine.wayland.input)
-  (:local-nicknames (#:a #:alexandria) (#:node #:pine.ui.node)
-                    (#:uiw #:pine.ui.wire) (#:d #:pine/data))
+  (:local-nicknames (#:a #:alexandria) (#:widget #:pine/ui/node)
+                    (#:wire #:pine/ui/wire) (#:d #:pine/data))
   (:export #:desktop #:run-desktop #:received #:open-for #:close-for
            #:placement #:role-for #:tree-fn #:on-widgets #:on-panel))
 
@@ -25,7 +25,7 @@
   (lambda (id) (lambda (&rest args) (send ds (list :widget-action :id id :args args)))))
 
 (defun tree-fn (ds name)
-  (lambda () (uiw:wire->node (gethash name (ds-wire ds)) :on-action (acting ds))))
+  (lambda () (wire:wire->node (gethash name (ds-wire ds)) :on-action (acting ds))))
 
 (defun placement (role)
   (flet ((spec (layer anchor axis avail exclusive margin)
@@ -105,7 +105,7 @@
        (pine.frontend:enqueue (ds-pump ds) (lambda () (on-panel ds name show)))))
     (:style
      (destructuring-bind (&key styles &allow-other-keys) (rest message)
-       (pine.ui.css:install styles)
+       (pine/ui/css:install styles)
        (pine.frontend:enqueue (ds-pump ds) (lambda () (repaint-all ds)))))
     (t nil)))
 
@@ -113,7 +113,7 @@
   (let* ((conn (connect-desktop))
          (ds (make-instance 'desktop :conn conn :pump (pine.frontend:make-pump))))
     (setf *on-hover*
-          (lambda (n) (send ds (list :hint :text (or (and n (node:hint n)) "")))))
+          (lambda (n) (send ds (list :hint :text (or (and n (widget:hint n)) "")))))
     (setf (ds-sys ds)
           (pine.frontend:attach :desktop (lambda (message) (received ds message))
                                 :host host :port port))
