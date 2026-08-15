@@ -178,3 +178,48 @@ buffer highlights."
                                    :test #'equal))
              (pine/run/libs:dirs))
       "and the loader is told about each of them"))
+
+(def-suite* :pine/meter :in :pine)
+
+(test an-instrument-says-what-it-timed-and-how-often
+  (pine/run/meter:reset)
+  (dotimes (n 20) (pine/run/meter:timing (:probe-timed) (sleep 0.002)))
+  (let ((said (pine/run/meter:reading :probe-timed)))
+    (is (= 20 (getf said :count)))
+    (is (eq :time (getf said :kind)))
+    (is (< 1500000 (getf said :mean) 20000000)
+        "twenty sleeps of two milliseconds average about two milliseconds, in
+nanoseconds: ~a" (getf said :mean))
+    (is (<= (getf said :p50) (getf said :p95) (getf said :most))
+        "the middle is under the ninety fifth is under the worst"))
+  (pine/run/meter:reset))
+
+(test a-counter-counts-what-it-was-told-not-how-often
+  (pine/run/meter:reset)
+  (pine/run/meter:counted :probe-bytes 700)
+  (pine/run/meter:counted :probe-bytes 300)
+  (let ((said (pine/run/meter:reading :probe-bytes)))
+    (is (eq :count (getf said :kind)))
+    (is (= 1000 (getf said :count)) "a thousand bytes, said twice"))
+  (pine/run/meter:reset))
+
+(test an-instrument-nothing-walked-says-nothing-rather-than-zero
+  (pine/run/meter:reset)
+  (is (null (pine/run/meter:reading :probe-never))
+      "a path nobody took has no reading, which is not the same as a fast one"))
+
+(test what-a-sample-costs
+  "Always on is a decision that has to be paid for on every frame, so what it
+costs is measured rather than assumed."
+  (let* ((n 100000)
+         (start (pine/run/meter:now)))
+    (let ((pine/run/meter:*on* nil))
+      (dotimes (i n) (pine/run/meter:timing (:probe-cost) i)))
+    (let* ((off (- (pine/run/meter:now) start))
+           (mid (pine/run/meter:now)))
+      (dotimes (i n) (pine/run/meter:timing (:probe-cost) i))
+      (let* ((on (- (pine/run/meter:now) mid))
+             (each (round (- on off) n)))
+        (is (< each 5000) "a sample costs ~d ns, which is too much" each)
+        (format t "~&    a sample costs about ~d ns~%" each))))
+  (pine/run/meter:reset))

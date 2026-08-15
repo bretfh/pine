@@ -1,6 +1,6 @@
 (defpackage #:pine/provider/sh
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:task #:pine/run/task))
+  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:node #:pine/fs/node) (#:task #:pine/run/task))
   (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
            #:*environment-out* #:output-of #:run-line #:launch
            #:streaming #:listen! #:quiet! #:listening #:said #:asked #:tethered
@@ -171,7 +171,8 @@ twice in the same breath does not fork twice."
     (cond ((and had (< (- now (cdr had))
                        (* *breath* internal-time-units-per-second)))
            (car had))
-          (t (let ((said (node:contents n)))
+          (t (meter:counted :sh-fork)
+             (let ((said (node:contents n)))
                (d:keep! *asked* line (cons said now))
                said)))))
 

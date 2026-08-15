@@ -1,6 +1,6 @@
 (defpackage #:pine/ts/parser
   (:use #:cl)
-  (:local-nicknames (#:language #:pine/edit/language) (#:endpoint #:pine/run/agent)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:language #:pine/edit/language) (#:endpoint #:pine/run/agent)
                     (#:node #:pine/fs/node) (#:mode #:pine/repl/mode)
                     (#:runtime #:pine/ts/runtime) (#:syntax #:pine/ts/syntax)
                     (#:hl #:pine/ts/highlight) (#:d #:pine/data))
@@ -77,6 +77,9 @@ and the lines outside it are what they were."
         (push (cons line run) out)))))
 
 (defun %recompute (p tick)
+  (meter:timing (:parse) (%parse p tick)))
+
+(defun %parse (p tick)
   (let* ((b (buffer-of p))
          (ps (state-of p))
          (lines (%lines b))
@@ -91,6 +94,8 @@ and the lines outside it are what they were."
                     (hl:parse-highlights ps))))
       (d:swap! (found p)
                (lambda (had) (%merged (%kept had edit) runs band))))
+    (meter:counted :parse-lines (if band (- (cdr band) (car band))
+                                   (pine/edit/buffer:line-count b)))
     (d:put! (banded p) band)
     (d:put! (parsed p) tick)
     (when *on-parse* (funcall *on-parse* b))
@@ -162,8 +167,9 @@ showing lines it has not been asked about."
   "Every run walked so far, the band just walked included. What was coloured
 before stays coloured while the next band is being walked, so paging does not
 blink through plain text."
-  (let ((p (note b)))
-    (when p (%flat (d:held (found p))))))
+  (meter:timing (:highlights)
+    (let ((p (note b)))
+      (when p (%flat (d:held (found p)))))))
 
 (defun wait (b &key (seconds +settle+))
   (let ((p (note b)))

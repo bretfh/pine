@@ -1,6 +1,6 @@
 (defpackage #:pine/app/desktop
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:watch #:pine/fs/watch)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:node #:pine/fs/node) (#:watch #:pine/fs/watch)
                     (#:surface #:pine/app/surface) (#:attach #:pine/net/attach)
                     (#:cmd #:pine/repl/command) (#:wire #:pine/ui/wire)
                     (#:css #:pine/ui/css) (#:fault #:pine/run/fault)
@@ -63,19 +63,23 @@ same as before."
   (let ((name (node:name surface))
         (index (d:box -1))
         (*client* (client-of s)))
-    (let ((tree (fault:attempt (lambda () (node:contents surface))
-                               (format nil "building ~a" name))))
+    (let ((tree (meter:timing (:surface-build)
+                  (fault:attempt (lambda () (node:contents surface))
+                                 (format nil "building ~a" name)))))
       (when tree
         (let ((wire (wire:node->wire
                      tree :on-action (lambda (thunk) (%keep s name index thunk)))))
           (%trim s name (1+ (d:held index)))
           (cond ((equal wire (d:at (d:all (sent s)) name))
+                 (meter:counted :surface-same)
                  nil)
                 (t (d:keep! (sent s) name wire)
-                   (attach:push-to (client-of s) :widgets
-                                   :surface name
-                                   :tree wire
-                                   :as (surface:as surface))
+                   (meter:counted :surface-bytes (length (princ-to-string wire)))
+                   (meter:timing (:surface-push)
+                     (attach:push-to (client-of s) :widgets
+                                     :surface name
+                                     :tree wire
+                                     :as (surface:as surface)))
                    name)))))))
 
 (defun mine-p (surface)
@@ -195,9 +199,10 @@ anybody else's."
   (task:once (format nil "widget ~d" (incf *acts*))
              (lambda ()
                (let ((*client* client))
-                 (fault:attempt (lambda ()
-                                  (if args (apply thunk args) (funcall thunk)))
-                                "a widget")))))
+                 (meter:timing (:click)
+                   (fault:attempt (lambda ()
+                                    (if args (apply thunk args) (funcall thunk)))
+                                  "a widget"))))))
 
 (defun install ()
   (cmd:defcommand "show-surface" (name) (:describes "put a surface up")

@@ -1,6 +1,6 @@
 (defpackage #:pine/edit/render
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine/ui/build)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine/ui/build)
                     (#:cells #:pine/ui/cells) (#:layout #:pine/ui/layout)
                     (#:raster #:pine/ui/raster) (#:face #:pine/ui/face)
                     (#:buffer #:pine/edit/buffer) (#:window #:pine/edit/window)
@@ -276,6 +276,9 @@ are on and a widget tree has nothing of the sort to say."
                                -1))))))
 
 (defun frame-tree (&key (cols *cols*) (rows *rows*) echo)
+  (meter:timing (:frame) (%frame-tree cols rows echo)))
+
+(defun %frame-tree (cols rows echo)
   (let* ((windows (window:windows))
          (weight (reduce #'+ windows :key #'window:weight-of :initial-value 0))
          (room (max 2 (1- rows))))

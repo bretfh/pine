@@ -1,6 +1,6 @@
 (defpackage #:pine/world/store
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:world #:pine/world/world)
                     )
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
@@ -92,6 +92,9 @@ what they are, because prin1 cannot say them and read cannot take them."
     n))
 
 (defun keep (n)
+  (meter:timing (:store-write) (%keep n)))
+
+(defun %keep (n)
   "Write this node where it will be found again, now rather than at shutdown.
 A crash must not cost what was written before it."
   (let ((s *store*))

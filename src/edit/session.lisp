@@ -1,6 +1,6 @@
 (defpackage #:pine/edit/session
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:attach #:pine/net/attach) (#:parser #:pine/ts/parser)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:attach #:pine/net/attach) (#:parser #:pine/ts/parser)
                     (#:render #:pine/edit/render) (#:key #:pine/edit/key)
                     (#:css #:pine/ui/css) (#:wire #:pine/ui/wire)
                     (#:layout #:pine/ui/layout)
@@ -71,23 +71,29 @@ is not the cell grid lines up with it instead of being laid out twice."
   "The frame, as what changed since the last one where that can say it. A
 keystroke moves a line or two; shipping the whole tree for each of them is what
 made typing cost what it did."
-  (let ((tree (%arrange s (%tree s))))
-    (when tree
-      (let* ((form (wire:node->wire tree))
-             (patch (unless whole (wire:rows-patch (sent s) form))))
-        (incf (generation s))
-        (setf (sent s) form)
-        (if patch
-            (attach:push-to (client-of s) :rows-patch
-                            :surface *surface*
-                            :patch patch
-                            :generation (generation s))
-            (attach:push-to (client-of s) :widgets
-                            :surface *surface*
-                            :tree form
-                            :as (surface:as (surface))
-                            :generation (generation s)))
-        (generation s)))))
+  (meter:timing (:frame-push)
+    (let ((tree (%arrange s (%tree s))))
+      (when tree
+        (let* ((form (wire:node->wire tree))
+               (patch (unless whole (wire:rows-patch (sent s) form))))
+          (incf (generation s))
+          (setf (sent s) form)
+          (cond (patch
+                 (meter:counted :frame-patch)
+                 (meter:counted :frame-bytes (length (princ-to-string patch)))
+                 (attach:push-to (client-of s) :rows-patch
+                                 :surface *surface*
+                                 :patch patch
+                                 :generation (generation s)))
+                (t
+                 (meter:counted :frame-whole)
+                 (meter:counted :frame-bytes (length (princ-to-string form)))
+                 (attach:push-to (client-of s) :widgets
+                                 :surface *surface*
+                                 :tree form
+                                 :as (surface:as (surface))
+                                 :generation (generation s))))
+          (generation s))))))
 
 (defun %draw (s)
   (fault:attempt (lambda () (push-frame s :whole (null (sent s)))) "a frame"))

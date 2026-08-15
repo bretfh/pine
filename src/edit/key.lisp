@@ -1,7 +1,7 @@
 (defpackage #:pine/edit/key
   (:use #:cl)
   (:shadow #:last)
-  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:cmd #:pine/repl/command)
                     (#:mode #:pine/repl/mode) (#:buffer #:pine/edit/buffer)
                     (#:fault #:pine/run/fault) (#:prompt #:pine/edit/prompt))
   (:export #:key #:make-key #:named #:key-sym #:key-ctrl #:key-meta #:key-shift
@@ -119,13 +119,17 @@ itself until something ends it."
 (defun taking () (d:held *taking*))
 
 (defun dispatch (session k)
+  (meter:timing (:key) (%take-or-dispatch session k)))
+
+(defun %take-or-dispatch (session k)
+  "What a key means: whoever asked to read the next one, else the keymap."
   (let ((take (taking)))
-    (when take
-      (d:put! *taking* nil)
-      (let ((said (fault:attempt (lambda () (funcall take k)) "a key")))
-        (when (eq said :again) (d:put! *taking* take))
-        (return-from dispatch (or said :taken)))))
-  (%dispatch session k))
+    (cond (take
+           (d:put! *taking* nil)
+           (let ((said (fault:attempt (lambda () (funcall take k)) "a key")))
+             (when (eq said :again) (d:put! *taking* take))
+             (or said :taken)))
+          (t (%dispatch session k)))))
 
 (defun %dispatch (session k)
   (let* ((session (where session))

@@ -1,6 +1,6 @@
 (defpackage #:pine/net/attach
   (:use #:cl)
-  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine/net/server)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine/net/server)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:app #:frontend #:kinds #:attached #:received #:detached
            #:run-frontend #:client #:client-id #:client-kind #:client-display
@@ -51,8 +51,9 @@
     (when fn (funcall fn client))))
 
 (defun received (kind client message)
-  (let ((fn (%of kind :received)))
-    (when fn (funcall fn client message))))
+  (meter:timing (:input)
+    (let ((fn (%of kind :received)))
+      (when fn (funcall fn client message)))))
 
 (defun detached (kind client)
   (let ((fn (%of kind :detached)))
