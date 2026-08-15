@@ -1,6 +1,6 @@
 (defpackage #:pine.cli
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:server #:pine.net.server) )
+  (:local-nicknames (#:d #:pine/data) (#:server #:pine.net.server) )
   (:export #:main #:usage #:ask #:running-p #:quiet #:*usage*))
 
 (in-package #:pine.cli)
@@ -72,7 +72,7 @@
 
 (defun %watch (where)
   (multiple-value-bind (sys name) (%system :name "watch")
-    (pine.run.agent:agent name
+    (pine/run/agent:agent name
                           (lambda (message)
                             (when (eq :moved (first message))
                               (format t "~a ~a~%" (second message) (third message))
@@ -135,7 +135,7 @@
 
 (defun main (&optional (arguments (rest sb-ext:*posix-argv*)))
   (quiet)
-  (pine.run.libs:attend)
+  (pine/run/libs:attend)
   (server:read-environment)
   (let ((verb (first arguments))
         (rest (rest arguments)))

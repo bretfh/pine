@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.process
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:task #:pine.run.task) (#:timer #:pine.run.timer))
+  (:local-nicknames (#:d #:pine/data) (#:task #:pine/run/task) (#:timer #:pine/run/timer))
   (:export #:process #:program #:thread-process #:name #:state #:attempts
            #:restarts-p #:backoff #:start #:stop #:alivep #:said #:emit
            #:took #:exit-of #:fault #:*out-kept* #:argv #:env #:thunk #:every-seconds))

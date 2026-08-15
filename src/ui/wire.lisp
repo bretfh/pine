@@ -1,6 +1,6 @@
 (defpackage #:pine.ui.wire
   (:use #:cl #:pine.ui.node #:pine.ui.raster)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export #:apply-rows-patch #:arranged-p #:node->wire #:rows-patch
            #:scroll-to-selection #:wire->node #:wire-views #:wire-tag
            #:defwire))

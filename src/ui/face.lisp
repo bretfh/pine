@@ -1,6 +1,6 @@
 (defpackage #:pine.ui.face
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export
 
    #:face-run #:run-start #:run-end #:run-face

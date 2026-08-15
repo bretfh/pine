@@ -274,5 +274,5 @@ by four does, rather than by the two that used to be written here."
                            (t (%align-column form open-col src)))))))))
 
         (error (c)
-          (pine.run.fault:report c (format nil "indenting line ~d" line))
+          (pine/run/fault:report c (format nil "indenting line ~d" line))
           nil)))))

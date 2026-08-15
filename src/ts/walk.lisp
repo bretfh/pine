@@ -210,7 +210,7 @@ re-walked. Anything unexpected falls back to the full walk."
            offset)
 
         (error (c)
-          (pine.run.fault:report
+          (pine/run/fault:report
            c (format nil "highlighting ~a, retrying without the cache"
                      (ps-language ps)))
           (setf (ps-hl-cache ps) nil (ps-hl-lines ps) nil

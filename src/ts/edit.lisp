@@ -102,7 +102,7 @@ is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Answers
                    (at e))))))
 
         (error (c)
-          (pine.run.fault:report c (format nil "~a from line ~d" kind line))
+          (pine/run/fault:report c (format nil "~a from line ~d" kind line))
           nil)))))
 
 (defun char-byte-length (ch)
@@ -170,7 +170,7 @@ is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Answers
                 (unwind-protect (funcall fn (ts-tree-root-node tree))
                   (ts-tree-delete tree)))))
         (error (c)
-          (pine.run.fault:report c (format nil "parsing ~a source" language)))))))
+          (pine/run/fault:report c (format nil "parsing ~a source" language)))))))
 
 (defun forward-sexp-pos (runtime language text line col)
   "Position (values line col) after the next sexp, or nil."

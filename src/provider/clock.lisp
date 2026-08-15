@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.clock
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
                     (#:process #:pine.proc.process))
   (:export #:clock-node #:install #:now #:tick #:*every*))
 

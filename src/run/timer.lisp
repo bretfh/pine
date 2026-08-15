@@ -1,9 +1,8 @@
-(defpackage #:pine.run.timer
+(defpackage #:pine/run/timer
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:fault #:pine.run.fault))
+  (:local-nicknames (#:d #:pine/data) (#:fault #:pine/run/fault))
   (:export #:timing #:*soonest* #:attend #:leave #:every-seconds #:once #:cancel #:names))
-
-(in-package #:pine.run.timer)
+(in-package #:pine/run/timer)
 
 (defvar *wheel* nil)
 (defparameter *soonest* 0.05)

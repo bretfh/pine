@@ -1,10 +1,9 @@
-(defpackage #:pine.run.task
+(defpackage #:pine/run/task
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export #:task #:spawn #:tasks #:task-named #:name #:alivep #:stop #:join
            #:fault #:answered #:*tasks* #:once #:stopping))
-
-(in-package #:pine.run.task)
+(in-package #:pine/run/task)
 
 (defvar *tasks* (d:box nil))
 (defvar *task* nil)
@@ -24,15 +23,6 @@
 
 (defun task-named (name)
   (find name (tasks) :key #'name :test #'equal))
-
-(defun %remember (tk)
-  (d:swap! *tasks* (lambda (all) (cons tk (remove (name tk) all
-                                                 :key #'name :test #'equal))))
-  tk)
-
-(defun %forget (tk)
-  (d:swap! *tasks* (lambda (all) (remove tk all)))
-  tk)
 
 (defgeneric alivep (task)
   (:method ((tk task))
@@ -55,7 +45,8 @@
 
 (defun spawn (name thunk)
   (let ((tk (make-instance 'task :name name)))
-    (%remember tk)
+    (d:swap! *tasks* (lambda (all)
+                       (cons tk (remove name all :key #'name :test #'equal))))
     (setf (thread tk)
           (bordeaux-threads:make-thread
            (lambda ()
@@ -68,5 +59,8 @@
 (defun once (name thunk)
   "Run THUNK on a thread of its own and let its task go when it is done, so
 work that happens a click at a time does not pile up in the list."
-  (spawn name (lambda () (unwind-protect (funcall thunk) (%forget *task*)))))
+  (flet ((forget ()
+           (let ((tk *task*))
+             (d:swap! *tasks* (lambda (all) (remove tk all))))))
+    (spawn name (lambda () (unwind-protect (funcall thunk) (forget))))))
 

@@ -2,7 +2,7 @@
   (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
         #:pine.wayland.surface #:pine.wayland.input)
   (:local-nicknames (#:a #:alexandria) (#:node #:pine.ui.node)
-                    (#:uiw #:pine.ui.wire) (#:d #:pine.data))
+                    (#:uiw #:pine.ui.wire) (#:d #:pine/data))
   (:export #:desktop #:run-desktop #:received #:open-for #:close-for
            #:placement #:role-for #:tree-fn #:on-widgets #:on-panel))
 

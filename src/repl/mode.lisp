@@ -1,6 +1,6 @@
 (defpackage #:pine.repl.mode
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command))
+  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command))
   (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:remode
            #:mode-for
            #:name #:parent #:indicator #:settings #:claims #:claimsp

@@ -1,9 +1,8 @@
-(defpackage #:pine.run.log
+(defpackage #:pine/run/log
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export #:note #:said #:forget #:*kept* #:*to* #:last-said))
-
-(in-package #:pine.run.log)
+(in-package #:pine/run/log)
 
 (defvar *kept* 500)
 (defvar *to* nil)

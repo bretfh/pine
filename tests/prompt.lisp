@@ -34,7 +34,7 @@
 (test what-pine-said-is-shown-when-it-is-not-asking
   (with-prompt ()
     (is-false (pine.edit.prompt:asking-p))
-    (pine.run.log:note "a probe said this")
+    (pine/run/log:note "a probe said this")
     (is (equal "a probe said this" (pine.edit.prompt:showing))
         "pine saying is the log; pine asking is the prompt")))
 

@@ -142,12 +142,12 @@ Without this a killed daemon leaves its windows on the screen for good."
                                  (port pine.net.server:*port*)
                                  (name "display"))
   (let ((sys (sento.actor-system:make-actor-system))
-        (joined (pine.data:box nil)))
+        (joined (pine/data:box nil)))
     (sento.remoting:enable-remoting sys :host pine.net.server:*host* :port 0)
-    (pine.run.agent:agent name
+    (pine/run/agent:agent name
                           (lambda (message)
                             (when (member (first message) '(:attached :refused))
-                              (pine.data:put! joined t))
+                              (pine/data:put! joined t))
                             (funcall handler message))
                           :dispatcher :pinned :in sys)
     (let* ((self-port (sento.remoting:remoting-port sys))
@@ -155,7 +155,7 @@ Without this a killed daemon leaves its windows on the screen for good."
            (self (pine.net.server:local-uri name self-port :host host)))
       (bordeaux-threads:make-thread
        (lambda () (%keep-attaching sys daemon self kind
-                                   (lambda () (pine.data:held joined))))
+                                   (lambda () (pine/data:held joined))))
        :name "pine attach")
-      (%watch-daemon host port (lambda () (pine.data:held joined)))
+      (%watch-daemon host port (lambda () (pine/data:held joined)))
       sys)))

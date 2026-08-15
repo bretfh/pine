@@ -93,10 +93,10 @@
     (let ((p (pine.ts.parser:parser-for (pine.edit.buffer:current))))
       (is-true p "lisp mode names a grammar, so the buffer has a parser")
       (is (equal :commonlisp (pine.ts.parser:language-of p)))
-      (is-true (find "scratch" (pine.run.agent:agents)
-                     :key #'pine.run.agent:name :test #'search)
+      (is-true (find "scratch" (pine/run/agent:agents)
+                     :key #'pine/run/agent:name :test #'search)
                "the parse runs at its own endpoint, off the typing thread")
-      (is (null (pine.run.task:task-named "parse scratch"))
+      (is (null (pine/run/task:task-named "parse scratch"))
           "and it costs no thread of its own: the parse dispatcher is shared"))))
 
 (test the-parse-catches-up-with-the-buffer-it-is-for
@@ -104,13 +104,13 @@
     (let ((b (pine.edit.buffer:current)))
       (pine.ts.parser:wait b)
       (is (eql (pine.edit.buffer:tick b)
-               (pine.data:held
+               (pine/data:held
                 (pine.ts.parser:parsed (pine.ts.parser:parser-for b)))))
       (pine.edit.buffer:goto! b 0 15)
       (pine.edit.buffer:insert! b " ")
       (pine.ts.parser:wait b)
       (is (eql (pine.edit.buffer:tick b)
-               (pine.data:held
+               (pine/data:held
                 (pine.ts.parser:parsed (pine.ts.parser:parser-for b))))
           "an edit is followed by a re-parse, without anything asking for one"))))
 
@@ -127,13 +127,13 @@
 (test a-buffer-that-is-killed-takes-its-parser-with-it
   (with-lisp-buffer (:text "(defun f (x) x)")
     (pine.ts.parser:parser-for (pine.edit.buffer:current))
-    (is-true (find "scratch" (pine.run.agent:agents)
-                   :key #'pine.run.agent:name :test #'search))
+    (is-true (find "scratch" (pine/run/agent:agents)
+                   :key #'pine/run/agent:name :test #'search))
     (pine.repl.command:run "kill-buffer" (list "scratch"))
     (is (null (pine.ts.parser:parsers))
         "the foreign parser is freed rather than left to the image")
-    (is (null (find "scratch" (pine.run.agent:agents)
-                    :key #'pine.run.agent:name :test #'search))
+    (is (null (find "scratch" (pine/run/agent:agents)
+                    :key #'pine/run/agent:name :test #'search))
         "and its endpoint is gone with it")))
 
 (def-suite* :pine.motion :in :pine)
@@ -288,22 +288,22 @@ blink through plain text")))))
 (test a-fault-under-the-debugger-stands-there-holding-its-restarts
   (with-lisp-buffer ()
     (let ((took nil))
-      (pine.run.fault:with-debugger
+      (pine/run/fault:with-debugger
         (let ((worker (bordeaux-threads:make-thread
                        (lambda ()
-                         (pine.run.fault:with-debugger
-                           (pine.run.fault:attempt
+                         (pine/run/fault:with-debugger
+                           (pine/run/fault:attempt
                             (lambda ()
                               (with-simple-restart (probe-on "carry on")
                                 (error "a probe"))
                               (setf took :past-it))
                             "a probe"))))))
-          (loop :repeat 200 :until (pine.run.fault:standing) :do (sleep 0.01))
-          (let ((f (first (pine.run.fault:standing))))
+          (loop :repeat 200 :until (pine/run/fault:standing) :do (sleep 0.01))
+          (let ((f (first (pine/run/fault:standing))))
             (is-true f "the thread is still standing in the fault")
-            (is (member "PROBE-ON" (pine.run.fault:offers f) :test #'equal)
+            (is (member "PROBE-ON" (pine/run/fault:offers f) :test #'equal)
                 "and what it offers is what is still there, not what unwound")
-            (pine.run.fault:resume f "PROBE-ON")
+            (pine/run/fault:resume f "PROBE-ON")
             (loop :repeat 200 :while (bordeaux-threads:thread-alive-p worker) :do (sleep 0.01))
             (is (eq :past-it took)
                 "taking the restart let the thread carry on from where it was")))))))
@@ -312,13 +312,13 @@ blink through plain text")))))
   (with-lisp-buffer ()
     (let ((worker (bordeaux-threads:make-thread
                    (lambda ()
-                     (pine.run.fault:with-debugger
-                       (pine.run.fault:attempt
+                     (pine/run/fault:with-debugger
+                       (pine/run/fault:attempt
                         (lambda ()
                           (with-simple-restart (probe-on "carry on")
                             (error "a probe")))
                         "a probe"))))))
-      (loop :repeat 200 :until (pine.run.fault:standing) :do (sleep 0.01))
+      (loop :repeat 200 :until (pine/run/fault:standing) :do (sleep 0.01))
       (pine.repl.command:run "debugger")
       (let ((b (pine.edit.buffer:buffer-named "*debugger*")))
         (is-true b)
@@ -326,4 +326,4 @@ blink through plain text")))))
             "the restarts it lists are the live ones"))
       (pine.repl.command:run "debugger-restart-0")
       (loop :repeat 200 :while (bordeaux-threads:thread-alive-p worker) :do (sleep 0.01))
-      (is (null (pine.run.fault:standing)) "and the thread is gone"))))
+      (is (null (pine/run/fault:standing)) "and the thread is gone"))))

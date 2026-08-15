@@ -1,9 +1,9 @@
 (defpackage #:pine.edit.debugger
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:node #:pine.fs.node)
-                    (#:fault #:pine.run.fault) (#:buffer #:pine.edit.buffer)
-                    (#:window #:pine.edit.window) (#:log #:pine.run.log))
+                    (#:fault #:pine/run/fault) (#:buffer #:pine.edit.buffer)
+                    (#:window #:pine.edit.window) (#:log #:pine/run/log))
   (:export #:install #:show #:standing #:choose #:next #:fault-of
            #:*name* #:*standing*))
 

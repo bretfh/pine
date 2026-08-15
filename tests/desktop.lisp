@@ -217,7 +217,7 @@
   "A widget's action is not run on the thread that told the daemon about it, so
 a test waits for the thread it did run on."
   (let ((tk (pine.app.desktop:received client (list :widget-action :id id :args nil))))
-    (when (typep tk 'pine.run.task:task) (pine.run.task:join tk))
+    (when (typep tk 'pine/run/task:task) (pine/run/task:join tk))
     tk))
 
 (test a-click-crosses-as-an-id-and-runs-the-thunk-it-stands-for
@@ -318,7 +318,7 @@ a test waits for the thread it did run on."
     (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
       (setf (pine.fs.node:contents where) nil)
       (let ((by-map (pine.ui.build:acting
-                     (pine.data:map (pine.path.path:parse "/probe") 41))))
+                     (pine/data:map (pine.path.path:parse "/probe") 41))))
         (funcall by-map)
         (is (eql 41 (pine.fs.node:contents where))
             "a write-map is a click, so a config declares one without a closure"))
@@ -333,15 +333,15 @@ a test waits for the thread it did run on."
   (with-desktop
     (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
       (setf (pine.fs.node:contents where) nil)
-      (setf (pine.fs.node:contents where) (pine.data:seq :toggle))
+      (setf (pine.fs.node:contents where) (pine/data:seq :toggle))
       (is (eq t (pine.fs.node:contents where)))
-      (setf (pine.fs.node:contents where) (pine.data:seq :toggle))
+      (setf (pine.fs.node:contents where) (pine/data:seq :toggle))
       (is (null (pine.fs.node:contents where)))
-      (setf (pine.fs.node:contents where) (pine.data:seq :set 7))
+      (setf (pine.fs.node:contents where) (pine/data:seq :set 7))
       (is (eql 7 (pine.fs.node:contents where)))
-      (setf (pine.fs.node:contents where) (pine.data:no-set))
-      (setf (pine.fs.node:contents where) (pine.data:seq :conj :probe))
-      (is-true (pine.data:contains (pine.fs.node:contents where) :probe)))))
+      (setf (pine.fs.node:contents where) (pine/data:no-set))
+      (setf (pine.fs.node:contents where) (pine/data:seq :conj :probe))
+      (is-true (pine/data:contains (pine.fs.node:contents where) :probe)))))
 
 (test asking-before-a-dangerous-click-goes-through-the-prompt
   (with-desktop
@@ -432,9 +432,9 @@ a test waits for the thread it did run on."
                  "the next message was answered while the click was still in it")
         (is (null ran))
         (bordeaux-threads:signal-semaphore held)
-        (pine.run.task:join tk)
+        (pine/run/task:join tk)
         (is-true ran)
-        (is (null (pine.run.task:task-named (pine.run.task:name tk)))
+        (is (null (pine/run/task:task-named (pine/run/task:name tk)))
             "and the task it ran on is gone")))))
 
 (test a-slow-command-does-not-hold-up-the-loop-that-reads-keys
@@ -526,8 +526,8 @@ a click that crossed during a repaint still means what it looks like it means."
        :as :bar)
       (let ((s (pine.app.desktop::%attached client)))
         (let ((id (block found
-                    (dolist (each (pine.data:keys
-                                   (pine.data:all (pine.app.desktop::acting s))))
+                    (dolist (each (pine/data:keys
+                                   (pine/data:all (pine.app.desktop::acting s))))
                       (return-from found each)))))
           (is-true id "the surface registered a click")
           (dotimes (n 20)

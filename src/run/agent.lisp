@@ -1,10 +1,9 @@
-(defpackage #:pine.run.agent
+(defpackage #:pine/run/agent
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:fault #:pine.run.fault))
+  (:local-nicknames (#:d #:pine/data) (#:fault #:pine/run/fault))
   (:export #:agent #:attend #:tell #:ask #:stop #:agents #:agent-named #:name #:ref
            #:in-receive-p #:blocking-ask #:*asking*))
-
-(in-package #:pine.run.agent)
+(in-package #:pine/run/agent)
 
 (defvar *agents* (d:table))
 (defvar *system* nil)

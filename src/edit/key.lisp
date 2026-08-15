@@ -1,9 +1,9 @@
 (defpackage #:pine.edit.key
   (:use #:cl)
   (:shadow #:last)
-  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command)
+  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:buffer #:pine.edit.buffer)
-                    (#:fault #:pine.run.fault) (#:prompt #:pine.edit.prompt))
+                    (#:fault #:pine/run/fault) (#:prompt #:pine.edit.prompt))
   (:export #:key #:make-key #:named #:key-sym #:key-ctrl #:key-meta #:key-shift
            #:key-super #:key= #:parse-key #:parse-chord #:chord-text
            #:self-insert-p #:dispatch #:pending #:last #:prefix #:*on-insert*

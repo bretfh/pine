@@ -68,8 +68,8 @@ a node like any other, so it is in the snapshot."
   (let ((file (merge-pathnames "pine-probe-store.db" (uiop:temporary-directory))))
     (ignore-errors (delete-file file))
     (unwind-protect
-         (let ((held (pine.data:map :a (pine.data:seq 1 2 3)
-                                    :b (pine.data:set :x :y))))
+         (let ((held (pine/data:map :a (pine/data:seq 1 2 3)
+                                    :b (pine/data:set :x :y))))
            (unwind-protect
                 (progn
                   (pine:start :store file)
@@ -84,10 +84,10 @@ a node like any other, so it is in the snapshot."
                                (pine.fs.tree:at (pine.world.world:root
                                                  pine.world.world:*world*)
                                                 "probe"))))
-                    (is-true (pine.data:mapp back)
+                    (is-true (pine/data:mapp back)
                              "a map goes in as a map and comes back as one")
-                    (is (equal '(1 2 3) (pine.data:as :list (pine.data:at back :a))))
-                    (is-true (pine.data:contains (pine.data:at back :b) :x))))
+                    (is (equal '(1 2 3) (pine/data:as :list (pine/data:at back :a))))
+                    (is-true (pine/data:contains (pine/data:at back :b) :x))))
              (pine:stop)))
       (ignore-errors (delete-file file)))))
 

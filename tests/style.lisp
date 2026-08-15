@@ -115,7 +115,7 @@
 
 (test only-data-knows-what-a-value-is-kept-in
   "fset is what a value is and sento.atomic is where one is kept. Both are
-behind pine.data, so what pine holds is one idea in one file."
+behind pine/data, so what pine holds is one idea in one file."
   (is (null (%naming "fset:" :except '("data.lisp")))
       "~{~%  ~a names fset~}" (%naming "fset:" :except '("data.lisp")))
   (is (null (%naming "sento.atomic" :except '("data.lisp")))
@@ -123,7 +123,7 @@ behind pine.data, so what pine holds is one idea in one file."
       (%naming "sento.atomic" :except '("data.lisp"))))
 
 (test nothing-sleeps-in-a-loop-to-repeat
-  "One clock: the actor system's wheel timer, and pine.run.timer over it."
+  "One clock: the actor system's wheel timer, and pine/run/timer over it."
   (is (null (%naming "schedule-recurring" :except '("timer.lisp")))
       "~{~%  ~a schedules its own repeat~}"
       (%naming "schedule-recurring" :except '("timer.lisp"))))
@@ -136,7 +136,7 @@ an endpoint or a tick, so it makes no thread."
       (%naming "make-thread" :except '("task.lisp" "frontend.lisp"))))
 
 (test an-endpoint-is-sentos-and-not-one-of-our-own
-  "actor-of is what makes one, and pine.run.agent is where that is said."
+  "actor-of is what makes one, and pine/run/agent is where that is said."
   (is (null (%naming "actor-context:actor-of" :except '("agent.lisp" "server.lisp")))
       "~{~%  ~a makes an actor of its own~}"
       (%naming "actor-context:actor-of" :except '("agent.lisp" "server.lisp"))))

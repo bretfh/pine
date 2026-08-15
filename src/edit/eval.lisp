@@ -1,10 +1,10 @@
 (defpackage #:pine.edit.eval
   (:use #:cl)
   (:shadow #:documentation)
-  (:local-nicknames (#:language #:pine.edit.language) (#:d #:pine.data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:language #:pine.edit.language) (#:d #:pine/data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:session #:pine.repl.session) (#:node #:pine.fs.node)
                     (#:buffer #:pine.edit.buffer) (#:prompt #:pine.edit.prompt)
-                    (#:log #:pine.run.log) (#:fault #:pine.run.fault)
+                    (#:log #:pine/run/log) (#:fault #:pine/run/fault)
                     )
   (:export #:install #:token-at #:symbol-at #:offset-of #:line-col
            #:definition #:references #:complete #:arglist #:documentation

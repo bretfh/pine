@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.syntax
   (:use #:cl)
-  (:local-nicknames (#:pl #:pine.data) (#:hl #:pine.ts.highlight)
+  (:local-nicknames (#:pl #:pine/data) (#:hl #:pine.ts.highlight)
                     (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
                     (#:world #:pine.world.world) (#:path #:pine.path.path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages

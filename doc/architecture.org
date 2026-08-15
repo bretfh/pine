@@ -47,7 +47,7 @@ reading =/sys/cpu= a moment apart are asking about the same moment.
 
 ** Values are immutable, and what holds one is a box
 
-=pine.data= is the only file that names fset or =sento.atomic=. It says what a
+=pine/data= is the only file that names fset or =sento.atomic=. It says what a
 value is and where one is kept: =box=, =held=, =swap!=, =cas=, =put!=, and
 =table= for a registry, which is a map in a box. Nothing takes a lock.
 

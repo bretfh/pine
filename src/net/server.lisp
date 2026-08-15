@@ -1,6 +1,6 @@
 (defpackage #:pine.net.server
   (:use #:cl)
-  (:local-nicknames (#:timer #:pine.run.timer) (#:d #:pine.data))
+  (:local-nicknames (#:timer #:pine/run/timer) (#:d #:pine/data))
   (:export #:server #:start-server #:stop-server #:*server* #:*host* #:*port*
            #:actor-system #:remoting-port #:clients #:next-client-id
            #:read-environment #:daemon-uri #:local-uri #:workers #:*workers*))

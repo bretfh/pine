@@ -228,8 +228,8 @@ take focus back from a panel that asked for it."
   "Border W in the colour that says whether it holds focus."
   (let ((border (wm-border wm)))
     (when border
-      (chrome:borders! (win-proxy w) (pine.data:at border :width)
-                       (pine.data:at border
+      (chrome:borders! (win-proxy w) (pine/data:at border :width)
+                       (pine/data:at border
                                      (if (eq w (wm-focus wm)) :active :inactive))))))
 
 (defun manage (wm)

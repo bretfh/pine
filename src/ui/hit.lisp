@@ -156,7 +156,7 @@ field needs no editing of its own and no focus to hold."
         (if pine.ui.build:*editing*
             (funcall pine.ui.build:*editing*
                      (format nil "~a " (or ask "New value:")) had write-back)
-            (pine.run.log:note "nothing here can ask for a value"))))))
+            (pine/run/log:note "nothing here can ask for a value"))))))
 
 (defun click-thunk (root line col)
   "A nullary thunk for a click at (LINE COL) on arranged ROOT, or nil where

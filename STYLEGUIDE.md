@@ -15,7 +15,7 @@ over `alexandria:curry`.
 
 ## Data
 
-`pine.data` is the vocabulary for maps, seqs and sets: `at`, `with`, `without`,
+`pine/data` is the vocabulary for maps, seqs and sets: `at`, `with`, `without`,
 `size`, `keys`, `vals`, `do-map`, `do-seq`, `as`. It is written over fset, and
 `src/data.lisp` is the only file that names `fset:` or `sento.atomic:`. It says
 what a value is and where one is kept: `box` / `held` / `swap!` / `cas` /
@@ -29,7 +29,7 @@ Tests enforce both.
 Every `defvar`, `defparameter` and `defconstant` in one block after the
 `defpackage`, before any function. A test enforces it.
 
-State that outlives a call belongs in a `pine.data:box` and is replaced by a
+State that outlives a call belongs in a `pine/data:box` and is replaced by a
 pure function of what it held: `(d:swap! box #'1+)`. No locks.
 
 ## Threads
@@ -38,14 +38,14 @@ Sento is pine's concurrency, not a library it wraps. The image has one actor
 system, made whether or not remoting is on.
 
 Something that repeats is a tick on that system's wheel timer, through
-`pine.run.timer:every-seconds`. Nothing sleeps in a loop.
+`pine/run/timer:every-seconds`. Nothing sleeps in a loop.
 
 Something that has to take messages in order is an endpoint, through
-`pine.run.agent:agent` over `ac:actor-of`; `:pinned` where it may stand in a
+`pine/run/agent:agent` over `ac:actor-of`; `:pinned` where it may stand in a
 fault. A receive never waits for an answer: `ask` from inside one is an error
 rather than a hang.
 
-`pine.run.task:spawn` makes a thread, and only for something that blocks: a pty
+`pine/run/task:spawn` makes a thread, and only for something that blocks: a pty
 read, a child's stdout, a frontend's own loop.
 
 ## Compiler warnings
@@ -101,7 +101,7 @@ stopping, crashing or being killed outright closes it and the child goes.
 Anything that outlives the image that asked for it is a leak with no upper
 bound: three hundred of them took a session's whole D-Bus allowance.
 
-`pine.run.task:spawn` is for something that blocks. Everything else is an
+`pine/run/task:spawn` is for something that blocks. Everything else is an
 endpoint or a tick.
 
 ## Frontends
@@ -141,7 +141,7 @@ way round: `(ns:serve :clock {...})` rather than `(defclass clock-server ...)`.
 ## Errors
 
 Never swallow. No `ignore-errors` or bare `handler-case` that turns a fault
-into `nil`. Either let it propagate, or route it through `pine.run.fault:attempt`,
+into `nil`. Either let it propagate, or route it through `pine/run/fault:attempt`,
 which records the failure and surfaces it through the debugger buffer.
 
 ## Comments

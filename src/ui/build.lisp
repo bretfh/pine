@@ -54,7 +54,7 @@ the place it shows are one thing."
   "A write-map as a thunk: every place in it takes the value beside it, so a
 config can say what a click does without writing a closure."
   (lambda ()
-    (pine.data:do-pairs (where value m)
+    (pine/data:do-pairs (where value m)
       (setf (held where) value))
     t))
 
@@ -64,7 +64,7 @@ name. A config holds nodes -- (at (root *world*) \"wm\" \"workspaces\" n) is one
 so clicking one writes it, the way clicking a path writes what it names."
   (cond ((null click) nil)
         ((functionp click) click)
-        ((pine.data:mapp click) (%writing click))
+        ((pine/data:mapp click) (%writing click))
         ((placep click) (lambda () (setf (held click) t)))
         (t (lambda () (pine.repl.command:run click)))))
 
@@ -78,7 +78,7 @@ so clicking one writes it, the way clicking a path writes what it names."
           (t (lambda ()
                (if *asking*
                    (funcall *asking* ask thunk)
-                   (pine.run.log:note "~a: nothing here can ask" ask)))))))
+                   (pine/run/log:note "~a: nothing here can ask" ask)))))))
 
 (defun %without (props &rest keys)
   "PROPS as initargs, with KEYS taken out: what a widget passes on after it has

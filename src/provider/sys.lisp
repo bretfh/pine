@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.sys
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node) (#:sh #:pine.provider.sh))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node) (#:sh #:pine.provider.sh))
   (:export #:sys-node #:install #:mounts #:cpu #:ram #:temp #:disk #:uptime #:load-average
            #:host #:user))
 

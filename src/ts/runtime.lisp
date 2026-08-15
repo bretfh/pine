@@ -1,6 +1,6 @@
 (defpackage #:pine.ts.runtime
   (:use :cl)
-  (:local-nicknames (#:pl #:pine.data))
+  (:local-nicknames (#:pl #:pine/data))
   (:export
 
    #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
@@ -143,7 +143,7 @@ compiled in.")
    (loading     :reader loading
                 :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
-                :initform (pine.data:box
+                :initform (pine/data:box
                            (pl:map :loaded (pl:no-map) :missing (pl:no-set)))))
   (:documentation "The grammars this image has loaded: {:loaded {LANGUAGE ENTRY}
 :missing #{LANGUAGE}} in an atomic reference. A hit is a slot read."))
@@ -205,7 +205,7 @@ copy the first one is still pointing into."
                  (cffi:load-foreign-library 'libtree-sitter))
                (setf (libs-loaded runtime) t))
       (error (c)
-        (pine.run.fault:report c "loading libtree-sitter"))))
+        (pine/run/fault:report c "loading libtree-sitter"))))
   runtime)
 
 (defun grammar-library-candidates (library-name)
@@ -237,7 +237,7 @@ mapping that is gone."
                          (cffi:foreign-symbol-pointer fn-name)))))
         (when fn (cffi:foreign-funcall-pointer fn () :pointer)))
     (error (c)
-      (pine.run.fault:report
+      (pine/run/fault:report
        c (format nil "loading the ~a grammar" library-name)))))
 
 (defun claim-language (parser lang language)
@@ -246,7 +246,7 @@ with no language answers every parse with a null tree, so the refusal names the
 two pointers and the grammar's ABI against the range this tree-sitter speaks."
   (or (ts-parser-set-language parser lang)
       (progn
-        (pine.run.fault:report
+        (pine/run/fault:report
          (make-condition
           'simple-error
           :format-control "~(~a~) refused: parser ~a, language ~a, abi ~a, ~

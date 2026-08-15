@@ -1,13 +1,13 @@
 (defpackage #:pine.edit.session
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
+  (:local-nicknames (#:d #:pine/data) (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine.ui.css) (#:wire #:pine.ui.wire)
                     (#:layout #:pine.ui.layout)
                     (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
                     (#:surface #:pine.app.surface)
-                    (#:fault #:pine.run.fault) (#:log #:pine.run.log)
-                    (#:agent #:pine.run.agent))
+                    (#:fault #:pine/run/fault) (#:log #:pine/run/log)
+                    (#:agent #:pine/run/agent))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
            #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h #:font-px

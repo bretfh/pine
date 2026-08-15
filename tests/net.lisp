@@ -84,7 +84,7 @@ remote. Nothing above it knows the difference."
   (with-server (s)
     (let ((c (make-instance 'pine.net.attach:client :id 1 :kind :probe-kind
                                                     :display nil)))
-      (pine.data:swap! pine.net.attach:*clients* (lambda (all) (cons c all)))
+      (pine/data:swap! pine.net.attach:*clients* (lambda (all) (cons c all)))
       (push c (pine.net.server:clients s))
       (is (pine.net.attach:attached-p :probe-kind))
       (pine.net.attach:reap c s)
@@ -133,8 +133,8 @@ remote. Nothing above it knows the difference."
            (pine:daemon :remoting 0 :config bad)
            (is (typep pine:*image* 'pine.net.server:server)
                "a broken config does not stop the daemon coming up")
-           (is (find-if (lambda (f) (search "init" (or (pine.run.fault:label f) "")))
-                        (pine.run.fault:faults))
+           (is (find-if (lambda (f) (search "init" (or (pine/run/fault:label f) "")))
+                        (pine/run/fault:faults))
                "and what went wrong is a fault, not a backtrace on the terminal"))
       (pine:stop)
       (ignore-errors (delete-file bad)))))
@@ -162,13 +162,13 @@ this was tested before, which is why the message shape was wrong."
            (pine.net.attach:app :probe-front
                                 (fset:map (:attached (lambda (c) (push c seen)))))
            (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
-                 (answered (pine.data:box nil)))
+                 (answered (pine/data:box nil)))
              (unwind-protect
                   (let ((sys (pine.net.server:actor-system client)))
                     (sento.actor-context:actor-of sys
                       :name "display"
                       :dispatcher :pinned
-                      :receive (lambda (m) (pine.data:put! answered m)))
+                      :receive (lambda (m) (pine/data:put! answered m)))
                     (pine.net.attach:attach-to
                      sys
                      (pine.net.server:daemon-uri
@@ -176,9 +176,9 @@ this was tested before, which is why the message shape was wrong."
                      (pine.net.server:local-uri
                       "display" (pine.net.server:remoting-port client))
                      :kind :probe-front)
-                    (is-true (wait-until (lambda () (pine.data:held answered)))
+                    (is-true (wait-until (lambda () (pine/data:held answered)))
                              "the daemon never answered the attach")
-                    (let ((reply (pine.data:held answered)))
+                    (let ((reply (pine/data:held answered)))
                       (is (eq :attached (first reply))
                           "the daemon refused or said something else: ~s" reply)
                       (is (integerp (getf (rest reply) :id))))
@@ -193,12 +193,12 @@ this was tested before, which is why the message shape was wrong."
        (progn
          (pine:daemon :remoting 0 :config nil)
          (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
-               (answered (pine.data:box nil)))
+               (answered (pine/data:box nil)))
            (unwind-protect
                 (let ((sys (pine.net.server:actor-system client)))
                   (sento.actor-context:actor-of sys
                     :name "display" :dispatcher :pinned
-                    :receive (lambda (m) (pine.data:put! answered m)))
+                    :receive (lambda (m) (pine/data:put! answered m)))
                   (sento.actor:tell
                    (sento.remoting:make-remote-ref
                     sys (pine.net.server:daemon-uri
@@ -207,8 +207,8 @@ this was tested before, which is why the message shape was wrong."
                          :uri "x" :display (pine.net.server:local-uri
                                             "display"
                                             (pine.net.server:remoting-port client))))
-                  (is-true (wait-until (lambda () (pine.data:held answered))))
-                  (is (eq :refused (first (pine.data:held answered)))
+                  (is-true (wait-until (lambda () (pine/data:held answered))))
+                  (is (eq :refused (first (pine/data:held answered)))
                       "an old frontend should be told plainly, not left painting"))
              (pine.net.server:stop-server client))))
     (pine:stop)))
@@ -222,13 +222,13 @@ turn back into a widget tree. This walks the whole path with no display."
          (setf (pine.fs.node:contents (pine.edit.buffer:current)) "hello
 there")
          (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
-               (got (pine.data:box nil)))
+               (got (pine/data:box nil)))
            (unwind-protect
                 (let ((sys (pine.net.server:actor-system client)))
                   (sento.actor-context:actor-of sys
                     :name "display" :dispatcher :pinned
                     :receive (lambda (m)
-                               (pine.data:swap! got (lambda (all) (cons m all)))))
+                               (pine/data:swap! got (lambda (all) (cons m all)))))
                   (pine.net.attach:attach-to
                    sys
                    (pine.net.server:daemon-uri
@@ -238,9 +238,9 @@ there")
                    :kind :editor)
                   (is-true (wait-until
                             (lambda ()
-                              (find :widgets (pine.data:held got) :key #'first)))
+                              (find :widgets (pine/data:held got) :key #'first)))
                            "no frame was pushed to the editor")
-                  (let* ((frame (find :widgets (pine.data:held got) :key #'first))
+                  (let* ((frame (find :widgets (pine/data:held got) :key #'first))
                          (tree (getf (rest frame) :tree)))
                     (is (equal "editor" (getf (rest frame) :surface)))
                     (is (integerp (getf (rest frame) :generation)))
@@ -261,13 +261,13 @@ there")
          (pine:daemon :remoting 0 :config nil)
          (setf (pine.fs.node:contents (pine.edit.buffer:current)) "")
          (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
-               (got (pine.data:box nil)))
+               (got (pine/data:box nil)))
            (unwind-protect
                 (let ((sys (pine.net.server:actor-system client)))
                   (sento.actor-context:actor-of sys
                     :name "display" :dispatcher :pinned
                     :receive (lambda (m)
-                               (pine.data:swap! got (lambda (all) (cons m all)))))
+                               (pine/data:swap! got (lambda (all) (cons m all)))))
                   (pine.net.attach:attach-to
                    sys
                    (pine.net.server:daemon-uri

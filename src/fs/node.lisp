@@ -1,7 +1,7 @@
 (defpackage #:pine.fs.node
   (:use #:cl)
   (:shadow #:describe)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
            #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
            #:dependents #:depend #:invalidate #:*reading* #:reading #:*on-write*

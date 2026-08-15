@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.lisp
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:process #:pine.proc.process) (#:fault #:pine.run.fault) (#:task #:pine.run.task))
+  (:local-nicknames (#:d #:pine/data) (#:process #:pine.proc.process) (#:fault #:pine/run/fault) (#:task #:pine/run/task))
   (:export #:lisp-process #:evaluate #:answered-by #:saidp #:ready-p #:wait-ready
            #:take-there #:there #:*elsewhere*
            #:*sbcl* #:*load-form*))

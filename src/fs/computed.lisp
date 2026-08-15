@@ -1,6 +1,6 @@
 (defpackage #:pine.fs.computed
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node))
   (:export #:computed-node #:computed #:thunk #:reads #:recompute #:staleness))
 
 (in-package #:pine.fs.computed)

@@ -1,6 +1,6 @@
 (defpackage #:pine.proc.supervisor
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:timer #:pine.run.timer)
+  (:local-nicknames (#:d #:pine/data) (#:timer #:pine/run/timer)
                     (#:process #:pine.proc.process))
   (:export #:supervisor #:supervise #:forget #:processes #:process-named
            #:attend #:attends #:watch #:unwatch #:start-all #:stop-all #:due))

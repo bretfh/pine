@@ -1,8 +1,7 @@
-(defpackage #:pine.run.libs
+(defpackage #:pine/run/libs
   (:use #:cl)
   (:export #:built-in #:dirs #:attend))
-
-(in-package #:pine.run.libs)
+(in-package #:pine/run/libs)
 
 (defparameter +built-in+ (sb-ext:posix-getenv "GUIX_ENVIRONMENT")
   "The profile pine was built against. Read as this file loads, which is inside

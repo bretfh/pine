@@ -149,7 +149,7 @@ nothing will ever release."
                                    (pine.provider.sh:listen! n)
                                    (sleep 0.5)
                                    (uiop:process-info-pid
-                                    (pine.data:held (pine.provider.sh::took n)))))
+                                    (pine/data:held (pine.provider.sh::took n)))))
                        :timeout 180)))
              (is-true (%alive-p pid) "the other image is listening")
              (sb-posix:kill (uiop:process-info-pid (pine.proc.process:took p)) 9)
@@ -168,7 +168,7 @@ nothing will ever release."
                      "sh -c 'while true; do echo tick; sleep 5; done'")))
              (pine.provider.sh:listen! n)
              (sleep 0.3)
-             (setf pid (uiop:process-info-pid (pine.data:held (pine.provider.sh::took n))))
+             (setf pid (uiop:process-info-pid (pine/data:held (pine.provider.sh::took n))))
              (is-true (%alive-p pid))))
       (pine:stop))
     (loop :repeat 40 :while (%alive-p pid) :do (sleep 0.05))

@@ -1,6 +1,6 @@
 (defpackage #:pine.world.store
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:node #:pine.fs.node)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node)
                     (#:tree #:pine.fs.tree) (#:world #:pine.world.world)
                     )
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of

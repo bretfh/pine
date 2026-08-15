@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.history
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) )
+  (:local-nicknames (#:d #:pine/data) )
   (:export #:history #:remember #:undo #:redo #:undoable #:redoable #:forget
            #:*kept* #:state #:state-lines #:state-line #:state-col))
 

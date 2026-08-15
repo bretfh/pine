@@ -1,4 +1,4 @@
-(defpackage #:pine.data
+(defpackage #:pine/data
   (:use #:cl)
   (:shadow #:map #:set #:keys #:count #:remove #:union #:subseq #:last #:first
            #:rest #:reverse #:sort #:find #:position #:some #:every #:append)
@@ -11,8 +11,7 @@
            #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at
            #:box #:held #:swap! #:cas #:put!
            #:table #:all #:keep! #:drop! #:claim #:clear!))
-
-(in-package #:pine.data)
+(in-package #:pine/data)
 
 (defvar +no-map+ (fset:empty-map))
 (defvar +no-seq+ (fset:empty-seq))

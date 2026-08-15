@@ -1,13 +1,12 @@
-(defpackage #:pine.run.fault
+(defpackage #:pine/run/fault
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export #:fault #:faults #:report #:attempt #:with-debugger #:forget-faults
            #:condition-of #:label #:backtrace-of #:at-time #:offers #:standing
            #:resume #:attend #:attended #:taken #:forget #:parked #:elsewhere #:await
            #:*kept* #:*on-fault*
            #:*waiting* #:*debugging*))
-
-(in-package #:pine.run.fault)
+(in-package #:pine/run/fault)
 
 (defvar *kept* 50)
 (defvar *faults* (d:box nil))
@@ -115,11 +114,11 @@ restart. Unattended, it gives up after a while rather than standing for ever."
 With the debugger on, the thread stops where it faulted and waits: what is
 offered is what is still there, because nothing has unwound yet."
   (if *debugging*
-      (%attempt-standing thunk label)
+      (%standing thunk label)
       (handler-case (funcall thunk)
         (error (c) (report c label) nil))))
 
-(defun %attempt-standing (thunk label)
+(defun %standing (thunk label)
   (block attempting
     (handler-bind
         ((error

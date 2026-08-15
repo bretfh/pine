@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.text
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:shadow #:delete #:search)
   (:export #:lines-of #:text-of #:line-at #:line-count #:clamp
            #:insert #:delete #:region #:newline

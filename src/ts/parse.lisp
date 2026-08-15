@@ -13,17 +13,17 @@
             (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
 
 (defun %grammars (runtime)
-  (pine.data:held (grammars runtime)))
+  (pine/data:held (grammars runtime)))
 
 (defun %note-loaded (runtime language entry)
-  (pine.data:swap!
+  (pine/data:swap!
    (grammars runtime)
    (lambda (state)
      (pl:with state :loaded
               (pl:with (pl:at state :loaded) language entry)))))
 
 (defun %note-missing (runtime language)
-  (pine.data:swap!
+  (pine/data:swap!
    (grammars runtime)
    (lambda (state)
      (pl:with state :missing
@@ -52,7 +52,7 @@ what grammars exist is something written rather than a list compiled in here."
                              (pl:at (pl:at (%grammars runtime) :loaded)
                                           language))
                       (t (%note-missing runtime language)
-                         (pine.run.fault:report
+                         (pine/run/fault:report
                           (make-condition 'simple-error
                                           :format-control "no ~(~a~) grammar to load"
                                           :format-arguments (list language))
@@ -91,10 +91,10 @@ in, so a macro defined in the buffer's own package is found."
 how many were written, which is zero at the end of the buffer."
   (multiple-value-bind (line offset) (pine.ts.index:byte-line index byte)
     (let ((written 0)
-          (n (pine.data:size lines)))
+          (n (pine/data:size lines)))
       (block filling
         (loop :while (< line n)
-              :do (let* ((octets (sb-ext:string-to-octets (pine.data:at lines line)
+              :do (let* ((octets (sb-ext:string-to-octets (pine/data:at lines line)
                                                           :external-format :utf-8))
                          (len (length octets)))
                     (loop :for i :from (min offset len) :below len
@@ -203,7 +203,7 @@ the next highlight call, or any failure here, marks the cache stale."
 
 (defun %band (lines viewport)
   "The line band to parse for VIEWPORT over LINES, or NIL for all of them."
-  (let ((n (pine.data:size lines)))
+  (let ((n (pine/data:size lines)))
     (when (and viewport (> n +whole-file-lines+))
       (cons (max 0 (* +band-lines+ (floor (car viewport) +band-lines+)))
             (min (1- n) (1- (* +band-lines+ (ceiling (1+ (cdr viewport))
@@ -212,8 +212,8 @@ the next highlight call, or any failure here, marks the cache stale."
 (defun %band-lines (lines band)
   "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
   (if band
-      (pine.data:subseq lines (car band)
-                        (min (pine.data:size lines) (1+ (cdr band))))
+      (pine/data:subseq lines (car band)
+                        (min (pine/data:size lines) (1+ (cdr band))))
       lines))
 
 (defun %parse-band (ps lines band band-lines same-band edit)
@@ -222,7 +222,7 @@ the next highlight call, or any failure here, marks the cache stale."
          (shifted (and edit old-index old-tree same-band
                        (<= (car (or band '(0))) (first edit))
                        (< (first edit) (+ (or (and band (car band)) 0)
-                                          (pine.data:size band-lines)))))
+                                          (pine/data:size band-lines)))))
          (index nil))
     (when shifted
       (destructuring-bind (line old-lines new-lines byte-delta) edit
@@ -245,12 +245,12 @@ the next highlight call, or any failure here, marks the cache stale."
         (cond
 
           ((or (null new) (cffi:null-pointer-p new))
-           (pine.run.fault:report
+           (pine/run/fault:report
             (make-condition 'simple-error
                             :format-control "the ~(~a~) parser answered no tree ~
                                              for ~d line~:p"
                             :format-arguments (list (ps-language ps)
-                                                    (pine.data:size band-lines)))
+                                                    (pine/data:size band-lines)))
             "parsing")
            nil)
           (t (if incremental

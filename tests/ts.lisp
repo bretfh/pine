@@ -40,7 +40,7 @@
 (test a-rule-is-a-plist-and-reads-with-the-same-accessor
   (let ((rule (gethash "str_lit" (pine.ts.highlight:lang-nodes
                                   (pine.ts.syntax:for :commonlisp)))))
-    (is (eq :string (pine.data:at rule :face)))))
+    (is (eq :string (pine/data:at rule :face)))))
 
 (test source-is-parsed-and-painted
   (let ((found (faces-of "(defun f (x) \"doc\" x)")))
@@ -51,9 +51,9 @@
 (test the-image-answers-for-a-head-nobody-wrote-down
   (let ((rule (pine.ts.highlight:head-rule (pine.ts.syntax:for :commonlisp)
                                            "with-open-file")))
-    (is (eq :keyword (pine.data:at rule :face))
+    (is (eq :keyword (pine/data:at rule :face))
         "a macro with a &body is a keyword whose rest is a body")
-    (is (eq :body (pine.data:at rule :rest)))))
+    (is (eq :body (pine/data:at rule :rest)))))
 
 (defmacro probe-two-then-body (a b &body forms)
   (declare (ignore a b))
@@ -63,14 +63,14 @@
   (let ((rule (pine.ts.highlight:head-rule (pine.ts.syntax:for :commonlisp)
                                            "probe-two-then-body"
                                            :pine.test)))
-    (is (eql 2 (pine.data:at rule :indent))
+    (is (eql 2 (pine/data:at rule :indent))
         "the macro's own lambda list says where its body begins")
-    (is (eq :body (pine.data:at rule :rest)))))
+    (is (eq :body (pine/data:at rule :rest)))))
 
 (test what-the-image-never-heard-of-is-read-by-its-shape
   (let ((rule (pine.ts.highlight:head-rule (pine.ts.syntax:for :commonlisp)
                                            "defnothing-at-all")))
-    (is (eq :keyword (pine.data:at rule :face))
+    (is (eq :keyword (pine/data:at rule :face))
         "a config's own macros are not defined until it runs")))
 
 (test pine-source-parses-under-pines-own-grammar
@@ -79,7 +79,7 @@
     (is (find :namespace found :key #'fourth) "a path segment is painted")))
 
 (test the-byte-index-answers-both-ways-over-lines
-  (let ((index (pine.ts.index:build-index (pine.data:seq "hello" "there"))))
+  (let ((index (pine.ts.index:build-index (pine/data:seq "hello" "there"))))
     (is (eql 0 (pine.ts.index:line-start index 0)))
     (is (eql 6 (pine.ts.index:line-start index 1)))
     (multiple-value-bind (line col) (pine.ts.index:source-line-col index 8)
@@ -89,8 +89,8 @@
 (test a-rule-map-is-a-map-and-a-constant-set-is-a-set
   (let* ((lang (pine.ts.syntax:for :commonlisp))
          (rule (gethash "str_lit" (pine.ts.highlight:lang-nodes lang))))
-    (is-true (pine.data:mapp rule) "a node rule is a map, looked up by key")
-    (is (eq :string (pine.data:at rule :face)))))
+    (is-true (pine/data:mapp rule) "a node rule is a map, looked up by key")
+    (is (eq :string (pine/data:at rule :face)))))
 
 (test a-buffer-says-what-it-is-written-in
   (unwind-protect

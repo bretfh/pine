@@ -115,7 +115,7 @@ or it is a document about a system that no longer exists."
                                            (uiop:temporary-directory))))
              (with-open-file (out scratch :direction :output :if-exists :supersede)
                (write-string (pine.edit.text:text-of
-                              (pine.data:as :seq
+                              (pine/data:as :seq
                                             (remove-if
                                              (lambda (line)
                                                (search "declare-frontends" line))

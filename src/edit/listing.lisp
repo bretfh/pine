@@ -1,10 +1,10 @@
 (defpackage #:pine.edit.listing
   (:use #:cl)
-  (:local-nicknames (#:d #:pine.data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
                     (#:node #:pine.fs.node) (#:key #:pine.edit.key)
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:prompt #:pine.edit.prompt)
-                    (#:log #:pine.run.log))
+                    (#:log #:pine/run/log))
   (:export #:install #:into #:activate #:listings #:listing #:rows #:acts
            #:place #:row-at #:step! #:said))
 
@@ -83,7 +83,7 @@ listing: RET on a row hands ACTS the place it stands for."
   (let ((n 0))
     (loop
       (multiple-value-bind (line col)
-          (text:search (pine.data:held (buffer:lines b)) from
+          (text:search (pine/data:held (buffer:lines b)) from
                        (buffer:point-line b) (buffer:point-col b))
         (unless line (return))
         (buffer:goto! b line col)
@@ -112,16 +112,16 @@ listing: RET on a row hands ACTS the place it stands for."
                                         (pine.proc.process:state p)
                                         (pine.proc.process:name p))
                                 p))
-           (loop :for tk :in (pine.run.task:tasks)
+           (loop :for tk :in (pine/run/task:tasks)
                  :collect (cons (format nil "~16a ~10a ~a" "thread"
-                                        (if (pine.run.task:alivep tk) :running :done)
-                                        (pine.run.task:name tk))
+                                        (if (pine/run/task:alivep tk) :running :done)
+                                        (pine/run/task:name tk))
                                 tk))
-           (loop :for a :in (pine.run.agent:agents)
+           (loop :for a :in (pine/run/agent:agents)
                  :collect (cons (format nil "~16a ~10a ~a" "endpoint" :running
-                                        (pine.run.agent:name a))
+                                        (pine/run/agent:name a))
                                 a))
-           (loop :for name :in (pine.run.timer:names)
+           (loop :for name :in (pine/run/timer:names)
                  :collect (format nil "~16a ~10a ~a" "tick" :running name)))
           (lambda (it)
             (log:note "~a" (or it "that row is a heading")))))

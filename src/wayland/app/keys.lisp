@@ -5,7 +5,7 @@
 
 (in-package #:pine.wayland.app.keys)
 
-(defvar *ekb* (pine.data:table)
+(defvar *ekb* (pine/data:table)
   "Editor to (list context keymap state).")
 
 (defparameter +modifier-keysyms+
@@ -14,7 +14,7 @@
     "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
   "Keysyms that never arm key repeat: holding a bare modifier repeats nothing.")
 
-(defun ekb (ed) (pine.data:at (pine.data:all *ekb*) ed))
+(defun ekb (ed) (pine/data:at (pine/data:all *ekb*) ed))
 
 (defun mod-active (state name)
   (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
@@ -44,7 +44,7 @@
     (:keymap (format fd size)
      (assert (eq format :xkb-v1))
      (let* ((cell (or (ekb ed)
-                      (pine.data:keep! *ekb* ed
+                      (pine/data:keep! *ekb* ed
                                      (list (xkb:xkb-context-new ()) nil nil))))
             (context (first cell))
             (shmo (shm:make-shm fd)))

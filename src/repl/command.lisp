@@ -1,7 +1,7 @@
 (defpackage #:pine.repl.command
   (:use #:cl)
   (:shadow #:describe)
-  (:local-nicknames (#:d #:pine.data))
+  (:local-nicknames (#:d #:pine/data))
   (:export #:command #:commandp #:defcommand #:command-named #:commands
            #:forget #:name #:action #:describes #:asks #:arguments #:run
            #:word #:unknown-command #:name-of #:*asking*))

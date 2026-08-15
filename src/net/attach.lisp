@@ -1,7 +1,7 @@
 (defpackage #:pine.net.attach
   (:use #:cl)
-  (:local-nicknames (#:endpoint #:pine.run.agent) (#:d #:pine.data) (#:server #:pine.net.server)
-                    (#:fault #:pine.run.fault) (#:log #:pine.run.log))
+  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine.net.server)
+                    (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:app #:frontend #:kinds #:attached #:received #:detached
            #:run-frontend #:client #:client-id #:client-kind #:client-display
            #:client-uri #:client-session #:clients #:push-to
