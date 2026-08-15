@@ -143,7 +143,7 @@ Without this a killed daemon leaves its windows on the screen for good."
   (let ((sys (sento.actor-system:make-actor-system))
         (joined (pine/data:box nil)))
     (sento.remoting:enable-remoting sys :host pine/net/server:*host* :port 0)
-    (pine/run/agent:agent name
+    (pine/run/endpoint:endpoint name
                           (lambda (message)
                             (when (member (first message) '(:attached :refused))
                               (pine/data:put! joined t))

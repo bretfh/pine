@@ -40,6 +40,37 @@ sleeping in a loop."
            (is (null (member "probe-thread" (pine/run/timer:names) :test #'equal)))))
     (pine:stop)))
 
+(test what-pine-supervises-is-in-the-tree-and-takes-a-verb
+  "/proc held the keyword :declared and nothing else: the processes themselves
+were a list in the supervisor. A process is a node like a buffer is, so it
+hangs where it can be read, watched and told what to do."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (let ((root (pine/world/world:root pine/world/world:*world*)))
+           (pine/repl/command:run "spawn" (list "probe-tree" "sleep 30"))
+           (unwind-protect
+                (let ((n (pine/fs/tree:at root "proc" "probe-tree")))
+                  (is (typep n 'pine/proc/process:process)
+                      "the node at the path is the process, not a note about it")
+                  (is (equal "/proc/probe-tree" (pine/fs/node:full-name n)))
+                  (is (eq :running (pine/fs/node:contents n)))
+                  (is (equal '("state" "attempts" "said") (pine/fs/tree:listing n)))
+                  (is (eql 1 (pine/fs/node:contents
+                              (pine/fs/tree:at root "proc" "probe-tree" "attempts"))))
+                  (setf (pine/fs/node:contents n) (pine/data:seq :restart))
+                  (is (eql 2 (pine/fs/node:contents
+                              (pine/fs/tree:at root "proc" "probe-tree" "attempts")))
+                      "writing it a verb is how a process is told what to do")
+                  (setf (pine/fs/node:contents n) (pine/data:seq :stop))
+                  (is (eq :stopped (pine/fs/node:contents n)))
+                  (signals error (setf (pine/fs/node:contents n) (pine/data:seq :fly))
+                    "and a verb it does not take says so"))
+             (pine/repl/command:run "kill" (list "probe-tree")))
+           (is (null (pine/fs/tree:at root "proc" "probe-tree"))
+               "killing it takes it off the tree too")))
+    (pine:stop)))
+
 (test what-dies-is-started-again-and-the-backoff-grows
   (let* ((s (pine/proc/supervisor:supervisor))
          (p (make-instance 'pine/proc/process:program
@@ -55,6 +86,27 @@ sleeping in a loop."
                "the supervisor started it again")
            (is (> (pine/proc/process:backoff p) 1)))
       (pine/proc/supervisor:forget s "probe-dies"))))
+
+(test one-that-dies-as-fast-as-it-starts-is-not-started-every-tick
+  "The backoff was worked out and never applied: DUE had no caller, and it
+compared against the exit code as though it were a time. A crash loop was
+started once a second for as long as pine ran."
+  (let* ((s (pine/proc/supervisor:supervisor))
+         (p (make-instance 'pine/proc/process:program
+                           :name "probe-loops" :argv '("sh" "-c" "exit 1"))))
+    (unwind-protect
+         (progn
+           (pine/proc/supervisor:supervise s p)
+           (pine/proc/process:start p)
+           (is-true (wait-until (lambda () (not (pine/proc/process:alivep p)))))
+           (pine/proc/supervisor:attend s)
+           (let ((tried (pine/proc/process:attempts p)))
+             (is (>= tried 2) "the first time it goes down it comes straight back")
+             (is-true (wait-until (lambda () (not (pine/proc/process:alivep p)))))
+             (dotimes (n 5) (pine/proc/supervisor:attend s))
+             (is (= tried (pine/proc/process:attempts p))
+                 "and then it waits, rather than being started on every tick")))
+      (pine/proc/supervisor:forget s "probe-loops"))))
 
 (test a-process-that-says-it-does-not-restart-is-left-alone
   (let* ((s (pine/proc/supervisor:supervisor))
@@ -93,10 +145,11 @@ sleeping in a loop."
          (progn
            (pine/proc/process:start p)
            (is-true (pine/proc/lisp:ready-p p))
-           (is (eql 4 (pine/proc/lisp:evaluate p '(+ 2 2))))
-           (is (equal "SBCL" (pine/proc/lisp:evaluate p '(lisp-implementation-type))))
+           (is (equal '(4) (pine/proc/elsewhere:evaluate p '(+ 2 2))))
+           (is (equal '("SBCL")
+                      (pine/proc/elsewhere:evaluate p '(lisp-implementation-type))))
            (multiple-value-bind (value fault)
-               (pine/proc/lisp:evaluate p '(error "over there"))
+               (pine/proc/elsewhere:evaluate p '(error "over there"))
              (is (null value))
              (is (search "over there" fault)
                  "a fault in the other image comes back as a value")))
@@ -113,7 +166,7 @@ still offering, so taking one of those resumes the thread over there."
          (progn
            (pine/proc/process:start p)
            (multiple-value-bind (value said offers)
-               (pine/proc/lisp:evaluate p '(error "over there"))
+               (pine/proc/elsewhere:evaluate p '(error "over there"))
              (is (null value))
              (is (search "over there" said))
              (is (member "ABORT" offers :test #'equal)
@@ -121,11 +174,11 @@ still offering, so taking one of those resumes the thread over there."
            (let ((f (first (pine/run/fault:faults))))
              (is (search "over there" (princ-to-string (pine/run/fault:condition-of f)))
                  "and the fault joined this image's own")
-             (is (eq p (pine/proc/lisp:there f)) "knowing where it came from")
+             (is (eq p (pine/proc/elsewhere:there f)) "knowing where it came from")
              (is (member "ABORT" (pine/run/fault:offers f) :test #'equal))
              (pine/run/fault:resume f "ABORT")
-             (loop :repeat 200 :while (pine/proc/lisp:there f) :do (sleep 0.01))
-             (is (eql 4 (pine/proc/lisp:evaluate p '(+ 2 2)))
+             (loop :repeat 200 :while (pine/proc/elsewhere:there f) :do (sleep 0.01))
+             (is (equal '(4) (pine/proc/elsewhere:evaluate p '(+ 2 2)))
                  "and taking one here let the thread there carry on")))
       (pine/run/fault:forget-faults)
       (pine/proc/process:stop p))))

@@ -47,14 +47,22 @@ spawns an sbcl, it attaches back, and an evaluation crosses as data."
         (unwind-protect
              (progn
                (is (equal a (pine/net/agent:agent-named "probe")))
-               (let ((answer (pine/net/agent:evaluate-there a '(+ 2 2))))
-                 (is (equal '(4) (getf answer :answered)))
-                 (is (null (getf answer :fault))))
-               (let ((answer (pine/net/agent:evaluate-there a '(princ "over here"))))
-                 (is (equal "over here" (getf answer :said))))
-               (let ((answer (pine/net/agent:evaluate-there a '(error "over there"))))
-                 (is (search "over there" (getf answer :fault))
-                     "a fault there comes back as a value here")))
+               (multiple-value-bind (answered fault)
+                   (pine/proc/elsewhere:evaluate a '(+ 2 2))
+                 (is (equal '(4) answered))
+                 (is (null fault)))
+               (multiple-value-bind (answered fault offers said)
+                   (pine/proc/elsewhere:evaluate a '(princ "over here"))
+                 (declare (ignore answered fault offers))
+                 (is (equal "over here" said)))
+               (multiple-value-bind (answered fault offers)
+                   (pine/proc/elsewhere:evaluate a '(error "over there"))
+                 (is (null answered))
+                 (is (search "over there" fault)
+                     "a fault there comes back as a value here")
+                 (is (null offers)
+                     "and this transport carries no restarts, because the far
+side unwound rather than standing in it")))
           (pine/net/agent:forget "probe"))))))
 
 (test a-session-on-the-far-side-is-a-session
@@ -93,7 +101,7 @@ remote. Nothing above it knows the difference."
 
 (test a-daemon-listens-and-says-what-is-attached
   (unwind-protect
-       (let ((image (pine:daemon :remoting 0)))
+       (let ((image (pine:daemon :remoting 0 :store nil)))
          (is (typep image 'pine/net/server:server))
          (is (plusp (pine/net/server:remoting-port image)))
          (is (null (pine/repl/command:run "agents")) "nothing has attached yet")
@@ -107,7 +115,7 @@ remote. Nothing above it knows the difference."
   (unwind-protect
        (let ((config (merge-pathnames "probe-init.lisp"
                                       (asdf:system-relative-pathname :pine "tests/"))))
-         (pine:daemon :remoting 0 :config config)
+         (pine:daemon :remoting 0 :store nil :config config)
          (is (eq t (pine/fs/node:contents
                     (pine/world/world:at pine/world/world:*world* "config/loaded")))
              "the config ran")
@@ -130,7 +138,7 @@ remote. Nothing above it knows the difference."
          (progn
            (with-open-file (out bad :direction :output :if-exists :supersede)
              (write-string "(in-package :pine) (this-is-not-a-function)" out))
-           (pine:daemon :remoting 0 :config bad)
+           (pine:daemon :remoting 0 :store nil :config bad)
            (is (typep pine:*image* 'pine/net/server:server)
                "a broken config does not stop the daemon coming up")
            (is (find-if (lambda (f) (search "init" (or (pine/run/fault:label f) "")))
@@ -142,7 +150,7 @@ remote. Nothing above it knows the difference."
 (test a-frontend-is-a-declaration-the-supervisor-keeps-running
   (unwind-protect
        (progn
-         (pine:daemon :remoting 0 :config nil)
+         (pine:daemon :remoting 0 :store nil :config nil)
          (let ((p (pine:frontend "editor")))
            (is (typep p 'pine/proc/process:program))
            (is (equal "editor" (pine/proc/process:name p)))
@@ -158,7 +166,7 @@ this was tested before, which is why the message shape was wrong."
   (let ((seen nil))
     (unwind-protect
          (progn
-           (pine:daemon :remoting 0 :config nil)
+           (pine:daemon :remoting 0 :store nil :config nil)
            (pine/net/attach:app :probe-front
                                 (fset:map (:attached (lambda (c) (push c seen)))))
            (let ((client (pine/net/server:start-server :workers 2 :remoting-port 0))
@@ -191,7 +199,7 @@ this was tested before, which is why the message shape was wrong."
 (test a-client-built-against-another-wire-is-told-so
   (unwind-protect
        (progn
-         (pine:daemon :remoting 0 :config nil)
+         (pine:daemon :remoting 0 :store nil :config nil)
          (let ((client (pine/net/server:start-server :workers 2 :remoting-port 0))
                (answered (pine/data:box nil)))
            (unwind-protect
@@ -218,7 +226,7 @@ this was tested before, which is why the message shape was wrong."
 turn back into a widget tree. This walks the whole path with no display."
   (unwind-protect
        (progn
-         (pine:daemon :remoting 0 :config nil)
+         (pine:daemon :remoting 0 :store nil :config nil)
          (setf (pine/fs/node:contents (pine/edit/buffer:current)) "hello
 there")
          (let ((client (pine/net/server:start-server :workers 2 :remoting-port 0))
@@ -258,7 +266,7 @@ there")
 (test a-key-from-the-frontend-edits-the-buffer-and-a-new-frame-follows
   (unwind-protect
        (progn
-         (pine:daemon :remoting 0 :config nil)
+         (pine:daemon :remoting 0 :store nil :config nil)
          (setf (pine/fs/node:contents (pine/edit/buffer:current)) "")
          (let ((client (pine/net/server:start-server :workers 2 :remoting-port 0))
                (got (pine/data:box nil)))

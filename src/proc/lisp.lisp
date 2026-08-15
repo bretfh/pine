@@ -1,8 +1,8 @@
 (defpackage #:pine/proc/lisp
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:process #:pine/proc/process) (#:fault #:pine/run/fault) (#:task #:pine/run/task))
-  (:export #:lisp-process #:evaluate #:answered-by #:saidp #:ready-p #:wait-ready
-           #:take-there #:there #:*elsewhere*
+  (:local-nicknames (#:d #:pine/data) (#:process #:pine/proc/process)
+                    (#:elsewhere #:pine/proc/elsewhere))
+  (:export #:lisp-process #:answered-by #:saidp #:ready-p #:wait-ready
            #:*sbcl* #:*load-form*))
 (in-package #:pine/proc/lisp)
 
@@ -10,7 +10,6 @@
 (defvar *load-form* "(require :asdf)")
 (defvar *ready* "pine-process-ready")
 (defvar *said* "pine-process-said ")
-(defvar *elsewhere* (d:box nil))
 
 (defparameter +loop+
   "(let ((*print-pretty* nil) (*print-circle* nil) (*print-readably* nil))
@@ -80,44 +79,23 @@ systems it loads say things on the same stream.")
                   (t (process:emit p line)))
         :finally (return nil)))
 
-(defgeneric evaluate (process form &key timeout)
-  (:method ((p lisp-process) form &key (timeout 30))
-    (let ((in (%in p)))
-      (write-string (prin1-to-string form) in)
-      (terpri in)
-      (force-output in))
-    (loop :repeat (round (/ timeout 0.02))
-          :for line := (read-line (%out p) nil nil)
-          :do (cond ((saidp line)
-                     (return (multiple-value-bind (value fault offers)
-                                 (answered-by line)
-                               (when fault (%coming-home p fault offers))
-                               (values value fault offers))))
-                    (line (process:emit p line))
-                    (t (sleep 0.02))))))
-
-(defun %coming-home (p said offers)
-  "A fault in the other image joins this one's, standing in what it offers
-there. Whoever takes one of those -- the debugger buffer, or nobody, in which
-case it gives up -- is what the thread over there is told."
-  (let ((f (fault:elsewhere (make-condition 'simple-error
-                                            :format-control "~a: ~a"
-                                            :format-arguments
-                                            (list (process:name p) said))
-                            offers
-                            (format nil "in ~a" (process:name p)))))
-    (d:swap! *elsewhere* (lambda (all) (cons (cons f p) (remove f all :key #'car))))
-    (task:spawn (format nil "~a fault" (process:name p))
-                (lambda ()
-                  (unwind-protect
-                       (take-there p (or (fault:await f) "ABORT"))
-                    (d:swap! *elsewhere*
-                            (lambda (all) (remove f all :key #'car))))))
-    f))
-
-(defun there (f)
-  "The image a fault came home from."
-  (cdr (assoc f (d:held *elsewhere*))))
+(defmethod elsewhere:evaluate ((p lisp-process) form &key (timeout 30))
+  (let ((in (%in p)))
+    (write-string (prin1-to-string form) in)
+    (terpri in)
+    (force-output in))
+  (loop :repeat (round (/ timeout 0.02))
+        :for line := (read-line (%out p) nil nil)
+        :do (cond ((saidp line)
+                   (return (multiple-value-bind (value fault offers)
+                               (answered-by line)
+                             (when fault
+                               (elsewhere:came-home p fault offers
+                                                    (process:name p)))
+                             (values (unless fault (list value))
+                                     fault offers ""))))
+                  (line (process:emit p line))
+                  (t (sleep 0.02)))))
 
 (defun saidp (line)
   (and line (>= (length line) (length *said*))
@@ -133,9 +111,7 @@ restarts that image is still offering."
         (values nil (second value) (third value))
         (values value nil nil))))
 
-(defun take-there (p name)
-  "Tell the child to take one of the restarts it offered. Its thread is still
-standing in the fault, so this is the same act as taking one here."
+(defmethod elsewhere:resume-there ((p lisp-process) name)
   (let ((in (%in p)))
     (write-string (prin1-to-string (list :take name)) in)
     (terpri in)

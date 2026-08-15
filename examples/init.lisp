@@ -8,8 +8,7 @@
 (media :player "emms")
 (niri)
 
-(write /active-theme :ef-dream)
-(write /tab-width 2)
+(write /theme/active :ef-dream)
 (write /wm-terminal "alacritty")
 
 (mode "org" :parent "text" :settings '(:indicator "Org")
@@ -39,24 +38,24 @@
     :end (column :align :center :spacing 10
            (icon #x0F028 :class "icon" :hint "Volume"
                          :click (map /surface/audio/shown (seq :toggle)))
-           (label (format nil "~a:~a" (read /clock/hour) (read /clock/minute))
+           (label (format nil "~a:~a" (read /dev/clock/hour) (read /dev/clock/minute))
                   :class "clock"))))
 
 (defsurface echo (:as :echo)
   (row :class "echo" :align :center
     (label (or (read /echo/hint) (run "wm-title") "") :class "echo-text" :expand 1)
-    (label (format nil "~a   ~d%" (or (read /net/connection) "offline")
-                   (or (read /audio/volume) 0))
+    (label (format nil "~a   ~d%" (or (read /dev/net/connection) "offline")
+                   (or (read /dev/audio/volume) 0))
            :class "echo-stat")))
 
 (defsurface audio (:as :panel)
   (column :class "netmenu" :align :stretch
     (label "Audio" :class "nm-title")
     (row :align :center :spacing 12
-      (icon (if (read /audio/muted) #x0F026 #x0F028) :class "audio-mute"
-            :click (map /audio/muted (seq :toggle)))
-      (slider /audio/volume :class "menu-slider" :min 0 :max 100 :expand 1)
-      (label (format nil "~d%" (or (read /audio/volume) 0)) :class "audio-pct"))))
+      (icon (if (read /dev/audio/muted) #x0F026 #x0F028) :class "audio-mute"
+            :click (map /dev/audio/muted (seq :toggle)))
+      (slider /dev/audio/volume :class "menu-slider" :min 0 :max 100 :expand 1)
+      (label (format nil "~d%" (or (read /dev/audio/volume) 0)) :class "audio-pct"))))
 
 (style ".bar" (list :background-color (css-glass :bg) :color (color :fg)
                     :padding "8px 0 0 0"))

@@ -238,7 +238,8 @@ than starting over."
 
 (defun %history-node (name)
   (when (and name world:*world*)
-    (world:ensure world:*world* "history" (string-downcase (string name)))))
+    (world:ensure world:*world* "prompt" "history"
+                  (string-downcase (string name)))))
 
 (defun history-of (name)
   (let ((n (%history-node name)))

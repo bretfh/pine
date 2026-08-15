@@ -96,7 +96,7 @@ nothing will ever ask it to let go of.")
                 (loop :with out := (uiop:process-info-output process)
                       :for said := (handler-case (read-line out nil nil)
                                      (stream-error () nil))
-                      :while said
+                      :while (and said (not (task:stoppingp)))
                       :do (d:swap! (said n)
                                   (lambda (all)
                                     (let ((next (cons said all)))

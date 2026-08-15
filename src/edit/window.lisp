@@ -35,7 +35,7 @@
 (defmethod node:persistp ((w window)) nil)
 
 (defun %root (&optional (world world:*world*))
-  (world:ensure world "win"))
+  (world:ensure world "window"))
 
 (defun make-window (&key buffer (into (%root)) name)
   (let ((w (make-instance 'window :name (or name (format nil "~d" (incf *counter*)))

@@ -55,6 +55,7 @@
   (mode:mode "pine" :parent "lisp"
                     :settings '(:indicator "Pine" :grammar :pine)
                     :claims '((:paths "*/pine/*.lisp")))
+  (mode:mode "shell" :settings '(:indicator "Shell"))
   (mode:minor "prompt" :precedence 20)
   (mode:minor "overwrite" :precedence 10 :settings '(:indicator "Ovwrt"))
   (mode:minor "list" :precedence 15)

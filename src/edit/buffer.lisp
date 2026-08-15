@@ -1,16 +1,17 @@
 (defpackage #:pine/edit/buffer
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node)
+  (:local-nicknames (#:node #:pine/fs/node) (#:mount #:pine/fs/mount)
                     (#:tree #:pine/fs/tree) (#:world #:pine/world/world)
                     (#:mode #:pine/repl/mode) (#:text #:pine/edit/text)
                     (#:d #:pine/data) (#:history #:pine/edit/history))
   (:export #:buffer #:make-buffer #:buffers #:buffer-named
            #:kill-buffer #:scratch #:current #:current-buffer #:asidep #:*on-current* #:lines #:point #:mark
-           #:mode-of #:minors-of #:file-of #:tick #:properties
+           #:mode-of #:minors-of #:file-of #:source #:origin #:tick #:properties
+           #:source-node #:*visiting*
            #:line #:line-count #:text-of #:insert! #:delete-back! #:newline!
-           #:delete-region! #:goto! #:move! #:region-of #:mark! #:visit! #:save!
+           #:delete-region! #:goto! #:move! #:region-of #:mark!
            #:point-line #:point-col #:changed #:modified #:settings #:setting
-           #:visited #:leaving! #:revert! #:recent
+           #:visited #:leaving!
            #:past #:undo! #:redo! #:undoable #:redoable
            #:marks #:mark-at #:put-mark! #:drop-mark!
            #:propertize! #:properties-at #:clear-properties! #:edit-of
@@ -20,8 +21,8 @@
 
 (defvar *current* nil)
 (defvar *on-current* nil)
+(defvar *visiting* nil)
 (defvar *places* (d:no-map))
-(defvar *recent* nil)
 
 (defclass buffer (node:node)
   ((lines      :initform (d:box (text:lines-of "")) :reader lines)
@@ -30,7 +31,8 @@
    (mark       :initform nil :accessor mark)
    (mode-of    :initarg :mode   :accessor mode-of   :initform "text")
    (minors-of  :initarg :minors :accessor minors-of :initform nil)
-   (file-of    :initarg :file   :accessor file-of   :initform nil)
+   (source     :initarg :source :reader source     :initform nil)
+   (file-of    :initarg :file   :reader file-of    :initform nil)
    (tick       :initform 0   :accessor tick)
    (past       :initform (history:history) :reader past)
    (marks      :initform (d:no-map) :accessor marks)
@@ -38,6 +40,8 @@
    (edit-of    :initform nil :accessor edit-of)
    (modified   :initform nil :accessor modified)
    (settings   :initform (d:no-map) :accessor settings)))
+
+(defclass source-node (node:node) ())
 
 (defmethod print-object ((b buffer) stream)
   (print-unreadable-object (b stream :type t)
@@ -82,11 +86,14 @@ on the text moves with it."
 
 (defun %attach-slots (b)
   (node:slots b b "point-line" 'point-line "point-col" 'point-col
-                  "mode" 'mode-of "file" 'file-of "tick" 'tick)
+                  "mode" 'mode-of "tick" 'tick)
+  (node:attach (make-instance 'source-node :name "file"
+                                           :describes "where this buffer reads and writes")
+               b)
   b)
 
 (defun %buffers-node (&optional (w world:*world*))
-  (world:ensure w "buf"))
+  (world:ensure w "buffer"))
 
 (defun asidep (b)
   "Whether B is shown somewhere other than a window: the prompt is drawn on the
@@ -305,48 +312,40 @@ a checker said."
     (destructuring-bind (line col) (mark b)
       (text:region (d:held (lines b)) line col (point-line b) (point-col b)))))
 
+(defun origin (b)
+  "What this buffer is remembered under: the host path when it is on one, and
+the path in the tree otherwise."
+  (or (file-of b) (let ((n (source b))) (and n (node:full-name n)))))
+
 (defun visited (b)
-  "Where point was the last time this file was open."
-  (d:at *places* (file-of b)))
+  "Where point was the last time this place was open."
+  (d:at *places* (origin b)))
 
-(defun recent ()
-  "The files opened here, the last one first."
-  *recent*)
+(defun (setf source) (n b)
+  "What this buffer is a view onto. A buffer on a file carries the host path
+too, because compiling and loading one is said in paths."
+  (setf (slot-value b 'source) n
+        (slot-value b 'file-of) (and (typep n 'mount:file-node)
+                                     (namestring (mount:truename-of n))))
+  (node:invalidate b)
+  n)
 
-(defun %recently (path)
-  (let ((name (namestring path)))
-    (setf *recent* (cons name (cl:remove name *recent* :test #'equal)))
-    (when (> (cl:length *recent*) 50)
-      (setf *recent* (cl:subseq *recent* 0 50)))
-    name))
+(defmethod node:contents ((n source-node)) (origin (node:parent n)))
 
-(defun visit! (b path)
-  (%recently path)
-  (setf (file-of b) (namestring path))
-  (setf (node:contents b)
-        (if (probe-file path) (uiop:read-file-string path) ""))
-  (let ((m (mode:mode-for path)))
-    (when m (setf (mode-of b) (mode:name m))))
-  (let ((was (visited b)))
-    (if was
-        (goto! b (first was) (second was))
-        (goto! b 0 0)))
-  (setf (modified b) nil)
-  b)
+(defmethod (setf node:contents) (value (n source-node))
+  "Writing where a buffer reads from opens it there."
+  (when *visiting* (funcall *visiting* (node:parent n) (princ-to-string value)))
+  value)
+
+(defmethod node:leafp ((n source-node)) t)
+
+(defmethod node:persistp ((n source-node)) nil)
 
 (defun leaving! (b)
   "Remember where point was, so coming back lands where you left."
-  (when (file-of b)
-    (setf *places* (d:with *places* (file-of b) (point b))))
+  (let ((where (origin b)))
+    (when where (setf *places* (d:with *places* where (point b)))))
   b)
-
-(defun revert! (b)
-  "The file again, as it is on disk."
-  (let ((file (file-of b)))
-    (when (and file (probe-file file))
-      (leaving! b)
-      (visit! b file)
-      file)))
 
 (defun setting (b key &optional default)
   "What this buffer reads for KEY: its own, then its modes', then the default.
@@ -359,11 +358,3 @@ A buffer overrides a setting by holding one of the same name."
   (setf (settings b) (d:with (settings b) key value))
   value)
 
-(defun save! (b &optional (path (file-of b)))
-  (when path
-    (with-open-file (out path :direction :output :if-exists :supersede
-                              :if-does-not-exist :create :external-format :utf-8)
-      (write-string (text-of b) out))
-    (setf (file-of b) (namestring path)
-          (modified b) nil)
-    path))

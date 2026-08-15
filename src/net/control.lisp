@@ -1,6 +1,6 @@
 (defpackage #:pine/net/control
   (:use #:cl)
-  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:endpoint #:pine/run/endpoint) (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:watch #:pine/fs/watch)
                     (#:world #:pine/world/world) (#:server #:pine/net/server)
                     (#:cmd #:pine/repl/command) (#:session #:pine/repl/session)
@@ -159,7 +159,7 @@
 
 (defun serve (s &key on-quit)
   (when on-quit (setf *on-quit* on-quit))
-  (endpoint:agent "control"
+  (endpoint:endpoint "control"
                   (lambda (message)
                     (or (received message) (list :no "that faulted")))
                   :dispatcher :pinned :in (server:actor-system s)))

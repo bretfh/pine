@@ -92,7 +92,7 @@ being painted."
 (defun active ()
   "The theme in force here: /theme, which is a value like any other."
   (or (and pine/world/world:*world*
-           (let ((n (pine/world/world:at pine/world/world:*world* "active-theme")))
+           (let ((n (pine/world/world:at pine/world/world:*world* "theme/active")))
              (and n (pine/fs/node:contents n))))
       +default-theme+))
 

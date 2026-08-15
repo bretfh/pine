@@ -4,7 +4,9 @@
   (:local-nicknames (#:d #:pine/data))
   (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
            #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
+           #:make-child #:erase-child
            #:dependents #:depend #:invalidate #:*reading* #:reading #:*on-write*
+           #:*on-erase*
            #:node-named #:make-node #:full-name #:root-of
            #:kept #:child #:children #:stir #:announces #:every-seconds
            #:verb #:verbp #:verb-name #:verb-args
@@ -13,6 +15,7 @@
 
 (defvar *reading* nil)
 (defvar *on-write* nil)
+(defvar *on-erase* nil)
 
 (defclass node ()
   ((name       :initarg :name      :reader name)
@@ -69,6 +72,21 @@
         (d:swap! (under n) (lambda (all) (d:remove gone all)))
         (setf (parent gone) nil))
       gone)))
+
+(defgeneric make-child (node name)
+  (:documentation "A fresh child of NODE named NAME, made in whatever stands
+behind NODE. A plain node keeps it in the tree and nowhere else; a mounted
+directory makes a file on the disk. A name that ends in / asks for a branch.")
+  (:method ((n node) name)
+    (attach (make-node (string-right-trim "/" (princ-to-string name))) n)))
+
+(defgeneric erase-child (node name)
+  (:documentation "Take NAME out of NODE, and out of whatever stands behind it.")
+  (:method ((n node) name)
+    (let ((gone (resolve n name)))
+      (when (and gone *on-erase*) (funcall *on-erase* gone))
+      (d:drop! (kept n) (princ-to-string name))
+      (detach n name))))
 
 (defgeneric leafp (node)
   (:method ((n node)) (null (nodes n))))
@@ -142,16 +160,17 @@ answer the one that landed."
       (invalidate each))
     n))
 
-(defmethod (setf contents) :after (value (n node))
-  "Whatever a node did with a write, it moved: a provider that turned one into
-an action on the world still has to tell what is watching, or a slider is left
-showing what the world held before it was dragged."
-  (declare (ignore value))
-  (invalidate n))
-
 (defgeneric contents (node)
   (:method ((n node)) nil)
   (:method ((n value-node)) (d:held (held n))))
+
+(defgeneric (setf contents) (value node)
+  (:method (value (n node))
+    (error "~a holds nothing that can be written." (full-name n)))
+  (:method (value (n value-node))
+    (d:put! (held n) value)
+    (when *on-write* (funcall *on-write* n))
+    value))
 
 (defmethod contents :around ((n node))
   (reading n)
@@ -162,13 +181,12 @@ showing what the world held before it was dragged."
       (verb n (verb-name value) (verb-args value))
       (call-next-method)))
 
-(defgeneric (setf contents) (value node)
-  (:method (value (n node))
-    (error "~a holds nothing that can be written." (full-name n)))
-  (:method (value (n value-node))
-    (d:put! (held n) value)
-    (when *on-write* (funcall *on-write* n))
-    value))
+(defmethod (setf contents) :after (value (n node))
+  "Whatever a node did with a write, it moved: a provider that turned one into
+an action on the world still has to tell what is watching, or a slider is left
+showing what the world held before it was dragged."
+  (declare (ignore value))
+  (invalidate n))
 
 (defmethod contents ((n slot-node))
   (slot-value (object n) (slot-of n)))

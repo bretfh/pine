@@ -115,9 +115,9 @@ listing: RET on a row hands ACTS the place it stands for."
                                         (if (pine/run/task:alivep tk) :running :done)
                                         (pine/run/task:name tk))
                                 tk))
-           (loop :for a :in (pine/run/agent:agents)
+           (loop :for a :in (pine/run/endpoint:endpoints)
                  :collect (cons (format nil "~16a ~10a ~a" "endpoint" :running
-                                        (pine/run/agent:name a))
+                                        (pine/run/endpoint:name a))
                                 a))
            (loop :for name :in (pine/run/timer:names)
                  :collect (format nil "~16a ~10a ~a" "tick" :running name)))

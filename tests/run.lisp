@@ -74,7 +74,7 @@ carries is what says when, and a tick runs on a worker rather than on it."
        (progn
          (pine:start)
          (let* ((seen (pine/data:box nil))
-                (a (pine/run/agent:agent
+                (a (pine/run/endpoint:endpoint
                     "probe-agent"
                     (lambda (message)
                       (if (eq :ping message)
@@ -82,14 +82,14 @@ carries is what says when, and a tick runs on a worker rather than on it."
                           (pine/data:swap! seen (lambda (all) (cons message all))))))))
            (unwind-protect
                 (progn
-                  (pine/run/agent:tell a :one)
-                  (pine/run/agent:tell a :two)
+                  (pine/run/endpoint:tell a :one)
+                  (pine/run/endpoint:tell a :two)
                   (is-true (wait-until (lambda () (= 2 (length (pine/data:held seen))))))
                   (is (equal '(:one :two) (reverse (pine/data:held seen))))
-                  (is (equal '(:answered :ping) (pine/run/agent:ask a :ping)))
-                  (is (eq a (pine/run/agent:agent-named "probe-agent"))))
-             (pine/run/agent:stop a))
-           (is (null (pine/run/agent:agent-named "probe-agent")))))
+                  (is (equal '(:answered :ping) (pine/run/endpoint:ask a :ping)))
+                  (is (eq a (pine/run/endpoint:endpoint-named "probe-agent"))))
+             (pine/run/endpoint:stop a))
+           (is (null (pine/run/endpoint:endpoint-named "probe-agent")))))
     (pine:stop)))
 
 (test asking-from-inside-a-receive-is-refused-rather-than-hung
@@ -99,20 +99,20 @@ carries is what says when, and a tick runs on a worker rather than on it."
          (pine:start)
          (let* ((said (pine/data:box nil))
                 (a nil))
-           (setf a (pine/run/agent:agent
+           (setf a (pine/run/endpoint:endpoint
                     "probe-blocking"
                     (lambda (message)
                       (declare (ignore message))
                       (pine/data:put!
                        said
-                       (handler-case (pine/run/agent:ask a :ping :timeout 1)
-                         (pine/run/agent:blocking-ask () :refused))))))
+                       (handler-case (pine/run/endpoint:ask a :ping :timeout 1)
+                         (pine/run/endpoint:blocking-ask () :refused))))))
            (unwind-protect
                 (progn
-                  (pine/run/agent:tell a :go)
+                  (pine/run/endpoint:tell a :go)
                   (is-true (wait-until (lambda () (pine/data:held said))))
                   (is (eq :refused (pine/data:held said))))
-             (pine/run/agent:stop a))))
+             (pine/run/endpoint:stop a))))
     (pine:stop)))
 
 (test two-threads-writing-one-table-both-land

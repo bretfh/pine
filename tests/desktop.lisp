@@ -195,6 +195,24 @@
                  (cdr (assoc "s-o" (pine/app/compositor:bindings) :test #'equal)))
           "a config binds a wm chord the way it binds any other"))))
 
+(test a-chord-the-compositor-reports-runs-the-command-it-is-bound-to
+  "The chords were registered and looked up two different ways: BINDINGS read
+the table and dispatch reached for a hash table, which a table is not. It
+faulted into the client's own attempt every time, so pine as the window manager
+answered no key at all."
+  (with-compositor
+    (told '(:window-added :id "a" :title "one" :app-id "probe"))
+    (told '(:window-added :id "b" :title "two" :app-id "probe"))
+    (pine/app/wm:focus! (pine/app/wm:current) "a")
+    (is (equal "a" (pine/app/wm:focused)))
+    (told '(:binding :keys "s-j"))
+    (is (equal "b" (pine/app/wm:focused))
+        "the chord reached the command, rather than a type error nobody saw")
+    (pine/run/fault:forget-faults)
+    (told '(:binding :keys "s-nothing-is-bound-here"))
+    (is (null (pine/run/fault:faults))
+        "and a chord with nothing on it says so instead of faulting")))
+
 (test splitting-says-where-the-next-window-lands
   (with-compositor
     (told '(:window-added :id "a" :title "one" :app-id "probe"))

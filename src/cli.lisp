@@ -71,7 +71,7 @@
 
 (defun %watch (where)
   (multiple-value-bind (sys name) (%system :name "watch")
-    (pine/run/agent:agent name
+    (pine/run/endpoint:endpoint name
                           (lambda (message)
                             (when (eq :moved (first message))
                               (format t "~a ~a~%" (second message) (third message))

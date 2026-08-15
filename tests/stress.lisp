@@ -25,18 +25,18 @@ threads pine already had."
        (progn
          (pine:start)
          (let* ((seen (pine/data:box nil))
-                (a (pine/run/agent:agent
+                (a (pine/run/endpoint:endpoint
                     "probe-order"
                     (lambda (m) (pine/data:swap! seen (lambda (all) (cons m all)))))))
            (unwind-protect
                 (progn
-                  (dotimes (i 1000) (pine/run/agent:tell a i))
+                  (dotimes (i 1000) (pine/run/endpoint:tell a i))
                   (is-true (wait-until (lambda () (= 1000 (length (pine/data:held seen))))
                                        :seconds 30))
                   (is (equal (loop :for i :below 1000 :collect i)
                              (reverse (pine/data:held seen)))
                       "in the order they were sent"))
-             (pine/run/agent:stop a))))
+             (pine/run/endpoint:stop a))))
     (pine:stop)))
 
 (test readers-keep-reading-while-a-writer-edits

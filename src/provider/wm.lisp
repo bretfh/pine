@@ -141,6 +141,11 @@
 (defmethod node:livep ((n verb-node)) t)
 
 (defun install (root &optional (name "wm"))
+  (let ((had (node:resolve root name)))
+    (when (and had (not (typep had 'wm-node)))
+      (error "~a already answers /~a. One window manager stands there: a config
+asks for the compositor it is under, or for pine to be the one, not both."
+             (class-name (class-of had)) name)))
   (node:attach (make-instance 'wm-node :name name
                                        :describes "the compositor: its workspaces, its windows, and what it takes")
                root))

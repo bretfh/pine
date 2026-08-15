@@ -56,14 +56,14 @@ th" (pine/edit/text:region lines 0 1 2 2)))
   (with-editor (:text "hello")
     (is (typep (b) 'pine/edit/buffer:buffer))
     (is (equal "hello" (pine/fs/node:contents (b))))
-    (is (equal "/buf/scratch" (pine/fs/node:full-name (b))))
-    (is (eq (b) (pine/world/world:at pine/world/world:*world* "buf/scratch")))))
+    (is (equal "/buffer/scratch" (pine/fs/node:full-name (b))))
+    (is (eq (b) (pine/world/world:at pine/world/world:*world* "buffer/scratch")))))
 
 (test a-buffers-slots-are-nodes-and-writing-one-moves-the-buffer
   (with-editor (:text "hello
 there")
     (setf (pine/fs/node:contents
-           (pine/world/world:at pine/world/world:*world* "buf/scratch/point-line"))
+           (pine/world/world:at pine/world/world:*world* "buffer/scratch/point-line"))
           1)
     (is (eql 1 (pine/edit/buffer:point-line (b)))
         "a slot node is the slot, not a copy of it")))
@@ -191,7 +191,7 @@ there")
                (setf (pine/edit/buffer:current) opened)
                (pine/edit/buffer:move! opened :buffer 1)
                (pine/edit/buffer:insert! opened " ")
-               (pine/edit/buffer:save! opened)
+               (pine/edit/source:save! opened)
                (is (equal "(defun f () 1) " (uiop:read-file-string file))))))
       (ignore-errors (delete-file file)))))
 
@@ -339,19 +339,51 @@ x)")
     (pine/edit/prompt:answer! "ONE")
     (is (equal "ONE two ONE" (pine/fs/node:contents (b))))))
 
+(test a-buffer-opens-onto-any-node-not-only-a-file
+  "A buffer is a view onto whatever stands at a place. Nothing under src/edit
+opens a file any more, so a node class anybody writes is editable already."
+  (with-editor ()
+    (let ((b (pine/edit/buffer:make-buffer "probe-onto")))
+      (setf (pine/fs/node:contents
+             (pine/world/world:ensure pine/world/world:*world* "probe" "note"))
+            "what the node holds")
+      (pine/edit/source:visit! b "/probe/note")
+      (is (equal "what the node holds" (pine/edit/buffer:text-of b)))
+      (is (equal "/probe/note" (pine/edit/buffer:origin b)))
+      (is (null (pine/edit/buffer:file-of b))
+          "it is on a node, so there is no host path for it")
+      (setf (pine/fs/node:contents b) "written from the buffer")
+      (pine/edit/source:save! b)
+      (is (equal "written from the buffer"
+                 (pine/fs/node:contents
+                  (pine/world/world:at pine/world/world:*world* "probe/note")))
+          "and saving it writes the node back"))))
+
+(test writing-where-a-buffer-reads-from-opens-it-there
+  (with-editor ()
+    (let ((b (pine/edit/buffer:make-buffer "probe-where")))
+      (setf (pine/fs/node:contents
+             (pine/world/world:ensure pine/world/world:*world* "probe" "two"))
+            "the second place")
+      (setf (pine/fs/node:contents
+             (pine/fs/tree:at (pine/world/world:root pine/world/world:*world*)
+                              "buffer" "probe-where" "file"))
+            "/probe/two")
+      (is (equal "the second place" (pine/edit/buffer:text-of b))))))
+
 (test a-buffer-says-when-it-has-been-changed-and-stops-when-it-is-saved
   (let ((file (merge-pathnames "pine-probe-modified.txt" (uiop:temporary-directory))))
     (unwind-protect
          (with-editor ()
            (let ((b (b)))
-             (pine/edit/buffer:save! b file)
+             (pine/edit/source:save! b file)
              (is-false (pine/edit/buffer:modified b) "saving settles it")
              (pine/edit/buffer:insert! b "x")
              (is-true (pine/edit/buffer:modified b) "and typing dirties it again")
              (is (find-if (lambda (row) (search "**" row))
                           (pine:frame :width 40 :height 6))
                  "the modeline says so")
-             (pine/edit/buffer:save! b file)
+             (pine/edit/source:save! b file)
              (is-false (pine/edit/buffer:modified b) "saving settles it")))
       (ignore-errors (delete-file file)))))
 
@@ -378,7 +410,7 @@ x)")
            (pine/repl/command:run "find-file" (list (namestring file)))
            (pine/edit/buffer:insert! (pine/edit/buffer:current) "typed ")
            (is (search "typed" (pine/fs/node:contents (pine/edit/buffer:current))))
-           (pine/edit/buffer:revert! (pine/edit/buffer:current))
+           (pine/edit/source:revert! (pine/edit/buffer:current))
            (is (equal "from disk"
                       (string-right-trim (string #\Newline)
                                          (pine/fs/node:contents
@@ -559,7 +591,7 @@ three")
              (pine/repl/command:run "find-file" (list (namestring one)))
              (pine/repl/command:run "find-file" (list (namestring two)))
              (is (equal (list (namestring two) (namestring one))
-                        (subseq (pine/edit/buffer:recent) 0 2))
+                        (subseq (pine/edit/source:recent) 0 2))
                  "the last one opened is the first offered")))
       (mapc (lambda (f) (ignore-errors (delete-file f))) (list one two)))))
 

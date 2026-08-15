@@ -5,7 +5,10 @@
                     (#:session #:pine/repl/session) (#:node #:pine/fs/node)
                     (#:buffer #:pine/edit/buffer) (#:prompt #:pine/edit/prompt)
                     (#:log #:pine/run/log) (#:fault #:pine/run/fault)
-                    )
+                    (#:elsewhere #:pine/proc/elsewhere) (#:agent #:pine/net/agent)
+                    (#:process #:pine/proc/process) (#:shell #:pine/repl/shell)
+                    (#:supervisor #:pine/proc/supervisor)
+                    (#:lisp-process #:pine/proc/lisp))
   (:export #:install #:token-at #:symbol-at #:offset-of #:line-col
            #:definition #:references #:complete #:arglist #:documentation
            #:sexp-before #:defun-around #:visit #:went #:*went* #:*target*))
@@ -192,17 +195,32 @@
     (buffer:delete-region! b line (max 0 (- col (length prefix))) line col)
     (buffer:insert! b choice)))
 
+(defun image-name (i)
+  (if (typep i 'agent:agent) (agent:name i) (process:name i)))
+
+(defun images ()
+  "Every image work can be done in: the ones this pine supervises, and the
+pines it is talking to. Two relationships, one protocol."
+  (let ((s shell:*supervisor*))
+    (append (when s
+              (remove-if-not (lambda (p) (typep p 'lisp-process:lisp-process))
+                             (supervisor:processes s)))
+            (agent:agents))))
+
+(defun image-named (name)
+  (find name (images) :key #'image-name :test #'equal))
+
 (defun %there (b text)
   "Evaluate in the image SET-EVAL-TARGET named, and say what it said the way a
 session here would."
-  (let ((a (pine/net/agent:agent-named *target*)))
+  (let ((a (image-named *target*)))
     (cond ((null a) (format nil "no image named ~a" *target*))
           (t (multiple-value-bind (*package* *readtable*) (language:reading b)
-               (let ((answer (pine/net/agent:evaluate-there
-                              a (cl:read-from-string text))))
-                 (if (getf answer :fault)
-                     (format nil "~a" (getf answer :fault))
-                     (format nil "~{~s~^, ~}" (getf answer :answered)))))))))
+               (multiple-value-bind (answered fault)
+                   (elsewhere:evaluate a (cl:read-from-string text))
+                 (if fault
+                     (format nil "~a" fault)
+                     (format nil "~{~s~^, ~}" answered))))))))
 
 (defun %evaluate (b text at)
   (let* ((s (unless *target*
@@ -294,8 +312,7 @@ session here would."
                (log:note "loaded ~a" file)
                file))))
   (cmd:defcommand "set-eval-target" () (:describes "which image a form is evaluated in")
-    (let ((names (cons "local" (mapcar #'pine/net/agent:name
-                                       (pine/net/agent:agents)))))
+    (let ((names (cons "local" (mapcar #'image-name (images)))))
       (prompt:ask "Eval in: " :must-match t :candidates names
                   :then (lambda (said)
                           (setf *target* (unless (equal said "local") said))

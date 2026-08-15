@@ -13,12 +13,15 @@
                 (sb-ext:posix-environ))
         #'string<))
 
+(defun %variable (n name)
+  (node:child n name
+              (lambda () (make-instance 'variable-node :name name :parent n))))
+
 (defmethod node:nodes ((n env-node))
-  (loop :for name :in (names)
-        :collect (make-instance 'variable-node :name name :parent n)))
+  (loop :for name :in (names) :collect (%variable n name)))
 
 (defmethod node:resolve ((n env-node) name)
-  (make-instance 'variable-node :name name :parent n))
+  (%variable n name))
 
 (defmethod node:contents ((n env-node)) (names))
 

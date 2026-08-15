@@ -38,6 +38,11 @@
 (defmethod node:persistp ((n compositor)) nil)
 
 (defun pine-wm (&optional (w world:*world*))
+  (let ((had (node:resolve (world:root w) "wm")))
+    (when (and had (not (typep had 'compositor)))
+      (error "~a already answers /wm. One window manager stands there: a config
+asks for the compositor it is under, or for pine to be the one, not both."
+             (class-name (class-of had)))))
   (let ((n (make-instance 'compositor :name "wm"
                                       :describes "the windows this pine manages")))
     (node:attach n (world:root w))
@@ -194,8 +199,8 @@
       (d:pairs (d:all (mode:keys m))))))
 
 (defun %run-chord (chord)
-  (let ((command (and (mode:mode-named "wm")
-                      (gethash chord (mode:keys (mode:mode-named "wm"))))))
+  (let* ((m (mode:mode-named "wm"))
+         (command (and m (d:at (d:all (mode:keys m)) chord))))
     (if command
         (fault:attempt (lambda () (pine/repl/command:run command)) chord)
         (log:note "no command bound to ~a" chord))))

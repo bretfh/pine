@@ -136,10 +136,10 @@ an endpoint or a tick, so it makes no thread."
       (%naming "make-thread" :except '("task.lisp" "frontend.lisp"))))
 
 (test an-endpoint-is-sentos-and-not-one-of-our-own
-  "actor-of is what makes one, and pine/run/agent is where that is said."
-  (is (null (%naming "actor-context:actor-of" :except '("agent.lisp" "server.lisp")))
+  "actor-of is what makes one, and pine/run/endpoint is where that is said."
+  (is (null (%naming "actor-context:actor-of" :except '("endpoint.lisp" "server.lisp")))
       "~{~%  ~a makes an actor of its own~}"
-      (%naming "actor-context:actor-of" :except '("agent.lisp" "server.lisp"))))
+      (%naming "actor-context:actor-of" :except '("endpoint.lisp" "server.lisp"))))
 
 (test a-registry-is-a-table-and-not-a-hash-table
   "A hash table is for identity, or for one call's own scratch. Anything two
@@ -165,6 +165,31 @@ a frontend tells the daemon about its geometry is written once."
               :do (push (format nil "~a:~d" (file-namestring file) n) sites)))
     (is (<= (length sites) 1) "~d place~:p build a resize message:~{~%  ~a~}"
         (length sites) (reverse sites))))
+
+(defparameter +builds-fresh+ '("supervisor.lisp")
+  "The files whose NODES or RESOLVE may answer without NODE:CHILD, because what
+they answer is already the same object every time: the supervisor hands out the
+processes it holds, and a process is a node itself. A name added here for any
+other reason is a subtree taken out of the graph.")
+
+(test a-provider-hands-out-the-same-child-every-time
+  "A node built fresh per call cannot be depended on, so nothing reading it can
+ever be recomputed: a surface reading /face/keyword would never hear that the
+face moved. NODE:CHILD is what makes the child the same object twice."
+  (let ((loose nil))
+    (dolist (file (%files))
+      (let ((lines (%lines file)))
+        (flet ((says (what)
+                 (find-if (lambda (line) (search what line)) lines)))
+          (when (and (or (says "(defmethod node:nodes")
+                         (says "(defmethod node:resolve"))
+                     (says "make-instance")
+                     (not (says "node:child"))
+                     (not (member (file-namestring file) +builds-fresh+
+                                  :test #'equal)))
+            (push (file-namestring file) loose)))))
+    (is (null loose) "~{~%  ~a builds a child without node:child~}"
+        (reverse loose))))
 
 (defun %package-of (file)
   "The package FILE declares, as it is written."

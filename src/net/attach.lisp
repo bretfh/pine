@@ -1,12 +1,13 @@
 (defpackage #:pine/net/attach
   (:use #:cl)
-  (:local-nicknames (#:meter #:pine/run/meter) (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine/net/server)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:endpoint #:pine/run/endpoint) (#:d #:pine/data) (#:node #:pine/fs/node) (#:server #:pine/net/server)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:app #:frontend #:kinds #:attached #:received #:detached
            #:run-frontend #:client #:client-id #:client-kind #:client-display
            #:client-uri #:client-session #:clients #:push-to
            #:listen-for-attach #:attach-to #:protocol #:acceptable
            #:reap #:sweep #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached
+           #:install #:clients-node
            #:attached-at))
 (in-package #:pine/net/attach)
 
@@ -101,19 +102,18 @@
                                           :kind kind :display display :uri uri)))
            (d:swap! *clients* (lambda (all) (cons c all)))
            (push c (server:clients s))
-           (endpoint:agent (format nil "client-~d" (client-id c))
+           (endpoint:endpoint (format nil "client-~d" (client-id c))
                            (lambda (m) (received kind c m))
                            :dispatcher :pinned :in (server:actor-system s))
            (sento.actor:tell display (list :attached :id (client-id c)
                                            :version (protocol)))
            (log:note "~(~a~) attached as client ~d" kind (client-id c))
-           (%noting kind)
            (fault:attempt (lambda () (attached kind c))
                           (format nil "~(~a~) attaching" kind))
            c))))))
 
 (defun listen-for-attach (s)
-  (endpoint:agent "attach"
+  (endpoint:endpoint "attach"
                   (lambda (message)
                     (case (first message)
                       (:attach (%accept s message (getf (rest message) :display)))
@@ -123,12 +123,46 @@
                       (t nil)))
                   :dispatcher :pinned :in (server:actor-system s)))
 
-(defun %noting (kind)
-  (when pine/world/world:*world*
-    (setf (pine/fs/node:contents
-           (pine/world/world:ensure pine/world/world:*world* "attached"
-                                    (string-downcase (string kind))))
-          (length (clients kind)))))
+(defclass clients-node (node:node) ())
+(defclass client-node (node:node) ())
+
+(defun %client-at (n)
+  (find (node:name n) (clients)
+        :key (lambda (c) (princ-to-string (client-id c))) :test #'equal))
+
+(defun %client-node (n id)
+  (let ((name (princ-to-string id)))
+    (node:child n name
+                (lambda () (make-instance 'client-node :name name :parent n)))))
+
+(defmethod node:nodes ((n clients-node))
+  (loop :for c :in (clients) :collect (%client-node n (client-id c))))
+
+(defmethod node:resolve ((n clients-node) name)
+  (when (find (princ-to-string name) (clients)
+              :key (lambda (c) (princ-to-string (client-id c))) :test #'equal)
+    (%client-node n name)))
+
+(defmethod node:contents ((n clients-node))
+  (mapcar #'client-id (clients)))
+
+(defmethod node:contents ((n client-node))
+  (let ((c (%client-at n)))
+    (and c (client-kind c))))
+
+(defmethod node:leafp ((n client-node)) t)
+(defmethod node:livep ((n clients-node)) t)
+(defmethod node:livep ((n client-node)) t)
+(defmethod node:persistp ((n clients-node)) nil)
+(defmethod node:persistp ((n client-node)) nil)
+
+(defun install (root)
+  "The frontends attached here, each one where it can be read. What stood
+before was a count of each kind, which is not a thing anything can be asked
+about."
+  (node:attach (make-instance 'clients-node :name "client"
+                                            :describes "the frontends attached to this pine")
+               root))
 
 (defun sweep (&optional s)
   "Drop the clients that are not there any more. A frontend that was killed
@@ -141,7 +175,6 @@ must not still be counted, or the one that replaces it is told not to start."
                  (format nil "~(~a~) detaching" (client-kind c)))
   (d:swap! *clients* (lambda (all) (remove c all)))
   (when s (setf (server:clients s) (remove c (server:clients s))))
-  (%noting (client-kind c))
   c)
 
 (defun alive-p (c)

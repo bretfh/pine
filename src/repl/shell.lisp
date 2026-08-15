@@ -7,30 +7,32 @@
                     (#:process #:pine/proc/process) (#:super #:pine/proc/supervisor)
                     (#:task #:pine/run/task))
   (:export #:install #:here #:resolve #:commands-node #:command-node
-           #:*supervisor* #:*store*))
+           #:*supervisor*))
 (in-package #:pine/repl/shell)
 
 (defvar *supervisor* nil)
-(defvar *store* nil)
 
 (defun supervisor () *supervisor*)
-(defun store-of () *store*)
 
 (defclass commands-node (node:node) ())
-(defclass command-node (node:node)
-  ((command :initarg :command :reader command)))
+(defclass command-node (node:node) ())
+
+(defun %command (n name)
+  (node:child n name
+              (lambda () (make-instance 'command-node :name name :parent n))))
 
 (defmethod node:nodes ((n commands-node))
-  (loop :for c :in (cmd:commands)
-        :collect (make-instance 'command-node :name (cmd:name c)
-                                              :parent n :command c)))
+  (loop :for c :in (cmd:commands) :collect (%command n (cmd:name c))))
 
 (defmethod node:resolve ((n commands-node) name)
-  (let ((c (cmd:command-named name)))
-    (when c (make-instance 'command-node :name name :parent n :command c))))
+  (when (cmd:command-named name) (%command n (princ-to-string name))))
 
 (defmethod node:contents ((n commands-node)) (mapcar #'cmd:name (cmd:commands)))
-(defmethod node:contents ((n command-node)) (cmd:describes (command n)))
+(defmethod node:contents ((n command-node))
+  "What the command at this path is for, as it stands now: one redefined at the
+repl is the same path saying something else."
+  (let ((c (cmd:command-named (node:name n))))
+    (and c (cmd:describes c))))
 (defmethod node:leafp ((n command-node)) t)
 (defmethod node:persistp ((n commands-node)) nil)
 (defmethod node:persistp ((n command-node)) nil)
@@ -44,6 +46,13 @@
         ((and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
          (tree:at (world:root world:*world*) where))
         (t (tree:at (here s) (princ-to-string where)))))
+
+(defun from (where)
+  "What a path is measured from: the root when it starts at one, this session
+otherwise."
+  (if (and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
+      (world:root world:*world*)
+      (here)))
 
 (defun install ()
   (cmd:defcommand "pwd" () (:describes "where this session is")
@@ -61,16 +70,15 @@
     (let ((n (resolve session:*session* where)))
       (and n (node:contents n))))
   (cmd:defcommand "put" (where value) (:describes "write a node")
-    (let ((n (tree:ensure (if (and (stringp where) (plusp (length where))
-                                   (char= #\/ (char where 0)))
-                              (world:root world:*world*)
-                              (here))
-                          (princ-to-string where))))
+    (let ((n (tree:ensure (from where) (princ-to-string where))))
       (setf (node:contents n) value)))
-  (cmd:defcommand "mkdir" (where) (:describes "make a node")
-    (node:full-name (tree:ensure (here) (princ-to-string where))))
+  (cmd:defcommand "mkdir" (where) (:describes "make a branch")
+    (let* ((names (tree:split-name (princ-to-string where)))
+           (holder (apply #'tree:ensure (from where) (butlast names))))
+      (node:full-name
+       (node:make-child holder (concatenate 'string (car (last names)) "/")))))
   (cmd:defcommand "rm" (where) (:describes "take a node off")
-    (and (tree:erase (here) (princ-to-string where)) t))
+    (and (tree:erase (from where) (princ-to-string where)) t))
   (cmd:defcommand "mount" (where name) (:describes "put a real directory in the tree")
     (node:full-name (mount:mount where (world:root world:*world*)
                                  (princ-to-string name))))
@@ -94,7 +102,7 @@
   (cmd:defcommand "kill" (name) (:describes "stop and forget a process")
     (and (super:forget (supervisor) (princ-to-string name)) t))
   (cmd:defcommand "snapshot" () (:describes "write the world to its store")
-    (and (store-of) (store:snapshot world:*world* (store-of))))
+    (and store:*store* (store:snapshot world:*world* store:*store*)))
   (cmd:defcommand "help" (&optional name) (:describes "what a command is for")
     (if name
         (let ((c (cmd:command-named (princ-to-string name))))

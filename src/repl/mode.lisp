@@ -1,7 +1,9 @@
 (defpackage #:pine/repl/mode
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command))
-  (:export #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:remode
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:cmd #:pine/repl/command))
+  (:export #:install #:modes-node
+           #:mode #:minor #:minor-mode #:mode-named #:modes #:unmode #:remode
            #:mode-for
            #:name #:parent #:indicator #:settings #:claims #:claimsp
            #:precedence #:chain #:setting #:handle #:handler #:claimants
@@ -141,3 +143,49 @@ and finally whoever asked does it itself."
     (loop :for link :in (in-force of)
           :for c := (d:at (d:all (keys link)) chord)
           :when c :do (return (cmd:command-named c)))))
+
+(defclass modes-node (node:node) ())
+(defclass mode-node (node:node) ())
+(defclass keys-node (node:node) ())
+
+(defun %mode-node (n name)
+  (node:child n name
+              (lambda () (make-instance 'mode-node :name name :parent n))))
+
+(defmethod node:nodes ((n modes-node))
+  (loop :for m :in (modes) :collect (%mode-node n (name m))))
+
+(defmethod node:resolve ((n modes-node) name)
+  (when (mode-named name) (%mode-node n (princ-to-string name))))
+
+(defmethod node:contents ((n modes-node)) (mapcar #'name (modes)))
+
+(defmethod node:contents ((n mode-node))
+  (let ((m (mode-named (node:name n))))
+    (and m (settings m))))
+
+(defmethod node:nodes ((n mode-node))
+  (list (node:child n "keys"
+                    (lambda () (make-instance 'keys-node :name "keys" :parent n)))))
+
+(defmethod node:contents ((n keys-node))
+  "What this mode is bound to, as it stands. A chord a config added is here
+without anything having to be told about it."
+  (let ((m (mode-named (node:name (node:parent n)))))
+    (and m (d:all (keys m)))))
+
+(defmethod node:leafp ((n keys-node)) t)
+(defmethod node:livep ((n modes-node)) t)
+(defmethod node:livep ((n mode-node)) t)
+(defmethod node:livep ((n keys-node)) t)
+(defmethod node:persistp ((n modes-node)) nil)
+(defmethod node:persistp ((n mode-node)) nil)
+(defmethod node:persistp ((n keys-node)) nil)
+
+(defun install (root)
+  "Every mode there is, and what each is bound to. A mode is what an end user
+implements to make pine understand something new, so it belongs where it can be
+read rather than only in a registry."
+  (node:attach (make-instance 'modes-node :name "mode"
+                                          :describes "every mode there is")
+               root))

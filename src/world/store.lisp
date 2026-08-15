@@ -4,7 +4,8 @@
                     (#:tree #:pine/fs/tree) (#:world #:pine/world/world)
                     )
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
-           #:storablep #:written #:read-back #:keep #:keeping #:*store*))
+           #:storablep #:written #:read-back #:keep #:forget #:keeping #:*store*
+           #:install #:store-node))
 (in-package #:pine/world/store)
 
 (defvar *schema*
@@ -21,6 +22,7 @@
     (write-string (princ-to-string (file-of s)) stream)))
 
 (defun open-store (file)
+  (ensure-directories-exist file)
   (let ((db (sqlite:connect file)))
     (sqlite:execute-non-query db "pragma journal_mode = wal")
     (sqlite:execute-non-query db "pragma busy_timeout = 2000")
@@ -105,14 +107,34 @@ A crash must not cost what was written before it."
         (node:full-name n) (written (node:contents n)) (get-universal-time)))
       n)))
 
+(defun forget (n)
+  "Take N out of the store as it goes out of the tree, and whatever stood under
+it with it. A path erased here that came back on the next start would be a node
+nobody asked for."
+  (let ((s *store*))
+    (when (and s (node:persistp n))
+      (let ((path (node:full-name n)))
+        (sqlite:execute-non-query
+         (db s) "delete from node where path = ? or path like ?"
+         path (concatenate 'string path "/%"))))
+    n))
+
 (defun keeping (&optional (s *store*))
   "Write every node through as it is written, so what is in the store is what
 the tree says rather than what it said when it last stopped."
-  (setf node:*on-write* (when s #'keep))
+  (setf node:*on-write* (when s #'keep)
+        node:*on-erase* (when s #'forget))
   s)
 
 (defun restore (w s)
-  (let ((n 0))
+  "Put back what the leaves held. A path already standing is written where it
+stands, so a buffer's point comes back on the buffer and not on a value node
+beside it.
+
+Nothing is written through while this runs: the store is where these came from,
+and telling it what it just said would rewrite every row on every start."
+  (let ((n 0)
+        (node:*on-write* nil))
     (loop :for (path text) :in (sqlite:execute-to-list
                                 (db s) "select path, value from node")
           :do (let ((names (tree:split-name path)))
@@ -120,3 +142,26 @@ the tree says rather than what it said when it last stopped."
                   (world:place w names (read-back text))
                   (incf n))))
     n))
+
+(defclass store-node (node:node) ())
+
+(defmethod node:contents ((n store-node))
+  (let ((s *store*))
+    (and s (princ-to-string (file-of s)))))
+
+(defmethod node:verb ((n store-node) name arguments)
+  (declare (ignore arguments))
+  (case name
+    (:snapshot (and *store* (snapshot world:*world* *store*)))
+    (t (error "/store takes :snapshot."))))
+
+(defmethod node:leafp ((n store-node)) t)
+(defmethod node:livep ((n store-node)) t)
+(defmethod node:persistp ((n store-node)) nil)
+
+(defun install (root)
+  "Where this pine is keeping what it was told to keep, and how to make it
+write everything down now rather than at a clean stop."
+  (node:attach (make-instance 'store-node :name "store"
+                                          :describes "where this pine persists")
+               root))

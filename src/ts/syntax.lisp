@@ -110,7 +110,7 @@
   (let ((full (%inherit (and parent (%raw parent)) raw)))
     (pl:keep! *compiled* name (cons full (%compile name full)))
     (when world:*world*
-      (setf (node:contents (world:ensure world:*world* "syntax"
+      (setf (node:contents (world:ensure world:*world* "lang"
                                          (string-downcase (string name))))
             (pl:at (pl:at full :options) :doc)))
     name))
@@ -144,7 +144,7 @@ follows it rather than the path it happens to be under."
 
 (defun install (&optional (w world:*world*))
   (dolist (name (languages) w)
-    (setf (node:contents (world:ensure w "syntax" (string-downcase (string name))))
+    (setf (node:contents (world:ensure w "lang" (string-downcase (string name))))
           (pl:at (pl:at (%raw name) :options) :doc))))
 
 (defun %state (runtime name)

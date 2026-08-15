@@ -1,21 +1,24 @@
 (defpackage #:pine/proc/process
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:task #:pine/run/task) (#:timer #:pine/run/timer))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:task #:pine/run/task) (#:timer #:pine/run/timer))
+  (:import-from #:pine/fs/node #:name)
   (:export #:process #:program #:thread-process #:name #:state #:attempts
            #:restarts-p #:backoff #:start #:stop #:alivep #:said #:emit
-           #:took #:exit-of #:fault #:*out-kept* #:argv #:env #:thunk #:every-seconds))
+           #:took #:exit-of #:since #:fault #:*out-kept* #:argv #:env #:thunk
+           #:every-seconds))
 (in-package #:pine/proc/process)
 
 (defvar *out-kept* 200)
 (defvar *backoff-cap* 60)
 
-(defclass process ()
-  ((name        :initarg :name    :reader name)
-   (state       :initform :stopped :accessor state)
+(defclass process (node:node)
+  ((state       :initform :stopped :accessor state)
    (attempts    :initform 0        :accessor attempts)
    (restarts-p  :initarg :restarts :accessor restarts-p :initform t)
    (took        :initform nil      :accessor took)
    (exit-of     :initform nil      :accessor exit-of)
+   (since       :initform nil      :accessor since)
    (fault       :initform nil      :accessor fault)
    (said        :initform (d:box nil) :reader said)))
 
@@ -30,6 +33,31 @@
 (defmethod print-object ((p process) stream)
   (print-unreadable-object (p stream :type t)
     (format stream "~a ~a" (name p) (state p))))
+
+(defclass said-node (node:node) ())
+
+(defmethod node:contents ((n said-node)) (d:held (said (node:parent n))))
+(defmethod node:leafp ((n said-node)) t)
+(defmethod node:livep ((n said-node)) t)
+(defmethod node:persistp ((n said-node)) nil)
+
+(defmethod initialize-instance :after ((p process) &key)
+  (node:slots p p "state" 'state "attempts" 'attempts)
+  (node:attach (make-instance 'said-node :name "said"
+                                         :describes "the last lines it said")
+               p))
+
+(defmethod node:contents ((p process)) (state p))
+(defmethod node:livep ((p process)) t)
+(defmethod node:persistp ((p process)) nil)
+
+(defmethod node:verb ((p process) name arguments)
+  (declare (ignore arguments))
+  (case name
+    (:start   (start p) (state p))
+    (:stop    (stop p) (state p))
+    (:restart (stop p) (start p) (state p))
+    (t (error "~a takes :start, :stop or :restart." (node:full-name p)))))
 
 (defun emit (p line)
   (d:swap! (said p)
@@ -67,7 +95,7 @@
                        (lambda ()
                          (loop :for line := (handler-case (read-line stream nil nil)
                                               (stream-error () nil))
-                               :while line
+                               :while (and line (not (task:stoppingp)))
                                :do (emit p line))))))
     (let ((it (uiop:launch-program (argv p)
                                    :output :stream :error-output :output

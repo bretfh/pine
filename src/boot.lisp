@@ -6,13 +6,14 @@
                     (#:mount #:pine/fs/mount) (#:watch #:pine/fs/watch)
                     (#:world #:pine/world/world) (#:store #:pine/world/store)
                     (#:metric #:pine/world/metric)
+                    (#:image #:pine/world/image)
                     (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
                     (#:session #:pine/repl/session) (#:shell #:pine/repl/shell)
                     (#:process #:pine/proc/process)
                     (#:supervisor #:pine/proc/supervisor)
                     (#:lisp-process #:pine/proc/lisp)
                     (#:task #:pine/run/task) (#:timer #:pine/run/timer)
-                    (#:endpoint #:pine/run/agent) (#:fault #:pine/run/fault)
+                    (#:endpoint #:pine/run/endpoint) (#:fault #:pine/run/fault)
                     (#:libs #:pine/run/libs) (#:log #:pine/run/log)
                     (#:place #:pine/path/place)
                     (#:ui #:pine/ui/paths) (#:css #:pine/ui/css)
@@ -24,7 +25,8 @@
                     (#:power #:pine/provider/power) (#:network #:pine/provider/net)
                     (#:media #:pine/provider/media) (#:wm #:pine/provider/wm)
                     (#:live #:pine/provider/live)
-                    (#:buffer #:pine/edit/buffer) (#:window #:pine/edit/window)
+                    (#:buffer #:pine/edit/buffer) (#:source #:pine/edit/source)
+                    (#:window #:pine/edit/window)
                     (#:defaults #:pine/edit/defaults) (#:key #:pine/edit/key)
                     (#:render #:pine/edit/render) (#:term #:pine/edit/term)
                     (#:motion #:pine/edit/motion) (#:listing #:pine/edit/listing)
@@ -36,18 +38,18 @@
                     (#:control #:pine/net/control) (#:agent #:pine/net/agent)
                     (#:desktop #:pine/app/desktop) (#:wm-app #:pine/app/wm)
                     (#:compositor #:pine/app/compositor))
-  (:export #:start #:stop #:main #:*supervisor* #:*store* #:*image* #:here
+  (:export #:start #:stop #:main #:*supervisor* #:*image* #:here
            #:describe #:frame #:type!
            #:daemon #:quit #:spawn-agent #:run-app #:load-config #:config-file
+           #:store-file
            #:user-package #:write-at #:read-at
            #:audio #:screen #:power #:network #:media #:procfs #:shell #:niri
+           #:devices
            #:compositor #:style
            #:frontend #:declare-frontends #:+frontends+))
 (in-package #:pine)
 
 (defvar *supervisor* nil)
-
-(defvar *store* nil)
 
 (defvar *image* nil)
 
@@ -76,13 +78,7 @@
     (:pine/data "map" "seq" "set")))
 
 (defun start (&key (name "pine") store remoting)
-  (flet ((seed-modes ()
-           (mode:mode "text" :settings '(:tab-width 8 :indicator "Text"))
-           (mode:mode "prog" :parent "text" :settings '(:indent 2 :comment ";"))
-           (mode:mode "lisp" :parent "prog" :settings '(:indicator "Lisp")
-                             :claims '((:files "*.lisp" "*.asd" "*.cl")))
-           (mode:mode "shell" :settings '(:indicator "Shell")))
-         (seed-syntax ()
+  (flet ((seed-syntax ()
            (let ((runtime (runtime:make-ts-runtime)))
              (fault:attempt (lambda () (runtime:ensure-ts runtime))
                             "loading tree-sitter")
@@ -102,19 +98,24 @@
   (node:attach (make-instance 'shell:commands-node :name "cmd"
                                                    :describes "every command there is")
                (world:root world:*world*))
-  (world:ensure world:*world* "buf")
-  (world:ensure world:*world* "win")
-  (setf shell:*supervisor* *supervisor* shell:*store* *store*)
+  (world:ensure world:*world* "buffer")
+  (world:ensure world:*world* "window")
+  (setf shell:*supervisor* *supervisor*)
   (shell:install)
-  (seed-modes)
   (ui:install world:*world*)
   (let ((root (world:root world:*world*)))
+    (supervisor:install *supervisor* root)
+    (image:install root)
     (metric:install root)
+    (store:install root)
+    (mode:install root)
+    (attach:install root)
     (sh:install root)
     (env:install root)
     (sys:install root)
-    (clock:install root :supervisor *supervisor*)
+    (clock:install (world:ensure world:*world* "dev") :supervisor *supervisor*)
     (mount:mount "/" root "file"))
+  (source:install)
   (defaults:install)
   (motion:install)
   (listing:install)
@@ -132,10 +133,9 @@
     (setf (buffer:current) scratch)
     (window:seed! scratch))
   (when store
-    (setf *store* (store:open-store store))
-    (setf shell:*store* *store*)
-    (store:restore world:*world* *store*)
-    (store:keeping *store*))
+    (store:open-store store)
+    (store:restore world:*world* store:*store*)
+    (store:keeping))
   (supervisor:watch *supervisor*)
   (timer:every-seconds 5 (lambda () (attach:sweep *image*))
                        :as :reap :what "sweeping dead clients")
@@ -158,11 +158,12 @@
   (dolist (c (copy-list (attach:clients))) (attach:reap c *image*))
   (editor:close-all)
   (desktop:close-all)
-  (setf node:*on-write* nil)
-  (when *store*
-    (ignore-errors (store:snapshot world:*world* *store*))
-    (ignore-errors (store:close-store *store*))
-    (setf *store* nil))
+  (setf node:*on-write* nil
+        node:*on-erase* nil)
+  (when store:*store*
+    (fault:attempt (lambda () (store:snapshot world:*world* store:*store*))
+                   "writing the world down")
+    (store:close-store store:*store*))
   (dolist (tk (task:tasks)) (task:stop tk))
   (timer:leave)
   (when *image*
@@ -170,7 +171,7 @@
     (setf *image* nil net:*server* nil))
   t)
 
-(defun main (&key store)
+(defun main (&key (store (store-file)))
   (start :store store)
   (let ((s (session:open-session :name "console" :mode "shell"
                                  :node (world:root world:*world*)
@@ -189,16 +190,21 @@
 
 (defun procfs () (live:attend (sys:install (world:root world:*world*))))
 (defun shell () (sh:install (world:root world:*world*)))
+(defun devices ()
+  "Where the machine's own things hang. A device is read and operated; /sys is
+what the machine is, and these are what it has."
+  (world:ensure world:*world* "dev"))
+
 (defun audio (&optional (name "audio"))
-  (live:attend (audio:install (world:root world:*world*) name)))
+  (live:attend (audio:install (devices) name)))
 (defun screen (&optional (name "screen"))
-  (live:attend (screen:install (world:root world:*world*) name)))
+  (live:attend (screen:install (devices) name)))
 (defun power (&optional (name "power"))
-  (live:attend (power:install (world:root world:*world*) name)))
+  (live:attend (power:install (devices) name)))
 (defun network (&optional (name "net"))
-  (live:attend (network:install (world:root world:*world*) name)))
+  (live:attend (network:install (devices) name)))
 (defun media (&key (name "media") player)
-  (live:attend (media:install (world:root world:*world*) :name name :player player)))
+  (live:attend (media:install (devices) :name name :player player)))
 
 (defun niri (&optional (name "wm")) (live:attend (wm:install (world:root world:*world*) name)))
 
@@ -239,6 +245,11 @@
 
 (defun config-file ()
   (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home)))
+
+(defun store-file ()
+  "Where a pine keeps what it was told to keep. Beside the config, under the
+directory a machine puts a program's own data in."
+  (merge-pathnames "pine/world.db" (uiop:xdg-data-home)))
 
 (defun load-config (&optional (file (config-file)))
   (user-package)
@@ -282,7 +293,6 @@ its environment."
                 (attach:attached-p (intern (string-upcase verb) :keyword)))
       (let ((p (frontend verb)))
         (supervisor:supervise *supervisor* p)
-        (setf (node:contents (world:ensure world:*world* "proc" verb)) :declared)
         (fault:attempt (lambda () (process:start p))
                        (format nil "starting the ~a frontend" verb)))))
   (mapcar #'process:name (supervisor:processes *supervisor*)))
@@ -297,8 +307,13 @@ its environment."
                 (sb-ext:exit :abort t :code 0)))
   t)
 
-(defun daemon (&key store (remoting net:*port*) (config (config-file)))
-  (start :store store :remoting remoting)
+(defun daemon (&key (store (store-file)) (remoting net:*port*)
+                    (config (config-file)))
+  "The store is opened after the config, not with the image. A surface a config
+declares takes the name it is declared under, so a panel restored before the
+config would be the value node the surface then replaced, and whether it was
+shown could never survive a restart."
+  (start :remoting remoting)
   (cmd:defcommand "agents" () (:describes "every image attached to this one")
     (mapcar #'agent:name (agent:agents)))
   (cmd:defcommand "clients" () (:describes "every frontend attached")
@@ -308,6 +323,10 @@ its environment."
         control:*agents* (lambda () (mapcar #'agent:name (agent:agents))))
   (control:serve *image* :on-quit #'quit)
   (load-config config)
+  (when store
+    (store:open-store store)
+    (log:note "~d node~:p came back" (store:restore world:*world* store:*store*))
+    (store:keeping))
   (log:note "~a: remoting ~d, ~d command~:p, ~d running"
              (world:name world:*world*)
              (net:remoting-port *image*)

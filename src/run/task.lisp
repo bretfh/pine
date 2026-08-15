@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data))
   (:export #:task #:spawn #:tasks #:task-named #:name #:alivep #:stop #:join
-           #:fault #:answered #:*tasks* #:once #:stopping))
+           #:fault #:answered #:*tasks* #:once #:stopping #:stoppingp))
 (in-package #:pine/run/task)
 
 (defvar *tasks* (d:box nil))
@@ -41,6 +41,8 @@
     (not (alivep tk))))
 
 (defun stoppingp (&optional (tk *task*))
+  "Whether this task has been asked to stop. A loop that blocks on a stream
+cannot be interrupted, so what can check between reads has to."
   (and tk (d:held (stopping tk))))
 
 (defun spawn (name thunk)

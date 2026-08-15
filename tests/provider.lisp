@@ -10,7 +10,7 @@
 
 (test the-providers-are-nodes-under-the-root
   (with-providers
-    (dolist (name '("sh" "env" "sys" "clock" "file"))
+    (dolist (name '("sh" "env" "sys" "dev/clock" "file"))
       (is-true (pine/world/world:at pine/world/world:*world* name)
                "~a is not mounted" name))))
 
@@ -50,10 +50,10 @@ the person's own program, and that is what /sh remembers."
 
 (test the-clock-is-a-node-and-a-process-keeps-it-current
   (with-providers
-    (is (integerp (held-at "clock")))
-    (is (stringp (held-at "clock/hour")))
-    (is (= 2 (length (held-at "clock/hour"))))
-    (is (integerp (held-at "clock/year")))
+    (is (integerp (held-at "dev/clock")))
+    (is (stringp (held-at "dev/clock/hour")))
+    (is (= 2 (length (held-at "dev/clock/hour"))))
+    (is (integerp (held-at "dev/clock/year")))
     (is (find "clock" (pine/proc/supervisor:processes pine:*supervisor*)
               :key #'pine/proc/process:name :test #'equal)
         "the time is kept current by a process, not a thread that sleeps")))
@@ -91,7 +91,7 @@ the person's own program, and that is what /sh remembers."
 (test what-answers-from-the-world-is-not-walked-into-by-the-store
   (with-providers
     (let ((live (pine/repl/command:run "live")))
-      (dolist (name '("/sh" "/env" "/sys" "/clock" "/file"))
+      (dolist (name '("/sh" "/env" "/sys" "/dev/clock" "/file"))
         (is (member name live :test #'equal) "~a should be live" name)))
     (is (null (pine/fs/node:livep (pine/edit/buffer:current)))
         "a buffer is pine's own, so the store keeps it")))
@@ -143,14 +143,15 @@ nothing will ever release."
     (unwind-protect
          (progn
            (pine/proc/process:start p)
-           (let ((pid (pine/proc/lisp:evaluate
+           (let ((pid (first
+                       (pine/proc/elsewhere:evaluate
                        p `(progn (pine:start)
                                  (let ((n (pine/provider/sh:streaming ,line)))
                                    (pine/provider/sh:listen! n)
                                    (sleep 0.5)
                                    (uiop:process-info-pid
                                     (pine/data:held (pine/provider/sh::took n)))))
-                       :timeout 180)))
+                       :timeout 180))))
              (is-true (%alive-p pid) "the other image is listening")
              (sb-posix:kill (uiop:process-info-pid (pine/proc/process:took p)) 9)
              (loop :repeat 100 :while (pine/proc/process:alivep p) :do (sleep 0.05))

@@ -7,7 +7,7 @@
                     (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
                     (#:surface #:pine/app/surface)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
-                    (#:endpoint #:pine/run/agent))
+                    (#:endpoint #:pine/run/endpoint))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
            #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h #:font-px
@@ -122,7 +122,7 @@ neither a slow command nor a slow frame holds up the loop reading from the
 client, and the keys still land in the order they were typed. Pinned: a command
 can stand in a fault, and a receive that parks takes its worker with it."
   (setf (drawing s)
-        (endpoint:agent (format nil "editor-~d" (attach:client-id (client-of s)))
+        (endpoint:endpoint (format nil "editor-~d" (attach:client-id (client-of s)))
                      (lambda (message) (%work s message))
                      :dispatcher :pinned)))
 

@@ -12,7 +12,7 @@
 
 (test a-node-has-an-identity-that-outlives-what-it-holds
   (let* ((w (pine/world/world:make-world))
-         (n (pine/world/world:ensure w "buf" "scratch")))
+         (n (pine/world/world:ensure w "buffer" "scratch")))
     (let ((id (pine/world/world:identity-of w n)))
       (is (integerp id))
       (setf (pine/fs/node:contents n) "one")
@@ -22,7 +22,7 @@
 
 (test what-persists-is-a-property-of-the-class
   (let* ((w (pine/world/world:make-world))
-         (held (pine/world/world:ensure w "buf" "scratch" "text"))
+         (held (pine/world/world:ensure w "buffer" "scratch" "text"))
          (worked-out (pine/fs/computed:computed "sum" (lambda () 42))))
     (pine/fs/node:attach worked-out (pine/world/world:root w))
     (is-true (pine/fs/node:persistp held))
@@ -32,15 +32,15 @@
 (test a-snapshot-comes-back-with-what-was-in-it
   (with-store (s)
     (let ((w (pine/world/world:make-world)))
-      (pine/world/world:place w '("buf" "scratch" "text") "hello")
-      (pine/world/world:place w '("win" "width") 80)
+      (pine/world/world:place w '("buffer" "scratch" "text") "hello")
+      (pine/world/world:place w '("window" "width") 80)
       (pine/world/world:place w '("mode" "lisp" "indent") 2)
       (is (eql 3 (pine/world/store:snapshot w s))))
     (let ((back (pine/world/world:make-world)))
       (is (eql 3 (pine/world/store:restore back s)))
       (is (equal "hello" (pine/fs/node:contents
-                          (pine/world/world:at back "buf/scratch/text"))))
-      (is (eql 80 (pine/fs/node:contents (pine/world/world:at back "win/width"))))
+                          (pine/world/world:at back "buffer/scratch/text"))))
+      (is (eql 80 (pine/fs/node:contents (pine/world/world:at back "window/width"))))
       (is (eql 2 (pine/fs/node:contents
                   (pine/world/world:at back "mode/lisp/indent")))))))
 
@@ -63,6 +63,110 @@ a node like any other, so it is in the snapshot."
       (pine/world/world:place w '("ok") 1)
       (pine/world/world:place w '("live") (lambda () :a-closure))
       (is (eql 1 (pine/world/store:snapshot w s))))))
+
+(test erasing-a-node-takes-what-it-held-out-of-the-store
+  "A path erased here that came back on the next start would be a node nobody
+asked for, and no way to be rid of it short of the file."
+  (with-store (s)
+    (let ((w (pine/world/world:make-world)))
+      (unwind-protect
+           (progn
+             (pine/world/store:keeping s)
+             (pine/world/world:place w '("kept" "note") "here")
+             (is (= 1 (length (sqlite:execute-to-list
+                               (pine/world/store::db s)
+                               "select path from node where path = ?"
+                               "/kept/note")))
+                 "it is written through as it is written")
+             (pine/fs/tree:erase (pine/world/world:root w) "kept" "note")
+             (is (null (sqlite:execute-to-list
+                        (pine/world/store::db s)
+                        "select path from node where path = ?"
+                        "/kept/note"))
+                 "and erasing it takes the row with it"))
+        (pine/world/store:keeping nil)))))
+
+(test erasing-a-node-takes-what-stood-under-it-too
+  (with-store (s)
+    (let ((w (pine/world/world:make-world)))
+      (unwind-protect
+           (progn
+             (pine/world/store:keeping s)
+             (pine/world/world:place w '("kept" "a" "one") 1)
+             (pine/world/world:place w '("kept" "a" "two") 2)
+             (pine/world/world:place w '("kept" "b") 3)
+             (pine/fs/tree:erase (pine/world/world:root w) "kept" "a")
+             (is (= 1 (length (sqlite:execute-to-list
+                               (pine/world/store::db s)
+                               "select path from node")))
+                 "what was under it went with it, and what was beside it stayed"))
+        (pine/world/store:keeping nil)))))
+
+(test what-comes-back-lands-on-the-node-that-was-already-there
+  "The store fills leaves in; the shape is each install's to build.
+/buffer/scratch/point-line is a slot on the scratch buffer, so what comes back
+moves the buffer rather than standing beside it as a value nobody reads."
+  (let ((file (namestring (merge-pathnames "pine-probe-point.db"
+                                           (uiop:temporary-directory)))))
+    (unwind-protect
+         (progn
+           (unwind-protect
+                (progn
+                  (pine:start :store file)
+                  (setf (pine/fs/node:contents (pine/edit/buffer:current))
+                        (format nil "one~%two~%three"))
+                  (pine/edit/buffer:goto! (pine/edit/buffer:current) 2 1))
+             (pine:stop))
+           (unwind-protect
+                (progn
+                  (pine:start :store file)
+                  (let ((n (pine/fs/tree:at
+                            (pine/world/world:root pine/world/world:*world*)
+                            "buffer" "scratch" "point-line")))
+                    (is (typep n 'pine/fs/node:slot-node)
+                        "the path is still the buffer's slot, not a fresh value")
+                    (is (= 2 (pine/edit/buffer:point-line
+                              (pine/edit/buffer:buffer-named "scratch")))
+                        "and what came back moved the buffer itself")))
+             (pine:stop)))
+      (ignore-errors (delete-file file)))))
+
+(test a-panel-that-was-up-is-up-again
+  "A surface takes the name a config declares it under, and attaching one
+replaces whatever stood there. Restoring before the config would hand the
+surface a value node to throw away, so whether a panel was shown could never
+survive a restart. The daemon reads the store after the config for that reason."
+  (let ((file (namestring (merge-pathnames "pine-probe-panel.db"
+                                           (uiop:temporary-directory))))
+        (config (merge-pathnames "pine-probe-panel-init.lisp"
+                                 (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (out config :direction :output :if-exists :supersede)
+             (write-string "(in-package :pine)
+(pine/app/surface:surface \"probe-panel\" (lambda () nil) :as :panel)" out))
+           (unwind-protect
+                (progn
+                  (pine:daemon :remoting 0 :store file :config config)
+                  (is-false (pine/app/surface:shownp
+                             (pine/app/surface:surface-named "probe-panel"))
+                            "a panel starts down")
+                  (pine/app/surface:show! "probe-panel"))
+             (pine:stop))
+           (unwind-protect
+                (progn
+                  (pine:daemon :remoting 0 :store file :config config)
+                  (is-true (pine/app/surface:shownp
+                            (pine/app/surface:surface-named "probe-panel"))
+                           "and comes back up, on the surface and not beside it"))
+             (pine:stop)))
+      (ignore-errors (delete-file file))
+      (ignore-errors (delete-file config)))))
+
+(test where-a-pine-keeps-what-it-was-told-to-keep
+  (is (search "pine" (namestring (pine:store-file)))
+      "under a directory of its own, so nothing else in the share is disturbed")
+  (is (equal "db" (pathname-type (pine:store-file)))))
 
 (test a-structured-value-goes-into-the-store-and-comes-back-as-itself
   (let ((file (merge-pathnames "pine-probe-store.db" (uiop:temporary-directory))))
@@ -103,13 +207,13 @@ a node like any other, so it is in the snapshot."
                          (pine/world/world:ensure pine/world/world:*world* "probe"))
                         :written)
                   (let ((rows (sqlite:execute-to-list
-                               (pine/world/store::db pine:*store*)
+                               (pine/world/store::db pine/world/store:*store*)
                                "select path, value from node where path = '/probe'")))
                     (is-true rows
                              "it is on disk already, not waiting for a clean stop")))
              (setf pine/fs/node:*on-write* nil)
-             (ignore-errors (pine/world/store:close-store pine:*store*))
-             (setf pine:*store* nil)
+             (ignore-errors (pine/world/store:close-store pine/world/store:*store*))
+             (setf pine/world/store:*store* nil)
              (pine:stop))
            (unwind-protect
                 (progn
@@ -133,8 +237,8 @@ the store had already been told, not what a snapshot would have written."
       (unwind-protect
            (progn
              (pine/proc/process:start p)
-             (is (eq :written
-                     (pine/proc/lisp:evaluate
+             (is (equal '(:written)
+                     (pine/proc/elsewhere:evaluate
                       p `(progn (pine:start :store ,(namestring file))
                                 (setf (pine/fs/node:contents
                                        (pine/world/world:ensure
@@ -193,8 +297,13 @@ is the only way one can be laid beside the other."
          (pine/run/meter:reset)
          (dotimes (n 3) (pine/edit/render:frame-tree :cols 40 :rows 10))
          (let ((rows (pine/repl/command:run "metrics")))
-           (is (equal rows (pine/run/meter:said))
-               "the command answers the instruments, not a rendering of them")
+           (is (equal (mapcar (lambda (r) (getf r :name)) rows)
+                      (mapcar (lambda (r) (getf r :name)) (pine/run/meter:said)))
+               "the command answers the instruments themselves")
+           (is-true (every (lambda (r) (and (consp r) (getf r :kind))) rows)
+               "each one is the row the table keeps, not a line of text.
+What a reading says of the clock -- seconds, per-second -- moves between two
+reads, so the rows are the same instruments and not the same numbers.")
            (let ((frame (find :frame rows :key (lambda (r) (getf r :name)))))
              (is-true frame)
              (is (= 3 (getf frame :count))))

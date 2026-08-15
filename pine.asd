@@ -28,7 +28,7 @@
                           :serial t
                           :components ((:file "libs") (:file "task") (:file "fault")
                                        (:file "meter") (:file "timer")
-                                       (:file "agent") (:file "log")))
+                                       (:file "endpoint") (:file "log")))
                  (:module "fs"
                           :serial t
                           :components ((:file "node") (:file "computed")
@@ -37,11 +37,11 @@
                  (:module "world"
                           :serial t
                           :components ((:file "world") (:file "store")
-                                       (:file "metric")))
+                                       (:file "metric") (:file "image")))
                  (:module "proc"
                           :serial t
-                          :components ((:file "process") (:file "lisp")
-                                       (:file "supervisor")))
+                          :components ((:file "process") (:file "elsewhere")
+                                       (:file "lisp") (:file "supervisor")))
                  (:module "repl"
                           :serial t
                           :components ((:file "command") (:file "mode")
@@ -77,7 +77,7 @@
                  (:module "edit"
                           :serial t
                           :components ((:file "text") (:file "history") (:file "buffer")
-                                       (:file "language")
+                                       (:file "source") (:file "language")
                                        (:file "window") (:file "prompt")))
                  (:module "parser"
                           :serial t :pathname "ts/"
@@ -109,7 +109,7 @@
                 :serial t
                 :pathname "tests/"
                 :components ((:file "suite") (:file "style")
-                             (:file "run") (:file "vt") (:file "layout") (:file "fs") (:file "world")
+                             (:file "run") (:file "vt") (:file "layout") (:file "fs") (:file "world") (:file "tree")
                              (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "isearch") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "desktop") (:file "stress") (:file "boot"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)

@@ -78,7 +78,7 @@
     (typed "save-buffer")
     (let ((pick (first (pine/edit/prompt:matching))))
       (is (equal "save-buffer" (pine/edit/prompt:name-of pick)))
-      (is (equal "write the buffer to its file"
+      (is (equal "write the buffer back where it came from"
                  (pine/edit/prompt:annotation pick)))
       (is (search "write the buffer" (pine/edit/prompt:shows pick 60))
           "the annotation is shown beside the name, not instead of it"))

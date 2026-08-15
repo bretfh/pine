@@ -40,8 +40,7 @@
 (defun ensure (from &rest pieces)
   (loop :with n := from
         :for name :in (%names pieces)
-        :do (setf n (or (node:resolve n name)
-                        (node:attach (node:make-node name) n)))
+        :do (setf n (or (node:resolve n name) (node:make-child n name)))
         :finally (return n)))
 
 (defun place (from pieces value)
@@ -52,7 +51,7 @@
 (defun erase (from &rest pieces)
   (let* ((names (%names pieces))
          (holder (apply #'at from (butlast names))))
-    (when holder (node:detach holder (car (last names))))))
+    (when holder (node:erase-child holder (car (last names))))))
 
 (defun walk (n function &key (depth -1) (into (complement #'node:livep)))
   (funcall function n)

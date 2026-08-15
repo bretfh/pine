@@ -1,10 +1,11 @@
 (defpackage #:pine/net/agent
   (:use #:cl)
-  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine/net/server)
+  (:local-nicknames (#:endpoint #:pine/run/endpoint) (#:d #:pine/data) (#:server #:pine/net/server)
                     (#:attach #:pine/net/attach) (#:fault #:pine/run/fault)
+                    (#:elsewhere #:pine/proc/elsewhere)
                     (#:session #:pine/repl/session) (#:log #:pine/run/log))
   (:export #:remote-session #:open-remote #:answer-for #:serve #:agents
-           #:agent #:agent-named #:name #:there #:evaluate-there
+           #:agent #:agent-named #:name #:ref
            #:register #:forget #:*agents* #:listen-for-agents))
 (in-package #:pine/net/agent)
 
@@ -12,9 +13,9 @@
 (defvar *timeout* 30)
 
 (defclass agent ()
-  ((name  :initarg :name  :reader name)
-   (there :initarg :there :accessor there)
-   (uri   :initarg :uri   :accessor uri :initform nil)))
+  ((name :initarg :name :reader name)
+   (ref  :initarg :ref  :accessor ref)
+   (uri  :initarg :uri  :accessor uri :initform nil)))
 
 (defmethod print-object ((a agent) stream)
   (print-unreadable-object (a stream :type t)
@@ -23,8 +24,8 @@
 (defclass remote-session (session:session)
   ((agent :initarg :agent :reader agent)))
 
-(defun register (name there &key uri)
-  (let ((a (make-instance 'agent :name name :there there :uri uri)))
+(defun register (name ref &key uri)
+  (let ((a (make-instance 'agent :name name :ref ref :uri uri)))
     (d:keep! *agents* name a)
     a))
 
@@ -40,18 +41,35 @@
   (apply #'make-instance 'remote-session :agent a :name (name a) initargs))
 
 (defmethod session:evaluate ((s remote-session) form)
-  (let ((answer (evaluate-there (agent s) form)))
+  (multiple-value-bind (answered fault offers said)
+      (elsewhere:evaluate (agent s) form)
+    (declare (ignore offers))
     (make-instance 'session:evaluation
-                   :form form
-                   :answered (and (not (getf answer :fault)) (getf answer :answered))
-                   :fault (getf answer :fault)
-                   :said (or (getf answer :said) ""))))
+                   :form form :answered answered :fault fault
+                   :said (or said ""))))
 
-(defun evaluate-there (a form &key (timeout *timeout*))
-  (let ((reply (sento.actor:ask-s (there a) (list :evaluate form) :time-out timeout)))
+(defmethod elsewhere:evaluate ((a agent) form &key (timeout *timeout*))
+  "Work in a pine reached over remoting. What it says crosses as data, so the
+image on the other end may be on another machine.
+
+A fault there unwinds there: this transport carries what broke and not the
+restarts it was standing in, which is why OFFERS is empty. Taking one is
+RESUME-THERE's, and it needs the far side to stand still rather than answer."
+  (let ((reply (sento.actor:ask-s (ref a) (list :evaluate form)
+                                  :time-out timeout)))
     (if (and (consp reply) (eq :ok (car reply)))
-        (cdr reply)
-        (list :fault (format nil "~a" reply)))))
+        (let ((answer (cdr reply)))
+          (values (getf answer :answered) (getf answer :fault) nil
+                  (or (getf answer :said) "")))
+        (values nil (format nil "~a" reply) nil ""))))
+
+(defmethod elsewhere:resume-there ((a agent) name)
+  "Nothing to take: the far side answered and unwound rather than standing in
+the fault, so by the time a restart is chosen here there is no thread there
+holding it. Standing still over remoting is what SERVE would have to do, and
+nothing calls SERVE yet."
+  (declare (ignore a name))
+  nil)
 
 (defun %evaluate-here (form)
   (let ((said (make-string-output-stream)))
@@ -64,7 +82,7 @@
               :said (get-output-stream-string said))))))
 
 (defun answer-for (sys &key (name "agent"))
-  (endpoint:agent name
+  (endpoint:endpoint name
                   (lambda (message)
                     (case (first message)
                       (:evaluate (cons :ok (%evaluate-here (second message))))
@@ -84,7 +102,7 @@
       home)))
 
 (defun listen-for-agents (s)
-  (endpoint:agent "agents"
+  (endpoint:endpoint "agents"
     (lambda (message)
       (case (first message)
         (:here (destructuring-bind (&key name uri) (rest message)

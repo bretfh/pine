@@ -1,6 +1,6 @@
 (defpackage #:pine/ts/parser
   (:use #:cl)
-  (:local-nicknames (#:meter #:pine/run/meter) (#:language #:pine/edit/language) (#:endpoint #:pine/run/agent)
+  (:local-nicknames (#:meter #:pine/run/meter) (#:language #:pine/edit/language) (#:endpoint #:pine/run/endpoint)
                     (#:node #:pine/fs/node) (#:mode #:pine/repl/mode)
                     (#:runtime #:pine/ts/runtime) (#:syntax #:pine/ts/syntax)
                     (#:hl #:pine/ts/highlight) (#:d #:pine/data))
@@ -124,7 +124,7 @@ what its mode says."
       (let ((p (make-instance 'parser :buffer b :language language :state ps
                                       :task nil)))
         (setf (slot-value p 'running)
-              (endpoint:agent (%name-for b)
+              (endpoint:endpoint (%name-for b)
                            (lambda (message) (%receive p message))
                            :dispatcher :parse))
         p)))))
