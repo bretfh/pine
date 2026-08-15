@@ -36,7 +36,8 @@
                                        (:file "watch")))
                  (:module "world"
                           :serial t
-                          :components ((:file "world") (:file "store")))
+                          :components ((:file "world") (:file "store")
+                                       (:file "metric")))
                  (:module "proc"
                           :serial t
                           :components ((:file "process") (:file "lisp")

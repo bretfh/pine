@@ -156,3 +156,51 @@ the store had already been told, not what a snapshot would have written."
                "and it is there for the image that starts next"))
       (pine:stop)
       (ignore-errors (delete-file file)))))
+
+(test what-the-daemon-is-doing-reads-through-the-tree
+  "A number about the running daemon has to be reachable the way everything
+else is: pine read /metric/frame/p95, or a widget in a bar."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (pine/run/meter:reset)
+         (let ((b (pine/edit/buffer:current)))
+           (setf (pine/fs/node:contents b) "hello")
+           (dotimes (n 5) (pine/edit/render:frame-tree :cols 40 :rows 10))
+           (pine/edit/key:dispatch nil (pine/edit/key:make-key "x")))
+         (let ((root (pine/world/world:root pine/world/world:*world*)))
+           (is (member "frame" (pine/fs/tree:listing (pine/fs/tree:at root "metric"))
+                       :test #'equal)
+               "the frame is one of the instruments the tree lists")
+           (is (= 5 (pine/fs/node:contents (pine/fs/tree:at root "metric/frame/count")))
+               "five frames were built and five is what it says")
+           (is (plusp (pine/fs/node:contents
+                       (pine/fs/tree:at root "metric/frame/mean")))
+               "and it took some milliseconds to do it")
+           (is (= 1 (pine/fs/node:contents (pine/fs/tree:at root "metric/key/count")))
+               "one key was dispatched")
+           (is (null (pine/fs/tree:at root "metric/nothing-walked-this/count"))
+               "an instrument nothing touched is not a zero in the tree")))
+    (pine/run/meter:reset)
+    (pine:stop)))
+
+(test the-same-table-answers-a-command-and-a-workload
+  "metrics is what a synthetic run prints and what a live daemon answers, which
+is the only way one can be laid beside the other."
+  (unwind-protect
+       (progn
+         (pine:start)
+         (pine/run/meter:reset)
+         (dotimes (n 3) (pine/edit/render:frame-tree :cols 40 :rows 10))
+         (let ((rows (pine/repl/command:run "metrics")))
+           (is (equal rows (pine/run/meter:said))
+               "the command answers the instruments, not a rendering of them")
+           (let ((frame (find :frame rows :key (lambda (r) (getf r :name)))))
+             (is-true frame)
+             (is (= 3 (getf frame :count))))
+           (is (search "instrument"
+                       (with-output-to-string (out)
+                         (pine/run/meter:report rows :to out :about "a probe")))
+               "and it prints through one report, with what it is about")))
+    (pine/run/meter:reset)
+    (pine:stop)))
