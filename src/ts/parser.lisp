@@ -15,6 +15,8 @@
 (defvar *on-parse* nil)
 (defvar *counter* 0)
 (defparameter +settle+ 2)
+(defparameter *reach* 200
+  "How far either side of a line is worth parsing when no window says.")
 
 (defclass parser ()
   ((buffer-of   :initarg :buffer   :reader buffer-of)
@@ -34,17 +36,24 @@
 
 (defun %lines (b) (d:held (pine/edit/buffer:lines b)))
 
-(defun showing (b)
-  "The band some window shows of B, or nil when none does. Past a few thousand
-lines only that band is given to tree-sitter at all.
+(defun around (line &optional (reach *reach*))
+  (cons (max 0 (- line reach)) (+ line reach)))
 
-A screen either side of what is on screen, so paging lands on lines that were
-walked already instead of on plain text waiting to be coloured."
+(defun showing (b)
+  "The band of B that is worth parsing. Past a few thousand lines only a band
+is given to tree-sitter at all.
+
+What a window shows, and a screen either side of it, so paging lands on lines
+that were walked already instead of on plain text waiting to be coloured. With
+no window showing it, the band is around point: a command that indents a buffer
+nobody is looking at asks about the line it is on, and the answer is the form
+around that line, not the whole file."
   (let ((w (find b (pine/edit/window:windows) :key #'pine/edit/window:buffer-of)))
-    (when w
-      (let* ((from (pine/edit/window:scroll-of w))
-             (height (max 1 (pine/edit/window:height-of w))))
-        (cons (max 0 (- from height)) (+ from (* 2 height)))))))
+    (if w
+        (let* ((from (pine/edit/window:scroll-of w))
+               (height (max 1 (pine/edit/window:height-of w))))
+          (cons (max 0 (- from height)) (+ from (* 2 height))))
+        (around (pine/edit/buffer:point-line b)))))
 
 (defun %kept (had edit)
   "What stays of the runs already walked. An edit moves every line under it, so
@@ -175,8 +184,15 @@ blink through plain text."
       (%flat (d:held (found p))))))
 
 (defun indent (b line &key (width 2))
+  "How far LINE should be indented. The parse has to cover the line asked
+about, so a line outside the band being walked is worth waiting for the band
+that has it."
   (let ((p (note b)))
     (when p
+      (let ((band (d:held (banded p))))
+        (when (and band (not (<= (car band) line (cdr band))))
+          (pine/edit/buffer:goto! b line (pine/edit/buffer:point-col b))
+          (note b)))
       (wait b)
       (hl:parse-indent (state-of p) line :width width))))
 
