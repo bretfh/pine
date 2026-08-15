@@ -79,10 +79,7 @@
 (defun prefixp (prefix p)
   (let ((a (segments prefix)) (b (segments p)))
     (and (<= (length a) (length b))
-         (every (lambda (x y)
-                  (equal (value x) (value y)))
-                a
-                (subseq b 0 (length a))))))
+         (every (lambda (x y) (equal (value x) (value y))) a (subseq b 0 (length a))))))
 
 (defun under (prefix p)
   (make-instance 'path :segments (nthcdr (length (segments prefix)) (segments p))))

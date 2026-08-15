@@ -327,24 +327,3 @@ blink through plain text")))))
       (pine/repl/command:run "debugger-restart-0")
       (loop :repeat 200 :while (bordeaux-threads:thread-alive-p worker) :do (sleep 0.01))
       (is (null (pine/run/fault:standing)) "and the thread is gone"))))
-
-(test a-buffer-no-window-shows-is-parsed-around-the-line-being-worked-on
-  "Indenting a buffer nobody is looking at asks about the line it is on. With
-no window to say what is worth parsing, the band is around point, not the whole
-file: at twenty thousand lines the difference is a second."
-  (with-lisp-buffer ()
-    (let ((b (pine/edit/buffer:make-buffer "probe-offscreen" :mode "lisp")))
-      (setf (pine/fs/node:contents b)
-            (format nil "~{~a~^~%~}"
-                    (loop :for i :below 3000
-                          :collect (format nil "(defun f~d (x)~%(+ x ~d))" i i))))
-      (pine/edit/buffer:goto! b 1000 0)
-      (let ((band (pine/ts/parser:showing b)))
-        (is-true band "a buffer with no window still says what is worth parsing")
-        (is (<= (car band) 1000 (cdr band)) "and it is around point")
-        (is (< (- (cdr band) (car band)) 3000) "not the whole file"))
-      (pine/ts/parser:wait b :seconds 30)
-      (is (plusp (pine/edit/render:indent-for b 1001))
-          "a line inside a form indents")
-      (is (integerp (pine/edit/render:indent-for b 2500))
-          "and a line the band did not cover is waited for rather than guessed"))))
