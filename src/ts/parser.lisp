@@ -1,15 +1,14 @@
-(defpackage #:pine.ts.parser
+(defpackage #:pine/ts/parser
   (:use #:cl)
   (:local-nicknames (#:language #:pine.edit.language) (#:agent #:pine/run/agent)
                     (#:node #:pine/fs/node) (#:mode #:pine/repl/mode)
-                    (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
-                    (#:hl #:pine.ts.highlight) (#:d #:pine/data))
+                    (#:runtime #:pine/ts/runtime) (#:syntax #:pine/ts/syntax)
+                    (#:hl #:pine/ts/highlight) (#:d #:pine/data))
   (:export #:parser #:parser-for #:parsers #:highlights #:note #:wait #:forget
            #:forget-all #:state-of #:language-of #:buffer-of #:showing #:banded #:*runtime*
            #:*on-parse*
            #:parsed #:indent))
-
-(in-package #:pine.ts.parser)
+(in-package #:pine/ts/parser)
 
 (defvar *parsers* (d:table))
 (defvar *runtime* nil)

@@ -1,4 +1,4 @@
-(in-package #:pine.ts.runtime)
+(in-package #:pine/ts/runtime)
 
 (defun parse-lines! (ps lines &key edit from viewport)
   "Parse LINES into PS's tree, reading the bytes straight from the seq.
@@ -83,11 +83,11 @@ is :forward-sexp :backward-sexp :beginning-of-defun :end-of-defun. Answers
          (line (- line offset)))
     (when (and tree src (<= 0 line))
       (handler-case
-          (let ((byte (pine.ts.index:source-byte src line col))
+          (let ((byte (pine/ts/index:source-byte src line col))
                 (root (ts-tree-root-node tree)))
             (flet ((at (b) (when b
                              (multiple-value-bind (l c)
-                                 (pine.ts.index:source-line-col src b)
+                                 (pine/ts/index:source-line-col src b)
                                (values (+ l offset) c)))))
               (ecase kind
                 (:forward-sexp (at (%forward-sexp-byte root byte)))

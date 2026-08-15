@@ -1,10 +1,9 @@
-(defpackage #:pine.provider.wm
+(defpackage #:pine/provider/wm
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine/provider/out))
   (:export #:wm-node #:install #:niri #:workspaces #:windows #:focused
            #:act #:json))
-
-(in-package #:pine.provider.wm)
+(in-package #:pine/provider/wm)
 
 (defparameter +verbs+ '("overview" "close" "expel" "consume" "exit"))
 (defparameter +actions+

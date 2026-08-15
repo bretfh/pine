@@ -1,5 +1,5 @@
-(defpackage #:pine.ts.highlight
-  (:use #:cl #:pine.ts.runtime #:pine.ts.index)
+(defpackage #:pine/ts/highlight
+  (:use #:cl #:pine/ts/runtime #:pine/ts/index)
   (:local-nicknames (#:pl #:pine/data))
   (:export
 
@@ -14,8 +14,7 @@
    #:delimiter-face #:lambda-list-keyword-p
 
    #:ts-type #:ts-type= #:ts-field #:ts-named-nodes))
-
-(in-package #:pine.ts.highlight)
+(in-package #:pine/ts/highlight)
 
 (defparameter +roles+
   '(:form :body :here :quoted :skip :operand :package :name :binding-name

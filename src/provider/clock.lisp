@@ -1,10 +1,9 @@
-(defpackage #:pine.provider.clock
+(defpackage #:pine/provider/clock
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
                     (#:process #:pine/proc/process))
   (:export #:clock-node #:install #:now #:tick #:*every*))
-
-(in-package #:pine.provider.clock)
+(in-package #:pine/provider/clock)
 
 (defvar *every* 1)
 (defvar *now* (d:box 0))

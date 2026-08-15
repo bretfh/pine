@@ -102,11 +102,11 @@ never a backtrace, because a bar reading /audio/volume must not take the daemon
 down when pipewire is not running."
   (with-providers
     (let ((root (pine/world/world:root pine/world/world:*world*)))
-      (pine.provider.audio:install root)
-      (pine.provider.screen:install root)
-      (pine.provider.power:install root)
-      (pine.provider.net:install root)
-      (pine.provider.media:install root))
+      (pine/provider/audio:install root)
+      (pine/provider/screen:install root)
+      (pine/provider/power:install root)
+      (pine/provider/net:install root)
+      (pine/provider/media:install root))
     (dolist (path '("audio/volume" "audio/muted" "screen/brightness"
                     "power/battery" "power/charging" "net/connection"
                     "net/online" "media/status" "media/title"))
@@ -114,7 +114,7 @@ down when pipewire is not running."
 
 (test a-provider-lists-what-it-has-and-each-is-a-node
   (with-providers
-    (pine.provider.audio:install (pine/world/world:root pine/world/world:*world*))
+    (pine/provider/audio:install (pine/world/world:root pine/world/world:*world*))
     (let ((audio (pine/world/world:at pine/world/world:*world* "audio")))
       (is (member "volume" (pine/fs/tree:listing audio) :test #'equal))
       (is (member "sinks" (pine/fs/tree:listing audio) :test #'equal))
@@ -122,7 +122,7 @@ down when pipewire is not running."
 
 (test power-verbs-are-nodes-so-a-config-writes-one-rather-than-calling-out
   (with-providers
-    (pine.provider.power:install (pine/world/world:root pine/world/world:*world*))
+    (pine/provider/power:install (pine/world/world:root pine/world/world:*world*))
     (let ((power (pine/world/world:at pine/world/world:*world* "power")))
       (dolist (verb '("lock" "suspend" "reboot" "poweroff" "logout"))
         (is (member verb (pine/fs/tree:listing power) :test #'equal)
@@ -145,11 +145,11 @@ nothing will ever release."
            (pine/proc/process:start p)
            (let ((pid (pine/proc/lisp:evaluate
                        p `(progn (pine:start)
-                                 (let ((n (pine.provider.sh:streaming ,line)))
-                                   (pine.provider.sh:listen! n)
+                                 (let ((n (pine/provider/sh:streaming ,line)))
+                                   (pine/provider/sh:listen! n)
                                    (sleep 0.5)
                                    (uiop:process-info-pid
-                                    (pine/data:held (pine.provider.sh::took n)))))
+                                    (pine/data:held (pine/provider/sh::took n)))))
                        :timeout 180)))
              (is-true (%alive-p pid) "the other image is listening")
              (sb-posix:kill (uiop:process-info-pid (pine/proc/process:took p)) 9)
@@ -164,11 +164,11 @@ nothing will ever release."
     (unwind-protect
          (progn
            (pine:start)
-           (let ((n (pine.provider.sh:streaming
+           (let ((n (pine/provider/sh:streaming
                      "sh -c 'while true; do echo tick; sleep 5; done'")))
-             (pine.provider.sh:listen! n)
+             (pine/provider/sh:listen! n)
              (sleep 0.3)
-             (setf pid (uiop:process-info-pid (pine/data:held (pine.provider.sh::took n))))
+             (setf pid (uiop:process-info-pid (pine/data:held (pine/provider/sh::took n))))
              (is-true (%alive-p pid))))
       (pine:stop))
     (loop :repeat 40 :while (%alive-p pid) :do (sleep 0.05))
@@ -178,7 +178,7 @@ nothing will ever release."
   "A bar and a panel read it a moment apart. Sampling per read leaves the
 second one no ticks to divide by, and it answers zero: the number twitches
 between nothing and the truth."
-  (let ((readings (loop :repeat 8 :collect (pine.provider.sys:cpu))))
+  (let ((readings (loop :repeat 8 :collect (pine/provider/sys:cpu))))
     (is (every (lambda (n) (and (integerp n) (<= 0 n 100))) readings))
     (is (= 1 (length (remove-duplicates readings)))
         "eight reads in one instant are one reading, not eight: ~s" readings)))
@@ -213,11 +213,11 @@ command, not three, and building the panel twice in a frame is not six."
                 (line (format nil "sh -c 'echo x >> ~a; echo said'"
                               (namestring file))))
            (ignore-errors (delete-file file))
-           (dotimes (n 5) (is (equal "said" (pine.provider.out:sh "~a" line))))
+           (dotimes (n 5) (is (equal "said" (pine/provider/out:sh "~a" line))))
            (is (= 1 (length (uiop:read-file-lines file)))
                "five reads in one breath ran it once")
-           (let ((pine.provider.sh:*breath* 0))
-             (pine.provider.out:sh "~a" line))
+           (let ((pine/provider/sh:*breath* 0))
+             (pine/provider/out:sh "~a" line))
            (is (= 2 (length (uiop:read-file-lines file)))
                "and the next breath asks again")
            (ignore-errors (delete-file file))))

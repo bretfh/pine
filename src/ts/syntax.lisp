@@ -1,14 +1,14 @@
-(defpackage #:pine.ts.syntax
+(defpackage #:pine/ts/syntax
   (:use #:cl)
-  (:local-nicknames (#:pl #:pine/data) (#:hl #:pine.ts.highlight)
+  (:local-nicknames (#:pl #:pine/data) (#:hl #:pine/ts/highlight)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine/world/world) (#:path #:pine/path/path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
            #:for-readtable #:readtable-of
            #:install #:compute-highlights #:hl-dump #:hl-dump-file
            #:*inferrers*))
+(in-package #:pine/ts/syntax)
 
-(in-package #:pine.ts.syntax)
 (named-readtables:in-readtable pine/path/reader:syntax)
 
 (defvar *compiled* (pl:table))
@@ -150,27 +150,27 @@ follows it rather than the path it happens to be under."
 (defun %state (runtime name)
   (multiple-value-bind (lib fn) (grammar-of name)
     (when lib
-      (pine.ts.runtime:make-parse-state runtime name lib fn :syntax (for name)))))
+      (pine/ts/runtime:make-parse-state runtime name lib fn :syntax (for name)))))
 
 (defun compute-highlights (runtime language text)
   (let ((ps (%state runtime language)))
     (when ps
       (unwind-protect
            (progn
-             (pine.ts.runtime:parse-lines!
+             (pine/ts/runtime:parse-lines!
               ps (uiop:split-string text :separator '(#\Newline)))
              (hl:parse-highlights ps))
-        (pine.ts.runtime:free-parse-state ps)))))
+        (pine/ts/runtime:free-parse-state ps)))))
 
 (defun hl-dump (source &optional (language :commonlisp))
-  (let* ((runtime (pine.ts.runtime:make-ts-runtime))
-         (ps (progn (pine.ts.runtime:ensure-ts runtime)
+  (let* ((runtime (pine/ts/runtime:make-ts-runtime))
+         (ps (progn (pine/ts/runtime:ensure-ts runtime)
                     (%state runtime language))))
     (if (null ps)
         (format t "~&no grammar loaded for ~a~%" language)
         (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
                              'vector)))
-          (pine.ts.runtime:parse-lines!
+          (pine/ts/runtime:parse-lines!
            ps (uiop:split-string source :separator '(#\Newline)))
           (dolist (h (hl:parse-highlights ps))
             (destructuring-bind (line start-col end-col face) h

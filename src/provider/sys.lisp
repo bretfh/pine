@@ -1,10 +1,9 @@
-(defpackage #:pine.provider.sys
+(defpackage #:pine/provider/sys
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:sh #:pine.provider.sh))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:sh #:pine/provider/sh))
   (:export #:sys-node #:install #:mounts #:cpu #:ram #:temp #:disk #:uptime #:load-average
            #:host #:user))
-
-(in-package #:pine.provider.sys)
+(in-package #:pine/provider/sys)
 
 (defvar *sampled* (d:box nil))
 (defvar *busy* (d:box nil))

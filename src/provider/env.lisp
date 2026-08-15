@@ -1,9 +1,8 @@
-(defpackage #:pine.provider.env
+(defpackage #:pine/provider/env
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node))
   (:export #:env-node #:variable-node #:install #:names))
-
-(in-package #:pine.provider.env)
+(in-package #:pine/provider/env)
 
 (defclass env-node (node:node) ())
 

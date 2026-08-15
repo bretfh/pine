@@ -1,8 +1,8 @@
 (defpackage #:pine.app.wm
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:world #:pine/world/world) (#:provider #:pine.provider.wm)
-                    (#:cmd #:pine/repl/command) (#:sh #:pine.provider.sh))
+                    (#:world #:pine/world/world) (#:provider #:pine/provider/wm)
+                    (#:cmd #:pine/repl/command) (#:sh #:pine/provider/sh))
   (:export #:install #:current #:root #:windows-of #:titled #:focused-of
            #:focus! #:step! #:close-window! #:overview! #:exit! #:split!
            #:terminal #:windows #:focused #:title))

@@ -65,7 +65,7 @@ what it needs with `:local-nicknames` or `:use` when it builds on a vocabulary
 where you are already looking.
 
 A file may only name packages that load before it. When two files need each
-other, the layering is wrong: one of them takes a hook (`pine.ts.parser:*on-parse*`,
+other, the layering is wrong: one of them takes a hook (`pine/ts/parser:*on-parse*`,
 `pine.edit.buffer:*on-current*`, `pine/ui/build:*asking*`) and the other fills
 it in.
 
@@ -91,7 +91,7 @@ without it a slider goes on showing what the world held before it was dragged.
 A reading stands for a moment, not for the instant it was asked in. Two things
 reading `/sys/cpu` a moment apart are asking about the same moment, so the
 answer is remembered for a window rather than recomputed per read. The same
-goes for a shell-out: `pine.provider.out:sh` remembers what a line said for a
+goes for a shell-out: `pine/provider/out:sh` remembers what a line said for a
 breath, so a panel reading three things out of one command runs it once.
 
 ## Processes

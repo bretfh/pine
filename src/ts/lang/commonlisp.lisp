@@ -1,9 +1,9 @@
-(defpackage #:pine.ts.lang.commonlisp
+(defpackage #:pine/ts/lang/commonlisp
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine.ts.syntax))
+  (:local-nicknames (#:syntax #:pine/ts/syntax))
   (:export #:commonlisp))
+(in-package #:pine/ts/lang/commonlisp)
 
-(in-package #:pine.ts.lang.commonlisp)
 (named-readtables:in-readtable pine/path/reader:syntax)
 
 (defun commonlisp ()

@@ -1,4 +1,4 @@
-(defpackage #:pine.ts.index
+(defpackage #:pine/ts/index
   (:use #:cl)
   (:export
    #:byte-index
@@ -25,8 +25,7 @@ Tree-sitter asks for the bytes at an offset; the buffer is an fset seq of lines.
 This is the map between them, and it has to survive an edit without walking the
 file: an edit records a pending shift instead, and the base is rebuilt once the
 pending list is long enough to be worth it."))
-
-(in-package #:pine.ts.index)
+(in-package #:pine/ts/index)
 
 (defparameter +compact-after+ 64
   "Pending edits to carry before rebuilding the base. A query costs one pass over

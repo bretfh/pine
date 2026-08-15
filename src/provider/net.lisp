@@ -1,11 +1,10 @@
-(defpackage #:pine.provider.net
+(defpackage #:pine/provider/net
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine/provider/out))
   (:export #:net-node #:install #:connection #:online #:wifi #:saved #:rescan
            #:*asking*
            #:connect #:disconnect #:forget))
-
-(in-package #:pine.provider.net)
+(in-package #:pine/provider/net)
 
 (defparameter +readings+ '("connection" "online"))
 (defvar *asking* nil)

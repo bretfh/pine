@@ -190,7 +190,7 @@
 (defun install ()
   (setf pine/ui/build:*asking* #'%confirming
         pine/ui/build:*editing* #'%editing
-        pine.provider.net:*asking* #'%password)
+        pine/provider/net:*asking* #'%password)
   (%modes)
   (edit:commands)
   (%sources)

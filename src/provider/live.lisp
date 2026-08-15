@@ -1,11 +1,10 @@
-(defpackage #:pine.provider.live
+(defpackage #:pine/provider/live
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:watch #:pine/fs/watch) (#:timer #:pine/run/timer)
-                    (#:sh #:pine.provider.sh) (#:fault #:pine/run/fault))
+                    (#:sh #:pine/provider/sh) (#:fault #:pine/run/fault))
   (:export #:attend #:leave #:leave-all #:attending #:tending))
-
-(in-package #:pine.provider.live)
+(in-package #:pine/provider/live)
 
 (defvar *tending* (d:box nil))
 

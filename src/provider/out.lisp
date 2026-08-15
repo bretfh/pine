@@ -1,9 +1,8 @@
-(defpackage #:pine.provider.out
+(defpackage #:pine/provider/out
   (:use #:cl)
   (:export #:sh #:lines #:words #:number-in #:firstp #:has #:each-line
            #:*through*))
-
-(in-package #:pine.provider.out)
+(in-package #:pine/provider/out)
 
 (defvar *through* nil)
 

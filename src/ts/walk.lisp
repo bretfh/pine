@@ -1,4 +1,4 @@
-(in-package #:pine.ts.highlight)
+(in-package #:pine/ts/highlight)
 
 (defun %viewport-bytes (src from-line to-line)
   "The byte range covering lines FROM-LINE to TO-LINE inclusive."

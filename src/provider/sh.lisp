@@ -1,12 +1,11 @@
-(defpackage #:pine.provider.sh
+(defpackage #:pine/provider/sh
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:task #:pine/run/task))
   (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
            #:*environment-out* #:output-of #:run-line #:launch
            #:streaming #:listen! #:quiet! #:listening #:said #:asked #:tethered
            #:forget-all #:*sh* #:*breath*))
-
-(in-package #:pine.provider.sh)
+(in-package #:pine/provider/sh)
 
 (defvar *kept* 100)
 (defvar *ran* (d:box (d:no-seq)))
@@ -180,7 +179,7 @@ twice in the same breath does not fork twice."
   (setf *sh* (node:attach (make-instance 'sh-node :name "sh"
                                                   :describes "running something, and what it said")
                           root))
-  (setf pine.provider.out:*through* #'asked)
+  (setf pine/provider/out:*through* #'asked)
   *sh*)
 
 (defun forget-all ()

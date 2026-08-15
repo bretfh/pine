@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.session
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:attach #:pine.net.attach) (#:parser #:pine.ts.parser)
+  (:local-nicknames (#:d #:pine/data) (#:attach #:pine.net.attach) (#:parser #:pine/ts/parser)
                     (#:render #:pine.edit.render) (#:key #:pine.edit.key)
                     (#:css #:pine/ui/css) (#:wire #:pine/ui/wire)
                     (#:layout #:pine/ui/layout)

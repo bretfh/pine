@@ -1,4 +1,4 @@
-(defpackage #:pine.ts.runtime
+(defpackage #:pine/ts/runtime
   (:use :cl)
   (:local-nicknames (#:pl #:pine/data))
   (:export
@@ -30,8 +30,7 @@
    #:ts-node-start-byte #:ts-node-end-byte
    #:ts-node-named-nth #:ts-node-named-count
    #:ts-node-by-field-name #:ts-node-named-descendant-for-byte-range))
-
-(in-package #:pine.ts.runtime)
+(in-package #:pine/ts/runtime)
 
 (defconstant +input-encoding-utf8+ 0)
 

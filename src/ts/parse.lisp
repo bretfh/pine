@@ -1,4 +1,4 @@
-(in-package #:pine.ts.runtime)
+(in-package #:pine/ts/runtime)
 
 (defun %grammar-of (language)
   (if *grammar-of* (funcall *grammar-of* language) (values nil nil)))
@@ -89,7 +89,7 @@ in, so a macro defined in the buffer's own package is found."
 (defun %fill-scratch (lines index byte scratch size)
   "Copy up to SIZE bytes of LINES from byte offset BYTE into SCRATCH. Answers
 how many were written, which is zero at the end of the buffer."
-  (multiple-value-bind (line offset) (pine.ts.index:byte-line index byte)
+  (multiple-value-bind (line offset) (pine/ts/index:byte-line index byte)
     (let ((written 0)
           (n (pine/data:size lines)))
       (block filling
@@ -227,14 +227,14 @@ the next highlight call, or any failure here, marks the cache stale."
     (when shifted
       (destructuring-bind (line old-lines new-lines byte-delta) edit
         (let* ((at (- line (if band (car band) 0)))
-               (start (pine.ts.index:line-start old-index at))
-               (old-end (pine.ts.index:line-start old-index (+ at old-lines))))
-          (setf index (pine.ts.index:index-edit old-index band-lines at byte-delta
+               (start (pine/ts/index:line-start old-index at))
+               (old-end (pine/ts/index:line-start old-index (+ at old-lines))))
+          (setf index (pine/ts/index:index-edit old-index band-lines at byte-delta
                                                 (- new-lines old-lines)))
           (%tree-edit old-tree start old-end
-                      (pine.ts.index:line-start index (+ at new-lines))
+                      (pine/ts/index:line-start index (+ at new-lines))
                       at (+ at old-lines) (+ at new-lines)))))
-    (unless index (setf index (pine.ts.index:build-index band-lines)))
+    (unless index (setf index (pine/ts/index:build-index band-lines)))
     (let ((incremental shifted))
       (let ((new (call-with-input
                   band-lines index (ps-read-buffer ps)

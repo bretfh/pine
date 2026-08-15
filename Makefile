@@ -89,7 +89,7 @@ OCICL_SYSTEMS := alexandria bordeaux-threads cffi cffi-libffi cl-cairo2 cl-xkb \
                  posix-shm sento sento-remoting sqlite usocket wayflan-client
 
 # where a build outside guix puts the shared libraries pine loads. lib/tree-sitter
-# is one of the places pine.ts.runtime already looks; the rest go beside them and
+# is one of the places pine/ts/runtime already looks; the rest go beside them and
 # the FOREIGN env puts lib/ on the loader's path.
 LIBDIR := lib
 TSDIR  := lib/tree-sitter

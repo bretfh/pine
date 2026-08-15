@@ -230,7 +230,7 @@
     (let* ((name (princ-to-string (or name (node:name (%b)))))
            (gone (buffer:buffer-named name)))
       (when gone
-        (pine.ts.parser:forget name)
+        (pine/ts/parser:forget name)
         (buffer:kill-buffer name)
         (let ((instead (buffer:current)))
           (dolist (w (window:windows))

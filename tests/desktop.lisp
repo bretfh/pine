@@ -282,7 +282,7 @@ a test waits for the thread it did run on."
            (probe (pine/fs/tree:ensure root "probe"))
            (told 0))
       (declare (ignorable probe))
-      (let ((stream (pine.provider.sh:streaming
+      (let ((stream (pine/provider/sh:streaming
                      "for i in 1 2 3; do echo tick; sleep 0.2; done")))
         (is-true stream "a command that streams is a node under /sh")
         (pine/fs/watch:watch stream
@@ -290,7 +290,7 @@ a test waits for the thread it did run on."
                              :only nil :poll nil)
         (loop :repeat 60 :until (>= told 2) :do (sleep 0.05))
         (is (>= told 2) "each line the process said reached the tree")
-        (pine.provider.sh:quiet! stream)))))
+        (pine/provider/sh:quiet! stream)))))
 
 (test a-click-writes-and-the-write-is-what-pushes
   (with-desktop

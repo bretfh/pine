@@ -1,10 +1,9 @@
-(defpackage #:pine.provider.media
+(defpackage #:pine/provider/media
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine/provider/out))
   (:export #:media-node #:install #:status #:title #:artist #:album #:art
            #:position-of #:length-of #:act #:*player*))
-
-(in-package #:pine.provider.media)
+(in-package #:pine/provider/media)
 
 (defvar *player* nil)
 

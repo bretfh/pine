@@ -208,7 +208,7 @@ there")
 
 (test a-lisp-buffer-renders-with-its-faces
   (with-editor (:text "(defun f (x) x)")
-    (pine.ts.parser:wait (b))
+    (pine/ts/parser:wait (b))
     (let ((found (pine.edit.render:highlights-for (b))))
       (is (plusp (hash-table-count found))
           "lisp mode names a grammar, so the buffer is parsed")
@@ -284,7 +284,7 @@ x)")
            (is (equal "  x)" (pine.edit.buffer:line (b) 1)))
            (is (eql 2 (pine.edit.buffer:point-col (b)))
                "point moved with the text it was sitting in"))
-      (pine.ts.parser:forget (b)))))
+      (pine/ts/parser:forget (b)))))
 
 (test killing-a-buffer-leaves-something-to-type-into
   (with-editor (:text "hello")

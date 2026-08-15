@@ -1,9 +1,9 @@
-(defpackage #:pine.ts.lang.pine
+(defpackage #:pine/ts/lang/pine
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine.ts.syntax))
+  (:local-nicknames (#:syntax #:pine/ts/syntax))
   (:export #:pine))
+(in-package #:pine/ts/lang/pine)
 
-(in-package #:pine.ts.lang.pine)
 (named-readtables:in-readtable pine/path/reader:syntax)
 
 (defun pine ()
