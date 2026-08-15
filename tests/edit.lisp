@@ -620,3 +620,21 @@ selection over text that was never selected, and the only way out is C-g."
     (pine/repl/command:run "yank")
     (is (equal "hello therehello" (pine/fs/node:contents (b)))
         "and what it kept is still there to put back")))
+
+(test what-a-buffer-is-written-in-is-worked-out-once-per-edit
+  "Every frame asks a buffer what language it is in. Answering by reading the
+whole buffer made the frame cost what the file is long: thirty milliseconds on
+a hundred thousand lines, for an answer that changes only when the buffer does."
+  (with-editor ()
+    (let ((b (pine/edit/buffer:make-buffer "probe-language")))
+      (setf (pine/fs/node:contents b) "(in-package #:pine/test)
+(defun f () 1)")
+      (let ((said (pine/edit/language:said b)))
+        (is (eq (find-package :pine/test) (car said)))
+        (is (eq said (pine/edit/language:said b))
+            "asked again with nothing changed, it is the same answer, not a
+fresh walk of the text"))
+      (setf (pine/fs/node:contents b) "(in-package #:cl-user)
+(defun f () 1)")
+      (is (eq (find-package :cl-user) (pine/edit/language:package-of b))
+          "and an edit is what makes it look again"))))
