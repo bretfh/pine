@@ -181,7 +181,6 @@ blink through plain text."
       (hl:parse-indent (state-of p) line :width width))))
 
 (defun forget (b)
-  (unless (stringp b) (pine/edit/language:forget b))
   (let* ((name (if (stringp b) b (node:name b)))
          (p (d:at (d:all *parsers*) name)))
     (when p
