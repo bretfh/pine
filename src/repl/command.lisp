@@ -1,12 +1,11 @@
-(defpackage #:pine.repl.command
+(defpackage #:pine/repl/command
   (:use #:cl)
   (:shadow #:describe)
   (:local-nicknames (#:d #:pine/data))
   (:export #:command #:commandp #:defcommand #:command-named #:commands
            #:forget #:name #:action #:describes #:asks #:arguments #:run
            #:word #:unknown-command #:name-of #:*asking*))
-
-(in-package #:pine.repl.command)
+(in-package #:pine/repl/command)
 
 (defvar *commands* (d:table))
 

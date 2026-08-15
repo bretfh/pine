@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine/world/world) (#:window #:pine.edit.window)
                     (#:build #:pine.ui.build) (#:layout #:pine.ui.layout)
-                    (#:face #:pine.ui.face) (#:mode #:pine.repl.mode)
+                    (#:face #:pine.ui.face) (#:mode #:pine/repl/mode)
                     (#:attach #:pine.net.attach) (#:wm #:pine.app.wm)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:compositor #:install #:pine-wm #:output-of #:splits #:arrange
@@ -198,7 +198,7 @@
   (let ((command (and (mode:mode-named "wm")
                       (gethash chord (mode:keys (mode:mode-named "wm"))))))
     (if command
-        (fault:attempt (lambda () (pine.repl.command:run command)) chord)
+        (fault:attempt (lambda () (pine/repl/command:run command)) chord)
         (log:note "no command bound to ~a" chord))))
 
 (defun received (client message)
@@ -235,10 +235,10 @@
   (mode:mode "wm" :settings '(:indicator "WM"))
   (dolist (pair +chords+)
     (mode:bind "wm" (car pair) (cdr pair)))
-  (pine.repl.command:defcommand "wm-split-below" ()
+  (pine/repl/command:defcommand "wm-split-below" ()
       (:describes "the next window opens below")
     (wm:split! (wm:current) :below))
-  (pine.repl.command:defcommand "wm-split-beside" ()
+  (pine/repl/command:defcommand "wm-split-beside" ()
       (:describes "the next window opens beside")
     (wm:split! (wm:current) :beside))
   (attach:app :wm

@@ -4,7 +4,7 @@
                     (#:cells #:pine.ui.cells) (#:layout #:pine.ui.layout)
                     (#:raster #:pine.ui.raster) (#:face #:pine.ui.face)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
-                    (#:mode #:pine.repl.mode) (#:parser #:pine.ts.parser)
+                    (#:mode #:pine/repl/mode) (#:parser #:pine.ts.parser)
                     (#:prompt #:pine.edit.prompt) (#:ui #:pine.ui.node))
   (:export #:shown #:modelinep #:buffer-tree #:window-tree #:frame-tree
            #:rows #:modeline #:echo-tree

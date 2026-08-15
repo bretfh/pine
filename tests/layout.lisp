@@ -282,14 +282,14 @@
       (funcall (pine.ui.node:callback b))
       (is (eq t (pine/fs/node:contents muted))))
     (let ((ran nil))
-      (pine.repl.command:command "probe-click" (lambda () (setf ran t)))
+      (pine/repl/command:command "probe-click" (lambda () (setf ran t)))
       (unwind-protect
            (progn
              (funcall (pine.ui.node:callback
                        (pine.ui.build:button :click "probe-click"
                                              (pine.ui.build:label "go"))))
              (is (eq t ran) "a command name did not run"))
-        (pine.repl.command:forget "probe-click")))))
+        (pine/repl/command:forget "probe-click")))))
 
 (test a-grid-is-rows-of-columns
   (let ((g (pine.ui.build:grid :columns 2

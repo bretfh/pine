@@ -1,9 +1,8 @@
-(defpackage #:pine.path.reader
+(defpackage #:pine/path/reader
   (:use #:cl)
-  (:local-nicknames (#:path #:pine.path.path))
+  (:local-nicknames (#:path #:pine/path/path))
   (:export #:syntax #:read-path))
-
-(in-package #:pine.path.reader)
+(in-package #:pine/path/reader)
 
 (defvar +stops+
   '(#\Space #\Tab #\Newline #\Return #\Page #\( #\) #\" #\' #\` #\, #\;))

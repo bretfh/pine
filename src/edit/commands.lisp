@@ -1,11 +1,11 @@
 (defpackage #:pine.edit.commands
   (:use #:cl)
-  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
                     (#:node #:pine/fs/node) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:text #:pine.edit.text)
                     (#:key #:pine.edit.key) (#:render #:pine.edit.render)
                     (#:prompt #:pine.edit.prompt) (#:log #:pine/run/log)
-                    (#:session #:pine.repl.session) (#:d #:pine/data))
+                    (#:session #:pine/repl/session) (#:d #:pine/data))
   (:export #:commands #:*kill-ring* #:kill #:yank))
 
 (in-package #:pine.edit.commands)

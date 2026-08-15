@@ -1,4 +1,4 @@
-(defpackage #:pine.path.path
+(defpackage #:pine/path/path
   (:use #:cl)
   (:shadow #:parse)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
@@ -6,8 +6,7 @@
            #:patternp #:binders #:match #:under #:prefixp #:join
            #:literal #:binding #:any #:deep #:segment #:segment-text #:kind
            #:value))
-
-(in-package #:pine.path.path)
+(in-package #:pine/path/path)
 
 (defclass segment ()
   ((value :initarg :value :reader value)))

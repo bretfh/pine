@@ -1,15 +1,14 @@
-(defpackage #:pine.repl.session
+(defpackage #:pine/repl/session
   (:use #:cl)
   (:shadow #:read #:print #:close)
-  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode))
+  (:local-nicknames (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode))
   (:export #:session #:open-session #:sessions #:*session* #:*history-kept*
            #:*prompt* #:name #:owner #:package-of #:readtable-of #:node-of
            #:mode-of #:minors
            #:history #:input #:output #:openp
            #:read #:evaluate #:print #:interact #:close
            #:evaluation #:form #:answered #:fault #:said #:at-time))
-
-(in-package #:pine.repl.session)
+(in-package #:pine/repl/session)
 
 (defvar *session* nil)
 (defvar *sessions* nil)
@@ -73,25 +72,6 @@
           (cl:read-from-string from)
           (cl:read (input s) nil :eof)))))
 
-(defun %command-for (session form)
-  (typecase form
-    (symbol (values (or (mode:binding session (string-downcase (symbol-name form)))
-                        (cmd:command-named form))
-                    nil))
-    (cons (let ((c (and (symbolp (car form)) (cmd:command-named (car form)))))
-            (values c (cdr form))))
-    (t nil)))
-
-(defun %capturing (thunk)
-  (let* ((said (make-string-output-stream))
-         (*standard-output* said))
-    (multiple-value-bind (answered fault) (funcall thunk)
-      (values answered fault (get-output-stream-string said)))))
-
-(defun %attempt (thunk)
-  (handler-case (values (multiple-value-list (funcall thunk)) nil)
-    (error (c) (values nil c))))
-
 (defgeneric evaluate (session form))
 
 (defmethod evaluate :around ((s session) form)
@@ -103,23 +83,36 @@
     e))
 
 (defmethod evaluate ((s session) form)
-  (multiple-value-bind (c given) (%command-for s form)
-    (multiple-value-bind (answered fault said)
-        (%capturing
-         (lambda ()
-           (%attempt
-            (lambda ()
-              (let ((*package* (package-of s))
-                    (*readtable* (or (readtable-of s) *readtable*))
-                    (*session* s))
-                (if c
-                    (let ((args (if given
-                                    (mapcar #'cmd:word given)
-                                    (cmd:arguments c (input s) (output s)))))
-                      (if (eq args :asking) :asking (cmd:run c args)))
-                    (eval form)))))))
-      (make-instance 'evaluation :form form :answered answered
-                                 :fault fault :said said))))
+  (flet ((command-for (form)
+           (typecase form
+             (symbol (values (or (mode:binding s (string-downcase (symbol-name form)))
+                                 (cmd:command-named form))
+                             nil))
+             (cons (let ((c (and (symbolp (car form))
+                                 (cmd:command-named (car form)))))
+                     (values c (cdr form))))
+             (t nil)))
+         (attempt (thunk)
+           (handler-case (values (multiple-value-list (funcall thunk)) nil)
+             (error (c) (values nil c)))))
+    (multiple-value-bind (c given) (command-for form)
+      (let* ((said (make-string-output-stream))
+             (*standard-output* said))
+        (multiple-value-bind (answered fault)
+            (attempt
+             (lambda ()
+               (let ((*package* (package-of s))
+                     (*readtable* (or (readtable-of s) *readtable*))
+                     (*session* s))
+                 (if c
+                     (let ((args (if given
+                                     (mapcar #'cmd:word given)
+                                     (cmd:arguments c (input s) (output s)))))
+                       (if (eq args :asking) :asking (cmd:run c args)))
+                     (eval form)))))
+          (make-instance 'evaluation :form form :answered answered
+                                     :fault fault
+                                     :said (get-output-stream-string said)))))))
 
 (defgeneric print (session evaluation)
   (:method ((s session) (e evaluation))

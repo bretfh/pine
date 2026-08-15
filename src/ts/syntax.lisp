@@ -2,14 +2,14 @@
   (:use #:cl)
   (:local-nicknames (#:pl #:pine/data) (#:hl #:pine.ts.highlight)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:world #:pine/world/world) (#:path #:pine.path.path))
+                    (#:world #:pine/world/world) (#:path #:pine/path/path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
            #:for-readtable #:readtable-of
            #:install #:compute-highlights #:hl-dump #:hl-dump-file
            #:*inferrers*))
 
 (in-package #:pine.ts.syntax)
-(named-readtables:in-readtable pine.path.reader:syntax)
+(named-readtables:in-readtable pine/path/reader:syntax)
 
 (defvar *compiled* (pl:table))
 

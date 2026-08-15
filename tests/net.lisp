@@ -71,12 +71,12 @@ remote. Nothing above it knows the difference."
              (remote (pine.net.agent:open-remote a)))
         (unwind-protect
              (progn
-               (is (typep remote 'pine.repl.session:session))
-               (let ((e (pine.repl.session:evaluate remote '(* 6 7))))
-                 (is (equal '(42) (pine.repl.session:answered e)))
-                 (is (null (pine.repl.session:fault e))))
-               (pine.repl.session:evaluate remote '(+ 1 1))
-               (is (= 2 (length (pine.repl.session:history remote)))
+               (is (typep remote 'pine/repl/session:session))
+               (let ((e (pine/repl/session:evaluate remote '(* 6 7))))
+                 (is (equal '(42) (pine/repl/session:answered e)))
+                 (is (null (pine/repl/session:fault e))))
+               (pine/repl/session:evaluate remote '(+ 1 1))
+               (is (= 2 (length (pine/repl/session:history remote)))
                    "the history is the session's, wherever it evaluates"))
           (pine.net.agent:forget "probe-session"))))))
 
@@ -96,7 +96,7 @@ remote. Nothing above it knows the difference."
        (let ((image (pine:daemon :remoting 0)))
          (is (typep image 'pine.net.server:server))
          (is (plusp (pine.net.server:remoting-port image)))
-         (is (null (pine.repl.command:run "agents")) "nothing has attached yet")
+         (is (null (pine/repl/command:run "agents")) "nothing has attached yet")
          (is (member "agents" (pine/fs/tree:listing
                                (pine/world/world:at pine/world/world:*world* "cmd"))
                      :test #'equal)
@@ -111,11 +111,11 @@ remote. Nothing above it knows the difference."
          (is (eq t (pine/fs/node:contents
                     (pine/world/world:at pine/world/world:*world* "config/loaded")))
              "the config ran")
-         (is (equal "hello from the config" (pine.repl.command:run "hello"))
+         (is (equal "hello from the config" (pine/repl/command:run "hello"))
              "a command a config defined is a command")
          (is (equal "hello"
-                    (pine.repl.command:name
-                     (pine.repl.mode:binding
+                    (pine/repl/command:name
+                     (pine/repl/mode:binding
                       (pine.edit.buffer:current) "C-c h")))
              "and a chord a config bound reaches it")
          (is (member "hello" (pine/fs/tree:listing

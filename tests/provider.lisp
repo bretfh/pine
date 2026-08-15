@@ -74,23 +74,23 @@ the person's own program, and that is what /sh remembers."
 (test the-shell-reaches-the-providers
   (with-providers
     (let* ((out (make-string-output-stream))
-           (s (pine.repl.session:open-session
+           (s (pine/repl/session:open-session
                :input (make-string-input-stream "") :output out
                :node (pine/world/world:root pine/world/world:*world*)
                :package (find-package :pine))))
       (unwind-protect
            (progn
-             (is (member "sys" (first (pine.repl.session:answered
-                                       (pine.repl.session:evaluate s 'ls)))
+             (is (member "sys" (first (pine/repl/session:answered
+                                       (pine/repl/session:evaluate s 'ls)))
                          :test #'equal))
-             (is (integerp (first (pine.repl.session:answered
-                                   (pine.repl.session:evaluate
+             (is (integerp (first (pine/repl/session:answered
+                                   (pine/repl/session:evaluate
                                     s '(cat "/sys/uptime")))))))
-        (pine.repl.session:close s)))))
+        (pine/repl/session:close s)))))
 
 (test what-answers-from-the-world-is-not-walked-into-by-the-store
   (with-providers
-    (let ((live (pine.repl.command:run "live")))
+    (let ((live (pine/repl/command:run "live")))
       (dolist (name '("/sh" "/env" "/sys" "/clock" "/file"))
         (is (member name live :test #'equal) "~a should be live" name)))
     (is (null (pine/fs/node:livep (pine.edit.buffer:current)))

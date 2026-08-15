@@ -171,7 +171,7 @@
            (progn
              (with-open-file (out file :direction :output :if-exists :supersede)
                (write-string "from disk" out))
-             (pine.repl.command:run "find-file")
+             (pine/repl/command:run "find-file")
              (is-true (pine.edit.prompt:asking-p)
                       "the command did not read a stream, it raised a question")
              (is (equal "Find file: "

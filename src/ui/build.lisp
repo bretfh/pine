@@ -31,17 +31,17 @@ to say what it stands for."
 (defun placep (x)
   "Whether X is somewhere a value is kept rather than a value: a node, or a
 path naming one."
-  (or (pine/fs/node:nodep x) (pine.path.path:pathp x)))
+  (or (pine/fs/node:nodep x) (pine/path/path:pathp x)))
 
 (defun held (x)
   (if (pine/fs/node:nodep x)
       (pine/fs/node:contents x)
-      (pine.path.place:contents x)))
+      (pine/path/place:contents x)))
 
 (defun (setf held) (value x)
   (if (pine/fs/node:nodep x)
       (setf (pine/fs/node:contents x) value)
-      (setf (pine.path.place:contents x) value)))
+      (setf (pine/path/place:contents x) value)))
 
 (defun shown (x)
   "What a slot shows. A place in place of a value is read, so a widget slot and
@@ -66,7 +66,7 @@ so clicking one writes it, the way clicking a path writes what it names."
         ((functionp click) click)
         ((pine/data:mapp click) (%writing click))
         ((placep click) (lambda () (setf (held click) t)))
-        (t (lambda () (pine.repl.command:run click)))))
+        (t (lambda () (pine/repl/command:run click)))))
 
 (defun %click (props)
   "The click thunk PROPS names, from :click or :on-click, gated by :confirm."
@@ -253,12 +253,12 @@ Over a pattern the row remembers the path it was built for. That is what makes
 the listing a listing of things rather than of lines: the selection, the keys a
 mode binds and a click all reach the same place, and none of them needs a table
 saying which line was which."
-  (let ((over-paths (pine.path.path:pathp items)))
+  (let ((over-paths (pine/path/path:pathp items)))
     (apply #'make-instance 'list-node
            :items (if over-paths
-                      (let ((n (pine.path.place:at items)))
+                      (let ((n (pine/path/place:at items)))
                         (and n (mapcar (lambda (each)
-                                         (pine.path.path:parse
+                                         (pine/path/path:parse
                                           (pine/fs/node:full-name each)))
                                        (pine/fs/node:nodes n))))
                       items)
@@ -266,7 +266,7 @@ saying which line was which."
                         (lambda (item &optional index)
                           (declare (ignore index))
                           (let ((*here*
-                                  (if (pine.path.path:pathp item)
+                                  (if (pine/path/path:pathp item)
                                       item
                                       *here*)))
                             (let ((row (funcall item-fn)))

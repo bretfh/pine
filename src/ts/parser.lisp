@@ -1,7 +1,7 @@
 (defpackage #:pine.ts.parser
   (:use #:cl)
   (:local-nicknames (#:language #:pine.edit.language) (#:agent #:pine/run/agent)
-                    (#:node #:pine/fs/node) (#:mode #:pine.repl.mode)
+                    (#:node #:pine/fs/node) (#:mode #:pine/repl/mode)
                     (#:runtime #:pine.ts.runtime) (#:syntax #:pine.ts.syntax)
                     (#:hl #:pine.ts.highlight) (#:d #:pine/data))
   (:export #:parser #:parser-for #:parsers #:highlights #:note #:wait #:forget

@@ -8,16 +8,16 @@
 
 (defmacro with-console ((var &key (in "")) &body body)
   `(let* ((out (make-string-output-stream))
-          (,var (pine.repl.session:open-session
+          (,var (pine/repl/session:open-session
                  :name "probe" :mode "shell"
                  :node (pine/world/world:root pine/world/world:*world*)
                  :input (make-string-input-stream ,in)
                  :output out
                  :package (find-package :pine))))
-     (unwind-protect (progn ,@body) (pine.repl.session:close ,var))))
+     (unwind-protect (progn ,@body) (pine/repl/session:close ,var))))
 
 (defun ran (session form)
-  (pine.repl.session:answered (pine.repl.session:evaluate session form)))
+  (pine/repl/session:answered (pine/repl/session:evaluate session form)))
 
 (test a-started-pine-has-a-world-a-supervisor-and-its-commands
   (with-pine ()
@@ -34,7 +34,7 @@
   (with-pine ()
     (let ((cmd (pine/world/world:at pine/world/world:*world* "cmd")))
       (is (null (member "probe-live" (pine/fs/tree:listing cmd) :test #'equal)))
-      (pine.repl.command:defcommand "probe-live" () (:describes "made at the repl")
+      (pine/repl/command:defcommand "probe-live" () (:describes "made at the repl")
         :ran)
       (unwind-protect
            (progn
@@ -44,7 +44,7 @@
                         (pine/fs/node:contents
                          (pine/world/world:at pine/world/world:*world*
                                               "cmd/probe-live")))))
-        (pine.repl.command:forget "probe-live")))))
+        (pine/repl/command:forget "probe-live")))))
 
 (test the-shell-walks-the-tree
   (with-pine ()

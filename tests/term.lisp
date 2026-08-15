@@ -75,11 +75,11 @@ its job: nothing in the key dispatcher knows what a terminal is."
   (unwind-protect
        (progn
          (pine:start)
-         (let ((name (pine.repl.command:run "terminal" (list "probe-cmd"))))
+         (let ((name (pine/repl/command:run "terminal" (list "probe-cmd"))))
            (is (equal "probe-cmd" name))
-           (is (member "probe-cmd" (pine.repl.command:run "terminals") :test #'equal))
-           (pine.repl.command:run "close-terminal" (list "probe-cmd"))
-           (is (null (pine.repl.command:run "terminals")))))
+           (is (member "probe-cmd" (pine/repl/command:run "terminals") :test #'equal))
+           (pine/repl/command:run "close-terminal" (list "probe-cmd"))
+           (is (null (pine/repl/command:run "terminals")))))
     (pine:stop)))
 
 (test a-terminal-takes-every-key-except-the-one-that-gets-you-out

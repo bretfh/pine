@@ -1,7 +1,7 @@
 (defpackage #:pine.edit.debugger
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command)
-                    (#:mode #:pine.repl.mode) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command)
+                    (#:mode #:pine/repl/mode) (#:node #:pine/fs/node)
                     (#:fault #:pine/run/fault) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:log #:pine/run/log))
   (:export #:install #:show #:standing #:choose #:next #:fault-of
@@ -84,7 +84,7 @@
 (defun %away ()
   (d:put! *standing* nil)
   (let ((b (buffer:buffer-named *name*)))
-    (when b (pine.repl.command:run "kill-buffer" (list *name*))))
+    (when b (pine/repl/command:run "kill-buffer" (list *name*))))
   t)
 
 (defun install ()

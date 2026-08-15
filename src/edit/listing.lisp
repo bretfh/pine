@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.listing
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
                     (#:node #:pine/fs/node) (#:key #:pine.edit.key)
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:prompt #:pine.edit.prompt)
@@ -107,7 +107,7 @@ listing: RET on a row hands ACTS the place it stands for."
           (append
            (list (format nil "~16a ~10a ~a" "what" "state" "name") "")
            (loop :for p :in (pine/proc/supervisor:processes
-                             pine.repl.shell:*supervisor*)
+                             pine/repl/shell:*supervisor*)
                  :collect (cons (format nil "~16a ~10a ~a" "process"
                                         (pine/proc/process:state p)
                                         (pine/proc/process:name p))

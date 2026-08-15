@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.defaults
   (:use #:cl)
-  (:local-nicknames (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
+  (:local-nicknames (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
                     (#:node #:pine/fs/node) (#:buffer #:pine.edit.buffer)
                     (#:prompt #:pine.edit.prompt) (#:edit #:pine.edit.commands)
                     (#:listing #:pine.edit.listing))

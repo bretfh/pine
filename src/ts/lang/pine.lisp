@@ -4,13 +4,13 @@
   (:export #:pine))
 
 (in-package #:pine.ts.lang.pine)
-(named-readtables:in-readtable pine.path.reader:syntax)
+(named-readtables:in-readtable pine/path/reader:syntax)
 
 (defun pine ()
   (syntax:language
    {:grammar {:lib "libtree-sitter-pine" :fn "tree_sitter_pine"}
     :indent {:width 2}
-    :readtable 'pine.path.reader:syntax
+    :readtable 'pine/path/reader:syntax
     :doc "pine"}
 
    (/node/map_lit  {:delimiters t :rest :form})

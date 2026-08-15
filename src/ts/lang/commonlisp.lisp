@@ -4,7 +4,7 @@
   (:export #:commonlisp))
 
 (in-package #:pine.ts.lang.commonlisp)
-(named-readtables:in-readtable pine.path.reader:syntax)
+(named-readtables:in-readtable pine/path/reader:syntax)
 
 (defun commonlisp ()
   (syntax:language

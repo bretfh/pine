@@ -61,13 +61,13 @@
     (dolist (name '("audio" "network" "media"))
       (pine.app.surface:surface name (lambda () (pine.ui.build:label name))
                                 :as :panel))
-    (pine.repl.command:run "toggle-surface" (list "audio"))
+    (pine/repl/command:run "toggle-surface" (list "audio"))
     (is-true (pine.app.surface:shownp (surface-of "audio")))
-    (pine.repl.command:run "toggle-surface" (list "network"))
+    (pine/repl/command:run "toggle-surface" (list "network"))
     (is-true (pine.app.surface:shownp (surface-of "network")))
     (is-false (pine.app.surface:shownp (surface-of "audio"))
               "two panels over each other is not a desktop")
-    (pine.repl.command:run "toggle-surface" (list "network"))
+    (pine/repl/command:run "toggle-surface" (list "network"))
     (is-false (pine.app.surface:shownp (surface-of "network")))))
 
 (test a-surface-slot-is-a-node-so-a-config-can-write-it
@@ -83,9 +83,9 @@
 (test the-desktop-verbs-are-commands-like-any-other
   (with-desktop
     (pine.app.surface:surface "probe" (lambda () (pine.ui.build:label "")) :as :panel)
-    (is (equal '(("probe" :panel nil)) (pine.repl.command:run "surfaces")))
-    (pine.repl.command:run "show-surface" (list "probe"))
-    (is (equal '(("probe" :panel t)) (pine.repl.command:run "surfaces")))))
+    (is (equal '(("probe" :panel nil)) (pine/repl/command:run "surfaces")))
+    (pine/repl/command:run "show-surface" (list "probe"))
+    (is (equal '(("probe" :panel t)) (pine/repl/command:run "surfaces")))))
 
 (def-suite* :pine.wm :in :pine)
 
@@ -107,8 +107,8 @@
     (is (equal (pine.app.wm:windows)
                (pine/fs/node:contents (pine/fs/tree:at (pine.app.wm:root) "windows")))
         "the command and the path answer the same thing")
-    (is-true (member "wm-focus-next" (mapcar #'pine.repl.command:name
-                                             (pine.repl.command:commands))
+    (is-true (member "wm-focus-next" (mapcar #'pine/repl/command:name
+                                             (pine/repl/command:commands))
                      :test #'equal))))
 
 (test the-terminal-this-machine-uses-is-a-node-a-config-writes
@@ -180,9 +180,9 @@
     (is (equal "a" (pine.app.wm:focused)))
     (is (equal "one" (pine.app.wm:title "a"))
         "the same generic answers, whichever compositor is at /wm")
-    (pine.repl.command:run "wm-focus-next")
+    (pine/repl/command:run "wm-focus-next")
     (is (equal "b" (pine.app.wm:focused)))
-    (pine.repl.command:run "wm-focus-previous")
+    (pine/repl/command:run "wm-focus-previous")
     (is (equal "a" (pine.app.wm:focused)))))
 
 (test the-chords-the-frontend-registers-are-an-ordinary-mode
@@ -190,7 +190,7 @@
     (let ((table (pine.app.compositor:bindings)))
       (is (equal "wm-terminal" (cdr (assoc "s-Return" table :test #'equal))))
       (is (equal "wm-focus-next" (cdr (assoc "s-j" table :test #'equal))))
-      (pine.repl.mode:bind "wm" "s-o" "wm-overview")
+      (pine/repl/mode:bind "wm" "s-o" "wm-overview")
       (is (equal "wm-overview"
                  (cdr (assoc "s-o" (pine.app.compositor:bindings) :test #'equal)))
           "a config binds a wm chord the way it binds any other"))))
@@ -198,7 +198,7 @@
 (test splitting-says-where-the-next-window-lands
   (with-compositor
     (told '(:window-added :id "a" :title "one" :app-id "probe"))
-    (pine.repl.command:run "wm-split-beside")
+    (pine/repl/command:run "wm-split-beside")
     (told '(:window-added :id "b" :title "two" :app-id "probe"))
     (let ((rects (pine.app.compositor:rects (pine.app.wm:current))))
       (is (= 2 (length rects)))
@@ -318,11 +318,11 @@ a test waits for the thread it did run on."
     (let ((where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) nil)
       (let ((by-map (pine.ui.build:acting
-                     (pine/data:map (pine.path.path:parse "/probe") 41))))
+                     (pine/data:map (pine/path/path:parse "/probe") 41))))
         (funcall by-map)
         (is (eql 41 (pine/fs/node:contents where))
             "a write-map is a click, so a config declares one without a closure"))
-      (let ((by-path (pine.ui.build:acting (pine.path.path:parse "/probe"))))
+      (let ((by-path (pine.ui.build:acting (pine/path/path:parse "/probe"))))
         (funcall by-path)
         (is (eq t (pine/fs/node:contents where))))
       (let ((by-name (pine.ui.build:acting "pwd")))
@@ -380,7 +380,7 @@ a test waits for the thread it did run on."
 (test a-field-asks-for-its-new-value
   (with-desktop
     (let* ((where (pine/world/world:ensure pine/world/world:*world* "probe"))
-           (field (pine.ui.build:field (pine.path.path:parse "/probe")
+           (field (pine.ui.build:field (pine/path/path:parse "/probe")
                                        :hint "Probe")))
       (setf (pine/fs/node:contents where) "was")
       (let ((thunk (pine.ui.layout:clicked field 0)))
@@ -443,12 +443,12 @@ a test waits for the thread it did run on."
            (s (pine.edit.session::%attached client))
            (held (bordeaux-threads:make-semaphore)))
       (is-true (wait-until (lambda () (find :widgets (sent client) :key #'first))))
-      (pine.repl.command:command "probe-slow"
+      (pine/repl/command:command "probe-slow"
                                  (lambda ()
                                    (bordeaux-threads:wait-on-semaphore held
                                                                        :timeout 5))
                                  :describes "waits")
-      (pine.repl.mode:bind "text" "C-c C-w" "probe-slow")
+      (pine/repl/mode:bind "text" "C-c C-w" "probe-slow")
       (unwind-protect
            (let ((was (get-internal-real-time)))
              (pine.edit.session:received client (list :key :key-str "c" :ctrl t))
@@ -463,7 +463,7 @@ a test waits for the thread it did run on."
                          (search "x" (pine/fs/node:contents
                                       (pine.edit.buffer:current)))))
                       "and the keys behind it landed once it was done, in order"))
-        (pine.repl.command:forget "probe-slow")))))
+        (pine/repl/command:forget "probe-slow")))))
 
 (test the-frame-is-arranged-in-pixels-once-the-frontend-says-what-a-cell-is
   (with-desktop
