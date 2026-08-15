@@ -147,4 +147,4 @@
                root))
 
 (defun niri (&optional (name "wm"))
-  (install (pine.world.world:root pine.world.world:*world*) name))
+  (install (pine/world/world:root pine/world/world:*world*) name))

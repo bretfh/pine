@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:watch #:pine/fs/watch)
-                    (#:world #:pine.world.world) (#:server #:pine.net.server)
+                    (#:world #:pine/world/world) (#:server #:pine.net.server)
                     (#:cmd #:pine.repl.command) (#:session #:pine.repl.session)
                     (#:log #:pine/run/log) (#:fault #:pine/run/fault))
   (:export #:serve #:received #:*on-quit* #:*on-reload* #:*agents*

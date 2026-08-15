@@ -98,7 +98,7 @@ remote. Nothing above it knows the difference."
          (is (plusp (pine.net.server:remoting-port image)))
          (is (null (pine.repl.command:run "agents")) "nothing has attached yet")
          (is (member "agents" (pine/fs/tree:listing
-                               (pine.world.world:at pine.world.world:*world* "cmd"))
+                               (pine/world/world:at pine/world/world:*world* "cmd"))
                      :test #'equal)
              "the daemon's own commands are nodes like any other"))
     (pine:stop)))
@@ -109,7 +109,7 @@ remote. Nothing above it knows the difference."
                                       (asdf:system-relative-pathname :pine "tests/"))))
          (pine:daemon :remoting 0 :config config)
          (is (eq t (pine/fs/node:contents
-                    (pine.world.world:at pine.world.world:*world* "config/loaded")))
+                    (pine/world/world:at pine/world/world:*world* "config/loaded")))
              "the config ran")
          (is (equal "hello from the config" (pine.repl.command:run "hello"))
              "a command a config defined is a command")
@@ -119,7 +119,7 @@ remote. Nothing above it knows the difference."
                       (pine.edit.buffer:current) "C-c h")))
              "and a chord a config bound reaches it")
          (is (member "hello" (pine/fs/tree:listing
-                              (pine.world.world:at pine.world.world:*world* "cmd"))
+                              (pine/world/world:at pine/world/world:*world* "cmd"))
                      :test #'equal)
              "it is a node under /cmd like any other"))
     (pine:stop)))
@@ -144,10 +144,10 @@ remote. Nothing above it knows the difference."
        (progn
          (pine:daemon :remoting 0 :config nil)
          (let ((p (pine:frontend "editor")))
-           (is (typep p 'pine.proc.process:program))
-           (is (equal "editor" (pine.proc.process:name p)))
+           (is (typep p 'pine/proc/process:program))
+           (is (equal "editor" (pine/proc/process:name p)))
            (is (find-if (lambda (entry) (search "PINE_PORT=" entry))
-                        (pine.proc.process:env p))
+                        (pine/proc/process:env p))
                "the frontend is told which pine to attach to")))
     (pine:stop)))
 

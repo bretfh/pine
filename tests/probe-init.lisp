@@ -6,5 +6,5 @@
 (pine.repl.mode:bind "text" "C-c h" "hello")
 
 (setf (pine/fs/node:contents
-       (pine.world.world:ensure pine.world.world:*world* "config" "loaded"))
+       (pine/world/world:ensure pine/world/world:*world* "config" "loaded"))
       t)

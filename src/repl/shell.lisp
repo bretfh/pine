@@ -1,10 +1,10 @@
 (defpackage #:pine.repl.shell
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:mount #:pine/fs/mount) (#:world #:pine.world.world)
-                    (#:store #:pine.world.store) (#:cmd #:pine.repl.command)
+                    (#:mount #:pine/fs/mount) (#:world #:pine/world/world)
+                    (#:store #:pine/world/store) (#:cmd #:pine.repl.command)
                     (#:mode #:pine.repl.mode) (#:session #:pine.repl.session)
-                    (#:process #:pine.proc.process) (#:super #:pine.proc.supervisor)
+                    (#:process #:pine/proc/process) (#:super #:pine/proc/supervisor)
                     (#:task #:pine/run/task))
   (:export #:install #:here #:resolve #:commands-node #:command-node
            #:*supervisor* #:*store*))

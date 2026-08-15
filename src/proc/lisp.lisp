@@ -1,11 +1,10 @@
-(defpackage #:pine.proc.lisp
+(defpackage #:pine/proc/lisp
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:process #:pine.proc.process) (#:fault #:pine/run/fault) (#:task #:pine/run/task))
+  (:local-nicknames (#:d #:pine/data) (#:process #:pine/proc/process) (#:fault #:pine/run/fault) (#:task #:pine/run/task))
   (:export #:lisp-process #:evaluate #:answered-by #:saidp #:ready-p #:wait-ready
            #:take-there #:there #:*elsewhere*
            #:*sbcl* #:*load-form*))
-
-(in-package #:pine.proc.lisp)
+(in-package #:pine/proc/lisp)
 
 (defvar *sbcl* (namestring sb-ext:*runtime-pathname*))
 (defvar *load-form* "(require :asdf)")

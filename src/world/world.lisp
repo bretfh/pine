@@ -1,11 +1,10 @@
-(defpackage #:pine.world.world
+(defpackage #:pine/world/world
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree))
   (:export #:world #:*world* #:make-world #:root #:name #:identity-of #:idents
            #:identify #:node-for-id #:at #:place #:ensure #:with-world))
-
-(in-package #:pine.world.world)
+(in-package #:pine/world/world)
 
 (defvar *world* nil)
 

@@ -57,13 +57,13 @@ th" (pine.edit.text:region lines 0 1 2 2)))
     (is (typep (b) 'pine.edit.buffer:buffer))
     (is (equal "hello" (pine/fs/node:contents (b))))
     (is (equal "/buf/scratch" (pine/fs/node:full-name (b))))
-    (is (eq (b) (pine.world.world:at pine.world.world:*world* "buf/scratch")))))
+    (is (eq (b) (pine/world/world:at pine/world/world:*world* "buf/scratch")))))
 
 (test a-buffers-slots-are-nodes-and-writing-one-moves-the-buffer
   (with-editor (:text "hello
 there")
     (setf (pine/fs/node:contents
-           (pine.world.world:at pine.world.world:*world* "buf/scratch/point-line"))
+           (pine/world/world:at pine/world/world:*world* "buf/scratch/point-line"))
           1)
     (is (eql 1 (pine.edit.buffer:point-line (b)))
         "a slot node is the slot, not a copy of it")))

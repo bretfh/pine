@@ -1,11 +1,10 @@
-(defpackage #:pine.proc.supervisor
+(defpackage #:pine/proc/supervisor
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:timer #:pine/run/timer)
-                    (#:process #:pine.proc.process))
+                    (#:process #:pine/proc/process))
   (:export #:supervisor #:supervise #:forget #:processes #:process-named
            #:attend #:attends #:watch #:unwatch #:start-all #:stop-all #:due))
-
-(in-package #:pine.proc.supervisor)
+(in-package #:pine/proc/supervisor)
 
 (defvar *interval* 1)
 

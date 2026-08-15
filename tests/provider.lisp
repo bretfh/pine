@@ -6,12 +6,12 @@
   `(unwind-protect (progn (pine:start) ,@body) (pine:stop)))
 
 (defun held-at (path)
-  (pine/fs/node:contents (pine.world.world:at pine.world.world:*world* path)))
+  (pine/fs/node:contents (pine/world/world:at pine/world/world:*world* path)))
 
 (test the-providers-are-nodes-under-the-root
   (with-providers
     (dolist (name '("sh" "env" "sys" "clock" "file"))
-      (is-true (pine.world.world:at pine.world.world:*world* name)
+      (is-true (pine/world/world:at pine/world/world:*world* name)
                "~a is not mounted" name))))
 
 (test reading-a-command-runs-it-and-answers-what-it-said
@@ -21,14 +21,14 @@ the person's own program, and that is what /sh remembers."
     (is (equal "from the provider" (held-at "sh/echo from the provider")))
     (is (null (held-at "sh")) "a question asked is not a program run")
     (setf (pine/fs/node:contents
-           (pine.world.world:at pine.world.world:*world* "sh/true"))
+           (pine/world/world:at pine/world/world:*world* "sh/true"))
           t)
     (is (member "true" (held-at "sh") :test #'equal)
         "what was launched is what /sh lists")))
 
 (test an-environment-variable-reads-and-writes
   (with-providers
-    (let ((n (pine.world.world:at pine.world.world:*world* "env/PINE_PROBE")))
+    (let ((n (pine/world/world:at pine/world/world:*world* "env/PINE_PROBE")))
       (is (null (pine/fs/node:contents n)))
       (setf (pine/fs/node:contents n) "a value")
       (is (equal "a value" (uiop:getenv "PINE_PROBE")))
@@ -45,7 +45,7 @@ the person's own program, and that is what /sh remembers."
     (is (stringp (held-at "sys/host")))
     (is (= 3 (length (held-at "sys/load"))))
     (is (member "cpu" (pine/fs/tree:listing
-                       (pine.world.world:at pine.world.world:*world* "sys"))
+                       (pine/world/world:at pine/world/world:*world* "sys"))
                 :test #'equal))))
 
 (test the-clock-is-a-node-and-a-process-keeps-it-current
@@ -54,8 +54,8 @@ the person's own program, and that is what /sh remembers."
     (is (stringp (held-at "clock/hour")))
     (is (= 2 (length (held-at "clock/hour"))))
     (is (integerp (held-at "clock/year")))
-    (is (find "clock" (pine.proc.supervisor:processes pine:*supervisor*)
-              :key #'pine.proc.process:name :test #'equal)
+    (is (find "clock" (pine/proc/supervisor:processes pine:*supervisor*)
+              :key #'pine/proc/process:name :test #'equal)
         "the time is kept current by a process, not a thread that sleeps")))
 
 (test the-filesystem-mounts-at-file
@@ -76,7 +76,7 @@ the person's own program, and that is what /sh remembers."
     (let* ((out (make-string-output-stream))
            (s (pine.repl.session:open-session
                :input (make-string-input-stream "") :output out
-               :node (pine.world.world:root pine.world.world:*world*)
+               :node (pine/world/world:root pine/world/world:*world*)
                :package (find-package :pine))))
       (unwind-protect
            (progn
@@ -101,7 +101,7 @@ the person's own program, and that is what /sh remembers."
 never a backtrace, because a bar reading /audio/volume must not take the daemon
 down when pipewire is not running."
   (with-providers
-    (let ((root (pine.world.world:root pine.world.world:*world*)))
+    (let ((root (pine/world/world:root pine/world/world:*world*)))
       (pine.provider.audio:install root)
       (pine.provider.screen:install root)
       (pine.provider.power:install root)
@@ -114,16 +114,16 @@ down when pipewire is not running."
 
 (test a-provider-lists-what-it-has-and-each-is-a-node
   (with-providers
-    (pine.provider.audio:install (pine.world.world:root pine.world.world:*world*))
-    (let ((audio (pine.world.world:at pine.world.world:*world* "audio")))
+    (pine.provider.audio:install (pine/world/world:root pine/world/world:*world*))
+    (let ((audio (pine/world/world:at pine/world/world:*world* "audio")))
       (is (member "volume" (pine/fs/tree:listing audio) :test #'equal))
       (is (member "sinks" (pine/fs/tree:listing audio) :test #'equal))
       (is-true (pine/fs/node:livep audio)))))
 
 (test power-verbs-are-nodes-so-a-config-writes-one-rather-than-calling-out
   (with-providers
-    (pine.provider.power:install (pine.world.world:root pine.world.world:*world*))
-    (let ((power (pine.world.world:at pine.world.world:*world* "power")))
+    (pine.provider.power:install (pine/world/world:root pine/world/world:*world*))
+    (let ((power (pine/world/world:at pine/world/world:*world* "power")))
       (dolist (verb '("lock" "suspend" "reboot" "poweroff" "logout"))
         (is (member verb (pine/fs/tree:listing power) :test #'equal)
             "~a should be a node under /power" verb)))))
@@ -137,13 +137,13 @@ down when pipewire is not running."
 crashed, or killed outright -- has to take it along, or the next run adds
 another and a machine ends up with hundreds of them holding connections
 nothing will ever release."
-  (let ((p (make-instance 'pine.proc.lisp:lisp-process
+  (let ((p (make-instance 'pine/proc/lisp:lisp-process
                           :name "probe-tether" :restarts nil :systems '(:pine)))
         (line "sh -c 'while true; do echo tick; sleep 5; done'"))
     (unwind-protect
          (progn
-           (pine.proc.process:start p)
-           (let ((pid (pine.proc.lisp:evaluate
+           (pine/proc/process:start p)
+           (let ((pid (pine/proc/lisp:evaluate
                        p `(progn (pine:start)
                                  (let ((n (pine.provider.sh:streaming ,line)))
                                    (pine.provider.sh:listen! n)
@@ -152,12 +152,12 @@ nothing will ever release."
                                     (pine/data:held (pine.provider.sh::took n)))))
                        :timeout 180)))
              (is-true (%alive-p pid) "the other image is listening")
-             (sb-posix:kill (uiop:process-info-pid (pine.proc.process:took p)) 9)
-             (loop :repeat 100 :while (pine.proc.process:alivep p) :do (sleep 0.05))
-             (is-false (pine.proc.process:alivep p) "and was killed outright")
+             (sb-posix:kill (uiop:process-info-pid (pine/proc/process:took p)) 9)
+             (loop :repeat 100 :while (pine/proc/process:alivep p) :do (sleep 0.05))
+             (is-false (pine/proc/process:alivep p) "and was killed outright")
              (loop :repeat 40 :while (%alive-p pid) :do (sleep 0.05))
              (is-false (%alive-p pid) "so what it was listening with is gone too")))
-      (ignore-errors (pine.proc.process:stop p)))))
+      (ignore-errors (pine/proc/process:stop p)))))
 
 (test a-clean-stop-leaves-no-stream-behind
   (let (pid)
@@ -190,7 +190,7 @@ world held before."
   (unwind-protect
        (progn
          (pine:start)
-         (let* ((n (pine.world.world:ensure pine.world.world:*world* "probe-act"))
+         (let* ((n (pine/world/world:ensure pine/world/world:*world* "probe-act"))
                 (told 0))
            (pine/fs/watch:watch n (lambda (of value)
                                     (declare (ignore of value))

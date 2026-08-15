@@ -245,18 +245,18 @@
   (is (null (pine.ui.cells:class-names nil))))
 
 (test a-widget-takes-a-node-in-place-of-a-value
-  (let* ((w (pine.world.world:make-world))
-         (title (pine.world.world:ensure w "media" "title")))
+  (let* ((w (pine/world/world:make-world))
+         (title (pine/world/world:ensure w "media" "title")))
     (setf (pine/fs/node:contents title) "Ligeia")
     (is (string= "Ligeia" (pine.ui.node:content (pine.ui.build:label title))))
-    (let ((nothing (pine.world.world:ensure w "media" "nothing")))
+    (let ((nothing (pine/world/world:ensure w "media" "nothing")))
       (is (string= "" (pine.ui.node:content (pine.ui.build:label nothing)))
           "a node holding nothing shows nothing, not the word NIL"))))
 
 (test a-control-takes-the-node-it-edits-as-its-subject
   "No :value and no :on-change: the display and the edit are one node."
-  (let* ((w (pine.world.world:make-world))
-         (volume (pine.world.world:ensure w "audio" "volume")))
+  (let* ((w (pine/world/world:make-world))
+         (volume (pine/world/world:ensure w "audio" "volume")))
     (setf (pine/fs/node:contents volume) 40)
     (let ((slider (pine.ui.build:slider volume :min 0 :max 100)))
       (is (= 40 (pine.ui.node:value slider)))
@@ -265,8 +265,8 @@
           "dragging it did not write the node it shows"))))
 
 (test a-field-shows-a-node-and-writes-it-back
-  (let* ((w (pine.world.world:make-world))
-         (input (pine.world.world:ensure w "echo" "input")))
+  (let* ((w (pine/world/world:make-world))
+         (input (pine/world/world:ensure w "echo" "input")))
     (setf (pine/fs/node:contents input) "hel")
     (let ((f (pine.ui.build:field input)))
       (is (string= "hel" (pine.ui.node:content f)))
@@ -275,8 +275,8 @@
 
 (test something-that-acts-takes-writes
   "A click is a node, a command name, a write-map or a function."
-  (let* ((w (pine.world.world:make-world))
-         (muted (pine.world.world:ensure w "audio" "muted")))
+  (let* ((w (pine/world/world:make-world))
+         (muted (pine/world/world:ensure w "audio" "muted")))
     (setf (pine/fs/node:contents muted) nil)
     (let ((b (pine.ui.build:button :click muted (pine.ui.build:label "mute"))))
       (funcall (pine.ui.node:callback b))
@@ -305,7 +305,7 @@ no :on-change anywhere in a config."
   (unwind-protect
        (progn
          (pine:start)
-         (let ((at (pine.world.world:ensure pine.world.world:*world* "probe-field")))
+         (let ((at (pine/world/world:ensure pine/world/world:*world* "probe-field")))
            (setf (pine/fs/node:contents at) "foot")
            (let ((f (pine.ui.build:field at :hint "Terminal:")))
              (is (equal "foot" (pine.ui.node:content f))

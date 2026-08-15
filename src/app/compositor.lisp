@@ -1,7 +1,7 @@
 (defpackage #:pine.app.compositor
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:world #:pine.world.world) (#:window #:pine.edit.window)
+                    (#:world #:pine/world/world) (#:window #:pine.edit.window)
                     (#:build #:pine.ui.build) (#:layout #:pine.ui.layout)
                     (#:face #:pine.ui.face) (#:mode #:pine.repl.mode)
                     (#:attach #:pine.net.attach) (#:wm #:pine.app.wm)

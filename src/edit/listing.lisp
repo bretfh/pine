@@ -106,11 +106,11 @@ listing: RET on a row hands ACTS the place it stands for."
     (into "*jobs*"
           (append
            (list (format nil "~16a ~10a ~a" "what" "state" "name") "")
-           (loop :for p :in (pine.proc.supervisor:processes
+           (loop :for p :in (pine/proc/supervisor:processes
                              pine.repl.shell:*supervisor*)
                  :collect (cons (format nil "~16a ~10a ~a" "process"
-                                        (pine.proc.process:state p)
-                                        (pine.proc.process:name p))
+                                        (pine/proc/process:state p)
+                                        (pine/proc/process:name p))
                                 p))
            (loop :for tk :in (pine/run/task:tasks)
                  :collect (cons (format nil "~16a ~10a ~a" "thread"

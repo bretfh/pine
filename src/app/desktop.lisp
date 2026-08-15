@@ -184,7 +184,7 @@ like any other; without this it never reaches the screen."
         (:refresh (d:clear! (sent s)) (push-all s))
         (:hint
          (destructuring-bind (&key text) (rest message)
-           (setf (node:contents (pine.world.world:ensure pine.world.world:*world*
+           (setf (node:contents (pine/world/world:ensure pine/world/world:*world*
                                                         "echo" "hint"))
                  (or text ""))))
         (t nil)))))

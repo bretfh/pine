@@ -59,8 +59,8 @@ thread and added to by nothing else.")
 read here: making one is a write to the space, and this runs while a cell is
 being painted."
 
-  (let ((root (and pine.world.world:*world*
-                   (pine.world.world:root pine.world.world:*world*))))
+  (let ((root (and pine/world/world:*world*
+                   (pine/world/world:root pine/world/world:*world*))))
     (if (null root)
         (funcall thunk)
         (let* ((name (string-downcase (symbol-name which)))
@@ -92,8 +92,8 @@ being painted."
 
 (defun active ()
   "The theme in force here: /theme, which is a value like any other."
-  (or (and pine.world.world:*world*
-           (let ((n (pine.world.world:at pine.world.world:*world* "active-theme")))
+  (or (and pine/world/world:*world*
+           (let ((n (pine/world/world:at pine/world/world:*world* "active-theme")))
              (and n (pine/fs/node:contents n))))
       +default-theme+))
 
@@ -143,8 +143,8 @@ names."))
 HELD rather than READ, because /face is served: what is asked for here is what
 someone put there, and the provider answers by asking this."
   (let ((out (make-hash-table :test 'eq))
-        (written (and pine.world.world:*world*
-                      (pine.world.world:at pine.world.world:*world* "face"))))
+        (written (and pine/world/world:*world*
+                      (pine/world/world:at pine/world/world:*world* "face"))))
     (maphash (lambda (k v) (setf (gethash k out) v))
              (theme-faces (find-theme (active))))
     (when written

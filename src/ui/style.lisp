@@ -40,8 +40,8 @@
            :collect (cons (parse-rule-selectors sel) props)))))
 
 (defun reset-rules ()
-  (let* ((w pine.world.world:*world*)
-         (n (and w (pine.world.world:at w "memo/stylesheet"))))
+  (let* ((w pine/world/world:*world*)
+         (n (and w (pine/world/world:at w "memo/stylesheet"))))
     (when n (pine/fs/node:invalidate n)))
   nil)
 

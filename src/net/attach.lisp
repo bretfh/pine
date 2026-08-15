@@ -124,9 +124,9 @@
                   :dispatcher :pinned :in (server:actor-system s)))
 
 (defun %noting (kind)
-  (when pine.world.world:*world*
+  (when pine/world/world:*world*
     (setf (pine/fs/node:contents
-           (pine.world.world:ensure pine.world.world:*world* "attached"
+           (pine/world/world:ensure pine/world/world:*world* "attached"
                                     (string-downcase (string kind))))
           (length (clients kind)))))
 

@@ -1,7 +1,7 @@
 (defpackage #:pine.ui.paths
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:world #:pine.world.world)
+                    (#:world #:pine/world/world)
                     (#:face #:pine.ui.face) (#:css #:pine.ui.css))
   (:export #:themes-node #:faces-node #:install #:face-plist))
 

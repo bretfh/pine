@@ -10,7 +10,7 @@
   `(let* ((out (make-string-output-stream))
           (,var (pine.repl.session:open-session
                  :name "probe" :mode "shell"
-                 :node (pine.world.world:root pine.world.world:*world*)
+                 :node (pine/world/world:root pine/world/world:*world*)
                  :input (make-string-input-stream ,in)
                  :output out
                  :package (find-package :pine))))
@@ -21,18 +21,18 @@
 
 (test a-started-pine-has-a-world-a-supervisor-and-its-commands
   (with-pine ()
-    (is (typep pine.world.world:*world* 'pine.world.world:world))
-    (is (typep pine:*supervisor* 'pine.proc.supervisor:supervisor))
+    (is (typep pine/world/world:*world* 'pine/world/world:world))
+    (is (typep pine:*supervisor* 'pine/proc/supervisor:supervisor))
     (is (member "ls" (pine/fs/tree:listing
-                      (pine.world.world:at pine.world.world:*world* "cmd"))
+                      (pine/world/world:at pine/world/world:*world* "cmd"))
                 :test #'equal))
     (is (equal "what is under a node"
                (pine/fs/node:contents
-                (pine.world.world:at pine.world.world:*world* "cmd/ls"))))))
+                (pine/world/world:at pine/world/world:*world* "cmd/ls"))))))
 
 (test commands-live-in-the-filesystem-and-a-new-one-appears-there
   (with-pine ()
-    (let ((cmd (pine.world.world:at pine.world.world:*world* "cmd")))
+    (let ((cmd (pine/world/world:at pine/world/world:*world* "cmd")))
       (is (null (member "probe-live" (pine/fs/tree:listing cmd) :test #'equal)))
       (pine.repl.command:defcommand "probe-live" () (:describes "made at the repl")
         :ran)
@@ -42,7 +42,7 @@
                  "the tree reflects the commands rather than copying them")
              (is (equal "made at the repl"
                         (pine/fs/node:contents
-                         (pine.world.world:at pine.world.world:*world*
+                         (pine/world/world:at pine/world/world:*world*
                                               "cmd/probe-live")))))
         (pine.repl.command:forget "probe-live")))))
 

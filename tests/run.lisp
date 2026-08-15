@@ -151,7 +151,7 @@ writing different keys reads the other out of it."
          (let ((threads (length (pine/run/task:tasks)))
                (heard (pine/data:box 0)))
            (dotimes (i 20)
-             (let ((n (pine.world.world:ensure pine.world.world:*world*
+             (let ((n (pine/world/world:ensure pine/world/world:*world*
                                                (format nil "probe-live-~d" i))))
                (pine/fs/watch:watch n (lambda (of value)
                                         (declare (ignore of value))

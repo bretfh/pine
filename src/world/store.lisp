@@ -1,12 +1,11 @@
-(defpackage #:pine.world.store
+(defpackage #:pine/world/store
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:world #:pine.world.world)
+                    (#:tree #:pine/fs/tree) (#:world #:pine/world/world)
                     )
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
            #:storablep #:written #:read-back #:keep #:keeping #:*store*))
-
-(in-package #:pine.world.store)
+(in-package #:pine/world/store)
 
 (defvar *schema*
   "create table if not exists node (path text primary key, value text not null,

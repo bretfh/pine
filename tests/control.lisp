@@ -31,7 +31,7 @@
 (test what-a-watcher-is-told-is-the-value-that-moved
   (with-pine
     (let ((heard nil)
-          (n (pine/fs/tree:ensure (pine.world.world:root pine.world.world:*world*)
+          (n (pine/fs/tree:ensure (pine/world/world:root pine/world/world:*world*)
                                   "probe")))
       (pine/fs/watch:watch n (lambda (of value)
                                (push (list (pine/fs/node:name of) value) heard)))
@@ -45,7 +45,7 @@
 (test a-watcher-that-is-dropped-hears-nothing-more
   (with-pine
     (let ((heard 0)
-          (n (pine/fs/tree:ensure (pine.world.world:root pine.world.world:*world*)
+          (n (pine/fs/tree:ensure (pine/world/world:root pine/world/world:*world*)
                                   "probe")))
       (let ((w (pine/fs/watch:watch n (lambda (of value)
                                         (declare (ignore of value))

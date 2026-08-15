@@ -22,7 +22,7 @@
 
 (test what-a-surface-reads-is-what-rebuilds-it
   (with-desktop
-    (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
+    (let ((where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface
        "reading" (lambda () (pine.ui.build:label (pine/fs/node:contents where))))
@@ -34,7 +34,7 @@
 
 (test a-surface-that-moves-tells-whoever-is-watching-it
   (with-desktop
-    (let ((where (pine.world.world:ensure pine.world.world:*world* "probe"))
+    (let ((where (pine/world/world:ensure pine/world/world:*world* "probe"))
           (told 0))
       (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface
@@ -114,7 +114,7 @@
 (test the-terminal-this-machine-uses-is-a-node-a-config-writes
   (with-desktop
     (setf (pine/fs/node:contents
-           (pine.world.world:ensure pine.world.world:*world* "wm-terminal"))
+           (pine/world/world:ensure pine/world/world:*world* "wm-terminal"))
           "foot")
     (is (equal "foot" (pine.app.wm:terminal)))))
 
@@ -278,7 +278,7 @@ a test waits for the thread it did run on."
 
 (test a-stream-says-a-provider-moved
   (with-desktop
-    (let* ((root (pine.world.world:root pine.world.world:*world*))
+    (let* ((root (pine/world/world:root pine/world/world:*world*))
            (probe (pine/fs/tree:ensure root "probe"))
            (told 0))
       (declare (ignorable probe))
@@ -295,7 +295,7 @@ a test waits for the thread it did run on."
 (test a-click-writes-and-the-write-is-what-pushes
   (with-desktop
     (let* ((client (make-instance 'probe-client))
-           (where (pine.world.world:ensure pine.world.world:*world* "probe")))
+           (where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) nil)
       (pine.app.surface:surface
        "probe"
@@ -315,7 +315,7 @@ a test waits for the thread it did run on."
 
 (test a-click-can-be-a-write-a-path-or-a-command
   (with-desktop
-    (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
+    (let ((where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) nil)
       (let ((by-map (pine.ui.build:acting
                      (pine/data:map (pine.path.path:parse "/probe") 41))))
@@ -331,7 +331,7 @@ a test waits for the thread it did run on."
 
 (test a-verb-is-applied-against-what-the-node-holds
   (with-desktop
-    (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
+    (let ((where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) nil)
       (setf (pine/fs/node:contents where) (pine/data:seq :toggle))
       (is (eq t (pine/fs/node:contents where)))
@@ -379,7 +379,7 @@ a test waits for the thread it did run on."
 
 (test a-field-asks-for-its-new-value
   (with-desktop
-    (let* ((where (pine.world.world:ensure pine.world.world:*world* "probe"))
+    (let* ((where (pine/world/world:ensure pine/world/world:*world* "probe"))
            (field (pine.ui.build:field (pine.path.path:parse "/probe")
                                        :hint "Probe")))
       (setf (pine/fs/node:contents where) "was")
@@ -511,8 +511,8 @@ pointer sends back names where the widget is, not which push it came from, so
 a click that crossed during a repaint still means what it looks like it means."
   (with-desktop
     (let ((client (make-instance 'probe-client))
-          (where (pine.world.world:ensure pine.world.world:*world* "probe"))
-          (ticks (pine.world.world:ensure pine.world.world:*world* "probe-tick")))
+          (where (pine/world/world:ensure pine/world/world:*world* "probe"))
+          (ticks (pine/world/world:ensure pine/world/world:*world* "probe-tick")))
       (setf (pine/fs/node:contents where) nil
             (pine/fs/node:contents ticks) 0)
       (pine.app.surface:surface
@@ -599,7 +599,7 @@ same as before. Pushing that is what made hovering flicker and a hint cost
 twenty frames."
   (with-desktop
     (let ((client (make-instance 'probe-client))
-          (where (pine.world.world:ensure pine.world.world:*world* "probe")))
+          (where (pine/world/world:ensure pine/world/world:*world* "probe")))
       (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface "probe-bar"
                                 (lambda () (pine.ui.build:label

@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:pl #:pine/data) (#:hl #:pine.ts.highlight)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:world #:pine.world.world) (#:path #:pine.path.path))
+                    (#:world #:pine/world/world) (#:path #:pine.path.path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
            #:for-readtable #:readtable-of
            #:install #:compute-highlights #:hl-dump #:hl-dump-file

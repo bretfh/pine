@@ -37,10 +37,10 @@ is stored as it was written."
 The same shape the built-ins are in, since the two are appended into one
 stylesheet and whatever compiles it should not have to know which half a style
 came from."
-  (when (and (null pine.world.world:*world*) *given*)
+  (when (and (null pine/world/world:*world*) *given*)
     (return-from styles *given*))
-  (let ((held (and pine.world.world:*world*
-                   (pine.world.world:at pine.world.world:*world* "style")))
+  (let ((held (and pine/world/world:*world*
+                   (pine/world/world:at pine/world/world:*world* "style")))
         (acc nil))
     (when held
       (dolist (each (pine/fs/node:nodes held))
@@ -69,11 +69,11 @@ This is not the way a config styles anything: a config writes the path. This is
 the far end of BROADCAST, where a frontend image puts what the daemon sent it
 into its own tree. Selectors may be keywords, symbol lists or selector strings,
 and it is reload-safe because a selector names its own path."
-  (cond ((null pine.world.world:*world*)
+  (cond ((null pine/world/world:*world*)
          (setf *given* styles))
         (t (dolist (style styles)
              (setf (pine/fs/node:contents
-                    (pine.world.world:ensure pine.world.world:*world*
+                    (pine/world/world:ensure pine/world/world:*world*
                                              "style" (%segment (first style))))
                    (first (rest style))))))
   (styles))

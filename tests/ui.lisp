@@ -53,8 +53,8 @@
        (progn
          (pine:start)
          (pine.ui.paths:install)
-         (let ((themes (pine.world.world:at pine.world.world:*world* "theme"))
-               (faces (pine.world.world:at pine.world.world:*world* "faces")))
+         (let ((themes (pine/world/world:at pine/world/world:*world* "theme"))
+               (faces (pine/world/world:at pine/world/world:*world* "faces")))
            (is (member "ef-dream" (pine/fs/tree:listing themes) :test #'equal))
            (is (member "default" (pine/fs/tree:listing faces) :test #'equal))
            (is (getf (pine/fs/node:contents
@@ -69,7 +69,7 @@
          (pine:start)
          (pine.ui.paths:install)
          (setf (pine/fs/node:contents
-                (pine.world.world:ensure pine.world.world:*world* "face" "probe-face"))
+                (pine/world/world:ensure pine/world/world:*world* "face" "probe-face"))
                (list :fg "#ff0000"))
          (let ((f (pine.ui.face:find-face :probe-face)))
            (is (equal "#ff0000" (pine.ui.face:fg f)))))
@@ -79,7 +79,7 @@
   "The frontend image never calls pine:start, so it has no tree. Installing the
 styles the daemon sent used to signal there, which killed the display actor and
 left every surface transparent."
-  (let ((pine.world.world:*world* nil)
+  (let ((pine/world/world:*world* nil)
         (pine.ui.css:*given* nil))
     (finishes (pine.ui.css:install (pine.ui.css:stylesheet)))
     (dolist (class '("editor-view" "modeline" "echo"))
@@ -118,8 +118,8 @@ is left, not in the middle of the whole box, or the two draw on each other."
 (test a-node-a-config-holds-is-written-by-clicking-it
   "(at (root *world*) \"wm\" \"workspaces\" n) is a node, and clicking a widget
 that carries one writes it."
-  (let* ((w (pine.world.world:make-world))
-         (n (pine.world.world:ensure w "probe"))
+  (let* ((w (pine/world/world:make-world))
+         (n (pine/world/world:ensure w "probe"))
          (thunk (pine.ui.build:acting n)))
     (setf (pine/fs/node:contents n) nil)
     (is-true thunk "a node is something a click can mean")

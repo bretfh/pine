@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.clock
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
-                    (#:process #:pine.proc.process))
+                    (#:process #:pine/proc/process))
   (:export #:clock-node #:install #:now #:tick #:*every*))
 
 (in-package #:pine.provider.clock)
@@ -67,6 +67,6 @@
   (when supervisor
     (let ((p (make-instance 'process:thread-process
                             :name "clock" :every *every* :thunk #'tick)))
-      (pine.proc.supervisor:supervise supervisor p)
+      (pine/proc/supervisor:supervise supervisor p)
       (process:start p)
       p)))

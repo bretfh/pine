@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.prompt
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:world #:pine.world.world)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:world #:pine/world/world)
                     (#:buffer #:pine.edit.buffer) (#:log #:pine/run/log)
                     (#:fault #:pine/run/fault))
   (:export #:prompt #:asking #:asking-p #:ask #:answer! #:cancel! #:said
