@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.render
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node) (#:build #:pine.ui.build)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine.ui.build)
                     (#:cells #:pine.ui.cells) (#:layout #:pine.ui.layout)
                     (#:raster #:pine.ui.raster) (#:face #:pine.ui.face)
                     (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)

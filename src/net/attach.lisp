@@ -125,7 +125,7 @@
 
 (defun %noting (kind)
   (when pine.world.world:*world*
-    (setf (pine.fs.node:contents
+    (setf (pine/fs/node:contents
            (pine.world.world:ensure pine.world.world:*world* "attached"
                                     (string-downcase (string kind))))
           (length (clients kind)))))

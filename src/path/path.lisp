@@ -1,7 +1,7 @@
 (defpackage #:pine.path.path
   (:use #:cl)
   (:shadow #:parse)
-  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree))
+  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
   (:export #:path #:pathp #:segments #:text #:parse #:leaf #:parent #:rootp
            #:patternp #:binders #:match #:under #:prefixp #:join
            #:literal #:binding #:any #:deep #:segment #:segment-text #:kind

@@ -1,7 +1,7 @@
 (defpackage #:pine.edit.listing
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command) (#:mode #:pine.repl.mode)
-                    (#:node #:pine.fs.node) (#:key #:pine.edit.key)
+                    (#:node #:pine/fs/node) (#:key #:pine.edit.key)
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:window #:pine.edit.window) (#:prompt #:pine.edit.prompt)
                     (#:log #:pine/run/log))

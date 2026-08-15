@@ -42,7 +42,7 @@
 (defun reset-rules ()
   (let* ((w pine.world.world:*world*)
          (n (and w (pine.world.world:at w "memo/stylesheet"))))
-    (when n (pine.fs.node:invalidate n)))
+    (when n (pine/fs/node:invalidate n)))
   nil)
 
 (defun pseudo-ok (pseudo hover)

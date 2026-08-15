@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.screen
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
   (:export #:screen-node #:install #:brightness #:set-brightness #:device
            #:outputs #:output #:set-output))
 

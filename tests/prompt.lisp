@@ -6,7 +6,7 @@
   `(unwind-protect
         (progn
           (pine:start)
-          (setf (pine.fs.node:contents (pine.edit.buffer:current)) ,text)
+          (setf (pine/fs/node:contents (pine.edit.buffer:current)) ,text)
           (pine.edit.buffer:goto! (pine.edit.buffer:current) 0 0)
           ,@body)
      (pine:stop)))
@@ -179,7 +179,7 @@
              (typed (namestring file))
              (press "RET")
              (is (equal "from disk"
-                        (pine.fs.node:contents
+                        (pine/fs/node:contents
                          (pine.edit.buffer:buffer-named "pine-probe-prompt.txt")))))
         (ignore-errors (delete-file file))))))
 

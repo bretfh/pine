@@ -64,15 +64,15 @@ being painted."
     (if (null root)
         (funcall thunk)
         (let* ((name (string-downcase (symbol-name which)))
-               (under (or (pine.fs.node:resolve root "memo")
-                          (pine.fs.node:attach
-                           (pine.fs.node:make-node "memo" :class 'pine.fs.node:node)
+               (under (or (pine/fs/node:resolve root "memo")
+                          (pine/fs/node:attach
+                           (pine/fs/node:make-node "memo" :class 'pine/fs/node:node)
                            root)))
-               (n (pine.fs.node:resolve under name)))
+               (n (pine/fs/node:resolve under name)))
           (unless n
-            (setf n (pine.fs.computed:computed name thunk))
-            (pine.fs.node:attach n under))
-          (pine.fs.node:contents n)))))
+            (setf n (pine/fs/computed:computed name thunk))
+            (pine/fs/node:attach n under))
+          (pine/fs/node:contents n)))))
 
 (defgeneric theme-key (name)
   (:documentation "NAME as the keyword a theme is known by."))
@@ -94,7 +94,7 @@ being painted."
   "The theme in force here: /theme, which is a value like any other."
   (or (and pine.world.world:*world*
            (let ((n (pine.world.world:at pine.world.world:*world* "active-theme")))
-             (and n (pine.fs.node:contents n))))
+             (and n (pine/fs/node:contents n))))
       +default-theme+))
 
 (defgeneric resolve-color (color palette)
@@ -148,10 +148,10 @@ someone put there, and the provider answers by asking this."
     (maphash (lambda (k v) (setf (gethash k out) v))
              (theme-faces (find-theme (active))))
     (when written
-      (dolist (each (pine.fs.node:nodes written))
-        (let ((f (%as-face (pine.fs.node:contents each))))
+      (dolist (each (pine/fs/node:nodes written))
+        (let ((f (%as-face (pine/fs/node:contents each))))
           (when f
-            (setf (gethash (intern (string-upcase (pine.fs.node:name each)) :keyword)
+            (setf (gethash (intern (string-upcase (pine/fs/node:name each)) :keyword)
                            out)
                   f)))))
     out))

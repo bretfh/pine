@@ -15,18 +15,18 @@
          (n (pine.world.world:ensure w "buf" "scratch")))
     (let ((id (pine.world.world:identity-of w n)))
       (is (integerp id))
-      (setf (pine.fs.node:contents n) "one")
-      (setf (pine.fs.node:contents n) "two")
+      (setf (pine/fs/node:contents n) "one")
+      (setf (pine/fs/node:contents n) "two")
       (is (eql id (pine.world.world:identity-of w n)))
       (is (eq n (pine.world.world:node-for-id w id))))))
 
 (test what-persists-is-a-property-of-the-class
   (let* ((w (pine.world.world:make-world))
          (held (pine.world.world:ensure w "buf" "scratch" "text"))
-         (worked-out (pine.fs.computed:computed "sum" (lambda () 42))))
-    (pine.fs.node:attach worked-out (pine.world.world:root w))
-    (is-true (pine.fs.node:persistp held))
-    (is-false (pine.fs.node:persistp worked-out)
+         (worked-out (pine/fs/computed:computed "sum" (lambda () 42))))
+    (pine/fs/node:attach worked-out (pine.world.world:root w))
+    (is-true (pine/fs/node:persistp held))
+    (is-false (pine/fs/node:persistp worked-out)
               "what is worked out comes back by being worked out again")))
 
 (test a-snapshot-comes-back-with-what-was-in-it
@@ -38,10 +38,10 @@
       (is (eql 3 (pine.world.store:snapshot w s))))
     (let ((back (pine.world.world:make-world)))
       (is (eql 3 (pine.world.store:restore back s)))
-      (is (equal "hello" (pine.fs.node:contents
+      (is (equal "hello" (pine/fs/node:contents
                           (pine.world.world:at back "buf/scratch/text"))))
-      (is (eql 80 (pine.fs.node:contents (pine.world.world:at back "win/width"))))
-      (is (eql 2 (pine.fs.node:contents
+      (is (eql 80 (pine/fs/node:contents (pine.world.world:at back "win/width"))))
+      (is (eql 2 (pine/fs/node:contents
                   (pine.world.world:at back "mode/lisp/indent")))))))
 
 (test a-snapshot-keeps-what-was-defined-while-it-was-running
@@ -54,7 +54,7 @@ a node like any other, so it is in the snapshot."
       (let ((back (pine.world.world:make-world)))
         (pine.world.store:restore back s)
         (is (equal "made at the repl"
-                   (pine.fs.node:contents
+                   (pine/fs/node:contents
                     (pine.world.world:at back "cmd/probe-live"))))))))
 
 (test what-cannot-be-written-down-is-left-out-rather-than-signalling
@@ -73,15 +73,15 @@ a node like any other, so it is in the snapshot."
            (unwind-protect
                 (progn
                   (pine:start :store file)
-                  (setf (pine.fs.node:contents
+                  (setf (pine/fs/node:contents
                          (pine.world.world:ensure pine.world.world:*world* "probe"))
                         held))
              (pine:stop))
            (unwind-protect
                 (progn
                   (pine:start :store file)
-                  (let ((back (pine.fs.node:contents
-                               (pine.fs.tree:at (pine.world.world:root
+                  (let ((back (pine/fs/node:contents
+                               (pine/fs/tree:at (pine.world.world:root
                                                  pine.world.world:*world*)
                                                 "probe"))))
                     (is-true (pine/data:mapp back)
@@ -99,7 +99,7 @@ a node like any other, so it is in the snapshot."
            (unwind-protect
                 (progn
                   (pine:start :store file)
-                  (setf (pine.fs.node:contents
+                  (setf (pine/fs/node:contents
                          (pine.world.world:ensure pine.world.world:*world* "probe"))
                         :written)
                   (let ((rows (sqlite:execute-to-list
@@ -107,7 +107,7 @@ a node like any other, so it is in the snapshot."
                                "select path, value from node where path = '/probe'")))
                     (is-true rows
                              "it is on disk already, not waiting for a clean stop")))
-             (setf pine.fs.node:*on-write* nil)
+             (setf pine/fs/node:*on-write* nil)
              (ignore-errors (pine.world.store:close-store pine:*store*))
              (setf pine:*store* nil)
              (pine:stop))
@@ -115,8 +115,8 @@ a node like any other, so it is in the snapshot."
                 (progn
                   (pine:start :store file)
                   (is (eq :written
-                          (pine.fs.node:contents
-                           (pine.fs.tree:at (pine.world.world:root
+                          (pine/fs/node:contents
+                           (pine/fs/tree:at (pine.world.world:root
                                              pine.world.world:*world*)
                                             "probe")))
                       "so a crash before the snapshot costs nothing"))
@@ -136,7 +136,7 @@ the store had already been told, not what a snapshot would have written."
              (is (eq :written
                      (pine.proc.lisp:evaluate
                       p `(progn (pine:start :store ,(namestring file))
-                                (setf (pine.fs.node:contents
+                                (setf (pine/fs/node:contents
                                        (pine.world.world:ensure
                                         pine.world.world:*world* "probe"))
                                       :written))
@@ -150,8 +150,8 @@ the store had already been told, not what a snapshot would have written."
          (progn
            (pine:start :store file)
            (is (eq :written
-                   (pine.fs.node:contents
-                    (pine.fs.tree:at (pine.world.world:root pine.world.world:*world*)
+                   (pine/fs/node:contents
+                    (pine/fs/tree:at (pine.world.world:root pine.world.world:*world*)
                                      "probe")))
                "and it is there for the image that starts next"))
       (pine:stop)

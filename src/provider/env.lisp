@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.env
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node))
+  (:local-nicknames (#:node #:pine/fs/node))
   (:export #:env-node #:variable-node #:install #:names))
 
 (in-package #:pine.provider.env)

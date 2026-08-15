@@ -31,16 +31,16 @@ to say what it stands for."
 (defun placep (x)
   "Whether X is somewhere a value is kept rather than a value: a node, or a
 path naming one."
-  (or (pine.fs.node:nodep x) (pine.path.path:pathp x)))
+  (or (pine/fs/node:nodep x) (pine.path.path:pathp x)))
 
 (defun held (x)
-  (if (pine.fs.node:nodep x)
-      (pine.fs.node:contents x)
+  (if (pine/fs/node:nodep x)
+      (pine/fs/node:contents x)
       (pine.path.place:contents x)))
 
 (defun (setf held) (value x)
-  (if (pine.fs.node:nodep x)
-      (setf (pine.fs.node:contents x) value)
+  (if (pine/fs/node:nodep x)
+      (setf (pine/fs/node:contents x) value)
       (setf (pine.path.place:contents x) value)))
 
 (defun shown (x)
@@ -259,8 +259,8 @@ saying which line was which."
                       (let ((n (pine.path.place:at items)))
                         (and n (mapcar (lambda (each)
                                          (pine.path.path:parse
-                                          (pine.fs.node:full-name each)))
-                                       (pine.fs.node:nodes n))))
+                                          (pine/fs/node:full-name each)))
+                                       (pine/fs/node:nodes n))))
                       items)
            :item-fn (if over-paths
                         (lambda (item &optional index)

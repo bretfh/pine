@@ -1,7 +1,7 @@
 (defpackage #:pine.app.surface
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:computed #:pine.fs.computed)
-                    (#:world #:pine.world.world) (#:tree #:pine.fs.tree))
+  (:local-nicknames (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
+                    (#:world #:pine.world.world) (#:tree #:pine/fs/tree))
   (:export #:*on-declare* #:surface #:defsurface #:surfaces #:surface-named #:surface-node #:root
            #:as #:shownp #:builds #:show! #:hide! #:toggle! #:only!
            #:panelp #:forget))

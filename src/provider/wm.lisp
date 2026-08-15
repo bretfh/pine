@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.wm
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
   (:export #:wm-node #:install #:niri #:workspaces #:windows #:focused
            #:act #:json))
 

@@ -6,7 +6,7 @@
   `(unwind-protect (progn (pine:start) ,@body) (pine:stop)))
 
 (defun held-at (path)
-  (pine.fs.node:contents (pine.world.world:at pine.world.world:*world* path)))
+  (pine/fs/node:contents (pine.world.world:at pine.world.world:*world* path)))
 
 (test the-providers-are-nodes-under-the-root
   (with-providers
@@ -20,7 +20,7 @@ the person's own program, and that is what /sh remembers."
   (with-providers
     (is (equal "from the provider" (held-at "sh/echo from the provider")))
     (is (null (held-at "sh")) "a question asked is not a program run")
-    (setf (pine.fs.node:contents
+    (setf (pine/fs/node:contents
            (pine.world.world:at pine.world.world:*world* "sh/true"))
           t)
     (is (member "true" (held-at "sh") :test #'equal)
@@ -29,11 +29,11 @@ the person's own program, and that is what /sh remembers."
 (test an-environment-variable-reads-and-writes
   (with-providers
     (let ((n (pine.world.world:at pine.world.world:*world* "env/PINE_PROBE")))
-      (is (null (pine.fs.node:contents n)))
-      (setf (pine.fs.node:contents n) "a value")
+      (is (null (pine/fs/node:contents n)))
+      (setf (pine/fs/node:contents n) "a value")
       (is (equal "a value" (uiop:getenv "PINE_PROBE")))
-      (is (equal "a value" (pine.fs.node:contents n)))
-      (setf (pine.fs.node:contents n) nil)
+      (is (equal "a value" (pine/fs/node:contents n)))
+      (setf (pine/fs/node:contents n) nil)
       (is (null (uiop:getenv "PINE_PROBE"))))
     (is (member "PATH" (held-at "env") :test #'equal))))
 
@@ -44,7 +44,7 @@ the person's own program, and that is what /sh remembers."
     (is (integerp (held-at "sys/uptime")))
     (is (stringp (held-at "sys/host")))
     (is (= 3 (length (held-at "sys/load"))))
-    (is (member "cpu" (pine.fs.tree:listing
+    (is (member "cpu" (pine/fs/tree:listing
                        (pine.world.world:at pine.world.world:*world* "sys"))
                 :test #'equal))))
 
@@ -93,7 +93,7 @@ the person's own program, and that is what /sh remembers."
     (let ((live (pine.repl.command:run "live")))
       (dolist (name '("/sh" "/env" "/sys" "/clock" "/file"))
         (is (member name live :test #'equal) "~a should be live" name)))
-    (is (null (pine.fs.node:livep (pine.edit.buffer:current)))
+    (is (null (pine/fs/node:livep (pine.edit.buffer:current)))
         "a buffer is pine's own, so the store keeps it")))
 
 (test the-machine-providers-read-without-signalling
@@ -116,16 +116,16 @@ down when pipewire is not running."
   (with-providers
     (pine.provider.audio:install (pine.world.world:root pine.world.world:*world*))
     (let ((audio (pine.world.world:at pine.world.world:*world* "audio")))
-      (is (member "volume" (pine.fs.tree:listing audio) :test #'equal))
-      (is (member "sinks" (pine.fs.tree:listing audio) :test #'equal))
-      (is-true (pine.fs.node:livep audio)))))
+      (is (member "volume" (pine/fs/tree:listing audio) :test #'equal))
+      (is (member "sinks" (pine/fs/tree:listing audio) :test #'equal))
+      (is-true (pine/fs/node:livep audio)))))
 
 (test power-verbs-are-nodes-so-a-config-writes-one-rather-than-calling-out
   (with-providers
     (pine.provider.power:install (pine.world.world:root pine.world.world:*world*))
     (let ((power (pine.world.world:at pine.world.world:*world* "power")))
       (dolist (verb '("lock" "suspend" "reboot" "poweroff" "logout"))
-        (is (member verb (pine.fs.tree:listing power) :test #'equal)
+        (is (member verb (pine/fs/tree:listing power) :test #'equal)
             "~a should be a node under /power" verb)))))
 
 (defun %alive-p (pid)
@@ -192,15 +192,15 @@ world held before."
          (pine:start)
          (let* ((n (pine.world.world:ensure pine.world.world:*world* "probe-act"))
                 (told 0))
-           (pine.fs.watch:watch n (lambda (of value)
+           (pine/fs/watch:watch n (lambda (of value)
                                     (declare (ignore of value))
                                     (incf told))
                                 :only nil :poll nil)
-           (setf (pine.fs.node:contents n) 41)
+           (setf (pine/fs/node:contents n) 41)
            (is (= 1 told) "one write, one telling")
-           (setf (pine.fs.node:contents n) 42)
+           (setf (pine/fs/node:contents n) 42)
            (is (= 2 told))))
-    (pine.fs.watch:forget-all)
+    (pine/fs/watch:forget-all)
     (pine:stop)))
 
 (test one-question-in-one-breath-is-asked-once

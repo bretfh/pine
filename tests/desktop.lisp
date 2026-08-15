@@ -15,34 +15,34 @@
     (let ((s (surface-of "probe")))
       (is-true s)
       (is (eq :bar (pine.app.surface:as s)))
-      (is (typep (pine.fs.node:contents s) 'pine.ui.node:node))
+      (is (typep (pine/fs/node:contents s) 'pine.ui.node:node))
       (is (equal '("hello")
                  (mapcar (lambda (row) (string-right-trim " " (car row)))
-                         (pine.ui.cells:render (pine.fs.node:contents s) 20)))))))
+                         (pine.ui.cells:render (pine/fs/node:contents s) 20)))))))
 
 (test what-a-surface-reads-is-what-rebuilds-it
   (with-desktop
     (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
-      (setf (pine.fs.node:contents where) "one")
+      (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface
-       "reading" (lambda () (pine.ui.build:label (pine.fs.node:contents where))))
+       "reading" (lambda () (pine.ui.build:label (pine/fs/node:contents where))))
       (let ((s (surface-of "reading")))
-        (is (equal "one" (pine.ui.node:content (pine.fs.node:contents s))))
-        (setf (pine.fs.node:contents where) "two")
-        (is (equal "two" (pine.ui.node:content (pine.fs.node:contents s)))
+        (is (equal "one" (pine.ui.node:content (pine/fs/node:contents s))))
+        (setf (pine/fs/node:contents where) "two")
+        (is (equal "two" (pine.ui.node:content (pine/fs/node:contents s)))
             "nothing subscribed: the surface read it, so the write invalidated it")))))
 
 (test a-surface-that-moves-tells-whoever-is-watching-it
   (with-desktop
     (let ((where (pine.world.world:ensure pine.world.world:*world* "probe"))
           (told 0))
-      (setf (pine.fs.node:contents where) "one")
+      (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface
-       "reading" (lambda () (pine.ui.build:label (pine.fs.node:contents where))))
-      (pine.fs.node:contents (surface-of "reading"))
-      (pine.fs.watch:watch (surface-of "reading")
+       "reading" (lambda () (pine.ui.build:label (pine/fs/node:contents where))))
+      (pine/fs/node:contents (surface-of "reading"))
+      (pine/fs/watch:watch (surface-of "reading")
                            (lambda (of value) (declare (ignore of value)) (incf told)))
-      (setf (pine.fs.node:contents where) "two")
+      (setf (pine/fs/node:contents where) "two")
       (is (= 1 told) "the desktop is pushed a fresh tree without polling for one"))))
 
 (test the-placement-is-wayland-vocabulary-and-the-content-is-not
@@ -73,12 +73,12 @@
 (test a-surface-slot-is-a-node-so-a-config-can-write-it
   (with-desktop
     (pine.app.surface:surface "probe" (lambda () (pine.ui.build:label "")) :as :panel)
-    (let ((shown (pine.fs.tree:at (pine.app.surface:root) "probe/shown")))
+    (let ((shown (pine/fs/tree:at (pine.app.surface:root) "probe/shown")))
       (is-true shown)
-      (setf (pine.fs.node:contents shown) t)
+      (setf (pine/fs/node:contents shown) t)
       (is-true (pine.app.surface:shownp (surface-of "probe")))
-      (is (eq :panel (pine.fs.node:contents
-                      (pine.fs.tree:at (pine.app.surface:root) "probe/as")))))))
+      (is (eq :panel (pine/fs/node:contents
+                      (pine/fs/tree:at (pine.app.surface:root) "probe/as")))))))
 
 (test the-desktop-verbs-are-commands-like-any-other
   (with-desktop
@@ -94,18 +94,18 @@
     (pine:niri)
     (let ((wm (pine.app.wm:root)))
       (is-true wm)
-      (is-true (pine.fs.node:livep wm)
+      (is-true (pine/fs/node:livep wm)
                "the compositor answers from itself, so no snapshot walks into it")
-      (is-true (pine.fs.tree:at wm "windows"))
-      (is-true (pine.fs.tree:at wm "workspaces"))
-      (is-true (pine.fs.node:resolve wm "close")
+      (is-true (pine/fs/tree:at wm "windows"))
+      (is-true (pine/fs/tree:at wm "workspaces"))
+      (is-true (pine/fs/node:resolve wm "close")
                "what it can be told is a node, not a special message"))))
 
 (test the-wm-commands-read-the-compositor-rather-than-a-copy
   (with-desktop
     (pine:niri)
     (is (equal (pine.app.wm:windows)
-               (pine.fs.node:contents (pine.fs.tree:at (pine.app.wm:root) "windows")))
+               (pine/fs/node:contents (pine/fs/tree:at (pine.app.wm:root) "windows")))
         "the command and the path answer the same thing")
     (is-true (member "wm-focus-next" (mapcar #'pine.repl.command:name
                                              (pine.repl.command:commands))
@@ -113,7 +113,7 @@
 
 (test the-terminal-this-machine-uses-is-a-node-a-config-writes
   (with-desktop
-    (setf (pine.fs.node:contents
+    (setf (pine/fs/node:contents
            (pine.world.world:ensure pine.world.world:*world* "wm-terminal"))
           "foot")
     (is (equal "foot" (pine.app.wm:terminal)))))
@@ -133,7 +133,7 @@
                                       (pine.ui.build:label "pine")
                                       (pine.edit.render:frame-tree)))
      :as :toplevel)
-    (let ((tree (pine.fs.node:contents (pine.edit.session:surface))))
+    (let ((tree (pine/fs/node:contents (pine.edit.session:surface))))
       (is (equal "chrome" (pine.ui.node:css-class tree))
           "the editor pushes the surface, so a config replacing it is what ships")
       (is-true (%classed tree "editor-view")
@@ -255,9 +255,9 @@ a test waits for the thread it did run on."
   (with-desktop
     (pine:niri)
     (let ((wm (pine.app.wm:root)))
-      (is (eq (pine.fs.tree:at wm "focused") (pine.fs.tree:at wm "focused"))
+      (is (eq (pine/fs/tree:at wm "focused") (pine/fs/tree:at wm "focused"))
           "a surface can only depend on a child that is the same object twice")
-      (is (eq (first (pine.fs.node:nodes wm)) (first (pine.fs.node:nodes wm)))))))
+      (is (eq (first (pine/fs/node:nodes wm)) (first (pine/fs/node:nodes wm)))))))
 
 (test stirring-a-provider-recomputes-what-read-it
   (with-desktop
@@ -267,25 +267,25 @@ a test waits for the thread it did run on."
               "live"
               (lambda () (pine.ui.build:label
                           (princ-to-string
-                           (pine.fs.node:contents
-                            (pine.fs.tree:at (pine.app.wm:root) "focused")))))
+                           (pine/fs/node:contents
+                            (pine/fs/tree:at (pine.app.wm:root) "focused")))))
               :as :bar)))
-      (pine.fs.node:contents s)
-      (pine.fs.watch:watch s (lambda (of value) (declare (ignore of value)) (incf told)))
-      (pine.fs.node:stir (pine.app.wm:root))
+      (pine/fs/node:contents s)
+      (pine/fs/watch:watch s (lambda (of value) (declare (ignore of value)) (incf told)))
+      (pine/fs/node:stir (pine.app.wm:root))
       (is (= 1 told)
           "the compositor said it moved, so the bar that read it was pushed again"))))
 
 (test a-stream-says-a-provider-moved
   (with-desktop
     (let* ((root (pine.world.world:root pine.world.world:*world*))
-           (probe (pine.fs.tree:ensure root "probe"))
+           (probe (pine/fs/tree:ensure root "probe"))
            (told 0))
       (declare (ignorable probe))
       (let ((stream (pine.provider.sh:streaming
                      "for i in 1 2 3; do echo tick; sleep 0.2; done")))
         (is-true stream "a command that streams is a node under /sh")
-        (pine.fs.watch:watch stream
+        (pine/fs/watch:watch stream
                              (lambda (of said) (declare (ignore of said)) (incf told))
                              :only nil :poll nil)
         (loop :repeat 60 :until (>= told 2) :do (sleep 0.05))
@@ -296,13 +296,13 @@ a test waits for the thread it did run on."
   (with-desktop
     (let* ((client (make-instance 'probe-client))
            (where (pine.world.world:ensure pine.world.world:*world* "probe")))
-      (setf (pine.fs.node:contents where) nil)
+      (setf (pine/fs/node:contents where) nil)
       (pine.app.surface:surface
        "probe"
        (lambda ()
          (pine.ui.build:button
-          :on-click (lambda () (setf (pine.fs.node:contents where) t))
-          (pine.ui.build:label (if (pine.fs.node:contents where) "on" "off"))))
+          :on-click (lambda () (setf (pine/fs/node:contents where) t))
+          (pine.ui.build:label (if (pine/fs/node:contents where) "on" "off"))))
        :as :bar)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
@@ -316,15 +316,15 @@ a test waits for the thread it did run on."
 (test a-click-can-be-a-write-a-path-or-a-command
   (with-desktop
     (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
-      (setf (pine.fs.node:contents where) nil)
+      (setf (pine/fs/node:contents where) nil)
       (let ((by-map (pine.ui.build:acting
                      (pine/data:map (pine.path.path:parse "/probe") 41))))
         (funcall by-map)
-        (is (eql 41 (pine.fs.node:contents where))
+        (is (eql 41 (pine/fs/node:contents where))
             "a write-map is a click, so a config declares one without a closure"))
       (let ((by-path (pine.ui.build:acting (pine.path.path:parse "/probe"))))
         (funcall by-path)
-        (is (eq t (pine.fs.node:contents where))))
+        (is (eq t (pine/fs/node:contents where))))
       (let ((by-name (pine.ui.build:acting "pwd")))
         (is (equal "/" (funcall by-name))
             "a command's name is a click too")))))
@@ -332,16 +332,16 @@ a test waits for the thread it did run on."
 (test a-verb-is-applied-against-what-the-node-holds
   (with-desktop
     (let ((where (pine.world.world:ensure pine.world.world:*world* "probe")))
-      (setf (pine.fs.node:contents where) nil)
-      (setf (pine.fs.node:contents where) (pine/data:seq :toggle))
-      (is (eq t (pine.fs.node:contents where)))
-      (setf (pine.fs.node:contents where) (pine/data:seq :toggle))
-      (is (null (pine.fs.node:contents where)))
-      (setf (pine.fs.node:contents where) (pine/data:seq :set 7))
-      (is (eql 7 (pine.fs.node:contents where)))
-      (setf (pine.fs.node:contents where) (pine/data:no-set))
-      (setf (pine.fs.node:contents where) (pine/data:seq :conj :probe))
-      (is-true (pine/data:contains (pine.fs.node:contents where) :probe)))))
+      (setf (pine/fs/node:contents where) nil)
+      (setf (pine/fs/node:contents where) (pine/data:seq :toggle))
+      (is (eq t (pine/fs/node:contents where)))
+      (setf (pine/fs/node:contents where) (pine/data:seq :toggle))
+      (is (null (pine/fs/node:contents where)))
+      (setf (pine/fs/node:contents where) (pine/data:seq :set 7))
+      (is (eql 7 (pine/fs/node:contents where)))
+      (setf (pine/fs/node:contents where) (pine/data:no-set))
+      (setf (pine/fs/node:contents where) (pine/data:seq :conj :probe))
+      (is-true (pine/data:contains (pine/fs/node:contents where) :probe)))))
 
 (test asking-before-a-dangerous-click-goes-through-the-prompt
   (with-desktop
@@ -382,13 +382,13 @@ a test waits for the thread it did run on."
     (let* ((where (pine.world.world:ensure pine.world.world:*world* "probe"))
            (field (pine.ui.build:field (pine.path.path:parse "/probe")
                                        :hint "Probe")))
-      (setf (pine.fs.node:contents where) "was")
+      (setf (pine/fs/node:contents where) "was")
       (let ((thunk (pine.ui.layout:clicked field 0)))
         (is-true thunk "a field is clickable")
         (funcall thunk)
         (is-true (pine.edit.prompt:asking-p) "and asks rather than doing nothing")
         (pine.edit.prompt:answer! "now")
-        (is (equal "now" (pine.fs.node:contents where)))))))
+        (is (equal "now" (pine/fs/node:contents where)))))))
 
 (test a-keystroke-ships-the-lines-that-moved-and-not-the-whole-frame
   (with-desktop
@@ -460,7 +460,7 @@ a test waits for the thread it did run on."
              (bordeaux-threads:signal-semaphore held)
              (is-true (wait-until
                        (lambda ()
-                         (search "x" (pine.fs.node:contents
+                         (search "x" (pine/fs/node:contents
                                       (pine.edit.buffer:current)))))
                       "and the keys behind it landed once it was done, in order"))
         (pine.repl.command:forget "probe-slow")))))
@@ -513,15 +513,15 @@ a click that crossed during a repaint still means what it looks like it means."
     (let ((client (make-instance 'probe-client))
           (where (pine.world.world:ensure pine.world.world:*world* "probe"))
           (ticks (pine.world.world:ensure pine.world.world:*world* "probe-tick")))
-      (setf (pine.fs.node:contents where) nil
-            (pine.fs.node:contents ticks) 0)
+      (setf (pine/fs/node:contents where) nil
+            (pine/fs/node:contents ticks) 0)
       (pine.app.surface:surface
        "probe"
        (lambda ()
          (pine.ui.build:row
-          (pine.ui.build:label (format nil "~a" (pine.fs.node:contents ticks)))
+          (pine.ui.build:label (format nil "~a" (pine/fs/node:contents ticks)))
           (pine.ui.build:button
-           :on-click (lambda () (setf (pine.fs.node:contents where) t))
+           :on-click (lambda () (setf (pine/fs/node:contents where) t))
            (pine.ui.build:label "go"))))
        :as :bar)
       (let ((s (pine.app.desktop::%attached client)))
@@ -531,10 +531,10 @@ a click that crossed during a repaint still means what it looks like it means."
                       (return-from found each)))))
           (is-true id "the surface registered a click")
           (dotimes (n 20)
-            (setf (pine.fs.node:contents ticks) n)
+            (setf (pine/fs/node:contents ticks) n)
             (pine.app.desktop:push-surface s (pine.app.surface:surface-named "probe")))
           (acted client id)
-          (is (eq t (pine.fs.node:contents where))
+          (is (eq t (pine/fs/node:contents where))
               "the id from twenty pushes ago still names the same button"))))))
 
 (test showing-a-panel-tells-the-frontend-when-the-write-is-to-its-slot
@@ -548,9 +548,9 @@ something else happens to rebuild it."
                                 :as :panel)
       (pine.app.desktop::%attached client)
       (setf (sent client) nil)
-      (let ((shown (pine.fs.tree:at (pine.app.surface:root) "probe-panel/shown")))
+      (let ((shown (pine/fs/tree:at (pine.app.surface:root) "probe-panel/shown")))
         (is-true shown "a surface says whether it is shown at a path")
-        (setf (pine.fs.node:contents shown) t)
+        (setf (pine/fs/node:contents shown) t)
         (pine.app.desktop:flush (pine.app.desktop::%for client))
         (let ((told (find-if (lambda (m)
                                (and (eq :panel (first m))
@@ -600,17 +600,17 @@ twenty frames."
   (with-desktop
     (let ((client (make-instance 'probe-client))
           (where (pine.world.world:ensure pine.world.world:*world* "probe")))
-      (setf (pine.fs.node:contents where) "one")
+      (setf (pine/fs/node:contents where) "one")
       (pine.app.surface:surface "probe-bar"
                                 (lambda () (pine.ui.build:label
-                                            (pine.fs.node:contents where)))
+                                            (pine/fs/node:contents where)))
                                 :as :bar)
       (let ((s (pine.app.desktop::%attached client)))
         (setf (sent client) nil)
         (dotimes (n 20) (pine.app.desktop:push-surface s (pine.app.surface:surface-named "probe-bar")))
         (is (zerop (count :widgets (sent client) :key #'first))
             "twenty pushes of a surface that did not move are none")
-        (setf (pine.fs.node:contents where) "two")
+        (setf (pine/fs/node:contents where) "two")
         (pine.app.desktop:flush s)
         (is (= 1 (count :widgets (sent client) :key #'first))
             "and one that did is one")

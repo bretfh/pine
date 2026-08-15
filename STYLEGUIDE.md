@@ -71,7 +71,7 @@ it in.
 
 ## Nodes
 
-Everything addressable is a `pine.fs.node` subclass answering the same six
+Everything addressable is a `pine/fs/node` subclass answering the same six
 generics: `contents`, `(setf contents)`, `nodes`, `resolve`, `describe`,
 `leafp`. A buffer, a surface, a window, a provider's reading and a command are
 all nodes. There is no registry beside the tree.

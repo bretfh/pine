@@ -1,6 +1,6 @@
 (defpackage #:pine.app.wm
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
+  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine.world.world) (#:provider #:pine.provider.wm)
                     (#:cmd #:pine.repl.command) (#:sh #:pine.provider.sh))
   (:export #:install #:current #:root #:windows-of #:titled #:focused-of

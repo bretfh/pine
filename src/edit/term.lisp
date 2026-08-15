@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.term
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node) (#:buffer #:pine.edit.buffer)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:buffer #:pine.edit.buffer)
                     (#:mode #:pine.repl.mode) (#:cmd #:pine.repl.command)
                     (#:process #:pine.proc.process) (#:task #:pine/run/task)
                     (#:super #:pine.proc.supervisor) (#:fault #:pine/run/fault))

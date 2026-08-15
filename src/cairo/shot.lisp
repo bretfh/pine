@@ -4,7 +4,7 @@
                     (#:grid #:pine.cairo.grid) (#:layout #:pine.ui.layout)
                     (#:face #:pine.ui.face) (#:render #:pine.edit.render)
                     (#:buffer #:pine.edit.buffer) (#:world #:pine.world.world)
-                    (#:node #:pine.fs.node))
+                    (#:node #:pine/fs/node))
   (:export #:rows #:window #:surfaces #:as-frontend #:shot #:*text*))
 
 (in-package #:pine.cairo.shot)
@@ -85,7 +85,7 @@
          (wire (and s (let ((render:*cols* (max 1 (floor width 9)))
                             (render:*rows* (max 2 (floor height 18))))
                         (pine.ui.wire:node->wire
-                         (pine.fs.computed:recompute s)))))
+                         (pine/fs/computed:recompute s)))))
          (styles (pine.ui.css:styles))
          (path (format nil "~a/pine-frontend-~a.png" dir name)))
     (when wire

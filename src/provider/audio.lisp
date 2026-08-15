@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.audio
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
   (:export #:audio-node #:install #:volume #:muted #:sink #:sinks #:set-volume
            #:toggle-muted #:set-sink))
 

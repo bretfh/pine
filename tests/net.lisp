@@ -97,7 +97,7 @@ remote. Nothing above it knows the difference."
          (is (typep image 'pine.net.server:server))
          (is (plusp (pine.net.server:remoting-port image)))
          (is (null (pine.repl.command:run "agents")) "nothing has attached yet")
-         (is (member "agents" (pine.fs.tree:listing
+         (is (member "agents" (pine/fs/tree:listing
                                (pine.world.world:at pine.world.world:*world* "cmd"))
                      :test #'equal)
              "the daemon's own commands are nodes like any other"))
@@ -108,7 +108,7 @@ remote. Nothing above it knows the difference."
        (let ((config (merge-pathnames "probe-init.lisp"
                                       (asdf:system-relative-pathname :pine "tests/"))))
          (pine:daemon :remoting 0 :config config)
-         (is (eq t (pine.fs.node:contents
+         (is (eq t (pine/fs/node:contents
                     (pine.world.world:at pine.world.world:*world* "config/loaded")))
              "the config ran")
          (is (equal "hello from the config" (pine.repl.command:run "hello"))
@@ -118,7 +118,7 @@ remote. Nothing above it knows the difference."
                      (pine.repl.mode:binding
                       (pine.edit.buffer:current) "C-c h")))
              "and a chord a config bound reaches it")
-         (is (member "hello" (pine.fs.tree:listing
+         (is (member "hello" (pine/fs/tree:listing
                               (pine.world.world:at pine.world.world:*world* "cmd"))
                      :test #'equal)
              "it is a node under /cmd like any other"))
@@ -219,7 +219,7 @@ turn back into a widget tree. This walks the whole path with no display."
   (unwind-protect
        (progn
          (pine:daemon :remoting 0 :config nil)
-         (setf (pine.fs.node:contents (pine.edit.buffer:current)) "hello
+         (setf (pine/fs/node:contents (pine.edit.buffer:current)) "hello
 there")
          (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
                (got (pine/data:box nil)))
@@ -259,7 +259,7 @@ there")
   (unwind-protect
        (progn
          (pine:daemon :remoting 0 :config nil)
-         (setf (pine.fs.node:contents (pine.edit.buffer:current)) "")
+         (setf (pine/fs/node:contents (pine.edit.buffer:current)) "")
          (let ((client (pine.net.server:start-server :workers 2 :remoting-port 0))
                (got (pine/data:box nil)))
            (unwind-protect
@@ -283,7 +283,7 @@ there")
                        c (list :key :key-str ch :ctrl nil :meta nil)))
                     (is-true (wait-until
                               (lambda ()
-                                (equal "hi" (pine.fs.node:contents
+                                (equal "hi" (pine/fs/node:contents
                                              (pine.edit.buffer:current)))))
                              "a key from the wire did not reach the buffer")))
              (pine.net.server:stop-server client))))

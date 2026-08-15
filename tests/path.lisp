@@ -35,7 +35,7 @@
     (setf (pine.path.place:contents (pine.path.path:parse "/buf/scratch/text") w)
           "written through the sugar")
     (is (equal "written through the sugar"
-               (pine.fs.node:contents (pine.world.world:at w "buf/scratch/text"))))))
+               (pine/fs/node:contents (pine.world.world:at w "buf/scratch/text"))))))
 
 (test a-pattern-answers-every-node-it-covers
   (let ((w (pine.world.world:make-world)))
@@ -43,7 +43,7 @@
     (pine.world.world:place w '("buf" "b" "text") 2)
     (pine.world.world:place w '("win" "c" "text") 3)
     (is (equal '("/buf/a/text" "/buf/b/text")
-               (mapcar #'pine.fs.node:full-name
+               (mapcar #'pine/fs/node:full-name
                        (pine.path.place:matching
                         (pine.path.path:parse "/buf/?name/text") w))))))
 

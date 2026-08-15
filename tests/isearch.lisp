@@ -6,7 +6,7 @@
   `(unwind-protect
         (progn
           (pine:start)
-          (setf (pine.fs.node:contents (pine.edit.buffer:current))
+          (setf (pine/fs/node:contents (pine.edit.buffer:current))
                 (format nil "~{~a~^~%~}" (list ,@lines)))
           (pine.edit.buffer:goto! (pine.edit.buffer:current) 0 0)
           ,@body)

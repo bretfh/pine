@@ -1,4 +1,4 @@
-(defpackage #:pine.fs.node
+(defpackage #:pine/fs/node
   (:use #:cl)
   (:shadow #:describe)
   (:local-nicknames (#:d #:pine/data))
@@ -9,8 +9,7 @@
            #:kept #:child #:children #:stir #:announces #:every-seconds
            #:verb #:verbp #:verb-name #:verb-args
            #:slot-node #:object #:slot-of #:slots))
-
-(in-package #:pine.fs.node)
+(in-package #:pine/fs/node)
 
 (defvar *reading* nil)
 (defvar *on-write* nil)

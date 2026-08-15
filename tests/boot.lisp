@@ -23,25 +23,25 @@
   (with-pine ()
     (is (typep pine.world.world:*world* 'pine.world.world:world))
     (is (typep pine:*supervisor* 'pine.proc.supervisor:supervisor))
-    (is (member "ls" (pine.fs.tree:listing
+    (is (member "ls" (pine/fs/tree:listing
                       (pine.world.world:at pine.world.world:*world* "cmd"))
                 :test #'equal))
     (is (equal "what is under a node"
-               (pine.fs.node:contents
+               (pine/fs/node:contents
                 (pine.world.world:at pine.world.world:*world* "cmd/ls"))))))
 
 (test commands-live-in-the-filesystem-and-a-new-one-appears-there
   (with-pine ()
     (let ((cmd (pine.world.world:at pine.world.world:*world* "cmd")))
-      (is (null (member "probe-live" (pine.fs.tree:listing cmd) :test #'equal)))
+      (is (null (member "probe-live" (pine/fs/tree:listing cmd) :test #'equal)))
       (pine.repl.command:defcommand "probe-live" () (:describes "made at the repl")
         :ran)
       (unwind-protect
            (progn
-             (is (member "probe-live" (pine.fs.tree:listing cmd) :test #'equal)
+             (is (member "probe-live" (pine/fs/tree:listing cmd) :test #'equal)
                  "the tree reflects the commands rather than copying them")
              (is (equal "made at the repl"
-                        (pine.fs.node:contents
+                        (pine/fs/node:contents
                          (pine.world.world:at pine.world.world:*world*
                                               "cmd/probe-live")))))
         (pine.repl.command:forget "probe-live")))))
@@ -123,13 +123,13 @@ or it is a document about a system that no longer exists."
                                               text :separator '(#\Newline)))))
                              out))
              (pine:load-config scratch)
-             (is (member "bar" (mapcar #'pine.fs.node:name
+             (is (member "bar" (mapcar #'pine/fs/node:name
                                        (pine.app.surface:surfaces))
                          :test #'equal)
                  "the surfaces it declares are there")
              (is (plusp (length (pine.ui.css:styles)))
                  "and the styles it writes are installed")
-             (is-true (pine.fs.computed:recompute
+             (is-true (pine/fs/computed:recompute
                        (pine.app.surface:surface-named "bar"))
                       "and its bar builds")
              (ignore-errors (delete-file scratch))))

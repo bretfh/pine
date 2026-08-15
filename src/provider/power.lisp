@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.power
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
   (:export #:power-node #:install #:battery #:charging #:state #:act))
 
 (in-package #:pine.provider.power)

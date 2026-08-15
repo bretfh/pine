@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.sh
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node) (#:task #:pine/run/task))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:task #:pine/run/task))
   (:export #:sh-node #:command-node #:stream-node #:install #:ran #:*kept*
            #:*environment-out* #:output-of #:run-line #:launch
            #:streaming #:listen! #:quiet! #:listening #:said #:asked #:tethered

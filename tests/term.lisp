@@ -12,7 +12,7 @@
      (pine:stop)))
 
 (defun term-text ()
-  (pine.fs.node:contents (pine.edit.buffer:buffer-named "probe")))
+  (pine/fs/node:contents (pine.edit.buffer:buffer-named "probe")))
 
 (defun settle (test &key (seconds 5))
   (loop :repeat (round (/ seconds 0.05))

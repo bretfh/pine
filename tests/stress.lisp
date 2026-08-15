@@ -11,10 +11,10 @@ threads pine already had."
          (let ((threads (length (pine/run/task:tasks))))
            (dotimes (i 200)
              (let ((b (pine.edit.buffer:make-buffer (format nil "probe-~d" i))))
-               (setf (pine.fs.node:contents b) (format nil "line ~d" i))))
+               (setf (pine/fs/node:contents b) (format nil "line ~d" i))))
            (is (<= 200 (length (pine.edit.buffer:buffers))))
            (is (equal "line 199"
-                      (pine.fs.node:contents
+                      (pine/fs/node:contents
                        (pine.edit.buffer:buffer-named "probe-199"))))
            (is (eql threads (length (pine/run/task:tasks)))
                "and not one of them took a thread")))
@@ -54,12 +54,12 @@ half an edit and never waits for one."
                                   (format nil "probe-reader-~d" i)
                                   (lambda ()
                                     (loop :until (pine/data:held stop)
-                                          :for text := (pine.fs.node:contents b)
+                                          :for text := (pine/fs/node:contents b)
                                           :do (unless (or (equal text "")
                                                           (char= #\x (char text 0)))
                                                 (pine/data:swap! torn #'1+))))))))
            (dotimes (n 300)
-             (setf (pine.fs.node:contents b)
+             (setf (pine/fs/node:contents b)
                    (make-string (1+ (mod n 40)) :initial-element #\x)))
            (pine/data:put! stop t)
            (mapc (lambda (tk) (pine/run/task:join tk :timeout 5)) readers)
@@ -113,11 +113,11 @@ half an edit and never waits for one."
        (progn
          (pine:start)
          (let ((b (pine.edit.buffer:make-buffer "probe-clamp")))
-           (setf (pine.fs.node:contents b) "one
+           (setf (pine/fs/node:contents b) "one
 two")
            (pine.edit.buffer:goto! b 99 99)
            (is (= 1 (pine.edit.buffer:point-line b)) "point cannot leave the buffer")
            (is (= 3 (pine.edit.buffer:point-col b)))
            (pine.edit.buffer:delete-region! b 0 0 99 99)
-           (is (equal "" (pine.fs.node:contents b)))))
+           (is (equal "" (pine/fs/node:contents b)))))
     (pine:stop)))

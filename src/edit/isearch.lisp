@@ -1,7 +1,7 @@
 (defpackage #:pine.edit.isearch
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:cmd #:pine.repl.command)
-                    (#:mode #:pine.repl.mode) (#:node #:pine.fs.node)
+                    (#:mode #:pine.repl.mode) (#:node #:pine/fs/node)
                     (#:text #:pine.edit.text) (#:buffer #:pine.edit.buffer)
                     (#:key #:pine.edit.key) (#:log #:pine/run/log))
   (:export #:install #:searching #:start #:step! #:took #:took-all #:said #:*search*

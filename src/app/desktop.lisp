@@ -1,10 +1,10 @@
 (defpackage #:pine.app.desktop
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node) (#:watch #:pine.fs.watch)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:watch #:pine/fs/watch)
                     (#:surface #:pine.app.surface) (#:attach #:pine.net.attach)
                     (#:cmd #:pine.repl.command) (#:wire #:pine.ui.wire)
                     (#:css #:pine.ui.css) (#:fault #:pine/run/fault)
-                    (#:computed #:pine.fs.computed) (#:task #:pine/run/task)
+                    (#:computed #:pine/fs/computed) (#:task #:pine/run/task)
                     (#:timer #:pine/run/timer))
   (:export #:session #:sessions #:install #:push-surface #:push-all #:received #:flush
            #:close-all

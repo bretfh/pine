@@ -43,10 +43,10 @@ came from."
                    (pine.world.world:at pine.world.world:*world* "style")))
         (acc nil))
     (when held
-      (dolist (each (pine.fs.node:nodes held))
-        (let ((props (pine.fs.node:contents each)))
+      (dolist (each (pine/fs/node:nodes held))
+        (let ((props (pine/fs/node:contents each)))
           (when (consp props)
-            (push (list (%selector (pine.fs.node:name each)) props) acc)))))
+            (push (list (%selector (pine/fs/node:name each)) props) acc)))))
     (sort acc #'string< :key #'first)))
 
 (defgeneric selector (sel)
@@ -72,7 +72,7 @@ and it is reload-safe because a selector names its own path."
   (cond ((null pine.world.world:*world*)
          (setf *given* styles))
         (t (dolist (style styles)
-             (setf (pine.fs.node:contents
+             (setf (pine/fs/node:contents
                     (pine.world.world:ensure pine.world.world:*world*
                                              "style" (%segment (first style))))
                    (first (rest style))))))

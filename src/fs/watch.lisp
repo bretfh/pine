@@ -1,11 +1,10 @@
-(defpackage #:pine.fs.watch
+(defpackage #:pine/fs/watch
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:timer #:pine/run/timer) (#:fault #:pine/run/fault))
   (:export #:watcher #:watch #:unwatch #:watchers #:watching #:of #:told
            #:fire #:sweep #:polled #:attend #:forget-all #:*every*))
-
-(in-package #:pine.fs.watch)
+(in-package #:pine/fs/watch)
 
 (defvar *watchers* (d:box nil))
 (defparameter *every* 1)

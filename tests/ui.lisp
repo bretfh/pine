@@ -55,10 +55,10 @@
          (pine.ui.paths:install)
          (let ((themes (pine.world.world:at pine.world.world:*world* "theme"))
                (faces (pine.world.world:at pine.world.world:*world* "faces")))
-           (is (member "ef-dream" (pine.fs.tree:listing themes) :test #'equal))
-           (is (member "default" (pine.fs.tree:listing faces) :test #'equal))
-           (is (getf (pine.fs.node:contents
-                      (pine.fs.tree:at faces "default"))
+           (is (member "ef-dream" (pine/fs/tree:listing themes) :test #'equal))
+           (is (member "default" (pine/fs/tree:listing faces) :test #'equal))
+           (is (getf (pine/fs/node:contents
+                      (pine/fs/tree:at faces "default"))
                      :fg)
                "a face reads as what it is, through the same generic")))
     (pine:stop)))
@@ -68,7 +68,7 @@
        (progn
          (pine:start)
          (pine.ui.paths:install)
-         (setf (pine.fs.node:contents
+         (setf (pine/fs/node:contents
                 (pine.world.world:ensure pine.world.world:*world* "face" "probe-face"))
                (list :fg "#ff0000"))
          (let ((f (pine.ui.face:find-face :probe-face)))
@@ -91,7 +91,7 @@ left every surface transparent."
   (unwind-protect
        (progn
          (pine:start)
-         (setf (pine.fs.node:contents (pine.edit.buffer:current)) "hello")
+         (setf (pine/fs/node:contents (pine.edit.buffer:current)) "hello")
          (let ((wire (pine.ui.wire:node->wire (pine.edit.render:frame-tree))))
            (let ((text (princ-to-string wire)))
              (dolist (class '("editor" "editor-view" "modeline" "echo"))
@@ -121,7 +121,7 @@ that carries one writes it."
   (let* ((w (pine.world.world:make-world))
          (n (pine.world.world:ensure w "probe"))
          (thunk (pine.ui.build:acting n)))
-    (setf (pine.fs.node:contents n) nil)
+    (setf (pine/fs/node:contents n) nil)
     (is-true thunk "a node is something a click can mean")
     (funcall thunk)
-    (is (eq t (pine.fs.node:contents n)))))
+    (is (eq t (pine/fs/node:contents n)))))

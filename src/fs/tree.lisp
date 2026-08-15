@@ -1,10 +1,9 @@
-(defpackage #:pine.fs.tree
+(defpackage #:pine/fs/tree
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:computed #:pine.fs.computed))
+  (:local-nicknames (#:node #:pine/fs/node) (#:computed #:pine/fs/computed))
   (:export #:root #:at #:ensure #:place #:erase #:walk #:listing #:names
            #:split-name #:absent))
-
-(in-package #:pine.fs.tree)
+(in-package #:pine/fs/tree)
 
 (define-condition absent (error)
   ((where :initarg :where :reader where))

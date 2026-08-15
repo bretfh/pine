@@ -1,6 +1,6 @@
 (defpackage #:pine.edit.window
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
+  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine.world.world) (#:buffer #:pine.edit.buffer))
   (:export #:window #:make-window #:windows #:window-named #:focused #:focus!
            #:buffer-of #:scroll-of #:hscroll-of #:width-of #:height-of #:runs-of #:weight-of #:parts

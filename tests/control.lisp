@@ -31,30 +31,30 @@
 (test what-a-watcher-is-told-is-the-value-that-moved
   (with-pine
     (let ((heard nil)
-          (n (pine.fs.tree:ensure (pine.world.world:root pine.world.world:*world*)
+          (n (pine/fs/tree:ensure (pine.world.world:root pine.world.world:*world*)
                                   "probe")))
-      (pine.fs.watch:watch n (lambda (of value)
-                               (push (list (pine.fs.node:name of) value) heard)))
-      (setf (pine.fs.node:contents n) 1)
-      (setf (pine.fs.node:contents n) 2)
+      (pine/fs/watch:watch n (lambda (of value)
+                               (push (list (pine/fs/node:name of) value) heard)))
+      (setf (pine/fs/node:contents n) 1)
+      (setf (pine/fs/node:contents n) 2)
       (is (equal '(("probe" 2) ("probe" 1)) heard))
-      (setf (pine.fs.node:contents n) 2)
+      (setf (pine/fs/node:contents n) 2)
       (is (= 2 (length heard))
           "a write of what it already held is not a move"))))
 
 (test a-watcher-that-is-dropped-hears-nothing-more
   (with-pine
     (let ((heard 0)
-          (n (pine.fs.tree:ensure (pine.world.world:root pine.world.world:*world*)
+          (n (pine/fs/tree:ensure (pine.world.world:root pine.world.world:*world*)
                                   "probe")))
-      (let ((w (pine.fs.watch:watch n (lambda (of value)
+      (let ((w (pine/fs/watch:watch n (lambda (of value)
                                         (declare (ignore of value))
                                         (incf heard)))))
-        (setf (pine.fs.node:contents n) 1)
-        (pine.fs.watch:unwatch w)
-        (setf (pine.fs.node:contents n) 2)
+        (setf (pine/fs/node:contents n) 1)
+        (pine/fs/watch:unwatch w)
+        (setf (pine/fs/node:contents n) 2)
         (is (= 1 heard))
-        (is (null (pine.fs.watch:watchers)))))))
+        (is (null (pine/fs/watch:watchers)))))))
 
 (test the-cli-says-what-it-takes-and-answers-nothing-when-no-daemon-is-up
   (is (search "usage: pine" (pine.cli:usage)))

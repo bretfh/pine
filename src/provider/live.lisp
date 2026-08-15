@@ -1,7 +1,7 @@
 (defpackage #:pine.provider.live
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine.fs.node)
-                    (#:watch #:pine.fs.watch) (#:timer #:pine/run/timer)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:watch #:pine/fs/watch) (#:timer #:pine/run/timer)
                     (#:sh #:pine.provider.sh) (#:fault #:pine/run/fault))
   (:export #:attend #:leave #:leave-all #:attending #:tending))
 

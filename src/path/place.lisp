@@ -1,6 +1,6 @@
 (defpackage #:pine.path.place
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree)
+  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:path #:pine.path.path) (#:world #:pine.world.world))
   (:export #:at #:ensure #:contents #:matching #:erase))
 

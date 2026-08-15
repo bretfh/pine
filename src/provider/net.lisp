@@ -1,6 +1,6 @@
 (defpackage #:pine.provider.net
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:out #:pine.provider.out))
+  (:local-nicknames (#:node #:pine/fs/node) (#:out #:pine.provider.out))
   (:export #:net-node #:install #:connection #:online #:wifi #:saved #:rescan
            #:*asking*
            #:connect #:disconnect #:forget))

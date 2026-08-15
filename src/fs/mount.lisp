@@ -1,10 +1,9 @@
-(defpackage #:pine.fs.mount
+(defpackage #:pine/fs/mount
   (:use #:cl)
-  (:local-nicknames (#:node #:pine.fs.node) (#:tree #:pine.fs.tree))
+  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
   (:export #:file-node #:directory-node #:mount #:unmount #:truename-of
            #:mounted #:refresh))
-
-(in-package #:pine.fs.mount)
+(in-package #:pine/fs/mount)
 
 (defvar *mounts* nil)
 
@@ -35,27 +34,25 @@
 
 (defmethod node:leafp ((n file-node)) t)
 
-(defun %entries (where)
-  (append (directory (merge-pathnames "*.*" where))
-          (directory (merge-pathnames "*/" where))))
-
-(defun %named (path)
-  (if (pathname-name path)
-      (file-namestring path)
-      (car (last (pathname-directory path)))))
-
 (defmethod node:nodes ((n directory-node))
-  (let ((seen (make-hash-table :test 'equal)))
-    (loop :for path :in (%entries (truename-of n))
-          :for name := (%named path)
-          :unless (or (null name) (gethash name seen))
-            :do (setf (gethash name seen) t)
-            :and :collect (%node-for path name n))))
-
-(defun %node-for (path name into)
-  (if (pathname-name path)
-      (make-instance 'file-node :name name :parent into :truename path)
-      (make-instance 'directory-node :name name :parent into :truename path)))
+  (flet ((entries (where)
+           (append (directory (merge-pathnames "*.*" where))
+                   (directory (merge-pathnames "*/" where))))
+         (named (path)
+           (if (pathname-name path)
+               (file-namestring path)
+               (car (last (pathname-directory path)))))
+         (node-for (path name)
+           (if (pathname-name path)
+               (make-instance 'file-node :name name :parent n :truename path)
+               (make-instance 'directory-node :name name :parent n
+                                              :truename path))))
+    (let ((seen (make-hash-table :test 'equal)))
+      (loop :for path :in (entries (truename-of n))
+            :for name := (named path)
+            :unless (or (null name) (gethash name seen))
+              :do (setf (gethash name seen) t)
+              :and :collect (node-for path name)))))
 
 (defmethod node:resolve ((n directory-node) name)
   (find name (node:nodes n) :key #'node:name :test #'equal))
