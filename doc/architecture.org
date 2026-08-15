@@ -113,6 +113,32 @@ Sqlite, one table. A write lands as it is made, not at a clean shutdown, so a
 crash costs nothing since the last write. What comes back is what the tree
 held, fset values included.
 
+** What it is doing is a reading, not a guess
+
+Every path a person waits on is timed in the daemon while it runs: a key, a
+frame built and pushed and what it carried, a parse and the lines it covered, a
+surface built or found the same as before, a shell-out and whether it forked, a
+write that reached the disk. A sample costs under a microsecond, so it is on
+from boot.
+
+The instruments read through the tree like anything else:
+
+: pine read /metric/frame/p95
+: pine watch /metric/key/count
+: pine run metrics
+
+and the same table comes out of a workload, so a made-up load and a real
+session are one measurement taken twice:
+
+: make bench WORK=typing SIZE=20000
+: ./pine run metrics-reset      # then use it for a while
+: ./pine run metrics-save
+: make bench COMPARE=1
+
+A workload says what it drives, in a line printed above its numbers. A number
+that cannot say which instrument it came from, over how many samples, and out
+of what work, is a number about nothing.
+
 * The shape of a running pine
 
 See =architecture.dot= beside this file; =make docs= renders it.
