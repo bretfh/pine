@@ -1,13 +1,12 @@
-(defpackage #:pine.edit.debugger
+(defpackage #:pine/edit/debugger
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command)
                     (#:mode #:pine/repl/mode) (#:node #:pine/fs/node)
-                    (#:fault #:pine/run/fault) (#:buffer #:pine.edit.buffer)
-                    (#:window #:pine.edit.window) (#:log #:pine/run/log))
+                    (#:fault #:pine/run/fault) (#:buffer #:pine/edit/buffer)
+                    (#:window #:pine/edit/window) (#:log #:pine/run/log))
   (:export #:install #:show #:standing #:choose #:next #:fault-of
            #:*name* #:*standing*))
-
-(in-package #:pine.edit.debugger)
+(in-package #:pine/edit/debugger)
 
 (defvar *standing* (d:box nil))
 (defparameter *name* "*debugger*")

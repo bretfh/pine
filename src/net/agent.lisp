@@ -1,13 +1,12 @@
-(defpackage #:pine.net.agent
+(defpackage #:pine/net/agent
   (:use #:cl)
-  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine.net.server)
-                    (#:attach #:pine.net.attach) (#:fault #:pine/run/fault)
+  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine/net/server)
+                    (#:attach #:pine/net/attach) (#:fault #:pine/run/fault)
                     (#:session #:pine/repl/session) (#:log #:pine/run/log))
   (:export #:remote-session #:open-remote #:answer-for #:serve #:agents
            #:agent #:agent-named #:name #:there #:evaluate-there
            #:register #:forget #:*agents* #:listen-for-agents))
-
-(in-package #:pine.net.agent)
+(in-package #:pine/net/agent)
 
 (defvar *agents* (d:table))
 (defvar *timeout* 30)

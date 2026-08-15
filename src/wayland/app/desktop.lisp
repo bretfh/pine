@@ -94,33 +94,33 @@
 (defun received (ds message)
   (case (first message)
     (:attached
-     (setf (ds-ref ds) (pine.net.attach:accept-attached (ds-sys ds) message))
+     (setf (ds-ref ds) (pine/net/attach:accept-attached (ds-sys ds) message))
      (send ds (list :refresh)))
     (:widgets
      (destructuring-bind (&key surface tree as &allow-other-keys) (rest message)
-       (pine.frontend:enqueue (ds-pump ds)
+       (pine/frontend:enqueue (ds-pump ds)
                               (lambda () (on-widgets ds surface tree as)))))
     (:panel
      (destructuring-bind (&key name show &allow-other-keys) (rest message)
-       (pine.frontend:enqueue (ds-pump ds) (lambda () (on-panel ds name show)))))
+       (pine/frontend:enqueue (ds-pump ds) (lambda () (on-panel ds name show)))))
     (:style
      (destructuring-bind (&key styles &allow-other-keys) (rest message)
        (pine/ui/css:install styles)
-       (pine.frontend:enqueue (ds-pump ds) (lambda () (repaint-all ds)))))
+       (pine/frontend:enqueue (ds-pump ds) (lambda () (repaint-all ds)))))
     (t nil)))
 
-(defun run-desktop (&key (host pine.net.server:*host*) (port pine.net.server:*port*))
+(defun run-desktop (&key (host pine/net/server:*host*) (port pine/net/server:*port*))
   (let* ((conn (connect-desktop))
-         (ds (make-instance 'desktop :conn conn :pump (pine.frontend:make-pump))))
+         (ds (make-instance 'desktop :conn conn :pump (pine/frontend:make-pump))))
     (setf *on-hover*
           (lambda (n) (send ds (list :hint :text (or (and n (widget:hint n)) "")))))
     (setf (ds-sys ds)
-          (pine.frontend:attach :desktop (lambda (message) (received ds message))
+          (pine/frontend:attach :desktop (lambda (message) (received ds message))
                                 :host host :port port))
     (unwind-protect
-         (pine.frontend:run (wl-conn-backing conn) (ds-pump ds)
+         (pine/frontend:run (wl-conn-backing conn) (ds-pump ds)
                             :done (lambda () (ds-done ds)))
-      (pine.frontend:close-pump (ds-pump ds))
-      (pine.frontend:shutdown (wl-conn-backing conn)))))
+      (pine/frontend:close-pump (ds-pump ds))
+      (pine/frontend:shutdown (wl-conn-backing conn)))))
 
-(pine.net.attach:frontend :desktop #'run-desktop)
+(pine/net/attach:frontend :desktop #'run-desktop)

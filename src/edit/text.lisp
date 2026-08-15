@@ -1,4 +1,4 @@
-(defpackage #:pine.edit.text
+(defpackage #:pine/edit/text
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data))
   (:shadow #:delete #:search)
@@ -6,8 +6,7 @@
            #:insert #:delete #:region #:newline
            #:move-by #:word-char-p #:indent-width #:search #:folding-p
            #:beginning-of-line #:end-of-line #:*word-characters*))
-
-(in-package #:pine.edit.text)
+(in-package #:pine/edit/text)
 
 (defvar *word-characters* "-_*+/<>=?!%&")
 

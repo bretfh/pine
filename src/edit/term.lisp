@@ -1,6 +1,6 @@
-(defpackage #:pine.edit.term
+(defpackage #:pine/edit/term
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:buffer #:pine.edit.buffer)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:buffer #:pine/edit/buffer)
                     (#:mode #:pine/repl/mode) (#:cmd #:pine/repl/command)
                     (#:process #:pine/proc/process) (#:task #:pine/run/task)
                     (#:super #:pine/proc/supervisor) (#:fault #:pine/run/fault))
@@ -8,8 +8,7 @@
            #:terminals #:send #:screen #:resize #:fd #:pid #:term-of
            #:install #:*shell* #:key->bytes #:drain #:typing #:waiting
            #:dropped #:*budget* #:*carry* #:*pause* #:*on-refresh*))
-
-(in-package #:pine.edit.term)
+(in-package #:pine/edit/term)
 
 (defvar *shell* (or (uiop:getenv "SHELL") "/bin/sh"))
 (defvar *terminals* (d:table))
@@ -106,19 +105,19 @@ until the image dies."
   tm)
 
 (defun %event (k)
-  (let ((named (cdr (assoc (pine.edit.key:key-sym k) +named+ :test #'equal)))
-        (mods (append (when (pine.edit.key:key-ctrl k) '(:ctrl))
-                      (when (pine.edit.key:key-meta k) '(:meta))
-                      (when (pine.edit.key:key-shift k) '(:shift)))))
+  (let ((named (cdr (assoc (pine/edit/key:key-sym k) +named+ :test #'equal)))
+        (mods (append (when (pine/edit/key:key-ctrl k) '(:ctrl))
+                      (when (pine/edit/key:key-meta k) '(:meta))
+                      (when (pine/edit/key:key-shift k) '(:shift)))))
     (cond (named (cons named mods))
-          ((and (= 1 (length (pine.edit.key:key-sym k)))
-                (pine.edit.key:key-ctrl k))
+          ((and (= 1 (length (pine/edit/key:key-sym k)))
+                (pine/edit/key:key-ctrl k))
            (let ((code (logand 31 (char-code
                                    (char-upcase
-                                    (char (pine.edit.key:key-sym k) 0))))))
+                                    (char (pine/edit/key:key-sym k) 0))))))
              (code-char code)))
-          ((= 1 (length (pine.edit.key:key-sym k)))
-           (char (pine.edit.key:key-sym k) 0))
+          ((= 1 (length (pine/edit/key:key-sym k)))
+           (char (pine/edit/key:key-sym k) 0))
           (t nil))))
 
 (defun key->bytes (tm k)
@@ -175,8 +174,8 @@ until the image dies."
   "A terminal takes every key except the ones the editor needs to stay usable:
 a prefix chord, and the chord that gets you out."
   (let ((tm (terminal-for (node:name b))))
-    (when (and tm (not (pine.edit.key:pending))
-               (not (pine.edit.key:key= k (pine.edit.key:parse-key "C-x"))))
+    (when (and tm (not (pine/edit/key:pending))
+               (not (pine/edit/key:key= k (pine/edit/key:parse-key "C-x"))))
       (let ((bytes (key->bytes tm k)))
         (when bytes (send tm bytes) :sent)))))
 

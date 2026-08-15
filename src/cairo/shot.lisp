@@ -2,8 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:cairo #:cl-cairo2) (#:paint #:pine.cairo.paint)
                     (#:grid #:pine.cairo.grid) (#:layout #:pine/ui/layout)
-                    (#:face #:pine/ui/face) (#:render #:pine.edit.render)
-                    (#:buffer #:pine.edit.buffer) (#:world #:pine/world/world)
+                    (#:face #:pine/ui/face) (#:render #:pine/edit/render)
+                    (#:buffer #:pine/edit/buffer) (#:world #:pine/world/world)
                     (#:node #:pine/fs/node))
   (:export #:rows #:window #:surfaces #:as-frontend #:shot #:*text*))
 
@@ -60,7 +60,7 @@
         (tree (node:contents s)))
     (paint:with-cairo-layout
       (multiple-value-bind (mw mh) (paint:measure-tree tree 480)
-        (multiple-value-bind (w h) (%surface-size (pine.app.surface:as s) mw mh)
+        (multiple-value-bind (w h) (%surface-size (pine/app/surface:as s) mw mh)
           (let ((surface (cairo:create-image-surface :argb32 (max 1 w) (max 1 h))))
             (cairo:with-context ((cairo:create-context surface))
               (cairo:set-source-rgba 0d0 0d0 0d0 0d0)
@@ -73,7 +73,7 @@
   (unless world:*world* (pine:start))
   (when config (pine:load-config config))
   (face:with-faces
-    (loop :for s :in (pine.app.surface:surfaces)
+    (loop :for s :in (pine/app/surface:surfaces)
           :for shot := (ignore-errors (surface s :dir dir))
           :collect (or shot (list :failed (node:name s))))))
 
@@ -81,7 +81,7 @@
                              (config (pine:config-file)))
   (unless world:*world* (pine:start))
   (when config (pine:load-config config))
-  (let* ((s (pine.app.surface:surface-named name))
+  (let* ((s (pine/app/surface:surface-named name))
          (wire (and s (let ((render:*cols* (max 1 (floor width 9)))
                             (render:*rows* (max 2 (floor height 18))))
                         (pine/ui/wire:node->wire

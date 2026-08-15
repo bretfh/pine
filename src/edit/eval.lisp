@@ -1,16 +1,15 @@
-(defpackage #:pine.edit.eval
+(defpackage #:pine/edit/eval
   (:use #:cl)
   (:shadow #:documentation)
-  (:local-nicknames (#:language #:pine.edit.language) (#:d #:pine/data) (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
+  (:local-nicknames (#:language #:pine/edit/language) (#:d #:pine/data) (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
                     (#:session #:pine/repl/session) (#:node #:pine/fs/node)
-                    (#:buffer #:pine.edit.buffer) (#:prompt #:pine.edit.prompt)
+                    (#:buffer #:pine/edit/buffer) (#:prompt #:pine/edit/prompt)
                     (#:log #:pine/run/log) (#:fault #:pine/run/fault)
                     )
   (:export #:install #:token-at #:symbol-at #:offset-of #:line-col
            #:definition #:references #:complete #:arglist #:documentation
            #:sexp-before #:defun-around #:visit #:went #:*went* #:*target*))
-
-(in-package #:pine.edit.eval)
+(in-package #:pine/edit/eval)
 
 (defvar *went* (d:box nil))
 (defvar *target* nil)
@@ -196,10 +195,10 @@
 (defun %there (b text)
   "Evaluate in the image SET-EVAL-TARGET named, and say what it said the way a
 session here would."
-  (let ((a (pine.net.agent:agent-named *target*)))
+  (let ((a (pine/net/agent:agent-named *target*)))
     (cond ((null a) (format nil "no image named ~a" *target*))
           (t (multiple-value-bind (*package* *readtable*) (language:reading b)
-               (let ((answer (pine.net.agent:evaluate-there
+               (let ((answer (pine/net/agent:evaluate-there
                               a (cl:read-from-string text))))
                  (if (getf answer :fault)
                      (format nil "~a" (getf answer :fault))
@@ -235,7 +234,7 @@ session here would."
           (let ((b (buffer:buffer-named name)))
             (when b
               (setf (buffer:current) b)
-              (pine.edit.window:show! (pine.edit.window:focused) b)
+              (pine/edit/window:show! (pine/edit/window:focused) b)
               (buffer:goto! b line col)))))))
   (cmd:defcommand "find-references" () (:describes "every place that mentions what is at point")
     (let ((found (%answer (buffer:current) :references)))
@@ -295,8 +294,8 @@ session here would."
                (log:note "loaded ~a" file)
                file))))
   (cmd:defcommand "set-eval-target" () (:describes "which image a form is evaluated in")
-    (let ((names (cons "local" (mapcar #'pine.net.agent:name
-                                       (pine.net.agent:agents)))))
+    (let ((names (cons "local" (mapcar #'pine/net/agent:name
+                                       (pine/net/agent:agents)))))
       (prompt:ask "Eval in: " :must-match t :candidates names
                   :then (lambda (said)
                           (setf *target* (unless (equal said "local") said))

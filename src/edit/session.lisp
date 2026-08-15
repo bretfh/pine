@@ -1,19 +1,18 @@
-(defpackage #:pine.edit.session
+(defpackage #:pine/edit/session
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:attach #:pine.net.attach) (#:parser #:pine/ts/parser)
-                    (#:render #:pine.edit.render) (#:key #:pine.edit.key)
+  (:local-nicknames (#:d #:pine/data) (#:attach #:pine/net/attach) (#:parser #:pine/ts/parser)
+                    (#:render #:pine/edit/render) (#:key #:pine/edit/key)
                     (#:css #:pine/ui/css) (#:wire #:pine/ui/wire)
                     (#:layout #:pine/ui/layout)
                     (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
-                    (#:surface #:pine.app.surface)
+                    (#:surface #:pine/app/surface)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
                     (#:agent #:pine/run/agent))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
            #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h #:font-px
            #:generation #:client-of #:surface #:repaint #:restyle))
-
-(in-package #:pine.edit.session)
+(in-package #:pine/edit/session)
 
 (defvar *sessions* (d:table))
 (defvar *surface* "editor")
@@ -177,7 +176,7 @@ so they go when it does rather than outliving it stopped."
 
 (defun install ()
   (setf parser:*on-parse* #'repaint
-        pine.edit.term:*on-refresh* #'repaint)
+        pine/edit/term:*on-refresh* #'repaint)
   (attach:app :editor
               (d:map :doc "the editor window: buffers, windows, the modeline"
                      :attached #'%attached

@@ -1,12 +1,11 @@
-(defpackage #:pine.edit.window
+(defpackage #:pine/edit/window
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:world #:pine/world/world) (#:buffer #:pine.edit.buffer))
+                    (#:world #:pine/world/world) (#:buffer #:pine/edit/buffer))
   (:export #:window #:make-window #:windows #:window-named #:focused #:focus!
            #:buffer-of #:scroll-of #:hscroll-of #:width-of #:height-of #:runs-of #:weight-of #:parts
            #:splitp #:split! #:close! #:only! #:seed! #:show! #:follow))
-
-(in-package #:pine.edit.window)
+(in-package #:pine/edit/window)
 
 (defvar *counter* 0)
 

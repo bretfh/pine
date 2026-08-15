@@ -1,6 +1,6 @@
 (defpackage #:pine.wayland.app.chord
   (:use #:cl)
-  (:local-nicknames (#:key #:pine.edit.key))
+  (:local-nicknames (#:key #:pine/edit/key))
   (:export #:keysym+modifiers))
 
 (in-package #:pine.wayland.app.chord)

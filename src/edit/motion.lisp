@@ -1,13 +1,12 @@
-(defpackage #:pine.edit.motion
+(defpackage #:pine/edit/motion
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command)
-                    (#:mode #:pine/repl/mode) (#:buffer #:pine.edit.buffer)
+                    (#:mode #:pine/repl/mode) (#:buffer #:pine/edit/buffer)
                     (#:parser #:pine/ts/parser) (#:runtime #:pine/ts/runtime)
                     (#:log #:pine/run/log))
   (:export #:install #:toward #:times #:*count* #:counting #:reset! #:digit!
            #:negative! #:universal!))
-
-(in-package #:pine.edit.motion)
+(in-package #:pine/edit/motion)
 
 (defvar *count* (d:box nil))
 (defparameter +kinds+

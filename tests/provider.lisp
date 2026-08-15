@@ -93,7 +93,7 @@ the person's own program, and that is what /sh remembers."
     (let ((live (pine/repl/command:run "live")))
       (dolist (name '("/sh" "/env" "/sys" "/clock" "/file"))
         (is (member name live :test #'equal) "~a should be live" name)))
-    (is (null (pine/fs/node:livep (pine.edit.buffer:current)))
+    (is (null (pine/fs/node:livep (pine/edit/buffer:current)))
         "a buffer is pine's own, so the store keeps it")))
 
 (test the-machine-providers-read-without-signalling

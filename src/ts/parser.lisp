@@ -1,6 +1,6 @@
 (defpackage #:pine/ts/parser
   (:use #:cl)
-  (:local-nicknames (#:language #:pine.edit.language) (#:agent #:pine/run/agent)
+  (:local-nicknames (#:language #:pine/edit/language) (#:agent #:pine/run/agent)
                     (#:node #:pine/fs/node) (#:mode #:pine/repl/mode)
                     (#:runtime #:pine/ts/runtime) (#:syntax #:pine/ts/syntax)
                     (#:hl #:pine/ts/highlight) (#:d #:pine/data))
@@ -32,7 +32,7 @@
 
 (defun parsers () (d:vals (d:all *parsers*)))
 
-(defun %lines (b) (d:held (pine.edit.buffer:lines b)))
+(defun %lines (b) (d:held (pine/edit/buffer:lines b)))
 
 (defun showing (b)
   "The band some window shows of B, or nil when none does. Past a few thousand
@@ -40,10 +40,10 @@ lines only that band is given to tree-sitter at all.
 
 A screen either side of what is on screen, so paging lands on lines that were
 walked already instead of on plain text waiting to be coloured."
-  (let ((w (find b (pine.edit.window:windows) :key #'pine.edit.window:buffer-of)))
+  (let ((w (find b (pine/edit/window:windows) :key #'pine/edit/window:buffer-of)))
     (when w
-      (let* ((from (pine.edit.window:scroll-of w))
-             (height (max 1 (pine.edit.window:height-of w))))
+      (let* ((from (pine/edit/window:scroll-of w))
+             (height (max 1 (pine/edit/window:height-of w))))
         (cons (max 0 (- from height)) (+ from (* 2 height)))))))
 
 (defun %kept (had edit)
@@ -80,12 +80,12 @@ and the lines outside it are what they were."
   (let* ((b (buffer-of p))
          (ps (state-of p))
          (lines (%lines b))
-         (edit (pine.edit.buffer:edit-of b))
+         (edit (pine/edit/buffer:edit-of b))
          (band (showing b)))
-    (setf (runtime:ps-package ps) (pine.edit.language:package-of b))
+    (setf (runtime:ps-package ps) (pine/edit/language:package-of b))
     (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport band)
-    (setf (pine.edit.buffer:edit-of b) nil)
+    (setf (pine/edit/buffer:edit-of b) nil)
     (let ((runs (if band
                     (hl:parse-highlights ps :from-line (car band) :to-line (cdr band))
                     (hl:parse-highlights ps))))
@@ -105,8 +105,8 @@ and the lines outside it are what they were."
 (defun %grammar (b)
   "Which language a buffer is parsed as: what it says it is written in, else
 what its mode says."
-  (or (syntax:for-readtable (pine.edit.language:readtable-of b))
-      (mode:setting (pine.edit.buffer:mode-of b) :grammar)))
+  (or (syntax:for-readtable (pine/edit/language:readtable-of b))
+      (mode:setting (pine/edit/buffer:mode-of b) :grammar)))
 
 (defun %name-for (b)
   (format nil "parse-~a-~d" (node:name b) (incf *counter*)))
@@ -145,7 +145,7 @@ gets and the other is freed rather than left holding a foreign parser."
               (let ((kept (d:claim *parsers* (node:name b) mine)))
                 (cond ((eq kept mine)
                        (agent:tell (running mine)
-                                   (list :parse (pine.edit.buffer:tick b)))
+                                   (list :parse (pine/edit/buffer:tick b)))
                        mine)
                       (t (%dispose mine) kept)))))))))
 
@@ -153,9 +153,9 @@ gets and the other is freed rather than left holding a foreign parser."
   "Tell the parser it has fallen behind: the buffer moved, or the window is
 showing lines it has not been asked about."
   (let ((p (parser-for b)))
-    (when (and p (or (/= (d:held (parsed p)) (pine.edit.buffer:tick b))
+    (when (and p (or (/= (d:held (parsed p)) (pine/edit/buffer:tick b))
                      (not (equal (d:held (banded p)) (showing b)))))
-      (agent:tell (running p) (list :parse (pine.edit.buffer:tick b))))
+      (agent:tell (running p) (list :parse (pine/edit/buffer:tick b))))
     p))
 
 (defun highlights (b)
@@ -169,7 +169,7 @@ blink through plain text."
   (let ((p (note b)))
     (when p
       (loop :repeat (round (/ seconds 0.01))
-            :until (and (= (d:held (parsed p)) (pine.edit.buffer:tick b))
+            :until (and (= (d:held (parsed p)) (pine/edit/buffer:tick b))
                         (equal (d:held (banded p)) (showing b)))
             :do (sleep 0.01))
       (%flat (d:held (found p))))))

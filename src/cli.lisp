@@ -1,9 +1,8 @@
-(defpackage #:pine.cli
+(defpackage #:pine/cli
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:server #:pine.net.server) )
+  (:local-nicknames (#:d #:pine/data) (#:server #:pine/net/server) )
   (:export #:main #:usage #:ask #:running-p #:quiet #:*usage*))
-
-(in-package #:pine.cli)
+(in-package #:pine/cli)
 
 (defparameter *usage*
   "usage: pine VERB [ARGUMENT...]
@@ -90,7 +89,7 @@
               "--noinform" "--no-userinit" "--non-interactive"
               "--eval" "(require :asdf)"
               "--eval" "(asdf:load-system :pine/wayland)"
-              "--eval" "(pine.cli:main (rest sb-ext:*posix-argv*))"
+              "--eval" "(pine/cli:main (rest sb-ext:*posix-argv*))"
               "--end-toplevel-options"))))
 
 (defun %start ()

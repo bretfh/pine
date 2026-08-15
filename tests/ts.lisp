@@ -96,23 +96,23 @@
   (unwind-protect
        (progn
          (pine:start)
-         (let ((b (pine.edit.buffer:make-buffer "probe-syntax")))
+         (let ((b (pine/edit/buffer:make-buffer "probe-syntax")))
            (setf (pine/fs/node:contents b) "(in-package #:pine.test)
 (defun f () 1)")
-           (is (eq (find-package :pine.test) (pine.edit.language:package-of b))
+           (is (eq (find-package :pine.test) (pine/edit/language:package-of b))
                "the package its own (in-package) names")
-           (is (null (pine.edit.language:readtable-of b))
+           (is (null (pine/edit/language:readtable-of b))
                "and nothing else, where it says nothing else")
            (setf (pine/fs/node:contents b)
                  "(in-package #:pine.test)
 (named-readtables:in-readtable pine/path/reader:syntax)
 (defun f () /probe/one)")
            (is (eq (named-readtables:find-readtable 'pine/path/reader:syntax)
-                   (pine.edit.language:readtable-of b))
+                   (pine/edit/language:readtable-of b))
                "the readtable its own (in-readtable) names")
            (is (eq :pine (pine/ts/parser::%grammar b))
                "so it is parsed as pine, whatever path it is under")
-           (multiple-value-bind (package readtable) (pine.edit.language:reading b)
+           (multiple-value-bind (package readtable) (pine/edit/language:reading b)
              (is (eq (find-package :pine.test) package))
              (is-true (pine/path/path:pathp
                        (eval (let ((*package* package) (*readtable* readtable))
@@ -124,8 +124,8 @@
   (unwind-protect
        (progn
          (pine:start)
-         (let ((b (pine.edit.buffer:make-buffer "probe-indent")))
-           (setf (pine.edit.buffer:mode-of b) "lisp")
+         (let ((b (pine/edit/buffer:make-buffer "probe-indent")))
+           (setf (pine/edit/buffer:mode-of b) "lisp")
            (setf (pine/fs/node:contents b) "(in-package #:pine.test)
 (probe-two-then-body 1 2
 x)")

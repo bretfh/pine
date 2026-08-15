@@ -1,12 +1,11 @@
-(defpackage #:pine.edit.repl
+(defpackage #:pine/edit/repl
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:cmd #:pine/repl/command)
                     (#:mode #:pine/repl/mode) (#:node #:pine/fs/node)
-                    (#:session #:pine/repl/session) (#:buffer #:pine.edit.buffer)
-                    (#:window #:pine.edit.window) (#:log #:pine/run/log))
+                    (#:session #:pine/repl/session) (#:buffer #:pine/edit/buffer)
+                    (#:window #:pine/edit/window) (#:log #:pine/run/log))
   (:export #:install #:open-repl #:submit #:sessions #:session-for #:*name*))
-
-(in-package #:pine.edit.repl)
+(in-package #:pine/edit/repl)
 
 (defvar *sessions* (d:box nil))
 (defparameter *name* "*repl*")

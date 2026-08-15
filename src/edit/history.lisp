@@ -1,10 +1,9 @@
-(defpackage #:pine.edit.history
+(defpackage #:pine/edit/history
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) )
   (:export #:history #:remember #:undo #:redo #:undoable #:redoable #:forget
            #:*kept* #:state #:state-lines #:state-line #:state-col))
-
-(in-package #:pine.edit.history)
+(in-package #:pine/edit/history)
 
 (defvar *kept* 200)
 

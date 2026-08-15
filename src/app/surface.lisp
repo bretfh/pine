@@ -1,12 +1,11 @@
-(defpackage #:pine.app.surface
+(defpackage #:pine/app/surface
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
                     (#:world #:pine/world/world) (#:tree #:pine/fs/tree))
   (:export #:*on-declare* #:surface #:defsurface #:surfaces #:surface-named #:surface-node #:root
            #:as #:shownp #:builds #:show! #:hide! #:toggle! #:only!
            #:panelp #:forget))
-
-(in-package #:pine.app.surface)
+(in-package #:pine/app/surface)
 
 (defparameter +roles+ '(:bar :echo :panel :overlay :background :toplevel))
 (defvar *on-declare* nil)

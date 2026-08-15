@@ -6,7 +6,7 @@
   `(unwind-protect (progn (pine:start) ,@body) (pine:stop)))
 
 (defun asked (&rest message)
-  (pine.net.control:received message))
+  (pine/net/control:received message))
 
 (test the-control-verbs-read-and-write-the-tree
   (with-pine
@@ -57,8 +57,8 @@
         (is (null (pine/fs/watch:watchers)))))))
 
 (test the-cli-says-what-it-takes-and-answers-nothing-when-no-daemon-is-up
-  (is (search "usage: pine" (pine.cli:usage)))
-  (is (null (pine.cli:ask (list :ping) :port 17099))
+  (is (search "usage: pine" (pine/cli:usage)))
+  (is (null (pine/cli:ask (list :ping) :port 17099))
       "no daemon on that port, and asking is not an error"))
 
 (test what-is-under-one-place-and-not-the-other

@@ -1,6 +1,6 @@
-(defpackage #:pine.net.attach
+(defpackage #:pine/net/attach
   (:use #:cl)
-  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine.net.server)
+  (:local-nicknames (#:endpoint #:pine/run/agent) (#:d #:pine/data) (#:server #:pine/net/server)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:app #:frontend #:kinds #:attached #:received #:detached
            #:run-frontend #:client #:client-id #:client-kind #:client-display
@@ -8,8 +8,7 @@
            #:listen-for-attach #:attach-to #:protocol #:acceptable
            #:reap #:sweep #:alive-p #:*wire* #:*clients* #:attached-p #:accept-attached
            #:attached-at))
-
-(in-package #:pine.net.attach)
+(in-package #:pine/net/attach)
 
 (defvar *wire* "ns2")
 (defvar *apps* (d:table))

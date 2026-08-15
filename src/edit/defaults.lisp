@@ -1,12 +1,11 @@
-(defpackage #:pine.edit.defaults
+(defpackage #:pine/edit/defaults
   (:use #:cl)
   (:local-nicknames (#:cmd #:pine/repl/command) (#:mode #:pine/repl/mode)
-                    (#:node #:pine/fs/node) (#:buffer #:pine.edit.buffer)
-                    (#:prompt #:pine.edit.prompt) (#:edit #:pine.edit.commands)
-                    (#:listing #:pine.edit.listing))
+                    (#:node #:pine/fs/node) (#:buffer #:pine/edit/buffer)
+                    (#:prompt #:pine/edit/prompt) (#:edit #:pine/edit/commands)
+                    (#:listing #:pine/edit/listing))
   (:export #:install))
-
-(in-package #:pine.edit.defaults)
+(in-package #:pine/edit/defaults)
 
 (defparameter +settings+
   '((:tab-width      . "how wide a tab is drawn")
@@ -36,7 +35,7 @@
   (declare (ignore arguments))
   (buffer:newline! b)
   (buffer:indent-line! b (buffer:point-line b)
-                       (pine.edit.render:indent-for b (buffer:point-line b)))
+                       (pine/edit/render:indent-for b (buffer:point-line b)))
   :indented)
 
 (defun %overwriting (b said)

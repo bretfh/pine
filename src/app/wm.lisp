@@ -1,4 +1,4 @@
-(defpackage #:pine.app.wm
+(defpackage #:pine/app/wm
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:world #:pine/world/world) (#:provider #:pine/provider/wm)
@@ -6,8 +6,7 @@
   (:export #:install #:current #:root #:windows-of #:titled #:focused-of
            #:focus! #:step! #:close-window! #:overview! #:exit! #:split!
            #:terminal #:windows #:focused #:title))
-
-(in-package #:pine.app.wm)
+(in-package #:pine/app/wm)
 
 (defparameter +terminal+ "alacritty")
 

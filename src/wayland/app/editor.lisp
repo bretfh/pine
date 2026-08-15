@@ -212,21 +212,21 @@ surface it lands in."
 (defun handle-editor-message (ed msg)
   (case (first msg)
     (:attached
-     (setf (ed-ref ed) (pine.net.attach:accept-attached (ed-sys ed) msg))
+     (setf (ed-ref ed) (pine/net/attach:accept-attached (ed-sys ed) msg))
      (say-size ed))
     (:style
      (destructuring-bind (&key styles) (rest msg)
        (pine/ui/css:install styles)
-       (pine.frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
+       (pine/frontend:enqueue (ed-pump ed) (lambda () (setf (ed-dirty ed) t)))))
 
     (:widgets
      (destructuring-bind (&key surface tree as generation) (rest msg)
        (declare (ignore surface as))
-       (pine.frontend:enqueue (ed-pump ed) (lambda () (adopt-frame ed tree generation)))))
+       (pine/frontend:enqueue (ed-pump ed) (lambda () (adopt-frame ed tree generation)))))
     (:rows-patch
      (destructuring-bind (&key surface patch generation) (rest msg)
        (declare (ignore surface))
-       (pine.frontend:enqueue (ed-pump ed) (lambda () (patch-frame ed patch generation)))))))
+       (pine/frontend:enqueue (ed-pump ed) (lambda () (patch-frame ed patch generation)))))))
 
 (defun %build-tree (ed form)
   (setf (ed-wire ed) form
@@ -257,7 +257,7 @@ for a whole one instead of applying."
      (send-input ed (list :refresh)))))
 
 (defun editor-loop (ed)
-  (pine.frontend:run (ed-backing ed) (ed-pump ed)
+  (pine/frontend:run (ed-backing ed) (ed-pump ed)
    :done (lambda () (ed-done ed))
    :ready (lambda ()
             (check-repeat ed)
@@ -265,19 +265,19 @@ for a whole one instead of applying."
    :pending (lambda () (and (ed-dirty ed) (ed-configured ed)))
    :deadline (lambda () (repeat-deadline ed))))
 
-(defun run-editor (&key (host pine.net.server:*host*) (port pine.net.server:*port*))
+(defun run-editor (&key (host pine/net/server:*host*) (port pine/net/server:*port*))
   "Attach an editor window to the daemon at HOST:PORT and paint the frames it
 pushes. The daemon must be up."
   (let* ((backing (connect-display))
          (ed (make-instance 'editor :backing backing :display (display backing)
-                                    :pump (pine.frontend:make-pump))))
+                                    :pump (pine/frontend:make-pump))))
       (connect-editor ed)
       (open-window ed)
-      (setf (ed-sys ed) (pine.frontend:attach
+      (setf (ed-sys ed) (pine/frontend:attach
                          :editor (lambda (msg) (handle-editor-message ed msg))
                          :host host :port port))
     (unwind-protect (editor-loop ed)
-      (pine.frontend:close-pump (ed-pump ed))
-      (pine.frontend:shutdown backing))))
+      (pine/frontend:close-pump (ed-pump ed))
+      (pine/frontend:shutdown backing))))
 
-(pine.net.attach:frontend :editor #'run-editor)
+(pine/net/attach:frontend :editor #'run-editor)

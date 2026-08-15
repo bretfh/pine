@@ -24,7 +24,7 @@
           ((and dir (plusp (length dir))) (format nil "~a/~a" dir name))
           (t (error "XDG_RUNTIME_DIR is unset")))))
 
-(defclass backing (pine.frontend:backing)
+(defclass backing (pine/frontend:backing)
   ((display :initarg :display :reader display)
    (fd :initarg :fd :reader fd
        :documentation "The connection's descriptor, to wait on."))
@@ -46,15 +46,15 @@ it and there is then nothing to wait on."
       (wire:connect socket path)
       (make-instance 'backing :display (wl-display-connect socket) :fd fd))))
 
-(defmethod pine.frontend:dispatch-pending ((b backing))
+(defmethod pine/frontend:dispatch-pending ((b backing))
   (let ((display (display b)))
     (loop :while (wl-display-listen display)
           :do (wl-display-dispatch-event display))))
 
-(defmethod pine.frontend:shutdown ((b backing))
+(defmethod pine/frontend:shutdown ((b backing))
   (wl-display-disconnect (display b)))
 
-(defmethod pine.frontend:wait-for-work ((b backing) pump timeout)
+(defmethod pine/frontend:wait-for-work ((b backing) pump timeout)
   "Wait on the connection and the queue at once, which is the whole reason the
 descriptor is held."
   (cffi:with-foreign-object (fds '(:struct pollfd) 2)
@@ -64,7 +64,7 @@ descriptor is held."
             (cffi:foreign-slot-value connection '(:struct pollfd) 'events) +pollin+
             (cffi:foreign-slot-value connection '(:struct pollfd) 'revents) 0
             (cffi:foreign-slot-value queue '(:struct pollfd) 'fd)
-            (pine.frontend:pump-wake-in pump)
+            (pine/frontend:pump-wake-in pump)
             (cffi:foreign-slot-value queue '(:struct pollfd) 'events) +pollin+
             (cffi:foreign-slot-value queue '(:struct pollfd) 'revents) 0)
       (let ((ready (cffi:foreign-funcall "poll"

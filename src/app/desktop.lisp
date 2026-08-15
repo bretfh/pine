@@ -1,7 +1,7 @@
-(defpackage #:pine.app.desktop
+(defpackage #:pine/app/desktop
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:watch #:pine/fs/watch)
-                    (#:surface #:pine.app.surface) (#:attach #:pine.net.attach)
+                    (#:surface #:pine/app/surface) (#:attach #:pine/net/attach)
                     (#:cmd #:pine/repl/command) (#:wire #:pine/ui/wire)
                     (#:css #:pine/ui/css) (#:fault #:pine/run/fault)
                     (#:computed #:pine/fs/computed) (#:task #:pine/run/task)
@@ -9,8 +9,7 @@
   (:export #:session #:sessions #:install #:push-surface #:push-all #:received #:flush
            #:close-all
            #:client-of #:acting #:mine-p #:upp #:repaint #:restyle #:declared #:*client*))
-
-(in-package #:pine.app.desktop)
+(in-package #:pine/app/desktop)
 
 (defvar *sessions* (d:table))
 (defvar *client* nil)

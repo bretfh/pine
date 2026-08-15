@@ -1,7 +1,7 @@
-(defpackage #:pine.edit.prompt
+(defpackage #:pine/edit/prompt
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:world #:pine/world/world)
-                    (#:buffer #:pine.edit.buffer) (#:log #:pine/run/log)
+                    (#:buffer #:pine/edit/buffer) (#:log #:pine/run/log)
                     (#:fault #:pine/run/fault))
   (:export #:prompt #:asking #:asking-p #:ask #:answer! #:cancel! #:said
            #:question #:answer-buffer #:then #:candidates #:chosen #:choose! #:was
@@ -10,8 +10,7 @@
            #:must-match #:history #:remember #:walk-history #:filep
            #:common-prefix #:matches #:descends-p #:descend! #:expanded #:files
            #:history-of #:*shown* #:*history-kept*))
-
-(in-package #:pine.edit.prompt)
+(in-package #:pine/edit/prompt)
 
 (defvar *prompt* nil)
 (defvar *sources* (d:table))

@@ -1,11 +1,10 @@
-(defpackage #:pine.frontend
+(defpackage #:pine/frontend
   (:use #:cl)
   (:export #:pump #:make-pump #:close-pump #:pump-wake-in
            #:enqueue #:wake #:pump-queued-p #:drain #:drain-wake
            #:backing #:wait-for-work #:dispatch-pending #:shutdown #:run
            #:attach #:answering-p #:*watch*))
-
-(in-package #:pine.frontend)
+(in-package #:pine/frontend)
 
 (defvar *attempts* 60)
 
@@ -110,7 +109,7 @@ when it has none."
 (defun %keep-attaching (sys daemon self kind ready)
   (loop :repeat *attempts*
         :until (funcall ready)
-        :do (pine.net.attach:attach-to sys daemon self :kind kind)
+        :do (pine/net/attach:attach-to sys daemon self :kind kind)
             (sleep *interval*))
   (unless (funcall ready)
     (format *error-output* "pine: no daemon after ~d tries, giving up~%" *attempts*)
@@ -138,12 +137,12 @@ Without this a killed daemon leaves its windows on the screen for good."
                  (uiop:quit 0))))
    :name "pine daemon watch"))
 
-(defun attach (kind handler &key (host pine.net.server:*host*)
-                                 (port pine.net.server:*port*)
+(defun attach (kind handler &key (host pine/net/server:*host*)
+                                 (port pine/net/server:*port*)
                                  (name "display"))
   (let ((sys (sento.actor-system:make-actor-system))
         (joined (pine/data:box nil)))
-    (sento.remoting:enable-remoting sys :host pine.net.server:*host* :port 0)
+    (sento.remoting:enable-remoting sys :host pine/net/server:*host* :port 0)
     (pine/run/agent:agent name
                           (lambda (message)
                             (when (member (first message) '(:attached :refused))
@@ -151,8 +150,8 @@ Without this a killed daemon leaves its windows on the screen for good."
                             (funcall handler message))
                           :dispatcher :pinned :in sys)
     (let* ((self-port (sento.remoting:remoting-port sys))
-           (daemon (pine.net.server:daemon-uri "attach" :host host :port port))
-           (self (pine.net.server:local-uri name self-port :host host)))
+           (daemon (pine/net/server:daemon-uri "attach" :host host :port port))
+           (self (pine/net/server:local-uri name self-port :host host)))
       (bordeaux-threads:make-thread
        (lambda () (%keep-attaching sys daemon self kind
                                    (lambda () (pine/data:held joined))))

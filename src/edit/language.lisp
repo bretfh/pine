@@ -1,9 +1,8 @@
-(defpackage #:pine.edit.language
+(defpackage #:pine/edit/language
   (:use #:cl)
-  (:local-nicknames (#:buffer #:pine.edit.buffer))
+  (:local-nicknames (#:buffer #:pine/edit/buffer))
   (:export #:package-of #:readtable-of #:reading))
-
-(in-package #:pine.edit.language)
+(in-package #:pine/edit/language)
 
 (defun %named-after (b word)
   "The name the buffer gives after the last WORD in it, as it is written. What

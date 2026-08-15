@@ -91,8 +91,8 @@ left every surface transparent."
   (unwind-protect
        (progn
          (pine:start)
-         (setf (pine/fs/node:contents (pine.edit.buffer:current)) "hello")
-         (let ((wire (pine/ui/wire:node->wire (pine.edit.render:frame-tree))))
+         (setf (pine/fs/node:contents (pine/edit/buffer:current)) "hello")
+         (let ((wire (pine/ui/wire:node->wire (pine/edit/render:frame-tree))))
            (let ((text (princ-to-string wire)))
              (dolist (class '("editor" "editor-view" "modeline" "echo"))
                (is (search class text) "the frame has no ~a" class)))))

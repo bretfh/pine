@@ -54,7 +54,7 @@ shot:
 # one executable: the daemon, the frontends and the CLI, which is how pine is
 # meant to be run. ./pine with no verb says what it takes.
 bin:
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(sb-ext:save-lisp-and-die \"pine\" :executable t :save-runtime-options t :toplevel (function pine.cli:main))"'
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(sb-ext:save-lisp-and-die \"pine\" :executable t :save-runtime-options t :toplevel (function pine/cli:main))"'
 	@echo "wrote ./pine"
 
 # the fiveam suite. Exits nonzero on failure.

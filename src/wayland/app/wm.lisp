@@ -11,7 +11,7 @@
 
 (defun %enqueue (wm thunk)
   "Hand THUNK to the wayland thread and wake it."
-  (pine.frontend:enqueue (wm-pump wm) thunk))
+  (pine/frontend:enqueue (wm-pump wm) thunk))
 
 (defun %ask-manage (wm)
   "Ask the compositor for a manage sequence, once: the protocol starts a new
@@ -128,7 +128,7 @@ the wayland thread."
   (case (first message)
     (:attached
      (progn
-       (setf (wm-ref wm) (pine.net.attach:accept-attached (wm-sys wm) message))
+       (setf (wm-ref wm) (pine/net/attach:accept-attached (wm-sys wm) message))
        (%enqueue wm (lambda () (%report-state wm)))))
     (:bindings
      (destructuring-bind (&key table) (rest message)
@@ -329,14 +329,14 @@ it. Always finishes."
     (wl-display-roundtrip (wm-display wm))
     (wl-display-roundtrip (wm-display wm))))
 
-(defun run-wm (&key (host pine.net.server:*host*) (port pine.net.server:*port*))
+(defun run-wm (&key (host pine/net/server:*host*) (port pine/net/server:*port*))
   "Drive the compositor's window management: bind the global, attach to the
 daemon for policy, and run the sequence loop until the server finishes with
 us. Errors out plainly when the compositor is not river or another window
 manager holds the global."
   (let* ((backing (connect-display))
          (wm (make-wm :display (display backing) :backing backing
-                       :pump (pine.frontend:make-pump))))
+                       :pump (pine/frontend:make-pump))))
     (connect-wm wm)
     (unless (wm-manager wm)
       (wl-display-disconnect (wm-display wm))
@@ -345,13 +345,13 @@ manager holds the global."
 offers no window management, or another manager holds it~%")
       (finish-output *error-output*)
       (uiop:quit +unavailable+))
-    (setf (wm-sys wm) (pine.frontend:attach
+    (setf (wm-sys wm) (pine/frontend:attach
                        :wm (lambda (msg) (handle-wm-message wm msg))
                        :host host :port port))
     (unwind-protect
-         (pine.frontend:run (wm-backing wm) (wm-pump wm)
+         (pine/frontend:run (wm-backing wm) (wm-pump wm)
                             :done (lambda () (wm-done wm)))
-      (pine.frontend:close-pump (wm-pump wm))
-      (pine.frontend:shutdown backing))))
+      (pine/frontend:close-pump (wm-pump wm))
+      (pine/frontend:shutdown backing))))
 
-(pine.net.attach:frontend :wm #'run-wm)
+(pine/net/attach:frontend :wm #'run-wm)

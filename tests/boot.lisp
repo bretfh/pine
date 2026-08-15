@@ -114,7 +114,7 @@ or it is a document about a system that no longer exists."
                  (scratch (merge-pathnames "pine-probe-example.lisp"
                                            (uiop:temporary-directory))))
              (with-open-file (out scratch :direction :output :if-exists :supersede)
-               (write-string (pine.edit.text:text-of
+               (write-string (pine/edit/text:text-of
                               (pine/data:as :seq
                                             (remove-if
                                              (lambda (line)
@@ -124,13 +124,13 @@ or it is a document about a system that no longer exists."
                              out))
              (pine:load-config scratch)
              (is (member "bar" (mapcar #'pine/fs/node:name
-                                       (pine.app.surface:surfaces))
+                                       (pine/app/surface:surfaces))
                          :test #'equal)
                  "the surfaces it declares are there")
              (is (plusp (length (pine/ui/css:styles)))
                  "and the styles it writes are installed")
              (is-true (pine/fs/computed:recompute
-                       (pine.app.surface:surface-named "bar"))
+                       (pine/app/surface:surface-named "bar"))
                       "and its bar builds")
              (ignore-errors (delete-file scratch))))
       (pine:stop))))

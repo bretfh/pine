@@ -1,9 +1,9 @@
-(defpackage #:pine.edit.buffer
+(defpackage #:pine/edit/buffer
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:world #:pine/world/world)
-                    (#:mode #:pine/repl/mode) (#:text #:pine.edit.text)
-                    (#:d #:pine/data) (#:history #:pine.edit.history))
+                    (#:mode #:pine/repl/mode) (#:text #:pine/edit/text)
+                    (#:d #:pine/data) (#:history #:pine/edit/history))
   (:export #:buffer #:make-buffer #:buffers #:buffer-named
            #:kill-buffer #:scratch #:current #:current-buffer #:asidep #:*on-current* #:lines #:point #:mark
            #:mode-of #:minors-of #:file-of #:tick #:properties
@@ -16,8 +16,7 @@
            #:propertize! #:properties-at #:clear-properties! #:edit-of
            #:overlay! #:overlays-at #:clear-overlays!
            #:indent-line! #:indent-of))
-
-(in-package #:pine.edit.buffer)
+(in-package #:pine/edit/buffer)
 
 (defvar *current* nil)
 (defvar *on-current* nil)

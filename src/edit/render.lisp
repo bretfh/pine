@@ -1,18 +1,17 @@
-(defpackage #:pine.edit.render
+(defpackage #:pine/edit/render
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine/ui/build)
                     (#:cells #:pine/ui/cells) (#:layout #:pine/ui/layout)
                     (#:raster #:pine/ui/raster) (#:face #:pine/ui/face)
-                    (#:buffer #:pine.edit.buffer) (#:window #:pine.edit.window)
+                    (#:buffer #:pine/edit/buffer) (#:window #:pine/edit/window)
                     (#:mode #:pine/repl/mode) (#:parser #:pine/ts/parser)
-                    (#:prompt #:pine.edit.prompt) (#:widget #:pine/ui/node))
+                    (#:prompt #:pine/edit/prompt) (#:widget #:pine/ui/node))
   (:export #:shown #:modelinep #:buffer-tree #:window-tree #:frame-tree
            #:rows #:modeline #:echo-tree
            #:shown-line #:shown-col
            #:visible-lines #:scroll-to-point #:hscroll-to-point #:caret-col #:highlights-for #:indent-for
            #:*cols* #:*rows* #:*font-px*))
-
-(in-package #:pine.edit.render)
+(in-package #:pine/edit/render)
 
 (defparameter +candidates-shown+ 12)
 (defvar *cols* 80)

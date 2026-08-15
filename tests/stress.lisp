@@ -10,12 +10,12 @@ threads pine already had."
          (pine:start)
          (let ((threads (length (pine/run/task:tasks))))
            (dotimes (i 200)
-             (let ((b (pine.edit.buffer:make-buffer (format nil "probe-~d" i))))
+             (let ((b (pine/edit/buffer:make-buffer (format nil "probe-~d" i))))
                (setf (pine/fs/node:contents b) (format nil "line ~d" i))))
-           (is (<= 200 (length (pine.edit.buffer:buffers))))
+           (is (<= 200 (length (pine/edit/buffer:buffers))))
            (is (equal "line 199"
                       (pine/fs/node:contents
-                       (pine.edit.buffer:buffer-named "probe-199"))))
+                       (pine/edit/buffer:buffer-named "probe-199"))))
            (is (eql threads (length (pine/run/task:tasks)))
                "and not one of them took a thread")))
     (pine:stop)))
@@ -45,7 +45,7 @@ half an edit and never waits for one."
   (unwind-protect
        (progn
          (pine:start)
-         (let* ((b (pine.edit.buffer:make-buffer "probe-race"))
+         (let* ((b (pine/edit/buffer:make-buffer "probe-race"))
                 (torn (pine/data:box 0))
                 (stop (pine/data:box nil))
                 (readers
@@ -112,12 +112,12 @@ half an edit and never waits for one."
   (unwind-protect
        (progn
          (pine:start)
-         (let ((b (pine.edit.buffer:make-buffer "probe-clamp")))
+         (let ((b (pine/edit/buffer:make-buffer "probe-clamp")))
            (setf (pine/fs/node:contents b) "one
 two")
-           (pine.edit.buffer:goto! b 99 99)
-           (is (= 1 (pine.edit.buffer:point-line b)) "point cannot leave the buffer")
-           (is (= 3 (pine.edit.buffer:point-col b)))
-           (pine.edit.buffer:delete-region! b 0 0 99 99)
+           (pine/edit/buffer:goto! b 99 99)
+           (is (= 1 (pine/edit/buffer:point-line b)) "point cannot leave the buffer")
+           (is (= 3 (pine/edit/buffer:point-col b)))
+           (pine/edit/buffer:delete-region! b 0 0 99 99)
            (is (equal "" (pine/fs/node:contents b)))))
     (pine:stop)))

@@ -1,11 +1,10 @@
-(defpackage #:pine.net.server
+(defpackage #:pine/net/server
   (:use #:cl)
   (:local-nicknames (#:timer #:pine/run/timer) (#:d #:pine/data))
   (:export #:server #:start-server #:stop-server #:*server* #:*host* #:*port*
            #:actor-system #:remoting-port #:clients #:next-client-id
            #:read-environment #:daemon-uri #:local-uri #:workers #:*workers*))
-
-(in-package #:pine.net.server)
+(in-package #:pine/net/server)
 
 (defvar *server* nil)
 (defvar *host* "127.0.0.1")

@@ -55,7 +55,7 @@ undefined function is usually a load-order fault.
 
 ## Packages
 
-The path to a package is its name. `pine.edit.buffer` lives in
+The path to a package is its name. `pine/edit/buffer` lives in
 `src/edit/buffer.lisp` and declares itself there. There is no manifest and
 there are no `package.lisp` files; the `.asd` is the module structure.
 
@@ -66,7 +66,7 @@ where you are already looking.
 
 A file may only name packages that load before it. When two files need each
 other, the layering is wrong: one of them takes a hook (`pine/ts/parser:*on-parse*`,
-`pine.edit.buffer:*on-current*`, `pine/ui/build:*asking*`) and the other fills
+`pine/edit/buffer:*on-current*`, `pine/ui/build:*asking*`) and the other fills
 it in.
 
 ## Nodes
