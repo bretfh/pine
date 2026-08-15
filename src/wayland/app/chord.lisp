@@ -1,9 +1,8 @@
-(defpackage #:pine.wayland.app.chord
+(defpackage #:pine/wayland/app/chord
   (:use #:cl)
   (:local-nicknames (#:key #:pine/edit/key))
   (:export #:keysym+modifiers))
-
-(in-package #:pine.wayland.app.chord)
+(in-package #:pine/wayland/app/chord)
 
 (defun keysym+modifiers (chord)
   "(values KEYSYM MODIFIERS) for a pine chord string such as \"s-Return\", or

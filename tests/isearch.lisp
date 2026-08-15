@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.isearch :in :pine)
+(def-suite* :pine/isearch :in :pine)
 
 (defmacro with-lines ((&rest lines) &body body)
   `(unwind-protect

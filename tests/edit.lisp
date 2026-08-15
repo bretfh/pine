@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.edit :in :pine)
+(def-suite* :pine/edit :in :pine)
 
 (defmacro with-editor ((&key (text "")) &body body)
   `(unwind-protect

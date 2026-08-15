@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.mode :in :pine)
+(def-suite* :pine/mode :in :pine)
 
 (defmacro with-modes (&body body)
   "Only the modes this test declares, so what pine itself ships cannot answer

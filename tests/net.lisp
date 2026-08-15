@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.net :in :pine)
+(def-suite* :pine/net :in :pine)
 
 (defmacro with-server ((var &key (remoting 0)) &body body)
   `(let ((,var (pine/net/server:start-server :workers 2 :remoting-port ,remoting)))

@@ -223,8 +223,8 @@
     (if (null value) default value)))
 
 (defun user-package ()
-  (or (find-package :pine.user)
-      (let ((p (make-package :pine.user :use '(:cl))))
+  (or (find-package :pine/user)
+      (let ((p (make-package :pine/user :use '(:cl))))
         (dolist (entry +user-surface+)
           (dolist (name (rest entry))
             (let ((symbol (find-symbol (string-upcase name) (first entry))))

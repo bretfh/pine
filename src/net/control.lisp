@@ -37,7 +37,7 @@
   (let ((n (tree:ensure (world:root world:*world*)
                         (string-left-trim "/" (princ-to-string where)))))
     (setf (node:contents n)
-          (let ((*package* (or (find-package :pine.user) *package*)))
+          (let ((*package* (or (find-package :pine/user) *package*)))
             (handler-case (read-from-string text) (error () text))))
     (list :ok (said (node:contents n)))))
 
@@ -49,7 +49,7 @@
 (defun %evaluate (text)
   (let* ((s (session:open-session
              :name "control"
-             :package (or (find-package :pine.user) (find-package :cl-user))))
+             :package (or (find-package :pine/user) (find-package :cl-user))))
          (e (session:evaluate s (session:read s text))))
     (session:close s)
     (if (session:fault e)

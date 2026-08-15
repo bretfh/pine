@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :pine.vt)
+(in-package :pine/vt)
 
 (defvar *color-palette* (make-array 256 :initial-element nil))
 

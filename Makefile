@@ -49,7 +49,7 @@ editor:
 # the frame as PNGs, with no display and no daemon: /tmp/pine-rows.png is the
 # cell grid, /tmp/pine-window.png the pixel pass a wayland surface gets
 shot:
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine.cairo.shot:shot))" --eval "(terpri)"'
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine/cairo/shot:shot))" --eval "(terpri)"'
 
 # one executable: the daemon, the frontends and the CLI, which is how pine is
 # meant to be run. ./pine with no verb says what it takes.
@@ -62,14 +62,14 @@ test:
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:test-system :pine)"'
 
 # run one suite over and over in a single image, to read an intermittent
-# failure: make probe SUITE=pine.repl TIMES=10
+# failure: make probe SUITE=pine/repl TIMES=10
 probe:
 	$(IN) '$(ENV) SUITE="$(SUITE)" TIMES="$(TIMES)" $(SBCL) --non-interactive --load bench/probe.lisp'
 
 # evaluate one form in an image with the test system loaded, in PINE.TEST, with
 # the debugger left on so a fault prints its backtrace: make eval FORM='(...)'
 eval:
-	FORM='$(FORM)' $(IN) '$(ENV) $(SBCL) --disable-debugger --eval "(asdf:load-system :pine/test)" --eval "(in-package :pine.test)" --eval "(eval (read-from-string (uiop:getenv \"FORM\")))" --quit'
+	FORM='$(FORM)' $(IN) '$(ENV) $(SBCL) --disable-debugger --eval "(asdf:load-system :pine/test)" --eval "(in-package :pine/test)" --eval "(eval (read-from-string (uiop:getenv \"FORM\")))" --quit'
 
 # the diagrams under doc/ are generated from the .dot beside them: make docs
 docs:

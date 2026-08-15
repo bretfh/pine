@@ -1,6 +1,6 @@
-(defpackage :pine.test
+(defpackage :pine/test
   (:use :cl :fiveam))
 
-(in-package :pine.test)
+(in-package :pine/test)
 
 (def-suite :pine)

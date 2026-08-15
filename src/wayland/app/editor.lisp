@@ -1,15 +1,14 @@
-(defpackage #:pine.wayland.app.editor
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine.wayland.protocol #:pine.wayland.connection)
+(defpackage #:pine/wayland/app/editor
+  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol #:pine/wayland/connection)
   (:local-nicknames (#:a #:alexandria) (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:wire #:pine/ui/wire) (#:paint #:pine.cairo.paint))
+                    (#:wire #:pine/ui/wire) (#:paint #:pine/cairo/paint))
   (:export
    #:editor #:run-editor
 
    #:*keyboard-handler* #:send-input #:now-ms
    #:ed-held-keycode #:ed-held-msg #:ed-held-since-ms #:ed-last-repeat-ms
    #:ed-repeat-rate #:ed-repeat-delay-ms))
-
-(in-package #:pine.wayland.app.editor)
+(in-package #:pine/wayland/app/editor)
 
 (defvar *keyboard-handler* nil
   "When set, a function of (editor &rest wl-keyboard-event) -- the xkb keys file
@@ -92,7 +91,7 @@ as it takes."
   "Measure the monospace cell once, the same way the layout engine's window node
 does, so a frame laid out at N cols x rows lands exactly in the cells."
   (unless (ed-metricsp ed)
-    (c:select-font-face pine.cairo.grid:*font-family* :normal :normal)
+    (c:select-font-face pine/cairo/grid:*font-family* :normal :normal)
     (c:set-font-size (font-px))
     (let ((fe (c:get-font-extents)))
       (multiple-value-bind (xb yb w h ax) (c:text-extents "M")

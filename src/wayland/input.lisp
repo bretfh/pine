@@ -1,11 +1,10 @@
-(defpackage #:pine.wayland.input
-  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
-        #:pine.wayland.surface)
+(defpackage #:pine/wayland/input
+  (:use #:cl #:wayflan-client #:pine/wayland/protocol #:pine/wayland/connection
+        #:pine/wayland/surface)
   (:local-nicknames (#:a #:alexandria) (#:widget #:pine/ui/node)
                     (#:layout #:pine/ui/layout))
   (:export #:*on-hover* #:clear-hover #:connect-desktop #:drag-to #:handle-desktop-seat #:handle-pointer #:pointer-click #:pointer-node #:pointer-press #:pointer-release #:update-hover))
-
-(in-package #:pine.wayland.input)
+(in-package #:pine/wayland/input)
 
 (defvar *on-hover* nil
   "When set, a function of the hovered node (or nil) called on each hover change
@@ -118,7 +117,7 @@ which would build the tree again."
         (when hit (setf (widget:hovered hit) t))
         (setf (ls-hover ls) hit)))))
 
-(setf pine.wayland.surface:*rebuilt* #'rehover)
+(setf pine/wayland/surface:*rebuilt* #'rehover)
 
 (defun pointer-press (conn)
   "Left press: a slider starts a drag (live scrub, fire on release); anything

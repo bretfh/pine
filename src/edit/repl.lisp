@@ -17,7 +17,7 @@
   (or (cdr (assoc name (sessions) :test #'equal))
       (let ((s (session:open-session
                 :name name
-                :package (or (find-package :pine.user) (find-package :cl-user)))))
+                :package (or (find-package :pine/user) (find-package :cl-user)))))
         (d:swap! *sessions* (lambda (all) (acons name s all)))
         s)))
 

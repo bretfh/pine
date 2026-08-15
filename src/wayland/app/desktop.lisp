@@ -1,12 +1,11 @@
-(defpackage #:pine.wayland.app.desktop
-  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
-        #:pine.wayland.surface #:pine.wayland.input)
+(defpackage #:pine/wayland/app/desktop
+  (:use #:cl #:wayflan-client #:pine/wayland/protocol #:pine/wayland/connection
+        #:pine/wayland/surface #:pine/wayland/input)
   (:local-nicknames (#:a #:alexandria) (#:widget #:pine/ui/node)
                     (#:wire #:pine/ui/wire) (#:d #:pine/data))
   (:export #:desktop #:run-desktop #:received #:open-for #:close-for
            #:placement #:role-for #:tree-fn #:on-widgets #:on-panel))
-
-(in-package #:pine.wayland.app.desktop)
+(in-package #:pine/wayland/app/desktop)
 
 (defclass desktop ()
   ((sys      :initarg :sys  :accessor ds-sys :initform nil)

@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.ts :in :pine)
+(def-suite* :pine/ts :in :pine)
 
 (defvar *runtime* nil)
 
@@ -62,7 +62,7 @@
 (test a-macro-indents-by-where-its-own-body-begins
   (let ((rule (pine/ts/highlight:head-rule (pine/ts/syntax:for :commonlisp)
                                            "probe-two-then-body"
-                                           :pine.test)))
+                                           :pine/test)))
     (is (eql 2 (pine/data:at rule :indent))
         "the macro's own lambda list says where its body begins")
     (is (eq :body (pine/data:at rule :rest)))))
@@ -97,14 +97,14 @@
        (progn
          (pine:start)
          (let ((b (pine/edit/buffer:make-buffer "probe-syntax")))
-           (setf (pine/fs/node:contents b) "(in-package #:pine.test)
+           (setf (pine/fs/node:contents b) "(in-package #:pine/test)
 (defun f () 1)")
-           (is (eq (find-package :pine.test) (pine/edit/language:package-of b))
+           (is (eq (find-package :pine/test) (pine/edit/language:package-of b))
                "the package its own (in-package) names")
            (is (null (pine/edit/language:readtable-of b))
                "and nothing else, where it says nothing else")
            (setf (pine/fs/node:contents b)
-                 "(in-package #:pine.test)
+                 "(in-package #:pine/test)
 (named-readtables:in-readtable pine/path/reader:syntax)
 (defun f () /probe/one)")
            (is (eq (named-readtables:find-readtable 'pine/path/reader:syntax)
@@ -113,7 +113,7 @@
            (is (eq :pine (pine/ts/parser::%grammar b))
                "so it is parsed as pine, whatever path it is under")
            (multiple-value-bind (package readtable) (pine/edit/language:reading b)
-             (is (eq (find-package :pine.test) package))
+             (is (eq (find-package :pine/test) package))
              (is-true (pine/path/path:pathp
                        (eval (let ((*package* package) (*readtable* readtable))
                                (read-from-string "/probe/one"))))
@@ -126,7 +126,7 @@
          (pine:start)
          (let ((b (pine/edit/buffer:make-buffer "probe-indent")))
            (setf (pine/edit/buffer:mode-of b) "lisp")
-           (setf (pine/fs/node:contents b) "(in-package #:pine.test)
+           (setf (pine/fs/node:contents b) "(in-package #:pine/test)
 (probe-two-then-body 1 2
 x)")
            (is (eql 2 (pine/ts/parser:indent b 2 :width 2))

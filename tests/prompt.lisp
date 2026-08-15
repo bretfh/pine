@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.prompt :in :pine)
+(def-suite* :pine/prompt :in :pine)
 
 (defmacro with-prompt ((&key (text "")) &body body)
   `(unwind-protect

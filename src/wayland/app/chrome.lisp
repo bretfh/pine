@@ -1,8 +1,7 @@
-(defpackage #:pine.wayland.app.chrome
-  (:use #:cl #:wayflan-client #:pine.wayland.protocol)
+(defpackage #:pine/wayland/app/chrome
+  (:use #:cl #:wayflan-client #:pine/wayland/protocol)
   (:export #:own-chrome-p #:take! #:border-rgba #:borders!))
-
-(in-package #:pine.wayland.app.chrome)
+(in-package #:pine/wayland/app/chrome)
 
 (defun own-chrome-p (hint)
   "True when a client cannot be talked out of decorating itself.

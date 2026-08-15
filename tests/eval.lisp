@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.eval :in :pine)
+(def-suite* :pine/eval :in :pine)
 
 (defparameter +probe-source+
   (format nil "(in-package :cl-user)~%(defun probe (x) (list x))~%(probe 41)~%"))
@@ -86,7 +86,7 @@
                                         :definition))
           "a mode that is not a lisp mode answers none of it"))))
 
-(def-suite* :pine.parser :in :pine)
+(def-suite* :pine/parser :in :pine)
 
 (test a-buffer-is-parsed-by-a-task-and-not-by-whoever-is-drawing
   (with-lisp-buffer (:text "(defun f (x) x)")
@@ -136,7 +136,7 @@
                     :key #'pine/run/agent:name :test #'search))
         "and its endpoint is gone with it")))
 
-(def-suite* :pine.motion :in :pine)
+(def-suite* :pine/motion :in :pine)
 
 (test the-arrows-move-point
   (with-lisp-buffer (:text "one
@@ -203,7 +203,7 @@ two")
       (is (search "C-x C-f" (pine/fs/node:contents b)))
       (is (search "find-file" (pine/fs/node:contents b))))))
 
-(def-suite* :pine.repl-buffer :in :pine)
+(def-suite* :pine/repl-buffer :in :pine)
 
 (test the-repl-is-a-buffer-whose-newline-submits
   (with-lisp-buffer ()

@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.style :in :pine)
+(def-suite* :pine/style :in :pine)
 
 (defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "edit"
                           "provider" "net" "app" "wayland" "wayland/app" "cairo")
@@ -165,3 +165,86 @@ a frontend tells the daemon about its geometry is written once."
               :do (push (format nil "~a:~d" (file-namestring file) n) sites)))
     (is (<= (length sites) 1) "~d place~:p build a resize message:~{~%  ~a~}"
         (length sites) (reverse sites))))
+
+(defun %package-of (file)
+  "The package FILE declares, as it is written."
+  (let ((line (find-if (lambda (l) (search "(defpackage" l)) (%lines file))))
+    (when line
+      (let* ((at (+ (search "#:" line) 2))
+             (end (or (position-if (lambda (c) (member c '(#\Space #\) #\Tab))) line
+                                   :start at)
+                      (length line))))
+        (subseq line at end)))))
+
+(test a-package-is-its-path
+  "src/edit/buffer.lisp declares pine/edit/buffer. The systems are already
+spelled that way; a package that is not is a name you have to translate. The
+root is pine, and the four generated wayland protocol files are one package
+between them."
+  (let ((wrong nil))
+    (dolist (file (%files))
+      (let ((said (%package-of file))
+            (path (namestring file)))
+        (when said
+          (let* ((from (search "src/" path))
+                 (under (and from (subseq path (+ from 4))))
+                 (want (and under
+                            (concatenate 'string "pine/"
+                                         (subseq under 0 (- (length under) 5))))))
+            (when (and want (not (equal said want))
+                       (not (equal said "pine"))
+                       (not (equal said "pine/wayland/protocol")))
+              (push (format nil "~a says ~a" (file-namestring file) said) wrong))))))
+    (is (null wrong) "~{~%  ~a~}" (reverse wrong))))
+
+(test nothing-spells-a-package-with-a-dot
+  (let ((found (%naming "pine." :except '("style.lisp"))))
+    (is (null found) "~{~%  ~a names a package with a dot~}" found)))
+
+(test in-package-is-the-line-after-the-defpackage
+  (let ((loose nil))
+    (dolist (file (%files))
+      (let ((lines (%lines file))
+            (depth 0) (start nil) (end nil) (at nil))
+        (loop :for line :in lines
+              :for n :from 0
+              :do (when (and (null start) (search "(defpackage" line)) (setf start n))
+                  (when (and start (null end))
+                    (incf depth (count #\( line))
+                    (decf depth (count #\) line))
+                    (when (<= depth 0) (setf end n)))
+                  (when (and (null at) (search "(in-package" line)) (setf at n)))
+        (when (and end at (/= at (1+ end)))
+          (push (file-namestring file) loose))))
+    (is (null loose) "~{~%  ~a puts something between defpackage and in-package~}"
+        (reverse loose))))
+
+(test a-nickname-names-one-package
+  "A nickname is vocabulary. It has to mean the same thing in every file, or
+reading one means checking its header first."
+  (let ((seen (make-hash-table :test 'equal))
+        (clashes nil))
+    (dolist (file (%files))
+      (dolist (line (%lines file))
+        (let ((at 0))
+          (loop
+            (let ((open (search "(#:" line :start2 at)))
+              (unless open (return))
+              (let* ((rest (subseq line (+ open 3)))
+                     (space (position #\Space rest))
+                     (name (and space (subseq rest 0 space)))
+                     (tail (and space (subseq rest (1+ space))))
+                     (of (and tail (search "#:pine" tail))))
+                (when (and name of)
+                  (let* ((from (+ of 2))
+                         (to (or (position-if (lambda (c) (member c '(#\Space #\)))) tail
+                                              :start from)
+                                 (length tail)))
+                         (package (subseq tail from to))
+                         (had (gethash name seen)))
+                    (cond ((null had) (setf (gethash name seen) package))
+                          ((not (equal had package))
+                           (pushnew (format nil "~a is ~a and ~a" name had package)
+                                    clashes :test #'equal)))))
+                (setf at (+ open 3))))))))
+    (is (null clashes) "~{~%  ~a~}" (reverse clashes))))

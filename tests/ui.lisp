@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.ui :in :pine)
+(def-suite* :pine/ui :in :pine)
 
 (test a-widget-tree-measures-arranges-and-renders-to-cells
   (let* ((tree (pine/ui/build:column

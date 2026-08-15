@@ -1,4 +1,4 @@
-(in-package #:pine.wayland.protocol)
+(in-package #:pine/wayland/protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include
   (merge-pathnames "share/river-protocols/stable/river-xkb-bindings-v1.xml"

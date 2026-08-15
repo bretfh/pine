@@ -36,7 +36,7 @@
       (setf *evaluating*
             (session:open-session
              :name "editor"
-             :package (or (find-package :pine.user) (find-package :cl-user))))))
+             :package (or (find-package :pine/user) (find-package :cl-user))))))
 
 (defun %as-path (typed) (prompt:expanded typed))
 

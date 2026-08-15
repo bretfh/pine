@@ -4,7 +4,7 @@
                     (#:world #:pine/world/world) (#:window #:pine/edit/window)
                     (#:build #:pine/ui/build) (#:layout #:pine/ui/layout)
                     (#:face #:pine/ui/face) (#:mode #:pine/repl/mode)
-                    (#:attach #:pine/net/attach) (#:wm #:pine/app/wm)
+                    (#:attach #:pine/net/attach) (#:wm-app #:pine/app/wm)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log))
   (:export #:compositor #:install #:pine-wm #:output-of #:splits #:arrange
            #:rects #:add-window #:forget-window #:bindings #:received
@@ -32,7 +32,7 @@
 
 (defmethod node:contents ((n compositor))
   (list :windows (length (window:windows n))
-        :focused (wm:focused-of n)
+        :focused (wm-app:focused-of n)
         :output (output-of n)))
 
 (defmethod node:persistp ((n compositor)) nil)
@@ -48,43 +48,43 @@
 (defun %window-at (n id)
   (find id (window:windows n) :key #'%id :test #'equal))
 
-(defmethod wm:windows-of ((n compositor))
+(defmethod wm-app:windows-of ((n compositor))
   (remove nil (mapcar #'%id (window:windows n))))
 
-(defmethod wm:titled ((n compositor) id)
+(defmethod wm-app:titled ((n compositor) id)
   (d:at (titles n) id))
 
-(defmethod wm:focused-of ((n compositor))
+(defmethod wm-app:focused-of ((n compositor))
   (let ((w (window:focused n)))
     (and w (%id w))))
 
-(defmethod wm:focus! ((n compositor) id)
+(defmethod wm-app:focus! ((n compositor) id)
   (let ((w (%window-at n id)))
     (when w
       (window:focus! w n)
       (push-arrangement n)
       id)))
 
-(defmethod wm:step! ((n compositor) by)
+(defmethod wm-app:step! ((n compositor) by)
   (let* ((all (window:windows n))
          (at (position (window:focused n) all)))
     (when (and all at)
       (window:focus! (nth (mod (+ at by) (length all)) all) n)
       (push-arrangement n)
-      (wm:focused-of n))))
+      (wm-app:focused-of n))))
 
-(defmethod wm:close-window! ((n compositor))
-  (let ((id (wm:focused-of n)))
+(defmethod wm-app:close-window! ((n compositor))
+  (let ((id (wm-app:focused-of n)))
     (when id (%tell n :wm :action :close :id id))
     id))
 
-(defmethod wm:exit! ((n compositor))
+(defmethod wm-app:exit! ((n compositor))
   (%tell n :wm :action :exit)
   t)
 
-(defmethod wm:overview! ((n compositor)) nil)
+(defmethod wm-app:overview! ((n compositor)) nil)
 
-(defmethod wm:split! ((n compositor) side)
+(defmethod wm-app:split! ((n compositor) side)
   (setf (splits n) (if (member side '(:beside :right :row)) :row :column)))
 
 (defun %app ()
@@ -163,7 +163,7 @@
   (let ((found (rects n)))
     (when found
       (%tell n :arrangement :rects found
-                            :focus (wm:focused-of n)
+                            :focus (wm-app:focused-of n)
                             :border (%border)))))
 
 (defun add-window (n id title app)
@@ -202,7 +202,7 @@
 
 (defun received (client message)
   (declare (ignore client))
-  (let ((n (wm:current)))
+  (let ((n (wm-app:current)))
     (when (typep n 'compositor)
       (case (first message)
         (:binding
@@ -221,12 +221,12 @@
            (forget-window n id)))
         (:window-focused
          (destructuring-bind (&key id &allow-other-keys) (rest message)
-           (wm:focus! n id)))
+           (wm-app:focus! n id)))
         (t nil)))))
 
 (defun %attached (client)
   (attach:push-to client :bindings :table (bindings))
-  (let ((n (wm:current)))
+  (let ((n (wm-app:current)))
     (when (typep n 'compositor) (push-arrangement n)))
   client)
 
@@ -236,10 +236,10 @@
     (mode:bind "wm" (car pair) (cdr pair)))
   (pine/repl/command:defcommand "wm-split-below" ()
       (:describes "the next window opens below")
-    (wm:split! (wm:current) :below))
+    (wm-app:split! (wm-app:current) :below))
   (pine/repl/command:defcommand "wm-split-beside" ()
       (:describes "the next window opens beside")
-    (wm:split! (wm:current) :beside))
+    (wm-app:split! (wm-app:current) :beside))
   (attach:app :wm
               (d:map :doc "the compositor's windows, and the chords that move them"
                      :attached #'%attached

@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.repl :in :pine)
+(def-suite* :pine/repl :in :pine)
 
 (defmacro with-session ((var &key (in "") (package :cl-user)) &body body)
   `(let* ((out (make-string-output-stream))

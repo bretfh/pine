@@ -1,4 +1,4 @@
-(defpackage #:pine.wayland.app.state
+(defpackage #:pine/wayland/app/state
   (:use #:cl)
   (:export #:wm #:make-wm #:wm-display #:wm-manager #:wm-bindings-global
            #:wm-layer-shell #:wm-layer-focus #:wm-windows #:wm-outputs #:wm-seats
@@ -10,8 +10,7 @@
            #:out #:make-out #:out-proxy #:out-x #:out-y #:out-width #:out-height
            #:out-shell #:out-area
            #:rect #:find-win #:screen #:tiled))
-
-(in-package #:pine.wayland.app.state)
+(in-package #:pine/wayland/app/state)
 
 (defstruct wm
   display

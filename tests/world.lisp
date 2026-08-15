@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.world :in :pine)
+(def-suite* :pine/world :in :pine)
 
 (defmacro with-store ((var) &body body)
   `(let* ((file (merge-pathnames (format nil "pine-probe-~d.db" (random 100000))

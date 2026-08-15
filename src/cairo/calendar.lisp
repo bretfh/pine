@@ -1,4 +1,4 @@
-(in-package #:pine.cairo.paint)
+(in-package #:pine/cairo/paint)
 
 (defun %days-in-month (mo y)
   (if (= mo 2)

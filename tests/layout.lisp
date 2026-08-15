@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.layout :in :pine)
+(def-suite* :pine/layout :in :pine)
 
 (defun rendered-rows (node width &key height selection)
   (mapcar (lambda (row) (string-right-trim " " (car row)))

@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.proc :in :pine)
+(def-suite* :pine/proc :in :pine)
 
 (test a-program-runs-and-says-what-it-said
   (let ((p (make-instance 'pine/proc/process:program

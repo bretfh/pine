@@ -26,7 +26,7 @@ names. A config's macros live there, not in CL, so this is what tells the
 highlighter and the evaluator what a name in it means."
   (let ((said (%named-after b "in-package")))
     (or (and said (find-package (string-upcase (string-left-trim "#:" said))))
-        (find-package :pine.user)
+        (find-package :pine/user)
         (find-package :cl-user))))
 
 (defun readtable-of (b)

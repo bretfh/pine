@@ -1,13 +1,12 @@
-(defpackage #:pine.cairo.shot
+(defpackage #:pine/cairo/shot
   (:use #:cl)
-  (:local-nicknames (#:cairo #:cl-cairo2) (#:paint #:pine.cairo.paint)
-                    (#:grid #:pine.cairo.grid) (#:layout #:pine/ui/layout)
+  (:local-nicknames (#:cairo #:cl-cairo2) (#:paint #:pine/cairo/paint)
+                    (#:grid #:pine/cairo/grid) (#:layout #:pine/ui/layout)
                     (#:face #:pine/ui/face) (#:render #:pine/edit/render)
                     (#:buffer #:pine/edit/buffer) (#:world #:pine/world/world)
                     (#:node #:pine/fs/node))
   (:export #:rows #:window #:surfaces #:as-frontend #:shot #:*text*))
-
-(in-package #:pine.cairo.shot)
+(in-package #:pine/cairo/shot)
 
 (defparameter *text* "(defun greet (who &optional (times 1))
   \"say hello\"

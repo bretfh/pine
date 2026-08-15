@@ -1,11 +1,10 @@
-(defpackage #:pine.wayland.app.wm
-  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection
-        #:pine.wayland.app.state)
-  (:local-nicknames (#:chrome #:pine.wayland.app.chrome)
-                    (#:chord #:pine.wayland.app.chord))
+(defpackage #:pine/wayland/app/wm
+  (:use #:cl #:wayflan-client #:pine/wayland/protocol #:pine/wayland/connection
+        #:pine/wayland/app/state)
+  (:local-nicknames (#:chrome #:pine/wayland/app/chrome)
+                    (#:chord #:pine/wayland/app/chord))
   (:export #:run-wm #:+unavailable+))
-
-(in-package #:pine.wayland.app.wm)
+(in-package #:pine/wayland/app/wm)
 
 (defparameter +unavailable+ 3)
 

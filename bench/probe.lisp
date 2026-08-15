@@ -1,7 +1,7 @@
 (require :asdf)
 (asdf:load-system :pine/test)
 
-(in-package :pine.test)
+(in-package :pine/test)
 
 (defun probe-suite (name times)
   (let ((suite (intern (string-upcase name) :keyword))

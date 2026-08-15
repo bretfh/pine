@@ -7,7 +7,7 @@
                     (#:node #:pine/fs/node) (#:computed #:pine/fs/computed)
                     (#:surface #:pine/app/surface)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
-                    (#:agent #:pine/run/agent))
+                    (#:endpoint #:pine/run/agent))
   (:export #:session #:sessions #:install #:push-frame #:received #:drawing
            #:close-all
            #:cols #:rows #:px-width #:px-height #:cell-w #:cell-h #:font-px
@@ -116,7 +116,7 @@ neither a slow command nor a slow frame holds up the loop reading from the
 client, and the keys still land in the order they were typed. Pinned: a command
 can stand in a fault, and a receive that parks takes its worker with it."
   (setf (drawing s)
-        (agent:agent (format nil "editor-~d" (attach:client-id (client-of s)))
+        (endpoint:agent (format nil "editor-~d" (attach:client-id (client-of s)))
                      (lambda (message) (%work s message))
                      :dispatcher :pinned)))
 
@@ -129,17 +129,17 @@ can stand in a fault, and a receive that parks takes its worker with it."
   (let ((s (%for client)))
     (when s
       (case (first message)
-        (:resize (agent:tell (drawing s) message))
+        (:resize (endpoint:tell (drawing s) message))
         (:key (let ((k (%key message)))
-                (when k (agent:tell (drawing s) (list :key k)))))
-        (:refresh (agent:tell (drawing s) (list :refresh)))
+                (when k (endpoint:tell (drawing s) (list :key k)))))
+        (:refresh (endpoint:tell (drawing s) (list :refresh)))
         (t nil)))))
 
 (defun restyle (styles)
   (dolist (s (sessions))
     (attach:push-to (client-of s) :style :styles styles)
     (if (drawing s)
-        (agent:tell (drawing s) (list :refresh))
+        (endpoint:tell (drawing s) (list :refresh))
         (progn (setf (sent s) nil) (push-frame s :whole t)))))
 
 (defun %attached (client)
@@ -150,12 +150,12 @@ can stand in a fault, and a receive that parks takes its worker with it."
       (when styles (attach:push-to client :style :styles styles)))
     (log:note "editor attached as client ~d" (attach:client-id client))
     (%drawing s)
-    (agent:tell (drawing s) (list :refresh))
+    (endpoint:tell (drawing s) (list :refresh))
     s))
 
 (defun %detached (client)
   (let ((s (%for client)))
-    (when (and s (drawing s)) (agent:stop (drawing s))))
+    (when (and s (drawing s)) (endpoint:stop (drawing s))))
   (d:drop! *sessions* (attach:client-id client))
   client)
 
@@ -163,7 +163,7 @@ can stand in a fault, and a receive that parks takes its worker with it."
   "Let go of every attached editor. The threads they draw on are this image's,
 so they go when it does rather than outliving it stopped."
   (dolist (s (sessions))
-    (when (drawing s) (agent:stop (drawing s))))
+    (when (drawing s) (endpoint:stop (drawing s))))
   (d:put! *sessions* (d:no-map))
   t)
 
@@ -171,7 +171,7 @@ so they go when it does rather than outliving it stopped."
   (declare (ignore b))
   (dolist (s (sessions))
     (if (drawing s)
-        (agent:tell (drawing s) (list :draw))
+        (endpoint:tell (drawing s) (list :draw))
         (fault:attempt (lambda () (push-frame s)) "a frame"))))
 
 (defun install ()

@@ -1,9 +1,8 @@
-(defpackage #:pine.wayland.app.keys
-  (:use #:cl #:wayflan-client #:pine.wayland.app.editor)
+(defpackage #:pine/wayland/app/keys
+  (:use #:cl #:wayflan-client #:pine/wayland/app/editor)
   (:local-nicknames (#:a #:alexandria) (#:shm #:posix-shm))
   (:export #:*ekb* #:+modifier-keysyms+ #:ekb #:handle-keyboard #:key->wire #:mod-active #:modifier-key-p))
-
-(in-package #:pine.wayland.app.keys)
+(in-package #:pine/wayland/app/keys)
 
 (defvar *ekb* (pine/data:table)
   "Editor to (list context keymap state).")

@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :pine.vt)
+(in-package :pine/vt)
 
 (declaim (optimize (speed 3) (safety 1)))
 

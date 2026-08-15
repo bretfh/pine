@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.term :in :pine)
+(def-suite* :pine/term :in :pine)
 
 (defmacro with-terminal ((var &key (command "/bin/sh")) &body body)
   `(unwind-protect

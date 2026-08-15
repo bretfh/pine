@@ -1,9 +1,8 @@
-(defpackage #:pine.wayland.connection
+(defpackage #:pine/wayland/connection
   (:use #:cl #:wayflan-client)
   (:local-nicknames (#:wire #:xyz.shunter.wayflan.wire))
   (:export #:backing #:connect-display #:display #:display-path #:fd))
-
-(in-package #:pine.wayland.connection)
+(in-package #:pine/wayland/connection)
 
 (defconstant +af-unix+ 1 "AF_UNIX.")
 (defconstant +sock-stream+ 1 "SOCK_STREAM.")

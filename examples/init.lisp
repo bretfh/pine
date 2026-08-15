@@ -1,4 +1,4 @@
-(in-package :pine.user)
+(in-package :pine/user)
 
 (procfs)
 (audio)

@@ -1,7 +1,7 @@
-(defpackage #:pine.wayland.surface
-  (:use #:cl #:wayflan-client #:pine.wayland.protocol #:pine.wayland.connection)
+(defpackage #:pine/wayland/surface
+  (:use #:cl #:wayflan-client #:pine/wayland/protocol #:pine/wayland/connection)
   (:local-nicknames (#:c #:cl-cairo2) (#:shm #:posix-shm)
-                    (#:paint #:pine.cairo.paint))
+                    (#:paint #:pine/cairo/paint))
   (:export
 
    #:wl-conn #:wl-conn-p #:make-wl-conn
@@ -15,8 +15,7 @@
    #:ls-conn #:ls-wl-surface #:ls-layer-surf #:ls-width #:ls-height
    #:ls-tree-fn #:ls-tree #:ls-hover #:ls-said #:ls-on-closed
    #:build-tree #:paint-surface #:*rebuilt*))
-
-(in-package #:pine.wayland.surface)
+(in-package #:pine/wayland/surface)
 
 (defvar *rebuilt* nil
   "Told a surface whose tree was just built again, so hover can be found on it.")

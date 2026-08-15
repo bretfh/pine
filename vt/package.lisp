@@ -1,8 +1,7 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :cl-user)
 
-(defpackage :pine.vt
+(defpackage :pine/vt
   (:use :common-lisp)
   (:export
    #:cell
@@ -57,3 +56,5 @@
    #:term-dump-row-string
    #:term-dump-to-string
    #:char-display-width))
+
+(in-package :cl-user)

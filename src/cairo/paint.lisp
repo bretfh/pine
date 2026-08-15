@@ -1,8 +1,7 @@
-(defpackage #:pine.cairo.paint
+(defpackage #:pine/cairo/paint
   (:use #:cl #:pine/ui/node)
   (:export #:measure-tree #:paint-arranged #:paint-tree #:render-tree-to-png #:with-cairo-layout))
-
-(in-package #:pine.cairo.paint)
+(in-package #:pine/cairo/paint)
 
 (defvar *cairo-font* "Maple Mono NF")
 
@@ -289,13 +288,13 @@ reports for one cell, so a window measures and paints at the same grid."
             (cairo:fill-path)
             (cairo:save)
             (cairo:translate 0d0 (float top 1d0))
-            (pine.cairo.grid:paint-rows orows cw ch asc (float x 1d0))
+            (pine/cairo/grid:paint-rows orows cw ch asc (float x 1d0))
             (cairo:restore)))
         (cairo:save)
         (cairo:rectangle (float x 1d0) (float y 1d0) (float w 1d0) (float h 1d0))
         (cairo:clip)
         (cairo:translate 0d0 (float y 1d0))
-        (pine.cairo.grid:paint-rows (subseq (view-rows n) over) cw ch asc (float x 1d0))
+        (pine/cairo/grid:paint-rows (subseq (view-rows n) over) cw ch asc (float x 1d0))
 
         (when (>= (view-crow n) 0)
           (destructuring-bind (br bg bb) (pine/ui/face:face-bg :cursor)

@@ -44,17 +44,17 @@
 
 (defun screen (tm)
   (let ((term (term-of tm)))
-    (loop :for row :below (pine.vt:term-height term)
+    (loop :for row :below (pine/vt:term-height term)
           :collect (with-output-to-string (s)
-                     (loop :for cell :across (pine.vt:term-grid-row term row)
-                           :do (write-char (or (pine.vt:cell-char cell) #\Space) s))))))
+                     (loop :for cell :across (pine/vt:term-grid-row term row)
+                           :do (write-char (or (pine/vt:cell-char cell) #\Space) s))))))
 
 (defun %refresh (tm b)
   (setf (node:contents b) (format nil "~{~a~^~%~}"
                                   (mapcar (lambda (line) (string-right-trim " " line))
                                           (screen tm))))
-  (buffer:goto! b (pine.vt:term-cursor-y (term-of tm))
-                (pine.vt:term-cursor-x (term-of tm))))
+  (buffer:goto! b (pine/vt:term-cursor-y (term-of tm))
+                (pine/vt:term-cursor-x (term-of tm))))
 
 (defun %carry (tm text)
   "Hold what the shell said until the drain gets to it. A command that prints
@@ -90,18 +90,18 @@ until the image dies."
   "Feed the emulator what it can take now, and repaint if anything landed."
   (let ((text (%take tm)))
     (when (and text (plusp (length text)))
-      (fault:attempt (lambda () (pine.vt:term-process-output (term-of tm) text))
+      (fault:attempt (lambda () (pine/vt:term-process-output (term-of tm) text))
                      "terminal output")
       (%refresh tm b)
       (when *on-refresh* (funcall *on-refresh* b))
       t)))
 
 (defun send (tm text)
-  (pine.vt:pty-write-string (fd tm) text)
+  (pine/vt:pty-write-string (fd tm) text)
   text)
 
 (defun resize (tm cols rows)
-  (pine.vt:term-resize (term-of tm) cols rows)
+  (pine/vt:term-resize (term-of tm) cols rows)
   tm)
 
 (defun %event (k)
@@ -123,12 +123,12 @@ until the image dies."
 (defun key->bytes (tm k)
   (let ((event (%event k)))
     (when event
-      (pine.vt:key-event-to-escape-sequence (term-of tm) event))))
+      (pine/vt:key-event-to-escape-sequence (term-of tm) event))))
 
 (defun open-terminal (name &key (command *shell*) (cols 80) (rows 24)
                                 supervisor)
-  (multiple-value-bind (fd pid) (pine.vt:spawn-pty-process command :rows rows :cols cols)
-    (let* ((term (pine.vt:make-term :width cols :height rows))
+  (multiple-value-bind (fd pid) (pine/vt:spawn-pty-process command :rows rows :cols cols)
+    (let* ((term (pine/vt:make-term :width cols :height rows))
            (tm (make-instance 'terminal :name name :fd fd :pid pid :term term))
            (b (or (buffer:buffer-named name) (buffer:make-buffer name :mode "term"))))
       (d:keep! *terminals* name tm)
@@ -136,8 +136,8 @@ until the image dies."
             (task:spawn (format nil "term ~a" name)
                         (lambda ()
                           (loop
-                            (when (pine.vt:pty-wait fd 50)
-                              (let ((text (pine.vt:pty-read-string fd 65536)))
+                            (when (pine/vt:pty-wait fd 50)
+                              (let ((text (pine/vt:pty-read-string fd 65536)))
                                 (when (or (null text) (zerop (length text)))
                                   (return))
                                 (%carry tm text)))
@@ -156,9 +156,9 @@ until the image dies."
   (let ((tm (terminal-for name)))
     (when tm
       (when (reader tm) (task:stop (reader tm)))
-      (ignore-errors (pine.vt:pty-kill (pid tm)))
-      (ignore-errors (pine.vt:pty-close (fd tm)))
-      (ignore-errors (pine.vt:pty-reap (pid tm)))
+      (ignore-errors (pine/vt:pty-kill (pid tm)))
+      (ignore-errors (pine/vt:pty-close (fd tm)))
+      (ignore-errors (pine/vt:pty-reap (pid tm)))
       (d:drop! *terminals* name))
     tm))
 

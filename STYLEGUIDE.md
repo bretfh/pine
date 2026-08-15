@@ -55,14 +55,25 @@ undefined function is usually a load-order fault.
 
 ## Packages
 
-The path to a package is its name. `pine/edit/buffer` lives in
-`src/edit/buffer.lisp` and declares itself there. There is no manifest and
-there are no `package.lisp` files; the `.asd` is the module structure.
+The path to a package is its name, spelled the way a path is: `pine/edit/buffer`
+lives in `src/edit/buffer.lisp` and declares itself there, and the systems are
+spelled that way already. There is no manifest and there are no `package.lisp`
+files; the `.asd` is the module structure.
 
-A file opens with its own `defpackage`, then `in-package`, then the code. Name
+A file opens with its own `defpackage`, then `in-package` on the line under
+it, then the code. Name
 what it needs with `:local-nicknames` or `:use` when it builds on a vocabulary
 (`pine/ui/node`); qualify otherwise. A file's dependencies belong at its top,
 where you are already looking.
+
+A nickname means one package everywhere: `node` is `pine/fs/node` in every file
+that says it, `widget` is `pine/ui/node`, `agent` is `pine/net/agent` and
+`endpoint` is `pine/run/agent`. A nickname you have to look up is worse than
+the name it shortened.
+
+A helper with one caller is a local function. `flet` for a plain one, `labels`
+where it recurses, written in the caller. What a package makes visible should
+be what somebody else calls.
 
 A file may only name packages that load before it. When two files need each
 other, the layering is wrong: one of them takes a hook (`pine/ts/parser:*on-parse*`,

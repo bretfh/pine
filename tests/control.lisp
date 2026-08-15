@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.control :in :pine)
+(def-suite* :pine/control :in :pine)
 
 (defmacro with-pine (&body body)
   `(unwind-protect (progn (pine:start) ,@body) (pine:stop)))

@@ -1,6 +1,6 @@
 ;;;; -*- Mode: Lisp; indent-tabs-mode: nil -*-
 
-(in-package :pine.vt)
+(in-package :pine/vt)
 
 (cffi:define-foreign-library libpine-pty
   (t (:default "libpine-pty")))

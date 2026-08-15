@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.stress :in :pine)
+(def-suite* :pine/stress :in :pine)
 
 (test hundreds-of-buffers-answer-and-cost-no-threads
   "A buffer is an object, not a thread. Opening two hundred of them costs the

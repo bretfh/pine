@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.desktop :in :pine)
+(def-suite* :pine/desktop :in :pine)
 
 (defmacro with-desktop (&body body)
   `(unwind-protect (progn (pine:start) ,@body) (pine:stop)))
@@ -87,7 +87,7 @@
     (pine/repl/command:run "show-surface" (list "probe"))
     (is (equal '(("probe" :panel t)) (pine/repl/command:run "surfaces")))))
 
-(def-suite* :pine.wm :in :pine)
+(def-suite* :pine/wm :in :pine)
 
 (test the-compositor-is-a-subtree-and-its-verbs-are-nodes
   (with-desktop

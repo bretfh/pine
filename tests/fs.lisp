@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.fs :in :pine)
+(def-suite* :pine/fs :in :pine)
 
 (defun fresh-tree ()
   (pine/fs/tree:root))

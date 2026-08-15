@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.path :in :pine)
+(def-suite* :pine/path :in :pine)
 
 (test a-path-is-read-as-sugar-and-means-a-list-of-segments
   (let ((p (pine/path/path:parse "/buf/scratch/text")))

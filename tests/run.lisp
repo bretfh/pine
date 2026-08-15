@@ -1,6 +1,6 @@
-(in-package :pine.test)
+(in-package :pine/test)
 
-(def-suite* :pine.run :in :pine)
+(def-suite* :pine/run :in :pine)
 
 (defun wait-until (test &key (seconds 5))
   (loop :repeat (round (/ seconds 0.02))
