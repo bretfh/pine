@@ -1,34 +1,29 @@
 (require :asdf)
+(require :sb-introspect)
 (asdf:load-system :pine/test)
 
 (defpackage #:pine/bench
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter)
-                    (#:node #:pine/fs/node) (#:buffer #:pine/edit/buffer)
-                    (#:window #:pine/edit/window) (#:key #:pine/edit/key)
-                    (#:render #:pine/edit/render) (#:parser #:pine/ts/parser)
-                    (#:session #:pine/edit/session) (#:attach #:pine/net/attach)
-                    (#:surface #:pine/app/surface) (#:desktop #:pine/app/desktop)
-                    (#:term #:pine/edit/term) (#:world #:pine/world/world))
+                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:parser #:pine/text/ts/parser)
+                    (#:keys #:pine/edit/keys) (#:key #:pine/ui/key)
+                    (#:window #:pine/edit/window) (#:render #:pine/edit/render)
+                    (#:surface #:pine/ui/surface) (#:device #:pine/host/device))
   (:export #:run #:workloads))
 (in-package #:pine/bench)
 
 (defvar *workloads* (d:table))
 (defvar *size* 2000)
 (defvar *for* 5)
-
-(defclass probe-client (attach:client)
-  ((sent :initform 0 :accessor sent))
-  (:default-initargs :id 1 :kind :editor))
-
-(defmethod attach:push-to ((c probe-client) &rest message)
-  (incf (sent c))
-  message)
+(defparameter +cols+ 100)
+(defparameter +lines+ 42)
 
 (defmacro workload (name (&rest options) drives &body body)
-  "A workload is a name, a line saying what it drives, and what it does. The
-line is printed above the numbers, so a number can never appear without saying
-where it came from."
+  "A workload is a name, a line saying what it drives, and what it does. The line
+is printed above the numbers, so a number can never appear without saying where it
+came from."
   (declare (ignore options))
   `(d:keep! *workloads* ,(string-downcase (string name))
             (list :drives ,drives :run (lambda () ,@body))))
@@ -38,52 +33,60 @@ where it came from."
           (loop :for i :below lines
                 :collect (format nil "(defun f~d (x) (+ x ~d))" i i))))
 
-(defun %shown (name lines)
-  "A buffer of LINES lines, in the window, parsed once before anything is timed."
-  (let ((b (buffer:make-buffer name :mode "lisp"))
-        (w (window:focused)))
-    (setf (node:contents b) (%lisp-text lines))
-    (setf (window:width-of w) 100 (window:height-of w) 40)
-    (window:show! w b)
-    (setf (buffer:current) b)
-    (buffer:goto! b 10 0)
-    (parser:wait b :seconds 60)
-    b))
+(defun %sized ()
+  "Say how big the painter's surface is, the way one would."
+  (setf (node:contents (tree:at nil "surface/editor/size"))
+        (list :wide (* 9 +cols+) :tall (* 18 +lines+)
+              :cols +cols+ :lines +lines+ :font 15)))
 
-(defun %attached ()
-  (let* ((client (make-instance 'probe-client))
-         (s (session::%attached client)))
-    (session::%work s (list :resize :cols 100 :rows 42
-                            :width 900 :height 882
-                            :cell-w 9 :cell-h 21 :font-px 15))
-    (values s client)))
+(defun %shown (name lines)
+  "A document of LINES lines, in the window, parsed once before anything is timed."
+  (let ((d (doc:make-document name :mode (make-instance 'mode:lisp)))
+        (w (window:focused)))
+    (setf (node:contents d) (%lisp-text lines))
+    (setf (window:cols w) +cols+ (window:lines w) +lines+)
+    (window:show w d)
+    (setf (doc:current) d)
+    (doc:goto d 10 0)
+    (%sized)
+    (parser:wait d :seconds 60)
+    d))
+
+(defun %wire (&optional (name "editor"))
+  "What a painter would be handed. This is the whole of what a frame costs."
+  (node:contents (tree:at nil (format nil "surface/~a/wire" name))))
+
+(defun %ready ()
+  (pine:use :text)
+  (pine:use :edit))
 
 (workload typing ()
-    "a key at a time through the keymap into a file being shown, with a frontend
-attached: the key, the parse, the frame and the push a keystroke really makes"
-  (let ((b (%shown "typing" *size*)))
-    (multiple-value-bind (s client) (%attached)
-      (declare (ignore client))
-      (dotimes (n 200)
-        (key:dispatch nil (key:make-key (string (code-char (+ 97 (mod n 26))))))
-        (session::%draw s))
-      (parser:wait b :seconds 30))))
+    "a key at a time through the keymap into a document being shown, and the tree
+a painter is handed after each: the key, the parse, the surface and the wire a
+keystroke really makes"
+  (%ready)
+  (let ((d (%shown "typing" *size*)))
+    (dotimes (n 200)
+      (keys:dispatch (key:make-key (string (code-char (+ 97 (mod n 26))))))
+      (%wire))
+    (parser:wait d :seconds 30)))
 
 (workload paging ()
-    "page down and back through a file being shown: the band moves, so the parse
-and the highlight walk are re-driven at every screen"
-  (let ((b (%shown "paging" *size*))
+    "page down and back through a document being shown: the band moves, so the
+parse and the highlight walk are re-driven at every screen"
+  (%ready)
+  (let ((d (%shown "paging" *size*))
         (w (window:focused)))
     (dotimes (n 40)
-      (setf (window:scroll-of w) (min (max 0 (- *size* 40)) (* n 40)))
-      (buffer:goto! b (window:scroll-of w) 0)
-      (render:frame-tree :cols 100 :rows 42)
-      (parser:wait b :seconds 20))
+      (setf (window:scroll w) (min (max 0 (- *size* 40)) (* n 40)))
+      (doc:goto d (window:scroll w) 0)
+      (%wire)
+      (parser:wait d :seconds 20))
     (dotimes (n 40)
-      (setf (window:scroll-of w) (max 0 (- (window:scroll-of w) 40)))
-      (buffer:goto! b (window:scroll-of w) 0)
-      (render:frame-tree :cols 100 :rows 42)
-      (parser:wait b :seconds 20))))
+      (setf (window:scroll w) (max 0 (- (window:scroll w) 40)))
+      (doc:goto d (window:scroll w) 0)
+      (%wire)
+      (parser:wait d :seconds 20))))
 
 (workload huge ()
     "the same typing, in a hundred thousand lines"
@@ -91,66 +94,50 @@ and the highlight walk are re-driven at every screen"
     (funcall (getf (d:at (d:all *workloads*) "typing") :run))))
 
 (workload cold ()
-    "what the first of everything costs: the first parse of a file, the first
-frame after a frontend attaches, the first whole push"
-  (let ((b (%shown "cold" *size*)))
-    (declare (ignore b))
-    (multiple-value-bind (s client) (%attached)
-      (declare (ignore client))
-      (session:push-frame s :whole t))))
+    "what the first of everything costs: the first parse of a document, and the
+first tree a painter is handed"
+  (%ready)
+  (%shown "cold" *size*)
+  (%wire))
 
 (workload desktop ()
-    "a bar and an echo strip pushed to a frontend while the world underneath
-them moves: the surface built, what was pushed, and what was the same as before"
-  (pine:load-config (merge-pathnames "examples/init.lisp"
-                                     (asdf:system-source-directory :pine)))
-  (let* ((client (make-instance 'probe-client :id 2 :kind :desktop))
-         (s (desktop::%attached client))
-         (clock (world:ensure world:*world* "clock"))
-         (until (+ (get-universal-time) *for*)))
-    (declare (ignore clock))
+    "a bar and its panels worked out while the world underneath them moves: the
+surface built, the tree written down, and what came out the same as before"
+  (%ready)
+  (pine:use :host)
+  (pine:use :desk)
+  (let ((until (+ (get-universal-time) *for*)))
     (loop :while (< (get-universal-time) until)
-          :do (pine/provider/clock:tick)
-              (desktop:flush s)
+          :do (device:tick)
+              (dolist (each (surface:surfaces))
+                (when (surface:shown each) (%wire (node:name each))))
               (sleep 1/20))))
 
 (workload many ()
-    "two hundred buffers and the frame that has to keep working with them open"
+    "two hundred documents and the frame that has to keep working with them open"
+  (%ready)
   (dotimes (n 200)
-    (let ((b (buffer:make-buffer (format nil "many-~d" n) :mode "lisp")))
-      (setf (node:contents b) (%lisp-text 50))))
-  (let ((b (%shown "many-shown" *size*)))
+    (let ((d (doc:make-document (format nil "many-~d" n)
+                                :mode (make-instance 'mode:lisp))))
+      (setf (node:contents d) (%lisp-text 50))))
+  (let ((d (%shown "many-shown" *size*)))
     (dotimes (n 50)
-      (key:dispatch nil (key:make-key "x"))
-      (render:frame-tree :cols 100 :rows 42))
-    (parser:wait b :seconds 30)))
-
-(workload flood ()
-    "a shell writing faster than a screen can take it: what the terminal drops
-and what it costs to keep up"
-  (let ((tm (term:open-terminal "flood" :command "/bin/sh")))
-    (unwind-protect
-         (progn
-           (term:send tm (format nil "for i in $(seq 1 2000); do echo ~a; done~%"
-                                 (make-string 60 :initial-element #\x)))
-           (let ((until (+ (get-universal-time) *for*)))
-             (loop :while (< (get-universal-time) until)
-                   :do (render:frame-tree :cols 100 :rows 42)
-                       (sleep 1/30))))
-      (term:close-terminal "flood"))))
+      (keys:dispatch (key:make-key "x"))
+      (%wire))
+    (parser:wait d :seconds 30)))
 
 (workload idle ()
     "a daemon with the config loaded that nobody is touching: what ticks, what
-forks, what pushes when nothing is happening"
+forks, what is worked out again when nothing is happening"
+  (%ready)
   (pine:load-config (merge-pathnames "examples/init.lisp"
                                      (asdf:system-source-directory :pine)))
-  (multiple-value-bind (s client) (%attached)
-    (declare (ignore s client))
-    (sleep *for*)))
+  (%sized)
+  (sleep *for*))
 
 (defun %where (which)
-  "Where a run is kept: beside the live sample, in the cache, out of the tree
-that is being measured."
+  "Where a run is kept: beside the live sample, in the cache, out of the tree that
+is being measured."
   (merge-pathnames (format nil "pine/~a.lisp-data" which) (uiop:xdg-cache-home)))
 
 (defun %read-rows (file)
@@ -162,8 +149,8 @@ that is being measured."
 
 (defun compare (synthetic live &key (to *standard-output*))
   "One table beside the other. A workload resembles use or it does not, and the
-only way to say so is to put the same instruments side by side. An instrument
-one side never touched says so rather than showing a zero."
+only way to say so is to put the same instruments side by side. An instrument one
+side never touched says so rather than showing a zero."
   (format to "~&~a~%"
           (format nil "workload ~a (~a) against ~a"
                   (getf synthetic :workload) (getf synthetic :image)
@@ -195,11 +182,7 @@ one side never touched says so rather than showing a zero."
   (sort (d:keys (d:all *workloads*)) #'string<))
 
 (defun %image ()
-  (string-trim '(#\Newline #\Space)
-               (with-output-to-string (out)
-                 (ignore-errors
-                  (uiop:run-program '("git" "describe" "--always" "--dirty")
-                                    :output out :ignore-error-status t)))))
+  (or (uiop:getenv "PINE_VERSION") (lisp-implementation-version)))
 
 (defun run (name)
   (let ((it (d:at (d:all *workloads*) name)))
@@ -214,7 +197,7 @@ one side never touched says so rather than showing a zero."
                (rows (meter:said)))
           (meter:report
            rows
-           :about (format nil "~&workload ~a, size ~d, for ~ds, pine ~a~%~
+           :about (format nil "~&workload ~a, size ~d, for ~ds, sbcl ~a~%~
                                it drives: ~a~%~
                                it ran for ~,2f seconds~%"
                           name *size* *for* (%image) (getf it :drives) seconds))
@@ -227,8 +210,8 @@ one side never touched says so rather than showing a zero."
           (pine:stop))))))
 
 (defun %given (name default)
-  "What the make target passed, where an unset variable arrives as an empty
-string rather than as nothing."
+  "What the make target passed, where an unset variable arrives as an empty string
+rather than as nothing."
   (let ((said (uiop:getenv name)))
     (or (and said (plusp (length said)) (parse-integer said :junk-allowed t))
         default)))

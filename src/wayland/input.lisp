@@ -1,157 +1,117 @@
 (defpackage #:pine/wayland/input
-  (:use #:cl #:wayflan-client #:pine/wayland/protocol #:pine/wayland/connection
-        #:pine/wayland/surface)
-  (:local-nicknames (#:a #:alexandria) (#:widget #:pine/ui/node)
-                    (#:layout #:pine/ui/layout))
-  (:export #:*on-hover* #:clear-hover #:connect-desktop #:drag-to #:handle-desktop-seat #:handle-pointer #:pointer-click #:pointer-node #:pointer-press #:pointer-release #:update-hover))
+  (:use #:cl #:wayflan-client)
+  (:local-nicknames (#:shm #:posix-shm))
+  (:export #:keys #:make-keys #:chord #:heldp #:modifierp #:forget-held
+           #:keys-rate #:keys-delay #:keymap #:modifiers #:pressed #:released
+           #:repeating #:now-ms #:deadline
+           #:pointer #:make-pointer #:pointer-at-x #:pointer-at-y
+           #:pointer-focus #:pointer-drag #:pointer-serial
+           #:+modifiers+))
 (in-package #:pine/wayland/input)
 
-(defvar *on-hover* nil
-  "When set, a function of the hovered node (or nil) called on each hover change
--- the daemon-attached client uses it to push the node's hint to the echo.")
+(defparameter +modifiers+
+  '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"
+    "Meta_L" "Meta_R" "Super_L" "Super_R" "Hyper_L" "Hyper_R"
+    "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
+  "Keys that never arm a repeat: holding a bare modifier repeats nothing.")
 
-(defconstant +btn-left+ #x110)
+(defstruct (keys (:constructor make-keys))
+  "The keyboard as xkb sees it, and what is being held down."
+  (context (xkb:xkb-context-new ()))
+  keymap
+  state
+  (held nil)
+  (held-code nil)
+  (since 0)
+  (repeated 0)
+  (rate 25)
+  (delay 400))
 
-(defun connect-desktop ()
-  "Open the display and bind compositor, shm, layer-shell, and seat globals."
-  (let* ((backing (connect-display))
-         (display (display backing))
-         (registry (wl-display.get-registry display))
-         (conn (make-wl-conn :display display :backing backing)))
-    (push (evlambda
-            (:global (name interface version)
-             (declare (ignore version))
-             (case (a:when-let ((it (find-interface-named interface))) (class-name it))
-               (wl-compositor
-                (setf (wl-conn-compositor conn) (wl-registry.bind registry name 'wl-compositor 4)))
-               (wl-shm
-                (setf (wl-conn-shm conn) (wl-registry.bind registry name 'wl-shm 1)))
-               (zwlr-layer-shell-v1
-                (setf (wl-conn-shell conn) (wl-registry.bind registry name 'zwlr-layer-shell-v1 1)))
-               (wl-seat
-                (let ((seat (wl-registry.bind registry name 'wl-seat 5)))
-                  (setf (wl-conn-seat conn) seat)
-                  (push (a:curry #'handle-desktop-seat conn) (wl-proxy-hooks seat)))))))
-          (wl-proxy-hooks registry))
-    (wl-display-roundtrip display)
-    (wl-display-roundtrip display)
-    (unless (wl-conn-shell conn)
-      (wl-display-disconnect display)
-      (error "compositor does not advertise zwlr_layer_shell_v1"))
-    conn))
+(defstruct (pointer (:constructor make-pointer))
+  "Where the pointer is, and what it is over."
+  (at-x 0) (at-y 0) (serial 0) focus drag)
 
-(defun handle-desktop-seat (conn &rest event)
-  (event-case event
-    (:capabilities (capabilities)
-     (if (member :pointer capabilities)
-         (unless (wl-conn-pointer conn)
-           (let ((pointer (wl-seat.get-pointer (wl-conn-seat conn))))
-             (setf (wl-conn-pointer conn) pointer)
-             (push (a:curry #'handle-pointer conn) (wl-proxy-hooks pointer))))
-         (when (wl-conn-pointer conn)
-           (destroy-proxy (wl-conn-pointer conn))
-           (setf (wl-conn-pointer conn) nil))))
-    (:name (name) (declare (ignore name)))))
+(defun now-ms ()
+  (values (floor (* 1000 (get-internal-real-time))
+                 internal-time-units-per-second)))
 
-(defun handle-pointer (conn &rest event)
-  (event-case event
-    (:enter (serial surface x y)
-     (setf (wl-conn-ptr-serial conn) serial
-           (wl-conn-focus conn) (conn-surface->ls conn surface)
-           (wl-conn-ptr-x conn) x (wl-conn-ptr-y conn) y)
-     (update-hover conn))
-    (:motion (time-ms x y)
-     (declare (ignore time-ms))
-     (setf (wl-conn-ptr-x conn) x (wl-conn-ptr-y conn) y)
-     (if (wl-conn-drag conn) (drag-to conn) (update-hover conn)))
-    (:leave (serial surface)
-     (declare (ignore serial surface))
-     (clear-hover conn)
-     (setf (wl-conn-focus conn) nil))
-    (:button (serial time-ms button state)
-     (declare (ignore serial time-ms))
-     (when (= button +btn-left+)
-       (ecase state
-         (:pressed  (pointer-press conn))
-         (:released (pointer-release conn)))))
-    (:axis (time-ms axis delta) (declare (ignore time-ms axis delta)))
-    (:frame ())))
+(defun modifierp (name) (member name +modifiers+ :test #'string=))
 
-(defun pointer-node (conn)
-  "The interactive node under the cursor on the focused surface, or nil."
-  (a:when-let ((ls (wl-conn-focus conn)))
-    (when (ls-tree ls)
-      (layout:node-at (ls-tree ls) (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn))))))
+(defun forget-held (k)
+  (setf (keys-held k) nil (keys-held-code k) nil)
+  k)
 
-(defun clear-hover (conn)
-  (a:when-let ((ls (wl-conn-focus conn)))
-    (when (ls-hover ls)
-      (setf (widget:hovered (ls-hover ls)) nil (ls-hover ls) nil)
-      (when *on-hover* (funcall *on-hover* nil))
-      (paint-surface ls))))
+(defun %activep (state name)
+  (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
 
-(defun %hint-of (n) (or (and n (widget:hint n)) ""))
+(defun chord (k code)
+  "The chord a keycode is, spelled the way pine spells one."
+  (let* ((state (keys-state k))
+         (sym (xkb:xkb-state-key-get-one-sym state code))
+         (utf8 (xkb:xkb-state-key-get-utf8 state code))
+         (ctrl (%activep state "Control"))
+         (meta (%activep state "Mod1"))
+         (super (%activep state "Mod4"))
+         (shift (%activep state "Shift"))
+         (printable (and (plusp (length utf8))
+                         (graphic-char-p (char utf8 0))
+                         (not super)
+                         (not (and ctrl (string= utf8 " "))))))
+    (let ((name (if printable utf8 (xkb:xkb-keysym-get-name sym))))
+      (values (format nil "~:[~;C-~]~:[~;M-~]~:[~;s-~]~:[~;S-~]~a"
+                      ctrl meta super (and shift (not printable)) name)
+              name))))
 
-(defun update-hover (conn)
-  (a:when-let ((ls (wl-conn-focus conn)))
-    (let ((hit (pointer-node conn)))
-      (unless (eq hit (ls-hover ls))
-        (when (ls-hover ls) (setf (widget:hovered (ls-hover ls)) nil))
-        (when hit (setf (widget:hovered hit) t))
-        (setf (ls-hover ls) hit)
-        (let ((said (%hint-of hit)))
-          (unless (equal said (ls-said ls))
-            (setf (ls-said ls) said)
-            (when *on-hover* (funcall *on-hover* hit))))
-        (paint-surface ls)))))
+(defun deadline (k)
+  "Milliseconds until the held key repeats again, or nothing when none is held.
+The only deadline a painter has: with no key down it waits as long as it takes."
+  (let ((held (keys-held k)) (rate (keys-rate k)))
+    (when (and held (plusp rate))
+      (let ((due (max (+ (keys-since k) (keys-delay k))
+                      (+ (keys-repeated k) (floor 1000 rate)))))
+        (max 0 (- due (now-ms)))))))
 
-(defun rehover (ls)
-  "Find what the pointer is over on a tree that was just built again. The
-daemon is not told: nothing moved, and telling it would push the surface again,
-which would build the tree again."
-  (let ((conn (ls-conn ls)))
-    (when (eq ls (wl-conn-focus conn))
-      (let ((hit (layout:node-at (ls-tree ls)
-                              (round (wl-conn-ptr-y conn))
-                              (round (wl-conn-ptr-x conn)))))
-        (when hit (setf (widget:hovered hit) t))
-        (setf (ls-hover ls) hit)))))
+(defun repeating (k)
+  "The chord to send again, if the held one is due. Nothing otherwise."
+  (let ((held (keys-held k)) (rate (keys-rate k)))
+    (when (and held (plusp rate))
+      (let ((now (now-ms)))
+        (when (and (>= (- now (keys-since k)) (keys-delay k))
+                   (>= (- now (keys-repeated k)) (floor 1000 rate)))
+          (setf (keys-repeated k) now)
+          held)))))
 
-(setf pine/wayland/surface:*rebuilt* #'rehover)
+(defun heldp (k) (and (keys-held k) t))
 
-(defun pointer-press (conn)
-  "Left press: a slider starts a drag (live scrub, fire on release); anything
-else runs its action now and rebuilds the surface."
-  (let ((hit (pointer-node conn)))
-    (cond
-      ((typep hit 'widget:slider)
-       (setf (wl-conn-drag conn) hit)
-       (drag-to conn))
-      (t (pointer-click conn)))))
+(defun keymap (k fd size)
+  "Take the keymap the compositor handed over."
+  (let ((it (shm:make-shm fd)))
+    (unwind-protect
+         (shm:with-mmap (ptr it size :flags '(:private))
+           (let* ((keymap (xkb:xkb-keymap-new-from-string (keys-context k) ptr
+                                                          :text-v1 ()))
+                  (state (xkb:xkb-state-new keymap)))
+             (when (keys-keymap k) (xkb:xkb-keymap-unref (keys-keymap k)))
+             (when (keys-state k) (xkb:xkb-state-unref (keys-state k)))
+             (setf (keys-keymap k) keymap (keys-state k) state)))
+      (shm:close-shm it))))
 
-(defun drag-to (conn)
-  "Move the dragged slider's knob to the cursor and repaint, without firing the
-callback (that waits for release, so a scrub does not spam the action)."
-  (a:when-let ((slider (wl-conn-drag conn)) (ls (wl-conn-focus conn)))
-    (setf (widget:value slider) (layout:slider-value-at slider (round (wl-conn-ptr-x conn))))
-    (paint-surface ls)))
+(defun modifiers (k depressed latched locked group)
+  (when (keys-state k)
+    (xkb:xkb-state-update-mask (keys-state k) depressed latched locked 0 0 group)))
 
-(defun pointer-release (conn)
-  "End a drag: fire the slider's on-change once with the final value."
-  (a:when-let ((slider (wl-conn-drag conn)))
-    (setf (wl-conn-drag conn) nil)
-    (a:when-let ((fn (widget:on-change slider)))
-      (pine/run/fault:attempt (lambda () (funcall fn (widget:value slider)))
-                         "slider drag"))))
+(defun pressed (k code)
+  "What was pressed, and hold it for repeating unless it is a bare modifier."
+  (when (keys-state k)
+    (multiple-value-bind (said name) (chord k (+ 8 code))
+      (if (modifierp name)
+          (forget-held k)
+          (setf (keys-held-code k) code
+                (keys-held k) said
+                (keys-since k) (now-ms)
+                (keys-repeated k) 0))
+      said)))
 
-(defun pointer-click (conn)
-  "Run the callback under the cursor, then rebuild + repaint the surface (the
-action may have changed the refs the tree reads)."
-  (a:when-let ((ls (wl-conn-focus conn)))
-    (when (ls-tree ls)
-      (let ((thunk (layout:click-thunk (ls-tree ls)
-                                  (round (wl-conn-ptr-y conn)) (round (wl-conn-ptr-x conn)))))
-        (when thunk
-          (pine/run/fault:attempt thunk "widget action")
-          (build-tree ls)
-          (paint-surface ls))))))
+(defun released (k code)
+  (when (eql code (keys-held-code k)) (forget-held k))
+  nil)

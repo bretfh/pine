@@ -1,28 +1,63 @@
 (defpackage #:pine/edit/render
   (:use #:cl)
-  (:local-nicknames (#:meter #:pine/run/meter) (#:d #:pine/data) (#:node #:pine/fs/node) (#:build #:pine/ui/build)
-                    (#:cells #:pine/ui/cells) (#:layout #:pine/ui/layout)
-                    (#:raster #:pine/ui/raster) (#:face #:pine/ui/face)
-                    (#:buffer #:pine/edit/buffer) (#:window #:pine/edit/window)
-                    (#:mode #:pine/repl/mode) (#:parser #:pine/ts/parser)
-                    (#:prompt #:pine/edit/prompt) (#:widget #:pine/ui/node))
-  (:export #:shown #:modelinep #:buffer-tree #:window-tree #:frame-tree
-           #:rows #:modeline #:echo-tree
-           #:shown-line #:shown-col
-           #:visible-lines #:scroll-to-point #:hscroll-to-point #:caret-col #:highlights-for #:indent-for
-           #:*cols* #:*rows* #:*font-px*))
+  (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter)
+                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+                    (#:build #:pine/ui/build)
+                    (#:grid #:pine/ui/grid) (#:face #:pine/ui/face)
+                    (#:w #:pine/ui/widget) (#:layout #:pine/ui/layout)
+                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:parser #:pine/text/ts/parser)
+                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt))
+  (:export #:shows #:frame #:window-tree #:document-tree #:modeline #:echo
+           #:rows #:drawn-line #:drawn-col #:caret-col #:showing
+           #:span #:spans #:forget-spans #:overlay #:overlays #:forget-overlays
+           #:scroll-to-point #:indent-for #:modelinep
+           #:*cols* #:*lines* #:*font*))
 (in-package #:pine/edit/render)
 
-(defparameter +candidates-shown+ 12)
+(defparameter +candidates+ 12)
 (defvar *cols* 80)
-(defvar *rows* 24)
-(defvar *font-px* nil)
+(defvar *lines* 24)
+(defvar *font* nil)
+(defvar *spans* (d:table))
+(defvar *overlays* (d:table))
 
-(defun visible-lines (b from height)
-  (loop :for n :from from :below (min (buffer:line-count b) (+ from height))
-        :collect (buffer:line b n)))
+(defun span (document line from to face)
+  "Colour part of a line, for as long as somebody wants it there. A search that has
+just landed says this; so does anything else that wants to point at text."
+  (d:keep! *spans* (node:name document)
+           (cons (list line from to face)
+                 (or (d:at (d:all *spans*) (node:name document)) nil)))
+  (node:stir document)
+  document)
 
-(defun shown-line (text width)
+(defun spans (document)
+  (or (d:at (d:all *spans*) (node:name document)) nil))
+
+(defun forget-spans (document)
+  (d:drop! *spans* (node:name document))
+  (node:stir document)
+  document)
+
+(defun overlay (document line text face)
+  "Text shown after a line without being in it. What an evaluation answers is put
+here, so the document is what was typed and nothing else."
+  (d:keep! *overlays* (node:name document)
+           (cons (list line text face)
+                 (or (d:at (d:all *overlays*) (node:name document)) nil)))
+  (node:stir document)
+  document)
+
+(defun overlays (document &optional line)
+  (let ((all (or (d:at (d:all *overlays*) (node:name document)) nil)))
+    (if line (remove line all :key #'first :test-not #'eql) all)))
+
+(defun forget-overlays (document)
+  (d:drop! *overlays* (node:name document))
+  (node:stir document)
+  document)
+
+(defun drawn-line (text width)
   "TEXT as it is drawn: a tab takes you to the next stop rather than one cell.
 Answers the text and the column each character landed in."
   (let ((out (make-string-output-stream))
@@ -38,79 +73,83 @@ Answers the text and the column each character landed in."
                     (t (write-char ch out) (incf at))))
     (values (get-output-stream-string out) where)))
 
-(defun shown-col (where col)
+(defun drawn-col (where col)
   (cond ((zerop (length where)) col)
         ((< col (length where)) (aref where col))
         (t (1+ (aref where (1- (length where)))))))
 
-(defun %buffer-of (w)
-  "The buffer W is showing, or the one it stands in for while it shows
-something else."
-  (let ((it (window:buffer-of w)))
-    (or (and (stringp it) (buffer:buffer-named it))
-        (and (typep it 'buffer:buffer) it)
-        (buffer:current)
-        (buffer:scratch))))
+(defun %document-of (win)
+  (let ((it (window:shows win)))
+    (or (and (stringp it) (doc:named it))
+        (and (typep it 'doc:document) it)
+        (doc:current))))
 
-(defun scroll-to-point (w)
-  (let* ((b (%buffer-of w))
-         (line (buffer:point-line b))
-         (from (window:scroll-of w))
-         (height (max 1 (window:height-of w))))
-    (setf (window:scroll-of w)
-          (cond ((< line from) line)
-                ((>= line (+ from height)) (1+ (- line height)))
-                (t from)))
-    (hscroll-to-point w)))
-
-(defun caret-col (b)
+(defun caret-col (document)
   "The column point is drawn in: where it lands once tabs are expanded."
   (multiple-value-bind (drawn where)
-      (shown-line (buffer:line b (buffer:point-line b))
-                  (max 1 (or (buffer:setting b :tab-width) 8)))
+      (drawn-line (doc:line document (doc:at-line document))
+                  (max 1 (or (doc:setting document :tab-width) 8)))
     (declare (ignore drawn))
-    (shown-col where (buffer:point-col b))))
+    (drawn-col where (doc:at-col document))))
 
-(defun hscroll-to-point (w)
-  "Keep point in the window sideways too: a long line scrolls under it rather
-than putting the caret where the text is not."
-  (let* ((b (%buffer-of w))
-         (col (caret-col b))
-         (left (window:hscroll-of w))
-         (width (max 1 (window:width-of w))))
-    (setf (window:hscroll-of w)
+(defun %sideways (win)
+  "Keep point in the window sideways too: a long line scrolls under it rather than
+putting the caret where the text is not."
+  (let* ((document (%document-of win))
+         (col (caret-col document))
+         (left (window:sideways win))
+         (width (max 1 (window:cols win))))
+    (setf (window:sideways win)
           (cond ((< col left) col)
                 ((>= col (+ left width)) (1+ (- col width)))
                 (t left)))))
 
-(defun highlights-for (b)
+(defun scroll-to-point (win)
+  (let* ((document (%document-of win))
+         (line (doc:at-line document))
+         (from (window:scroll win))
+         (height (max 1 (window:lines win))))
+    (setf (window:scroll win)
+          (cond ((< line from) line)
+                ((>= line (+ from height)) (1+ (- line height)))
+                (t from)))
+    (%sideways win)))
+
+(defun showing (document)
+  "The band of lines a window is showing of DOCUMENT, a screen either side, so
+paging lands on lines that were walked already."
+  (let ((win (find document (window:windows) :key #'%document-of)))
+    (when win
+      (let* ((from (window:scroll win))
+             (height (max 1 (window:lines win))))
+        (cons (max 0 (- from height)) (+ from (* 2 height)))))))
+
+(defun %by-line (document)
   (let ((found (make-hash-table :test 'eql)))
-    (dolist (run (parser:highlights b) found)
+    (dolist (run (parser:highlights document))
+      (destructuring-bind (line from to face) run
+        (push (list from to face) (gethash line found))))
+    (dolist (run (spans document) found)
       (destructuring-bind (line from to face) run
         (push (list from to face) (gethash line found))))))
 
-(defun %face-at (highlights line col)
-  (loop :for (from to face) :in (gethash line highlights)
+(defun %face-at (by-line line col)
+  (loop :for (from to face) :in (gethash line by-line)
         :when (and (>= col from) (< col to))
           :do (return face)))
 
-(defun %cell-face (b highlights line col)
-  (or (getf (first (buffer:properties-at b line col)) :face)
-      (%face-at highlights line col)
-      :default))
-
-(defun %region-span (b)
-  (let ((mark (buffer:mark b)))
+(defun %region (document)
+  (let ((mark (doc:mark document)))
     (when mark
       (destructuring-bind (line col) mark
-        (let ((at-line (buffer:point-line b)) (at-col (buffer:point-col b)))
+        (let ((at-line (doc:at-line document)) (at-col (doc:at-col document)))
           (if (or (< line at-line) (and (= line at-line) (<= col at-col)))
               (list line col at-line at-col)
               (list at-line at-col line col)))))))
 
-(defun %paint-region (r b from height width &optional (left 0))
-  (let ((span (%region-span b))
-        (bg (face:face-bg :selection)))
+(defun %paint-region (g document from height width left)
+  (let ((span (%region document))
+        (bg (face:rgb (face:bg (face:named :selection)))))
     (when (and span bg)
       (destructuring-bind (start-line start-col end-line end-col) span
         (destructuring-bind (br bg bb) bg
@@ -119,190 +158,202 @@ than putting the caret where the text is not."
                 :do (loop :for col :from (if (= line start-line) start-col 0)
                             :below (if (= line end-line) end-col (+ left width))
                           :when (>= col left)
-                            :do (raster:raster-put-bg r (- line from) (- col left)
-                                                      br bg bb))))))))
+                            :do (grid:put-bg g (- line from) (- col left)
+                                             br bg bb))))))))
 
 (defun %at-col (where drawn)
-  "Which character of the text is being drawn at this column."
   (or (position drawn where) (max 0 (1- (length where)))))
 
-(defun %carets-here (w)
-  (and (eq w (window:focused)) (not (prompt:asking-p))))
+(defun %caretp (win)
+  (and (eq win (window:focused)) (not (prompt:askingp))))
 
-(defgeneric shown (content w)
-  (:documentation "The cells window W shows of what it holds. A buffer, a
-widget tree and the name of a buffer are all things a window can hold, and
-another kind of content is a method someone else writes: nothing here has to
-know about it.")
-  (:method (content w)
+(defgeneric shows (content win)
+  (:documentation "The cells a window shows of what it holds. A document, a widget
+tree and the name of a document are all things a window can hold; another kind is a
+method somebody else writes, and nothing here has to know about it.")
+  (:method (content win)
     (declare (ignore content))
-    (build:cells (cells:rows-of (raster:make-raster (max 1 (window:width-of w))
-                                                    (max 1 (window:height-of w))))
-                 :class "editor-view" :expand 1 :font-px *font-px*
-                 :crow -1 :ccol -1)))
+    (build:cells (grid:rows (grid:make-grid (max 1 (window:cols win))
+                                            (max 1 (window:lines win))))
+                 :class "editor-view" :expand 1 :font *font*)))
 
-(defmethod shown ((content string) w)
-  "A name is the buffer it names."
-  (shown (or (buffer:buffer-named content) (buffer:scratch)) w))
+(defmethod shows ((content string) win)
+  (let ((document (doc:named content)))
+    (if document (shows document win) (call-next-method))))
 
-(defmethod shown ((content widget:node) w)
-  "A widget tree renders to cells like any surface does, so a config can put
-one in a window beside a buffer."
-  (build:cells (cells:render content (max 1 (window:width-of w))
-                             :height (max 1 (window:height-of w)))
-               :class "editor-view" :expand 1 :font-px *font-px*
-               :crow -1 :ccol -1))
+(defmethod shows ((content w:widget) win)
+  "A widget tree draws to cells like a surface does, so a config can put one in a
+window beside a document."
+  (let* ((cols (max 1 (window:cols win)))
+         (rows (max 1 (window:lines win)))
+         (g (grid:make-grid cols rows)))
+    (layout:with-pass
+      (layout:dress content)
+      (layout:measure content g cols rows)
+      (layout:arrange content g 0 0 cols rows)
+      (layout:paint content g))
+    (build:cells (grid:rows g) :class "editor-view" :expand 1 :font *font*)))
 
-(defmethod shown ((b buffer:buffer) w)
-  (let* ((from (window:scroll-of w))
-         (left (window:hscroll-of w))
-         (width (max 1 (window:width-of w)))
-         (height (max 1 (window:height-of w)))
-         (highlights (highlights-for b))
-         (r (raster:make-raster width height))
-         (caret (%carets-here w)))
-    (loop :with tab := (max 1 (or (buffer:setting b :tab-width) 8))
-          :for text :in (visible-lines b from height)
+(defmethod shows ((document doc:document) win)
+  (node:reading document)
+  (let* ((from (window:scroll win))
+         (left (window:sideways win))
+         (width (max 1 (window:cols win)))
+         (height (max 1 (window:lines win)))
+         (by-line (%by-line document))
+         (g (grid:make-grid width height))
+         (caret (%caretp win)))
+    (loop :with tab := (max 1 (or (doc:setting document :tab-width) 8))
+          :for line :from from :below (min (doc:line-count document) (+ from height))
           :for row :from 0
-          :for line :from from
-          :do (multiple-value-bind (drawn where) (shown-line text tab)
+          :do (multiple-value-bind (drawn where)
+                  (drawn-line (doc:line document line) tab)
                 (loop :for col :from left :below (min (+ left width) (length drawn))
-                      :do (raster:raster-put r row (- col left) (char drawn col)
-                                             (%cell-face b highlights line
-                                                         (%at-col where col))))
-                (let ((said (buffer:overlays-at b line)))
+                      :do (grid:put g row (- col left) (char drawn col)
+                                    (or (%face-at by-line line (%at-col where col))
+                                        :default)))
+                (let ((said (overlays document line)))
                   (when said
-                    (let ((at (min (1- width) (max 0 (- (+ 2 (length drawn)) left)))))
-                      (loop :for props :in said
-                            :for text := (getf props :after)
+                    (let ((at (min (1- width)
+                                   (max 0 (- (+ 2 (length drawn)) left)))))
+                      (loop :for (nil text face) :in said
                             :do (loop :for i :from 0
                                         :below (min (- width at) (length text))
-                                      :do (raster:raster-put r row (+ at i)
-                                                             (char text i)
-                                                             (or (getf props :face)
-                                                                 :comment)))))))))
-    (%paint-region r b from height width left)
-    (build:cells (cells:rows-of r)
-                 :class "editor-view" :expand 1 :font-px *font-px*
-                 :crow (if caret (min (1- height) (max 0 (- (buffer:point-line b) from))) -1)
-                 :ccol (if caret
-                           (min (1- width) (max 0 (- (caret-col b) left)))
-                           -1))))
+                                      :do (grid:put g row (+ at i) (char text i)
+                                                    (or face :comment)))))))))
+    (%paint-region g document from height width left)
+    (build:cells (grid:rows g)
+                 :class "editor-view" :expand 1 :font *font*
+                 :caret (when caret
+                          (cons (min (1- height)
+                                     (max 0 (- (doc:at-line document) from)))
+                                (min (1- width)
+                                     (max 0 (- (caret-col document) left))))))))
 
-(defun buffer-tree (w)
-  "What window W is showing, whatever it holds."
-  (shown (or (window:buffer-of w) (buffer:current) (buffer:scratch)) w))
+(defun document-tree (win)
+  (shows (or (window:shows win) (doc:current)) win))
 
-(defun modelinep (w)
-  "Whether what this window holds has a modeline: a buffer says what line you
-are on and a widget tree has nothing of the sort to say."
-  (let ((it (window:buffer-of w)))
-    (or (null it) (typep it 'buffer:buffer)
-        (and (stringp it) (buffer:buffer-named it)))))
+(defun modelinep (win)
+  "Whether what this window holds has a modeline: a document says what line you are
+on, and a widget tree has nothing of the sort to say."
+  (let ((it (window:shows win)))
+    (or (null it) (typep it 'doc:document)
+        (and (stringp it) (doc:named it)))))
 
-(defun modeline (w)
-  (let* ((b (%buffer-of w))
-         (width (max 1 (window:width-of w)))
-         (text (format nil " ~:[  ~;**~] ~a  ~a~{ ~a~}  L~d C~d"
-                       (buffer:modified b)
-                       (node:name b)
-                       (or (mode:setting (buffer:mode-of b) :indicator)
-                           (buffer:mode-of b))
-                       (remove nil
-                               (mapcar (lambda (name)
-                                         (mode:setting (mode:mode-named name)
-                                                       :indicator))
-                                       (buffer:minors-of b)))
-                       (1+ (buffer:point-line b))
-                       (buffer:point-col b)))
-         (r (raster:make-raster width 1)))
+(defun modeline (win)
+  (let* ((document (%document-of win))
+         (width (max 1 (window:cols win)))
+         (text (format nil " ~:[  ~;**~] ~a  ~a  L~d C~d"
+                       (doc:modified document)
+                       (node:name document)
+                       (mode:type (doc:mode-of document))
+                       (1+ (doc:at-line document))
+                       (doc:at-col document)))
+         (g (grid:make-grid width 1)))
     (loop :for col :from 0 :below width
-          :do (raster:raster-put r 0 col
-                                 (if (< col (length text)) (char text col) #\space)
-                                 :modeline))
-    (build:cells (cells:rows-of r) :class "modeline" :font-px *font-px*)))
+          :do (grid:put g 0 col
+                        (if (< col (length text)) (char text col) #\space)
+                        :modeline))
+    (build:cells (grid:rows g) :class "modeline" :font *font*)))
 
-(defun window-tree (w)
-  (scroll-to-point w)
-  (if (modelinep w)
+(defun window-tree (win)
+  (scroll-to-point win)
+  (if (modelinep win)
       (build:column :align :stretch :class "window" :expand 1
-                    (buffer-tree w)
-                    (modeline w))
+                    (document-tree win)
+                    (modeline win))
       (build:column :align :stretch :class "window" :expand 1
-                    (buffer-tree w))))
+                    (document-tree win))))
 
-(defun candidates-shown ()
+(defun %candidates ()
   (let ((p (prompt:asking)))
     (when p
       (let* ((found (prompt:matching p))
              (n (length found))
-             (from (pine/ui/wire:scroll-to-selection (prompt:chosen p) 0
-                                                     +candidates-shown+)))
-        (values (subseq found (min from n) (min (+ from +candidates-shown+) n))
-                from)))))
+             (chosen (prompt:chosen p))
+             (from (max 0 (min (- n +candidates+)
+                               (- chosen (floor +candidates+ 2))))))
+        (values (subseq found (min from n) (min (+ from +candidates+) n)) from)))))
 
 (defun %candidate-rows (found from width)
   (let ((chosen (prompt:chosen (prompt:asking)))
-        (r (raster:make-raster (max 1 width) (max 1 (length found)))))
+        (g (grid:make-grid (max 1 width) (max 1 (length found)))))
     (loop :for each :in found
           :for row :from 0
           :for text := (prompt:shows each width)
-          :for face := (if (= (+ row from) chosen) :completion-selected :completion)
+          :for face := (if (= (+ row from) chosen)
+                           :completion-selected
+                           :completion)
           :do (loop :for col :from 0 :below width
-                    :do (raster:raster-put r row col
-                                           (if (< col (length text)) (char text col) #\space)
-                                           face)))
-    (cells:rows-of r)))
+                    :do (grid:put g row col
+                                  (if (< col (length text)) (char text col) #\space)
+                                  face)))
+    (grid:rows g)))
 
-(defun echo-tree (width &optional echo)
-  (let* ((p (and (null echo) (prompt:asking)))
+(defun echo (width &optional said)
+  (let* ((p (and (null said) (prompt:asking)))
          (question (if p (prompt:question p) ""))
-         (text (or echo (prompt:showing)))
-         (r (raster:make-raster (max 1 width) 1)))
+         (text (or said (prompt:showing)))
+         (g (grid:make-grid (max 1 width) 1)))
     (loop :for col :from 0 :below (min width (length text))
-          :do (raster:raster-put r 0 col (char text col)
-                                 (if (< col (length question)) :prompt :echo)))
-    (multiple-value-bind (found from) (and p (candidates-shown))
-      (let ((rows (cells:rows-of r)))
+          :do (grid:put g 0 col (char text col)
+                        (if (< col (length question)) :prompt :echo)))
+    (multiple-value-bind (found from) (and p (%candidates))
+      (let ((rows (grid:rows g)))
         (build:cells (if found
                          (append (%candidate-rows found from width) rows)
                          rows)
-                     :class "echo" :base 1 :font-px *font-px*
-                     :crow (if p 0 -1)
-                     :ccol (if p
-                               (min (1- width)
-                                    (+ (length question)
-                                       (buffer:point-col (prompt:answer-buffer))))
-                               -1))))))
+                     :class "echo" :font *font*
+                     :over (if found (length found) 0)
+                     :caret (when p
+                              (cons (if found (length found) 0)
+                                    (min (1- width)
+                                         (+ (length question)
+                                            (doc:at-col (prompt:answering)))))))))))
 
-(defun frame-tree (&key (cols *cols*) (rows *rows*) echo)
-  (meter:timing (:frame) (%frame-tree cols rows echo)))
-
-(defun %frame-tree (cols rows echo)
-  (let* ((windows (window:windows))
-         (weight (reduce #'+ windows :key #'window:weight-of :initial-value 0))
-         (room (max 2 (1- rows))))
-    (dolist (w windows)
-      (setf (window:width-of w) (max 1 cols)
-            (window:height-of w)
-            (let ((share (max 2 (floor (* room (window:weight-of w))
+(defun %frame (cols lines said)
+  "The frame, and what it read: every window, the question standing and what was
+last said. A surface follows what it read, so this is where the editor says what
+moving means."
+  (node:reading (window:root))
+  (let ((n (tree:at nil "prompt"))) (when n (node:reading n)))
+  (let ((n (tree:at nil "log"))) (when n (node:reading n)))
+  (let* ((wins (window:windows))
+         (weight (reduce #'+ wins :key #'window:weight :initial-value 0))
+         (room (max 2 (1- lines))))
+    (dolist (win wins) (node:reading win))
+    (dolist (win wins)
+      (setf (window:cols win) (max 1 cols)
+            (window:lines win)
+            (let ((share (max 2 (floor (* room (window:weight win))
                                        (max 1 weight)))))
-              (max 1 (if (modelinep w) (1- share) share)))))
+              (max 1 (if (modelinep win) (1- share) share)))))
     (apply #'build:column :align :stretch :class "editor"
-           (append (loop :for w :in windows
+           (append (loop :for win :in wins
                          :for first := t :then nil
                          :append (if first
-                                     (list (window-tree w))
+                                     (list (window-tree win))
                                      (list (build:rule :face :border-inactive)
-                                           (window-tree w))))
-                   (list (echo-tree cols echo))))))
+                                           (window-tree win))))
+                   (list (echo cols said))))))
 
-(defun rows (&key (width 80) (height 24) echo)
-  (cells:render (frame-tree :cols width :rows height :echo echo)
-                width :height height))
+(defun frame (&key (cols *cols*) (lines *lines*) said)
+  (meter:timing (:frame) (%frame cols lines said)))
 
-(defun indent-for (b line)
-  (let ((width (or (mode:setting (buffer:mode-of b) :indent) 2)))
-    (or (parser:indent b line :width width)
-        (and (plusp line) (buffer:indent-of b (1- line)))
+(defun rows (&key (cols 80) (lines 24) said)
+  "The frame as rows of cells: what a painter blits, and what a test reads."
+  (let ((tree (frame :cols cols :lines lines :said said))
+        (g (grid:make-grid cols lines)))
+    (layout:with-pass
+      (layout:dress tree)
+      (layout:measure tree g cols lines)
+      (layout:arrange tree g 0 0 cols lines)
+      (layout:paint tree g))
+    (grid:rows g)))
+
+(defun indent-for (document line)
+  (let ((width (or (mode:setting (doc:mode-of document) :indent) 2)))
+    (or (parser:indent document line :width width)
+        (mode:indent (doc:mode-of document) document line)
+        (and (plusp line) (doc:indent-of document (1- line)))
         0)))

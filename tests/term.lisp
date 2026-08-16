@@ -2,115 +2,59 @@
 
 (def-suite* :pine/term :in :pine)
 
-(defmacro with-terminal ((var &key (command "/bin/sh")) &body body)
-  `(unwind-protect
-        (progn
-          (pine:start)
-          (let ((,var (pine/edit/term:open-terminal "probe" :command ,command)))
-            (unwind-protect (progn (sleep 0.6) ,@body)
-              (pine/edit/term:close-terminal "probe"))))
-     (pine:stop)))
+(defun %terminal ()
+  (editing)
+  (pine:use :term)
+  (pine/run/command:run "terminal" (list "/bin/sh"))
+  (pine/term:current))
 
-(defun term-text ()
-  (pine/fs/node:contents (pine/edit/buffer:buffer-named "probe")))
+(defmacro with-terminal ((it) &body body)
+  `(let ((,it (%terminal)))
+     (unwind-protect (progn ,@body)
+       (ignore-errors (pine/run/command:run "terminal-close")))))
 
-(defun settle (test &key (seconds 5))
-  (loop :repeat (round (/ seconds 0.05))
-        :when (funcall test) :do (return t)
-        :do (sleep 0.05)))
+(test a-terminal-is-a-document-and-a-job-at-once
+  (with-terminal (term)
+    (is (typep term 'doc:document))
+    (is (typep term 'job:job))
+    (is (job:alivep term))
+    (is (typep (doc:mode-of term) 'pine/term/mode:shell))
+    (is (eq term (doc:current)))))
 
-(test a-terminal-is-a-buffer-and-the-shell-writes-into-it
-  (with-terminal (tm)
-    (is (typep tm 'pine/edit/term:terminal))
-    (is (typep (pine/edit/buffer:buffer-named "probe") 'pine/edit/buffer:buffer))
-    (is (equal "term" (pine/edit/buffer:mode-of (pine/edit/buffer:buffer-named "probe"))))
-    (is-true (settle (lambda () (search "$" (term-text))))
-             "the shell's prompt reached the buffer")))
+(test writing-a-terminal-is-typing-at-the-program
+  (with-terminal (term)
+    (setf (node:contents term) (format nil "echo the-pty-answered~%"))
+    (is (until (lambda () (search "the-pty-answered" (doc:text term)))
+               :seconds 5))))
 
-(test what-is-typed-goes-to-the-pty-and-what-it-said-comes-back
-  (with-terminal (tm)
-    (pine/edit/term:send tm (format nil "echo probe-output~%"))
-    (is-true (settle (lambda () (search "probe-output" (term-text)))))
-    (is (search "echo probe-output" (term-text)) "the echoed line is there too")))
+(test what-a-key-means-here-is-a-method-not-an-edit
+  (with-terminal (term)
+    (let ((was (doc:text term)))
+      (pine/edit:type-text "echo two")
+      (is (until (lambda () (search "echo two" (doc:text term))) :seconds 5)
+          "it reached the program, and the program echoed it")
+      (is (not (equal was (doc:text term)))))))
 
-(test typing-in-a-term-buffer-reaches-the-shell-rather-than-the-buffer
-  "The mode's :insert handler takes the key, which is the handler chain doing
-its job: nothing in the key dispatcher knows what a terminal is."
-  (with-terminal (tm)
-    (settle (lambda () (search "$" (term-text))))
-    (let ((before (term-text)))
-      (loop :for ch :across "echo typed-through"
-            :do (pine/edit/key:dispatch nil (pine/edit/key:make-key (string ch))))
-      (pine/edit/key:dispatch nil (pine/edit/key:parse-key "RET"))
-      (is-true (settle (lambda () (search "typed-through" (term-text)))))
-      (is (not (equal before (term-text)))))))
+(test a-terminals-size-is-a-node
+  (with-terminal (term)
+    (is (eql (pine/term/terminal:wide term)
+             (node:contents (tree:at term "wide"))))
+    (pine/term/terminal:resize term 100 30)
+    (is (eql 100 (node:contents (tree:at term "wide"))))
+    (is (eql 30 (node:contents (tree:at term "tall"))))))
 
-(test a-control-key-crosses-as-its-escape-sequence
-  (with-terminal (tm)
-    (is (equal (string (code-char 3))
-               (pine/edit/term:key->bytes tm (pine/edit/key:parse-key "C-c"))))
-    (is (equal (string #\Return)
-               (pine/edit/term:key->bytes tm (pine/edit/key:parse-key "RET"))))
-    (is (equal (string #\Tab)
-               (pine/edit/term:key->bytes tm (pine/edit/key:parse-key "TAB"))))))
+(test the-frame-draws-a-terminal-like-any-document
+  (with-terminal (term)
+    (setf (node:contents term) (format nil "echo drawn-in-the-frame~%"))
+    (is (until (lambda () (search "drawn-in-the-frame" (doc:text term)))
+               :seconds 5))
+    (window:show (window:focused) term)
+    (is (somewhere (render:rows :cols 80 :lines 24) "drawn-in-the-frame"))))
 
-(test the-screen-is-the-emulator-not-a-log-of-bytes
-  (with-terminal (tm)
-    (pine/edit/term:send tm (format nil "printf 'aaa\\rZ\\n'~%"))
-    (is-true (settle (lambda () (search "Zaa" (term-text))))
-             "the carriage return moved the cursor and Z overwrote the first a")))
-
-(test closing-a-terminal-stops-its-reader-and-forgets-it
-  (unwind-protect
-       (progn
-         (pine:start)
-         (pine/edit/term:open-terminal "probe" :command "/bin/sh")
-         (is (= 1 (length (pine/edit/term:terminals))))
-         (pine/edit/term:close-terminal "probe")
-         (is (null (pine/edit/term:terminals)))
-         (is (null (pine/edit/term:terminal-for "probe"))))
-    (pine:stop)))
-
-(test the-terminal-is-a-command
-  (unwind-protect
-       (progn
-         (pine:start)
-         (let ((name (pine/repl/command:run "terminal" (list "probe-cmd"))))
-           (is (equal "probe-cmd" name))
-           (is (member "probe-cmd" (pine/repl/command:run "terminals") :test #'equal))
-           (pine/repl/command:run "close-terminal" (list "probe-cmd"))
-           (is (null (pine/repl/command:run "terminals")))))
-    (pine:stop)))
-
-(test a-terminal-takes-every-key-except-the-one-that-gets-you-out
-  (unwind-protect
-       (progn
-         (pine:start)
-         (pine/edit/term:open-terminal "probe" :command "/bin/sh")
-         (sleep 0.5)
-         (let ((b (pine/edit/buffer:buffer-named "probe")))
-           (setf (pine/edit/buffer:current) b)
-           (is-true (pine/edit/term:typing b (pine/edit/key:parse-key "C-c"))
-                    "C-c reaches the shell rather than the keymap")
-           (is-true (pine/edit/term:typing b (pine/edit/key:parse-key "Up")))
-           (is (null (pine/edit/term:typing b (pine/edit/key:parse-key "C-x")))
-               "and C-x is still the editor's, so you can leave")))
-    (pine/edit/term:close-terminal "probe")
-    (pine:stop)))
-
-(test what-the-shell-says-faster-than-the-screen-can-show-is-bounded
-  (unwind-protect
-       (progn
-         (pine:start)
-         (let ((tm (pine/edit/term:open-terminal "probe" :command "/bin/sh"))
-               (pine/edit/term:*carry* 64))
-           (let ((b (pine/edit/buffer:buffer-named "probe")))
-             (dotimes (i 20) (pine/edit/term::%carry tm (format nil "~40,'x<~d~>" i)))
-             (is (<= (pine/data:held (pine/edit/term::carried tm))
-                     (* 2 pine/edit/term:*carry*))
-                 "it drops what is oldest rather than growing without end")
-             (is (plusp (pine/data:held (pine/edit/term:dropped tm))))
-             (pine/edit/term:drain tm b)
-             (is-true b))))
-    (pine/edit/term:close-terminal "probe")
-    (pine:stop)))
+(test closing-one-takes-its-job-and-its-document-with-it
+  (let ((term (%terminal)))
+    (let ((name (node:name term)))
+      (pine/run/command:run "terminal-close")
+      (is (null (doc:named name)))
+      (is (null (job:named name)))
+      (is (null (pine/term/terminal:terminals))))))

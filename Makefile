@@ -1,5 +1,5 @@
 .PHONY: foreign foreign-deps foreign-libs foreign-wayflan
-.PHONY: repl check test probe bench eval docs daemon editor shot bin
+.PHONY: repl check test probe bench eval docs daemon painter shot screen bin
 
 # Two ways to get what pine needs, and every target below works under either.
 # Guix is what pine develops against and what plain `make' uses. FOREIGN=1 is
@@ -10,6 +10,13 @@
 #   make test              guix
 #   make FOREIGN=1 test    ocicl and system libraries
 FOREIGN ?=
+
+# where make screen puts what it captured
+OUT ?= /tmp/pine-screen.png
+
+# which compositor make screen runs against: sway manages its own windows, river
+# asks for a manager and pine is one
+COMPOSITOR ?= sway
 
 # --rebuild-cache: the manifest's local-file packages (tree-sitter grammars,
 # pine-pty) change on disk without manifest.scm's mtime moving; the cached
@@ -31,30 +38,35 @@ else
 endif
 
 repl:
-	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine)"'
+	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/all)"'
 
 # load everything and say so, without running anything
 check:
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(princ :wayland-loaded)" --eval "(terpri)"'
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine)" --eval "(princ :loaded)" --eval "(terpri)"'
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(princ :loaded)" --eval "(terpri)"'
 
-# the daemon: a pine listening on a remoting port, for a frontend to attach to
+# the daemon: a pine listening on a remoting port, for a painter to attach to
 daemon:
-	$(IN) '$(ENV) sbcl --noinform --dynamic-space-size 4096 --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine))" --eval "(setf pine/run/log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
+	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --noinform --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))" --eval "(setf pine/run/log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
 
-# the editor: an xdg-shell window attached to the daemon. make daemon first.
-editor:
-	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine:run-app \"editor\")"'
+# the painter: the surfaces the daemon declares, on the compositor you are
+# under. make daemon first.
+painter:
+	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine/wayland/painter:run)"'
 
-# the frame as PNGs, with no display and no daemon: /tmp/pine-rows.png is the
-# cell grid, /tmp/pine-window.png the pixel pass a wayland surface gets
+# the frame and every surface as PNGs, with no display and no compositor
 shot:
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/cairo)" --eval "(princ (pine/cairo/shot:shot))" --eval "(terpri)"'
+	$(IN) '$(ENV) $(SBCL) --non-interactive --load bench/shot.lisp'
 
-# one executable: the daemon, the frontends and the CLI, which is how pine is
+# the painter, end to end: a headless compositor, a daemon, the painter on both,
+# and a capture of what landed on the screen. COMPOSITOR=river makes pine the
+# window manager as well, which is what river asks for
+screen:
+	$(IN) 'COMPOSITOR=$(COMPOSITOR) sh bench/painter-shot.sh $(OUT)'
+
+# one executable: the daemon, the painter and the CLI, which is how pine is
 # meant to be run. ./pine with no verb says what it takes.
 bin:
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/wayland)" --eval "(sb-ext:save-lisp-and-die \"pine\" :executable t :save-runtime-options t :toplevel (function pine/cli:main))"'
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(sb-ext:save-lisp-and-die \"pine\" :executable t :save-runtime-options t :toplevel (function pine/cli:main))"'
 	@echo "wrote ./pine"
 
 # the fiveam suite. Exits nonzero on failure.
@@ -62,7 +74,7 @@ test:
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:test-system :pine)"'
 
 # run one suite over and over in a single image, to read an intermittent
-# failure: make probe SUITE=pine/repl TIMES=10
+# failure: make probe SUITE=pine/edit TIMES=10
 probe:
 	$(IN) '$(ENV) SUITE="$(SUITE)" TIMES="$(TIMES)" $(SBCL) --non-interactive --load bench/probe.lisp'
 

@@ -1,388 +1,368 @@
 (defpackage #:pine/ui/layout
-  (:use #:cl #:pine/ui/node #:pine/ui/raster)
-  (:export
-
-   #:measure #:arrange #:paint #:nodes-of
-
-   #:*text-size* #:*default-font-px* #:text-size #:line-height
-
-   #:split-node #:remove-node
-
-   #:node-at #:clicked #:click-thunk #:slider-value-at #:collect-selectables
-   #:placep
-
-   #:centerbox-parts #:list-items #:view-overlay-count))
+  (:use #:cl #:pine/ui/widget)
+  (:local-nicknames (#:d #:pine/data) (#:face #:pine/ui/face)
+                    (#:style #:pine/ui/style) (#:grid #:pine/ui/grid))
+  (:export #:measure #:arrange #:paint #:text-size #:line-height
+           #:dress #:styled #:with-pass #:*hover*))
 (in-package #:pine/ui/layout)
 
-(defvar *text-size* nil
-  "When bound to a function of (text font-px) -> (values w h), text leaves
-measure through it (pixel/cairo mode); otherwise a character is one cell.")
-(defvar *default-font-px* 13)
+(defvar *styles* nil
+  "Widget to resolved style, for one pass. Resolution answers a style and layout
+reads it; nothing writes back into the tree it was handed.")
 
-(defparameter *hover-face* nil
-  "A face designator painted as the background of the hovered node, or nil.")
+(defvar *sizes* nil
+  "Widget to its measured (w h), for one pass. A container arranges by measuring its
+parts, and it has just measured them.")
 
-(defparameter +slider-filled+ (code-char #x2588))
-(defparameter +slider-empty+  (code-char #x2500))
+(defvar *hover* nil
+  "A face painted as the background of the hovered widget, or nothing.")
 
-(defun text-size (text font-px)
-  (if *text-size*
-      (funcall *text-size* text (or font-px *default-font-px*))
-      (values (length text) 1)))
+(defparameter +filled+ (code-char #x2588))
+(defparameter +empty+  (code-char #x2500))
 
-(defun line-height (font-px)
-  (if *text-size* (nth-value 1 (text-size "M" font-px)) 1))
+(defgeneric text-size (medium text font)
+  (:documentation "How big TEXT is on this medium, as (values w h). A grid answers
+in cells and a canvas in pixels: that is the whole of the difference between them,
+and it lives here rather than in every widget.")
+  (:method ((m grid:grid) text font)
+    (declare (ignore font))
+    (values (length text) 1)))
 
-(defgeneric nodes-of (node)
-  (:documentation "NODE's nodes, in the order they are laid out and painted.
+(defun line-height (m font) (nth-value 1 (text-size m "M" font)))
 
-The one place a class says what it contains. Every walk over the tree is
-written on this, so a new node kind states its structure once.")
-  (:method ((n node)) (declare (ignore n)) nil))
+(defmacro with-pass (&body body)
+  "One layout pass: styles resolved once, sizes measured once."
+  `(let ((*styles* (make-hash-table :test 'eq))
+         (*sizes* (make-hash-table :test 'eq)))
+     ,@body))
 
-(defgeneric measure (node avail-w avail-h)
-  (:documentation "The node's natural (values w h) given the available space,
-in cells (default) or pixels (when *text-size* is bound). Bottom-up."))
+(defun styled (w)
+  (or (and *styles* (gethash w *styles*)) (d:no-map)))
 
-(defgeneric arrange (node x y w h)
-  (:documentation "Assign the node the rect X Y W H and place its nodes."))
+(defun dress (root &optional chain)
+  "Resolve the style of every widget under ROOT against its chain of class-sets.
+Nothing is written into the widgets: what a config authored stays what it authored,
+and the style is what the sheet says on top of it."
+  (labels ((walk (w chain)
+             (let* ((classes (append (style:classes (css-class w))
+                                     (and (chosen w) (list "sel"))))
+                    (full (append chain (list classes))))
+               (when *styles*
+                 (setf (gethash w *styles*) (style:resolve full :hover (hovered w))))
+               (dolist (part (parts w)) (walk part full)))))
+    (walk root chain))
+  root)
 
-(defgeneric paint (node raster)
-  (:documentation "Draw the node into its arranged rect on RASTER."))
+(defun %pad-x (w)
+  (let ((p (pad w)) (s (d:at (styled w) :pad)))
+    (cond ((consp p) (car p)) ((realp p) p) ((consp s) (car s)) (t 0))))
 
-(defgeneric node-at (node line col)
-  (:documentation "The deepest node at (LINE COL) that answers interaction: an
-action, a selectable, or a slider. Nil when nothing there does.
+(defun %pad-y (w)
+  (let ((p (pad w)) (s (d:at (styled w) :pad)))
+    (cond ((consp p) (cdr p)) ((realp p) p) ((consp s) (cdr s)) (t 0))))
 
-The default descends into the nodes, so a container needs no method and an
-interactive node says only what it does with a hit.")
-  (:method ((n node) line col)
-    (some (lambda (node) (node-at node line col)) (nodes-of n))))
+(defun %margin (w) (or (margin w) (d:at (styled w) :margin)))
+(defun %margin-x (w) (let ((m (%margin w))) (if m (+ (fourth m) (second m)) 0)))
+(defun %margin-y (w) (let ((m (%margin w))) (if m (+ (first m) (third m)) 0)))
+(defun %min-w (w) (max (min-w w) (or (d:at (styled w) :min-w) 0)))
+(defun %min-h (w) (max (min-h w) (or (d:at (styled w) :min-h) 0)))
+(defun %font (w) (or (font w) (d:at (styled w) :font)))
 
-(defun %node-width (n) (- (end-col n) (start-col n)))
+(defgeneric measure (widget medium avail-w avail-h)
+  (:documentation "The widget's natural (values w h) in the space it is given.")
+  (:method ((w widget) m aw ah) (declare (ignore m aw ah)) (values 0 1)))
 
-(defmethod measure ((n node) aw ah) (declare (ignore aw ah)) (values 0 1))
+(defmethod measure :around ((w widget) m aw ah)
+  "The css box model around the intrinsic measure: content is measured in what is
+left after margin and padding, and the answer adds padding back, floors at the
+minimum, then adds margin."
+  (let ((had (and *sizes* (gethash w *sizes*))))
+    (if had
+        (values (first had) (second had))
+        (multiple-value-bind (cw ch)
+            (call-next-method w m
+                              (max 0 (- aw (* 2 (%pad-x w)) (%margin-x w)))
+                              (max 0 (- ah (* 2 (%pad-y w)) (%margin-y w))))
+          (let ((out-w (+ (max (%min-w w) (+ cw (* 2 (%pad-x w)))) (%margin-x w)))
+                (out-h (+ (max (%min-h w) (+ ch (* 2 (%pad-y w)))) (%margin-y w))))
+            (when *sizes* (setf (gethash w *sizes*) (list out-w out-h)))
+            (values out-w out-h))))))
 
-(defun %margin-x (n) (let ((m (node-margin n))) (if m (+ (fourth m) (second m)) 0)))
-(defun %margin-y (n) (let ((m (node-margin n))) (if m (+ (first m) (third m)) 0)))
+(defgeneric arrange (widget medium x y w h)
+  (:documentation "Give the widget this rect, and place what it holds.")
+  (:method ((w widget) m x y width height)
+    (declare (ignore m))
+    (setf (left w) x (top w) y
+          (right w) (+ x width) (bottom w) (+ y (max 0 (1- height))))))
 
-(defmethod measure :around ((n node) aw ah)
-  "Wrap the intrinsic measure with the CSS box model: content is measured in the
-space left after margin and padding; the result adds padding back (floored at
-min-w/min-h for the border-box) and then adds margin for the outer size."
-  (multiple-value-bind (w h)
-      (call-next-method n (max 0 (- aw (* 2 (pad-x n)) (%margin-x n)))
-                          (max 0 (- ah (* 2 (pad-y n)) (%margin-y n))))
-    (values (+ (max (min-w n) (+ w (* 2 (pad-x n)))) (%margin-x n))
-            (+ (max (min-h n) (+ h (* 2 (pad-y n)))) (%margin-y n)))))
-
-(defmethod arrange :around ((n node) x y w h)
-  "Inset the allocated rect by the node's margin before the primary arrange, so
-the node's border-box (and everything it lays out inside) sits within its margin."
-  (let ((m (node-margin n)))
-    (if m
-        (call-next-method n (+ x (fourth m)) (+ y (first m))
-                          (max 0 (- w (%margin-x n))) (max 0 (- h (%margin-y n))))
+(defmethod arrange :around ((w widget) m x y width height)
+  (let ((mg (%margin w)))
+    (if mg
+        (call-next-method w m (+ x (fourth mg)) (+ y (first mg))
+                          (max 0 (- width (%margin-x w)))
+                          (max 0 (- height (%margin-y w))))
         (call-next-method))))
 
-(defun %inner (n x y w h)
-  "The content rect of N inside its padding."
-  (values (+ x (pad-x n)) (+ y (pad-y n))
-          (max 0 (- w (* 2 (pad-x n)))) (max 0 (- h (* 2 (pad-y n))))))
+(defun %inner (w x y width height)
+  (values (+ x (%pad-x w)) (+ y (%pad-y w))
+          (max 0 (- width (* 2 (%pad-x w))))
+          (max 0 (- height (* 2 (%pad-y w))))))
 
-(defmethod arrange ((n node) x y w h)
-  (setf (start-col n) x (start-line n) y
-        (end-col n) (+ x w) (end-line n) (+ y (max 0 (1- h)))))
+(defgeneric paint (widget medium)
+  (:documentation "Draw the widget into its arranged rect. One generic; which
+medium you were handed is what says whether that is cells or pixels.")
+  (:method ((w widget) m) (declare (ignore m)) nil))
 
-(defmethod paint ((n node) r) (declare (ignore r)) nil)
-
-(defun %fill-bg (n r)
-  "Fill the node's rect background: the hover face when hovered, else its own."
-  (let ((f (if (and (hovered n) *hover-face*) *hover-face* (face n))))
+(defun %fill (w m)
+  (let ((f (if (and (hovered w) *hover*) *hover* (face w))))
     (when f
-      (multiple-value-bind (fr fg fb br bg bb attr) (face-cell-rgb f)
+      (multiple-value-bind (fr fg fb br bg bb attr) (grid:ink f)
         (declare (ignore fr fg fb attr))
         (when (>= br 0)
-          (loop for row from (start-line n) to (end-line n) do
-            (loop for col from (start-col n) below (end-col n)
-                  do (raster-put-bg r row col br bg bb))))))))
+          (loop :for line :from (top w) :to (bottom w)
+                :do (loop :for col :from (left w) :below (right w)
+                          :do (grid:put-bg m line col br bg bb))))))))
 
-(defmethod paint :before ((n node) r) (%fill-bg n r))
+(defmethod paint :before ((w widget) (m grid:grid)) (%fill w m))
 
-(defmethod measure ((n text-node) aw ah)
-  (declare (ignore aw ah)) (text-size (content n) (font-px n)))
-(defmethod paint ((n text-node) r)
-  (let ((s (content n)) (w (%node-width n)))
-    (loop for i from 0 below (min (length s) w)
-          do (raster-put r (start-line n) (+ (start-col n) i) (char s i) (face n)))))
+(defmethod paint ((w widget) (m grid:grid))
+  (dolist (part (parts w)) (paint part m)))
 
-(defun view-overlay-count (n)
-  "How many of N's leading rows are overlay (drawn above the arranged rect)."
-  (let ((base (view-base n)))
-    (if base (max 0 (- (length (view-rows n)) base)) 0)))
-
-(defmethod measure ((n view-node) aw ah)
+(defmethod measure ((w label) m aw ah)
   (declare (ignore aw ah))
-  (let* ((rows (view-rows n))
-         (cols (reduce #'max rows :initial-value 1 :key (lambda (row) (length (car row)))))
-         (nrows (max 1 (- (length rows) (view-overlay-count n)))))
-    (if *text-size*
-        (multiple-value-bind (cw ch) (text-size "M" (font-px n))
-          (values (* cols cw) (* nrows ch)))
-        (values cols nrows))))
-(defmethod paint ((n view-node) r)
-  (let ((over (view-overlay-count n)))
-    (loop for row in (view-rows n)
-          for y from (- (start-line n) over)
-          do (blit-row r y (start-col n) (car row) (cdr row)))))
+  (text-size m (content w) (%font w)))
 
-(defmethod measure ((n separator) aw ah)
-  "A separator's natural size is its thickness; its length comes from the
-container's arrange (:align :stretch), never from the available space --
-reporting AW/AH here would eat the whole axis as natural size."
+(defmethod paint ((w label) (m grid:grid))
+  (let ((s (content w)) (n (width w)))
+    (loop :for i :from 0 :below (min (length s) n)
+          :do (grid:put m (top w) (+ (left w) i) (char s i) (face w)))))
+
+(defmethod measure ((w rule) m aw ah)
+  "A rule's natural size is its thickness; its length comes from the container's
+arrange, never from the space available -- answering that here would eat the axis."
   (declare (ignore aw ah))
-  (let ((px (max 1 (pine/ui/face:metric :border 2))))
-    (if (sep-vertical n)
-        (values (if *text-size* px 1) 1)
-        (values 1 (if *text-size* px 1)))))
-(defmethod paint ((n separator) r)
-  (if (sep-vertical n)
-      (loop for row from (start-line n) to (end-line n)
-            do (raster-put r row (start-col n) (sep-char n) (face n)))
-      (loop for col from (start-col n) below (end-col n)
-            do (raster-put r (start-line n) col (sep-char n) (face n)))))
+  (let ((thick (max 1 (nth-value 1 (text-size m "M" nil)))))
+    (if (upright w)
+        (values (if (typep m 'grid:grid) 1 thick) 1)
+        (values 1 (if (typep m 'grid:grid) 1 thick)))))
 
-(defmethod measure ((n spacer) aw ah) (declare (ignore aw ah)) (values 0 0))
+(defmethod paint ((w rule) (m grid:grid))
+  (if (upright w)
+      (loop :for line :from (top w) :to (bottom w)
+            :do (grid:put m line (left w) (glyph w) (face w)))
+      (loop :for col :from (left w) :below (right w)
+            :do (grid:put m (top w) col (glyph w) (face w)))))
 
-(defmethod measure ((n slider) aw ah)
+(defmethod measure ((w gap) m aw ah) (declare (ignore m aw ah)) (values 0 0))
+
+(defmethod measure ((w cells) m aw ah)
   (declare (ignore aw ah))
-  (if *text-size* (values (* 8 (track n)) (line-height (font-px n))) (values (track n) 1)))
-(defmethod paint ((n slider) r)
-  (let* ((w (track n))
-         (span (max 1 (- (max-of n) (min-of n))))
-         (v (max 0 (min span (- (value n) (min-of n)))))
-         (fill (round (* (/ v span) w))))
-    (loop for i from 0 below w
-          do (raster-put r (start-line n) (+ (start-col n) i)
-                         (if (< i fill) +slider-filled+ +slider-empty+)
-                         (if (< i fill) (filled-face n) (empty-face n))))))
+  (let* ((all (rows w))
+         (cols (reduce #'max all :initial-value 1 :key (lambda (r) (length (car r)))))
+         (n (max 1 (- (length all) (or (over w) 0)))))
+    (multiple-value-bind (cw ch) (text-size m "M" (%font w))
+      (values (* cols cw) (* n ch)))))
 
-(defun slider-value-at (n col)
-  "The value a click at absolute COL maps to for arranged slider N, using its
-arranged width (start/end-col hold pixels or cells, whichever it was laid out in)
--- not the dynamic *text-size*, which is only bound during a draw."
-  (let* ((w (max 1 (- (end-col n) (start-col n))))
-         (rel (max 0 (min w (- col (start-col n)))))
-         (span (- (max-of n) (min-of n))))
-    (+ (min-of n) (round (* (/ rel w) span)))))
+(defmethod paint ((w cells) (m grid:grid))
+  (let ((up (or (over w) 0)))
+    (loop :for row :in (rows w)
+          :for line :from (- (top w) up)
+          :do (grid:blit m line (left w) (car row) (cdr row)))))
 
-(defmethod measure ((n ring) aw ah)
+(defmethod measure ((w slider) m aw ah)
   (declare (ignore aw ah))
-  (let ((d (max (diameter n) (min-w n) (min-h n))))
+  (if (typep m 'grid:grid)
+      (values (track w) 1)
+      (values (* 8 (track w)) (line-height m (%font w)))))
+
+(defmethod paint ((w slider) (m grid:grid))
+  (let* ((n (track w))
+         (upto (round (* (fraction w) n))))
+    (loop :for i :from 0 :below n
+          :do (grid:put m (top w) (+ (left w) i)
+                        (if (< i upto) +filled+ +empty+)
+                        (if (< i upto) :function-name :comment)))))
+
+(defmethod measure ((w ring) m aw ah)
+  (declare (ignore m aw ah))
+  (let ((d (max (diameter w) (%min-w w) (%min-h w))))
     (values d d)))
-(defmethod arrange ((n ring) x y w h)
+
+(defmethod arrange ((w ring) m x y width height)
   (call-next-method)
-  (when (node n)
-    (multiple-value-bind (ix iy iw ih) (%inner n x y w h)
-      (multiple-value-bind (cw ch) (measure (node n) iw ih)
-        (arrange (node n) (+ ix (floor (- iw cw) 2)) (+ iy (floor (- ih ch) 2)) cw ch)))))
+  (let ((part (first (parts w))))
+    (when part
+      (multiple-value-bind (ix iy iw ih) (%inner w x y width height)
+        (multiple-value-bind (cw ch) (measure part m iw ih)
+          (arrange part m (+ ix (floor (- iw cw) 2)) (+ iy (floor (- ih ch) 2))
+                   cw ch))))))
 
-(defmethod measure ((n vstack) aw ah)
-  (let ((w 0) (h 0) (items (nodes n)))
-    (dolist (c items)
-      (multiple-value-bind (cw ch) (measure c aw ah)
-        (setf w (max w cw)) (incf h ch)))
-    (values w (+ h (* (spacing n) (max 0 (1- (length items))))))))
+(defun %stacked (w m aw ah down)
+  (let ((wide 0) (high 0) (all (parts w)))
+    (dolist (part all)
+      (multiple-value-bind (cw ch) (measure part m aw ah)
+        (if down
+            (progn (setf wide (max wide cw)) (incf high ch))
+            (progn (incf wide cw) (setf high (max high ch))))))
+    (let ((gaps (* (spacing w) (max 0 (1- (length all))))))
+      (if down (values wide (+ high gaps)) (values (+ wide gaps) high)))))
 
-(defmethod arrange ((n vstack) x y w h)
-  (call-next-method)
-  (multiple-value-bind (x y w h) (%inner n x y w h)
-    (let* ((items (nodes n))
-           (nats (mapcar (lambda (c) (multiple-value-list (measure c w h))) items))
-           (natsum (+ (reduce #'+ (mapcar #'second nats) :initial-value 0)
-                      (* (spacing n) (max 0 (1- (length items))))))
-           (slack (max 0 (- h natsum)))
-           (tw (reduce #'+ (mapcar #'expand-of items) :initial-value 0))
-           (acc 0) (given 0)
-           (cy y))
+(defmethod measure ((w column) m aw ah) (%stacked w m aw ah t))
+(defmethod measure ((w row) m aw ah) (%stacked w m aw ah nil))
 
-      (loop for c in items for (cw ch) in nats
-            for extra = (if (plusp tw)
-                            (progn
-                              (incf acc (* slack (/ (expand-of c) tw)))
-                              (prog1 (- (round acc) given)
-                                (setf given (round acc))))
+(defun %lay (w m x y width height down)
+  (let* ((all (parts w))
+         (sizes (mapcar (lambda (p) (multiple-value-list (measure p m width height)))
+                        all))
+         (natural (+ (reduce #'+ sizes :initial-value 0
+                                       :key (if down #'second #'first))
+                     (* (spacing w) (max 0 (1- (length all))))))
+         (slack (max 0 (- (if down height width) natural)))
+         (weight (reduce #'+ all :initial-value 0 :key #'expand))
+         (acc 0) (given 0)
+         (at (if down y x)))
+    (loop :for part :in all
+          :for (cw ch) :in sizes
+          :for extra := (if (plusp weight)
+                            (progn (incf acc (* slack (/ (expand part) weight)))
+                                   (prog1 (- (round acc) given)
+                                     (setf given (round acc))))
                             0)
-            for fh = (+ ch extra)
-            for cx = (ecase (align n)
-                       ((:start :stretch) x)
-                       (:center (+ x (floor (- w cw) 2)))
-                       (:end (+ x (- w cw))))
-            for fw = (if (eq (align n) :stretch) w cw)
-            do (arrange c cx cy fw fh)
-               (setf cy (+ cy fh (spacing n)))))))
+          :do (if down
+                  (let ((fh (+ ch extra))
+                        (cx (ecase (align w)
+                              ((:start :stretch) x)
+                              (:center (+ x (floor (- width cw) 2)))
+                              (:end (+ x (- width cw))))))
+                    (arrange part m cx at (if (eq (align w) :stretch) width cw) fh)
+                    (setf at (+ at fh (spacing w))))
+                  (let ((fw (+ cw extra))
+                        (cy (ecase (align w)
+                              ((:start :stretch) y)
+                              (:center (+ y (floor (- height ch) 2)))
+                              (:end (+ y (- height ch))))))
+                    (arrange part m at cy fw (if (eq (align w) :stretch) height ch))
+                    (setf at (+ at fw (spacing w))))))))
 
-(defmethod paint ((n vstack) r) (dolist (c (nodes n)) (paint c r)))
-
-(defmethod measure ((n hstack) aw ah)
-  (let ((w 0) (h 0) (items (nodes n)))
-    (dolist (c items)
-      (multiple-value-bind (cw ch) (measure c aw ah)
-        (incf w cw) (setf h (max h ch))))
-    (values (+ w (* (spacing n) (max 0 (1- (length items))))) h)))
-
-(defmethod arrange ((n hstack) x y w h)
+(defmethod arrange ((w column) m x y width height)
   (call-next-method)
-  (multiple-value-bind (x y w h) (%inner n x y w h)
-    (let* ((items (nodes n))
-           (nats (mapcar (lambda (c) (multiple-value-list (measure c w h))) items))
-           (natsum (+ (reduce #'+ (mapcar #'first nats) :initial-value 0)
-                      (* (spacing n) (max 0 (1- (length items))))))
-           (slack (max 0 (- w natsum)))
-           (tw (reduce #'+ (mapcar #'expand-of items) :initial-value 0))
-           (acc 0) (given 0)
-           (cx x))
-      (loop for c in items for (cw ch) in nats
-            for extra = (if (plusp tw)
-                            (progn
-                              (incf acc (* slack (/ (expand-of c) tw)))
-                              (prog1 (- (round acc) given)
-                                (setf given (round acc))))
-                            0)
-            for fw = (+ cw extra)
-            for cy = (ecase (align n)
-                       ((:start :stretch) y)
-                       (:center (+ y (floor (- h ch) 2)))
-                       (:end (+ y (- h ch))))
-            for fh = (if (eq (align n) :stretch) h ch)
-            do (arrange c cx cy fw fh)
-               (setf cx (+ cx fw (spacing n)))))))
+  (multiple-value-bind (x y width height) (%inner w x y width height)
+    (%lay w m x y width height t)))
 
-(defmethod paint ((n hstack) r) (dolist (c (nodes n)) (paint c r)))
-
-(defmethod measure ((n stack) aw ah)
-  (let ((w 0) (h 0))
-    (dolist (c (nodes n) (values w h))
-      (multiple-value-bind (cw ch) (measure c aw ah)
-        (setf w (max w cw) h (max h ch))))))
-
-(defmethod arrange ((n stack) x y w h)
+(defmethod arrange ((w row) m x y width height)
   (call-next-method)
-  (multiple-value-bind (x y w h) (%inner n x y w h)
-    (dolist (c (nodes n)) (arrange c x y w h))))
+  (multiple-value-bind (x y width height) (%inner w x y width height)
+    (%lay w m x y width height nil)))
 
-(defmethod paint ((n stack) r) (dolist (c (nodes n)) (paint c r)))
+(defmethod measure ((w stack) m aw ah)
+  (let ((wide 0) (high 0))
+    (dolist (part (parts w) (values wide high))
+      (multiple-value-bind (cw ch) (measure part m aw ah)
+        (setf wide (max wide cw) high (max high ch))))))
 
-(defmethod measure ((n box) aw ah)
+(defmethod arrange ((w stack) m x y width height)
+  (call-next-method)
+  (multiple-value-bind (x y width height) (%inner w x y width height)
+    (dolist (part (parts w)) (arrange part m x y width height))))
+
+(defmethod measure ((w box) m aw ah)
   (declare (ignore aw))
-  (let ((c (node n)))
-    (values (width-of n) (if c (nth-value 1 (measure c (width-of n) ah)) 1))))
-(defmethod arrange ((n box) x y w h)
-  (declare (ignore w))
-  (call-next-method n x y (width-of n) h)
-  (let ((c (node n)))
-    (when c
-      (multiple-value-bind (cw ch) (measure c (width-of n) h)
-        (let ((cx (ecase (align n)
-                    (:left x)
-                    (:right (+ x (- (width-of n) cw)))
-                    (:center (+ x (floor (- (width-of n) cw) 2))))))
-          (arrange c cx y cw (max 1 ch)))))))
-(defmethod paint ((n box) r)
-  (unless (char= (pad-char n) #\space)
-    (loop for col from (start-col n) below (end-col n)
-          do (raster-put r (start-line n) col (pad-char n) (face n))))
-  (when (node n) (paint (node n) r)))
+  (let ((part (first (parts w))))
+    (values (wide w) (if part (nth-value 1 (measure part m (wide w) ah)) 1))))
 
-(defmethod measure ((n center) aw ah)
-  (if (node n) (measure (node n) aw ah) (values 0 0)))
-(defmethod arrange ((n center) x y w h)
+(defmethod arrange ((w box) m x y width height)
+  (declare (ignore width))
+  (call-next-method w m x y (wide w) height)
+  (let ((part (first (parts w))))
+    (when part
+      (multiple-value-bind (cw ch) (measure part m (wide w) height)
+        (arrange part m
+                 (ecase (align w)
+                   (:left x)
+                   (:right (+ x (- (wide w) cw)))
+                   (:center (+ x (floor (- (wide w) cw) 2))))
+                 y cw (max 1 ch))))))
+
+(defmethod measure ((w center) m aw ah)
+  (let ((part (first (parts w))))
+    (if part (measure part m aw ah) (values 0 0))))
+
+(defmethod arrange ((w center) m x y width height)
   (call-next-method)
-  (multiple-value-bind (x y w h) (%inner n x y w h)
-    (let ((c (node n)))
-      (when c
-        (multiple-value-bind (cw ch) (measure c w h)
-          (arrange c (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch))))))
-(defmethod paint ((n center) r) (when (node n) (paint (node n) r)))
+  (multiple-value-bind (x y width height) (%inner w x y width height)
+    (let ((part (first (parts w))))
+      (when part
+        (multiple-value-bind (cw ch) (measure part m width height)
+          (arrange part m (+ x (floor (- width cw) 2))
+                   (+ y (floor (- height ch) 2)) cw ch))))))
 
-(defun centerbox-parts (n) (remove nil (list (cb-start n) (cb-center n) (cb-end n))))
-(defmethod measure ((n centerbox) aw ah)
-  (let ((w 0) (h 0))
-    (dolist (c (centerbox-parts n))
-      (multiple-value-bind (cw ch) (measure c aw ah) (setf w (max w cw)) (incf h ch)))
-    (values w h)))
-(defmethod arrange ((n centerbox) x y w h)
-  "Start at one end, end at the other, and the middle centred in what is left
-between them. Centring it in the whole box instead is what puts a bar's apps
-on top of its workspaces once there are enough workspaces."
+(defmethod measure ((w centerbox) m aw ah)
+  (let ((wide 0) (high 0))
+    (dolist (part (parts w) (values wide high))
+      (multiple-value-bind (cw ch) (measure part m aw ah)
+        (setf wide (max wide cw))
+        (incf high ch)))))
+
+(defmethod arrange ((w centerbox) m x y width height)
   (call-next-method)
-  (multiple-value-bind (x y w h) (%inner n x y w h)
-    (let* ((s (cb-start n)) (c (cb-center n)) (e (cb-end n))
-           (sh (if s (nth-value 1 (measure s w h)) 0))
-           (eh (if e (nth-value 1 (measure e w h)) 0)))
-      (when s (arrange s x y w sh))
-      (when e (arrange e x (+ y (- h eh)) w eh))
+  (multiple-value-bind (x y width height) (%inner w x y width height)
+    (let* ((s (start w)) (c (middle w)) (e (end w))
+           (sh (if s (nth-value 1 (measure s m width height)) 0))
+           (eh (if e (nth-value 1 (measure e m width height)) 0)))
+      (when s (arrange s m x y width sh))
+      (when e (arrange e m x (+ y (- height eh)) width eh))
       (when c
-        (let* ((ch (nth-value 1 (measure c w h)))
-               (room (max 0 (- h sh eh))))
-          (arrange c x (+ y sh (max 0 (floor (- room ch) 2))) w ch))))))
-(defmethod paint ((n centerbox) r) (dolist (c (centerbox-parts n)) (paint c r)))
+        (let ((ch (nth-value 1 (measure c m width height)))
+              (room (max 0 (- height sh eh))))
+          (arrange c m x (+ y sh (max 0 (floor (- room ch) 2))) width ch))))))
 
-(defmethod measure ((n scroll) aw ah)
+(defmethod measure ((w scroll) m aw ah)
   (declare (ignore ah))
-  (values (if (node n) (nth-value 0 (measure (node n) aw 100000)) 0)
-          (vheight n)))
-(defmethod arrange ((n scroll) x y w h)
-  (call-next-method n x y w (vheight n))
-  (when (node n)
-    (let ((ch (nth-value 1 (measure (node n) w 100000))))
+  (let ((part (first (parts w))))
+    (values (if part (nth-value 0 (measure part m aw 100000)) 0) (tall w))))
 
-      (arrange (node n) x (- y (scroll-offset n)) w ch))))
-(defmethod paint ((n scroll) r)
-  (when (node n)
-    (with-clip (r (start-col n) (start-line n) (end-col n) (+ (start-line n) (vheight n)))
-      (paint (node n) r))))
+(defmethod arrange ((w scroll) m x y width height)
+  (declare (ignore height))
+  (call-next-method w m x y width (tall w))
+  (let ((part (first (parts w))))
+    (when part
+      (let ((ch (nth-value 1 (measure part m width 100000))))
+        (arrange part m x (- y (offset w)) width ch)))))
 
-(defmethod measure ((n selectable) aw ah)
-  (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
-    (multiple-value-bind (cw ch) (if (node n) (measure (node n) aw ah) (values 0 1))
-      (values (+ (length pfx) cw) ch))))
-(defmethod arrange ((n selectable) x y w h)
+(defmethod paint ((w scroll) (m grid:grid))
+  (let ((part (first (parts w))))
+    (when part
+      (grid:with-clip (m (left w) (top w) (right w) (+ (top w) (tall w)))
+        (paint part m)))))
+
+(defmethod measure ((w choice) m aw ah)
+  (let ((mark (if (chosen w) (before w) (after w)))
+        (part (first (parts w))))
+    (multiple-value-bind (cw ch) (if part (measure part m aw ah) (values 0 1))
+      (values (+ (length mark) cw) ch))))
+
+(defmethod arrange ((w choice) m x y width height)
   (call-next-method)
-  (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
-    (when (node n) (arrange (node n) (+ x (length pfx)) y (- w (length pfx)) h))))
-(defmethod paint ((n selectable) r)
-  (let ((pfx (if (selectedp n) (prefix-selected n) (prefix-unselected n))))
-    (loop for i from 0 below (length pfx)
-          do (raster-put r (start-line n) (+ (start-col n) i) (char pfx i) (face n)))
-    (when (node n) (paint (node n) r))))
+  (let ((mark (if (chosen w) (before w) (after w)))
+        (part (first (parts w))))
+    (when part
+      (arrange part m (+ x (length mark)) y (- width (length mark)) height))))
 
-(defmethod measure ((n action) aw ah)
-  (if (node n) (measure (node n) aw ah) (values 0 1)))
-(defmethod arrange ((n action) x y w h)
+(defmethod paint ((w choice) (m grid:grid))
+  (let ((mark (if (chosen w) (before w) (after w))))
+    (loop :for i :from 0 :below (length mark)
+          :do (grid:put m (top w) (+ (left w) i) (char mark i) (face w)))
+    (dolist (part (parts w)) (paint part m))))
+
+(defmethod measure ((w action) m aw ah)
+  (let ((part (first (parts w))))
+    (if part (measure part m aw ah) (values 0 1))))
+
+(defmethod arrange ((w action) m x y width height)
   (call-next-method)
-  (multiple-value-bind (x y w h) (%inner n x y w h)
-    (when (node n)
-      (multiple-value-bind (cw ch) (measure (node n) w h)
-        (arrange (node n) (+ x (floor (- w cw) 2)) (+ y (floor (- h ch) 2)) cw ch)))))
-(defmethod paint ((n action) r) (when (node n) (paint (node n) r)))
-
-(defun list-items (n)
-  (let* ((is (items n)) (mx (max-visible n))
-         (vis (if mx (subseq is 0 (min mx (length is))) is)))
-    (setf (rendered n)
-          (loop for item in vis for i from 0 collect (funcall (item-fn n) item i)))))
-
-(defmethod measure ((n list-node) aw ah)
-  (let ((w 0) (h 0))
-    (dolist (c (list-items n))
-      (multiple-value-bind (cw ch) (measure c aw ah) (setf w (max w cw)) (incf h ch)))
-    (values w h)))
-(defmethod arrange ((n list-node) x y w h)
-  (call-next-method)
-  (let ((cy y))
-    (dolist (c (rendered n))
-      (let ((ch (nth-value 1 (measure c w h))))
-        (arrange c x cy w ch)
-        (setf cy (+ cy ch))))))
-(defmethod paint ((n list-node) r) (dolist (c (rendered n)) (paint c r)))
+  (multiple-value-bind (x y width height) (%inner w x y width height)
+    (let ((part (first (parts w))))
+      (when part
+        (multiple-value-bind (cw ch) (measure part m width height)
+          (arrange part m (+ x (floor (- width cw) 2))
+                   (+ y (floor (- height ch) 2)) cw ch))))))

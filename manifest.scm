@@ -7,8 +7,10 @@
 (concatenate-manifests
  (list (specifications->manifest
         (list "sbcl"
-              ;; the wm harness (bench/wm-shot.sh): capture, a test client,
-              ;; and synthetic key presses against headless river
+              ;; the painter harness (bench/painter-shot.sh): a headless
+              ;; compositor to attach to, a capture of what landed on it, a
+              ;; test client and synthetic key presses
+              "sway"
               "grim"
               "foot"
               "wtype"

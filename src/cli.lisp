@@ -1,7 +1,7 @@
 (defpackage #:pine/cli
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:server #:pine/net/server) )
-  (:export #:main #:usage #:ask #:running-p #:quiet #:*usage*))
+  (:local-nicknames (#:d #:pine/data) (#:actors #:pine/run/actors))
+  (:export #:main #:usage #:ask #:runningp #:quiet #:*usage* #:*timeout*))
 (in-package #:pine/cli)
 
 (defparameter *usage*
@@ -13,19 +13,18 @@
   watch WHERE           say so whenever it moves, until interrupted
   eval FORM             evaluate a form in the daemon
   run NAME [ARG...]     run one of the daemon's commands
-  diff WHERE OTHER      what is under one that is not under the other
+  use NAME              load a system there and start it
+  drop NAME             stop one and take it off
+  systems               what it has loaded
+  jobs                  what is running
   status                what the daemon is
   reload                read the config again
-  agents                every image attached to this one
-  spawn NAME LINE       run a program under the supervisor
-  kill NAME             stop one
   start | stop | restart   the daemon itself
   daemon                a daemon in this terminal
-  editor | desktop | wm a frontend, attached to the daemon
-  shell                 a repl in this terminal, with no daemon")
+  shell                 a pine in this terminal, with no daemon")
 
 (defvar *timeout* 5)
-(defvar *heard* (d:box nil))
+(defvar *actor* "tree")
 
 (defun usage () *usage*)
 
@@ -36,48 +35,70 @@
 (defun %system (&key (name "cli"))
   (quiet)
   (let ((sys (sento.actor-system:make-actor-system)))
-    (sento.remoting:enable-remoting sys :host server:*host* :port 0)
+    (sento.remoting:enable-remoting sys :host actors:*host* :port 0)
     (values sys name)))
 
-(defun %control (sys &key (host server:*host*) (port server:*port*))
-  (sento.remoting:make-remote-ref
-   sys (server:daemon-uri "control" :host host :port port)))
+(defun %uri (host port actor) (format nil "sento://~a:~d/user/~a" host port actor))
 
-(defun ask (message &key (host server:*host*) (port server:*port*) (system nil))
+(defun %daemon (sys &key (host actors:*host*) (port actors:*port*))
+  (sento.remoting:make-remote-ref sys (%uri host port *actor*)))
+
+(defun ask (message &key (host actors:*host*) (port actors:*port*) system)
   (handler-case
       (let* ((sys (or system (%system)))
-             (answer (sento.actor:ask-s (%control sys :host host :port port)
-                                        message :time-out *timeout*)))
-        (if (and (consp answer) (member (first answer) '(:ok :no)))
-            answer
-            (list :no (format nil "~a" answer))))
+             (said (sento.actor:ask-s (%daemon sys :host host :port port)
+                                      message :time-out *timeout*)))
+        (if (and (consp said) (member (first said) '(:ok :no)))
+            said
+            (list :no (format nil "~a" said))))
     (error () nil)))
 
-(defun running-p (&key (port server:*port*))
-  (let ((answer (ask (list :ping) :port port)))
-    (and answer (eq :ok (first answer)))))
+(defun runningp (&key (port actors:*port*))
+  (let ((said (ask (list :ping) :port port)))
+    (and said (eq :ok (first said)))))
 
-(defun %say (answer)
-  (cond ((null answer)
-         (format t "pine: no daemon at ~a:~d~%" server:*host* server:*port*)
+(defun %say (said)
+  (cond ((null said)
+         (format t "pine: no daemon at ~a:~d~%" actors:*host* actors:*port*)
          nil)
-        ((eq :no (first answer))
-         (format t "pine: ~a~%" (second answer))
+        ((eq :no (first said))
+         (format t "pine: ~a~%" (second said))
          nil)
-        (t
-         (let ((text (second answer)))
-           (when (plusp (length text)) (format t "~a~%" text)))
-         t)))
+        (t (let ((value (second said)))
+             (typecase value
+               (null nil)
+               (string (when (plusp (length value)) (format t "~a~%" value)))
+               (cons (dolist (each value) (format t "~a~%" each)))
+               (t (format t "~a~%" value))))
+           t)))
+
+(defun %evaluate (form)
+  (let ((said (ask (list :evaluate form))))
+    (cond ((null said)
+           (format t "pine: no daemon at ~a:~d~%" actors:*host* actors:*port*)
+           nil)
+          ((eq :no (first said)) (format t "pine: ~a~%" (second said)) nil)
+          (t (let ((answer (rest said)))
+               (let ((printed (getf answer :said)))
+                 (when (and printed (plusp (length printed)))
+                   (write-string printed)))
+               (cond ((getf answer :said-broke)
+                      (format t "pine: ~a~%" (getf answer :said-broke))
+                      (dolist (r (getf answer :offers))
+                        (format t "  ~a~%" r))
+                      nil)
+                     (t (dolist (v (getf answer :answered)) (format t "~s~%" v))
+                        t)))))))
 
 (defun %watch (where)
   (multiple-value-bind (sys name) (%system :name "watch")
-    (pine/run/endpoint:endpoint name
-                          (lambda (message)
-                            (when (eq :moved (first message))
-                              (format t "~a ~a~%" (second message) (third message))
-                              (finish-output)))
-                          :dispatcher :pinned :in sys)
-    (let ((uri (server:local-uri name (sento.remoting:remoting-port sys))))
+    (sento.actor-context:actor-of
+     sys :name name
+     :receive (lambda (message)
+                (when (eq :moved (first message))
+                  (format t "~a ~a~%" (second message) (third message))
+                  (finish-output))))
+    (let ((uri (%uri actors:*host* (sento.remoting:remoting-port sys) name)))
       (when (%say (ask (list :watch where uri) :system sys))
         (loop (sleep 60))))))
 
@@ -88,77 +109,65 @@
         (list (namestring sb-ext:*runtime-pathname*)
               "--noinform" "--no-userinit" "--non-interactive"
               "--eval" "(require :asdf)"
-              "--eval" "(asdf:load-system :pine/wayland)"
+              "--eval" "(asdf:load-system :pine)"
               "--eval" "(pine/cli:main (rest sb-ext:*posix-argv*))"
               "--end-toplevel-options"))))
 
 (defun %start ()
-  (if (running-p)
-      (format t "pine: already running on ~d~%" server:*port*)
+  (if (runningp)
+      (format t "pine: already running on ~d~%" actors:*port*)
       (progn
         (uiop:launch-program (append (%self) (list "daemon"))
                              :output nil :error-output nil)
         (loop :repeat 60
-              :until (running-p)
+              :until (runningp)
               :do (sleep 0.5))
         (format t "pine: ~:[did not come up~;running on ~d~]~%"
-                (running-p) server:*port*))))
+                (runningp) actors:*port*))))
 
-(defun %pid ()
-  (let ((answer (ask (list :pid))))
-    (when (and answer (eq :ok (first answer)))
-      (parse-integer (second answer) :junk-allowed t))))
-
-(defun %gone-p (&key (seconds 5))
+(defun %gonep (&key (seconds 5))
   (loop :repeat (round (/ seconds 0.2))
-        :unless (running-p) :do (return t)
+        :unless (runningp) :do (return t)
         :do (sleep 0.2)
-        :finally (return (not (running-p)))))
+        :finally (return (not (runningp)))))
 
 (defun %stop ()
-  (cond
-    ((not (running-p)) (format t "pine: not running~%"))
-    (t
-     (let ((pid (%pid)))
-       (ask (list :quit))
-       (unless (%gone-p)
-         (when pid
-           (format t "pine: ~d did not stop, killing it~%" pid)
-           (ignore-errors (sb-posix:kill pid 15))
-           (unless (%gone-p :seconds 3)
-             (ignore-errors (sb-posix:kill pid 9))
-             (%gone-p :seconds 3))))
-       (if (running-p)
-           (format t "pine: still running on ~d~%" server:*port*)
-           (format t "stopped~%"))))))
+  (cond ((not (runningp)) (format t "pine: not running~%"))
+        (t (%evaluate '(pine:quit))
+           (if (%gonep)
+               (format t "stopped~%")
+               (format t "pine: still running on ~d~%" actors:*port*)))))
+
+(defun %run (arguments)
+  (%evaluate `(pine/run/command:run ,(first arguments)
+                                    (list ,@(rest arguments)))))
 
 (defun main (&optional (arguments (rest sb-ext:*posix-argv*)))
   (quiet)
   (pine/run/libs:attend)
-  (server:read-environment)
   (let ((verb (first arguments))
         (rest (rest arguments)))
     (cond
       ((null verb) (format t "~a~%" *usage*))
-      ((equal verb "read")   (%say (ask (list :read (first rest)))))
-      ((equal verb "write")  (%say (ask (list :write (first rest) (second rest)))))
-      ((equal verb "ls")     (%say (ask (list :ls (first rest)))))
-      ((equal verb "eval")   (%say (ask (list :eval (first rest)))))
-      ((equal verb "run")    (%say (ask (list* :run rest))))
-      ((equal verb "status") (%say (ask (list :status))))
-      ((equal verb "diff")   (%say (ask (list :diff (first rest) (second rest)))))
-      ((equal verb "reload") (%say (ask (list :reload))))
-      ((equal verb "agents") (%say (ask (list :agents))))
-      ((equal verb "spawn")  (%say (ask (list :run "spawn" (first rest)
-                                              (second rest)))))
-      ((equal verb "kill")   (%say (ask (list :run "kill" (first rest)))))
+      ((equal verb "read")    (%say (ask (list :contents (first rest)))))
+      ((equal verb "write")   (%say (ask (list :write (first rest)
+                                               (second rest)))))
+      ((equal verb "ls")      (%say (ask (list :nodes (or (first rest) "/")))))
+      ((equal verb "watch")   (%watch (first rest)))
+      ((equal verb "eval")    (%evaluate (read-from-string (first rest))))
+      ((equal verb "run")     (%run rest))
+      ((equal verb "use")     (%run (list "use" (first rest))))
+      ((equal verb "drop")    (%run (list "drop" (first rest))))
+      ((equal verb "systems") (%run (list "systems")))
+      ((equal verb "jobs")    (%run (list "jobs")))
+      ((equal verb "status")  (format t "pine: ~:[not running~;running on ~d~]~%"
+                                      (runningp) actors:*port*))
+      ((equal verb "reload")  (%run (list "reload")))
+      ((equal verb "start")   (%start))
+      ((equal verb "stop")    (%stop))
       ((equal verb "restart") (%stop) (sleep 1) (%start))
-      ((equal verb "watch")  (%watch (first rest)))
-      ((equal verb "start")  (%start))
-      ((equal verb "stop")   (%stop))
-      ((equal verb "daemon") (pine:daemon) (loop (sleep 60)))
-      ((equal verb "shell")  (pine:main))
-      ((member verb '("editor" "desktop" "wm") :test #'equal) (pine:run-app verb))
-      ((equal verb "help")   (format t "~a~%" *usage*))
+      ((equal verb "daemon")  (pine:daemon) (loop (sleep 60)))
+      ((equal verb "shell")   (pine:main))
+      ((equal verb "help")    (format t "~a~%" *usage*))
       (t (format t "pine: no verb ~a~%~a~%" verb *usage*)))
     (finish-output)))

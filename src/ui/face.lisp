@@ -1,43 +1,24 @@
 (defpackage #:pine/ui/face
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
-  (:export
-
-   #:face-run #:run-start #:run-end #:run-face
-   #:display-line #:make-display-line #:display-text #:display-runs
-
-   #:face #:fg #:bg #:bold #:italic #:underline
-   #:faces #:with-faces #:find-face #:face-attr-bits #:face-fg #:face-bg
-
-   #:theme #:theme-name #:theme-palette #:theme-faces #:theme-metrics
-   #:theme-key #:register-theme #:find-theme #:active
-   #:*themes* #:+default-theme+
-   #:theme-color #:color #:theme-metric #:metric #:resolve-color #:hex-rgb
-
-   #:memo))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree))
+  (:export #:face #:fg #:bg #:bold #:italic #:underline #:attrs
+           #:faces #:with-faces #:named #:rgb
+           #:theme #:name #:palette #:metrics #:themes #:register #:active
+           #:color #:metric #:hex #:memo #:build #:*themes* #:+plain+))
 (in-package #:pine/ui/face)
 
 (defvar *in-force* nil
-  "The face table for the render running on this thread. Bound for the extent
-of one render and never assigned: finding the table is three reads and finding a
-face in it is one, so a paint that asks per cell spends most of its time asking
-where to look.")
+  "The face table for the render running on this thread. Bound for the extent of one
+render: finding the table is three reads and finding a face in it is one, so a paint
+that asks per cell spends most of its time asking where to look.")
 
-(defvar *themes* (d:table)
-  "Theme name to theme: what the files said as they loaded, read from every
-thread and added to by nothing else.")
+(defvar *themes* (d:table))
 
-(defparameter +default-theme+ :ef-dream
-  "The theme a space that has not said resolves in.")
+(defparameter +plain+ :default
+  "The face a space that has not said resolves in.")
 
-(defclass face-run ()
-  ((start-col :initarg :start :accessor run-start :initform 0)
-   (end-col   :initarg :end   :accessor run-end   :initform 0)
-   (run-face  :initarg :face  :accessor run-face   :initform :default)))
-
-(defclass display-line ()
-  ((text :initarg :text :accessor display-text :initform "")
-   (runs :initarg :runs :accessor display-runs :initform nil)))
+(defparameter +theme+ :ef-dream)
 
 (defclass face ()
   ((fg        :initarg :fg        :accessor fg        :initform nil)
@@ -47,179 +28,125 @@ thread and added to by nothing else.")
    (underline :initarg :underline :accessor underline :initform nil)))
 
 (defclass theme ()
-  ((name    :initarg :name    :reader theme-name)
-   (palette :initarg :palette :reader theme-palette :initform nil)
-   (metrics :initarg :metrics :reader theme-metrics :initform nil)
-   (faces   :initarg :faces   :reader theme-faces
+  ((name    :initarg :name    :reader name)
+   (palette :initarg :palette :reader palette :initform nil)
+   (metrics :initarg :metrics :reader metrics :initform nil)
+   (faces   :initarg :faces   :reader faces
             :initform (make-hash-table :test 'eq))))
 
-(defun memo (which thunk)
-  "The cell the :THEME server keeps for WHICH, or NIL before it is raised. Only
-read here: making one is a write to the space, and this runs while a cell is
-being painted."
+(defun %key (name)
+  (etypecase name
+    (keyword name)
+    (symbol (intern (symbol-name name) :keyword))
+    (string (intern (string-upcase name) :keyword))))
 
-  (let ((root (and pine/world/world:*world*
-                   (pine/world/world:root pine/world/world:*world*))))
-    (if (null root)
-        (funcall thunk)
-        (let* ((name (string-downcase (symbol-name which)))
-               (under (or (pine/fs/node:resolve root "memo")
-                          (pine/fs/node:attach
-                           (pine/fs/node:make-node "memo" :class 'pine/fs/node:node)
-                           root)))
-               (n (pine/fs/node:resolve under name)))
-          (unless n
-            (setf n (pine/fs/computed:computed name thunk))
-            (pine/fs/node:attach n under))
-          (pine/fs/node:contents n)))))
+(defun register (theme) (d:keep! *themes* (name theme) theme))
 
-(defgeneric theme-key (name)
-  (:documentation "NAME as the keyword a theme is known by."))
+(defun themes ()
+  (sort (d:keys (d:all *themes*)) #'string< :key #'symbol-name))
 
-(defmethod theme-key ((name symbol))
-  (if (keywordp name) name (intern (symbol-name name) :keyword)))
-
-(defmethod theme-key ((name string))
-  (intern (string-upcase name) :keyword))
-
-(defun register-theme (theme)
-  (d:keep! *themes* (theme-name theme) theme))
-
-(defun find-theme (name)
-  (or (d:at (d:all *themes*) (theme-key name))
-      (error "unknown theme ~s" name)))
+(defun theme (name)
+  (or (d:at (d:all *themes*) (%key name))
+      (error "no theme called ~s" name)))
 
 (defun active ()
-  "The theme in force here: /theme, which is a value like any other."
-  (or (and pine/world/world:*world*
-           (let ((n (pine/world/world:at pine/world/world:*world* "theme/active")))
-             (and n (pine/fs/node:contents n))))
-      +default-theme+))
+  "The theme in force here: /theme/active, which is a value like any other."
+  (or (let ((n (and (tree:root) (tree:at nil "theme" "active"))))
+        (and n (node:contents n)))
+      +theme+))
 
-(defgeneric resolve-color (color palette)
-  (:documentation "COLOR as the hex it stands for: a literal, or a role PALETTE
-names."))
+(defun memo (which thunk)
+  "What WHICH worked out to, kept in the tree so it is thrown away when anything it
+read moves. Before there is a tree, it is worked out every time."
+  (if (null (tree:root))
+      (funcall thunk)
+      (let* ((name (string-downcase (symbol-name which)))
+             (under (or (node:resolve (tree:root) "memo")
+                        (node:attach (node:make "memo" :class 'node:node)
+                                     (tree:root))))
+             (n (node:resolve under name)))
+        (unless n
+          (setf n (node:derive name thunk))
+          (node:attach n under))
+        (node:contents n))))
 
-(defmethod resolve-color ((color null) palette)
-  (declare (ignore palette))
-  nil)
+(defgeneric hex (color palette)
+  (:documentation "COLOR as the hex it stands for: a literal, or a role the palette
+names.")
+  (:method ((color null) palette) (declare (ignore palette)) nil)
+  (:method ((color string) palette) (declare (ignore palette)) color)
+  (:method ((color symbol) palette)
+    (or (cdr (assoc color palette :test #'string=))
+        (error "color ~s is not in the palette" color))))
 
-(defmethod resolve-color ((color string) palette)
-  (declare (ignore palette))
-  color)
-
-(defmethod resolve-color ((color symbol) palette)
-  (or (cdr (assoc color palette :test #'string=))
-      (error "color ~s is not in the palette" color)))
-
-(defun build-theme (name palette-plist metrics-plist face-specs)
-  (let ((palette (loop for (role hex) on palette-plist by #'cddr
-                       collect (cons role hex)))
-        (metrics (loop for (key val) on metrics-plist by #'cddr
-                       collect (cons key val)))
-        (faces   (make-hash-table :test 'eq)))
-    (dolist (spec face-specs)
+(defun build (name palette-plist metrics-plist specs)
+  (let ((palette (loop :for (role h) :on palette-plist :by #'cddr
+                       :collect (cons role h)))
+        (metrics (loop :for (key v) :on metrics-plist :by #'cddr
+                       :collect (cons key v)))
+        (faces (make-hash-table :test 'eq)))
+    (dolist (spec specs)
       (destructuring-bind (fname &key fg bg bold italic underline) spec
         (setf (gethash fname faces)
-                       (make-instance 'face
-                                      :fg (resolve-color fg palette)
-                                      :bg (resolve-color bg palette)
-                                      :bold bold :italic italic
-                                      :underline underline))))
-    (make-instance 'theme :name (theme-key name) :palette palette
-                          :metrics metrics :faces faces)))
+              (make-instance 'face :fg (hex fg palette) :bg (hex bg palette)
+                                   :bold bold :italic italic
+                                   :underline underline))))
+    (make-instance 'theme :name (%key name) :palette palette :metrics metrics
+                          :faces faces)))
 
 (defun %as-face (m)
-  "A written {:fg .. :bg ..} as a face, or NIL when it is not one."
   (when (and (consp m) (keywordp (first m)))
     (make-instance 'face :fg (getf m :fg) :bg (getf m :bg)
-                         :bold (getf m :bold)
-                         :italic (getf m :italic)
+                         :bold (getf m :bold) :italic (getf m :italic)
                          :underline (getf m :underline))))
 
 (defun %resolve ()
-  "The active theme's faces with whatever was written at /face/?name on top.
-HELD rather than READ, because /face is served: what is asked for here is what
-someone put there, and the provider answers by asking this."
+  "The active theme's faces with whatever was written at /face/?name on top."
   (let ((out (make-hash-table :test 'eq))
-        (written (and pine/world/world:*world*
-                      (pine/world/world:at pine/world/world:*world* "face"))))
-    (maphash (lambda (k v) (setf (gethash k out) v))
-             (theme-faces (find-theme (active))))
+        (written (and (tree:root) (tree:at nil "face"))))
+    (maphash (lambda (k v) (setf (gethash k out) v)) (faces (theme (active))))
     (when written
-      (dolist (each (pine/fs/node:nodes written))
-        (let ((f (%as-face (pine/fs/node:contents each))))
-          (when f
-            (setf (gethash (intern (string-upcase (pine/fs/node:name each)) :keyword)
-                           out)
-                  f)))))
+      (dolist (each (node:nodes written))
+        (let ((f (%as-face (node:contents each))))
+          (when f (setf (gethash (%key (node:name each)) out) f)))))
     out))
 
-(defun faces ()
-  "Face name to face, for the theme in force and the overrides on it. Worked out
-once and kept until the tree moves: FIND-FACE is on the path every painted cell
-takes."
+(defun faces-in-force ()
+  "Face name to face, worked out once and kept until the tree moves: NAMED is on the
+path every painted cell takes."
   (or *in-force* (memo :faces #'%resolve)))
 
 (defmacro with-faces (&body body)
   "Run BODY with the faces in force worked out once."
-  `(let ((*in-force* (faces))) ,@body))
+  `(let ((*in-force* (faces-in-force))) ,@body))
 
-(defun find-face (name)
-  (gethash name (faces)))
+(defun named (name) (gethash name (faces-in-force)))
 
-(defun face-attr-bits (face)
+(defun attrs (f)
   "bit 0 bold, bit 1 italic, bit 2 underline."
-  (if face
-      (logior (if (bold face) 1 0) (if (italic face) 2 0) (if (underline face) 4 0))
+  (if f
+      (logior (if (bold f) 1 0) (if (italic f) 2 0) (if (underline f) 4 0))
       0))
-
-(defun theme-color (theme-name role)
-  (or (cdr (assoc role (theme-palette (find-theme theme-name)) :test #'string=))
-      (error "theme ~s has no color ~s" theme-name role)))
 
 (defun color (role)
   "The hex of a palette ROLE in the active theme."
-  (theme-color (active) role))
-
-(defun theme-metric (theme-name key &optional default)
-  (let ((cell (assoc key (theme-metrics (find-theme theme-name)) :test #'string=)))
-    (if cell (cdr cell) default)))
+  (or (cdr (assoc role (palette (theme (active))) :test #'string=))
+      (error "the active theme has no color ~s" role)))
 
 (defun metric (key &optional default)
-  "A layout metric (:radius :border :opacity :font ...) from the active theme."
-  (theme-metric (active) key default))
+  (let ((cell (assoc key (metrics (theme (active))) :test #'string=)))
+    (if cell (cdr cell) default)))
 
-(defun hex-rgb (hex)
-  "The (values r g b) 0..255 of a #rrggbb string, or NIL for a non-colour."
-  (when (and (stringp hex) (>= (length hex) 7) (char= (char hex 0) #\#))
-    (values (parse-integer hex :start 1 :end 3 :radix 16)
-            (parse-integer hex :start 3 :end 5 :radix 16)
-            (parse-integer hex :start 5 :end 7 :radix 16))))
+(defun rgb (h)
+  "A #rrggbb string as (r g b), or nothing for anything else. A face's FG and BG are
+hex; this is how a painter reads one."
+  (when (and (stringp h) (>= (length h) 7) (char= (char h 0) #\#))
+    (list (parse-integer h :start 1 :end 3 :radix 16)
+          (parse-integer h :start 3 :end 5 :radix 16)
+          (parse-integer h :start 5 :end 7 :radix 16))))
 
-(defun face-fg (name)
-  "FACE NAME's foreground as an (r g b) list, falling back to the default face."
-  (let* ((f (find-face name))
-         (hex (or (and f (fg f))
-                  (let ((d (find-face :default))) (and d (fg d))))))
-    (multiple-value-bind (r g b) (hex-rgb hex)
-      (if r (list r g b) '(205 214 244)))))
-
-(defun face-bg (name)
-  "FACE NAME's background as an (r g b) list, or NIL when it has none."
-  (let ((f (find-face name)))
-    (when (and f (bg f))
-      (multiple-value-bind (r g b) (hex-rgb (bg f)) (list r g b)))))
-
-(defun make-display-line (text &optional runs)
-  (make-instance 'display-line
-    :text text
-    :runs (or runs
-              (list (make-instance 'face-run
-                      :start 0 :end (length text) :face :default)))))
-
-(register-theme
- (build-theme
+(register
+ (build
   :ef-dream
   '(bg        "#232025"   bg-dim    "#322f34"   bg-alt "#3b393e"
     bg-active "#5b595e"   fg        "#efd5c5"   fg-dim "#8f8886"
@@ -273,6 +200,7 @@ takes."
     (:delimiter.5    :fg green-cooler)
     (:error          :fg red)
     (:accent         :fg fg-alt)
+    (:match          :fg accent-fg :bg bg-active)
     (:ws-active      :fg accent-fg :bg accent :bold t)
     (:hover          :fg accent-fg :bg bg-active)
     (:ring-cpu       :fg red)

@@ -23,73 +23,69 @@ It restores the concurrency, and adds the boundary: a computation can live in
 another image, on another machine, and when it faults its restarts come home to
 the debugger you are sitting in.
 
-* What follows from it
+* An operating system is a class hierarchy and a protocol
 
-** Everything addressable is a node
+Five abstractions, and one hierarchy under =node= that carries them all.
 
-One tree, reached by path. A buffer is a node, so is a window, a surface, a
-provider's reading, a command, a running process. They answer the same
-generics: =contents=, =(setf contents)=, =nodes=, =resolve=, =describe=,
-=leafp=. There is no registry beside the tree.
+: node                     a name, where it sits, what is under it
+: |- value                 holds one
+: |- derived               works one out, and follows whatever it read
+: |  \- surface            works out a widget tree; a role says where it goes
+: |- mount                 a namespace from somewhere else, grafted in
+: |  |- directory          a directory on this machine
+: |  \- peer               another pine, here or on another machine
+: |- job                   something that runs
+: |  |- thread             blocks on something
+: |  |- actor              takes messages in order
+: |  |- program            an os child that is not lisp
+: |  |- image              a lisp we can evaluate in
+: |  \- system             a package pine loaded
+: \- document              text, and the structure its mode gives it
+:    \- region             a span of one, with its own sub-regions
 
-: pine read /audio/volume
-: pine write /surface/audio/shown '(:toggle)'
-: pine watch /media/title
+A =peer= is an =image= and a =mount= at once. That inheritance is the whole
+reason this is CLOS and not a pile of structures, and it is what makes =mount=
+one generic for a directory on this machine and for a pine on another.
 
-A provider says when the world behind it moved rather than being polled:
-=announces= names the shell lines whose output stirs it, =every-seconds= the
-interval for the ones with no stream. A write it turns into an action on the
-world still announces, because dragging a slider has to leave the slider
-showing where it was dragged to.
+** Memory, and storage
 
-A reading stands for a moment, not for the instant it was asked in. Two things
-reading =/sys/cpu= a moment apart are asking about the same moment.
+: (contents node) (setf (contents node) v) (nodes node)
 
-** Values are immutable, and what holds one is a box
+=resolve=, =full-name=, =leafp= and =attach= are functions over =nodes=, so
+they cannot disagree with it. =savedp= and =livep= are properties of a class,
+not questions to re-answer per instance.
 
-=pine/data= is the only file that names fset or =sento.atomic=. It says what a
-value is and where one is kept: =box=, =held=, =swap!=, =cas=, =put!=, and
-=table= for a registry, which is a map in a box. Nothing takes a lock.
+A =value= holds one. A =derived= records what it read while working one out, so
+a write invalidates exactly what depended on it and nothing subscribes to
+anything. =derived= takes a function for writing as well as reading, which is
+why a device reading is a table row rather than a class:
 
-The same value serves twice: shared by reference inside an image, and rendered
-to plain lists at the edge to cross a wire. That is what lets a second image
-hold the same world without sharing memory with it.
+#+begin_src lisp
+  (device "audio"
+          (list (list "volume" #'level (lambda (v) (sh "wpctl ... ~d%" v)))
+                (list "muted"  #'muted #'toggle)))
+#+end_src
 
-** Concurrency is sento, not our own
+Storage is not a layer. =savedp= is a property of a class; writes go through as
+they are made, so a crash costs what happened since the last write; loading the
+code builds the shape and the store only puts values back into nodes that
+already exist. The host filesystem is in the namespace on the same protocol, so
+a file is one of several places a thing can live, and so is a node on another
+machine.
 
-One actor system per image, made whether or not remoting is on.
+** Processes, and concurrency
 
-- Something that has to take messages in order is an endpoint, over
-  =ac:actor-of=. Pinned where it may stand in a fault, since a receive that
-  parks would take its worker with it.
-- Something that repeats is a tick on that system's wheel timer. Nothing
-  sleeps in a loop.
-- A thread is made only where something blocks: a pty read, a child's stdout, a
-  frontend's own loop.
+: (start job) (stop job) (alivep job) (tell job m) (ask job m)
+: (evaluate image form) (take fault restart) (resume image fault restart)
 
-A receive never waits for an answer. Asking from inside one is an error rather
-than a hang.
+One triple for a thread, an actor, an os child, another image, a peer and a
+loaded system. One method table. =start= on a system is what replaces every
+install called by hand in a fixed order.
 
-** The daemon decides, the frontends paint
-
-The daemon is a headless image that never draws. It owns the tree, the
-providers, the store, the parse, the editor's buffers and windows. A frontend
-is a painter that is told what to paint and sends back what happened.
-
-What crosses:
-
-- the daemon pushes a surface as a wire tree, or the rows that changed in one;
-- a frontend sends a key, a resize, or a widget action;
-- a widget action names *where* the widget sits in its surface, so a click that
-  crossed while the surface was being pushed again still means the button it
-  was on;
-- a key crosses under one name however the frontend spelled it. =C-SPC= in a
-  keymap is the key xkb hands over as =space=.
-
-The daemon lays a frame out in pixels once the frontend has said what its cell
-and font are, so the frame is painted at the size it was laid out for. A
-surface is pushed when what it shows changes, on a tick: the world behind a bar
-moves dozens of times a second and reads the same.
+One actor system per image, made whether or not remoting is on. Something that
+takes messages in order is an actor; something that repeats is a tick on that
+system's wheel; a thread is made only where a call blocks. Nothing sleeps in a
+loop and nothing takes a lock.
 
 ** Failure is a value you can act on
 
@@ -98,83 +94,132 @@ thread stops where it faulted and stands there holding its restarts, so what
 you are offered is what is really still there. Taking one resumes that thread.
 
 Across images it is the same act: a child image stands in its fault and says
-what it is offering, the fault joins this image's own, and taking one of its
-restarts is sent back to the thread standing there.
+what it is offering, the fault joins this image's own as a =borrowed= one that
+knows where it stands, and taking one of its restarts is sent back to the
+thread standing there. Over a pipe and over the network, one act.
 
-** What pine starts dies with pine
+** The interface
 
-A stream a provider listens to holds a pipe the image owns. Stopping, crashing
-or being killed outright closes it and the child goes. Anything that outlives
-the image that started it is a leak with no upper bound.
+: (parts widget) (measure widget medium w h) (arrange widget medium x y w h)
+: (paint widget medium) (anchor role width height) (text-size medium text font)
 
-** The store is write-through
+=parts= is a slot on the widget, so measure, arrange, paint, hit testing and the
+wire cannot disagree about what a container holds. =paint= specializes on what
+it is painting onto -- a grid of character cells, a cairo canvas -- so there is
+one paint generic and not one per back end.
 
-Sqlite, one table. A write lands as it is made, not at a clean shutdown, so a
-crash costs nothing since the last write. What comes back is what the tree
-held, fset values included.
+A =role= is a class, and it is the whole of what "any kind of surface" means.
+One =anchor= method and a default puts a new kind on screen, and the painter
+needs no compiled-in knowledge of it: the role crosses the wire with the
+surface. There is no privileged surface. The editor's window, the bar and a
+panel are the same class with different roles.
 
-** What it is doing is a reading, not a guess
+A widget is *not* a node. It is an immutable value that crosses a wire. Nothing
+you draw is in the namespace; only the surface that works it out.
 
-Every path a person waits on is timed in the daemon while it runs: a key, a
-frame built and pushed and what it carried, a parse and the lines it covered, a
-surface built or found the same as before, a shell-out and whether it forked, a
-write that reached the disk. A sample costs under a microsecond, so it is on
-from boot.
+** Text, and the elevated buffer
 
-The instruments read through the tree like anything else:
+: (press mode d key) (insert mode d string) (indent mode d line)
+: (complete mode d prefix) (save mode d) (structure mode d)
 
-: pine read /metric/frame/p95
-: pine watch /metric/key/count
-: pine run metrics
+A mode is a class, so the chain is class inheritance, =call-next-method= is the
+fallback, and precedence costs nothing:
 
-and the same table comes out of a workload, so a made-up load and a real
-session are one measurement taken twice:
+: mode
+: \- text
+:    |- prose -- org
+:    \- code  -- lisp -- pine
+:               \- scheme
 
-: make bench WORK=typing SIZE=20000
-: ./pine run metrics-reset      # then use it for a while
-: ./pine run metrics-save
-: make bench COMPARE=1
+A terminal is a =document= and a =thread= at once: a program's screen is text a
+window shows and a command acts on, and a pty read is where something blocks.
+The mode is what makes a key go to the program rather than into the text.
 
-A workload says what it drives, in a line printed above its numbers. A number
-that cannot say which instrument it came from, over how many samples, and out
-of what work, is a number about nothing.
+An emacs buffer is characters with a flat property list laid over them. A pine
+=document= is text plus the structure its mode gives it, and *the structure is
+in the namespace*:
+
+: /text/init.lisp                      the text
+: /text/init.lisp/defsurface/bar       the form, as a region
+: /text/init.lisp/defsurface/bar/icon  a sub-region of it
+
+A =region= is a node whose contents is the text it covers, whose nodes are its
+sub-regions, and writing it replaces that span. Marks, overlays, the parse and
+what a command acts on are one thing: regions with identity, that survive edits
+around them.
+
+* Nothing is special
+
+You define classes and methods in your own package, and pine loads it the way it
+loads its own. =pine/user= is that package's whole vocabulary: Common Lisp and
+pine's protocol together, rebuilt whenever a system is loaded, so a system loaded
+later brings its own words with it.
+
+The editor, the desktop, the window manager and the machine's own devices are
+written exactly this way and name nothing your package cannot name.
+=examples/notes.lisp= is an app of that shape -- its own kind of node, its own
+mode, its own role and surface, its own commands and chords -- and the suite
+checks that nothing under =src/= names it. Taking one away takes its surfaces and
+its commands with it:
+
+: pine use desk
+: pine drop desk
 
 * The shape of a running pine
 
-See =architecture.dot= beside this file; =make docs= renders it.
+| the daemon  | the tree, the systems it loaded, the store, no display        |
+| a painter   | the surfaces the daemon declares, on the compositor it is under |
+| the cli     | reads and writes of the daemon's tree, from a terminal          |
+| an image    | another sbcl pine spawned, evaluated in, whose faults come home |
 
-Four kinds of operating-system process:
+On a compositor that manages its own windows, pine is a client of it: a bar is a
+layer surface, a window is an xdg toplevel, and =/wm= is what that compositor
+says about itself. On one that asks for a window manager, the painter is that
+too: it says what the compositor handed over at =/wm/said=, and puts each window
+where =/wm/placement= says. The layout is worked out in the daemon, from a class
+with one =arrange= method, so how windows are laid out is a config's to replace.
 
-| the daemon        | the tree, the providers, the store, the editor, no display |
-| the editor        | one wayland toplevel, paints frames, sends keys             |
-| the desktop       | layer surfaces: the bar, the echo strip, the panels         |
-| the window manager | pine as the compositor's own manager, over river           |
+Being the window manager is what makes the rest of it work there rather than a
+separate world: pine binds the compositor's layer shell support, so its own bar
+maps the same way it does anywhere else, and the compositor tells it what area is
+left after that strip -- which is the area the layout is given. One bar, one
+layout, two compositors.
 
-and a fifth on demand: an agent, another sbcl image pine spawned, evaluated in
-over the same protocol, whose faults come home.
+A painter is a pine that mounted another one. It reads =/surface/<name>/wire=
+for the tree, asks =/surface/<name>/where= for the placement the role worked
+out, writes =/surface/<name>/size= to say how big it came out and
+=/surface/<name>/click= to say what was clicked, and writes =/key= for what a
+keyboard gave it. There is no separate attach protocol: it is reads and writes
+of a namespace, the same ones the cli makes.
+
+: make daemon      # a pine on a remoting port
+: make painter     # the surfaces it declares, on your compositor
+: make screen      # both on a headless compositor, and a capture of the result
 
 * The config is Lisp
 
-=~/.config/pine/init.lisp= is read by the daemon. It declares surfaces, styles,
-commands, bindings, and which frontends to start. It is the same language and
-the same tree, so a config says =(read /audio/volume)= and =(at (root *world*)
-"wm" "workspaces" n)= and hands either to a widget.
+=~/.config/pine/init.lisp= is read by the daemon, in =pine/user=, with pine's
+own readtable so a path is a literal. It is the same language and the same
+tree, so a surface reads a node and a click writes one. See
+=examples/init.lisp=, which the suite loads so it stays a config you can copy.
 
 * Where the code is
 
-| =src/data.lisp=  | values, boxes, tables: fset and sento.atomic, named nowhere else |
-| =src/run/=       | tasks, timer, endpoints, faults, log, where the C libraries are  |
-| =src/fs/=        | the node, computed nodes, the tree, mounts, watchers             |
-| =src/world/=     | the world and the store                                          |
-| =src/proc/=      | processes, the supervisor, another sbcl image                    |
-| =src/repl/=      | commands, modes, sessions, the shell                             |
-| =src/path/=      | paths and the reader that makes them sugar                       |
-| =src/ui/=        | widgets, layout, styles, cells, the wire                         |
-| =src/ts/=        | tree-sitter: the runtime, the parse, highlighting, indentation   |
-| =src/provider/=  | what answers from the world: sh, clock, sys, audio, net, media   |
-| =src/edit/=      | buffers, windows, keys, the prompt, rendering, the session       |
-| =src/app/=       | surfaces, the desktop, the window manager, the compositor        |
-| =src/net/=       | the server, attaching, agents, the control socket                |
-| =src/cairo/=     | painting cells and widgets                                       |
-| =src/wayland/=   | the frontends: editor, desktop, wm                               |
-| =vt/=            | the terminal emulator                                            |
+The substrate is three directories, and nothing else:
+
+| =src/data.lisp= | values, boxes, tables: fset and sento.atomic, named nowhere else |
+| =src/fs/=       | node, derived, tree, path, mount, store: memory and storage       |
+| =src/run/=      | jobs, actors, faults, commands, images, peers: processes          |
+| =src/ui/=       | widgets, layout, hit testing, styles, surfaces, the wire          |
+
+Loaded on top, privileged by nothing:
+
+| =src/text/=    | documents, modes, and tree-sitter behind them |
+| =src/host/=    | the machine's own devices, at =/dev=          |
+| =src/edit/=    | windows onto documents, and the chords        |
+| =src/desk/=    | a bar, and the panels it opens                |
+| =src/term/=    | programs with screens of their own            |
+| =src/wm/=      | the compositor, in the namespace              |
+| =src/paint/=   | pixels, through cairo: the other medium       |
+| =src/wayland/= | a painter: a pine that shows another one      |
+| =vt/=          | the terminal emulator                         |

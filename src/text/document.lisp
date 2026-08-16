@@ -1,0 +1,334 @@
+(defpackage #:pine/text/document
+  (:use #:cl)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
+                    (#:lines #:pine/text/lines) (#:mode #:pine/text/mode))
+  (:export #:document #:region #:make-document #:documents #:named #:kill
+           #:current #:root #:asidep #:*on-current* #:*visiting*
+           #:lines #:line #:line-count #:text #:point #:at-line #:at-col #:mark
+           #:mode-of #:source #:file-of #:origin #:tick #:past #:edit-of #:changed
+           #:modified #:setting #:settings #:visited #:leaving
+           #:goto #:move #:insert #:delete-back #:newline #:delete-region
+           #:mark-at #:put-mark #:drop-mark #:region-of #:indent-line #:indent-of
+           #:undo #:redo #:undoable #:redoable
+           #:span #:regions #:restructure))
+(in-package #:pine/text/document)
+
+(defvar *current* nil)
+(defvar *on-current* nil)
+(defvar *visiting* nil)
+(defvar *places* (d:no-map))
+(defvar *undo-kept* 200)
+
+(defstruct (was (:constructor was (lines at col))) lines at col)
+
+(defclass document (node:node)
+  ((lines    :initform (d:box (lines:of "")) :reader lines)
+   (at-line  :initform 0   :accessor at-line)
+   (at-col   :initform 0   :accessor at-col)
+   (mark     :initform nil :accessor mark)
+   (mode-of  :initarg :mode :accessor mode-of :initform (make-instance 'mode:text))
+   (source   :initarg :source :reader source :initform nil)
+   (file-of  :initarg :file   :reader file-of :initform nil)
+   (tick     :initform 0   :accessor tick)
+   (done     :initform (d:box nil) :reader done)
+   (undone   :initform (d:box nil) :reader undone)
+   (marks    :initform (d:no-map) :accessor marks)
+   (edit-of  :initform nil :accessor edit-of)
+   (modified :initform nil :accessor modified)
+   (settings :initform (d:no-map) :accessor settings)
+   (savedp   :allocation :class :initform nil :reader node:savedp))
+  (:documentation "Text, and the structure its mode gives it.
+
+An emacs buffer is characters with a flat property list laid over them. This is a
+document: what its mode makes of the text is in the namespace under it, as regions
+with identity, so a form or a heading is a place anything can read and write."))
+
+(defclass region (node:node)
+  ((span    :initarg :span :accessor span)
+   (savedp  :allocation :class :initform nil :reader node:savedp)
+   (livep   :allocation :class :initform t   :reader node:livep))
+  (:documentation "A span of a document. Its contents is the text it covers, its
+nodes are its sub-regions, and writing it replaces that span."))
+
+(defclass source-node (node:node)
+  ((savedp :allocation :class :initform nil :reader node:savedp)))
+
+(defmethod print-object ((doc document) stream)
+  (print-unreadable-object (doc stream :type t)
+    (format stream "~a ~d:~d" (node:name doc) (at-line doc) (at-col doc))))
+
+(defun root () (tree:ensure nil "text"))
+
+(defun line (doc n) (lines:line (d:held (lines doc)) n))
+(defun line-count (doc) (lines:line-count (d:held (lines doc))))
+(defun text (doc) (lines:text (d:held (lines doc))))
+(defun point (doc) (list (at-line doc) (at-col doc)))
+
+(defmethod node:contents ((doc document)) (text doc))
+
+(defmethod (setf node:contents) (value (doc document))
+  (%remember doc)
+  (setf (edit-of doc) nil)
+  (d:put! (lines doc) (lines:of (princ-to-string value)))
+  (changed doc)
+  value)
+
+(defun %bytes (text)
+  (length (sb-ext:string-to-octets (or text "") :external-format :utf-8)))
+
+(defun changed (doc)
+  (setf (modified doc) t)
+  (incf (tick doc))
+  (node:stir doc)
+  doc)
+
+(defun %edited (doc had at old new bytes)
+  "What the last edit did, for whoever reads this document: at AT, OLD lines became
+NEW and it grew by BYTES, counted from HAD."
+  (setf (edit-of doc) (list (list at old new bytes) had)))
+
+(defun make-document (name &rest initargs &key (class 'document) &allow-other-keys)
+  "A document, of whatever class. A terminal is one, and so is anything else that
+is text plus something of its own."
+  (let ((doc (apply #'make-instance class :name name
+                    (alexandria:remove-from-plist initargs :class))))
+    (node:attach doc (root))
+    (node:slots doc doc "at-line" 'at-line "at-col" 'at-col "tick" 'tick)
+    (node:attach (make-instance 'source-node :name "source"
+                                :describes "where this document reads and writes")
+                 doc)
+    (tree:identify doc)
+    doc))
+
+(defun documents ()
+  (remove-if-not (lambda (n) (typep n 'document)) (node:nodes (root))))
+
+(defun named (name)
+  (let ((n (tree:at (root) (princ-to-string name))))
+    (and (typep n 'document) n)))
+
+(defun scratch ()
+  (or (named "scratch")
+      (make-document "scratch" :mode (make-instance 'mode:lisp))))
+
+(defun kill (name)
+  (let ((doc (named name)))
+    (when doc
+      (node:detach (root) (node:name doc))
+      (when (eq doc *current*) (setf *current* (or (first (documents)) (scratch)))))
+    doc))
+
+(defun current () *current*)
+
+(defun (setf current) (doc)
+  (when *current* (leaving *current*))
+  (setf *current* (if (stringp doc) (named doc) doc))
+  (when (and *current* *on-current*) (funcall *on-current* *current*))
+  *current*)
+
+(defun asidep (doc)
+  (and (typep doc 'document) (setting doc :aside) t))
+
+(defun setting (doc key)
+  "What this document reads for KEY: its own, then its mode's."
+  (or (d:at (settings doc) key) (mode:setting (mode-of doc) key)))
+
+(defun (setf setting) (value doc key)
+  (setf (settings doc) (d:with (settings doc) key value))
+  value)
+
+(defun goto (doc at col)
+  (multiple-value-bind (at col) (lines:clamp (d:held (lines doc)) at col)
+    (setf (at-line doc) at (at-col doc) col)
+    (node:stir doc)
+    (point doc)))
+
+(defun move (doc unit n)
+  (multiple-value-bind (at col)
+      (lines:move-by unit (d:held (lines doc)) (at-line doc) (at-col doc) n)
+    (goto doc at col)))
+
+(defun %remember (doc)
+  (d:swap! (done doc)
+           (lambda (all)
+             (let ((next (cons (was (d:held (lines doc)) (at-line doc) (at-col doc))
+                               all)))
+               (if (> (length next) *undo-kept*) (subseq next 0 *undo-kept*) next))))
+  (d:put! (undone doc) nil)
+  doc)
+
+(defun undoable (doc) (and (d:held (done doc)) t))
+(defun redoable (doc) (and (d:held (undone doc)) t))
+
+(defun %restore (doc it)
+  (when it
+    (d:put! (lines doc) (was-lines it))
+    (setf (at-line doc) (was-at it) (at-col doc) (was-col it))
+    (changed doc))
+  (and it (point doc)))
+
+(defun undo (doc)
+  (let ((all (d:held (done doc))))
+    (when all
+      (d:put! (done doc) (rest all))
+      (d:swap! (undone doc)
+               (lambda (u) (cons (was (d:held (lines doc)) (at-line doc)
+                                      (at-col doc))
+                                 u)))
+      (%restore doc (first all)))))
+
+(defun redo (doc)
+  (let ((all (d:held (undone doc))))
+    (when all
+      (d:put! (undone doc) (rest all))
+      (d:swap! (done doc)
+               (lambda (u) (cons (was (d:held (lines doc)) (at-line doc)
+                                      (at-col doc))
+                                 u)))
+      (%restore doc (first all)))))
+
+(defun insert (doc string)
+  (%remember doc)
+  (let ((had (d:held (lines doc)))
+        (at (at-line doc)))
+    (multiple-value-bind (fresh line col)
+        (lines:insert had (at-line doc) (at-col doc) string)
+      (%edited doc had at 1 (1+ (count #\Newline string)) (%bytes string))
+      (d:put! (lines doc) fresh)
+      (setf (at-line doc) line (at-col doc) col)
+      (changed doc)
+      (point doc))))
+
+(defun newline (doc) (insert doc (string #\Newline)))
+
+(defun delete-back (doc &optional (n 1))
+  (%remember doc)
+  (multiple-value-bind (at col)
+      (lines:move-by :char (d:held (lines doc)) (at-line doc) (at-col doc) (- n))
+    (multiple-value-bind (fresh line col taken)
+        (lines:delete (d:held (lines doc)) at col (at-line doc) (at-col doc))
+      (d:put! (lines doc) fresh)
+      (setf (at-line doc) line (at-col doc) col)
+      (changed doc)
+      taken)))
+
+(defun delete-region (doc from-line from-col to-line to-col)
+  (%remember doc)
+  (let ((had (d:held (lines doc))))
+    (multiple-value-bind (fresh line col taken)
+        (lines:delete had from-line from-col to-line to-col)
+      (%edited doc had from-line (1+ (- to-line from-line)) 1 (- (%bytes taken)))
+      (d:put! (lines doc) fresh)
+      (goto doc line col)
+      (changed doc)
+      taken)))
+
+(defun region-of (doc)
+  (when (mark doc)
+    (destructuring-bind (at col) (mark doc)
+      (lines:region (d:held (lines doc)) at col (at-line doc) (at-col doc)))))
+
+(defun mark-at (doc name) (d:at (marks doc) name))
+
+(defun put-mark (doc name &optional (at (at-line doc)) (col (at-col doc)))
+  (setf (marks doc) (d:with (marks doc) name (list at col)))
+  (list at col))
+
+(defun drop-mark (doc name)
+  (setf (marks doc) (d:without (marks doc) name))
+  name)
+
+(defun indent-of (doc at) (lines:indent (line doc at)))
+
+(defun indent-line (doc at target)
+  (let* ((text (line doc at))
+         (had (lines:indent text))
+         (body (subseq text had))
+         (fresh (concatenate 'string (make-string target :initial-element #\Space)
+                             body)))
+    (unless (equal text fresh)
+      (%remember doc)
+      (let ((was (d:held (lines doc))))
+        (%edited doc was at 1 1 (- (%bytes fresh) (%bytes text)))
+        (d:put! (lines doc) (d:with-at was at fresh)))
+      (when (= at (at-line doc))
+        (setf (at-col doc) (max 0 (+ (at-col doc) (- target had)))))
+      (changed doc))
+    target))
+
+(defun origin (doc)
+  (or (file-of doc) (let ((n (source doc))) (and n (node:full-name n)))))
+
+(defun visited (doc) (d:at *places* (origin doc)))
+
+(defun leaving (doc)
+  (let ((where (origin doc)))
+    (when where (setf *places* (d:with *places* where (point doc)))))
+  doc)
+
+(defun (setf source) (n doc)
+  (setf (slot-value doc 'source) n
+        (slot-value doc 'file-of) (and (typep n 'mount:file)
+                                       (namestring (mount:truename-of n))))
+  (node:stir doc)
+  n)
+
+(defmethod node:contents ((n source-node)) (origin (node:over n)))
+
+(defmethod (setf node:contents) (value (n source-node))
+  "Writing where a document reads from opens it there."
+  (when *visiting* (funcall *visiting* (node:over n) (princ-to-string value)))
+  value)
+
+(defmethod node:contents ((r region))
+  (let ((doc (%document r)))
+    (when doc
+      (destructuring-bind (from to) (span r)
+        (lines:region (d:held (lines doc)) (car from) (cdr from)
+                      (car to) (cdr to))))))
+
+(defmethod (setf node:contents) (value (r region))
+  "Writing a region replaces the text it covers."
+  (let ((doc (%document r)))
+    (when doc
+      (destructuring-bind (from to) (span r)
+        (delete-region doc (car from) (cdr from) (car to) (cdr to))
+        (goto doc (car from) (cdr from))
+        (insert doc (princ-to-string value))
+        (restructure doc))))
+  value)
+
+(defun %document (r)
+  (loop :for at := r :then (node:over at)
+        :while at
+        :when (typep at 'document) :do (return at)))
+
+(defun %region (under name span)
+  (let ((r (node:child under name
+                       (lambda () (make-instance 'region :name name :over under
+                                                         :span span)))))
+    (setf (span r) span)
+    r))
+
+(defun %build (under said)
+  "Put what the mode said into the namespace under UNDER, keeping the node that was
+already at each name so anything watching one keeps watching it."
+  (dolist (each said)
+    (destructuring-bind (name from to &rest children) each
+      (let ((r (%region under (princ-to-string name) (list from to))))
+        (node:attach r under)
+        (when children (%build r children))))))
+
+(defun restructure (doc)
+  "Ask the mode what this text divides into, and put it in the namespace. Regions
+are nodes with identity, so one that is still there is the same node it was and a
+watcher on it goes on watching."
+  (let ((said (mode:structure (mode-of doc) doc)))
+    (dolist (each (node:nodes doc))
+      (when (typep each 'region) (node:detach doc (node:name each))))
+    (%build doc said)
+    said))
+
+(defun regions (doc)
+  (remove-if-not (lambda (n) (typep n 'region)) (node:nodes doc)))

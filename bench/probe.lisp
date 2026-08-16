@@ -21,6 +21,6 @@
             (nreverse failed))
     (null failed)))
 
-(let ((suite (or (uiop:getenv "SUITE") "pine.repl"))
+(let ((suite (or (uiop:getenv "SUITE") "pine/edit"))
       (times (parse-integer (or (uiop:getenv "TIMES") "5"))))
   (sb-ext:exit :code (if (probe-suite suite times) 0 1)))

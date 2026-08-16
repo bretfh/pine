@@ -1,36 +1,54 @@
 (defpackage #:pine/fs/node
   (:use #:cl)
-  (:shadow #:describe)
   (:local-nicknames (#:d #:pine/data))
-  (:export #:node #:value-node #:nodep #:name #:parent #:describes #:describe
-           #:contents #:nodes #:resolve #:attach #:detach #:leafp #:persistp #:livep
-           #:make-child #:erase-child
-           #:dependents #:depend #:invalidate #:*reading* #:reading #:*on-write*
-           #:*on-erase*
-           #:node-named #:make-node #:full-name #:root-of
-           #:kept #:child #:children #:stir #:announces #:every-seconds
-           #:verb #:verbp #:verb-name #:verb-args
-           #:slot-node #:object #:slot-of #:slots))
+  (:export #:node #:value #:derived #:slot #:nodep
+           #:name #:over #:describes #:savedp #:livep #:announces #:refreshes
+           #:contents #:nodes #:resolve #:stir #:verb
+           #:full-name #:leafp #:stalep #:root
+           #:make #:derive #:attach #:detach #:child #:children #:memo #:slots
+           #:make-child #:erase-child #:reads #:writes #:object #:saw
+           #:readers #:depend #:reading #:*reading* #:*on-write* #:*on-erase*))
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)
 (defvar *on-write* nil)
 (defvar *on-erase* nil)
+(defparameter +unread+ '#:unread)
 
 (defclass node ()
-  ((name       :initarg :name      :reader name)
-   (parent     :initarg :parent    :accessor parent     :initform nil)
-   (describes  :initarg :describes :accessor describes  :initform nil)
-   (under      :initform (d:box (d:no-seq)) :reader under)
-   (kept       :initform (d:table)           :reader kept)
-   (dependents :initform (d:box (d:no-set))  :reader dependents)))
+  ((name      :initarg :name      :reader name)
+   (over      :initarg :over      :accessor over      :initform nil)
+   (describes :initarg :describes :accessor describes :initform nil)
+   (beneath   :initform (d:box (d:no-seq)) :reader beneath)
+   (memo      :initform (d:table)          :reader memo)
+   (readers   :initform (d:box (d:no-set)) :reader readers)
+   (savedp    :allocation :class :initform nil :reader savedp)
+   (livep     :allocation :class :initform nil :reader livep))
+  (:documentation "A name, what it sits under, and what is under it.
 
-(defclass value-node (node)
-  ((held :initform (d:box nil) :reader held)))
+Whether a class persists and whether it answers differently without being written
+are declared once as class slots, not asked of every instance."))
 
-(defclass slot-node (node)
-  ((object  :initarg :object :reader object)
-   (slot-of :initarg :slot   :reader slot-of)))
+(defclass value (node)
+  ((holds  :initform (d:box nil) :reader holds)
+   (savedp :allocation :class :initform t :reader savedp))
+  (:documentation "Holds one."))
+
+(defclass derived (node)
+  ((reads  :initarg :reads  :accessor reads)
+   (writes :initarg :writes :accessor writes :initform nil)
+   (cached :initform (d:box +unread+) :reader cached)
+   (saw    :initform (d:box nil)      :reader saw))
+  (:documentation "Works one out, and follows whatever it read.
+
+READS answers the value; WRITES, where there is one, is what writing it means. That
+second function is why a device reading is a row in a table rather than a class."))
+
+(defclass slot (node)
+  ((object :initarg :object :reader object)
+   (slot   :initarg :slot   :reader slot)
+   (savedp :allocation :class :initform t :reader savedp))
+  (:documentation "One slot of an object, at a place."))
 
 (defmethod print-object ((n node) stream)
   (print-unreadable-object (n stream :type t)
@@ -38,27 +56,56 @@
 
 (defun nodep (x) (typep x 'node))
 
-(defun make-node (name &rest initargs &key (class 'value-node) &allow-other-keys)
+(defun make (name &rest initargs &key (class 'value) &allow-other-keys)
   (apply #'make-instance class :name name
          (alexandria:remove-from-plist initargs :class)))
 
+(defun derive (name reads &rest initargs)
+  (apply #'make-instance 'derived :name name :reads reads initargs))
+
 (defun full-name (n)
-  (let ((names (loop :for at := n :then (parent at)
+  "The path this node is at."
+  (let ((names (loop :for at := n :then (over at)
                      :while at
                      :when (name at) :collect (name at))))
     (if names (format nil "/~{~a~^/~}" (reverse names)) "/")))
 
+(defun root (n)
+  (loop :for at := n :then (over at)
+        :while (over at)
+        :finally (return at)))
+
 (defgeneric nodes (node)
-  (:method ((n node)) (d:as :list (d:held (under n)))))
+  (:documentation "What is under NODE, in order.
+
+The one place a class says what it contains. RESOLVE and LEAFP are written on this,
+so a class that answers here answers everywhere.")
+  (:method ((n node)) (d:as :list (d:held (beneath n)))))
 
 (defgeneric resolve (node name)
+  (:documentation "What NODE has under NAME.
+
+Derived from NODES, so the two cannot disagree. A class overrides it only where
+enumerating to find one name costs what a mounted directory cannot afford.")
   (:method ((n node) name)
     (find name (nodes n) :key #'name :test #'equal)))
 
+(defun leafp (n) (null (nodes n)))
+
+(defun children (n) (d:vals (d:all (memo n))))
+
+(defun child (n name builder)
+  "The child N keeps under NAME, made once. Two threads asking at once both answer
+the one that landed, which is what lets anything reading it be worked out again."
+  (let ((name (princ-to-string name)))
+    (or (d:at (d:all (memo n)) name)
+        (d:claim (memo n) name (funcall builder)))))
+
 (defgeneric attach (node into)
+  (:documentation "Put NODE under INTO, replacing whatever stood at its name.")
   (:method ((n node) (into node))
-    (setf (parent n) into)
-    (d:swap! (under into)
+    (setf (over n) into)
+    (d:swap! (beneath into)
              (lambda (all)
                (d:with (d:as :seq (cl:remove (name n) (d:as :list all)
                                              :key #'name :test #'equal))
@@ -69,107 +116,110 @@
   (:method ((n node) name)
     (let ((gone (resolve n name)))
       (when gone
-        (d:swap! (under n) (lambda (all) (d:remove gone all)))
-        (setf (parent gone) nil))
+        (d:swap! (beneath n) (lambda (all) (d:remove gone all)))
+        (setf (over gone) nil))
       gone)))
 
 (defgeneric make-child (node name)
-  (:documentation "A fresh child of NODE named NAME, made in whatever stands
-behind NODE. A plain node keeps it in the tree and nowhere else; a mounted
-directory makes a file on the disk. A name that ends in / asks for a branch.")
+  (:documentation "A fresh child of NODE named NAME, made in whatever stands behind
+it: a plain node keeps it here, a mounted directory makes a file on the disk. A name
+that ends in / asks for a branch.")
   (:method ((n node) name)
-    (attach (make-node (string-right-trim "/" (princ-to-string name))) n)))
+    (attach (make (string-right-trim "/" (princ-to-string name))) n)))
 
 (defgeneric erase-child (node name)
   (:documentation "Take NAME out of NODE, and out of whatever stands behind it.")
   (:method ((n node) name)
     (let ((gone (resolve n name)))
       (when (and gone *on-erase*) (funcall *on-erase* gone))
-      (d:drop! (kept n) (princ-to-string name))
+      (d:drop! (memo n) (princ-to-string name))
       (detach n name))))
 
-(defgeneric leafp (node)
-  (:method ((n node)) (null (nodes n))))
-
-(defgeneric describe (node)
-  (:method ((n node)) (describes n)))
-
-(defgeneric livep (node)
-  (:method ((n node)) nil))
-
-(defgeneric persistp (node)
-  (:method ((n node)) nil)
-  (:method ((n value-node)) t))
-
-(defun reading (node)
-  (when *reading* (pushnew node (cdr *reading*)))
-  node)
-
-(defun child (n name builder)
-  "The child N keeps under NAME, made once. Two threads asking at once both
-answer the one that landed."
-  (let ((name (princ-to-string name)))
-    (or (d:at (d:all (kept n)) name)
-        (d:claim (kept n) name (funcall builder)))))
-
-(defun children (n) (d:vals (d:all (kept n))))
-
-(defun root-of (n)
-  (loop :for at := n :then (parent at)
-        :while (parent at)
-        :finally (return at)))
-
-(defgeneric stir (node)
-  (:method ((n node))
-    (invalidate n)
-    (dolist (each (children n) n) (stir each))))
-
 (defgeneric announces (node)
+  (:documentation "The lines whose output says the world behind NODE moved.")
   (:method ((n node)) (declare (ignore n)) nil))
 
-(defgeneric every-seconds (node)
+(defgeneric refreshes (node)
+  (:documentation "How often to ask NODE again, where it has no stream to speak for
+it.")
   (:method ((n node)) (declare (ignore n)) nil))
 
-(defun verbp (value)
-  (and (d:seqp value) (plusp (d:size value)) (keywordp (d:at value 0))))
-
-(defun verb-name (value) (d:at value 0))
-
-(defun verb-args (value) (d:as :list (d:rest value)))
-
-(defgeneric verb (node name arguments)
-  (:method ((n node) name arguments)
-    (let ((held (contents n)))
-      (setf (contents n)
-            (case name
-              (:set    (cl:first arguments))
-              (:toggle (not held))
-              (:conj   (d:with (or held (d:no-set)) (cl:first arguments)))
-              (:disj   (d:without (or held (d:no-set)) (cl:first arguments)))
-              (:merge  (d:merged (or held (d:no-map)) (cl:first arguments)))
-              (t       (cl:first arguments)))))))
+(defun reading (n)
+  (when *reading* (pushnew n (cdr *reading*)))
+  n)
 
 (defgeneric depend (node on)
   (:method ((n node) (on node))
-    (d:swap! (dependents on) (lambda (all) (d:with all n)))
+    (d:swap! (readers on) (lambda (all) (d:with all n)))
     n))
 
-(defgeneric invalidate (node)
+(defgeneric stir (node)
+  (:documentation "Say NODE moved. Whatever read it is worked out again.")
   (:method ((n node))
-    (d:do-each (each (d:held (dependents n)))
-      (invalidate each))
+    (d:do-each (each (d:held (readers n)))
+      (stir each))
+    n)
+  (:method ((n derived))
+    (unless (eq (d:held (cached n)) +unread+)
+      (d:put! (cached n) +unread+)
+      (d:do-each (each (d:held (readers n)))
+        (stir each)))
     n))
+
+(defun %work-out (n)
+  (let ((reading (cons :reading nil)))
+    (let* ((*reading* reading)
+           (v (funcall (reads n))))
+      (d:put! (saw n) (cdr reading))
+      (dolist (on (cdr reading))
+        (unless (eq on n) (depend n on)))
+      (d:put! (cached n) v)
+      v)))
+
+(defun stalep (n) (eq (d:held (cached n)) +unread+))
+
+(defgeneric verb (node name arguments)
+  (:documentation "What writing (:toggle) and its like means.")
+  (:method ((n node) name arguments)
+    (let ((had (contents n)))
+      (setf (contents n)
+            (case name
+              (:set    (cl:first arguments))
+              (:toggle (not had))
+              (:conj   (d:with (or had (d:no-set)) (cl:first arguments)))
+              (:disj   (d:without (or had (d:no-set)) (cl:first arguments)))
+              (:merge  (d:merged (or had (d:no-map)) (cl:first arguments)))
+              (t       (cl:first arguments)))))))
+
+(defun %verbp (v)
+  (and (d:seqp v) (plusp (d:size v)) (keywordp (d:at v 0))))
 
 (defgeneric contents (node)
+  (:documentation "What NODE holds.")
   (:method ((n node)) nil)
-  (:method ((n value-node)) (d:held (held n))))
+  (:method ((n value)) (d:held (holds n)))
+  (:method ((n slot)) (slot-value (object n) (slot n)))
+  (:method ((n derived))
+    (let ((v (d:held (cached n))))
+      (if (eq v +unread+) (%work-out n) v))))
 
 (defgeneric (setf contents) (value node)
   (:method (value (n node))
     (error "~a holds nothing that can be written." (full-name n)))
-  (:method (value (n value-node))
-    (d:put! (held n) value)
+  (:method (value (n value))
+    (d:put! (holds n) value)
     (when *on-write* (funcall *on-write* n))
+    value)
+  (:method (value (n slot))
+    (setf (slot-value (object n) (slot n)) value)
+    (let ((it (object n)))
+      (when (and (nodep it) (not (eq it n))) (stir it)))
+    value)
+  (:method (value (n derived))
+    (if (writes n)
+        (funcall (writes n) value)
+        (progn (setf (reads n) (constantly value))
+               (d:put! (cached n) +unread+)))
     value))
 
 (defmethod contents :around ((n node))
@@ -177,33 +227,20 @@ answer the one that landed."
   (call-next-method))
 
 (defmethod (setf contents) :around (value (n node))
-  (if (verbp value)
-      (verb n (verb-name value) (verb-args value))
+  (if (%verbp value)
+      (verb n (d:at value 0) (d:as :list (d:rest value)))
       (call-next-method)))
 
 (defmethod (setf contents) :after (value (n node))
-  "Whatever a node did with a write, it moved: a provider that turned one into
-an action on the world still has to tell what is watching, or a slider is left
-showing what the world held before it was dragged."
+  "Whatever a node did with a write, it moved: one that turned it into an action on
+the world still has to say so, or a slider goes on showing what the world held
+before it was dragged."
   (declare (ignore value))
-  (invalidate n))
+  (stir n))
 
-(defmethod contents ((n slot-node))
-  (slot-value (object n) (slot-of n)))
-
-(defmethod (setf contents) (value (n slot-node))
-  "Writing a slot moves the node that holds it too: whether a surface is shown
-is written at /surface/ctl/shown, and what is watching is the surface."
-  (setf (slot-value (object n) (slot-of n)) value)
-  (let ((of (object n)))
-    (when (and (nodep of) (not (eq of n))) (invalidate of)))
-  value)
-
-(defmethod leafp ((n slot-node)) t)
-(defmethod persistp ((n slot-node)) t)
-
-(defun slots (of into &rest pairs)
+(defun slots (object into &rest pairs)
   (loop :for (name slot) :on pairs :by #'cddr
-        :collect (attach (make-instance 'slot-node :name (string-downcase (string name))
-                                                   :object of :slot slot)
+        :collect (attach (make-instance 'slot
+                                        :name (string-downcase (string name))
+                                        :object object :slot slot)
                          into)))

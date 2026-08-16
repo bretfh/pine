@@ -16,7 +16,6 @@
                              #:sqlite
                              #:com.inuoe.jzon
                              #:sb-posix
-                             #:pine/vt
                              #:sb-introspect
                              #:uiop)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
@@ -24,124 +23,118 @@
                 :pathname "src/"
                 :components
                 ((:file "data")
-                 (:module "run"
-                          :serial t
-                          :components ((:file "libs") (:file "task") (:file "fault")
-                                       (:file "meter") (:file "timer")
-                                       (:file "endpoint") (:file "log")))
                  (:module "fs"
                           :serial t
-                          :components ((:file "node") (:file "computed")
-                                       (:file "tree") (:file "mount")
-                                       (:file "watch")))
-                 (:module "world"
+                          :components ((:file "node") (:file "tree") (:file "path")
+                                       (:file "reader") (:file "mount")
+                                       (:file "store")))
+                 (:module "run"
                           :serial t
-                          :components ((:file "world") (:file "store")
-                                       (:file "metric") (:file "image")))
-                 (:module "proc"
-                          :serial t
-                          :components ((:file "process") (:file "elsewhere")
-                                       (:file "lisp") (:file "supervisor")))
-                 (:module "repl"
-                          :serial t
-                          :components ((:file "command") (:file "mode")
-                                       (:file "session") (:file "shell")))
-                 (:module "path"
-                          :serial t
-                          :components ((:file "path") (:file "reader")
-                                       (:file "place")))
+                          :components ((:file "libs") (:file "log") (:file "meter")
+                                       (:file "fault") (:file "actors")
+                                       (:file "job") (:file "watch")
+                                       (:file "command") (:file "state")
+                                       (:file "image") (:file "peer")
+                                       (:file "session") (:file "system")))
                  (:module "ui"
                           :serial t
-                          :components ((:file "node") (:file "face")
-                                       (:file "raster") (:file "css")
-                                       (:file "style") (:file "build")
-                                       (:file "layout") (:file "hit") (:file "cells")
-                                       (:file "wire") (:file "paths")))
-                 (:module "ts"
-                          :serial t
-                          :components ((:file "index") (:file "runtime") (:file "parse") (:file "edit")
-                                       (:file "highlight") (:file "indent") (:file "walk")
-                                       (:file "syntax")
-                                       (:module "lang"
-                                                :serial t
-                                                :components ((:file "commonlisp")
-                                                             (:file "scheme")
-                                                             (:file "pine")))))
-                 (:module "provider"
-                          :serial t
-                          :components ((:file "out") (:file "sh") (:file "live") (:file "env")
-                                       (:file "clock") (:file "sys")
-                                       (:file "audio") (:file "screen")
-                                       (:file "power") (:file "net")
-                                       (:file "media") (:file "wm")))
-                 (:module "edit"
-                          :serial t
-                          :components ((:file "text") (:file "history") (:file "buffer")
-                                       (:file "source") (:file "language")
-                                       (:file "window") (:file "prompt")))
-                 (:module "parser"
-                          :serial t :pathname "ts/"
-                          :components ((:file "parser")))
-                 (:module "net"
-                          :serial t
-                          :components ((:file "server") (:file "attach") (:file "agent")
-                                       (:file "control")))
-                 (:module "surface"
-                          :serial t :pathname "app/"
-                          :components ((:file "surface")))
-                 (:module "editing"
-                          :serial t :pathname "edit/"
-                          :components ((:file "key") (:file "render")
-                                       (:file "term") (:file "commands")
-                                       (:file "motion") (:file "isearch") (:file "listing") (:file "repl") (:file "debugger")
-                                       (:file "defaults") (:file "eval")
-                                       (:file "session")))
-                 (:module "app"
-                          :serial t
-                          :components ((:file "desktop") (:file "wm")
-                                       (:file "compositor")))
-                 (:file "frontend")
+                          :components ((:file "widget") (:file "face")
+                                       (:file "style") (:file "sheet")
+                                       (:file "grid") (:file "layout")
+                                       (:file "hit") (:file "wire")
+                                       (:file "build") (:file "surface")
+                                       (:file "key")))
                  (:file "boot")
                  (:file "cli")))
 
-(asdf:defsystem #:pine/test
-                :depends-on (#:pine #:fiveam)
+(asdf:defsystem #:pine/text
+                :description "Documents, the structure their modes give them, and
+the parse behind it"
+                :depends-on (#:pine)
                 :serial t
-                :pathname "tests/"
-                :components ((:file "suite") (:file "style")
-                             (:file "run") (:file "vt") (:file "layout") (:file "fs") (:file "world") (:file "tree")
-                             (:file "proc") (:file "repl") (:file "mode") (:file "path") (:file "ui") (:file "ts") (:file "edit") (:file "eval") (:file "isearch") (:file "prompt") (:file "provider") (:file "term") (:file "net") (:file "control") (:file "desktop") (:file "stress") (:file "boot"))
-                :perform (asdf:test-op (o c)
-                                       (unless (uiop:symbol-call :fiveam :run! :pine)
-                                         (error "pine tests failed"))))
+                :pathname "src/text/"
+                :components ((:file "lines") (:file "mode") (:file "document")
+                             (:file "lisp") (:file "language")
+                             (:module "ts"
+                                      :serial t
+                                      :components ((:file "index")
+                                                   (:file "runtime")
+                                                   (:file "parse")
+                                                   (:file "edit")
+                                                   (:file "highlight")
+                                                   (:file "walk")
+                                                   (:file "indent")
+                                                   (:file "syntax")
+                                                   (:file "parser")
+                                                   (:module "lang"
+                                                            :serial t
+                                                            :components
+                                                            ((:file "commonlisp")
+                                                             (:file "pine")
+                                                             (:file "scheme")))))
+                             (:file "system")))
 
-(asdf:defsystem #:pine/cairo
+(asdf:defsystem #:pine/host
+                :description "The machine's own devices, in the namespace"
+                :depends-on (#:pine)
+                :serial t
+                :pathname "src/host/"
+                :components ((:file "shell") (:file "device") (:file "system")))
+
+(asdf:defsystem #:pine/edit
+                :description "Windows onto documents, and the chords that act on them"
+                :depends-on (#:pine/text)
+                :serial t
+                :pathname "src/edit/"
+                :components ((:file "mode") (:file "window") (:file "prompt")
+                             (:file "keys") (:file "render") (:file "listing")
+                             (:file "isearch") (:file "commands") (:file "file")
+                             (:file "help") (:file "eval") (:file "debugger")
+                             (:file "system")))
+
+(asdf:defsystem #:pine/term
+                :description "Programs with screens of their own, as documents"
+                :depends-on (#:pine/edit #:pine/vt)
+                :serial t
+                :pathname "src/term/"
+                :components ((:file "mode") (:file "terminal") (:file "system")))
+
+(asdf:defsystem #:pine/wm
+                :description "The compositor, in the namespace"
+                :depends-on (#:pine/host)
+                :serial t
+                :pathname "src/wm/"
+                :components ((:file "compositor") (:file "tiles") (:file "managed")
+                             (:file "niri") (:file "system")))
+
+(asdf:defsystem #:pine/desk
+                :description "A bar along the top, and the panels it opens"
+                :depends-on (#:pine)
+                :serial t
+                :pathname "src/desk/"
+                :components ((:file "system")))
+
+(asdf:defsystem #:pine/paint
+                :description "Pixels, through cairo: the other medium PAINT
+dispatches on"
                 :depends-on (#:pine #:cl-cairo2)
                 :serial t
-                :pathname "src/cairo/"
-                :components ((:file "grid") (:file "paint") (:file "calendar")
-                             (:file "shot")))
+                :pathname "src/paint/"
+                :components ((:file "canvas") (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
-                :depends-on (#:pine/cairo #:wayflan-client #:posix-shm #:cl-xkb)
+                :description "A painter: a pine that shows another one"
+                :depends-on (#:pine/paint #:wayflan-client #:posix-shm #:cl-xkb)
                 :serial t
-                :pathname "src/"
-                :components
-                ((:module "protocol"
-                          :serial t :pathname "wayland/protocol/"
-                          :components ((:file "wlr-layer-shell") (:file "river-wm")
-                                       (:file "river-xkb") (:file "river-layer-shell")))
-                 (:module "wayland"
-                          :serial t
-                          :components ((:file "connection") (:file "surface")
-                                       (:file "input")))
-                 (:module "app"
-                          :serial t :pathname "wayland/app/"
-                          :components ((:file "editor") (:file "keys")
-                                       (:file "desktop")
-                                       (:file "chrome") (:file "chord")
-                                       (:file "state")
-                                       (:file "wm")))))
+                :pathname "src/wayland/"
+                :components ((:module "protocol"
+                                      :serial t
+                                      :components ((:file "wlr-layer-shell")
+                                                   (:file "river-wm")
+                                                   (:file "river-xkb")
+                                                   (:file "river-layer-shell")))
+                             (:file "pump") (:file "display") (:file "shell")
+                             (:file "pane") (:file "input") (:file "wm") (:file "painter")))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"
@@ -158,3 +151,21 @@
                              (:file "render")
                              (:file "input")
                              (:file "pty")))
+
+(asdf:defsystem #:pine/all
+                :description "Every system pine ships, built in"
+                :depends-on (#:pine/edit #:pine/host #:pine/wm #:pine/desk
+                             #:pine/term #:pine/paint #:pine/wayland))
+
+(asdf:defsystem #:pine/test
+                :depends-on (#:pine/all #:fiveam)
+                :serial t
+                :pathname "tests/"
+                :components ((:file "suite") (:file "data") (:file "fs")
+                             (:file "run") (:file "ui") (:file "text")
+                             (:file "host") (:file "edit") (:file "term")
+                             (:file "wm") (:file "config") (:file "app")
+                             (:file "style"))
+                :perform (asdf:test-op (o c)
+                                       (unless (uiop:symbol-call :fiveam :run! :pine)
+                                         (error "pine tests failed"))))

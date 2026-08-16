@@ -1,16 +1,56 @@
 (defpackage #:pine/fs/tree
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:computed #:pine/fs/computed))
-  (:export #:root #:at #:ensure #:place #:erase #:walk #:listing #:names
-           #:split-name #:absent))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
+  (:export #:*root* #:root #:make-root #:at #:ensure #:put #:erase #:walk
+           #:listing #:paths #:split-name #:absent
+           #:id-of #:node-for-id #:identify #:forget-ids))
 (in-package #:pine/fs/tree)
+
+(defvar *root* nil
+  "The namespace this image is. One per image: a second one is another pine, and it
+is reached by mounting it rather than by holding two here.")
+
+(defvar *ids* (make-hash-table :test 'eql))
+(defvar *by-node* (make-hash-table :test 'eq))
+(defvar *counter* (d:box 0))
+(defvar *naming* (bordeaux-threads:make-lock "pine-ids"))
 
 (define-condition absent (error)
   ((where :initarg :where :reader where))
   (:report (lambda (c s) (format s "nothing at ~a" (where c)))))
 
-(defun root (&optional (name nil))
-  (node:make-node name :class 'node:node))
+(defun make-root ()
+  (let ((n (node:make nil :class 'node:node)))
+    (setf *root* n)
+    (forget-ids)
+    (identify n)
+    n))
+
+(defun root () *root*)
+
+(defun identify (n)
+  "The number this node crosses the wire as. Under a lock: two hash tables cannot be
+swapped as one, and a counter that hands the same number to two nodes is a frontend
+clicking the wrong one."
+  (bordeaux-threads:with-lock-held (*naming*)
+    (or (gethash n *by-node*)
+        (let ((it (d:swap! *counter* #'1+)))
+          (setf (gethash n *by-node*) it
+                (gethash it *ids*) n)
+          it))))
+
+(defun id-of (n)
+  (bordeaux-threads:with-lock-held (*naming*) (gethash n *by-node*)))
+
+(defun node-for-id (it)
+  (bordeaux-threads:with-lock-held (*naming*) (gethash it *ids*)))
+
+(defun forget-ids ()
+  (bordeaux-threads:with-lock-held (*naming*)
+    (clrhash *ids*)
+    (clrhash *by-node*)
+    (d:put! *counter* 0))
+  t)
 
 (defun split-name (text)
   (let ((names nil)
@@ -31,39 +71,46 @@
                   (symbol (list (string-downcase (symbol-name p))))
                   (t (list (princ-to-string p))))))
 
-(defun at (from &rest pieces)
-  (loop :with n := from
+(defun %from (where)
+  (etypecase where
+    (node:node where)
+    (null *root*)))
+
+(defun at (where &rest pieces)
+  (loop :with n := (%from where)
         :for name :in (%names pieces)
         :do (setf n (and n (node:resolve n name)))
         :finally (return n)))
 
-(defun ensure (from &rest pieces)
-  (loop :with n := from
+(defun ensure (where &rest pieces)
+  (loop :with n := (%from where)
         :for name :in (%names pieces)
         :do (setf n (or (node:resolve n name) (node:make-child n name)))
-        :finally (return n)))
+        :finally (progn (identify n) (return n))))
 
-(defun place (from pieces value)
-  (let ((n (apply #'ensure from (alexandria:ensure-list pieces))))
+(defun put (where pieces value)
+  (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))
     (setf (node:contents n) value)
     n))
 
-(defun erase (from &rest pieces)
+(defun erase (where &rest pieces)
   (let* ((names (%names pieces))
-         (holder (apply #'at from (butlast names))))
+         (holder (apply #'at where (butlast names))))
     (when holder (node:erase-child holder (car (last names))))))
 
 (defun walk (n function &key (depth -1) (into (complement #'node:livep)))
   (funcall function n)
   (when (and (not (zerop depth)) (or (null into) (funcall into n)))
-    (dolist (under (node:nodes n))
-      (walk under function :depth (1- depth) :into into)))
+    (dolist (each (node:nodes n))
+      (walk each function :depth (1- depth) :into into)))
   n)
 
 (defun listing (n)
+  "The names directly under N."
   (mapcar #'node:name (node:nodes n)))
 
-(defun names (n)
+(defun paths (n)
+  "Every path below N, N's own first."
   (let (acc)
     (walk n (lambda (each) (push (node:full-name each) acc)))
     (nreverse acc)))

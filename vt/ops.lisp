@@ -91,7 +91,6 @@
 (defun term-erase-in-display (term &optional (mode 0))
   (let* ((y (term-cursor-y term))
          (h (term-height term))
-         (w (term-width term))
          (grid (term-grid term))
          (bg-face (term-current-bg-face term)))
     (case mode

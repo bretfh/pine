@@ -2,165 +2,90 @@
 
 (def-suite* :pine/fs :in :pine)
 
-(defun fresh-tree ()
-  (pine/fs/tree:root))
+(test a-derived-node-follows-what-it-read
+  (with-tree
+    (let ((w (tree:ensure nil "window" "width"))
+          (runs 0))
+      (setf (node:contents w) 80)
+      (let ((line (node:derive "line"
+                               (lambda ()
+                                 (incf runs)
+                                 (make-string (node:contents w)
+                                              :initial-element #\-)))))
+        (node:attach line (tree:root))
+        (is (= 80 (length (node:contents line))))
+        (node:contents line)
+        (is (= 1 runs) "what it worked out is kept")
+        (setf (node:contents w) 20)
+        (is (= 20 (length (node:contents line)))
+            "a write two levels down stirs it")
+        (is (= 2 runs) "exactly once")))))
 
-(test a-node-is-a-name-a-parent-and-what-is-under-it
-  (let* ((root (fresh-tree))
-         (buf (pine/fs/tree:ensure root "buffer" "scratch")))
-    (is (equal "scratch" (pine/fs/node:name buf)))
-    (is (equal "/buffer/scratch" (pine/fs/node:full-name buf)))
-    (is (equal "buffer" (pine/fs/node:name (pine/fs/node:parent buf))))
-    (is-true (pine/fs/node:leafp buf))
-    (is-false (pine/fs/node:leafp (pine/fs/node:parent buf)))))
+(test a-derived-node-takes-a-function-for-writing
+  (with-tree
+    (let ((held (list 41)))
+      (let ((n (node:derive "probe" (lambda () (first held))
+                            :writes (lambda (v) (setf (first held) (* 2 v))))))
+        (node:attach n (tree:root))
+        (is (= 41 (node:contents n)))
+        (setf (node:contents n) 10)
+        (is (= 20 (node:contents n)))))))
 
-(test contents-is-the-one-word-for-what-a-node-holds
-  (let* ((root (fresh-tree))
-         (n (pine/fs/tree:ensure root "buffer" "scratch" "text")))
-    (is (null (pine/fs/node:contents n)))
-    (setf (pine/fs/node:contents n) "hello")
-    (is (equal "hello" (pine/fs/node:contents n)))
-    (is (equal "hello" (pine/fs/node:contents (pine/fs/tree:at root "buffer/scratch/text"))))))
+(test a-node-knows-where-it-is
+  (with-tree
+    (setf (node:contents (tree:ensure nil "window" "width")) 80)
+    (is (equal "/window/width" (node:full-name (tree:at nil "window/width"))))
+    (is (member "window" (tree:listing (tree:root)) :test #'equal))
+    (is (null (tree:at nil "window/nothing")))))
 
-(test a-path-is-one-string-or-many-pieces-and-means-the-same-node
-  (let ((root (fresh-tree)))
-    (pine/fs/tree:ensure root "a" "b" "c")
-    (is (eq (pine/fs/tree:at root "a/b/c")
-            (pine/fs/tree:at root "a" "b" "c")))
-    (is (eq (pine/fs/tree:at root "a/b/c")
-            (pine/fs/tree:at root '|a| '|b| '|c|)))
-    (is (null (pine/fs/tree:at root "a/b/absent")))))
+(test a-path-is-a-place
+  (with-tree
+    (setf (node:contents (tree:ensure nil "dev" "audio" "volume")) 40)
+    (let ((p (path:parse "/dev/audio/volume")))
+      (is (= 40 (path:contents p)))
+      (setf (path:contents p) 55)
+      (is (= 55 (node:contents (tree:at nil "dev/audio/volume"))))
+      (is (equal "volume" (path:leaf p))))))
 
-(test detaching-takes-a-node-and-what-is-under-it
-  (let ((root (fresh-tree)))
-    (pine/fs/tree:ensure root "a" "b" "c")
-    (pine/fs/tree:erase root "a/b")
-    (is (null (pine/fs/tree:at root "a/b")))
-    (is (null (pine/fs/tree:at root "a/b/c")))
-    (is (equal '("a") (pine/fs/tree:listing root)))))
-
-(test a-computed-node-answers-a-function-and-answers-it-once
-  (let* ((root (fresh-tree))
-         (runs 0)
-         (n (pine/fs/computed:computed "twice" (lambda () (incf runs) 42))))
-    (pine/fs/node:attach n root)
-    (is (eql 42 (pine/fs/node:contents n)))
-    (is (eql 42 (pine/fs/node:contents n)))
-    (is (eql 1 runs) "a computed node is worked out once and kept")))
-
-(test a-computed-node-follows-what-it-read-with-nothing-subscribing
-  "This is what makes a surface follow the tree. Nobody registers anything: the
-node records what it read while it was computing."
-  (let* ((root (fresh-tree))
-         (width (pine/fs/tree:ensure root "window" "width"))
-         (runs 0))
-    (setf (pine/fs/node:contents width) 80)
-    (let ((line (pine/fs/computed:computed
-                 "line"
-                 (lambda ()
-                   (incf runs)
-                   (make-string (pine/fs/node:contents width)
-                                :initial-element #\-)))))
-      (pine/fs/node:attach line root)
-      (is (eql 80 (length (pine/fs/node:contents line))))
-      (is (eql 1 runs))
-      (setf (pine/fs/node:contents width) 20)
-      (is (eql 20 (length (pine/fs/node:contents line))))
-      (is (eql 2 runs) "the write it read made it stale"))))
-
-(test staleness-runs-the-whole-way-up
-  (let* ((root (fresh-tree))
-         (a (pine/fs/tree:ensure root "a")))
-    (setf (pine/fs/node:contents a) 1)
-    (let* ((b (pine/fs/computed:computed "b" (lambda () (* 10 (pine/fs/node:contents a)))))
-           (c (pine/fs/computed:computed "c" (lambda () (+ 1 (pine/fs/node:contents b))))))
-      (pine/fs/node:attach b root)
-      (pine/fs/node:attach c root)
-      (is (eql 11 (pine/fs/node:contents c)))
-      (setf (pine/fs/node:contents a) 5)
-      (is (eql 51 (pine/fs/node:contents c))
-          "a moved two nodes below what was read"))))
-
-(test a-node-that-holds-nothing-writable-says-so
-  (let* ((root (fresh-tree))
-         (n (make-instance 'pine/fs/node:node :name "bare")))
-    (pine/fs/node:attach n root)
-    (signals error (setf (pine/fs/node:contents n) 1))))
-
-(test mounting-a-real-directory-reads-through-to-it
-  (let* ((root (fresh-tree))
-         (where (merge-pathnames "pine-probe-mount/" (uiop:temporary-directory))))
+(test a-store-writes-through-and-comes-back
+  (let ((file (merge-pathnames "pine-test-store.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
     (unwind-protect
          (progn
-           (ensure-directories-exist where)
-           (with-open-file (out (merge-pathnames "hello.txt" where)
+           (with-tree
+             (let ((s (store:open-store file)))
+               (store:keeping s)
+               (tree:put nil '("kept" "note") "across")
+               (store:close-store s)))
+           (with-tree
+             (let ((s (store:open-store file)))
+               (store:restore s)
+               (is (equal "across" (node:contents (tree:at nil "kept/note"))))
+               (store:close-store s))))
+      (ignore-errors (delete-file file)))))
+
+(test a-host-directory-reads-and-writes-through
+  (with-tree
+    (let ((where (merge-pathnames "pine-test-dir/" (uiop:temporary-directory))))
+      (unwind-protect
+           (progn
+             (ensure-directories-exist where)
+             (with-open-file (o (merge-pathnames "hello.txt" where)
                                 :direction :output :if-exists :supersede)
-             (write-string "from the disk" out))
-           (ensure-directories-exist (merge-pathnames "under/" where))
-           (let ((m (pine/fs/mount:mount where root "disk")))
-             (is (member "hello.txt" (pine/fs/tree:listing m) :test #'equal))
-             (is (member "under" (pine/fs/tree:listing m) :test #'equal))
+               (write-string "from the disk" o))
+             (mount:mount where (tree:root) "file")
              (is (equal "from the disk"
-                        (pine/fs/node:contents (pine/fs/tree:at root "disk/hello.txt"))))
-             (setf (pine/fs/node:contents (pine/fs/tree:at root "disk/hello.txt"))
-                   "written back")
+                        (node:contents (tree:at nil "file/hello.txt"))))
+             (setf (node:contents (tree:at nil "file/hello.txt")) "written back")
              (is (equal "written back"
-                        (uiop:read-file-string (merge-pathnames "hello.txt" where))))
-             (is (null (pine/fs/node:persistp
-                        (pine/fs/tree:at root "disk/hello.txt")))
-                 "what the disk already keeps is not snapshotted")))
-      (uiop:delete-directory-tree where :validate t :if-does-not-exist :ignore))))
-
-(test writing-a-path-that-is-not-there-yet-makes-a-file
-  "An operating system makes files, not only reads them. What the tree makes
-under a mount is a file on the disk; without this the write attached a node
-nothing could resolve again and no file appeared."
-  (let* ((root (fresh-tree))
-         (where (merge-pathnames "pine-probe-make/" (uiop:temporary-directory))))
-    (unwind-protect
-         (progn
-           (ensure-directories-exist where)
-           (pine/fs/mount:mount where root "disk")
-           (let ((made (pine/fs/tree:ensure root "disk" "fresh.txt")))
-             (is (typep made 'pine/fs/mount:file-node)
-                 "what the tree made is a file, not a value beside one")
-             (setf (pine/fs/node:contents made) "written through the tree")
-             (is (equal "written through the tree"
                         (uiop:read-file-string
-                         (merge-pathnames "fresh.txt" where))))
-             (is (eq made (pine/fs/tree:at root "disk" "fresh.txt"))
-                 "and it is the same node next time, so what reads it follows it"))
-           (pine/fs/tree:erase root "disk" "fresh.txt")
-           (is (null (probe-file (merge-pathnames "fresh.txt" where)))
-               "erasing it takes it off the disk")
-           (is (null (pine/fs/tree:at root "disk" "fresh.txt"))))
-      (uiop:delete-directory-tree where :validate t :if-does-not-exist :ignore))))
+                         (merge-pathnames "hello.txt" where)))))
+        (uiop:delete-directory-tree where :validate t
+                                          :if-does-not-exist :ignore)))))
 
-(test a-name-that-ends-in-a-slash-asks-for-a-branch
-  (let* ((root (fresh-tree))
-         (where (merge-pathnames "pine-probe-branch/" (uiop:temporary-directory))))
-    (unwind-protect
-         (progn
-           (ensure-directories-exist where)
-           (let* ((disk (pine/fs/mount:mount where root "disk"))
-                  (made (pine/fs/node:make-child disk "under/")))
-             (is (typep made 'pine/fs/mount:directory-node))
-             (is (equal "under" (pine/fs/node:name made))
-                 "the slash asked for a branch, it is not part of the name")
-             (is-true (probe-file (merge-pathnames "under/" where)))
-             (pine/fs/node:erase-child disk "under")
-             (is (null (probe-file (merge-pathnames "under/" where))))))
-      (uiop:delete-directory-tree where :validate t :if-does-not-exist :ignore))))
-
-(test a-branch-marker-is-not-part-of-a-plain-nodes-name
-  (let* ((root (fresh-tree))
-         (made (pine/fs/node:make-child root "under/")))
-    (is (equal "under" (pine/fs/node:name made)))
-    (is (eq made (pine/fs/tree:at root "under")))))
-
-(test walking-visits-everything-under-a-node
-  (let ((root (fresh-tree)))
-    (pine/fs/tree:ensure root "a" "b")
-    (pine/fs/tree:ensure root "a" "c")
-    (pine/fs/tree:ensure root "d")
-    (is (equal '("/" "/a" "/a/b" "/a/c" "/d") (pine/fs/tree:names root)))))
+(test erasing-takes-a-node-off
+  (with-tree
+    (tree:put nil '("a" "b") 1)
+    (is (tree:at nil "a/b"))
+    (tree:erase nil "a/b")
+    (is (null (tree:at nil "a/b")))))

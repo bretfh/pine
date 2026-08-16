@@ -2,9 +2,11 @@
 
 (def-suite* :pine/style :in :pine)
 
-(defparameter +modules+ '("run" "fs" "world" "proc" "repl" "path" "ui" "ts" "edit"
-                          "provider" "net" "app" "wayland" "wayland/app" "cairo")
-  "The v2 modules. Each step adds its own; what is not here has not been ported.")
+(defparameter +modules+ '("fs" "run" "ui" "text" "text/ts" "host" "edit" "wm"
+                          "desk" "paint" "wayland")
+  "Every directory of pine's own source. What is not here is not pine's; the
+wayland protocol bindings are generated from the compositor's own xml, so they
+are not here either.")
 
 (defparameter +line-limit+ 400)
 
@@ -12,17 +14,34 @@
   '("defun" "defmacro" "defclass" "defmethod" "defgeneric" "define-condition"
     "defstruct" "deftype" "defsetf"))
 
+(defparameter +declarations+ '("syntax.lisp" "commonlisp.lisp" "scheme.lisp"
+                               "pine.lisp" "reader.lisp")
+  "Where the sugar belongs: the language declarations, and the module that is it.")
+
+(defparameter +builds-fresh+ '("job.lisp" "system.lisp" "managed.lisp")
+  "The files whose NODES or RESOLVE may answer without NODE:CHILD, because what
+they answer is already the same object every time: a job is a node itself, so is a
+system, and a managed compositor makes its own places once and holds them. A name
+added here for any other reason is a subtree taken out of the graph.")
+
+(defparameter +generated+ '("pine/wayland/protocol")
+  "Packages a file does not get to name for itself: the wayland protocol
+bindings are four files generated from xml, and one package between them.")
+
+(defparameter +identity-tables+ '("tree.lisp")
+  "Where a hash table is identity and not a registry: the number a node crosses
+the wire as, and the node that number is for.")
+
 (defun %module-root ()
   (merge-pathnames "src/" (asdf:system-source-directory :pine)))
 
 (defun %lang-files ()
-  (append (directory (merge-pathnames "ts/lang/*.lisp" (%module-root)))
-          (directory (merge-pathnames "wayland/protocol/*.lisp" (%module-root)))))
+  (directory (merge-pathnames "text/ts/lang/*.lisp" (%module-root))))
 
 (defun %files ()
   (remove-if (lambda (f) (char= #\. (char (file-namestring f) 0)))
              (append (list (merge-pathnames "boot.lisp" (%module-root))
-                           (merge-pathnames "frontend.lisp" (%module-root)))
+                           (merge-pathnames "cli.lisp" (%module-root)))
                      (loop :for module :in +modules+
                            :append (directory
                                     (merge-pathnames (format nil "~a/*.lisp" module)
@@ -60,12 +79,22 @@
                         (string-equal head trimmed :end2 (length head)))))
                words))))
 
-(test v2-code-carries-no-commentary
+(defun %naming (what &key (except nil))
+  "The files that name WHAT, other than the ones allowed to."
+  (loop :for file :in (%files)
+        :when (and (find-if (lambda (line) (search what line)) (%lines file))
+                   (not (member (file-namestring file) except :test #'equal)))
+          :collect (file-namestring file)))
+
+(test code-carries-no-commentary
+  "What a file says about itself it says in a docstring. A comment is a note to
+whoever was here last, and it goes out of date without anything failing."
   (let ((found nil))
     (dolist (file (%files))
       (dolist (n (%commented-lines file))
         (push (format nil "~a:~d" (file-namestring file) n) found)))
-    (is (null found) "~d commented line~:p:~{~%  ~a~}" (length found) (reverse found))))
+    (is (null found) "~d commented line~:p:~{~%  ~a~}"
+        (length found) (reverse found))))
 
 (test every-global-is-in-the-block-at-the-top
   (let ((loose nil))
@@ -75,9 +104,11 @@
             (last-global nil))
         (loop :for line :in lines
               :for n :from 1
-              :do (when (and (null first-definition) (%starts-with-any line +definers+))
+              :do (when (and (null first-definition)
+                             (%starts-with-any line +definers+))
                     (setf first-definition n))
-                  (when (%starts-with-any line '("defvar" "defparameter" "defconstant"))
+                  (when (%starts-with-any line '("defvar" "defparameter"
+                                                 "defconstant"))
                     (setf last-global n)))
         (when (and first-definition last-global (> last-global first-definition))
           (push (format nil "~a: a global at line ~d, below a definition at ~d"
@@ -94,28 +125,20 @@
     (is (null long) "~d file~:p over ~d lines:~{~%  ~a~}"
         (length long) +line-limit+ (reverse long))))
 
-(defparameter +declarations+ '("syntax.lisp" "commonlisp.lisp" "scheme.lisp"
-                               "pine.lisp" "reader.lisp")
-  "Where the sugar belongs: the language declarations, and the module that is it.")
-
 (test the-operating-system-does-not-read-in-its-own-sugar
   (let ((using nil))
     (dolist (file (%files))
-      (when (and (find-if (lambda (line) (search "named-readtables:in-readtable" line)) (%lines file))
-                 (not (member (file-namestring file) +declarations+ :test #'equal)))
+      (when (and (find-if (lambda (line)
+                            (search "named-readtables:in-readtable" line))
+                          (%lines file))
+                 (not (member (file-namestring file) +declarations+
+                              :test #'equal)))
         (push (file-namestring file) using)))
     (is (null using) "~{~%  ~a declares a readtable~}" (reverse using))))
 
-(defun %naming (what &key (except nil))
-  "The files that name WHAT, other than the ones allowed to."
-  (loop :for file :in (%files)
-        :when (and (find-if (lambda (line) (search what line)) (%lines file))
-                   (not (member (file-namestring file) except :test #'equal)))
-          :collect (file-namestring file)))
-
 (test only-data-knows-what-a-value-is-kept-in
-  "fset is what a value is and sento.atomic is where one is kept. Both are
-behind pine/data, so what pine holds is one idea in one file."
+  "fset is what a value is and sento.atomic is where one is kept. Both are behind
+pine/data, so what pine holds is one idea in one file."
   (is (null (%naming "fset:" :except '("data.lisp")))
       "~{~%  ~a names fset~}" (%naming "fset:" :except '("data.lisp")))
   (is (null (%naming "sento.atomic" :except '("data.lisp")))
@@ -123,23 +146,23 @@ behind pine/data, so what pine holds is one idea in one file."
       (%naming "sento.atomic" :except '("data.lisp"))))
 
 (test nothing-sleeps-in-a-loop-to-repeat
-  "One clock: the actor system's wheel timer, and pine/run/timer over it."
-  (is (null (%naming "schedule-recurring" :except '("timer.lisp")))
+  "One clock: the actor system's wheel, and pine/run/actors over it."
+  (is (null (%naming "schedule-recurring" :except '("actors.lisp")))
       "~{~%  ~a schedules its own repeat~}"
-      (%naming "schedule-recurring" :except '("timer.lisp"))))
+      (%naming "schedule-recurring" :except '("actors.lisp"))))
 
 (test a-thread-is-made-only-where-something-blocks
-  "A pty read, a child's stdout and a frontend's loop block. Everything else is
-an endpoint or a tick, so it makes no thread."
-  (is (null (%naming "make-thread" :except '("task.lisp" "frontend.lisp")))
+  "A pipe read and a child's output block. Everything else is an actor or a tick,
+so it makes no thread."
+  (is (null (%naming "make-thread" :except '("actors.lisp" "job.lisp")))
       "~{~%  ~a makes a thread of its own~}"
-      (%naming "make-thread" :except '("task.lisp" "frontend.lisp"))))
+      (%naming "make-thread" :except '("actors.lisp" "job.lisp"))))
 
-(test an-endpoint-is-sentos-and-not-one-of-our-own
-  "actor-of is what makes one, and pine/run/endpoint is where that is said."
-  (is (null (%naming "actor-context:actor-of" :except '("endpoint.lisp" "server.lisp")))
+(test an-actor-is-sentos-and-not-one-of-our-own
+  "actor-of is what makes one, and pine/run/job is where that is said."
+  (is (null (%naming "actor-context:actor-of" :except '("job.lisp" "cli.lisp")))
       "~{~%  ~a makes an actor of its own~}"
-      (%naming "actor-context:actor-of" :except '("endpoint.lisp" "server.lisp"))))
+      (%naming "actor-context:actor-of" :except '("job.lisp" "cli.lisp"))))
 
 (test a-registry-is-a-table-and-not-a-hash-table
   "A hash table is for identity, or for one call's own scratch. Anything two
@@ -147,34 +170,16 @@ threads read is a map in a box."
   (let ((loose nil))
     (dolist (file (%files))
       (dolist (line (%lines file))
-        (when (search "(defvar *" line)
-          (when (search "make-hash-table" line)
-            (push (file-namestring file) loose)))))
+        (when (and (search "(defvar *" line) (search "make-hash-table" line)
+                   (not (member (file-namestring file) +identity-tables+
+                                :test #'equal)))
+          (push (file-namestring file) loose))))
     (is (null loose) "~{~%  ~a keeps a registry in a hash table~}"
         (reverse loose))))
 
-(test a-frontend-says-its-size-in-one-place
-  "Two places built the :resize message and one of them left out the font size,
-so the daemon laid the frame out for a grid the frontend was not drawing. What
-a frontend tells the daemon about its geometry is written once."
-  (let ((sites nil))
-    (dolist (file (%files))
-      (loop :for line :in (%lines file)
-            :for n :from 1
-            :when (search "(list :resize" line)
-              :do (push (format nil "~a:~d" (file-namestring file) n) sites)))
-    (is (<= (length sites) 1) "~d place~:p build a resize message:~{~%  ~a~}"
-        (length sites) (reverse sites))))
-
-(defparameter +builds-fresh+ '("supervisor.lisp")
-  "The files whose NODES or RESOLVE may answer without NODE:CHILD, because what
-they answer is already the same object every time: the supervisor hands out the
-processes it holds, and a process is a node itself. A name added here for any
-other reason is a subtree taken out of the graph.")
-
-(test a-provider-hands-out-the-same-child-every-time
+(test a-node-hands-out-the-same-child-every-time
   "A node built fresh per call cannot be depended on, so nothing reading it can
-ever be recomputed: a surface reading /face/keyword would never hear that the
+ever be worked out again: a surface reading /face/keyword would never hear that the
 face moved. NODE:CHILD is what makes the child the same object twice."
   (let ((loose nil))
     (dolist (file (%files))
@@ -196,16 +201,15 @@ face moved. NODE:CHILD is what makes the child the same object twice."
   (let ((line (find-if (lambda (l) (search "(defpackage" l)) (%lines file))))
     (when line
       (let* ((at (+ (search "#:" line) 2))
-             (end (or (position-if (lambda (c) (member c '(#\Space #\) #\Tab))) line
-                                   :start at)
+             (end (or (position-if (lambda (c) (member c '(#\Space #\) #\Tab)))
+                                   line :start at)
                       (length line))))
         (subseq line at end)))))
 
 (test a-package-is-its-path
-  "src/edit/buffer.lisp declares pine/edit/buffer. The systems are already
-spelled that way; a package that is not is a name you have to translate. The
-root is pine, and the four generated wayland protocol files are one package
-between them."
+  "src/edit/window.lisp declares pine/edit/window. The systems are already spelled
+that way; a package that is not is a name you have to translate. The root is pine,
+and a directory's own system file is that directory."
   (let ((wrong nil))
     (dolist (file (%files))
       (let ((said (%package-of file))
@@ -215,15 +219,32 @@ between them."
                  (under (and from (subseq path (+ from 4))))
                  (want (and under
                             (concatenate 'string "pine/"
-                                         (subseq under 0 (- (length under) 5))))))
+                                         (subseq under 0 (- (length under) 5)))))
+                 (directory (and want
+                                 (let ((slash (position #\/ want :from-end t)))
+                                   (and slash (subseq want 0 slash))))))
             (when (and want (not (equal said want))
                        (not (equal said "pine"))
-                       (not (equal said "pine/wayland/protocol")))
-              (push (format nil "~a says ~a" (file-namestring file) said) wrong))))))
+                       (not (member said +generated+ :test #'equal))
+                       (not (and (equal (file-namestring file) "system.lisp")
+                                 (equal said directory))))
+              (push (format nil "~a says ~a" (file-namestring file) said)
+                    wrong))))))
     (is (null wrong) "~{~%  ~a~}" (reverse wrong))))
 
+(defun %dotted-package (line)
+  "Whether LINE spells a package with a dot rather than a slash. A sentence that
+ends in the word is not one, and neither is a file called pine.something."
+  (let ((at (search "pine." line)))
+    (and at (< (+ at 5) (length line))
+         (alpha-char-p (char line (+ at 5)))
+         (or (zerop at) (not (char= #\/ (char line (1- at))))))))
+
 (test nothing-spells-a-package-with-a-dot
-  (let ((found (%naming "pine." :except '("style.lisp"))))
+  (let ((found (loop :for file :in (%files)
+                     :when (and (find-if #'%dotted-package (%lines file))
+                                (not (equal "style.lisp" (file-namestring file))))
+                       :collect (file-namestring file))))
     (is (null found) "~{~%  ~a names a package with a dot~}" found)))
 
 (test in-package-is-the-line-after-the-defpackage
@@ -233,7 +254,8 @@ between them."
             (depth 0) (start nil) (end nil) (at nil))
         (loop :for line :in lines
               :for n :from 0
-              :do (when (and (null start) (search "(defpackage" line)) (setf start n))
+              :do (when (and (null start) (search "(defpackage" line))
+                    (setf start n))
                   (when (and start (null end))
                     (incf depth (count #\( line))
                     (decf depth (count #\) line))
@@ -262,8 +284,8 @@ reading one means checking its header first."
                      (of (and tail (search "#:pine" tail))))
                 (when (and name of)
                   (let* ((from (+ of 2))
-                         (to (or (position-if (lambda (c) (member c '(#\Space #\)))) tail
-                                              :start from)
+                         (to (or (position-if (lambda (c) (member c '(#\Space #\))))
+                                              tail :start from)
                                  (length tail)))
                          (package (subseq tail from to))
                          (had (gethash name seen)))
@@ -273,3 +295,16 @@ reading one means checking its header first."
                                     clashes :test #'equal)))))
                 (setf at (+ open 3))))))))
     (is (null clashes) "~{~%  ~a~}" (reverse clashes))))
+
+(test nothing-in-the-substrate-names-what-is-loaded-on-it
+  "The editor, the desktop, the window manager and the machine's own devices are
+systems. A substrate that names one of them has a favourite."
+  (let ((loose nil))
+    (dolist (module '("fs" "run" "ui"))
+      (dolist (file (directory (merge-pathnames (format nil "~a/*.lisp" module)
+                                                (%module-root))))
+        (dolist (name '("pine/edit" "pine/desk" "pine/wm" "pine/host" "pine/text"))
+          (when (find-if (lambda (line) (search name line)) (%lines file))
+            (pushnew (format nil "~a names ~a" (file-namestring file) name)
+                     loose :test #'equal)))))
+    (is (null loose) "~{~%  ~a~}" (reverse loose))))

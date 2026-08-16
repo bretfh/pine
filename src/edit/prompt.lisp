@@ -1,22 +1,23 @@
 (defpackage #:pine/edit/prompt
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:world #:pine/world/world)
-                    (#:buffer #:pine/edit/buffer) (#:log #:pine/run/log)
-                    (#:fault #:pine/run/fault))
-  (:export #:prompt #:asking #:asking-p #:ask #:answer! #:cancel! #:said
-           #:question #:answer-buffer #:then #:candidates #:chosen #:choose! #:was
-           #:matching #:complete! #:source #:sources #:install #:*prompt*
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree) (#:doc #:pine/text/document)
+                    (#:emode #:pine/edit/mode) (#:log #:pine/run/log)
+                    (#:command #:pine/run/command) (#:fault #:pine/run/fault))
+  (:export #:prompt #:asking #:askingp #:ask #:answer #:cancel #:said
+           #:question #:answering #:then #:candidates #:chosen #:choose #:was
+           #:matching #:complete #:source #:sources #:*prompt*
            #:showing #:category #:annotation #:name-of #:shows #:given
            #:must-match #:history #:remember #:walk-history #:filep
-           #:common-prefix #:matches #:descends-p #:descend! #:expanded #:files
-           #:history-of #:*shown* #:*history-kept*))
+           #:common-prefix #:matches #:descendsp #:descend #:expanded #:files
+           #:history-of #:commands #:*shown* #:*history-kept*))
 (in-package #:pine/edit/prompt)
 
 (defvar *prompt* nil)
 (defvar *sources* (d:table))
 (defvar *shown* 12)
 (defvar *history-kept* 200)
-(defparameter +buffer+ "*prompt*")
+(defparameter +document+ "*prompt*")
 (defparameter +separator+ #\Space)
 
 (defclass prompt ()
@@ -30,7 +31,8 @@
    (walking    :initform nil        :accessor walking)
    (walked     :initform nil        :accessor walked)
    (seen       :initform nil        :accessor seen)
-   (chose      :initform 0          :accessor chose)))
+   (chose      :initform 0          :accessor chose))
+  (:documentation "A question standing, and what will be done with the answer."))
 
 (defmethod print-object ((p prompt) stream)
   (print-unreadable-object (p stream :type t)
@@ -38,17 +40,15 @@
 
 (defun asking () *prompt*)
 
-(defun asking-p () (and *prompt* t))
+(defun askingp () (and *prompt* t))
 
-(defun answer-buffer ()
-  (or (buffer:buffer-named +buffer+)
-      (let ((b (buffer:make-buffer +buffer+)))
-        (setf (buffer:setting b :aside) t)
-        b)))
+(defun answering ()
+  (or (doc:named +document+)
+      (doc:make-document +document+ :mode (make-instance 'emode:prompt))))
 
 (defun said ()
-  (let ((b (buffer:buffer-named +buffer+)))
-    (if b (buffer:text-of b) "")))
+  (let ((d (doc:named +document+)))
+    (if d (doc:text d) "")))
 
 (defun source (category function)
   (d:keep! *sources* category function)
@@ -60,7 +60,8 @@
   (when p
     (or (given p)
         (let ((fn (d:at (d:all *sources*) (category p))))
-          (when fn (fault:attempt (lambda () (funcall fn (said))) "the candidates"))))))
+          (when fn (fault:attempt (lambda () (funcall fn (said)))
+                                  "the candidates"))))))
 
 (defun name-of (each) (princ-to-string (if (consp each) (first each) each)))
 
@@ -81,10 +82,10 @@
           :test #'string=))
 
 (defun %scored (tokens name)
-  "How well NAME answers TOKENS: every token must be somewhere in it, in any
-order and in any case. The score is where they were found, so what matches
-earliest is offered first, and a name that begins with the first token beats one
-that merely contains it. Nil when a token is missing."
+  "How well NAME answers TOKENS: every token must be somewhere in it, in any order
+and in any case. The score is where they were found, so what matches earliest is
+offered first, and a name that begins with the first token beats one that merely
+contains it. Nothing when a token is missing."
   (let ((score 0) (from-the-start nil))
     (loop :for token :in tokens
           :for first := t :then nil
@@ -113,8 +114,8 @@ that merely contains it. Nil when a token is missing."
                                          (t (string-lessp na nb)))))))))))
 
 (defun matching (&optional (p *prompt*))
-  "What answers the question as it stands. A file question is already narrowed
-by the directory it is in, so what it offers is what is there."
+  "What answers the question as it stands. A file question is already narrowed by
+the directory it is in, so what it offers is what is there."
   (when p
     (%sync p)
     (if (filep p)
@@ -122,30 +123,30 @@ by the directory it is in, so what it offers is what is there."
         (matches (said) (candidates p)))))
 
 (defun here-directory ()
-  (let* ((b (buffer:current))
-         (file (and b (typep b 'buffer:buffer) (buffer:file-of b))))
+  (let* ((d (doc:current))
+         (file (and d (typep d 'doc:document) (doc:file-of d))))
     (if file
         (directory-namestring (pathname file))
         (namestring (uiop:getcwd)))))
 
 (defun ask (question &key then category initial must-match candidates history)
-  (let ((b (answer-buffer))
+  (let ((d (answering))
         (seed (or initial (when (eq category :file) (here-directory)) "")))
-    (setf (node:contents b) seed)
-    (buffer:move! b :buffer 1)
+    (setf (node:contents d) seed)
+    (doc:move d :text 1)
     (setf *prompt* (make-instance 'prompt :question question :then then
                                           :category category
                                           :must-match must-match
                                           :candidates candidates
                                           :history history
-                                          :was (buffer:current))
-          (buffer:current) b)
+                                          :was (doc:current))
+          (doc:current) d)
     (setf (seen *prompt*) (said)))
-  (when world:*world*
-    (setf (node:contents (world:ensure world:*world* "prompt")) question))
+  (when (tree:root)
+    (setf (node:contents (tree:ensure nil "prompt")) question))
   *prompt*)
 
-(defun choose! (delta)
+(defun choose (delta)
   (let* ((p *prompt*)
          (found (and p (matching p)))
          (n (length found)))
@@ -156,8 +157,8 @@ by the directory it is in, so what it offers is what is there."
 (defun filep (&optional (p *prompt*)) (and p (eq :file (category p))))
 
 (defun expanded (text)
-  "TEXT as a path a person typed: ~ is home, and a second / starts again from
-the root, so an absolute path typed over a directory means that path."
+  "TEXT as a path a person typed: ~ is home, and a second / starts again from the
+root, so an absolute path typed over a directory means that path."
   (let* ((text (or text ""))
          (over (search "//" text :from-end t))
          (text (if over (subseq text (1+ over)) text)))
@@ -179,7 +180,8 @@ the root, so an absolute path typed over a directory means that path."
                                            (car (last (pathname-directory p))) "/"))
                             (uiop:subdirectories where))
                     #'string<)
-              (sort (mapcar #'file-namestring (uiop:directory-files where)) #'string<))
+              (sort (mapcar #'file-namestring (uiop:directory-files where))
+                    #'string<))
     (error () nil)))
 
 (defun files (typed)
@@ -192,15 +194,6 @@ the root, so an absolute path typed over a directory means that path."
                                 (string= base name :end2 (length base))))
                          all)))))
 
-(defun %complete-file (p found)
-  (declare (ignore p))
-  (multiple-value-bind (where base) (split-path (expanded (said)))
-    (declare (ignore base))
-    (let ((shared (common-prefix (mapcar #'name-of found))))
-      (when (plusp (length shared))
-        (%put (concatenate 'string where shared)))
-      (first found))))
-
 (defun common-prefix (strings)
   (if (null strings)
       ""
@@ -211,25 +204,33 @@ the root, so an absolute path typed over a directory means that path."
         shortest)))
 
 (defun %put (text)
-  (let ((b (answer-buffer)))
-    (setf (node:contents b) text)
-    (buffer:move! b :buffer 1)
+  (let ((d (answering)))
+    (setf (node:contents d) text)
+    (doc:move d :text 1)
     (when *prompt* (setf (seen *prompt*) (said)))
     text))
 
-(defun complete! ()
-  "Fill in as much as every match agrees on. With one match, that is the whole
-of it; with several, the part they share, so the next keystroke narrows rather
-than starting over."
+(defun %complete-file (found)
+  (multiple-value-bind (where base) (split-path (expanded (said)))
+    (declare (ignore base))
+    (let ((shared (common-prefix (mapcar #'name-of found))))
+      (when (plusp (length shared))
+        (%put (concatenate 'string where shared)))
+      (first found))))
+
+(defun complete ()
+  "Fill in as much as every match agrees on. With one match, that is the whole of
+it; with several, the part they share, so the next keystroke narrows rather than
+starting over."
   (let* ((p *prompt*)
          (found (and p (matching p))))
     (when found
       (if (filep p)
-          (%complete-file p found)
+          (%complete-file found)
           (let ((shared (common-prefix (mapcar #'name-of found))))
             (cond ((and (= 1 (length found))
                         (equal (said) (name-of (first found))))
-                   (answer!))
+                   (answer))
                   ((and (plusp (length shared)) (> (length shared) (length (said))))
                    (%put shared))
                   (t (%put (name-of (nth (min (chosen p) (1- (length found)))
@@ -237,9 +238,8 @@ than starting over."
             (first found))))))
 
 (defun %history-node (name)
-  (when (and name world:*world*)
-    (world:ensure world:*world* "prompt" "history"
-                  (string-downcase (string name)))))
+  (when (and name (tree:root))
+    (tree:ensure nil "prompt" "history" (string-downcase (string name)))))
 
 (defun history-of (name)
   (let ((n (%history-node name)))
@@ -273,25 +273,25 @@ typed, so walking back to the end gives it back."
 
 (defun %close ()
   (let ((was (and *prompt* (was *prompt*))))
-    (setf (buffer:current)
-          (if (and was (buffer:buffer-named (node:name was)))
+    (setf (doc:current)
+          (if (and was (doc:named (node:name was)))
               was
-              (or (buffer:current) (buffer:scratch)))))
+              (or (doc:current) (doc:named "scratch")))))
   (setf *prompt* nil)
-  (when world:*world*
-    (setf (node:contents (world:ensure world:*world* "prompt")) nil))
-  (let ((b (buffer:buffer-named +buffer+)))
-    (when b (setf (node:contents b) "")))
+  (when (tree:root)
+    (setf (node:contents (tree:ensure nil "prompt")) nil))
+  (let ((d (doc:named +document+)))
+    (when d (setf (node:contents d) "")))
   nil)
 
-(defun descends-p (p)
+(defun descendsp (p)
   (and (filep p)
        (let ((typed (expanded (said))))
          (and (plusp (length typed))
               (uiop:directory-exists-p typed)
               (not (eql #\/ (char typed (1- (length typed)))))))))
 
-(defun descend!(&optional (p *prompt*))
+(defun descend (&optional (p *prompt*))
   (declare (ignore p))
   (let ((typed (expanded (said))))
     (%put (concatenate 'string (string-right-trim "/" typed) "/"))))
@@ -304,7 +304,7 @@ typed, so walking back to the end gives it back."
           (if pick (name-of pick) said))
         said)))
 
-(defun answer! (&optional text)
+(defun answer (&optional text)
   (let* ((p *prompt*)
          (answer (or text (%answered p)))
          (fn (and p (then p))))
@@ -313,13 +313,13 @@ typed, so walking back to the end gives it back."
     (when fn (fault:attempt (lambda () (funcall fn answer)) "answering a prompt"))
     answer))
 
-(defun cancel! ()
+(defun cancel ()
   (%close)
   (log:note "cancelled")
   nil)
 
 (defun showing ()
-  (if (asking-p)
+  (if (askingp)
       (format nil "~a~a" (question *prompt*) (said))
       (or (log:last-said) "")))
 
@@ -333,3 +333,33 @@ typed, so walking back to the end gives it back."
     (if (and (plusp (length note)) (> gap 1))
         (concatenate 'string name (make-string gap :initial-element #\space) note)
         name)))
+
+(defun commands ()
+  (command:defcommand "run-command" () (:describes "run a command by name")
+    (ask "M-x " :category :command :must-match t :history :commands
+                :then (lambda (name)
+                        (let ((c (command:named name)))
+                          (if c
+                              (command:run c)
+                              (log:note "no command named ~a" name)))))
+    :asking)
+  (command:defcommand "answer" () (:describes "accept what is typed at the prompt")
+    (if (descendsp (asking))
+        (descend)
+        (answer)))
+  (command:defcommand "cancel" () (:describes "put the prompt away")
+    (cancel))
+  (command:defcommand "complete" ()
+      (:describes "fill the prompt from the candidates")
+    (complete))
+  (command:defcommand "next-candidate" () (:describes "the next candidate")
+    (choose 1))
+  (command:defcommand "previous-candidate" () (:describes "the candidate before")
+    (choose -1))
+  (command:defcommand "history-previous" ()
+      (:describes "what was answered here before")
+    (walk-history 1))
+  (command:defcommand "history-next" () (:describes "the answer after that one")
+    (walk-history -1))
+  (command:defcommand "cancel" () (:describes "put the prompt away")
+    (cancel)))
