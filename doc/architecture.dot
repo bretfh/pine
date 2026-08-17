@@ -60,8 +60,8 @@ digraph pine {
                        label="the debugger document"];
   }
 
-  subgraph cluster_painter {
-    label="a painter: a pine that mounted this one";
+  subgraph cluster_peer {
+    label="a peer: another pine, mounted and evaluated in";
     labeljust=l; fontsize=15; fontcolor="#b0a0cf";
     color="#635850"; style="rounded,dashed"; penwidth=2;
     pa [label="one wayland surface per pine surface\llayer or toplevel, as the role says\lpaints widgets onto cairo\l"];

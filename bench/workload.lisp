@@ -34,7 +34,7 @@ came from."
                 :collect (format nil "(defun f~d (x) (+ x ~d))" i i))))
 
 (defun %sized ()
-  "Say how big the painter's surface is, the way one would."
+  "Say how big the surface came out, the way the screen would."
   (setf (node:contents (tree:at nil "surface/editor/size"))
         (list :wide (* 9 +cols+) :tall (* 18 +lines+)
               :cols +cols+ :lines +lines+ :font 15)))
@@ -53,7 +53,7 @@ came from."
     d))
 
 (defun %wire (&optional (name "editor"))
-  "What a painter would be handed. This is the whole of what a frame costs."
+  "What the screen would be handed. This is the whole of what a frame costs."
   (node:contents (tree:at nil (format nil "surface/~a/wire" name))))
 
 (defun %ready ()
@@ -62,7 +62,7 @@ came from."
 
 (workload typing ()
     "a key at a time through the keymap into a document being shown, and the tree
-a painter is handed after each: the key, the parse, the surface and the wire a
+the screen is handed after each: the key, the parse, the surface and the wire a
 keystroke really makes"
   (%ready)
   (let ((d (%shown "typing" *size*)))
@@ -95,7 +95,7 @@ parse and the highlight walk are re-driven at every screen"
 
 (workload cold ()
     "what the first of everything costs: the first parse of a document, and the
-first tree a painter is handed"
+first tree the screen is handed"
   (%ready)
   (%shown "cold" *size*)
   (%wire))

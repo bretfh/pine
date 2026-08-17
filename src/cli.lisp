@@ -29,7 +29,7 @@
 (defun usage () *usage*)
 
 (defun quiet ()
-  (ignore-errors (log4cl-impl:log-config :warn))
+  (ignore-errors (log4cl-impl:log-config :error))
   t)
 
 (defun %system (&key (name "cli"))
@@ -56,6 +56,26 @@
 (defun runningp (&key (port actors:*port*))
   (let ((said (ask (list :ping) :port port)))
     (and said (eq :ok (first said)))))
+
+(defun %value (text)
+  "What a word on the command line means. A form is read as one, so t is true and
+42 is a number; a bare word stays the word it was."
+  (if (null text)
+      nil
+      (let ((said (handler-case (let ((*read-eval* nil))
+                                  (values (read-from-string text)))
+                    (error () text))))
+        (typecase said
+          (null nil)
+          (keyword said)
+          (symbol (if (eq said t) t text))
+          (t said)))))
+
+(defun %verb (value)
+  "Whether what was typed is a verb a node takes rather than a value to put in it:
+(:stop), (:restart). It crosses as its own message, because what a node is told to
+do and what it is given are two questions."
+  (and (consp value) (keywordp (first value)) value))
 
 (defun %say (said)
   (cond ((null said)
@@ -113,30 +133,34 @@
               "--eval" "(pine/cli:main (rest sb-ext:*posix-argv*))"
               "--end-toplevel-options"))))
 
+(defun %say-line (control &rest arguments)
+  (apply #'format t control arguments)
+  (finish-output))
+
 (defun %start ()
   (if (runningp)
-      (format t "pine: already running on ~d~%" actors:*port*)
+      (%say-line "pine: already running on ~d~%" actors:*port*)
       (progn
         (uiop:launch-program (append (%self) (list "daemon"))
                              :output nil :error-output nil)
         (loop :repeat 60
               :until (runningp)
               :do (sleep 0.5))
-        (format t "pine: ~:[did not come up~;running on ~d~]~%"
-                (runningp) actors:*port*))))
+        (%say-line "pine: ~:[did not come up~;running on ~d~]~%"
+                   (runningp) actors:*port*))))
 
 (defun %gonep (&key (seconds 5))
   (loop :repeat (round (/ seconds 0.2))
         :unless (runningp) :do (return t)
-        :do (sleep 0.2)
+          :do (sleep 0.2)
         :finally (return (not (runningp)))))
 
 (defun %stop ()
-  (cond ((not (runningp)) (format t "pine: not running~%"))
-        (t (%evaluate '(pine:quit))
+  (cond ((not (runningp)) (%say-line "pine: not running~%"))
+        (t (ask (list :evaluate '(pine:quit)))
            (if (%gonep)
-               (format t "stopped~%")
-               (format t "pine: still running on ~d~%" actors:*port*)))))
+               (%say-line "stopped~%")
+               (%say-line "pine: still running on ~d~%" actors:*port*)))))
 
 (defun %run (arguments)
   (%evaluate `(pine/run/command:run ,(first arguments)
@@ -149,25 +173,28 @@
         (rest (rest arguments)))
     (cond
       ((null verb) (format t "~a~%" *usage*))
-      ((equal verb "read")    (%say (ask (list :contents (first rest)))))
-      ((equal verb "write")   (%say (ask (list :write (first rest)
-                                               (second rest)))))
-      ((equal verb "ls")      (%say (ask (list :nodes (or (first rest) "/")))))
-      ((equal verb "watch")   (%watch (first rest)))
-      ((equal verb "eval")    (%evaluate (read-from-string (first rest))))
-      ((equal verb "run")     (%run rest))
-      ((equal verb "use")     (%run (list "use" (first rest))))
-      ((equal verb "drop")    (%run (list "drop" (first rest))))
+      ((equal verb "read") (%say (ask (list :contents (first rest)))))
+      ((equal verb "write")
+       (let ((value (%value (second rest))))
+         (%say (ask (if (%verb value)
+                        (list* :verb (first rest) value)
+                        (list :write (first rest) value))))))
+      ((equal verb "ls") (%say (ask (list :nodes (or (first rest) "/")))))
+      ((equal verb "watch") (%watch (first rest)))
+      ((equal verb "eval") (%evaluate (read-from-string (first rest))))
+      ((equal verb "run") (%run rest))
+      ((equal verb "use") (%run (list "use" (first rest))))
+      ((equal verb "drop") (%run (list "drop" (first rest))))
       ((equal verb "systems") (%run (list "systems")))
-      ((equal verb "jobs")    (%run (list "jobs")))
-      ((equal verb "status")  (format t "pine: ~:[not running~;running on ~d~]~%"
-                                      (runningp) actors:*port*))
-      ((equal verb "reload")  (%run (list "reload")))
-      ((equal verb "start")   (%start))
-      ((equal verb "stop")    (%stop))
+      ((equal verb "jobs") (%run (list "jobs")))
+      ((equal verb "status") (format t "pine: ~:[not running~;running on ~d~]~%"
+                                     (runningp) actors:*port*))
+      ((equal verb "reload") (%run (list "reload")))
+      ((equal verb "start") (%start))
+      ((equal verb "stop") (%stop))
       ((equal verb "restart") (%stop) (sleep 1) (%start))
-      ((equal verb "daemon")  (pine:daemon) (loop (sleep 60)))
-      ((equal verb "shell")   (pine:main))
-      ((equal verb "help")    (format t "~a~%" *usage*))
+      ((equal verb "daemon") (pine:daemon) (loop (sleep 60)))
+      ((equal verb "shell") (pine:main))
+      ((equal verb "help") (format t "~a~%" *usage*))
       (t (format t "pine: no verb ~a~%~a~%" verb *usage*)))
     (finish-output)))

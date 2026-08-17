@@ -5,7 +5,7 @@
   (:import-from #:pine/fs/node #:name)
   (:export #:job #:thread #:actor #:program
            #:start #:stop #:alivep #:tell #:ask
-           #:jobs #:named #:supervise #:supervised #:sweep #:due #:backoff
+           #:jobs #:named #:supervise #:supervised #:sweep #:attend #:due #:backoff
            #:settle #:emit #:stoppingp #:attach #:forget
            #:name #:state #:tries #:restartsp #:took #:exit-of #:since #:fault
            #:said #:thunk #:seconds #:stopping #:argv #:env #:receive
@@ -157,7 +157,8 @@ be interrupted, so what can look between reads has to."
              (name j)
              (lambda ()
                (unwind-protect (fault:attempt (thunk j) (name j))
-                 (setf (state j) :stopped))))))
+                 (setf (state j)
+                       (if (d:held (stopping j)) :stopped :failed)))))))
   j)
 
 (defmethod stop ((j thread))
@@ -260,6 +261,11 @@ again."
   (find name (supervised) :key #'name :test #'equal))
 
 (defmethod node:contents ((n jobs-node)) (mapcar #'name (supervised)))
+
+(defun attend (&key (every *every*))
+  "Look over what is supervised, on the wheel. Without this the backoff, the tries
+and the restart are all written down and none of them ever happens."
+  (actors:repeat every #'sweep :as :proc :what "starting again what died"))
 
 (defun attach (root)
   (setf *under* (node:attach (make-instance 'jobs-node :name "proc"

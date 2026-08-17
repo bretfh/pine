@@ -11,7 +11,7 @@
 (defvar *terminal* "alacritty")
 (defvar *manage* nil
   "Whether pine is the window manager rather than a client of one. /wm-manage says
-so too: a painter that found a compositor asking for a manager writes it there
+so too: the screen, finding a compositor that asks for a manager, writes it there
 before it asks for this system, because it cannot name this package yet.")
 
 (defclass wm (system:system) ()

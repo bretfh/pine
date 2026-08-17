@@ -1,7 +1,7 @@
 (defpackage #:pine/ui/hit
   (:use #:cl #:pine/ui/widget)
   (:shadow #:at)
-  (:export #:at #:clicked #:clicked-at #:choosable #:choices #:value-at))
+  (:export #:at #:clicked #:clicked-at #:value-at))
 (in-package #:pine/ui/hit)
 
 (defun %covers (w line col)
@@ -46,21 +46,3 @@ over its own text would swallow the clicks of whatever it sits inside."
 (defun clicked-at (root line col)
   (let ((hit (at root line col)))
     (and hit (clicked hit col))))
-
-(defgeneric choosable (widget)
-  (:documentation "Whether the selection can land here.")
-  (:method ((w widget)) nil)
-  (:method ((w choice)) t)
-  (:method ((w label)) (and (changed w) t)))
-
-(defun choices (w)
-  "Every place the selection can land, in tree order. A choice is a leaf, so the
-walk does not go past one."
-  (let (acc)
-    (labels ((walk (it)
-               (when it
-                 (if (choosable it)
-                     (push it acc)
-                     (mapc #'walk (parts it))))))
-      (walk w))
-    (nreverse acc)))

@@ -2,8 +2,7 @@
   (:use #:cl)
   (:shadow #:parse)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
-  (:export #:path #:pathp #:segments #:text #:parse #:leaf #:parent #:rootp
-           #:patternp #:binders #:match #:below #:prefixp #:join
+  (:export #:path #:pathp #:segments #:text #:parse #:leaf #:parent #:rootp #:match #:prefixp
            #:literal #:binding #:any #:deep #:segment #:segment-text #:kind
            #:value #:at #:ensure #:contents #:matching #:erase))
 (in-package #:pine/fs/path)
@@ -67,23 +66,10 @@
 (defun parent (p)
   (make-instance 'path :segments (butlast (segments p))))
 
-(defun join (p &rest pieces) (apply #'path p pieces))
-
-(defun patternp (p)
-  (some (lambda (s) (not (typep s 'literal))) (segments p)))
-
-(defun binders (p)
-  (loop :for s :in (segments p)
-        :when (typep s 'binding) :collect (intern (string-upcase (value s)))))
-
 (defun prefixp (prefix p)
   (let ((a (segments prefix)) (b (segments p)))
     (and (<= (length a) (length b))
          (every (lambda (x y) (equal (value x) (value y))) a (subseq b 0 (length a))))))
-
-(defun below (prefix p)
-  "The part of P under PREFIX."
-  (make-instance 'path :segments (nthcdr (length (segments prefix)) (segments p))))
 
 (defun match (pattern subject)
   (let ((bound nil))

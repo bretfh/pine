@@ -1,6 +1,6 @@
 (defpackage #:pine/fs/node
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
+  (:local-nicknames (#:d #:pine/data) (#:commit #:pine/fs/commit))
   (:export #:node #:value #:derived #:slot #:nodep
            #:name #:over #:describes #:savedp #:livep #:announces #:refreshes
            #:contents #:nodes #:resolve #:stir #:verb
@@ -22,6 +22,7 @@
    (beneath   :initform (d:box (d:no-seq)) :reader beneath)
    (memo      :initform (d:table)          :reader memo)
    (readers   :initform (d:box (d:no-set)) :reader readers)
+   (named     :initform (d:box nil)        :reader named)
    (savedp    :allocation :class :initform nil :reader savedp)
    (livep     :allocation :class :initform nil :reader livep))
   (:documentation "A name, what it sits under, and what is under it.
@@ -30,8 +31,7 @@ Whether a class persists and whether it answers differently without being writte
 are declared once as class slots, not asked of every instance."))
 
 (defclass value (node)
-  ((holds  :initform (d:box nil) :reader holds)
-   (savedp :allocation :class :initform t :reader savedp))
+  ((savedp :allocation :class :initform t :reader savedp))
   (:documentation "Holds one."))
 
 (defclass derived (node)
@@ -63,12 +63,21 @@ second function is why a device reading is a row in a table rather than a class.
 (defun derive (name reads &rest initargs)
   (apply #'make-instance 'derived :name name :reads reads initargs))
 
-(defun full-name (n)
-  "The path this node is at."
+(defun %named (n)
   (let ((names (loop :for at := n :then (over at)
                      :while at
                      :when (name at) :collect (name at))))
     (if names (format nil "/~{~a~^/~}" (reverse names)) "/")))
+
+(defun full-name (n)
+  "The path this node is at."
+  (or (d:held (named n)) (d:put! (named n) (%named n))))
+
+(defun %renamed (n)
+  (d:put! (named n) nil)
+  (d:do-each (each (d:held (beneath n))) (%renamed each))
+  (dolist (each (d:vals (d:all (memo n)))) (%renamed each))
+  n)
 
 (defun root (n)
   (loop :for at := n :then (over at)
@@ -105,6 +114,7 @@ the one that landed, which is what lets anything reading it be worked out again.
   (:documentation "Put NODE under INTO, replacing whatever stood at its name.")
   (:method ((n node) (into node))
     (setf (over n) into)
+    (%renamed n)
     (d:swap! (beneath into)
              (lambda (all)
                (d:with (d:as :seq (cl:remove (name n) (d:as :list all)
@@ -117,7 +127,8 @@ the one that landed, which is what lets anything reading it be worked out again.
     (let ((gone (resolve n name)))
       (when gone
         (d:swap! (beneath n) (lambda (all) (d:remove gone all)))
-        (setf (over gone) nil))
+        (setf (over gone) nil)
+        (%renamed gone))
       gone)))
 
 (defgeneric make-child (node name)
@@ -131,7 +142,9 @@ that ends in / asks for a branch.")
   (:documentation "Take NAME out of NODE, and out of whatever stands behind it.")
   (:method ((n node) name)
     (let ((gone (resolve n name)))
-      (when (and gone *on-erase*) (funcall *on-erase* gone))
+      (when gone
+        (when *on-erase* (funcall *on-erase* gone))
+        (commit:forget (full-name gone)))
       (d:drop! (memo n) (princ-to-string name))
       (detach n name))))
 
@@ -160,21 +173,24 @@ it.")
       (stir each))
     n)
   (:method ((n derived))
-    (unless (eq (d:held (cached n)) +unread+)
-      (d:put! (cached n) +unread+)
-      (d:do-each (each (d:held (readers n)))
-        (stir each)))
+    (d:put! (cached n) +unread+)
+    (d:do-each (each (d:held (readers n)))
+      (stir each))
     n))
 
 (defun %work-out (n)
+  "Work N out, and record what it read while doing it. What it read is recorded
+whether or not it finished: a node that threw has still read what it read, and one
+that keeps nothing is one nothing can ever stir again."
   (let ((reading (cons :reading nil)))
-    (let* ((*reading* reading)
-           (v (funcall (reads n))))
+    (unwind-protect
+         (let* ((*reading* reading)
+                (v (funcall (reads n))))
+           (d:put! (cached n) v)
+           v)
       (d:put! (saw n) (cdr reading))
       (dolist (on (cdr reading))
-        (unless (eq on n) (depend n on)))
-      (d:put! (cached n) v)
-      v)))
+        (unless (eq on n) (depend n on))))))
 
 (defun stalep (n) (eq (d:held (cached n)) +unread+))
 
@@ -197,7 +213,7 @@ it.")
 (defgeneric contents (node)
   (:documentation "What NODE holds.")
   (:method ((n node)) nil)
-  (:method ((n value)) (d:held (holds n)))
+  (:method ((n value)) (commit:at (full-name n)))
   (:method ((n slot)) (slot-value (object n) (slot n)))
   (:method ((n derived))
     (let ((v (d:held (cached n))))
@@ -207,19 +223,25 @@ it.")
   (:method (value (n node))
     (error "~a holds nothing that can be written." (full-name n)))
   (:method (value (n value))
-    (d:put! (holds n) value)
-    (when *on-write* (funcall *on-write* n))
+    (unless (d:emptyp (commit:change (d:map (full-name n) value)))
+      (commit:announce n)
+      (when *on-write* (funcall *on-write* n)))
     value)
   (:method (value (n slot))
-    (setf (slot-value (object n) (slot n)) value)
+    (let ((had (slot-value (object n) (slot n))))
+      (setf (slot-value (object n) (slot n)) value)
+      (unless (d:same had value)
+        (commit:announce n)
+        (when *on-write* (funcall *on-write* n))))
     (let ((it (object n)))
       (when (and (nodep it) (not (eq it n))) (stir it)))
     value)
   (:method (value (n derived))
-    (if (writes n)
-        (funcall (writes n) value)
-        (progn (setf (reads n) (constantly value))
-               (d:put! (cached n) +unread+)))
+    (cond ((writes n)
+           (funcall (writes n) value)
+           (commit:announce n))
+          (t (setf (reads n) (constantly value))
+             (d:put! (cached n) +unread+)))
     value))
 
 (defmethod contents :around ((n node))
@@ -232,9 +254,6 @@ it.")
       (call-next-method)))
 
 (defmethod (setf contents) :after (value (n node))
-  "Whatever a node did with a write, it moved: one that turned it into an action on
-the world still has to say so, or a slider goes on showing what the world held
-before it was dragged."
   (declare (ignore value))
   (stir n))
 

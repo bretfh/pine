@@ -1,8 +1,10 @@
 (defpackage #:pine/fs/tree
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:commit #:pine/fs/commit))
   (:export #:*root* #:root #:make-root #:at #:ensure #:put #:erase #:walk
            #:listing #:paths #:split-name #:absent
+           #:change #:was #:revert #:diff
            #:id-of #:node-for-id #:identify #:forget-ids))
 (in-package #:pine/fs/tree)
 
@@ -22,6 +24,7 @@ is reached by mounting it rather than by holding two here.")
 (defun make-root ()
   (let ((n (node:make nil :class 'node:node)))
     (setf *root* n)
+    (commit:clear)
     (forget-ids)
     (identify n)
     n))
@@ -92,6 +95,53 @@ clicking the wrong one."
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))
     (setf (node:contents n) value)
     n))
+
+(defun %placed (pairs)
+  (loop :for (place . value) :in (d:pairs pairs)
+        :collect (cons (ensure nil (alexandria:ensure-list place)) value)))
+
+(defun %by-name (placed)
+  (loop :with out := (d:no-map)
+        :for (n . value) :in placed
+        :do (setf out (d:with out (node:full-name n) value))
+        :finally (return out)))
+
+(defun change (pairs &key when)
+  (let ((placed (%placed pairs)))
+    (cond ((every (lambda (each) (typep (car each) 'node:value)) placed)
+           (let ((moved (commit:change (%by-name placed)
+                                       :when (and when (%by-name (%placed when))))))
+             (when (and moved (not (d:emptyp moved)))
+               (commit:writing
+                 (loop :for (n . nil) :in placed
+                       :when (d:contains moved (node:full-name n))
+                         :do (node:stir n)
+                             (commit:announce n))))
+             moved))
+          (t (commit:writing
+               (loop :for (n . value) :in placed
+                     :do (setf (node:contents n) value))
+               (%by-name placed))))))
+
+(defun was (place n)
+  (commit:was (node:full-name (ensure nil (alexandria:ensure-list place))) n))
+
+(defun revert (place &optional (n 0))
+  (let ((it (ensure nil (alexandria:ensure-list place))))
+    (setf (node:contents it) (commit:was (node:full-name it) n))))
+
+(defun diff (n)
+  (let ((then (commit:root-at n))
+        (now (commit:held))
+        (out (d:no-map)))
+    (when then
+      (d:do-map (place value now)
+        (unless (d:same value (d:at then place))
+          (setf out (d:with out place (list (d:at then place) value)))))
+      (d:do-map (place value then)
+        (unless (d:contains now place)
+          (setf out (d:with out place (list value nil))))))
+    out))
 
 (defun erase (where &rest pieces)
   (let* ((names (%names pieces))

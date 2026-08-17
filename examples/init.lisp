@@ -11,12 +11,16 @@
 
 ;; What the machine has, in the tree. A device is rows -- a name, how to read it
 ;; and how to write it -- so /dev/audio/volume is read and written like anything.
+;; ATTEND puts one under /dev and follows it.
 
-(run "attend" '("audio"))
-(run "attend" '("screen"))
-(run "attend" '("power"))
-(run "attend" '("net"))
-(run "attend" '("media"))
+(attend "audio")
+(attend "screen")
+(attend "power")
+(attend "net")
+(attend "media" :player "emms")
+(attend "clip")
+
+;; A write makes the node if nothing has put one there yet.
 
 (write /theme/active :ef-dream)
 (write /wm-terminal "alacritty")
@@ -50,10 +54,13 @@
                        (list id (+ x 320) y (- width 320) height)))))
 
 ;; A role is a class too, and it is the whole of what a kind of surface means:
-;; one ANCHOR method puts a new one on screen and the painter needs no knowledge
-;; of it, because the role crosses the wire with the surface.
+;; one ANCHOR method puts a new one on screen and nothing showing it needs knowledge
+;; of it, because the role crosses the wire with the surface. ASKS says whether it
+;; waits to be asked for. A panel does; this does not.
 
 (defclass ticker (overlay) ())
+
+(defmethod asks ((r ticker)) nil)
 
 (defmethod anchor ((r ticker) width height)
   (map :edges '(:bottom :right) :wide width :tall height :keeps 0
@@ -62,6 +69,14 @@
 (defsurface ticker (:as 'ticker)
   (row :class "ticker"
        (label (or (read /dev/media/title) "nothing playing"))))
+
+;; A reading can answer a list. /dev/audio/sinks is every sink there is, and
+;; writing one of their names makes it the default. A row per thing is MAPCAR.
+
+(defun sink-row (sink)
+  (choice :class "sink" :click (map /dev/audio/sink (getf sink :name))
+          (label (getf sink :name)
+                 :class (if (getf sink :default) "sink-name on" "sink-name"))))
 
 ;; A surface reads nodes and follows them: nothing subscribes to anything, and a
 ;; write two levels down works this out again exactly once.
@@ -72,12 +87,26 @@
           (row :align :center :spacing 12
                (button :class "mute" :click /dev/audio/muted
                        (label (if (read /dev/audio/muted) "muted" "on")))
-               (slider /dev/audio/volume :low 0 :high 100 :expand 1)
-               (label (format nil "~d%" (or (read /dev/audio/volume) 0))))))
+               (slider /dev/audio/volume :class "level" :low 0 :high 100 :expand 1)
+               (label (format nil "~d%" (or (read /dev/audio/volume) 0))))
+          (apply #'column :align :stretch :spacing 2
+                 (mapcar #'sink-row (or (read /dev/audio/sinks) (list))))))
+
+;; A selector names classes, not elements. Pine draws widgets, and a widget has no
+;; parts to reach into: a rule naming one matches nothing, and pine drops it. It
+;; matches the widget wearing the class, not what is inside it, so a colour for a
+;; label goes on the label. A slider's track is its background colour and what it
+;; has filled is its colour.
 
 (style ".panel" (list :background-color (css-glass :bg) :color (color :fg)
                       :border-radius (css-rad) :padding "12px"
                       :min-width "320px"))
 (style ".panel-title" (list :font-size "17px" :font-weight "bold"))
+(style ".level" (list :background-color (color :bg-alt) :color (color :accent)
+                      :min-height "8px" :border-radius "5px"))
+(style ".sink" (list :padding "6px 8px" :border-radius (css-rad)))
+(style ".sink:hover" (list :background-color (color :bg-active)))
+(style ".sink-name" (list :color (color :fg)))
+(style ".sink-name.on" (list :color (color :green) :font-weight "bold"))
 (style ".ticker" (list :background-color (css-glass :bg) :color (color :fg-dim)
                        :border-radius (css-rad) :padding "6px 12px"))

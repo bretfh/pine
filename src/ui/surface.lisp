@@ -18,7 +18,7 @@ cannot cross, so what it meant stays here.")
   (:documentation "Where a surface of this kind goes, and whether it is up already.
 
 A role is a class and that is the whole of what any kind of surface means. Writing a
-new one is one ANCHOR method and a default; the painter needs no knowledge of it,
+new one is one ANCHOR method and a default; what shows it needs no knowledge of it,
 because the role crosses the wire with the surface it is on."))
 
 (defclass bar (role) ())
@@ -73,13 +73,13 @@ content is here.")
    (size  :initarg :size  :accessor size :initform nil))
   (:documentation "A widget tree that is worked out, so it follows whatever it read.
 SHOWN is a node under it: writing /surface/audio/shown '(:toggle)' is the whole of
-putting a panel up. So is SIZE: a painter says how big it is by writing there, and
+putting a panel up. So is SIZE: what shows it says how big it came out there, and
 what the surface builds follows it like anything else it read."))
 
 (defclass click-node (node:node)
   ((livep  :allocation :class :initform t   :reader node:livep)
    (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "Where a painter says something was clicked. Writing the id a
+  (:documentation "Where another pine says something was clicked. Writing the id a
 widget crossed as runs what that widget meant."))
 
 (defmethod print-object ((s surface) stream)
@@ -99,14 +99,14 @@ widget crossed as runs what that widget meant."))
 (defun %id (name at) (format nil "~a/~d" name at))
 
 (defun %plainly (said)
-  "A map as a plist. What crosses to a painter is plain lisp data: the painter may
+  "A map as a plist. What crosses a wire is plain lisp data: the far side may
 be another image, and what it reads has to be something a reader can read."
   (loop :for (key . value) :in (d:pairs said) :append (list key value)))
 
 (defun act (said)
-  "Do what the widget that crossed as this id meant, with whatever the painter
-says it was given. Nothing where it means nothing, because a painter can be a
-frame behind."
+  "Do what the widget that crossed as this id meant, with whatever the far side
+says it was given. Nothing where it means nothing, because a pine showing this one
+can be a frame behind."
   (let* ((all (alexandria:ensure-list said))
          (id (princ-to-string (first all)))
          (thunk (d:at (d:all *acts*) id)))
@@ -139,7 +139,7 @@ id it crossed as."
                                     :role r
                                     :shown (if (eq shown :default) (not (asks r))
                                                shown)
-                                    :describes "a widget tree a painter shows")))
+                                    :describes "a widget tree, and where it goes")))
     (node:attach s (root))
     (let ((size (second (node:slots s s "shown" 'shown "size" 'size))))
       (node:attach (node:derive
@@ -149,7 +149,7 @@ id it crossed as."
                     :describes "which kind of surface this is")
                    s)
       (node:attach (node:derive "wire" (lambda () (%wire s)) :over s
-                                :describes "the tree, as it crosses to a painter")
+                                :describes "the tree, as it crosses to another pine")
                    s)
       (node:attach (node:derive
                     "where"
@@ -162,7 +162,7 @@ id it crossed as."
                     :describes "where the role says this goes")
                    s))
     (node:attach (make-instance 'click-node :name "click"
-                                :describes "what a painter says was clicked")
+                                :describes "what another pine says was clicked")
                  s)
     (when *on-declare* (funcall *on-declare* s))
     s))
@@ -170,4 +170,4 @@ id it crossed as."
 (defmacro defsurface (name options &body body)
   "Declare a surface. OPTIONS is :as and a role class."
   `(builds ,(string-downcase (string name)) (lambda () ,@body)
-           :shown :default ,@options))
+           ,@options :shown :default))

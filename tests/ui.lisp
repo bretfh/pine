@@ -44,12 +44,25 @@ knows the roles by name."))
                              (list ".a.b" (list :color "#00ff00"))))
     (let ((general (style:resolve '(("a"))))
           (both (style:resolve '(("a" "b")))))
-      (is (equal '(1.0 0.0 0.0) (d:at general :fg)))
-      (is (equal '(0.0 1.0 0.0) (d:at both :fg))
+      (is (equal '(255 0 0) (d:at general :fg))
+          "and a rule says a colour the way everything else does")
+      (is (equal '(0 255 0) (d:at both :fg))
           "whatever order the rules were written in")
       (is (eql 20 (d:at both :min-w))
           "and what the winning rule does not say still comes through"))
     (is (member :shadow (style:properties)))))
+
+(test a-rule-and-a-face-say-a-colour-the-same-way
+  "A painter takes a colour from a style and a colour from a face and paints with
+both, so they have to be the same three numbers."
+  (with-tree
+    (pine/ui/sheet:attach (tree:root))
+    (pine/ui/sheet:put (list (list ".x" (list :background-color
+                                             (face:color :accent)))))
+    (is (equal (face:rgb (face:color :accent))
+               (subseq (d:at (style:resolve '(("x"))) :bg) 0 3)))
+    (is (eql 1.0 (fourth (d:at (style:resolve '(("x"))) :bg)))
+        "and how much of it shows is still a fraction")))
 
 (test nothing-is-written-into-the-tree-during-a-pass
   (with-tree

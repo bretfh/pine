@@ -2,7 +2,8 @@
   (:use #:cl)
   (:shadow #:describe)
   (:local-nicknames (#:d #:pine/data)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+                    (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
+                    (#:tree #:pine/fs/tree)
                     (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
                     (#:store #:pine/fs/store)
                     (#:libs #:pine/run/libs) (#:log #:pine/run/log)
@@ -19,8 +20,12 @@
            #:use #:drop #:reach #:serve #:mount #:spawn #:style
            #:here #:describe #:read-at #:write-at
            #:load-config #:config-file #:store-file #:user-package
-           #:+user-surface+))
+           #:*screen* #:+user-surface+))
 (in-package #:pine)
+
+(defvar *screen* nil
+  "What opens the display, and nothing when this image has none to open. Loading
+PINE/WAYLAND fills it in.")
 
 (defparameter +user-surface+
   '((:pine "use" "drop" "reach" "spawn" "here" "style" "read-at" "write-at")
@@ -37,8 +42,8 @@
     (:pine/fs/path "leaf")
     (:pine/run/job "job" "thread" "actor" "program" "start" "stop" "alivep"
      "tell" "ask")
-    (:pine/ui/surface "surface" "defsurface" "builds" "role" "anchor" "shown"
-     "bar" "panel" "overlay" "background" "window" "tile")
+    (:pine/ui/surface "surface" "defsurface" "builds" "role" "anchor" "asks"
+     "shown" "bar" "panel" "overlay" "background" "window" "tile")
     (:pine/ui/widget "widget" "parts")
     (:pine/ui/layout "measure" "paint")
     (:pine/ui/face "color" "metric")
@@ -47,7 +52,9 @@
      "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
      "calendar" "image" "centerbox" "ring" "cells" "here" "acting")
     (:pine/text/document "document" "make-document" "documents" "restructure"
-     "regions")
+     "regions" "spans" "overlays")
+    (:pine/host "attend")
+    (:pine/host/device "device" "readings")
     (:pine/run/log "note")
     (:pine/wm/tiles "layout" "arrange" "tall" "wide" "full" "stacked")
     (:pine/term/terminal "open-terminal")
@@ -67,6 +74,16 @@ private: a system they write is the editor's equal, and this is the proof of it.
          (tree:at (tree:root) where))
         (t (tree:at (here s) (princ-to-string where)))))
 
+(defun %making (where &optional (s session:*session*))
+  "Where a write lands: the same place a read would find, and one made there when
+nothing has been put there yet."
+  (cond ((null where) (here s))
+        ((node:nodep where) where)
+        ((path:pathp where) (path:ensure where))
+        ((and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
+         (tree:ensure (tree:root) where))
+        (t (tree:ensure (here s) (princ-to-string where)))))
+
 (defun %from (where)
   "What a path is measured from: the root when it starts at one, this session
 otherwise."
@@ -80,8 +97,7 @@ otherwise."
     (if (null value) default value)))
 
 (defun write-at (where value)
-  (let ((n (%place where)))
-    (when n (setf (node:contents n) value))))
+  (setf (node:contents (%making where)) value))
 
 (defun describe (where)
   (let ((n (%place where)))
@@ -136,17 +152,17 @@ stands in comes back here with the restarts it is still offering."
       (tree:walk (%place where) (lambda (n) (push (node:full-name n) out)))
       (nreverse out)))
   (command:defcommand "live" ()
-      (:describes "what answers from the world, not the store")
+    (:describes "what answers from the world, not the store")
     (let (out)
       (tree:walk (tree:root)
-                 (lambda (n) (when (node:livep n) (push (node:full-name n) out))))
+        (lambda (n) (when (node:livep n) (push (node:full-name n) out))))
       (nreverse out)))
   (command:defcommand "mount" (what name)
-      (:describes "put a directory, or another pine, in the tree")
+    (:describes "put a directory, or another pine, in the tree")
     (let ((it (or (peer:named what) (pathname (princ-to-string what)))))
       (node:full-name (mount:mount it (tree:root) (princ-to-string name)))))
   (command:defcommand "reach" (name port &optional host)
-      (:describes "get to another pine")
+    (:describes "get to another pine")
     (job:name (peer:reach (princ-to-string name)
                           :host (and host (princ-to-string host))
                           :port (if (integerp port)
@@ -179,24 +195,22 @@ stands in comes back here with the restarts it is still offering."
                          (if (fault:standingp f) :standing :done)
                          (princ-to-string (fault:condition-of f)))))
   (command:defcommand "take" (restart)
-      (:describes "hand a standing fault one of its restarts")
+    (:describes "hand a standing fault one of its restarts")
     (let ((f (first (fault:standing))))
       (and f (fault:take f (princ-to-string restart)))))
   (command:defcommand "snapshot" () (:describes "write the tree to its store")
     (and store:*store* (store:snapshot store:*store*)))
   (command:defcommand "metrics" ()
-      (:describes "how long what pine does is taking")
+    (:describes "how long what pine does is taking")
     (meter:said))
   (command:defcommand "metrics-reset" ()
-      (:describes "start a fresh window of samples")
+    (:describes "start a fresh window of samples")
     (meter:reset)
     :reset)
   (command:defcommand "describe" (where) (:describes "what stands at a place")
     (describe where)))
 
 (defun start (&key (name "pine") store remoting)
-  "Bring up the substrate: the namespace, what runs on it, and what is painted from
-it. Nothing above it -- a system is loaded and started, including the editor."
   (libs:attend)
   (setf system:*on-loaded* #'user-package)
   (tree:make-root)
@@ -205,11 +219,13 @@ it. Nothing above it -- a system is loaded and started, including the editor."
     (setf (node:contents (tree:ensure root "name")) name)
     (command:attach root)
     (system:attach root)
+    (job:attach root)
     (state:attach root)
     (store:attach root)
     (sheet:attach root)
     (surface:root)
     (mount:mount #p"/" root "file"))
+  (job:attend)
   (%shell-commands)
   (when store
     (store:open-store store)
@@ -218,12 +234,13 @@ it. Nothing above it -- a system is loaded and started, including the editor."
   (tree:root))
 
 (defun stop ()
+  (setf node:*on-write* nil
+        node:*on-erase* nil)
+  (commit:forget-listeners)
   (dolist (s (session:sessions)) (session:close s))
   (dolist (j (system:systems)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
   (watch:forget-all)
   (dolist (j (job:jobs)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
-  (setf node:*on-write* nil
-        node:*on-erase* nil)
   (when store:*store*
     (fault:attempt (lambda () (store:snapshot store:*store*))
                    "writing the tree down")
@@ -235,8 +252,6 @@ it. Nothing above it -- a system is loaded and started, including the editor."
   (merge-pathnames "pine/init.lisp" (uiop:xdg-config-home)))
 
 (defun store-file ()
-  "Where a pine keeps what it was told to keep. Beside the config, under the
-directory a machine puts a program's own data in."
   (merge-pathnames "pine/tree.db" (uiop:xdg-data-home)))
 
 (defun user-package ()
@@ -277,7 +292,11 @@ has and a system loaded later brings its own words."
           (*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax))
           (before (length (fault:faults))))
       (log:note "reading ~a" file)
-      (fault:attempt (lambda () (load file)) (format nil "reading ~a" file))
+      (fault:attempt
+       (lambda ()
+         (handler-bind ((sb-kernel:redefinition-with-defmethod #'muffle-warning))
+           (load file)))
+       (format nil "reading ~a" file))
       (let ((broke (- (length (fault:faults)) before)))
         (when (plusp broke)
           (log:note "~a did not read: ~a" file
@@ -286,14 +305,14 @@ has and a system loaded later brings its own words."
 
 (defun quit (&optional (grace 5))
   (job:start (make-instance 'job:thread :name "quit-watchdog" :restarts nil
-                            :thunk (lambda ()
-                                     (sleep grace)
-                                     (sb-ext:exit :abort t :code 0))))
+                                        :thunk (lambda ()
+                                                 (sleep grace)
+                                                 (sb-ext:exit :abort t :code 0))))
   (job:start (make-instance 'job:thread :name "quit" :restarts nil
-                            :thunk (lambda ()
-                                     (sleep 0.2)
-                                     (ignore-errors (stop))
-                                     (sb-ext:exit :abort t :code 0))))
+                                        :thunk (lambda ()
+                                                 (sleep 0.2)
+                                                 (ignore-errors (stop))
+                                                 (sb-ext:exit :abort t :code 0))))
   t)
 
 (defun main (&key (store (store-file)))
@@ -305,7 +324,7 @@ has and a system loaded later brings its own words."
       (stop))))
 
 (defun daemon (&key (store (store-file)) (remoting actors:*port*)
-                    (config (config-file)))
+                 (config (config-file)))
   "A pine other images talk to. The store is opened after the config: a surface a
 config declares takes the name it is declared under, so a panel restored before the
 config would be the value node the surface then replaced."
@@ -321,6 +340,8 @@ config would be the value node the surface then replaced."
     (store:open-store store)
     (log:note "~d node~:p came back" (store:restore store:*store*))
     (store:keeping))
+  (setf store:*on-trouble* (lambda (said) (log:note "~a" said)))
+  (when *screen* (fault:attempt *screen* "opening the display"))
   (log:note "~a: remoting ~a, ~d command~:p, ~d running"
             (node:contents (tree:at nil "name"))
             (actors:remoting)

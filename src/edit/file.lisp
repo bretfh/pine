@@ -4,7 +4,8 @@
                     (#:log #:pine/run/log)
                     (#:doc #:pine/text/document) (#:text #:pine/text)
                     (#:parser #:pine/text/ts/parser)
-                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt))
+                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
+                    (#:match #:pine/edit/matching))
   (:export #:commands))
 (in-package #:pine/edit/file)
 
@@ -14,7 +15,7 @@
   (command:defcommand "find-file" (path)
       (:describes "open a file in a document"
        :asks (list (list :prompt "Find file: " :category :file :history :files)))
-    (let ((path (prompt:expanded (princ-to-string path))))
+    (let ((path (match:expanded (princ-to-string path))))
       (if (uiop:directory-exists-p path)
           (log:note "~a is a directory" path)
           (let* ((name (or (ignore-errors (file-namestring (pathname path))) path))
@@ -42,18 +43,21 @@
       (:describes "write the document to a file you name"
        :asks (list (list :prompt "Write file: " :category :file :history :files)))
     (let ((document (%of)))
-      (text:save document (prompt:expanded (princ-to-string path)))
+      (text:save document (match:expanded (princ-to-string path)))
       (log:note "wrote ~a" (doc:origin document))
       (doc:origin document)))
-  (command:defcommand "revert-document" ()
+  (command:defcommand "revert-document" (&optional said)
       (:describes "the file again, as it is on disk"
-       :asks '((:prompt "Revert from disk? " :must-match t)))
+       :asks '((:prompt "Revert from disk? " :candidates ("yes" "no")
+                :must-match t)))
     (let ((document (%of)))
-      (if (doc:source document)
-          (and (text:revert document)
-               (log:note "reverted ~a" (doc:origin document))
-               t)
-          (log:note "~a is on nothing to read again" (node:name document)))))
+      (cond ((not (equal "yes" (princ-to-string (or said "no")))) nil)
+            ((doc:source document)
+             (and (text:revert document)
+                  (log:note "reverted ~a" (doc:origin document))
+                  t))
+            (t (log:note "~a is on nothing to read again"
+                         (node:name document))))))
   (command:defcommand "switch-to-document" (name)
       (:describes "show a document here, making it if there is none"
        :asks '((:prompt "Document: " :category :document)))

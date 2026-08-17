@@ -183,6 +183,15 @@ arrange, never from the space available -- answering that here would eat the axi
                         (if (< i upto) +filled+ +empty+)
                         (if (< i upto) :function-name :comment)))))
 
+(defmethod measure ((w calendar) m aw ah)
+  "Seven days across and eight lines down: the month, the day names, and the six
+weeks a month can fall across."
+  (declare (ignore aw ah))
+  (multiple-value-bind (cw ch) (text-size m "MM " (%font w))
+    (if (typep m 'grid:grid)
+        (values (* 7 3) 8)
+        (values (* 7 cw) (* 8 ch)))))
+
 (defmethod measure ((w ring) m aw ah)
   (declare (ignore m aw ah))
   (let ((d (max (diameter w) (%min-w w) (%min-h w))))

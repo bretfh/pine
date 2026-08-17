@@ -22,6 +22,66 @@
         (ignore-errors (job:stop j))
         (job:forget "ticker")))))
 
+(test starting-pine-puts-what-runs-at-proc
+  "A job hangs at /proc, and START is what puts /proc there. Without this every
+supervised thing pine has is running and unreadable."
+  (booted)
+  (let ((was (tree:root)))
+    (unwind-protect
+         (let ((j (make-instance 'job:thread :name "probe" :seconds 0.05
+                                             :thunk (lambda () nil))))
+           (pine:start)
+           (is (not (null (tree:at nil "proc"))))
+           (unwind-protect
+                (progn (job:supervise j)
+                       (job:start j)
+                       (is (eq j (tree:at nil "proc" "probe")))
+                       (is (eq :running (pine:read-at "/proc/probe"))))
+             (ignore-errors (job:stop j))
+             (job:forget "probe")))
+      (setf tree:*root* was))))
+
+(test what-died-on-its-own-is-started-again
+  "Supervision that never looks is a list of jobs and a promise. A thread that
+returned without being asked to is failed, and the next sweep starts it."
+  (booted)
+  (with-tree
+    (job:attach (tree:root))
+    (let* ((runs (d:box 0))
+           (j (make-instance 'job:thread :name "flaky" :restarts t
+                                         :thunk (lambda ()
+                                                  (d:swap! runs #'1+)))))
+      (unwind-protect
+           (progn
+             (job:supervise j)
+             (job:start j)
+             (is (until (lambda () (eq :failed (job:state j))))
+                 "a thread that ended by itself is failed, not stopped")
+             (job:sweep)
+             (is (until (lambda () (> (d:held runs) 1)))
+                 "and a sweep starts it again"))
+        (ignore-errors (job:stop j))
+        (job:forget "flaky")))))
+
+(test being-asked-to-stop-is-not-dying
+  (booted)
+  (with-tree
+    (job:attach (tree:root))
+    (let ((j (make-instance 'job:thread :name "quiet" :restarts t
+                                        :thunk (lambda ()
+                                                 (loop :until (job:stoppingp j)
+                                                       :do (sleep 0.01))))))
+      (unwind-protect
+           (progn
+             (job:supervise j)
+             (job:start j)
+             (job:stop j)
+             (is (eq :stopped (job:state j)))
+             (job:sweep)
+             (is (eq :stopped (job:state j))
+                 "a sweep does not start what was asked to stop"))
+        (job:forget "quiet")))))
+
 (test an-actor-takes-messages-in-order
   (booted)
   (let* ((said (d:box nil))
@@ -130,8 +190,34 @@ image's one down and puts a listening one in its place."
                                    (tree:at nil "dev/audio/volume"))))
                     (is (equal '("audio")
                                (tree:listing (tree:at nil "host/dev"))))
-                    (is (equal '(4) (image:evaluate p '(+ 2 2)))))
+                    (is (equal '(4) (image:evaluate p '(+ 2 2))))
+                    (fault:forget-faults)
+                    (multiple-value-bind (answered broke offers)
+                        (image:evaluate p '(error "over there"))
+                      (declare (ignore answered))
+                      (is (search "over there" (princ-to-string broke))
+                          "a fault in the other one comes back")
+                      (is (member "ABORT" offers :test #'equal)
+                          "with the restarts it is still offering: ~s" offers))
+                    (let ((f (find-if (lambda (each) (typep each 'fault:borrowed))
+                                      (fault:faults))))
+                      (is (not (null f)) "and it stands here as a borrowed one")
+                      (when f
+                        (is (eq p (fault:where f))
+                            "knowing which image it is standing in"))))
                (ignore-errors (job:stop p))
                (job:forget "self")))))
     (actors:leave)
     (booted)))
+
+(test nothing-that-can-block-draws-from-a-shared-pool
+  "A receive that waits behind another one is a keystroke behind a parse. Every
+actor pine starts owns its thread, so the isolation is structural rather than
+something each caller has to remember."
+  (booted)
+  (let ((shared (loop :for j :in (job:jobs)
+                      :when (and (typep j 'job:actor) (job:ref j))
+                        :unless (typep (sento.actor-cell:msgbox (job:ref j))
+                                       'sento.messageb:message-box/bt)
+                          :collect (job:name j))))
+    (is (null shared) "these queue behind each other: ~{~a~^, ~}" shared)))

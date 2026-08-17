@@ -1,21 +1,17 @@
 (defpackage #:pine/ui/wire
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:w #:pine/ui/widget))
-  (:export #:to-wire #:from-wire #:tag #:placed #:views #:patch #:apply-patch
-           #:scroll-to))
+  (:export #:to-wire #:from-wire))
 (in-package #:pine/ui/wire)
 
 (defparameter +skip+ '(:key :of :parts :hovered :pad)
   "What does not cross: the identity the daemon keeps, what a widget stands for,
-what PARTS already says, a flag the painter sets itself, and the shorthand that
+what PARTS already says, a flag the far side sets itself, and the shorthand that
 sets two others.")
 
 (defparameter +thunks+ '(:click :changed)
   "Slots holding a function. A closure cannot cross, so it goes as an id and what
 it meant stays where it was made.")
-
-(defparameter +patchable+ '(:rows :caret)
-  "What a patch can carry. Two forms differing only in these can be sent as one.")
 
 (defvar *classes* (d:table))
 
@@ -112,79 +108,3 @@ ON-ACTION, given an id, answers what to do about it."
                   (w:bottom widget) bottom (w:right widget) right)))
         widget))))
 
-(defun placed (form)
-  (and (consp form) (getf (second form) :rect) t))
-
-(defun views (form)
-  "Every cells form in FORM, in tree order."
-  (let (acc)
-    (labels ((walk (f)
-               (when (and (consp f) (keywordp (first f)))
-                 (when (eq (first f) :cells) (push f acc))
-                 (dolist (part (cddr f)) (walk part)))))
-      (walk form))
-    (nreverse acc)))
-
-(defun %shape (form)
-  "FORM with everything a patch can carry taken out. Two forms with the same shape
-differ only in what a patch can say, which is the test for sending one."
-  (if (and (consp form) (keywordp (first form)))
-      (let ((props (second form)))
-        (when (eq (first form) :cells)
-          (setf props (loop :for (k v) :on props :by #'cddr
-                            :unless (member k +patchable+) :append (list k v))))
-        (list* (first form) props (mapcar #'%shape (cddr form))))
-      form))
-
-(defun patch (had now)
-  "What changed between two frames, or nothing when a patch cannot say it. One entry
-per cells form: (INDEX CARET (LINE . ROW)...), carrying only the lines that differ."
-  (when (and had now (equal (%shape had) (%shape now)))
-    (let ((olds (views had)) (news (views now)))
-      (when (= (length olds) (length news))
-        (loop :for o :in olds
-              :for n :in news
-              :for index :from 0
-              :for o-rows := (getf (second o) :rows)
-              :for n-rows := (getf (second n) :rows)
-              :unless (= (length o-rows) (length n-rows))
-                :do (return-from patch nil)
-              :collect (list index (getf (second n) :caret)
-                             (loop :for a :in o-rows
-                                   :for b :in n-rows
-                                   :for line :from 0
-                                   :unless (equal a b) :collect (cons line b))))))))
-
-(defun apply-patch (form patch)
-  "FORM with PATCH applied: a fresh frame carrying the lines that changed."
-  (let ((index -1))
-    (labels ((patched (f)
-               (if (and (consp f) (keywordp (first f)))
-                   (if (eq (first f) :cells)
-                       (let ((entry (assoc (incf index) patch))
-                             (props (second f)))
-                         (if (null entry)
-                             f
-                             (destructuring-bind (caret lines) (rest entry)
-                               (let ((rows (copy-list (getf props :rows))))
-                                 (dolist (line lines)
-                                   (setf (nth (car line) rows) (cdr line)))
-                                 (list* :cells
-                                        (%ordered
-                                         (list* :rows rows :caret caret
-                                                (loop :for (k v) :on props :by #'cddr
-                                                      :unless (member k +patchable+)
-                                                        :append (list k v))))
-                                        (cddr f))))))
-                       (list* (first f) (second f) (mapcar #'patched (cddr f))))
-                   f)))
-      (patched form))))
-
-(defun scroll-to (chosen offset visible)
-  "The offset that keeps the chosen row on screen."
-  (if (minusp chosen)
-      (max 0 offset)
-      (let ((at offset))
-        (when (>= chosen (+ at visible)) (setf at (1+ (- chosen visible))))
-        (when (< chosen at) (setf at chosen))
-        (max 0 at))))

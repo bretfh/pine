@@ -55,8 +55,8 @@
          (shift (%activep state "Shift"))
          (printable (and (plusp (length utf8))
                          (graphic-char-p (char utf8 0))
-                         (not super)
-                         (not (and ctrl (string= utf8 " "))))))
+                         (not (string= utf8 " "))
+                         (not super))))
     (let ((name (if printable utf8 (xkb:xkb-keysym-get-name sym))))
       (values (format nil "~:[~;C-~]~:[~;M-~]~:[~;s-~]~:[~;S-~]~a"
                       ctrl meta super (and shift (not printable)) name)
@@ -64,7 +64,7 @@
 
 (defun deadline (k)
   "Milliseconds until the held key repeats again, or nothing when none is held.
-The only deadline a painter has: with no key down it waits as long as it takes."
+The only deadline the screen has: with no key down it waits as long as it takes."
   (let ((held (keys-held k)) (rate (keys-rate k)))
     (when (and held (plusp rate))
       (let ((due (max (+ (keys-since k) (keys-delay k))
@@ -101,16 +101,16 @@ The only deadline a painter has: with no key down it waits as long as it takes."
     (xkb:xkb-state-update-mask (keys-state k) depressed latched locked 0 0 group)))
 
 (defun pressed (k code)
-  "What was pressed, and hold it for repeating unless it is a bare modifier."
+  "What was pressed, and hold it for repeating. A bare modifier is not a press: it
+is what the next one is spelled with."
   (when (keys-state k)
     (multiple-value-bind (said name) (chord k (+ 8 code))
-      (if (modifierp name)
-          (forget-held k)
-          (setf (keys-held-code k) code
-                (keys-held k) said
-                (keys-since k) (now-ms)
-                (keys-repeated k) 0))
-      said)))
+      (cond ((modifierp name) (forget-held k) nil)
+            (t (setf (keys-held-code k) code
+                     (keys-held k) said
+                     (keys-since k) (now-ms)
+                     (keys-repeated k) 0)
+               said)))))
 
 (defun released (k code)
   (when (eql code (keys-held-code k)) (forget-held k))

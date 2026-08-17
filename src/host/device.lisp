@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:sh #:pine/host/shell))
   (:export #:device #:readings #:attach #:audio #:screen #:power #:net #:media
-           #:clock #:tick #:sys #:env))
+           #:clip #:clock #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
 (defvar *now* (d:box 0))
@@ -32,6 +32,12 @@ twelve methods, and it is this list now."))
 (defmethod node:announces ((n device)) (announces n))
 (defmethod node:refreshes ((n device)) (refreshes n))
 
+(defmethod node:stir :after ((n device))
+  "What a device is told is that the world behind it moved, and what reads the world
+is the rows. Stirring one without the other leaves every reading at whatever it
+answered the first time."
+  (dolist (row (node:nodes n)) (node:stir row)))
+
 (defun %reading (n row)
   (destructuring-bind (name reads &optional writes) row
     (let ((name (string name)))
@@ -54,6 +60,22 @@ twelve methods, and it is this list now."))
   (make-instance 'device :name name :readings readings :announces announces
                          :refreshes refreshes :describes describes))
 
+(defun %sinks ()
+  "Every sink wireplumber lists, and which one is the default."
+  (loop :for line :in (sh:lines (sh:sh "wpctl status"))
+        :with inp := nil
+        :do (cond ((search "Sinks:" line) (setf inp t))
+                  ((and inp (search "Sources:" line)) (setf inp nil)))
+        :when (and inp (search "." line) (not (search "Sinks:" line)))
+          :collect (let* ((at (position #\. line))
+                          (name (string-trim " " (subseq line (1+ at))))
+                          (defaultp (search "*" (subseq line 0 (min 8 (length line))))))
+                     (list :name (if (search "[vol:" name)
+                                     (string-trim " " (subseq name 0 (search "[vol:" name)))
+                                     name)
+                           :default (and defaultp t)
+                           :id (sh:number-in line)))))
+
 (defun audio ()
   (flet ((level () (let ((n (sh:number-in (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@"))))
                      (when n (round (* 100 n)))))
@@ -64,9 +86,17 @@ twelve methods, and it is this list now."))
                                            (max 0 (min 100 v)))))
                   (list "muted" #'muted
                         (lambda (v) (declare (ignore v))
-                          (sh:sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))))
+                          (sh:sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")))
+                  (list "sinks" #'%sinks
+                        (lambda (v) (sh:sh "wpctl set-default ~a" v) t))
+                  (list "sink" (lambda ()
+                                 (let ((it (find-if (lambda (each) (getf each :default))
+                                                    (%sinks))))
+                                   (getf it :name)))
+                        (lambda (v) (sh:sh "wpctl set-default ~a" v) t)))
             :announces '("pactl subscribe")
-            :describes "the default sink: how loud, and whether it is muted")))
+            :describes "the default sink: how loud, whether it is muted, and what
+else there is to play through")))
 
 (defun screen ()
   (flet ((where () (first (directory "/sys/class/backlight/*/")))
@@ -117,6 +147,34 @@ twelve methods, and it is this list now."))
               :refreshes 10
               :describes "the battery, and lock suspend reboot poweroff logout"))))
 
+(defun %wifi ()
+  "What is in the air, strongest first: what it is called, how strong, whether it
+wants a password and whether it is the one we are on."
+  (let (found)
+    (dolist (line (sh:lines (sh:sh "nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi"))
+                  (sort (nreverse found) #'> :key (lambda (each) (getf each :signal))))
+      (let ((parts (uiop:split-string line :separator '(#\:))))
+        (when (and (>= (length parts) 4) (plusp (length (second parts))))
+          (push (list :ssid (second parts)
+                      :signal (or (parse-integer (third parts) :junk-allowed t) 0)
+                      :secure (plusp (length (string-trim " " (fourth parts))))
+                      :in-use (equal "*" (first parts)))
+                found))))))
+
+(defun clip ()
+  "What the desktop is holding, as a place. Reading it is what anything else on
+this machine copied; writing it is copying."
+  (device "clip"
+          (list (list "text"
+                      (lambda ()
+                        (let ((said (sh:sh "wl-paste --no-newline 2>/dev/null")))
+                          (when (plusp (length said)) said)))
+                      (lambda (v)
+                        (sh:feed "wl-copy" (princ-to-string v))
+                        t)))
+          :announces '("wl-paste --watch echo")
+          :describes "the desktop's clipboard"))
+
 (defun net ()
   (flet ((connection ()
            (let ((line (sh:firstp (sh:sh "nmcli -t -f NAME connection show --active"))))
@@ -124,11 +182,22 @@ twelve methods, and it is this list now."))
          (online () (and (search "connected" (sh:sh "nmcli -t -f STATE general")) t)))
     (device "net"
             (list (list "connection" #'connection)
-                  (list "online" #'online))
+                  (list "online" #'online)
+                  (list "wifi" #'%wifi
+                        (lambda (v)
+                          "An ssid connects to it. :rescan looks again."
+                          (if (eq :rescan v)
+                              (sh:sh "nmcli device wifi rescan")
+                              (sh:sh "nmcli device wifi connect ~s" v))
+                          t)))
             :announces '("nmcli monitor")
-            :describes "what is connected")))
+            :describes "what is connected, and what else is in the air")))
 
-(defun media (&optional player)
+(defun %seconds (said)
+  (let ((n (sh:number-in said)))
+    (when n (round n))))
+
+(defun media (&key player)
   (flet ((ask (what) (sh:sh "playerctl~@[ -p ~a~] ~a 2>/dev/null" player what)))
     (labels ((meta (key) (let ((said (ask (format nil "metadata ~a" key))))
                            (when (plusp (length said)) said))))
@@ -143,7 +212,12 @@ twelve methods, and it is this list now."))
                      (list "artist" (lambda () (meta "xesam:artist")))
                      (list "album" (lambda () (meta "xesam:album")))
                      (list "art" (lambda () (meta "mpris:artUrl")))
-                     (list "position" (lambda () (sh:number-in (ask "position")))))
+                     (list "position" (lambda () (sh:number-in (ask "position"))))
+                     (list "length" (lambda ()
+                                      (let ((said (meta "mpris:length")))
+                                        (when said
+                                          (let ((n (sh:number-in said)))
+                                            (when n (round n 1000000))))))))
                (loop :for verb :in '("play" "pause" "next" "previous" "stop")
                      :collect (list verb (constantly verb)
                                     (let ((verb verb))
@@ -223,10 +297,17 @@ moment: sampling per read gives the second one no ticks to divide by."
         (let ((raw (sh:number-in (%file (merge-pathnames "temp1_input" sensor)))))
           (when raw (return (round raw 1000))))))))
 
+(defun %disk ()
+  "How full the filesystem this is running on is, as a percentage."
+  (let* ((said (sh:sh "df -P / | tail -1"))
+         (pct (find-if (lambda (word) (find #\% word)) (sh:words said))))
+    (or (and pct (sh:number-in pct)) 0)))
+
 (defun sys ()
   (device "sys"
           (list (list "cpu" #'%cpu)
                 (list "ram" #'%ram)
+                (list "disk" #'%disk)
                 (list "temp" #'%temp)
                 (list "uptime" (lambda () (round (or (sh:number-in (%file "/proc/uptime")) 0))))
                 (list "load" (lambda ()

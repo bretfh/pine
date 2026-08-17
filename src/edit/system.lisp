@@ -1,7 +1,8 @@
 (defpackage #:pine/edit
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
+                    (#:tree #:pine/fs/tree) (#:commit #:pine/fs/commit)
+                    (#:job #:pine/run/job)
                     (#:system #:pine/run/system) (#:command #:pine/run/command)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
                     (#:key #:pine/ui/key) (#:surface #:pine/ui/surface)
@@ -11,7 +12,8 @@
                     (#:emode #:pine/edit/mode) (#:window #:pine/edit/window)
                     (#:file #:pine/edit/file)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
-                    (#:prompt #:pine/edit/prompt) (#:listing #:pine/edit/listing)
+                    (#:prompt #:pine/edit/prompt) (#:match #:pine/edit/matching)
+                    (#:listing #:pine/edit/listing)
                     (#:isearch #:pine/edit/isearch) (#:commands #:pine/edit/commands)
                     (#:help #:pine/edit/help) (#:evaluate #:pine/edit/eval)
                     (#:debugger #:pine/edit/debugger))
@@ -88,7 +90,7 @@
 
 (defclass edit (system:system) ()
   (:documentation "Windows onto documents, the chords that act on them, and the
-surface a painter shows. A system like any other: nothing in the substrate names
+surface pine shows. A system like any other: nothing in the substrate names
 it."))
 
 (system:offers 'edit)
@@ -97,15 +99,19 @@ it."))
   ((livep  :allocation :class :initform t   :reader node:livep)
    (savedp :allocation :class :initform nil :reader node:savedp))
   (:documentation "Where a key arrives. Writing a chord here is typing it, so a
-painter, a test and another pine all press keys the same way."))
+keyboard, a test and another pine all press keys the same way."))
 
 (defmethod node:contents ((n key-node)) (key:text (key:pending)))
 
+(defun %drew (moved)
+  (declare (ignore moved))
+  (let ((s (surface:named "editor")))
+    (when s (fault:attempt (lambda () (node:stir s)) "the frame"))))
+
 (defmethod (setf node:contents) (value (n key-node))
-  (let ((said nil))
+  (commit:writing
     (dolist (k (key:chord (princ-to-string value)))
-      (setf said (keys:dispatch k)))
-    (log:note "~a: ~a" value said))
+      (keys:dispatch k)))
   value)
 
 (defun %keys ()
@@ -158,7 +164,7 @@ painter, a test and another pine all press keys the same way."))
                    (mapcar (lambda (each)
                              (cons (string-downcase (string (car each))) (cdr each)))
                            help:+settings+)))
-  (prompt:source :file #'prompt:files))
+  (prompt:source :file #'match:files))
 
 (defun %asking (c)
   (let* ((spec (first (command:asks c)))
@@ -166,6 +172,7 @@ painter, a test and another pine all press keys the same way."))
     (prompt:ask (or (getf spec :prompt) (format nil "~a: " (command:name c)))
                 :category (getf spec :category)
                 :history (getf spec :history)
+                :candidates (getf spec :candidates)
                 :must-match (getf spec :must-match)
                 :initial (if (functionp initial) (funcall initial) initial)
                 :then (lambda (answer) (command:run c (list answer))))
@@ -183,7 +190,7 @@ painter, a test and another pine all press keys the same way."))
   :asking)
 
 (defun %frame ()
-  "The editor, laid out for whatever is showing it. A painter says how big it is by
+  "The editor, laid out for whatever is showing it. The screen says how big it is by
 writing /surface/editor/size, and this follows that the way it follows anything
 else it read."
   (let* ((s (surface:named "editor"))
@@ -207,6 +214,8 @@ else it read."
         build:*editing* #'%editing-value
         doc:*on-current* #'window:follow
         parser:*showing* #'render:showing
+        parser:*on-parse* (lambda (document) (declare (ignore document)) (%drew nil))
+        (commit:on-commit :edit) #'%drew
         fault:*on-fault*
         (lambda (f)
           (if (fault:standingp f)
@@ -229,6 +238,8 @@ else it read."
         build:*editing* nil
         doc:*on-current* nil
         parser:*showing* nil
+        parser:*on-parse* nil
+        (commit:on-commit :edit) nil
         fault:*on-fault* nil)
   (key:take-next nil)
   (isearch:took-all)

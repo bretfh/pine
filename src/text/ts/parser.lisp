@@ -8,9 +8,10 @@
                     (#:runtime #:pine/text/ts/runtime)
                     (#:syntax #:pine/text/ts/syntax)
                     (#:hl #:pine/text/ts/highlight))
-  (:export #:parser #:parser-for #:parsers #:highlights #:note #:wait #:forget
+  (:export #:parser #:parser-for #:parsers #:highlights #:note #:forget
            #:forget-all #:state-of #:language-of #:document-of #:showing #:banded
-           #:parsed #:indent #:*runtime* #:*on-parse* #:*showing*))
+           #:parsed #:indent #:motion #:currentp #:running
+           #:*runtime* #:*on-parse* #:*showing*))
 (in-package #:pine/text/ts/parser)
 
 (defvar *parsers* (d:table))
@@ -22,8 +23,6 @@
 business knowing what a window is.")
 (defvar *counter* 0)
 
-(actors:pool :parse 2)
-(defparameter +settle+ 2)
 
 (defclass parser ()
   ((document-of :initarg :document :reader document-of)
@@ -47,14 +46,19 @@ is given to tree-sitter at all."
   (when *showing* (funcall *showing* document)))
 
 (defun %kept (had edit)
-  "What stays of the runs already walked. An edit moves every line under it, so
-those go; a scroll moves nothing, so they all stay."
+  "What stays of the runs already walked. The lines the edit replaced go; the ones
+above it are where they were, and the ones below it move by as many lines as the
+edit added or took away."
   (cond ((null had) (d:no-map))
         ((null edit) had)
-        (t (let ((line (first (first edit)))
-                 (out (d:no-map)))
-             (d:do-map (at runs had out)
-               (when (and line (< at line)) (setf out (d:with out at runs))))))))
+        (t (destructuring-bind (at old new bytes) (first edit)
+             (declare (ignore bytes))
+             (let ((delta (- new old))
+                   (out (d:no-map)))
+               (d:do-map (line runs had out)
+                 (cond ((< line at) (setf out (d:with out line runs)))
+                       ((< line (+ at old)))
+                       (t (setf out (d:with out (+ line delta) runs))))))))))
 
 (defun %merged (had runs band)
   "HAD with the band walked again: the lines in it are what the walk says now, and
@@ -97,11 +101,33 @@ the lines outside it are what they were."
     (when *on-parse* (funcall *on-parse* document))
     (%flat (d:held (found p)))))
 
+(defun currentp (p)
+  (and (= (d:held (parsed p)) (doc:tick (document-of p)))
+       (equal (d:held (banded p)) (showing (document-of p)))))
+
+(defun %current (p tick)
+  (unless (currentp p) (%parse p tick))
+  p)
+
 (defun %receive (p message)
-  (case (first message)
-    (:parse (meter:timing (:parse) (%parse p (second message))))
-    (:stop (runtime:free-parse-state (state-of p)))
-    (t nil)))
+  (destructuring-bind (tag &rest more) message
+    (case tag
+      (:parse (meter:timing (:parse) (%parse p (first more))))
+      (:indent
+       (destructuring-bind (tick from to width then) more
+         (%current p tick)
+         (funcall then
+                  (loop :for line :from from :to to
+                        :for at := (hl:parse-indent (state-of p) line :width width)
+                        :when at :collect (cons line at)))))
+      (:motion
+       (destructuring-bind (tick kind at col then) more
+         (%current p tick)
+         (multiple-value-bind (line where)
+             (runtime:parse-motion (state-of p) kind at col)
+           (when line (funcall then line where)))))
+      (:stop (runtime:free-parse-state (state-of p)))
+      (t (error "A parser has no handler for ~s." message)))))
 
 (defun %grammar (document)
   "Which language a document is parsed as: what it says it is written in, else what
@@ -121,7 +147,7 @@ its mode says."
                  (make-instance 'job:actor
                                 :name (format nil "parse-~a-~d"
                                               (node:name document) (incf *counter*))
-                                :dispatcher :parse
+                                :dispatcher :pinned
                                 :receive (lambda (message) (%receive p message)))))
           p)))))
 
@@ -166,20 +192,20 @@ plain text."
     (let ((p (note document)))
       (when p (%flat (d:held (found p)))))))
 
-(defun wait (document &key (seconds +settle+))
+(defun indent (document from to &key (width 2) then)
   (let ((p (note document)))
     (when p
-      (loop :repeat (round (/ seconds 0.01))
-            :until (and (= (d:held (parsed p)) (doc:tick document))
-                        (equal (d:held (banded p)) (showing document)))
-            :do (sleep 0.01))
-      (%flat (d:held (found p))))))
+      (job:tell (running p)
+                (list :indent (doc:tick document) from to width then))
+      p)))
 
-(defun indent (document line &key (width 2))
+(defun motion (document kind then)
   (let ((p (note document)))
     (when p
-      (wait document)
-      (hl:parse-indent (state-of p) line :width width))))
+      (job:tell (running p)
+                (list :motion (doc:tick document) kind
+                      (doc:at-line document) (doc:at-col document) then))
+      p)))
 
 (defun forget (document)
   (let* ((name (if (stringp document) document (node:name document)))

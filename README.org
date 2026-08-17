@@ -41,7 +41,7 @@ Linux and wayland. Guix is what pine develops against:
 
 : git clone https://github.com/bretfh/pine
 : cd pine
-: make bin        # one binary: the daemon, the painter and the cli
+: make bin        # one binary: the daemon and the cli
 : ./pine start    # reads ~/.config/pine/init.lisp and starts what it declares
 : ./pine status
 
@@ -64,6 +64,11 @@ wayland compositor.
 The tree is the interface, from Lisp or from a terminal:
 
 : ./pine read /dev/audio/volume
+: ./pine read /dev/audio/sinks       # every sink; write one its name
+: ./pine read /dev/net/wifi          # what is in the air; write one an ssid
+: ./pine read /dev/clip/text         # the desktop's clipboard; write one to copy
+: ./pine read /proc                  # what pine is running
+: ./pine write /proc/screen '(:restart)'   # and a verb it takes
 : ./pine write /surface/sound/shown t
 : ./pine watch /dev/media/title
 : ./pine eval '(+ 1 2)'
@@ -117,7 +122,9 @@ the area the layout is given is what is left after that bar took its strip:
 =pine/user= is the language: Common Lisp and pine's whole protocol in one
 package, so a package that uses it and nothing else can say everything the editor
 can say. =~/.config/pine/init.lisp= is read in it, and so is anything else you
-write:
+write. [[file:examples/init.lisp][examples/init.lisp]] is a config you can copy.
+"make shot CONFIG=<file>" draws what one declares as PNGs, with no display and no
+compositor, so you can look at yours before you run it:
 
 #+begin_src lisp
   (defpackage #:notes (:use #:pine/user))
@@ -165,7 +172,8 @@ it:
 : make check       # load everything, warning free
 : make test        # the suite
 : make shot        # the frame and the surfaces as png, headless
-: make screen      # the painter on a headless compositor, and a shot of it
+: make shot CONFIG=~/.config/pine/init.lisp   # what your own config draws
+: make screen      # pine on a headless compositor, and a shot of what it drew
 : make screen COMPOSITOR=river         # with pine as the window manager too
 : make docs        # doc/*.dot -> the png and svg beside them
 : make bench WORK=typing SIZE=20000   # a workload, through the real paths

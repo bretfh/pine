@@ -3,11 +3,10 @@
   (:shadow #:directory)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree))
-  (:export #:mount #:unmount #:mounted #:mounts #:truename-of #:place
+  (:export #:mount #:truename-of #:place
            #:file #:directory))
 (in-package #:pine/fs/mount)
 
-(defvar *mounts* (d:table))
 
 (defclass mount (node:node)
   ((savedp :allocation :class :initform nil :reader node:savedp)
@@ -35,19 +34,10 @@ another machine. The method differs; nothing above it does."))
          (n (make-instance 'directory :name name :truename it
                                       :describes (namestring it))))
     (node:attach n into)
-    (d:keep! *mounts* name n)
     n))
 
 (defmethod mount ((what string) into name)
   (mount (pathname what) into name))
-
-(defun unmount (name &optional (from (tree:root)))
-  (d:drop! *mounts* name)
-  (node:detach from name))
-
-(defun mounted () (d:keys (d:all *mounts*)))
-
-(defun mounts () (d:vals (d:all *mounts*)))
 
 (defmethod node:contents ((n file))
   (when (probe-file (truename-of n))

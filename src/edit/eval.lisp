@@ -1,6 +1,7 @@
 (defpackage #:pine/edit/eval
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree)
                     (#:command #:pine/run/command) (#:job #:pine/run/job)
                     (#:image #:pine/run/image) (#:session #:pine/run/session)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
@@ -11,11 +12,10 @@
   (:export #:definition #:references #:arglist #:explains
            #:token-at #:symbol-at #:offset-of #:line-col #:form-before
            #:form-around #:visit #:went #:images #:image-named
-           #:evaluating #:commands #:*went* #:*target*))
+           #:evaluating #:commands #:target #:target-was #:*went*))
 (in-package #:pine/edit/eval)
 
 (defvar *went* (d:box nil))
-(defvar *target* nil)
 (defvar *evaluating* nil)
 (defparameter +kinds+ '(:function :macro :generic-function :variable :class))
 (defparameter +delimiters+ (format nil "~c()'`,;\"" #\Newline))
@@ -108,84 +108,6 @@
                              (when (zerop depth)
                                (return-from form-around (values from (1+ i)))))))))))))
 
-(defgeneric definition (mode document &optional of)
-  (:documentation "Where what is at point is defined, as (FILE LINE COL KIND).")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
-    nil))
-
-(defgeneric references (mode document &optional of)
-  (:documentation "Every place that mentions what is at point.")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
-    nil))
-
-(defgeneric arglist (mode document &optional of)
-  (:documentation "What the call at point takes.")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
-    nil))
-
-(defgeneric explains (mode document &optional of)
-  (:documentation "What the name at point is.")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
-    nil))
-
-(defun %placed (source kind)
-  (let ((file (sb-introspect:definition-source-pathname source))
-        (at (sb-introspect:definition-source-character-offset source)))
-    (when (and file (probe-file file))
-      (multiple-value-bind (line col)
-          (if at
-              (line-col (ignore-errors (uiop:read-file-string file)) at)
-              (values 0 0))
-        (list (namestring file) line col kind)))))
-
-(defmethod definition ((m mode:lisp) document &optional of)
-  (let ((s (symbol-at document of)))
-    (when (symbolp s)
-      (loop :for kind :in +kinds+
-            :append (loop :for source
-                            :in (ignore-errors
-                                 (sb-introspect:find-definition-sources-by-name
-                                  s kind))
-                          :for placed := (%placed source kind)
-                          :when placed :collect placed)))))
-
-(defmethod references ((m mode:lisp) document &optional of)
-  (let ((s (symbol-at document of)))
-    (when (and s (symbolp s))
-      (loop :for (nil . source) :in (ignore-errors (sb-introspect:who-calls s))
-            :for placed := (%placed source :caller)
-            :when placed :collect placed))))
-
-(defmethod mode:complete ((m mode:lisp) document prefix)
-  (when (plusp (length prefix))
-    (let ((up (string-upcase prefix)) (out nil))
-      (do-symbols (s (language:package-of document))
-        (let ((name (string-downcase (symbol-name s))))
-          (when (and (>= (length name) (length prefix))
-                     (string-equal up name :end2 (length up)))
-            (pushnew name out :test #'string=))))
-      (sort out #'string<))))
-
-(defmethod arglist ((m mode:lisp) document &optional of)
-  (multiple-value-bind (s token) (symbol-at document of)
-    (when (and s (symbolp s) (fboundp s))
-      (format nil "~(~a ~a~)" token
-              (or (ignore-errors (sb-introspect:function-lambda-list s)) "()")))))
-
-(defmethod explains ((m mode:lisp) document &optional of)
-  (multiple-value-bind (s token) (symbol-at document of)
-    (when (and s (symbolp s))
-      (let ((said (or (documentation s 'function) (documentation s 'variable)))
-            (args (arglist m document of)))
-        (cond ((and args said) (format nil "~a  ~a" args said))
-              (args args)
-              (said (format nil "~a: ~a" token said))
-              (t (format nil "~a is not defined" token)))))))
-
 (defun went ()
   (let ((back (first (d:held *went*))))
     (when back (d:swap! *went* #'rest))
@@ -207,17 +129,6 @@
     (log:note "~a:~d" (file-namestring file) (1+ line))
     place))
 
-(defun prefix-at (document)
-  (let* ((text (doc:text document))
-         (at (offset-of document))
-         (from (token-start text at)))
-    (subseq text from (min at (length text)))))
-
-(defun put-completion (document prefix choice)
-  (let ((line (doc:at-line document)) (col (doc:at-col document)))
-    (doc:delete-region document line (max 0 (- col (length prefix))) line col)
-    (doc:insert document choice)))
-
 (defun images ()
   "Every image work can be done in: the children this pine runs, and the pines it
 has reached. Two relationships, one protocol."
@@ -225,6 +136,18 @@ has reached. Two relationships, one protocol."
 
 (defun image-named (name)
   (find (princ-to-string name) (images) :key #'job:name :test #'equal))
+
+(defun %at (name) (tree:ensure nil "eval" name))
+
+(defun target () (and (tree:root) (node:contents (%at "target"))))
+
+(defun (setf target) (name)
+  (setf (node:contents (%at "target")) name))
+
+(defun target-was () (and (tree:root) (node:contents (%at "was"))))
+
+(defun (setf target-was) (name)
+  (setf (node:contents (%at "was")) name))
 
 (defun evaluating (document)
   (or *evaluating*
@@ -236,8 +159,8 @@ has reached. Two relationships, one protocol."
 (defun %there (document text)
   "Evaluate in the image the target names, and say what it said the way a session
 here would."
-  (let ((i (image-named *target*)))
-    (cond ((null i) (format nil "no image named ~a" *target*))
+  (let* ((where (target)) (i (image-named where)))
+    (cond ((null i) (format nil "no image named ~a" where))
           (t (multiple-value-bind (*package* *readtable*)
                  (language:reading document)
                (multiple-value-bind (answered broke)
@@ -247,14 +170,15 @@ here would."
                      (format nil "~{~s~^, ~}" answered))))))))
 
 (defun evaluate (document text at)
-  (let* ((s (unless *target* (evaluating document)))
+  (let* ((where (target))
+         (s (unless where (evaluating document)))
          (e (when s (session:evaluate s (session:read s text))))
-         (said (cond (*target* (%there document text))
+         (said (cond (where (%there document text))
                      ((and e (session:fault e)) (format nil "~a" (session:fault e)))
                      (t (format nil "~{~s~^, ~}" (session:answered e))))))
     (log:note "~a" said)
-    (render:forget-overlays document)
-    (render:overlay document (line-col (doc:text document) at)
+    (doc:forget-overlays document)
+    (doc:overlay document (line-col (doc:text document) at)
                     (format nil "=> ~a" said)
                     (if (and e (session:fault e)) :error :comment))
     (or e said)))
@@ -342,9 +266,9 @@ here would."
     (let ((names (cons "here" (mapcar #'job:name (images)))))
       (prompt:ask "Eval in: " :must-match t :candidates names
                   :then (lambda (said)
-                          (setf *target* (unless (equal said "here") said))
+                          (setf (target) (unless (equal said "here") said))
                           (log:note "evaluating in ~a"
-                                    (or *target* "this image"))))
+                                    (or (target) "this image"))))
       :asking))
   (command:defcommand "eval-expression" (form)
       (:describes "read a form and evaluate it"

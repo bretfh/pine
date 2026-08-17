@@ -27,8 +27,8 @@ measurement is cairo's, so it is the one the paint will use."
 
 (defun draw (tree path &key (width 800) (height 600) (font 14)
                             (background +background+))
-  "Draw TREE onto a PNG. No display and no compositor: this is what a painter would
-put on the screen, in a file you can look at."
+  "Draw TREE onto a PNG. No display and no compositor: this is what would land on
+the screen, in a file you can look at."
   (let* ((s (cl-cairo2:create-image-surface :argb32 width height))
          (context (cl-cairo2:create-context s))
          (m (make-instance 'canvas:canvas :context context :size font)))
@@ -43,21 +43,29 @@ put on the screen, in a file you can look at."
                (layout:measure tree m width height)
                (layout:arrange tree m 0 0 width height)
                (layout:paint tree m)))
+           (ensure-directories-exist path)
            (cl-cairo2:surface-write-to-png s (namestring path))
+           (unless (probe-file path)
+             (error "~a was not written" (namestring path)))
            (namestring path))
       (cl-cairo2:destroy context)
       (cl-cairo2:destroy s))))
 
 (defun surfaces (&key (into "/tmp/") (width 800) (height 600))
-  "Every surface that is up, each as a PNG. What a painter would be showing."
+  "Every surface that is up, each as a PNG at the size it asked for. A bar is drawn
+as tall and as narrow as it measured, rather than stretched to fill a window it
+would never be given."
   (loop :for each :in (surface:surfaces)
         :when (surface:shown each)
           :collect (let ((tree (node:contents each)))
                      (when tree
-                       (draw tree (merge-pathnames
-                                   (format nil "pine-~a.png" (node:name each))
-                                   into)
-                             :width width :height height)))))
+                       (multiple-value-bind (cw ch) (measure tree :width width
+                                                                  :height height)
+                         (draw tree (merge-pathnames
+                                     (format nil "pine-~a.png" (node:name each))
+                                     into)
+                               :width (max 16 (min width cw))
+                               :height (max 16 (min height ch))))))))
 
 (defun shot (tree &key (path "/tmp/pine.png") (width 800) (height 600) (font 14))
   (draw tree path :width width :height height :font font))

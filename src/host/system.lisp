@@ -20,9 +20,29 @@ the substrate names either."))
 
 (system:offers 'host)
 
-(defun attend (n)
-  "Start what N declared: the streams whose lines say the world behind it moved, and
-its interval where it has no stream to speak for it."
+(defun %make (name &rest arguments)
+  "The device NAME names, made. What builds one is a function in DEVICE with that
+name."
+  (let ((make (find-symbol (string-upcase (princ-to-string name))
+                           :pine/host/device)))
+    (when (and make (fboundp make))
+      (apply make arguments))))
+
+(defun attend (what &rest arguments)
+  "Start what WHAT declared: the streams whose lines say the world behind it moved,
+and its interval where it has no stream to speak for it.
+
+A name in place of a node is made and put under /dev first:
+
+  (attend \"media\" :player \"emms\")"
+  (let ((n (if (node:nodep what)
+               what
+               (let ((it (apply #'%make what arguments)))
+                 (when it
+                   (node:attach it (tree:ensure (tree:root) "dev")))))))
+    (%attend n)))
+
+(defun %attend (n)
   (when (node:nodep n)
     (let ((watching (remove nil
                             (mapcar (lambda (line)
@@ -71,14 +91,10 @@ its interval where it has no stream to speak for it."
                                            :thunk #'device:tick)))
     (command:defcommand "devices" () (:describes "what the machine has")
       (tree:listing (tree:at root "dev")))
-    (command:defcommand "attend" (name) (:describes "put a device in the tree")
-      (let ((make (find-symbol (string-upcase (princ-to-string name))
-                               :pine/host/device)))
-        (when (and make (fboundp make))
-          (let ((it (funcall make)))
-            (node:attach it (tree:ensure root "dev"))
-            (attend it)
-            (node:full-name it)))))
+    (command:defcommand "attend" (name &rest arguments)
+        (:describes "put a device in the tree")
+      (let ((it (apply #'attend name arguments)))
+        (and it (node:full-name it))))
     (command:defcommand "sh" (line) (:describes "run something")
       (sh:run-line (princ-to-string line))))
   s)

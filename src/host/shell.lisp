@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:meter #:pine/run/meter)
                     (#:actors #:pine/run/actors) (#:job #:pine/run/job))
-  (:export #:sh #:lines #:words #:number-in #:firstp #:has #:asked #:ran
+  (:export #:sh #:feed #:lines #:words #:number-in #:firstp #:has #:asked #:ran
            #:run-line #:launch #:streaming #:hear #:quiet #:hearing
            #:stream-node #:attach #:forget-all #:*breath* #:*out*))
 (in-package #:pine/host/shell)
@@ -74,6 +74,16 @@ one command runs it once and a bar built twice in a frame does not fork twice."
 (defun sh (format &rest arguments)
   "Ask the machine something and answer what it said."
   (meter:timing (:sh) (asked (apply #'format nil format arguments))))
+
+(defun feed (line text)
+  "Give a program TEXT on its standard input. Not remembered: this is telling the
+machine something, and telling it twice is twice."
+  (meter:counted :sh-fork)
+  (with-input-from-string (in (princ-to-string text))
+    (uiop:run-program (list "sh" "-c" line) :input in :output nil
+                                            :error-output nil
+                                            :ignore-error-status t))
+  t)
 
 (defun lines (text)
   (remove "" (uiop:split-string (or text "") :separator '(#\Newline))

@@ -29,7 +29,7 @@
   (super nil :read-only t))
 
 (defun %named (sym)
-  "One name for a key however it was spelled. A painter says what xkb calls it, a
+  "One name for a key however it was spelled. A keyboard says what xkb calls it, a
 config says what emacs calls it, and C-SPC in a keymap has to be the key that
 arrives as `space'."
   (if (< (length sym) 2)
@@ -71,8 +71,15 @@ object, which is what lets KEY= be EQ."
                   (alexandria:ensure-list keys))))
 
 (defun chord (spec)
-  (mapcar #'parse (remove "" (uiop:split-string spec :separator '(#\Space))
-                          :test #'string=)))
+  "The keys a chord names. Written down, a space is what separates one key from the
+next, so a space on its own is the space key rather than nothing at all: /key is the
+one door everything types through, and a door that swallows what it is given is
+worse than one that asks for a name."
+  (let ((keys (remove "" (uiop:split-string spec :separator '(#\Space))
+                      :test #'string=)))
+    (if (and (null keys) (plusp (length spec)))
+        (list (parse "SPC"))
+        (mapcar #'parse keys))))
 
 (defun typed (k)
   "What this key types, or nothing where it types nothing. SPC is a key with a
@@ -81,7 +88,8 @@ thing as the key that arrived."
   (unless (or (key-ctrl k) (key-meta k) (key-super k))
     (let ((sym (key-sym k)))
       (cond ((equal sym "SPC") " ")
-            ((and (= 1 (length sym)) (graphic-char-p (char sym 0))) sym)))))
+            ((and (= 1 (length sym)) (graphic-char-p (char sym 0)))
+             (if (key-shift k) (string-upcase sym) sym))))))
 
 (defun selfp (k) (and (typed k) t))
 

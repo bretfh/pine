@@ -152,12 +152,20 @@ job: stopping it is how you stop listening."
           (list :ok (node:full-name n))))))
 
 (defun %place (where message)
-  (let ((n (tree:at (tree:root) (string-left-trim "/" (princ-to-string where)))))
+  "A place another pine is asking about. A write makes it if nothing stands there,
+the way a write does here; a read and a verb do not, because there is nothing to
+read and nothing to tell."
+  (let* ((name (string-left-trim "/" (princ-to-string where)))
+         (n (if (eq :write (first message))
+                (tree:ensure (tree:root) name)
+                (tree:at (tree:root) name))))
     (if (null n)
         (list :no (format nil "nothing at ~a" where))
         (case (first message)
           (:contents (list :ok (node:contents n)))
           (:write    (setf (node:contents n) (second message))
+                     (list :ok (node:contents n)))
+          (:verb     (node:verb n (second message) (cddr message))
                      (list :ok (node:contents n)))
           (:nodes    (list :ok (mapcar #'node:name (node:nodes n))))
           (t (list :no "no such question about a place"))))))
@@ -198,7 +206,7 @@ offers are the ones still there, and answer as soon as it has a value or a fault
     (:watch (%watching (second message) (third message)))
     (:take (let ((f (d:at (d:all *asked*) (third message))))
              (list :ok (and f (fault:take f (second message))))))
-    ((:contents :write :nodes)
+    ((:contents :write :verb :nodes)
      (%place (second message) (list* (first message) (cddr message))))
     (t (list :no "no such question"))))
 

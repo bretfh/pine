@@ -63,8 +63,19 @@ why a device reading is a table row rather than a class:
 #+begin_src lisp
   (device "audio"
           (list (list "volume" #'level (lambda (v) (sh "wpctl ... ~d%" v)))
-                (list "muted"  #'muted #'toggle)))
+                (list "muted"  #'muted #'toggle)
+                (list "sinks"  #'sinks (lambda (v) (sh "wpctl set-default ~a" v)))))
 #+end_src
+
+A row may answer a list. =/dev/audio/sinks= is every sink there is,
+=/dev/net/wifi= is everything in the air, and writing one a name is what picks
+it. What is under a device is what it can be asked, not a subtree to keep in
+step with the machine. =/dev/clip/text= is the desktop's clipboard the same way:
+reading it is what anything else copied, writing it is copying.
+
+A device is told the world behind it moved -- by a stream it named, or on its
+interval -- and telling it means telling its rows. A device stirred without them
+is a clock that reads the hour once and never again.
 
 Storage is not a layer. =savedp= is a property of a class; writes go through as
 they are made, so a crash costs what happened since the last write; loading the
@@ -109,10 +120,18 @@ it is painting onto -- a grid of character cells, a cairo canvas -- so there is
 one paint generic and not one per back end.
 
 A =role= is a class, and it is the whole of what "any kind of surface" means.
-One =anchor= method and a default puts a new kind on screen, and the painter
-needs no compiled-in knowledge of it: the role crosses the wire with the
-surface. There is no privileged surface. The editor's window, the bar and a
-panel are the same class with different roles.
+=anchor= says where a new kind goes and =asks= says whether it waits to be asked
+for: a bar is up as soon as it is declared, a panel is not. Nothing that shows a
+surface needs compiled-in knowledge of either: what the role answered is a plist
+of edges, sizes and margins, and it travels with the surface. There is no
+privileged surface. The editor's window, the bar and a panel are the same class
+with different roles.
+
+A style rule names classes and nothing else. Pine draws widgets, and a widget
+has no parts to reach into, so =.slider trough highlight= cannot fire and pine
+drops it rather than leave it looking live. A rule matches the widget wearing
+the class, not what is inside it. A slider's track is its background colour and
+what it has filled is its colour.
 
 A widget is *not* a node. It is an immutable value that crosses a wire. Nothing
 you draw is in the namespace; only the surface that works it out.
@@ -134,6 +153,12 @@ fallback, and precedence costs nothing:
 A terminal is a =document= and a =thread= at once: a program's screen is text a
 window shows and a command acts on, and a pty read is where something blocks.
 The mode is what makes a key go to the program rather than into the text.
+
+What is laid over the text without being in it belongs to the document too. A
+=span= is =(line from to face)=: a search that has just landed says one, a parse
+says a whole file's worth, a terminal says one per run of colour its program
+asked for. All of them are the same few numbers a cell is painted with, so the
+grid paints a syntax highlight and an =ls --color= the same way.
 
 An emacs buffer is characters with a flat property list laid over them. A pine
 =document= is text plus the structure its mode gives it, and *the structure is
@@ -167,17 +192,25 @@ its commands with it:
 
 * The shape of a running pine
 
-| the daemon  | the tree, the systems it loaded, the store, no display        |
-| a painter   | the surfaces the daemon declares, on the compositor it is under |
+| the daemon  | the tree, the systems it loaded, the store, and its screen     |
+| /proc       | what it is running, readable and stoppable: the screen is there |
 | the cli     | reads and writes of the daemon's tree, from a terminal          |
 | an image    | another sbcl pine spawned, evaluated in, whose faults come home |
+| a peer      | another pine, here or elsewhere, mounted and evaluated in       |
+
+The screen is not a second program. A surface is declared and shown, and pine
+paints it: the tree the surface worked out goes onto a cairo canvas over a
+wayland surface, through the same =paint= that puts a widget on a grid of cells.
+The connection blocks, so it is a =thread= and hangs at =/proc/screen= like
+anything else that runs. Nothing to launch, and nothing between a surface and
+its pixels.
 
 On a compositor that manages its own windows, pine is a client of it: a bar is a
 layer surface, a window is an xdg toplevel, and =/wm= is what that compositor
-says about itself. On one that asks for a window manager, the painter is that
-too: it says what the compositor handed over at =/wm/said=, and puts each window
-where =/wm/placement= says. The layout is worked out in the daemon, from a class
-with one =arrange= method, so how windows are laid out is a config's to replace.
+says about itself. On one that asks for a window manager, pine is that too: it
+says what the compositor handed over at =/wm/said=, and puts each window where
+=/wm/placement= says. The layout is a class with one =arrange= method, so how
+windows are laid out is a config's to replace.
 
 Being the window manager is what makes the rest of it work there rather than a
 separate world: pine binds the compositor's layer shell support, so its own bar
@@ -185,16 +218,13 @@ maps the same way it does anywhere else, and the compositor tells it what area i
 left after that strip -- which is the area the layout is given. One bar, one
 layout, two compositors.
 
-A painter is a pine that mounted another one. It reads =/surface/<name>/wire=
-for the tree, asks =/surface/<name>/where= for the placement the role worked
-out, writes =/surface/<name>/size= to say how big it came out and
-=/surface/<name>/click= to say what was clicked, and writes =/key= for what a
-keyboard gave it. There is no separate attach protocol: it is reads and writes
-of a namespace, the same ones the cli makes.
+The wire is for the other case. =/surface/<name>/wire= is the tree written down
+as plain data, so a pine that mounted this one over the network can show its
+surfaces from another machine. That is what =mount= and =peer= are for. It is
+not how a surface reaches the screen in front of you.
 
-: make daemon      # a pine on a remoting port
-: make painter     # the surfaces it declares, on your compositor
-: make screen      # both on a headless compositor, and a capture of the result
+: make daemon      # a pine in this terminal, on the compositor you are under
+: make screen      # one on a headless compositor, and a capture of the result
 
 * The config is Lisp
 
@@ -202,6 +232,20 @@ of a namespace, the same ones the cli makes.
 own readtable so a path is a literal. It is the same language and the same
 tree, so a surface reads a node and a click writes one. See
 =examples/init.lisp=, which the suite loads so it stays a config you can copy.
+
+: (use :host)                            load a system and start it
+: (attend "media" :player "emms")        put a device under /dev and follow it
+: (write /wm-terminal "alacritty")       a place nothing has made yet is made
+: (defclass ticker (overlay) ())         a kind of surface
+: (defsurface ticker (:as 'ticker) ...)  one, declared
+: (defmethod setting ((m text) k) ...)   what a mode says about itself
+: (bind 'text "C-c h" "hello")           a chord, in a mode and under it
+
+A read finds what is there. A write makes what is not.
+
+To look at what a config draws, with no display and no compositor:
+
+: make shot CONFIG=~/.config/pine/init.lisp
 
 * Where the code is
 
@@ -221,5 +265,5 @@ Loaded on top, privileged by nothing:
 | =src/term/=    | programs with screens of their own            |
 | =src/wm/=      | the compositor, in the namespace              |
 | =src/paint/=   | pixels, through cairo: the other medium       |
-| =src/wayland/= | a painter: a pine that shows another one      |
+| =src/wayland/= | the display: pine's surfaces on a compositor  |
 | =vt/=          | the terminal emulator                         |

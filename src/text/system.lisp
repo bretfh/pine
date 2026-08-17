@@ -82,7 +82,8 @@ load is a fault like any other: the text still opens, uncoloured."
       (syntax:attach (tree:root)))))
 
 (defmethod job:start ((s text))
-  (setf doc:*visiting* #'visit)
+  (setf doc:*visiting* #'visit
+        doc:*on-kill* #'parser:forget)
   (%syntax)
   (mode:attach (tree:root))
   (doc:root)
@@ -91,13 +92,14 @@ load is a fault like any other: the text still opens, uncoloured."
   (command:defcommand "structure" (&optional name)
     (:describes "what this document's mode makes of it")
     (let ((d (if name (doc:named name) (doc:current))))
-      (when d (mapcar #'node:name (doc:regions (doc:restructure d))))))
+      (when d (mapcar #'node:name (doc:regions d)))))
   (let ((scratch (doc:make-document "scratch" :mode (make-instance 'mode:lisp))))
     (setf (doc:current) scratch))
   s)
 
 (defmethod job:stop ((s text))
-  (setf doc:*visiting* nil)
+  (setf doc:*visiting* nil
+        doc:*on-kill* nil)
   (parser:forget-all)
   (dolist (d (doc:documents)) (doc:kill (node:name d)))
   s)

@@ -1,5 +1,5 @@
 .PHONY: foreign foreign-deps foreign-libs foreign-wayflan
-.PHONY: repl check test probe bench eval docs daemon painter shot screen bin
+.PHONY: repl check test probe bench eval docs daemon shot screen bin
 
 # Two ways to get what pine needs, and every target below works under either.
 # Guix is what pine develops against and what plain `make' uses. FOREIGN=1 is
@@ -13,6 +13,12 @@ FOREIGN ?=
 
 # where make screen puts what it captured
 OUT ?= /tmp/pine-screen.png
+
+# where make shot puts its PNGs, and whose config it draws. With no config it
+# draws what pine ships:
+#   make shot CONFIG=~/.config/pine/init.lisp
+SHOT ?= /tmp/
+CONFIG ?=
 
 # which compositor make screen runs against: sway manages its own windows, river
 # asks for a manager and pine is one
@@ -44,26 +50,22 @@ repl:
 check:
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(princ :loaded)" --eval "(terpri)"'
 
-# the daemon: a pine listening on a remoting port, for a painter to attach to
+# a pine in this terminal: the tree, what its config declares, and its surfaces on
+# the compositor you are under
 daemon:
 	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --noinform --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))" --eval "(setf pine/run/log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
 
-# the painter: the surfaces the daemon declares, on the compositor you are
-# under. make daemon first.
-painter:
-	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/wayland)" --eval "(pine/wayland/painter:run)"'
-
 # the frame and every surface as PNGs, with no display and no compositor
 shot:
-	$(IN) '$(ENV) $(SBCL) --non-interactive --load bench/shot.lisp'
+	$(IN) '$(ENV) PINE_SHOT="$(SHOT)" PINE_CONFIG="$(CONFIG)" $(SBCL) --non-interactive --load bench/shot.lisp'
 
-# the painter, end to end: a headless compositor, a daemon, the painter on both,
-# and a capture of what landed on the screen. COMPOSITOR=river makes pine the
-# window manager as well, which is what river asks for
+# end to end: a headless compositor, a pine on it, and a capture of what landed on
+# the screen. COMPOSITOR=river makes pine the window manager as well, which is what
+# river asks for
 screen:
-	$(IN) 'COMPOSITOR=$(COMPOSITOR) sh bench/painter-shot.sh $(OUT)'
+	$(IN) 'COMPOSITOR=$(COMPOSITOR) sh bench/screen-shot.sh $(OUT)'
 
-# one executable: the daemon, the painter and the CLI, which is how pine is
+# one executable: the daemon and the CLI, which is how pine is
 # meant to be run. ./pine with no verb says what it takes.
 bin:
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(sb-ext:save-lisp-and-die \"pine\" :executable t :save-runtime-options t :toplevel (function pine/cli:main))"'

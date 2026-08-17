@@ -98,3 +98,22 @@
                (text:save doc)
                (is (equal "(defun probe () 2)" (uiop:read-file-string file)))))
         (ignore-errors (delete-file file))))))
+
+(test a-region-still-covers-its-own-span-after-an-edit
+  "Regions are worked out from the text. One worked out before an edit covers the
+wrong stretch, so writing it replaces something it was never standing for."
+  (editing)
+  (let ((doc (doc:current)))
+    (setf (node:contents doc) (format nil "(defun a () 1)~%(defun b () 2)"))
+    (is (equal "(defun a () 1)"
+               (node:contents (tree:at doc "defun/a"))))
+    (doc:goto doc 0 0)
+    (setf (node:contents (tree:at nil "key")) "C-e")
+    (setf (node:contents (tree:at doc "defun/b")) "(defun b () 99)")
+    (is (equal (format nil "(defun a () 1)~%(defun b () 99)") (doc:text doc)))))
+
+(test the-structure-command-answers-what-the-mode-made
+  (editing)
+  (let ((doc (doc:current)))
+    (setf (node:contents doc) (format nil "(defun a () 1)~%(defun b () 2)"))
+    (is (equal '("defun") (command:run "structure")))))

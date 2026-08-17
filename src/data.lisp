@@ -165,14 +165,18 @@
              (t ,result)))))
 
 (defmacro do-each ((value collection &optional result) &body body)
-  "Every value in a collection: a map's values, a seq's elements, a set's members."
+  "Every value in a collection: a map's values, a seq's elements, a set's members,
+a list's. KEYS and VALS answer lists, so a walk over one has to be a walk and not
+a shape this quietly steps over."
   (let ((c (gensym)) (key (gensym)))
     `(let ((,c ,collection))
        (cond ((mapp ,c) (fset:do-map (,key ,value ,c)
                           (declare (ignorable ,key))
                           (locally ,@body)))
              ((seqp ,c) (fset:do-seq (,value ,c) (locally ,@body)))
-             ((setp ,c) (fset:do-set (,value ,c) (locally ,@body))))
+             ((setp ,c) (fset:do-set (,value ,c) (locally ,@body)))
+             ((listp ,c) (dolist (,value ,c) (locally ,@body)))
+             (t (error "~s is not something to walk." ,c)))
        ,result)))
 
 (defgeneric as (kind collection)

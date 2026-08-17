@@ -89,7 +89,7 @@ and watch."
                                             (ends (max from to)))))))))))
 
 ;;; A role, and a surface on it. One ANCHOR method puts a new kind of surface on
-;;; screen; the painter needs no knowledge of it, because the role crosses the
+;;; screen; nothing showing it needs knowledge of it, because the role crosses the
 ;;; wire with the surface.
 
 (defclass sticky (overlay) ()

@@ -52,14 +52,46 @@ IMAGE and a MOUNT."))
   (let ((it (doc:named (princ-to-string name))))
     (and (typep it 'terminal) it)))
 
+(defun %rgb (colour)
+  "A colour the program asked for, as the three numbers a cell is painted with.
+An index is one of the 256 a terminal has; anything else is already the numbers."
+  (let ((said (if (integerp colour) (vt:color-index-to-rgb colour) colour)))
+    (when said (coerce said 'list))))
+
+(defun %face (props)
+  "A run of the program's colour, as a face: what a cell is painted with, and
+nothing else. The same three numbers a theme's face works out to, so the grid
+paints one the way it paints the other."
+  (list (%rgb (getf props :fg))
+        (%rgb (getf props :bg))
+        (logior (if (getf props :bold) 1 0)
+                (if (getf props :italic) 2 0)
+                (if (getf props :underline) 4 0))))
+
 (defun screen (term)
-  "What is on the screen now, as text."
-  (vt:term-dump-to-string (vt-of term)))
+  "What is on the screen now: the text, and the runs of colour over it.
+
+The colour is spans on the document, which is what a search that has just landed
+says and what a parse says. One kind of thing, painted one way."
+  (let ((vt (vt-of term))
+        (rows nil)
+        (spans nil))
+    (dotimes (y (vt:term-height vt))
+      (multiple-value-bind (text changes) (vt:term-render-line vt y)
+        (push text rows)
+        (loop :for (run . more) :on changes
+              :do (destructuring-bind (from props) run
+                    (let ((to (if more (first (first more)) (length text))))
+                      (when (and (> to from) props)
+                        (push (list y from to (%face props)) spans)))))))
+    (values (format nil "~{~a~^~%~}" (nreverse rows)) (nreverse spans))))
 
 (defun %shown (term)
   "Put what the screen says into the document, and say so. Point follows the
 program's cursor: what you are looking at is where it is writing."
-  (d:put! (doc:lines term) (lines:of (screen term)))
+  (multiple-value-bind (text spans) (screen term)
+    (d:put! (doc:lines term) (lines:of text))
+    (setf (doc:spans term) spans))
   (doc:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
   (setf (doc:modified term) nil)
   (node:stir term)

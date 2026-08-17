@@ -2,8 +2,10 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
+                    (#:job #:pine/run/job)
                     (#:doc #:pine/text/document) (#:emode #:pine/edit/mode)
-                    (#:window #:pine/edit/window) (#:log #:pine/run/log))
+                    (#:window #:pine/edit/window) (#:log #:pine/run/log)
+                    (#:evaluate #:pine/edit/eval))
   (:export #:show #:standing #:choose #:next #:fault-of #:commands #:away #:*name* #:*standing*))
 (in-package #:pine/edit/debugger)
 
@@ -38,8 +40,24 @@ restarts still being offered where it broke."))
       (when (and f (fault:backtrace-of f))
         (format out "~%~a~%" (fault:backtrace-of f))))))
 
+(defun %follow (f)
+  "Work goes where the fault is, so a fix after a break lands in the image that
+broke. What the target was is kept, and putting the debugger away puts it back."
+  (let ((where (and f (fault:where f))))
+    (when where
+      (unless (evaluate:target-was)
+        (setf (evaluate:target-was) (or (evaluate:target) :here)))
+      (setf (evaluate:target) (job:name where)))))
+
+(defun %back ()
+  (let ((was (evaluate:target-was)))
+    (when was
+      (setf (evaluate:target) (unless (eq was :here) was))
+      (setf (evaluate:target-was) nil))))
+
 (defun show (condition &key restarts fault)
   "Put a fault up as a document you can act on rather than a line you cannot."
+  (%follow fault)
   (let* ((s (make-instance 'standing
                            :of condition
                            :restarts (or restarts
@@ -69,6 +87,7 @@ restarts still being offered where it broke."))
         (if f
             (progn (fault:take f name) (log:note "took ~a" name))
             (log:note "~a" name))
+        (unless (fault:standing) (%back))
         name))))
 
 (defun next ()
@@ -81,6 +100,7 @@ restarts still being offered where it broke."))
 
 (defun away ()
   (d:put! *standing* nil)
+  (%back)
   (when (doc:named *name*) (command:run "kill-document" (list *name*)))
   t)
 

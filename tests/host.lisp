@@ -59,3 +59,29 @@
       (let ((n (node:resolve env "PATH")))
         (is (not (null n)))
         (is (equal (uiop:getenv "PATH") (node:contents n)))))))
+
+(test a-device-told-the-world-moved-reads-it-again
+  "A device is told the world behind it moved; what reads the world is its rows.
+Stirring one without the other leaves every reading frozen at whatever it answered
+the first time, which is a clock that never ticks."
+  (with-tree
+    (let* ((n (d:box 0))
+           (dev (node:attach (device:device "probe"
+                                            (list (list "count"
+                                                        (lambda ()
+                                                          (d:swap! n #'1+)))))
+                             (tree:root))))
+      (is (eql 1 (node:contents (tree:at nil "probe/count"))))
+      (is (eql 1 (node:contents (tree:at nil "probe/count")))
+          "and it is remembered until something says otherwise")
+      (node:stir dev)
+      (is (eql 2 (node:contents (tree:at nil "probe/count")))
+          "the device moved, so the reading is read again"))))
+
+(test the-desktop-clipboard-is-a-place
+  "Copying is a write and pasting is a read. Without it an editor is an island:
+nothing copied anywhere else can come in, and nothing killed here can go out."
+  (let ((rows (device:readings (device:clip))))
+    (is (equal '("text") (mapcar #'first rows)))
+    (is (functionp (second (first rows))) "it reads")
+    (is (functionp (third (first rows))) "and it is written")))

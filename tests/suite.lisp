@@ -16,9 +16,11 @@
                     (:doc :pine/text/document) (:text :pine/text)
                     (:sh :pine/host/shell) (:device :pine/host/device)
                     (:window :pine/edit/window) (:render :pine/edit/render)
-                    (:prompt :pine/edit/prompt) (:listing :pine/edit/listing)
+                    (:prompt :pine/edit/prompt) (:match :pine/edit/matching)
+                    (:listing :pine/edit/listing)
                     (:isearch :pine/edit/isearch) (:keys :pine/edit/keys)
                     (:emode :pine/edit/mode)
+                    (:log :pine/run/log) (:parser :pine/text/ts/parser)
                     (:compositor :pine/wm/compositor) (:tiles :pine/wm/tiles)))
 
 (in-package :pine/test)

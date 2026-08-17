@@ -1,21 +1,24 @@
 (defpackage #:pine/text/document
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:commit #:pine/fs/commit)
                     (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
                     (#:lines #:pine/text/lines) (#:mode #:pine/text/mode))
   (:export #:document #:region #:make-document #:documents #:named #:kill
-           #:current #:root #:asidep #:*on-current* #:*visiting*
+           #:current #:root #:scratch #:asidep #:*on-current* #:*on-kill* #:*visiting*
            #:lines #:line #:line-count #:text #:point #:at-line #:at-col #:mark
            #:mode-of #:source #:file-of #:origin #:tick #:past #:edit-of #:changed
            #:modified #:setting #:settings #:visited #:leaving
            #:goto #:move #:insert #:delete-back #:newline #:delete-region
            #:mark-at #:put-mark #:drop-mark #:region-of #:indent-line #:indent-of
            #:undo #:redo #:undoable #:redoable
-           #:span #:regions #:restructure))
+           #:span #:spans #:forget-spans #:overlay #:overlays #:forget-overlays
+           #:covers #:regions #:restructure #:fresh-structure))
 (in-package #:pine/text/document)
 
 (defvar *current* nil)
 (defvar *on-current* nil)
+(defvar *on-kill* nil)
 (defvar *visiting* nil)
 (defvar *places* (d:no-map))
 (defvar *undo-kept* 200)
@@ -31,9 +34,12 @@
    (source   :initarg :source :reader source :initform nil)
    (file-of  :initarg :file   :reader file-of :initform nil)
    (tick     :initform 0   :accessor tick)
+   (structured :initform nil :accessor structured)
    (done     :initform (d:box nil) :reader done)
    (undone   :initform (d:box nil) :reader undone)
    (marks    :initform (d:no-map) :accessor marks)
+   (spans    :initform nil :reader spans)
+   (overlays :initform nil :accessor overlays)
    (edit-of  :initform nil :accessor edit-of)
    (modified :initform nil :accessor modified)
    (settings :initform (d:no-map) :accessor settings)
@@ -42,14 +48,20 @@
 
 An emacs buffer is characters with a flat property list laid over them. This is a
 document: what its mode makes of the text is in the namespace under it, as regions
-with identity, so a form or a heading is a place anything can read and write."))
+with identity, so a form or a heading is a place anything can read and write.
+
+SPANS and OVERLAYS are what is laid over the text without being in it: a colour
+on part of a line, and something shown after one. A search that has just landed
+says a span, a parse says spans, and a terminal says one for every run of colour
+its program asked for -- the same few numbers a cell is painted with, whoever
+worked them out. They belong to the document, so they go when it does."))
 
 (defclass region (node:node)
-  ((span    :initarg :span :accessor span)
+  ((covers  :initarg :covers :accessor covers)
    (savedp  :allocation :class :initform nil :reader node:savedp)
    (livep   :allocation :class :initform t   :reader node:livep))
-  (:documentation "A span of a document. Its contents is the text it covers, its
-nodes are its sub-regions, and writing it replaces that span."))
+  (:documentation "A stretch of a document. Its contents is the text it covers,
+its nodes are its sub-regions, and writing it replaces that stretch."))
 
 (defclass source-node (node:node)
   ((savedp :allocation :class :initform nil :reader node:savedp)))
@@ -81,6 +93,7 @@ nodes are its sub-regions, and writing it replaces that span."))
   (setf (modified doc) t)
   (incf (tick doc))
   (node:stir doc)
+  (commit:announce doc)
   doc)
 
 (defun %edited (doc had at old new bytes)
@@ -115,6 +128,7 @@ is text plus something of its own."
 (defun kill (name)
   (let ((doc (named name)))
     (when doc
+      (when *on-kill* (funcall *on-kill* doc))
       (node:detach (root) (node:name doc))
       (when (eq doc *current*) (setf *current* (or (first (documents)) (scratch)))))
     doc))
@@ -142,6 +156,7 @@ is text plus something of its own."
   (multiple-value-bind (at col) (lines:clamp (d:held (lines doc)) at col)
     (setf (at-line doc) at (at-col doc) col)
     (node:stir doc)
+    (commit:announce doc)
     (point doc)))
 
 (defun move (doc unit n)
@@ -229,6 +244,38 @@ is text plus something of its own."
     (destructuring-bind (at col) (mark doc)
       (lines:region (d:held (lines doc)) at col (at-line doc) (at-col doc)))))
 
+(defun span (doc line from to face)
+  "Colour part of a line, for as long as somebody wants it there. FACE is a face
+name or the numbers themselves: (FG BG ATTR), where a colour is (R G B) or
+nothing for whatever the theme says."
+  (push (list line from to face) (spans doc))
+  (node:stir doc)
+  doc)
+
+(defun (setf spans) (runs doc)
+  "All of them at once. A terminal works out every run of colour on its screen
+whenever the program writes, and saying so a line at a time would stir the
+document a hundred times for one keystroke."
+  (setf (slot-value doc 'spans) runs)
+  (node:stir doc)
+  runs)
+
+(defun forget-spans (doc)
+  (setf (spans doc) nil)
+  doc)
+
+(defun overlay (doc line text face)
+  "Text shown after a line without being in it. What an evaluation answers is put
+here, so the document is what was typed and nothing else."
+  (push (list line text face) (overlays doc))
+  (node:stir doc)
+  doc)
+
+(defun forget-overlays (doc)
+  (setf (overlays doc) nil)
+  (node:stir doc)
+  doc)
+
 (defun mark-at (doc name) (d:at (marks doc) name))
 
 (defun put-mark (doc name &optional (at (at-line doc)) (col (at-col doc)))
@@ -284,7 +331,7 @@ is text plus something of its own."
 (defmethod node:contents ((r region))
   (let ((doc (%document r)))
     (when doc
-      (destructuring-bind (from to) (span r)
+      (destructuring-bind (from to) (covers r)
         (lines:region (d:held (lines doc)) (car from) (cdr from)
                       (car to) (cdr to))))))
 
@@ -292,7 +339,7 @@ is text plus something of its own."
   "Writing a region replaces the text it covers."
   (let ((doc (%document r)))
     (when doc
-      (destructuring-bind (from to) (span r)
+      (destructuring-bind (from to) (covers r)
         (delete-region doc (car from) (cdr from) (car to) (cdr to))
         (goto doc (car from) (cdr from))
         (insert doc (princ-to-string value))
@@ -304,11 +351,11 @@ is text plus something of its own."
         :while at
         :when (typep at 'document) :do (return at)))
 
-(defun %region (under name span)
+(defun %region (under name covers)
   (let ((r (node:child under name
                        (lambda () (make-instance 'region :name name :over under
-                                                         :span span)))))
-    (setf (span r) span)
+                                                         :covers covers)))))
+    (setf (covers r) covers)
     r))
 
 (defun %build (under said)
@@ -329,6 +376,23 @@ watcher on it goes on watching."
       (when (typep each 'region) (node:detach doc (node:name each))))
     (%build doc said)
     said))
+
+(defun fresh-structure (doc)
+  "Build the regions again where the text has moved since they were built. A region
+worked out before an edit covers the wrong span, and writing one replaces text it
+was never standing for."
+  (unless (eql (structured doc) (tick doc))
+    (setf (structured doc) (tick doc))
+    (restructure doc))
+  doc)
+
+(defmethod node:nodes ((doc document))
+  (fresh-structure doc)
+  (call-next-method))
+
+(defmethod node:resolve ((doc document) name)
+  (fresh-structure doc)
+  (call-next-method))
 
 (defun regions (doc)
   (remove-if-not (lambda (n) (typep n 'region)) (node:nodes doc)))

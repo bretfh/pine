@@ -3,13 +3,14 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:doc #:pine/text/document)
                     (#:emode #:pine/edit/mode) (#:log #:pine/run/log)
+                    (#:match #:pine/edit/matching)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault))
-  (:export #:prompt #:asking #:askingp #:ask #:answer #:cancel #:said
+  (:export #:prompt #:asking #:askingp #:ask #:answer #:cancel #:said #:asked
            #:question #:answering #:then #:candidates #:chosen #:choose #:was
            #:matching #:complete #:source #:sources #:*prompt*
-           #:showing #:category #:annotation #:name-of #:shows #:given
+           #:showing #:category #:given
            #:must-match #:history #:remember #:walk-history #:filep
-           #:common-prefix #:matches #:descendsp #:descend #:expanded #:files
+           #:descendsp #:descend
            #:history-of #:commands #:*shown* #:*history-kept*))
 (in-package #:pine/edit/prompt)
 
@@ -18,7 +19,6 @@
 (defvar *shown* 12)
 (defvar *history-kept* 200)
 (defparameter +document+ "*prompt*")
-(defparameter +separator+ #\Space)
 
 (defclass prompt ()
   ((question   :initarg :question   :reader question)
@@ -30,8 +30,7 @@
    (history    :initarg :history    :reader history    :initform nil)
    (walking    :initform nil        :accessor walking)
    (walked     :initform nil        :accessor walked)
-   (seen       :initform nil        :accessor seen)
-   (chose      :initform 0          :accessor chose))
+   (seen       :initform nil        :accessor seen))
   (:documentation "A question standing, and what will be done with the answer."))
 
 (defmethod print-object ((p prompt) stream)
@@ -46,9 +45,41 @@
   (or (doc:named +document+)
       (doc:make-document +document+ :mode (make-instance 'emode:prompt))))
 
-(defun said ()
+(defun %under () (tree:ensure nil "prompt"))
+
+(defun %place (name builder)
+  (let ((under (%under)))
+    (or (node:resolve under name)
+        (node:attach (funcall builder) under))))
+
+(defun %question-node () (%place "question" (lambda () (node:make "question"))))
+
+(defun %chose-node () (%place "chose" (lambda () (node:make "chose"))))
+
+(defun %text ()
   (let ((d (doc:named +document+)))
-    (if d (doc:text d) "")))
+    (if d (node:contents d) "")))
+
+(defun %said-node ()
+  (%place "said" (lambda () (node:derive "said" #'%text))))
+
+(defun %matching-node ()
+  (%place "matching"
+          (lambda ()
+            (node:derive "matching"
+                         (lambda ()
+                           (let ((p *prompt*))
+                             (when p
+                               (let ((text (node:contents (%said-node))))
+                                 (if (filep p)
+                                     (candidates p text)
+                                     (match:matches text (candidates p text)))))))))))
+
+(defun said ()
+  (if (tree:root) (node:contents (%said-node)) (%text)))
+
+(defun asked ()
+  (and (tree:root) (node:contents (%question-node))))
 
 (defun source (category function)
   (d:keep! *sources* category function)
@@ -56,71 +87,39 @@
 
 (defun sources () (d:keys (d:all *sources*)))
 
-(defun candidates (&optional (p *prompt*))
+(defun candidates (&optional (p *prompt*) (text (said)))
   (when p
     (or (given p)
         (let ((fn (d:at (d:all *sources*) (category p))))
-          (when fn (fault:attempt (lambda () (funcall fn (said)))
+          (when fn (fault:attempt (lambda () (funcall fn text))
                                   "the candidates"))))))
-
-(defun name-of (each) (princ-to-string (if (consp each) (first each) each)))
 
 (defun %sync (p)
   (let ((text (said)))
     (unless (equal text (seen p))
-      (setf (seen p) text (chose p) 0)))
+      (setf (seen p) text)
+      (setf (node:contents (%chose-node)) 0)))
   p)
 
 (defun chosen (&optional (p *prompt*))
-  (when p (chose (%sync p))))
+  (when p
+    (%sync p)
+    (or (node:contents (%chose-node)) 0)))
 
 (defun (setf chosen) (value p)
-  (setf (chose (%sync p)) value))
-
-(defun %tokens (text)
-  (remove "" (uiop:split-string (or text "") :separator (list +separator+))
-          :test #'string=))
-
-(defun %scored (tokens name)
-  "How well NAME answers TOKENS: every token must be somewhere in it, in any order
-and in any case. The score is where they were found, so what matches earliest is
-offered first, and a name that begins with the first token beats one that merely
-contains it. Nothing when a token is missing."
-  (let ((score 0) (from-the-start nil))
-    (loop :for token :in tokens
-          :for first := t :then nil
-          :for at := (search token name :test #'char-equal)
-          :do (unless at (return-from %scored (values nil nil)))
-              (when (and first (zerop at)) (setf from-the-start t))
-              (incf score at))
-    (values (if from-the-start score (+ score 1000)) t)))
-
-(defun matches (text all)
-  (let ((tokens (%tokens text)))
-    (if (null tokens)
-        (stable-sort (copy-list all) #'string-lessp :key #'name-of)
-        (let (scored)
-          (dolist (each all)
-            (multiple-value-bind (score hit) (%scored tokens (name-of each))
-              (when hit (push (cons score each) scored))))
-          (mapcar #'cdr
-                  (stable-sort (nreverse scored)
-                               (lambda (a b)
-                                 (let ((sa (car a)) (sb (car b))
-                                       (na (name-of (cdr a))) (nb (name-of (cdr b))))
-                                   (cond ((/= sa sb) (< sa sb))
-                                         ((/= (length na) (length nb))
-                                          (< (length na) (length nb)))
-                                         (t (string-lessp na nb)))))))))))
+  (%sync p)
+  (setf (node:contents (%chose-node)) value))
 
 (defun matching (&optional (p *prompt*))
   "What answers the question as it stands. A file question is already narrowed by
 the directory it is in, so what it offers is what is there."
   (when p
     (%sync p)
-    (if (filep p)
-        (candidates p)
-        (matches (said) (candidates p)))))
+    (if (and (eq p *prompt*) (tree:root))
+        (node:contents (%matching-node))
+        (if (filep p)
+            (candidates p)
+            (match:matches (said) (candidates p))))))
 
 (defun here-directory ()
   (let* ((d (doc:current))
@@ -129,9 +128,27 @@ the directory it is in, so what it offers is what is there."
         (directory-namestring (pathname file))
         (namestring (uiop:getcwd)))))
 
+(defun %standing (&optional (p *prompt*))
+  "What is being asked, at a place. A question, what has been typed at it and which
+candidate is chosen are what the frame shows, so they are nodes: a surface follows
+what it read, and a slot nobody reads is a thing nothing can follow."
+  (when (tree:root)
+    (setf (node:contents (%question-node)) (and p (question p)))
+    (setf (node:contents (%chose-node)) 0)
+    (node:stir (%said-node))
+    (%under)))
+
+(defun %where-from (had)
+  "Where answering goes back to. Never the prompt itself: a question asked from
+inside another one would otherwise leave the prompt as what every key edits."
+  (let ((it (and had (doc:named (node:name had)))))
+    (cond ((and it (not (eq it (doc:named +document+)))) it)
+          (t (find-if-not #'doc:asidep (doc:documents))))))
+
 (defun ask (question &key then category initial must-match candidates history)
   (let ((d (answering))
-        (seed (or initial (when (eq category :file) (here-directory)) "")))
+        (seed (or initial (when (eq category :file) (here-directory)) ""))
+        (back (or (and *prompt* (was *prompt*)) (doc:current))))
     (setf (node:contents d) seed)
     (doc:move d :text 1)
     (setf *prompt* (make-instance 'prompt :question question :then then
@@ -139,11 +156,10 @@ the directory it is in, so what it offers is what is there."
                                           :must-match must-match
                                           :candidates candidates
                                           :history history
-                                          :was (doc:current))
+                                          :was (%where-from back))
           (doc:current) d)
     (setf (seen *prompt*) (said)))
-  (when (tree:root)
-    (setf (node:contents (tree:ensure nil "prompt")) question))
+  (%standing)
   *prompt*)
 
 (defun choose (delta)
@@ -156,53 +172,6 @@ the directory it is in, so what it offers is what is there."
 
 (defun filep (&optional (p *prompt*)) (and p (eq :file (category p))))
 
-(defun expanded (text)
-  "TEXT as a path a person typed: ~ is home, and a second / starts again from the
-root, so an absolute path typed over a directory means that path."
-  (let* ((text (or text ""))
-         (over (search "//" text :from-end t))
-         (text (if over (subseq text (1+ over)) text)))
-    (cond ((equal text "~") (namestring (user-homedir-pathname)))
-          ((and (> (length text) 1) (string= "~/" (subseq text 0 2)))
-           (namestring (merge-pathnames (subseq text 2) (user-homedir-pathname))))
-          (t text))))
-
-(defun split-path (text)
-  (let ((slash (position #\/ text :from-end t)))
-    (if slash
-        (values (subseq text 0 (1+ slash)) (subseq text (1+ slash)))
-        (values "" text))))
-
-(defun entries (where)
-  (handler-case
-      (append (sort (mapcar (lambda (p)
-                              (concatenate 'string
-                                           (car (last (pathname-directory p))) "/"))
-                            (uiop:subdirectories where))
-                    #'string<)
-              (sort (mapcar #'file-namestring (uiop:directory-files where))
-                    #'string<))
-    (error () nil)))
-
-(defun files (typed)
-  (multiple-value-bind (where base) (split-path (expanded typed))
-    (let ((all (entries (if (equal where "") "./" where))))
-      (if (equal base "")
-          all
-          (remove-if-not (lambda (name)
-                           (and (>= (length name) (length base))
-                                (string= base name :end2 (length base))))
-                         all)))))
-
-(defun common-prefix (strings)
-  (if (null strings)
-      ""
-      (let ((shortest (first strings)))
-        (dolist (each (rest strings))
-          (let ((at (or (mismatch shortest each :test #'char=) (length each))))
-            (setf shortest (subseq shortest 0 (min at (length shortest))))))
-        shortest)))
-
 (defun %put (text)
   (let ((d (answering)))
     (setf (node:contents d) text)
@@ -211,9 +180,9 @@ root, so an absolute path typed over a directory means that path."
     text))
 
 (defun %complete-file (found)
-  (multiple-value-bind (where base) (split-path (expanded (said)))
+  (multiple-value-bind (where base) (match:split-path (match:expanded (said)))
     (declare (ignore base))
-    (let ((shared (common-prefix (mapcar #'name-of found))))
+    (let ((shared (match:common-prefix (mapcar #'match:name-of found))))
       (when (plusp (length shared))
         (%put (concatenate 'string where shared)))
       (first found))))
@@ -227,13 +196,13 @@ starting over."
     (when found
       (if (filep p)
           (%complete-file found)
-          (let ((shared (common-prefix (mapcar #'name-of found))))
+          (let ((shared (match:common-prefix (mapcar #'match:name-of found))))
             (cond ((and (= 1 (length found))
-                        (equal (said) (name-of (first found))))
+                        (equal (said) (match:name-of (first found))))
                    (answer))
                   ((and (plusp (length shared)) (> (length shared) (length (said))))
                    (%put shared))
-                  (t (%put (name-of (nth (min (chosen p) (1- (length found)))
+                  (t (%put (match:name-of (nth (min (chosen p) (1- (length found)))
                                          found)))))
             (first found))))))
 
@@ -272,36 +241,34 @@ typed, so walking back to the end gives it back."
           (nth (or next 0) all))))))
 
 (defun %close ()
-  (let ((was (and *prompt* (was *prompt*))))
-    (setf (doc:current)
-          (if (and was (doc:named (node:name was)))
-              was
-              (or (doc:current) (doc:named "scratch")))))
+  (setf (doc:current)
+        (or (%where-from (and *prompt* (was *prompt*)))
+            (doc:named "scratch")
+            (doc:scratch)))
   (setf *prompt* nil)
-  (when (tree:root)
-    (setf (node:contents (tree:ensure nil "prompt")) nil))
+  (%standing nil)
   (let ((d (doc:named +document+)))
     (when d (setf (node:contents d) "")))
   nil)
 
 (defun descendsp (p)
   (and (filep p)
-       (let ((typed (expanded (said))))
+       (let ((typed (match:expanded (said))))
          (and (plusp (length typed))
               (uiop:directory-exists-p typed)
               (not (eql #\/ (char typed (1- (length typed)))))))))
 
 (defun descend (&optional (p *prompt*))
   (declare (ignore p))
-  (let ((typed (expanded (said))))
+  (let ((typed (match:expanded (said))))
     (%put (concatenate 'string (string-right-trim "/" typed) "/"))))
 
 (defun %answered (p)
-  (let ((said (if (filep p) (expanded (said)) (said))))
+  (let ((said (if (filep p) (match:expanded (said)) (said))))
     (if (and p (must-match p))
         (let* ((found (matching p))
                (pick (nth (min (chosen p) (max 0 (1- (length found)))) found)))
-          (if pick (name-of pick) said))
+          (if pick (match:name-of pick) said))
         said)))
 
 (defun answer (&optional text)
@@ -322,17 +289,6 @@ typed, so walking back to the end gives it back."
   (if (askingp)
       (format nil "~a~a" (question *prompt*) (said))
       (or (log:last-said) "")))
-
-(defun annotation (each)
-  (if (consp each) (princ-to-string (rest each)) ""))
-
-(defun shows (each width)
-  (let* ((name (name-of each))
-         (note (annotation each))
-         (gap (- width (length name) (length note))))
-    (if (and (plusp (length note)) (> gap 1))
-        (concatenate 'string name (make-string gap :initial-element #\space) note)
-        name)))
 
 (defun commands ()
   (command:defcommand "run-command" () (:describes "run a command by name")

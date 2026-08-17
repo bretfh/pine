@@ -1,9 +1,8 @@
 #!/bin/sh
-# The painter, end to end, with no display of your own: a headless river, a pine
-# daemon beside it, the painter attached to both, and grim's PNG of what landed
-# on the screen.
+# Pine end to end, with no display of your own: a headless compositor, one pine on
+# it, and grim's PNG of what landed on the screen.
 #
-#   guix shell -m manifest.scm -- sh bench/painter-shot.sh /tmp/pine-screen.png
+#   guix shell -m manifest.scm -- sh bench/screen-shot.sh /tmp/pine-screen.png
 set -eu
 
 out=${1:-/tmp/pine-screen.png}
@@ -21,8 +20,7 @@ CL_SOURCE_REGISTRY=$PWD//:$GUIX_ENVIRONMENT/share/common-lisp// \
 ASDF_OUTPUT_TRANSLATIONS=/:$HOME/.cache/common-lisp/pine/"
 
 cleanup() {
-  [ -n "${painter:-}" ] && kill "$painter" 2>/dev/null || true
-  [ -n "${daemon:-}" ] && kill "$daemon" 2>/dev/null || true
+  [ -n "${pine:-}" ] && kill "$pine" 2>/dev/null || true
   [ -n "${wm:-}" ] && kill "$wm" 2>/dev/null || true
   rm -rf "$run"
 }
@@ -51,7 +49,7 @@ done
 export WAYLAND_DISPLAY="$found"
 echo "the compositor is up on $WAYLAND_DISPLAY"
 
-env $env sbcl --dynamic-space-size 2048 --noinform --no-userinit \
+env $env PINE_FRAME_DUMP=/tmp/pine-frame sbcl --dynamic-space-size 2048 --noinform --no-userinit \
   --eval '(require :asdf)' --eval '(require :sb-introspect)' \
   --eval '(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))' \
   --eval "(setf pine/run/actors:*port* $port)" \
@@ -59,38 +57,23 @@ env $env sbcl --dynamic-space-size 2048 --noinform --no-userinit \
   --eval '(pine:daemon :store nil :config nil)' \
   --eval '(pine:use :text)' --eval '(pine:use :edit)' --eval '(pine:use :desk)' \
   --eval '(pine/edit:type-text "(defun hello (who) who)")' \
-  --eval '(loop (sleep 60))' >"$run/daemon.log" 2>&1 &
-daemon=$!
+  --eval '(loop (sleep 60))' >"$run/pine.log" 2>&1 &
+pine=$!
 
 n=0
-while ! grep -q "answering peers" "$run/daemon.log" 2>/dev/null; do
+while ! grep -q "surface" "$run/pine.log" 2>/dev/null; do
   n=$((n + 1))
-  [ "$n" -gt 300 ] && { echo "the daemon did not come up:"; tail -20 "$run/daemon.log"; exit 1; }
-  sleep 0.2
-done
-echo "the daemon is up on $port"
-
-env $env PINE_FRAME_DUMP=/tmp/pine-frame sbcl --dynamic-space-size 2048 --noinform --no-userinit \
-  --eval '(require :asdf)' --eval '(require :sb-introspect)' \
-  --eval '(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/wayland))' \
-  --eval '(setf pine/run/log:*to* *standard-output*)' \
-  --eval "(pine/wayland/painter:run :port $port)" >"$run/painter.log" 2>&1 &
-painter=$!
-
-n=0
-while ! grep -q "surface" "$run/painter.log" 2>/dev/null; do
-  n=$((n + 1))
-  [ "$n" -gt 300 ] && { echo "the painter did not come up:"; tail -30 "$run/painter.log"; exit 1; }
+  [ "$n" -gt 300 ] && { echo "pine did not come up:"; tail -30 "$run/pine.log"; exit 1; }
   sleep 0.2
 done
 sleep 4
 
-grim "$out" || { echo "grim said no"; tail -20 "$run/painter.log"; exit 1; }
+grim "$out" || { echo "grim said no"; tail -20 "$run/pine.log"; exit 1; }
 echo "wrote $out"
 
 # and again, with something typed at it. The keys go in at /key, which is where
-# a painter puts what a keyboard gave it, so this is the same path a keystroke
-# takes: the daemon works the frame out again, says so, and the painter paints.
+# a keyboard's own says land, so this is the same path a keystroke takes: the
+# surface works itself out again, says so, and the screen paints it.
 pine() {
   env $env sbcl --noinform --no-userinit --non-interactive \
     --eval '(require :asdf)' --eval '(require :sb-introspect)' \
@@ -106,9 +89,13 @@ grim "${out%.png}-typed.png" && echo "wrote ${out%.png}-typed.png"
 echo "--- what the document holds"
 pine '"read"' '"/text/scratch"'
 
+echo "--- what the screen laid out for"
+pine '"read"' '"/surface/bar/size"'
+pine '"read"' '"/surface/editor/size"'
+
 # and what a keyboard on the compositor gives it. A headless seat has no keyboard
 # until a virtual one appears and the compositor says so, which is why this is
-# typed twice: the first is what makes the painter bind one.
+# typed twice: the first is what makes pine bind one.
 if command -v wtype >/dev/null 2>&1; then
   wtype -s 200 "x" >/dev/null 2>&1 || true
   sleep 2
@@ -122,7 +109,5 @@ echo "--- what pine is showing"
 pine '"read"' '"/wm/layout"'
 pine '"run"' '"wm-windows"'
 
-echo "--- painter"
-grep -a -v '^;' "$run/painter.log" | grep -a -vE '^( |$)' | tail -16
-echo "--- daemon"
-grep -a -v '^;' "$run/daemon.log" | grep -a -vE '^( |$)' | tail -12
+echo "--- pine"
+grep -a -v '^;' "$run/pine.log" | grep -a -vE '^( |$)' | tail -20

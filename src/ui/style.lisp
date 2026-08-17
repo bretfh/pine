@@ -145,15 +145,15 @@ edited to carry something new."
          (parts (uiop:split-string (subseq s (1+ open) close) :separator '(#\,))))
     (when (>= (length parts) n)
       (flet ((num (i) (read-from-string (string-trim " " (nth i parts)))))
-        (list (/ (num 0) 255.0) (/ (num 1) 255.0) (/ (num 2) 255.0)
-              (if (= n 4) (float (num 3)) 1.0))))))
+        (list (num 0) (num 1) (num 2) (if (= n 4) (float (num 3)) 1.0))))))
 
 (defun %color (s)
-  "(r g b a) in 0..1, or nothing for transparent, none, or unparsable."
+  "(r g b a): the three numbers the rest of pine paints with, and how much of it
+shows. Nothing for transparent, none, or unparsable."
   (cond ((or (null s) (equal s "transparent") (equal s "none")) nil)
         ((and (stringp s) (plusp (length s)) (char= (char s 0) #\#))
          (let ((rgb (face:rgb s)))
-           (when rgb (append (mapcar (lambda (c) (/ c 255.0)) rgb) (list 1.0)))))
+           (when rgb (append rgb (list 1.0)))))
         ((and (stringp s) (eql 0 (search "rgba(" s))) (%rgba s 4))
         ((and (stringp s) (eql 0 (search "rgb(" s)))  (%rgba s 3))
         (t nil)))

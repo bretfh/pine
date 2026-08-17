@@ -1,10 +1,10 @@
 (defpackage #:pine/fs/store
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree))
+                    (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree))
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
-           #:storablep #:written #:read-back #:keep #:forget #:keeping #:*store*
-           #:attach #:*on-trouble*))
+           #:storablep #:written #:read-back #:stale #:keep #:kept #:forget
+           #:keeping #:*store* #:attach #:*on-trouble*))
 (in-package #:pine/fs/store)
 
 (defvar *schema*
@@ -91,9 +91,12 @@ they are, because prin1 cannot say them and read cannot take them."
         (values nil nil)))))
 
 (defun snapshot (s &optional (root (tree:root)))
+  "Write down what stands now. Belt and braces over the write-through, so nothing
+is taken out here: a node that really went was taken out as it went, and a system
+that has just been stopped has taken its nodes off the tree without meaning that
+what they held is to be forgotten."
   (let ((n 0))
     (sqlite:with-transaction (db s)
-      (sqlite:execute-non-query (db s) "delete from node")
       (tree:walk root
                  (lambda (each)
                    (when (and (node:savedp each)
@@ -133,26 +136,48 @@ with it."
          path (concatenate 'string path "/%"))))
     n))
 
+(defun kept (moved)
+  (let ((s *store*))
+    (when s
+      (sqlite:with-transaction (db s)
+        (loop :for n :in moved
+              :when (node:nodep n) :do (keep n))))))
+
 (defun keeping (&optional (s *store*))
-  (setf node:*on-write* (when s #'keep)
-        node:*on-erase* (when s #'forget))
+  (setf node:*on-write* nil
+        node:*on-erase* (when s #'forget)
+        (commit:on-commit :store) (when s #'kept))
   s)
 
 (defun restore (s &optional (root (tree:root)))
-  "Put back what the leaves held. A path already standing is written where it
-stands, so a buffer's point comes back on the buffer and not on a value beside it.
+  "Put values back into the nodes that already stand. Loading the code builds the
+shape; this only fills it in. A path with no node behind it any more is left in the
+store rather than conjured as a plain value: what it stood for is what knew how to
+read it, and a value node standing in its place would be saved forever after.
 
 Nothing is written through while this runs: the store is where these came from."
   (let ((n 0)
+        (was (commit:on-commit :store))
         (node:*on-write* nil))
-    (loop :for (path text) :in (sqlite:execute-to-list
-                                (db s) "select path, value from node")
-          :do (multiple-value-bind (value read) (read-back text)
-                (let ((names (tree:split-name path)))
-                  (when (and names read)
-                    (tree:put root names value)
-                    (incf n)))))
-    n))
+    (setf (commit:on-commit :store) nil)
+    (unwind-protect
+         (loop :for (path text) :in (sqlite:execute-to-list
+                                     (db s) "select path, value from node")
+               :do (multiple-value-bind (value read) (read-back text)
+                     (let* ((names (tree:split-name path))
+                            (at (and names read (apply #'tree:at root names))))
+                       (when (and at (node:savedp at))
+                         (setf (node:contents at) value)
+                         (incf n))))
+               :finally (return n))
+      (setf (commit:on-commit :store) was))))
+
+(defun stale (s &optional (root (tree:root)))
+  "Every path the store holds that nothing stands at any more."
+  (loop :for (path) :in (sqlite:execute-to-list (db s) "select path from node")
+        :for names := (tree:split-name path)
+        :unless (and names (apply #'tree:at root names))
+          :collect path))
 
 (defmethod node:contents ((n store-node))
   (let ((s *store*))

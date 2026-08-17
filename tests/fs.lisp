@@ -47,7 +47,14 @@
       (is (= 55 (node:contents (tree:at nil "dev/audio/volume"))))
       (is (equal "volume" (path:leaf p))))))
 
+(defun %paths (s like)
+  (sqlite:execute-to-list (pine/fs/store::db s)
+                          "select path from node where path like ?" like))
+
 (test a-store-writes-through-and-comes-back
+  "Loading the code builds the shape and the store only fills it in. A path with
+nothing standing at it is left in the store, not conjured as a plain value: what
+it stood for is what knew how to read it."
   (let ((file (merge-pathnames "pine-test-store.db" (uiop:temporary-directory))))
     (ignore-errors (delete-file file))
     (unwind-protect
@@ -56,12 +63,56 @@
              (let ((s (store:open-store file)))
                (store:keeping s)
                (tree:put nil '("kept" "note") "across")
+               (tree:put nil '("gone" "away") "orphan")
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (store:restore s)
+               (tree:ensure nil "kept" "note")
+               (is (eql 1 (store:restore s))
+                   "one node stood there to be filled in")
                (is (equal "across" (node:contents (tree:at nil "kept/note"))))
+               (is (null (tree:at nil "gone/away"))
+                   "and nothing was conjured where nothing stands")
+               (is (equal '("/gone/away") (store:stale s))
+                   "which the store can say")
                (store:close-store s))))
+      (ignore-errors (delete-file file)))))
+
+(test a-slot-is-kept-the-moment-it-is-written
+  "A slot says it is saved. Writing one has to reach the store as it happens, or
+what a crash costs is everything since the image came up."
+  (let ((file (merge-pathnames "pine-slot-store.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (with-tree
+           (let ((s (store:open-store file))
+                 (thing (make-instance 'job:thread :name "held" :restarts nil
+                                                   :thunk (lambda () nil))))
+             (store:keeping s)
+             (node:attach thing (tree:root))
+             (node:slots thing thing "state" 'job:state)
+             (setf (node:contents (tree:at nil "held/state")) :awake)
+             (is (equal '(("/held/state")) (%paths s "/held%"))
+                 "written through, before any shutdown")
+             (store:close-store s)))
+      (ignore-errors (delete-file file)))))
+
+(test a-snapshot-does-not-take-anything-out
+  "The snapshot is belt and braces over the write-through. A system stopping takes
+its nodes off the tree, and that is not a reason to forget what they held."
+  (let ((file (merge-pathnames "pine-snap-store.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (with-tree
+           (let ((s (store:open-store file)))
+             (store:keeping s)
+             (tree:put nil '("going" "away") "kept")
+             (setf node:*on-erase* nil)
+             (tree:erase nil "going")
+             (store:snapshot s)
+             (is (equal '(("/going/away")) (%paths s "/going%"))
+                 "still there after a snapshot with it off the tree")
+             (store:close-store s)))
       (ignore-errors (delete-file file)))))
 
 (test a-host-directory-reads-and-writes-through

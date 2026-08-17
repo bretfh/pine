@@ -12,6 +12,9 @@ images, and there is one."
     (pine:use :text)
     (pine:use :edit)
     (setf *editing* t))
+  (when (prompt:askingp) (command:run "cancel"))
+  (when (isearch:searching) (isearch:took (isearch:searching)))
+  (key:take-next nil)
   (let ((scratch (or (doc:named "scratch")
                      (doc:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
@@ -48,6 +51,55 @@ images, and there is one."
   (command:run "yank")
   (is (equal "hello" (doc:text (doc:current)))))
 
+(defun typed (&rest chords)
+  "Type at pine the way a keyboard does: one write to /key each. Nothing about the
+editor is reached around, so what this proves is what a keyboard would get."
+  (dolist (c chords chords)
+    (setf (node:contents (tree:at nil "key")) c)))
+
+(test space-is-a-key-like-any-other
+  "Every name a keyboard hands over has to be one pine can spell. A space arriving
+as itself is a chord nothing can parse, so it lands nowhere."
+  (let ((doc (editing)))
+    (typed "a" "space" "b" "SPC" "c")
+    (is (equal "a b c" (doc:text doc)))))
+
+(test typing-says-nothing-in-the-log
+  "A key is not news. The echo line shows the last thing the log said, so a note
+per keystroke is the editor talking over itself."
+  (editing)
+  (let ((before (log:last-said)))
+    (typed "x" "y" "C-a")
+    (is (equal before (log:last-said))
+        "the log said ~s" (log:last-said))))
+
+(test what-a-keyboard-can-send-the-editor-takes
+  "Every chord a keyboard hands over, through the one place they arrive. This is
+the path a person is on; a test that reaches past /key proves nothing about it."
+  (let ((doc (editing)))
+    (flet ((typed-into (want &rest chords)
+             (setf (node:contents doc) "")
+             (doc:goto doc 0 0)
+             (apply #'typed chords)
+             (is (equal want (doc:text doc)) "~{ ~a~}" chords)))
+      (typed-into "abc" "a" "b" "c")
+      (typed-into "a b" "a" "space" "b")
+      (typed-into "123" "1" "2" "3")
+      (typed-into "A" "S-a")
+      (typed-into "(hi)" "(" "h" "i" ")")
+      (typed-into (format nil "a~%b") "a" "Return" "b")
+      (typed-into "ab" "a" "b" "c" "BackSpace")
+      (typed-into "xabc" "a" "b" "c" "C-a" "x")
+      (typed-into "abx" "a" "b" "C-a" "End" "x")
+      (typed-into "acb" "a" "b" "Left" "c")
+      (typed-into "bc" "a" "b" "c" "C-a" "C-d")
+      (typed-into "a" "a" "b" "c" "C-a" "Right" "C-k")
+      (typed-into "ba" "a" "b" "C-a" "Right" "C-t")
+      (typed-into "ab " "a" "b" "space" "c" "d" "M-BackSpace")
+      (typed-into "abab" "a" "b" "C-a" "C-space" "C-e" "M-w" "C-e" "C-y")
+      (typed-into "" "a" "b" "C-a" "C-space" "C-e" "C-w")
+      (typed-into "ab" "a" "b" "c" "C-/"))))
+
 (test a-prefix-chord-waits-for-the-rest-of-itself
   (editing)
   (keys:dispatch (key:parse "C-x"))
@@ -62,11 +114,65 @@ images, and there is one."
   (is (typep (doc:mode-of (doc:current)) 'emode:prompt))
   (pine/edit:type-text "beginning-of-doc")
   (is (member "beginning-of-document" (prompt:matching)
-              :key #'prompt:name-of :test #'equal))
+              :key #'match:name-of :test #'equal))
   (is (somewhere (render:rows :cols 60 :lines 12) "M-x")
       "the frame shows the question")
   (command:run "cancel")
   (is (not (prompt:askingp))))
+
+(test the-completing-read-is-what-m-x-and-c-x-c-f-are
+  "The one facility every question goes through: what is offered, how typing
+narrows it, what TAB fills in, what C-n chooses and what RET does with it."
+  (editing)
+  (flet ((typed-in (text) (dolist (c (coerce text 'list)) (typed (string c))))
+         (names () (mapcar #'match:name-of (prompt:matching)))
+         (clear () (loop :repeat 3 :while (prompt:askingp)
+                         :do (command:run "cancel"))))
+    (clear)
+    (typed "M-x")
+    (is (prompt:askingp))
+    (is (> (length (names)) 100) "every command is offered before you type")
+    (typed-in "begin")
+    (is (member "beginning-of-line" (names) :test #'equal) "typing narrows")
+    (is (not (member "save-document" (names) :test #'equal)))
+    (is (somewhere (render:rows :cols 90 :lines 24) "beginning-of-line")
+        "and the candidates are on screen")
+    (clear)
+    (typed "M-x")
+    (typed-in "doc begin")
+    (is (member "beginning-of-document" (names) :test #'equal)
+        "words in any order, in any place")
+    (clear)
+    (typed "M-x")
+    (typed-in "beginning-of-docu")
+    (typed "TAB")
+    (is (equal "beginning-of-document" (prompt:said)) "TAB fills in the rest")
+    (clear)
+    (typed "M-x")
+    (typed-in "list-")
+    (typed "C-n")
+    (is (eql 1 (prompt:chosen)))
+    (typed "C-p")
+    (is (eql 0 (prompt:chosen)))
+    (clear)
+    (typed "M-x")
+    (typed-in "list-documents")
+    (typed "Return")
+    (is (equal "*documents*" (node:name (doc:current))) "and RET runs it")
+    (clear)
+    (typed "C-x" "C-f")
+    (is (prompt:filep prompt::*prompt*) "a file question knows it is one")
+    (is (and (plusp (length (prompt:said)))
+             (eql #\/ (char (prompt:said) 0)))
+        "and starts where you are")
+    (clear)))
+
+(test a-space-typed-at-key-is-the-space-key
+  "A chord written down separates keys with spaces, so a space on its own has to
+still be the space key. /key is the one door everything types through."
+  (let ((doc (editing)))
+    (typed "a" " " "b")
+    (is (equal "a b" (doc:text doc)))))
 
 (test what-a-prompt-answers-is-what-it-does
   (editing)
@@ -90,6 +196,34 @@ images, and there is one."
     (isearch:took (isearch:searching))
     (is (null (isearch:searching)))))
 
+(test a-long-file-scrolls-under-the-window
+  "A window shows part of a document. Point going out of it has to bring it along,
+or everything past the first screenful is unreachable."
+  (let ((doc (editing))
+        (render:*cols* 60)
+        (render:*lines* 10))
+    (setf (node:contents doc)
+          (format nil "~{line-~d~^~%~}" (loop :for i :below 200 :collect i)))
+    (doc:goto doc 0 0)
+    (flet ((shows (what)
+             (and (somewhere (render:rows :cols 60 :lines 10) what) t)))
+      (render:rows :cols 60 :lines 10)
+      (is (shows "line-0"))
+      (is (not (shows "line-150")))
+      (typed "M->")
+      (render:rows :cols 60 :lines 10)
+      (is (shows "line-199") "point at the end brought the window with it")
+      (is (not (shows "line-0")))
+      (typed "M-<")
+      (render:rows :cols 60 :lines 10)
+      (is (shows "line-0") "and back")
+      (typed "C-v")
+      (render:rows :cols 60 :lines 10)
+      (is (not (shows "line-0")) "a page down moved it")
+      (typed "M-v")
+      (render:rows :cols 60 :lines 10)
+      (is (shows "line-0") "and a page back returned it"))))
+
 (test a-listing-row-stands-for-a-thing
   (editing)
   (command:run "list-documents")
@@ -111,8 +245,28 @@ images, and there is one."
     (setf (node:contents doc) "(+ 2 2)")
     (doc:move doc :text 1)
     (command:run "eval-last-expression")
-    (is (render:overlays doc) "what it answered is shown beside the line")
-    (is (search "4" (second (first (render:overlays doc)))))))
+    (is (doc:overlays doc) "what it answered is shown beside the line")
+    (is (search "4" (second (first (doc:overlays doc)))))))
+
+(test a-name-written-with-its-package-completes
+  "Pine's own source is written in package-qualified names. A completion that only
+knew the document's package would be no use in the thing it is written in."
+  (let ((doc (editing)))
+    (flet ((completing (text col)
+             (setf (node:contents doc) text)
+             (doc:goto doc 0 col)
+             (command:run "complete-symbol")
+             (setf (doc:current) doc)
+             (doc:text doc)))
+      (is (equal "(pine/text/document:make-document"
+                 (completing "(pine/text/document:make-docu" 29)))
+      (is (search "prefix-at" (completing "(pine/edit/eval::prefix-a" 25))
+          "and two colons reach what a package keeps to itself")
+      (is (equal "(nosuchpackage:thi" (completing "(nosuchpackage:thi" 18))
+          "a package that is not there leaves the text alone"))
+    (is (member "pine/fs/node:contents"
+                (mode:complete (doc:mode-of doc) doc "pine/fs/node:conten")
+                :test #'equal))))
 
 (test what-is-at-point-is-a-symbol-the-mode-knows
   (let ((doc (editing)))
@@ -121,6 +275,40 @@ images, and there is one."
     (is (search "car" (or (pine/edit/eval:arglist (doc:mode-of doc) doc) "")))
     (is (member "car" (mode:complete (doc:mode-of doc) doc "ca")
                 :test #'equal))))
+
+(test a-file-opens-saves-reverts-and-goes
+  "The whole of what a person does with a file, through the commands and the
+prompt. A command that asks a question has to be able to take the answer."
+  (editing)
+  (let ((file (merge-pathnames "pine-file-probe.lisp" (uiop:temporary-directory))))
+    (unwind-protect
+         (progn
+           (with-open-file (o file :direction :output :if-exists :supersede)
+             (format o "(defun one () 1)~%(defun two () 2)~%"))
+           (command:run "find-file" (list (namestring file)))
+           (let ((d (doc:current)))
+             (is (search "(defun one () 1)" (doc:text d)))
+             (is (equal '("one" "two")
+                        (mapcar #'node:name (node:nodes (tree:at d "defun"))))
+                 "and its mode gave it regions")
+             (doc:goto d 0 0)
+             (typed "x")
+             (is (doc:modified d))
+             (command:run "save-document")
+             (is (not (doc:modified d)))
+             (is (search "x(defun one" (uiop:read-file-string file)))
+             (doc:goto d 0 0)
+             (typed "y" "y")
+             (command:run "revert-document" '("yes"))
+             (setf (doc:current) d)
+             (is (not (search "yy" (doc:text d))) "reverted")
+             (doc:goto d 0 0)
+             (typed "z")
+             (command:run "revert-document" '("no"))
+             (setf (doc:current) d)
+             (is (search "z" (doc:text d)) "and no means no")
+             (doc:kill (node:name d))))
+      (ignore-errors (delete-file file)))))
 
 (test a-system-stops-and-takes-its-surface-with-it
   (editing)

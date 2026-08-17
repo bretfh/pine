@@ -7,11 +7,11 @@
                     (#:w #:pine/ui/widget) (#:layout #:pine/ui/layout)
                     (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
-                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt))
+                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
+                    (#:match #:pine/edit/matching))
   (:export #:shows #:frame #:window-tree #:document-tree #:modeline #:echo
            #:rows #:drawn-line #:drawn-col #:caret-col #:showing
-           #:span #:spans #:forget-spans #:overlay #:overlays #:forget-overlays
-           #:scroll-to-point #:indent-for #:modelinep
+           #:scroll-to-point #:indenting #:modelinep
            #:*cols* #:*lines* #:*font*))
 (in-package #:pine/edit/render)
 
@@ -19,44 +19,6 @@
 (defvar *cols* 80)
 (defvar *lines* 24)
 (defvar *font* nil)
-(defvar *spans* (d:table))
-(defvar *overlays* (d:table))
-
-(defun span (document line from to face)
-  "Colour part of a line, for as long as somebody wants it there. A search that has
-just landed says this; so does anything else that wants to point at text."
-  (d:keep! *spans* (node:name document)
-           (cons (list line from to face)
-                 (or (d:at (d:all *spans*) (node:name document)) nil)))
-  (node:stir document)
-  document)
-
-(defun spans (document)
-  (or (d:at (d:all *spans*) (node:name document)) nil))
-
-(defun forget-spans (document)
-  (d:drop! *spans* (node:name document))
-  (node:stir document)
-  document)
-
-(defun overlay (document line text face)
-  "Text shown after a line without being in it. What an evaluation answers is put
-here, so the document is what was typed and nothing else."
-  (d:keep! *overlays* (node:name document)
-           (cons (list line text face)
-                 (or (d:at (d:all *overlays*) (node:name document)) nil)))
-  (node:stir document)
-  document)
-
-(defun overlays (document &optional line)
-  (let ((all (or (d:at (d:all *overlays*) (node:name document)) nil)))
-    (if line (remove line all :key #'first :test-not #'eql) all)))
-
-(defun forget-overlays (document)
-  (d:drop! *overlays* (node:name document))
-  (node:stir document)
-  document)
-
 (defun drawn-line (text width)
   "TEXT as it is drawn: a tab takes you to the next stop rather than one cell.
 Answers the text and the column each character landed in."
@@ -124,12 +86,15 @@ paging lands on lines that were walked already."
              (height (max 1 (window:lines win))))
         (cons (max 0 (- from height)) (+ from (* 2 height)))))))
 
+(defun %overlays (document line)
+  (remove line (doc:overlays document) :key #'first :test-not #'eql))
+
 (defun %by-line (document)
   (let ((found (make-hash-table :test 'eql)))
     (dolist (run (parser:highlights document))
       (destructuring-bind (line from to face) run
         (push (list from to face) (gethash line found))))
-    (dolist (run (spans document) found)
+    (dolist (run (doc:spans document) found)
       (destructuring-bind (line from to face) run
         (push (list from to face) (gethash line found))))))
 
@@ -212,7 +177,7 @@ window beside a document."
                       :do (grid:put g row (- col left) (char drawn col)
                                     (or (%face-at by-line line (%at-col where col))
                                         :default)))
-                (let ((said (overlays document line)))
+                (let ((said (%overlays document line)))
                   (when said
                     (let ((at (min (1- width)
                                    (max 0 (- (+ 2 (length drawn)) left)))))
@@ -280,7 +245,7 @@ on, and a widget tree has nothing of the sort to say."
         (g (grid:make-grid (max 1 width) (max 1 (length found)))))
     (loop :for each :in found
           :for row :from 0
-          :for text := (prompt:shows each width)
+          :for text := (match:shows each width)
           :for face := (if (= (+ row from) chosen)
                            :completion-selected
                            :completion)
@@ -292,7 +257,7 @@ on, and a widget tree has nothing of the sort to say."
 
 (defun echo (width &optional said)
   (let* ((p (and (null said) (prompt:asking)))
-         (question (if p (prompt:question p) ""))
+         (question (if p (or (prompt:asked) (prompt:question p)) ""))
          (text (or said (prompt:showing)))
          (g (grid:make-grid (max 1 width) 1)))
     (loop :for col :from 0 :below (min width (length text))
@@ -316,8 +281,8 @@ on, and a widget tree has nothing of the sort to say."
 last said. A surface follows what it read, so this is where the editor says what
 moving means."
   (node:reading (window:root))
-  (let ((n (tree:at nil "prompt"))) (when n (node:reading n)))
-  (let ((n (tree:at nil "log"))) (when n (node:reading n)))
+  (node:reading (tree:ensure nil "prompt"))
+  (node:reading (tree:ensure nil "log"))
   (let* ((wins (window:windows))
          (weight (reduce #'+ wins :key #'window:weight :initial-value 0))
          (room (max 2 (1- lines))))
@@ -341,7 +306,7 @@ moving means."
   (meter:timing (:frame) (%frame cols lines said)))
 
 (defun rows (&key (cols 80) (lines 24) said)
-  "The frame as rows of cells: what a painter blits, and what a test reads."
+  "The frame as rows of cells: what the screen blits, and what a test reads."
   (let ((tree (frame :cols cols :lines lines :said said))
         (g (grid:make-grid cols lines)))
     (layout:with-pass
@@ -351,9 +316,13 @@ moving means."
       (layout:paint tree g))
     (grid:rows g)))
 
-(defun indent-for (document line)
+(defun %without-a-parse (document line)
+  (or (mode:indent (doc:mode-of document) document line)
+      (and (plusp line) (doc:indent-of document (1- line)))
+      0))
+
+(defun indenting (document from to then)
   (let ((width (or (mode:setting (doc:mode-of document) :indent) 2)))
-    (or (parser:indent document line :width width)
-        (mode:indent (doc:mode-of document) document line)
-        (and (plusp line) (doc:indent-of document (1- line)))
-        0)))
+    (or (parser:indent document from to :width width :then then)
+        (funcall then (loop :for line :from from :to to
+                            :collect (cons line (%without-a-parse document line)))))))

@@ -25,7 +25,8 @@
                 ((:file "data")
                  (:module "fs"
                           :serial t
-                          :components ((:file "node") (:file "tree") (:file "path")
+                          :components ((:file "commit")
+                                       (:file "node") (:file "tree") (:file "path")
                                        (:file "reader") (:file "mount")
                                        (:file "store")))
                  (:module "run"
@@ -86,10 +87,10 @@ the parse behind it"
                 :depends-on (#:pine/text)
                 :serial t
                 :pathname "src/edit/"
-                :components ((:file "mode") (:file "window") (:file "prompt")
+                :components ((:file "mode") (:file "window") (:file "matching") (:file "prompt")
                              (:file "keys") (:file "render") (:file "listing")
                              (:file "isearch") (:file "commands") (:file "file")
-                             (:file "help") (:file "eval") (:file "debugger")
+                             (:file "help") (:file "eval") (:file "names") (:file "debugger")
                              (:file "system")))
 
 (asdf:defsystem #:pine/term
@@ -123,7 +124,7 @@ dispatches on"
                 :components ((:file "canvas") (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
-                :description "A painter: a pine that shows another one"
+                :description "The display pine paints its surfaces on"
                 :depends-on (#:pine/paint #:wayflan-client #:posix-shm #:cl-xkb)
                 :serial t
                 :pathname "src/wayland/"
@@ -134,7 +135,7 @@ dispatches on"
                                                    (:file "river-xkb")
                                                    (:file "river-layer-shell")))
                              (:file "pump") (:file "display") (:file "shell")
-                             (:file "pane") (:file "input") (:file "wm") (:file "painter")))
+                             (:file "pane") (:file "input") (:file "wm") (:file "screen")))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"
@@ -164,7 +165,7 @@ dispatches on"
                 :components ((:file "suite") (:file "data") (:file "fs")
                              (:file "run") (:file "ui") (:file "text")
                              (:file "host") (:file "edit") (:file "term")
-                             (:file "wm") (:file "config") (:file "app")
+                             (:file "wm") (:file "config") (:file "app") (:file "draw")
                              (:file "style"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)

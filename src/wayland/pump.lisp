@@ -6,7 +6,7 @@
 
 (defparameter +nonblock+ 2048
   "O_NONBLOCK. The read end must never block: the thread that reads it is the one
-holding the compositor connection, and a read that waits is a painter that has
+holding the compositor connection, and a read that waits is a screen that has
 stopped drawing.")
 
 (defstruct (pump (:constructor %pump))

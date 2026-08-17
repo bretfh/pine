@@ -1,0 +1,398 @@
+(defpackage #:pine/wayland/screen
+  (:use #:cl #:wayflan-client)
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
+                    (#:watch #:pine/run/watch) (#:system #:pine/run/system)
+                    (#:fault #:pine/run/fault) (#:log #:pine/run/log)
+                    (#:w #:pine/ui/widget) (#:hit #:pine/ui/hit)
+                    (#:surface #:pine/ui/surface)
+                    (#:pump #:pine/wayland/pump) (#:display #:pine/wayland/display)
+                    (#:shell #:pine/wayland/shell)
+                    (#:pane #:pine/wayland/pane)
+                    (#:input #:pine/wayland/input)
+                    (#:wm #:pine/wayland/wm))
+  (:export #:screen #:open-screen #:close-screen #:wm-of #:availablep))
+(in-package #:pine/wayland/screen)
+
+(defconstant +left+ #x110)
+(defparameter +settling+ 10
+  "Turns of the loop between passes over what is up. A surface can go without
+saying so, and a pane with nothing behind it is a window nothing can close.")
+
+(defclass screen (job:thread)
+  ((display :initform nil     :accessor display-of)
+   (shell   :initform nil     :accessor shell-of)
+   (pump    :initform nil     :accessor pump)
+   (says    :initform nil     :accessor says)
+   (up      :initform (d:table) :reader up)
+   (watching :initform (d:table) :reader watching)
+   (wm      :initform nil     :accessor wm-of)
+   (keys    :initform (input:make-keys) :reader keys)
+   (pointer :initform (input:make-pointer) :reader pointer)
+   (turns   :initform 0       :accessor turns)
+   (done    :initform nil     :accessor done))
+  (:documentation "The display this pine paints on. A THREAD, because a compositor
+connection is a thing you block on."))
+
+(defun availablep () (and (uiop:getenv "WAYLAND_DISPLAY") t))
+
+(defun %at (name &rest under)
+  (apply #'tree:at nil "surface" name under))
+
+(defun tell (s thunk)
+  "Do something that is not drawing, off the thread holding the connection."
+  (let ((to (says s)))
+    (when to (job:tell to thunk) t)))
+
+(defun %named (name) (surface:named name))
+
+(defun %tree (name)
+  (let ((it (%named name))) (when it (node:contents it))))
+
+(defun %shownp (name)
+  (let ((it (%named name))) (and it (surface:shown it) t)))
+
+(defun %windowp (name)
+  (let ((it (%named name)))
+    (and it (typep (surface:role it) '(or surface:window surface:tile)) t)))
+
+(defun %where (name)
+  (let ((n (%at name "where")))
+    (and n (node:contents n))))
+
+(defun %sizing (p cell-w cell-h)
+  (list :wide (pane:wide p) :tall (pane:tall p)
+        :cols (max 1 (floor (pane:wide p) (max 1 (or cell-w 9))))
+        :lines (max 1 (floor (pane:tall p) (max 1 (or cell-h 18))))
+        :font pane:*font*))
+
+(defun %say-size (s name p &key cell-w cell-h now)
+  "How big this surface came out. Opening one says it and waits: where it goes is
+worked out from the size."
+  (let ((said (%sizing p cell-w cell-h))
+        (n (%at name "size")))
+    (flet ((put ()
+             (when (and n (not (equal said (node:contents n))))
+               (setf (node:contents n) said))))
+      (if now (put) (tell s #'put)))))
+
+(defun open-one (s name)
+  "Put a surface up. What has to be told to the compositor is only ever the thread
+holding it."
+  (let ((tree (%tree name)))
+    (when (and tree (null (d:at (d:all (up s)) name)))
+      (let ((p (make-instance 'pane:pane
+                              :name name :shell (shell-of s) :tree tree
+                              :on-resize
+                              (lambda (p)
+                                (multiple-value-bind (cw ch) (pane:cell p)
+                                  (%say-size s name p :cell-w cw :cell-h ch))))))
+        (when (eq p (d:claim (up s) name p))
+          (multiple-value-bind (wide tall) (pane:measure p)
+            (setf (pane:wide p) wide (pane:tall p) tall)
+            (multiple-value-bind (cw ch) (pane:cell p)
+              (%say-size s name p :cell-w cw :cell-h ch :now t)))
+          (let ((where (%where name))
+                (windowp (%windowp name)))
+            (pump:hand (pump s)
+                       (lambda ()
+                         (pane:open-pane p where :windowp windowp)
+                         (%shows s p)
+                         (log:note "~a is up" name)))))))))
+
+(defun moved (s name)
+  "The surface worked itself out again. How big it is is not said here: that is a
+write to a node the surface reads, and on every repaint it never settles."
+  (let ((p (d:at (d:all (up s)) name))
+        (tree (%tree name)))
+    (cond ((and p tree)
+           (pump:hand (pump s)
+                      (lambda () (setf (pane:tree p) tree) (%shows s p))))
+          ((and (null p) tree (%shownp name)) (open-one s name))
+          (t nil))))
+
+(defun toggled (s name)
+  (if (%shownp name)
+      (unless (d:at (d:all (up s)) name) (open-one s name))
+      (let ((p (d:at (d:all (up s)) name)))
+        (when p
+          (d:drop! (up s) name)
+          (pump:hand (pump s) (lambda () (pane:close-pane p)))))))
+
+(defun %unlisten (s name)
+  (dolist (w (d:at (d:all (watching s)) name))
+    (ignore-errors (watch:unwatch w)))
+  (d:drop! (watching s) name))
+
+(defun %listen (s name)
+  "Hear about this surface. A config read again puts a new node under the same
+name, and the old one is something nothing writes."
+  (%unlisten s name)
+  (let ((it (%named name)))
+    (when it
+      (let ((on-tree (watch:watch it (lambda (of said)
+                                       (declare (ignore of said))
+                                       (moved s name))
+                                  :only nil :poll nil
+                                  :name (format nil "screen<-~a" name)))
+            (shown (%at name "shown")))
+        (d:keep! (watching s) name
+                 (list* on-tree
+                        (when shown
+                          (list (watch:watch shown
+                                             (lambda (of said)
+                                               (declare (ignore of said))
+                                               (toggled s name))
+                                             :poll nil
+                                             :name (format nil "screen<-~a/shown"
+                                                            name))))))))))
+
+(defun %pointer (s sh &rest event)
+  (let ((at (pointer s)))
+    (event-case event
+      (:enter (serial surface x y)
+       (setf (input:pointer-serial at) serial
+             (input:pointer-focus at) (shell:at-surface sh surface)
+             (input:pointer-at-x at) x
+             (input:pointer-at-y at) y))
+      (:motion (time-ms x y)
+       (declare (ignore time-ms))
+       (setf (input:pointer-at-x at) x (input:pointer-at-y at) y)
+       (when (input:pointer-drag at) (%drag s)))
+      (:leave (serial surface)
+       (declare (ignore serial surface))
+       (setf (input:pointer-focus at) nil))
+      (:button (serial time-ms button state)
+       (declare (ignore serial time-ms))
+       (when (= button +left+)
+         (ecase state
+           (:pressed (%press s))
+           (:released (%release s)))))
+      (:axis (time-ms axis delta) (declare (ignore time-ms axis delta)))
+      (:frame ()))))
+
+(defun %over (s)
+  (let* ((at (pointer s))
+         (p (input:pointer-focus at)))
+    (when (and p (pane:tree p))
+      (hit:at (pane:tree p) (round (input:pointer-at-y at))
+              (round (input:pointer-at-x at))))))
+
+(defun %press (s)
+  (let ((found (%over s)))
+    (if (typep found 'w:slider)
+        (progn (setf (input:pointer-drag (pointer s)) found) (%drag s))
+        (%click s))))
+
+(defun %drag (s)
+  (let ((slider (input:pointer-drag (pointer s)))
+        (p (input:pointer-focus (pointer s))))
+    (when (and slider p)
+      (setf (w:value slider)
+            (hit:value-at slider (round (input:pointer-at-x (pointer s)))))
+      (pane:paint p))))
+
+(defun %release (s)
+  (let ((slider (input:pointer-drag (pointer s))))
+    (when slider
+      (setf (input:pointer-drag (pointer s)) nil)
+      (let ((fn (w:changed slider)))
+        (when fn (tell s (lambda () (funcall fn (w:value slider)))))))))
+
+(defun %click (s)
+  (let* ((at (pointer s))
+         (p (input:pointer-focus at)))
+    (when (and p (pane:tree p))
+      (let ((thunk (hit:clicked-at (pane:tree p)
+                                   (round (input:pointer-at-y at))
+                                   (round (input:pointer-at-x at)))))
+        (when thunk (tell s thunk))))))
+
+(defun %keyboard (s sh &rest event)
+  (declare (ignore sh))
+  (let ((k (keys s)))
+    (event-case event
+      (:keymap (format fd size)
+       (assert (eq format :xkb-v1))
+       (input:keymap k fd size))
+      (:modifiers (serial depressed latched locked group)
+       (declare (ignore serial))
+       (input:modifiers k depressed latched locked group))
+      (:key (serial time-ms key state)
+       (declare (ignore serial time-ms))
+       (case state
+         (:pressed (let ((said (input:pressed k key)))
+                     (when said (%typed s said))))
+         (:released (input:released k key))))
+      (:enter (serial surface keys) (declare (ignore serial surface keys)))
+      (:leave (serial surface)
+       (declare (ignore serial surface))
+       (input:forget-held k))
+      (:repeat-info (rate delay)
+       (setf (input:keys-rate k) rate (input:keys-delay k) delay)))))
+
+(defun %typed (s said)
+  (tell s (lambda ()
+            (let ((n (tree:at nil "key")))
+              (if n
+                  (setf (node:contents n) said)
+                  (log:note "nothing at /key"))))))
+
+(defun %settle (s)
+  "Take down what /surface no longer says."
+  (d:do-each (name (d:keys (d:all (up s))))
+    (unless (surface:named name)
+      (let ((p (d:at (d:all (up s)) name)))
+        (%unlisten s name)
+        (d:drop! (up s) name)
+        (when p
+          (pane:close-pane p)
+          (log:note "~a is gone" name))))))
+
+(defun %tick (s)
+  (let ((again (input:repeating (keys s))))
+    (when again (%typed s again)))
+  (when (zerop (mod (incf (turns s)) +settling+)) (%settle s)))
+
+(defun %loop (s)
+  (let ((d (display-of s)))
+    (loop :until (or (done s) (d:held (job:stopping s)))
+          :do (%tick s)
+              (display:dispatch d)
+              (pump:drain (pump s))
+              (let ((woke (display:wait d (pump s)
+                                        (or (input:deadline (keys s)) 100))))
+                (when woke (pump:drain-wake (pump s)))))))
+
+(defun %managing (s said)
+  "What the compositor handed over, and where it all goes. Off the thread holding
+it: river kills a manager that waits."
+  (tell s
+        (lambda ()
+          (let ((where (tree:at nil "wm" "said")))
+            (when where (setf (node:contents where) said)))
+          (let ((wants (let ((n (tree:at nil "wm" "wants")))
+                         (and n (node:contents n))))
+                (layout (let ((n (tree:at nil "wm" "placement")))
+                          (and n (node:contents n)))))
+            (pump:hand (pump s)
+                       (lambda ()
+                         (let ((it (wm-of s)))
+                           (when it
+                             (when wants (wm:take it wants))
+                             (wm:laid it layout)))))))))
+
+(defun %rendering (s)
+  "A render sequence is open: commit pine's own furniture."
+  (d:do-each (p (d:vals (d:all (up s))))
+    (when (and (pane:chromep p) (pane:dirty p))
+      (fault:attempt (lambda () (pane:render p))
+                     (format nil "rendering ~a" (pane:name-of p))))))
+
+(defun %shows (s p)
+  (pane:paint p)
+  (when (and (pane:chromep p) (pane:dirty p)) (wm:wake (wm-of s))))
+
+(defun %names ()
+  (let ((n (tree:at nil "surface")))
+    (and n (mapcar #'node:name (node:nodes n)))))
+
+(defun %managing-windows (s)
+  "Where the compositor asked for a manager, say so and load the one that is it.
+A wm already up is the wrong one, so it goes first."
+  (when (wm-of s)
+    (fault:attempt
+     (lambda ()
+       (setf (node:contents (tree:ensure nil "wm-manage")) t)
+       (when (system:named "wm") (system:drop "wm"))
+       (system:use "wm"))
+     "taking the windows over")))
+
+(defun %rebound (s name p)
+  "A pane over a surface node that has just been replaced. The pane stays where the
+compositor put it; what it draws is the new node's to say."
+  (multiple-value-bind (cw ch) (pane:cell p)
+    (%say-size s name p :cell-w cw :cell-h ch :now t))
+  (let ((tree (%tree name)))
+    (when tree
+      (pump:hand (pump s) (lambda () (setf (pane:tree p) tree) (%shows s p))))))
+
+(defun took-up (s name)
+  "One surface, watched and shown, however it came to be declared."
+  (%listen s name)
+  (let ((p (d:at (d:all (up s)) name)))
+    (cond ((not (%shownp name))
+           (when p
+             (d:drop! (up s) name)
+             (pump:hand (pump s) (lambda () (pane:close-pane p)))))
+          (p (%rebound s name p))
+          (t (open-one s name)))))
+
+(defun %take-up (s)
+  (%managing-windows s)
+  (setf surface:*on-declare*
+        (lambda (it) (tell s (lambda () (took-up s (node:name it))))))
+  (dolist (name (%names)) (took-up s name))
+  (log:note "~d surface~:p up, ~d watched" (d:size (d:all (up s)))
+            (length (%names)))
+  s)
+
+(defun %attend (s)
+  "Everything that touches the connection, on the thread that owns it."
+  (let ((d (display:connect)))
+    (setf (display-of s) d
+          (pump s) (pump:make-pump))
+    (setf (shell-of s) (shell:bind d
+                                   :on-pointer (lambda (sh &rest e)
+                                                 (apply #'%pointer s sh e))
+                                   :on-keyboard (lambda (sh &rest e)
+                                                  (apply #'%keyboard s sh e))))
+    (setf (wm-of s) (wm:bind d :on-said (lambda (said) (%managing s said))
+                               :on-render (lambda () (%rendering s))))
+    (when (wm-of s)
+      (setf (shell:chrome (shell-of s)) (wm:manager (wm-of s))))
+    (setf (says s)
+          (job:start (make-instance 'job:actor
+                                    :name (format nil "~a-work" (node:name s))
+                                    :restarts nil :dispatcher :pinned
+                                    :receive (lambda (thunk)
+                                               (fault:attempt thunk "the screen")))))
+    (%take-up s)
+    s))
+
+(defun %shut (s)
+  (setf surface:*on-declare* nil)
+  (d:do-each (name (d:keys (d:all (watching s))))
+    (%unlisten s name))
+  (d:do-each (p (d:vals (d:all (up s))))
+    (ignore-errors (pane:close-pane p)))
+  (d:do-each (name (d:keys (d:all (up s))))
+    (d:drop! (up s) name))
+  (when (says s) (ignore-errors (job:stop (says s))))
+  (when (pump s) (pump:close-pump (pump s)))
+  (when (display-of s) (display:disconnect (display-of s)))
+  (setf (display-of s) nil (shell-of s) nil (wm-of s) nil)
+  s)
+
+(defmethod job:start :before ((s screen))
+  (setf (job:thunk s)
+        (lambda ()
+          (unwind-protect (progn (%attend s) (%loop s))
+            (%shut s)))))
+
+(defun open-screen (&key (name "screen"))
+  "Paint this pine's surfaces: what is declared and shown is on screen."
+  (let ((s (make-instance 'screen :name name :restarts t)))
+    (job:supervise s)
+    (job:start s)
+    s))
+
+(defun close-screen (&optional (name "screen"))
+  (let ((s (job:named name)))
+    (when (typep s 'screen)
+      (setf (done s) t)
+      (when (pump s) (pump:wake (pump s)))
+      (job:stop s))
+    s))
+
+(setf pine:*screen* (lambda () (when (availablep) (open-screen))))

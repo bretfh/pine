@@ -1,6 +1,8 @@
 (defpackage #:pine/edit/commands
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
+                    (#:surface #:pine/ui/surface)
                     (#:command #:pine/run/command) (#:log #:pine/run/log)
                     (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
                     (#:lines #:pine/text/lines)
@@ -15,13 +17,25 @@
 (defvar *kill-kept* 60)
 (defvar *count* (d:box nil))
 
+(defun %clip ()
+  (tree:at nil "dev" "clip" "text"))
+
 (defun kill (string)
+  (let ((n (%clip)))
+    (when n (fault:attempt (lambda () (setf (node:contents n) string)) "copying")))
   (push string *kill-ring*)
   (when (> (length *kill-ring*) *kill-kept*)
     (setf *kill-ring* (subseq *kill-ring* 0 *kill-kept*)))
   string)
 
-(defun yank () (first *kill-ring*))
+(defun yank ()
+  "What to put back: what the desktop is holding when that is not what pine killed
+last, so what was copied in another program pastes here."
+  (let* ((n (%clip))
+         (theirs (and n (fault:attempt (lambda () (node:contents n)) "pasting"))))
+    (if (and theirs (plusp (length theirs)) (not (equal theirs (first *kill-ring*))))
+        theirs
+        (first *kill-ring*))))
 
 (defun counting () (d:held *count*))
 
@@ -47,22 +61,10 @@ by whoever asks for it."
         (let ((word (doc:delete-region document line col to-line to-col)))
           (doc:insert document (funcall by word)))))))
 
-(defun %toward (document kind)
-  "Where KIND says to go from point, asked of the parse. Nothing when the document
-is in no language or the parse has nothing to say."
-  (let ((p (parser:parser-for document)))
-    (when p
-      (parser:wait document)
-      (multiple-value-bind (line col)
-          (runtime:parse-motion (parser:state-of p) kind
-                                (doc:at-line document) (doc:at-col document))
-        (when line (list line col))))))
-
 (defun %go (document kind)
-  (let ((there (%toward document kind)))
-    (if there
-        (doc:goto document (first there) (second there))
-        (log:note "the parse says nothing there"))))
+  (or (parser:motion document kind
+                     (lambda (line col) (doc:goto document line col)))
+      (log:note "the parse says nothing there")))
 
 (defun %motion ()
   (command:defcommand "forward-sexp" () (:describes "over the form after point")
@@ -77,10 +79,11 @@ is in no language or the parse has nothing to say."
     (%go (%of) :end-of-defun))
   (command:defcommand "mark-sexp" ()
       (:describes "the region is the form after point")
-    (let* ((document (%of)) (there (%toward document :forward-sexp)))
-      (when there
-        (setf (doc:mark document) (doc:point document))
-        (doc:goto document (first there) (second there)))))
+    (let ((document (%of)))
+      (parser:motion document :forward-sexp
+                     (lambda (line col)
+                       (setf (doc:mark document) (doc:point document))
+                       (doc:goto document line col)))))
   (command:defcommand "forward-char" () (:describes "point one character on")
     (doc:move (%of) :char (times)))
   (command:defcommand "backward-char" () (:describes "point one character back")
@@ -134,17 +137,23 @@ is in no language or the parse has nothing to say."
          (log:note "C-u ~a" (counting)))
        :describes "a digit of the count the next command takes"))))
 
+(defun %laying-out (document)
+  (lambda (targets)
+    (loop :for (line . at) :in targets
+          :do (doc:indent-line document line at))))
+
+(defun %indent (document from to)
+  (render:indenting document from to (%laying-out document)))
+
 (defun %editing ()
   (command:defcommand "newline" () (:describes "break the line at point")
     (let ((document (%of)))
       (doc:newline document)
-      (doc:indent-line document (doc:at-line document)
-                       (render:indent-for document (doc:at-line document)))
+      (%indent document (doc:at-line document) (doc:at-line document))
       (doc:point document)))
   (command:defcommand "indent-line" ()
       (:describes "indent this line as the parse says")
-    (doc:indent-line (%of) (doc:at-line (%of))
-                     (render:indent-for (%of) (doc:at-line (%of)))))
+    (%indent (%of) (doc:at-line (%of)) (doc:at-line (%of))))
   (command:defcommand "undo" () (:describes "put back what the last edit changed")
     (doc:undo (%of)))
   (command:defcommand "redo" () (:describes "do again what undo put back")
@@ -243,19 +252,13 @@ is in no language or the parse has nothing to say."
       (:describes "indent every line of the region")
     (let* ((document (%of)) (span (doc:mark document)))
       (when span
-        (loop :for line :from (min (first span) (doc:at-line document))
-                :to (max (first span) (doc:at-line document))
-              :do (doc:indent-line document line
-                                   (render:indent-for document line))))))
+        (%indent document
+                 (min (first span) (doc:at-line document))
+                 (max (first span) (doc:at-line document))))))
   (command:defcommand "format-document" () (:describes "indent every line of it")
-    (let ((document (%of)) (n 0))
-      (dotimes (line (doc:line-count document))
-        (let ((width (render:indent-for document line)))
-          (when width
-            (doc:indent-line document line width)
-            (incf n))))
-      (log:note "indented ~d line~:p" n)
-      n))
+    (let ((document (%of)))
+      (%indent document 0 (max 0 (1- (doc:line-count document))))
+      (doc:line-count document)))
   (command:defcommand "comment-line" ()
       (:describes "comment this line, or uncomment it")
     (let* ((document (%of))
@@ -292,10 +295,15 @@ is in no language or the parse has nothing to say."
       (setf (doc:setting document :overwrite) on)
       (log:note "overwrite is ~:[off~;on~]" on)
       on))
+  (command:defcommand "refresh" () (:describes "draw everything again")
+    (let ((n 0))
+      (dolist (each (surface:surfaces) n)
+        (fault:attempt (lambda () (node:stir each)) (node:name each))
+        (incf n))))
   (command:defcommand "keyboard-quit" ()
       (:describes "drop the mark, the prompt and the pending chord")
     (setf (doc:mark (%of)) nil)
-    (render:forget-spans (%of))
+    (doc:forget-spans (%of))
     (if (prompt:askingp) (prompt:cancel) (log:note "quit")))
   (command:defcommand "recenter" ()
       (:describes "point to the middle of the window")

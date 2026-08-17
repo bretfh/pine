@@ -139,7 +139,7 @@ path every painted cell takes."
 
 (defun rgb (h)
   "A #rrggbb string as (r g b), or nothing for anything else. A face's FG and BG are
-hex; this is how a painter reads one."
+hex; this is how a canvas reads one."
   (when (and (stringp h) (>= (length h) 7) (char= (char h 0) #\#))
     (list (parse-integer h :start 1 :end 3 :radix 16)
           (parse-integer h :start 3 :end 5 :radix 16)
