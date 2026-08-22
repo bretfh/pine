@@ -1,12 +1,12 @@
-(define-module (sento)
+(define-module (pine packages sento)
   #:use-module (guix packages)
   #:use-module (guix git-download)
   #:use-module (guix build-system asdf)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages lisp-xyz)
-  #:use-module (timer-wheel)
-  #:use-module (local-time-duration)
-  #:use-module (pure-tls)
+  #:use-module (pine packages timer-wheel)
+  #:use-module (pine packages local-time-duration)
+  #:use-module (pine packages pure-tls)
   #:export (sbcl-sento))
 
 (define-public sbcl-sento

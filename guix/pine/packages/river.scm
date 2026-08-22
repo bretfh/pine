@@ -1,4 +1,4 @@
-(define-module (river)
+(define-module (pine packages river)
   #:use-module (guix packages)
   #:use-module (guix gexp)
   #:use-module (guix git-download)

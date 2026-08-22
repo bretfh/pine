@@ -22,8 +22,9 @@ pine's own tree."
                                  (sb-ext:posix-getenv "GUIX_ENVIRONMENT")
                                  +built-in+
                                  (ignore-errors
-                                  (namestring
-                                   (asdf:system-source-directory :pine)))))))
+                                  (handler-bind ((warning #'muffle-warning))
+                                    (namestring
+                                     (asdf:system-source-directory :pine))))))))
     (remove-duplicates
      (loop :for root :in roots
            :append (loop :for under :in +under+

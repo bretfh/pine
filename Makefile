@@ -1,4 +1,4 @@
-.PHONY: foreign foreign-deps foreign-libs foreign-wayflan
+.PHONY: foreign foreign-deps foreign-libs foreign-wayflan libs
 .PHONY: repl check test probe bench eval docs daemon shot screen bin
 
 # Two ways to get what pine needs, and every target below works under either.
@@ -30,12 +30,15 @@ COMPOSITOR ?= sway
 GUIX := guix shell --rebuild-cache -m manifest.scm --
 
 ifeq ($(FOREIGN),)
+  # gcc-toolchain, from the manifest; the host's cc is not what is in here
+  BUILD_CC = gcc
   IN   := $(GUIX) sh -c
   ENV  := LD_LIBRARY_PATH="$$GUIX_ENVIRONMENT/lib" CL_SOURCE_REGISTRY="$$PWD//:$$GUIX_ENVIRONMENT/share/common-lisp//" ASDF_OUTPUT_TRANSLATIONS="/:$$HOME/.cache/common-lisp/pine/"
   # --no-userinit: deps come from guix and this tree only; the user's sbclrc
   # (ocicl runtime, its own source registry) must not leak into pine builds.
   SBCL := sbcl --no-userinit --eval "(require :asdf)"
 else
+  BUILD_CC = $(CC)
   IN   := sh -c
   # ocicl put itself in the user's sbclrc, so this is the one path that wants
   # it. DYLD_ is what a mac's loader reads; setting both costs nothing.
@@ -43,53 +46,65 @@ else
   SBCL := sbcl --eval "(require :asdf)"
 endif
 
-repl:
+# the C pine owns: its pty shim and its own dialect grammar. The guix package
+# builds these into its output; a tree you run from builds them here, once.
+libs:
+	@test -f $(LIBDIR)/libpine-pty.$(SOEXT) -a -f $(TSDIR)/libtree-sitter-pine.$(SOEXT) \
+	  || $(IN) 'mkdir -p $(LIBDIR) $(TSDIR) && \
+	    $(BUILD_CC) -O2 lib/pty-helper.c -o $(LIBDIR)/pine-pty-helper && \
+	    $(BUILD_CC) -shared -fPIC -DPINE_PTY_HELPER=\"$(CURDIR)/$(LIBDIR)/pine-pty-helper\" \
+	       lib/pty.c -o $(LIBDIR)/libpine-pty.$(SOEXT) $(PTY_LINK) && \
+	    $(BUILD_CC) -shared -fPIC -I grammar/pine/src grammar/pine/src/parser.c \
+	       -o $(TSDIR)/libtree-sitter-pine.$(SOEXT) && \
+	    echo "built $(LIBDIR) and $(TSDIR)"'
+
+repl: libs
 	$(IN) '$(ENV) $(SBCL) --eval "(asdf:load-system :pine/all)"'
 
 # load everything and say so, without running anything
-check:
+check: libs
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(princ :loaded)" --eval "(terpri)"'
 
 # a pine in this terminal: the tree, what its config declares, and its surfaces on
 # the compositor you are under
-daemon:
+daemon: libs
 	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --noinform --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))" --eval "(setf pine/run/log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
 
 # the frame and every surface as PNGs, with no display and no compositor
-shot:
+shot: libs
 	$(IN) '$(ENV) PINE_SHOT="$(SHOT)" PINE_CONFIG="$(CONFIG)" $(SBCL) --non-interactive --load bench/shot.lisp'
 
 # end to end: a headless compositor, a pine on it, and a capture of what landed on
 # the screen. COMPOSITOR=river makes pine the window manager as well, which is what
 # river asks for
-screen:
+screen: libs
 	$(IN) 'COMPOSITOR=$(COMPOSITOR) sh bench/screen-shot.sh $(OUT)'
 
 # one executable: the daemon and the CLI, which is how pine is
 # meant to be run. ./pine with no verb says what it takes.
-bin:
+bin: libs
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(sb-ext:save-lisp-and-die \"pine\" :executable t :save-runtime-options t :toplevel (function pine/cli:main))"'
 	@echo "wrote ./pine"
 
 # the fiveam suite. Exits nonzero on failure.
-test:
+test: libs
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:test-system :pine)"'
 
 # run one suite over and over in a single image, to read an intermittent
 # failure: make probe SUITE=pine/edit TIMES=10
-probe:
+probe: libs
 	$(IN) '$(ENV) SUITE="$(SUITE)" TIMES="$(TIMES)" $(SBCL) --non-interactive --load bench/probe.lisp'
 
 # a workload, driving the paths a person waits on, printing the same table a
 # running daemon answers with `pine run metrics':
 #   make bench WORK=typing SIZE=20000
 #   make bench WORK=idle FOR=20
-bench:
+bench: libs
 	$(IN) '$(ENV) WORK="$(WORK)" SIZE="$(SIZE)" FOR="$(FOR)" $(SBCL) --non-interactive --load bench/workload.lisp'
 
 # evaluate one form in an image with the test system loaded, in PINE.TEST, with
 # the debugger left on so a fault prints its backtrace: make eval FORM='(...)'
-eval:
+eval: libs
 	FORM='$(FORM)' $(IN) '$(ENV) $(SBCL) --disable-debugger --eval "(asdf:load-system :pine/test)" --eval "(in-package :pine/test)" --eval "(eval (read-from-string (uiop:getenv \"FORM\")))" --quit'
 
 # the diagrams under doc/ are generated from the .dot beside them: make docs
@@ -195,16 +210,9 @@ foreign-deps:
 # the C pine owns: its pty helper, and the two tree-sitter grammars generated
 # from the sibling checkout. Guix builds these as packages; without guix they
 # are three compiler invocations and they land where pine already looks.
-foreign-libs:
-	@test -n "$(CC)" || { echo "no C compiler: see make foreign"; exit 1; }
-	mkdir -p $(LIBDIR) $(TSDIR)
-	$(CC) -O2 lib/pty-helper.c -o $(LIBDIR)/pine-pty-helper
-	$(CC) -shared -fPIC -DPINE_PTY_HELPER='"$(CURDIR)/$(LIBDIR)/pine-pty-helper"' \
-	   lib/pty.c -o $(LIBDIR)/libpine-pty.$(SOEXT) $(PTY_LINK)
+foreign-libs: libs
 	@test -f $(GRAMMARS)/src/parser.c \
 	  || { echo "no grammar checkout at $(GRAMMARS)"; exit 1; }
 	$(CC) -shared -fPIC -I $(GRAMMARS)/src $(GRAMMARS)/src/parser.c \
 	   -o $(TSDIR)/libtree-sitter-commonlisp.$(SOEXT)
-	$(CC) -shared -fPIC -I $(GRAMMARS)/pine/src $(GRAMMARS)/pine/src/parser.c \
-	   -o $(TSDIR)/libtree-sitter-pine.$(SOEXT)
-	@echo "built $(LIBDIR) and $(TSDIR)"
+	@echo "built $(TSDIR)/libtree-sitter-commonlisp.$(SOEXT)"

@@ -1,6 +1,7 @@
-(define-module (tree-sitter-commonlisp)
+(define-module (pine packages tree-sitter-commonlisp)
   #:use-module (guix packages)
   #:use-module (guix gexp)
+  #:use-module (guix git-download)
   #:use-module (guix build-system gnu)
   #:use-module ((guix licenses) #:prefix license:)
   #:export (tree-sitter-commonlisp))
@@ -9,8 +10,15 @@
   (package
     (name "tree-sitter-commonlisp")
     (version "0.4.1")
-    (source (local-file "../../tree-sitter-commonlisp/src"
-                        "tree-sitter-commonlisp-src" #:recursive? #t))
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/tree-sitter-grammars/tree-sitter-commonlisp")
+             (commit (string-append "v" version))))
+       (file-name (git-file-name name version))
+       (sha256
+        (base32 "0xg3ay8l62h7s35abkxi4gjfvndzdvvrpgh1z980q1ib5935sxf0"))))
     (build-system gnu-build-system)
     (arguments
      (list
@@ -20,7 +28,7 @@
           (delete 'configure)
           (replace 'build
             (lambda _
-              (invoke "gcc" "-shared" "-fPIC" "-I" "." "parser.c"
+              (invoke "gcc" "-shared" "-fPIC" "-I" "src" "src/parser.c"
                       "-o" "libtree-sitter-commonlisp.so")))
           (replace 'install
             (lambda _

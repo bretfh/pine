@@ -1,4 +1,4 @@
-(define-module (local-time-duration)
+(define-module (pine packages local-time-duration)
   #:use-module (guix packages)
   #:use-module (guix git-download)
   #:use-module (guix build-system asdf)

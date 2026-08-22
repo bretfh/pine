@@ -1,10 +1,10 @@
-(define-module (pure-tls)
+(define-module (pine packages pure-tls)
   #:use-module (guix packages)
   #:use-module (guix git-download)
   #:use-module (guix build-system asdf)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages lisp-xyz)
-  #:use-module (cl-cancel)
+  #:use-module (pine packages cl-cancel)
   #:export (sbcl-pure-tls))
 
 (define-public sbcl-pure-tls

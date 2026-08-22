@@ -1,10 +1,10 @@
-(define-module (cl-cancel)
+(define-module (pine packages cl-cancel)
   #:use-module (guix packages)
   #:use-module (guix git-download)
   #:use-module (guix build-system asdf)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages lisp-xyz)
-  #:use-module (precise-time)
+  #:use-module (pine packages precise-time)
   #:export (sbcl-cl-cancel))
 
 (define-public sbcl-cl-cancel

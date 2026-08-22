@@ -1,7 +1,7 @@
 ;; The pine operating system, VM shape: river as the session compositor,
 ;; pine as the window manager, daemon, editor, and desktop.
 ;;
-;;   make vm    (guix system vm -L guix guix/os.scm, then run the script)
+;;   guix system vm -L guix os.scm
 ;;
 ;; Auto-logs bfh in on tty1; the shell profile execs river with pine as its
 ;; init: `pine wm' binds window management, `pine start' brings up the
@@ -9,18 +9,16 @@
 
 (use-modules (gnu)
              (guix gexp)
-             (pine)
-             (river))
+             (pine packages pine)
+             (pine packages river))
 (use-service-modules dbus desktop networking ssh)
 (use-package-modules fonts fontutils image terminals nss)
 
 (define pine-river-init
-  ;; river -c runs this once the compositor is up.
+  ;; river -c runs this once the compositor is up. One image: the screen finds
+  ;; river asking for a manager and loads the wm system itself.
   (program-file "pine-river-init"
-    #~(begin
-        (setenv "PINE_FRAME_DUMP" "/tmp/pine-frame.png")
-        (system (string-append #$pine "/bin/pine wm >/tmp/pine-wm.log 2>&1 &"))
-        (execl (string-append #$pine "/bin/pine") "pine" "start"))))
+    #~(execl (string-append #$pine:bin "/bin/pine") "pine" "daemon")))
 
 (define pine-session-profile
   ;; exec river on the auto-logged-in tty; everything else is a normal shell.
@@ -54,7 +52,7 @@
                  '("wheel" "audio" "video" "input" "tty")))
                %base-user-accounts))
 
-  (packages (cons* pine river-0.4
+  (packages (cons* (list pine "bin") river-0.4
                    foot grim
                    (specification->package "font-maple-mono-nf")
                    font-dejavu fontconfig

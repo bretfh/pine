@@ -1,0 +1,4 @@
+(channel
+ (version 0)
+ (directory "guix")
+ (url "https://github.com/bretfh/pine"))

@@ -1,4 +1,4 @@
-(define-module (wayflan)
+(define-module (pine packages wayflan)
   #:use-module (guix packages)
   #:use-module (guix gexp)
   #:use-module (gnu packages lisp-xyz)

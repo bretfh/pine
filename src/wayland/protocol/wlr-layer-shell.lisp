@@ -6,8 +6,6 @@ and layer shell."))
 (in-package #:pine/wayland/protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include
-  (merge-pathnames "share/wlr-protocols/unstable/wlr-layer-shell-unstable-v1.xml"
-                   (uiop:ensure-directory-pathname
-                    (or (uiop:getenv "GUIX_ENVIRONMENT")
-                        (error "GUIX_ENVIRONMENT unset: build inside guix shell -m manifest.scm"))))
+  (asdf:system-relative-pathname
+   :pine "protocol/wlr-layer-shell-unstable-v1.xml")
   :export t)

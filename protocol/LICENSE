@@ -1,0 +1,16 @@
+The protocol descriptions in this directory are copied verbatim from their
+upstream projects. Each file carries its own copyright and permission notice in
+its <copyright> element; those notices govern.
+
+wlr-layer-shell-unstable-v1.xml
+  Copyright © 2017 Drew DeVault
+  MIT-old-style (HPND), from wlr-protocols.
+
+river-window-management-v1.xml
+  SPDX-FileCopyrightText: © 2024 Isaac Freund
+  SPDX-License-Identifier: MIT
+
+river-xkb-bindings-v1.xml
+river-layer-shell-v1.xml
+  SPDX-FileCopyrightText: © 2025 Isaac Freund
+  SPDX-License-Identifier: MIT

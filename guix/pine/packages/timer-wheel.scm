@@ -1,4 +1,4 @@
-(define-module (timer-wheel)
+(define-module (pine packages timer-wheel)
   #:use-module (guix packages)
   #:use-module (guix git-download)
   #:use-module (guix build-system asdf)
