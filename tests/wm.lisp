@@ -2,6 +2,14 @@
 
 (def-suite* :pine/wm :in :pine)
 
+(defparameter +said+
+  (list :windows '((:id 1 :title "term" :app "foot")
+                   (:id 2 :title "browser" :app "chrome")
+                   (:id 3 :title "notes" :app "pine"))
+        :outputs '((:name "eDP-1" :position (0 0) :size (1280 720)
+                    :area (0 0 1280 720)))
+        :focused 2))
+
 (defun %managed ()
   "A pine that is the window manager, told what a compositor has. Everything about
 it is a value, so nothing here needs a compositor."
@@ -9,12 +17,15 @@ it is a value, so nothing here needs a compositor."
   (setf (node:contents (tree:ensure nil "wm-manage")) t)
   (unless (system:named "wm") (pine:use :wm))
   (let ((c (pine/wm:current)))
-    (setf (node:contents (tree:at nil "wm/layout")) "tall")
-    (setf (node:contents (tree:at nil "wm/said"))
-          (list :windows '((1 "term" "foot") (2 "browser" "chrome")
-                           (3 "notes" "pine"))
-                :outputs '((0 0 0 1280 720))
-                :focused 2))
+    (setf (node:contents (tree:at nil "wm/said")) +said+)
+    c))
+
+(defun %tiled ()
+  "The same, with one of the window managers pine ships loaded on top."
+  (let ((c (%managed)))
+    (when (system:named "tiles") (pine:drop :tiles))
+    (pine:use :tiles)
+    (setf (node:contents (tree:at nil "wm/said")) +said+)
     c))
 
 (test pine-being-the-compositor-is-a-subclass-not-a-second-protocol
@@ -32,8 +43,48 @@ it is a value, so nothing here needs a compositor."
   (is (getf (node:contents (tree:at nil "wm/windows/2")) :focused))
   (is (equal '("1" "2" "3") (node:contents (tree:at nil "wm/windows")))))
 
-(test the-layout-is-a-node-and-what-it-says-follows-it
+(test what-a-window-says-about-itself-is-a-path-each
   (%managed)
+  (is (equal "browser" (node:contents (tree:at nil "wm/windows/2/title"))))
+  (is (equal "chrome" (node:contents (tree:at nil "wm/windows/2/app"))))
+  (is (node:contents (tree:at nil "wm/windows/2/focused")))
+  (is (null (node:contents (tree:at nil "wm/windows/1/focused")))))
+
+(test an-output-is-a-place-and-says-what-the-bars-left
+  (%managed)
+  (is (equal '("eDP-1") (node:contents (tree:at nil "wm/outputs"))))
+  (is (equal '(1280 720) (node:contents (tree:at nil "wm/outputs/eDP-1/size"))))
+  (is (equal '(0 0) (node:contents (tree:at nil "wm/outputs/eDP-1/position"))))
+  (is (equal '(0 0 1280 720) (node:contents (tree:at nil "wm/outputs/eDP-1/area"))))
+  (setf (node:contents (tree:at nil "wm/said"))
+        (list :windows nil
+              :outputs '((:name "eDP-1" :position (0 0) :size (1280 720)
+                          :area (64 0 1216 720)))
+              :focused nil))
+  (is (equal '(64 0 1216 720) (node:contents (tree:at nil "wm/outputs/eDP-1/area")))
+      "what is left after the furniture took its strip"))
+
+(test core-places-nothing-until-something-says-where
+  "The substrate has outputs, windows and what has the keyboard. Where they go is
+a system you load."
+  (%managed)
+  (when (system:named "tiles") (pine:drop :tiles))
+  (is (null (node:contents (tree:at nil "wm/placement"))))
+  (is (null (tree:at nil "wm/layout"))
+      "and there is no layout in core to speak of"))
+
+(test a-window-manager-is-something-that-writes-the-placement
+  (%managed)
+  (when (system:named "tiles") (pine:drop :tiles))
+  (setf (node:contents (tree:at nil "wm/placement"))
+        '((1 0 0 640 720) (2 640 0 640 720)))
+  (is (equal '((1 0 0 640 720) (2 640 0 640 720))
+             (node:contents (tree:at nil "wm/placement"))))
+  (is (equal '(0 0 640 720) (compositor:rect (pine/wm:current) "1"))
+      "and where a window is is what was last placed for it"))
+
+(test tiles-is-one-of-them-and-writes-it-from-what-it-was-told
+  (%tiled)
   (is (equal "tall" (node:contents (tree:at nil "wm/layout"))))
   (is (equal '((1 0 0 640 720) (2 640 0 640 360) (3 640 360 640 360))
              (node:contents (tree:at nil "wm/placement"))))
@@ -46,35 +97,31 @@ it is a value, so nothing here needs a compositor."
              (node:contents (tree:at nil "wm/placement")))))
 
 (test what-the-compositor-said-is-what-the-placement-follows
-  (%managed)
-  (node:contents (tree:at nil "wm/placement"))
+  (%tiled)
   (setf (node:contents (tree:at nil "wm/said"))
-        (list :windows '((7 "only" "one")) :outputs '((0 0 0 800 600))
+        (list :windows '((:id 7 :title "only" :app "one"))
+              :outputs '((:name "eDP-1" :position (0 0) :size (800 600)
+                          :area (0 0 800 600)))
               :focused 7))
   (is (equal '((7 0 0 800 600)) (node:contents (tree:at nil "wm/placement")))))
 
-(test the-area-a-window-gets-is-what-the-bars-left
-  "An output says what is left after the furniture took its strip. A window laid
-out over the bar is a window laid out wrong."
-  (%managed)
-  (setf (node:contents (tree:at nil "wm/said"))
-        (list :windows '((1 "one" "x") (2 "two" "y"))
-              :outputs '((0 64 0 1216 720))
-              :focused 1))
-  (is (equal '((1 64 0 608 720) (2 672 0 608 720))
-             (node:contents (tree:at nil "wm/placement")))))
+(test dropping-the-window-manager-takes-its-paths-with-it
+  (%tiled)
+  (is (tree:at nil "wm/layout"))
+  (pine:drop :tiles)
+  (is (null (tree:at nil "wm/layout")))
+  (is (null (command:named "wm-layout"))))
 
 (test a-layout-is-a-class-so-a-config-can-write-one
-  (let ((c (%managed)))
-    (is (member "tall" (mapcar (lambda (each)
-                                 (string-downcase (symbol-name (class-name each))))
-                               (pine/wm/tiles:layouts))
-                :test #'equal))
-    (let ((l (make-instance 'pine/wm/tiles:tall :share 1/4 :gaps 4)))
-      (is (equal '((1 4 4 312 712))
-                 (subseq (pine/wm/tiles:arrange l '(1 2) '(0 0 1280 720)) 0 1))
-          "the share and the gaps are what the layout was made with"))
-    (is (typep (pine/wm/managed:layout-of c) 'pine/wm/tiles:layout))))
+  (%tiled)
+  (is (member "tall" (mapcar (lambda (each)
+                               (string-downcase (symbol-name (class-name each))))
+                             (pine/wm/tiles:layouts))
+              :test #'equal))
+  (let ((l (make-instance 'pine/wm/tiles:tall :share 1/4 :gaps 4)))
+    (is (equal '((1 4 4 312 712))
+               (subseq (pine/wm/tiles:arrange l '(1 2) '(0 0 1280 720)) 0 1))
+        "the share and the gaps are what the layout was made with")))
 
 (test what-pine-wants-of-the-compositor-is-taken-once
   (%managed)
@@ -90,3 +137,17 @@ out over the bar is a window laid out wrong."
   (%managed)
   (setf (node:contents (tree:at nil "wm/close")) t)
   (is (equal '((:close)) (node:contents (tree:at nil "wm/wants")))))
+
+(test taking-a-window-off-the-screen-is-writing-that-it-is-off
+  (%managed)
+  (node:contents (tree:at nil "wm/wants"))
+  (setf (node:contents (tree:at nil "wm/windows/2/hidden")) t)
+  (is (equal '((:hide "2")) (node:contents (tree:at nil "wm/wants"))))
+  (setf (node:contents (tree:at nil "wm/windows/2/hidden")) nil)
+  (is (equal '((:show "2")) (node:contents (tree:at nil "wm/wants")))))
+
+(test the-keyboard-goes-where-the-focused-place-says
+  (%managed)
+  (node:contents (tree:at nil "wm/wants"))
+  (setf (node:contents (tree:at nil "wm/focused")) "3")
+  (is (equal '((:focus "3")) (node:contents (tree:at nil "wm/wants")))))

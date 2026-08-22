@@ -21,7 +21,10 @@ the theme, over the wire, like everything else about how it looks.")
    (title   :initform ""      :accessor title)
    (app     :initform ""      :accessor app)
    (wide    :initform 0       :accessor wide)
-   (tall    :initform 0       :accessor tall))
+   (tall    :initform 0       :accessor tall)
+   (hidden  :initform nil     :accessor hidden)
+   (clip    :initform nil     :accessor clip)
+   (stack   :initform nil     :accessor stack))
   (:documentation "One window the compositor handed over, and the node that says
 where it sits."))
 
@@ -37,6 +40,7 @@ where it sits."))
    (on-said   :initarg :on-said   :accessor on-said   :initform nil)
    (on-render :initarg :on-render :accessor on-render :initform nil)
    (pending :initform nil     :accessor pending)
+   (placedp :initform nil     :accessor placedp)
    (asking  :initform nil     :accessor asking)
    (dirty   :initform t       :accessor dirty))
   (:documentation "Pine as the compositor's window manager. It is told what there
@@ -75,29 +79,69 @@ keyboard. This is what crosses to whoever decides.
 An output says the area left after the bars have taken their strip, where the
 compositor says so: a window laid out over the bar is a window laid out wrong."
   (list :windows (loop :for each :in (reverse (windows w))
-                       :collect (list (id each) (title each) (app each)))
+                       :collect (list :id (id each) :title (title each)
+                                      :app (app each)
+                                      :size (list (wide each) (tall each))
+                                      :hidden (hidden each)))
         :outputs (loop :for each :in (outputs w)
-                       :collect (cons (getf each :name)
-                                      (or (getf each :area)
-                                          (list (getf each :x) (getf each :y)
-                                                (getf each :wide)
-                                                (getf each :tall)))))
+                       :collect (list :name (getf each :name)
+                                      :position (list (getf each :x)
+                                                      (getf each :y))
+                                      :size (list (getf each :wide)
+                                                  (getf each :tall))
+                                      :area (or (getf each :area)
+                                                (list (getf each :x)
+                                                      (getf each :y)
+                                                      (getf each :wide)
+                                                      (getf each :tall)))))
         :focused (and (focused w) (id (focused w)))))
 
+(defun %shown (w it x y wide tall clip stack)
+  (unless (and (= wide (wide it)) (= tall (tall it)))
+    (setf (wide it) wide (tall it) tall)
+    (river-window-v1.propose-dimensions (of it) wide tall))
+  (unless (node-of it)
+    (setf (node-of it) (river-window-v1.get-node (of it))))
+  (when (hidden it)
+    (river-window-v1.show (of it))
+    (setf (hidden it) nil))
+  (unless (equal clip (clip it))
+    (setf (clip it) clip)
+    (if clip
+        (destructuring-bind (cx cy cw ch) clip
+          (river-window-v1.set-clip-box (of it) cx cy cw ch))
+        (river-window-v1.set-clip-box (of it) 0 0 wide tall)))
+  (river-node-v1.set-position (node-of it) x y)
+  (river-window-v1.set-tiled (of it) +all-edges+)
+  (setf (stack it) stack)
+  (case stack
+    (:bottom (river-node-v1.place-bottom (node-of it)))
+    ((nil :top) (river-node-v1.place-top (node-of it)))
+    (t (let ((over (%by-id w stack)))
+         (if (and over (node-of over))
+             (river-node-v1.place-above (node-of it) (node-of over))
+             (river-node-v1.place-top (node-of it))))))
+  w)
+
+(defun %gone (it)
+  (unless (hidden it)
+    (river-window-v1.hide (of it))
+    (setf (hidden it) t))
+  it)
+
 (defun apply-layout (w layout)
-  "Put each window where the layout says. A window that is not in it is left
-where it was: an answer that says nothing about one is not an answer to hide it."
-  (dolist (each layout w)
-    (destructuring-bind (id x y wide tall) each
-      (let ((it (%by-id w id)))
-        (when it
-          (unless (and (= wide (wide it)) (= tall (tall it)))
-            (setf (wide it) wide (tall it) tall)
-            (river-window-v1.propose-dimensions (of it) wide tall))
-          (unless (node-of it)
-            (setf (node-of it) (river-window-v1.get-node (of it))))
-          (river-node-v1.set-position (node-of it) x y)
-          (river-window-v1.set-tiled (of it) +all-edges+))))))
+  "Put each window where the layout says. The answer is total: a window it does
+not name is hidden, which is what makes changing what is on screen one write
+rather than a difference against what was there before."
+  (let ((named nil))
+    (dolist (each layout)
+      (destructuring-bind (id x y wide tall &key clip stack) each
+        (let ((it (%by-id w id)))
+          (when it
+            (push it named)
+            (%shown w it x y wide tall clip stack)))))
+    (dolist (it (windows w) w)
+      (unless (member it named) (%gone it)))))
 
 (defun %window-events (w it)
   (push (evlambda
@@ -188,9 +232,12 @@ is where anything of the window manager's own is committed."
 
 (defun laid (w layout)
   "Take an answer about where the windows go. It arrives after the cycle that
-asked for it, so this asks for another one."
-  (setf (pending w) layout (asking w) nil)
-  (when (and layout (manager w))
+asked for it, so this asks for another one.
+
+An answer naming nothing is still an answer: a workspace with no windows on it
+hides every window, and that is not the same as never having been told."
+  (setf (pending w) layout (placedp w) t (asking w) nil)
+  (when (manager w)
     (river-window-manager-v1.manage-dirty (manager w)))
   layout)
 
@@ -211,7 +258,7 @@ The answer comes from another image, so it is never waited for here: a manager
 that waits is one the compositor gives up on, and it says so after three
 seconds."
   (%default-output w)
-  (when (pending w) (apply-layout w (pending w)))
+  (when (placedp w) (apply-layout w (pending w)))
   (river-window-manager-v1.manage-finish (manager w))
   (when (and (dirty w) (on-said w) (not (asking w)))
     (when (funcall (on-said w) (said w))
@@ -244,6 +291,11 @@ over data and not a protocol of its own."
         (:close (close-focused w))
         (:next (%step w 1))
         (:previous (%step w -1))
+        (:hide (let ((it (%by-id w (first arguments)))) (when it (%gone it))))
+        (:show (let ((it (%by-id w (first arguments))))
+                 (when (and it (hidden it))
+                   (river-window-v1.show (of it))
+                   (setf (hidden it) nil))))
         (:exit (river-window-manager-v1.exit-session (manager w)))
         (t nil)))
     (setf (dirty w) t)))

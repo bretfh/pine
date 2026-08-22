@@ -4,8 +4,8 @@
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command) (#:sh #:pine/host/shell)
                     (#:compositor #:pine/wm/compositor) (#:niri #:pine/wm/niri)
-                    (#:tiles #:pine/wm/tiles) (#:managed #:pine/wm/managed))
-  (:export #:wm #:current #:terminal #:layout #:*terminal* #:*manage*))
+                    (#:managed #:pine/wm/managed))
+  (:export #:wm #:current #:terminal #:*terminal* #:*manage*))
 (in-package #:pine/wm)
 
 (defvar *terminal* "alacritty")
@@ -25,6 +25,13 @@ it. Which compositor it is is one class under COMPOSITOR."))
 (defun terminal ()
   (or (node:contents (tree:ensure nil "wm-terminal")) *terminal*))
 
+(defun places ()
+  "The name of the system that says where the windows go, or nothing. Core does
+not know what is behind the name: it is a system, and it is used the way any of
+them is. A config writes it because /wm cannot exist until the compositor has
+handed the windows over, which is after the config was read."
+  (node:contents (tree:ensure nil "wm-places")))
+
 (defun %under ()
   "Which compositor this session is under, as a class. Pine managing one and pine
 talking to one are the same protocol with two subclasses under it, and this is
@@ -34,20 +41,11 @@ where a third is added."
         ((uiop:getenv "NIRI_SOCKET") 'niri:niri)
         ((sh:has "niri") 'niri:niri)))
 
-(defun layout (&optional name)
-  "The layout in force, by name, or put one there. It is a node, so a config and
-the cli change it the same way: pine write /wm/layout wide."
-  (let* ((c (current))
-         (n (and c (node:resolve c "layout"))))
-    (when n
-      (when name (setf (node:contents n) (princ-to-string name)))
-      (node:contents n))))
-
 (defmethod job:start ((s wm))
   (let ((class (%under)))
     (unless class (error "no compositor here that pine knows how to talk to."))
     (node:attach (make-instance class :name "wm"
-                                :describes "the compositor: its workspaces, its
+                                :describes "the compositor: its outputs, its
 windows, and what it takes")
                  (tree:root)))
   (command:defcommand "wm-focus-next" ()
@@ -83,18 +81,21 @@ windows, and what it takes")
       (:describes "what the focused window is called")
     (let ((c (current)))
       (compositor:titled c (compositor:focused c))))
-  (command:defcommand "wm-layout" (&optional name)
-      (:describes "how windows are laid out, where pine is the one laying them out")
-    (layout name))
-  (command:defcommand "wm-layouts" () (:describes "every layout there is")
-    (mapcar (lambda (c) (string-downcase (symbol-name (class-name c))))
-            (tiles:layouts)))
+  (command:defcommand "wm-outputs" () (:describes "every screen, and what is left
+of it after the bars")
+    (compositor:outputs (current)))
+  (command:defcommand "wm-hide" (id) (:describes "take a window off the screen")
+    (and (compositor:hide (current) (princ-to-string id)) t))
+  (command:defcommand "wm-show" (id) (:describes "put one back")
+    (and (compositor:show (current) (princ-to-string id)) t))
+  (let ((places (places)))
+    (when places (system:use places)))
   s)
 
 (defmethod job:stop ((s wm))
   (dolist (name '("wm-focus-next" "wm-focus-previous" "wm-close-window"
                   "wm-overview" "wm-split" "wm-exit" "wm-terminal"
-                  "wm-windows" "wm-title" "wm-layout" "wm-layouts"))
+                  "wm-windows" "wm-title" "wm-outputs" "wm-hide" "wm-show"))
     (command:forget name))
   (tree:erase nil "wm")
   s)

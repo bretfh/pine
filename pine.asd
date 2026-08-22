@@ -105,8 +105,15 @@ the parse behind it"
                 :depends-on (#:pine/host)
                 :serial t
                 :pathname "src/wm/"
-                :components ((:file "compositor") (:file "tiles") (:file "managed")
+                :components ((:file "compositor") (:file "managed")
                              (:file "niri") (:file "system")))
+
+(asdf:defsystem #:pine/tiles
+                :description "One window manager: where the windows go"
+                :depends-on (#:pine/wm)
+                :serial t
+                :pathname "src/wm/"
+                :components ((:file "tiles")))
 
 (asdf:defsystem #:pine/desk
                 :description "A bar along the top, and the panels it opens"
@@ -155,8 +162,9 @@ dispatches on"
 
 (asdf:defsystem #:pine/all
                 :description "Every system pine ships, built in"
-                :depends-on (#:pine/edit #:pine/host #:pine/wm #:pine/desk
-                             #:pine/term #:pine/paint #:pine/wayland))
+                :depends-on (#:pine/edit #:pine/host #:pine/wm #:pine/tiles
+                             #:pine/desk #:pine/term #:pine/paint
+                             #:pine/wayland))
 
 (asdf:defsystem #:pine/test
                 :depends-on (#:pine/all #:fiveam)

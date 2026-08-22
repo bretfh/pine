@@ -1,0 +1,142 @@
+#+TITLE: pine as a window manager: what is core, and what you load
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+* The one idea
+
+A window manager is something that writes =/wm/placement=.
+
+That is the whole protocol. The core says what there is -- outputs, windows, and
+which one has the keyboard -- and whatever answers where they go is the window
+manager. Pine ships one the way it ships an editor: a system you load, and can
+drop.
+
+Nothing in the substrate knows what a workspace is, what a column is, or that
+windows can be tiled at all.
+
+* What core is
+
+The machine's window resources, in the namespace, with no opinion about
+arrangement:
+
+: /wm/outputs/?name/size      what the compositor says it is
+: /wm/outputs/?name/position  where it sits among the others
+: /wm/outputs/?name/area      what is left after the bars take their strip
+: /wm/windows/?id/title
+: /wm/windows/?id/app
+: /wm/windows/?id/rect        where it is now
+: /wm/windows/?id/hidden      writing it hides or shows
+: /wm/focused                 writing it moves the keyboard
+: /wm/said                    what the compositor last handed over
+: /wm/placement               where each window goes
+: /wm/wants                   acts queued for the thread holding the connection
+
+The verbs core takes are the ones true of any compositor rather than of any
+policy: =focus=, =close=, =hide=, =show=, =exit=.
+
+An output says the area left after the bars, not its whole size, because a
+window laid out over the bar is a window laid out wrong. The compositor is what
+knows the difference, so it is the compositor that says.
+
+* What core is not
+
+There is no =/wm/layout=. No =tall=, =wide=, =full=, =stacked=. No workspaces.
+
+Grouping is policy. 2bwm has none, openbox has desktops, niri has scrolling ones
+that belong to an output, and a substrate that picks one of those has picked a
+window manager for you. What every one of them agrees on is that there are
+outputs, there are windows, and one of them has the keyboard. That is the part
+that goes in core.
+
+Core with nothing loaded on top of it places nothing. =pine use wm= is not a
+desktop; it is the vocabulary for one.
+
+* Writing a window manager
+
+Watch =/wm/said=, write =/wm/placement=. An entry is
+
+: (id x y width height &key clip stack)
+
+=clip= is the part of the window to show, in the window's own coordinates. It is
+what lets a strip run a window off the edge of the viewport without drawing it
+over the bar. =stack= is =:top=, =:bottom=, or the id to sit above.
+
+Placement is total. A window pine manages that the placement does not mention is
+hidden. That is what makes changing workspace a single write rather than a diff
+against what was there before.
+
+Both directions are ordinary node access, so a window manager can be written in
+a config, in a package that uses =pine/user= and nothing else, or in another
+image entirely -- a peer that mounted this one writes the same path.
+
+* tiles, as the shipped example
+
+: pine use tiles
+
+adds =/wm/layout= and the four arrangements pine ships with. Inside, it keeps a
+generic of its own:
+
+#+begin_src lisp
+  (defclass column-of-two (layout) ())
+  (defmethod arrange ((l column-of-two) windows area) ...)
+#+end_src
+
+so a layout is still one method. What tiles does with the answer is write it to
+=/wm/placement=; core never hears the word =arrange=.
+
+=pine/user= is rebuilt whenever a system loads, so =arrange=, =layout=, =tall=
+and the rest are words a config can say exactly when tiles is there, and are
+gone when it is dropped. That is the same machinery every other system uses, and
+it is why moving tiles out of core costs a config nothing.
+
+* The strip
+
+The niri shape -- workspaces, each of them a strip of windows you scroll along --
+written as nodes and nothing else:
+
+: /wm/workspaces/active
+: /wm/workspaces/?n/output    which output it is on
+: /wm/workspaces/?n/windows   the order; this seq is the strip
+: /wm/workspaces/?n/at        how far along it is scrolled
+: /wm/windows/?id/column      which column it shares
+: /wm/columns/?c/width
+
+Placement is worked out from those, so it follows them the way anything derived
+follows what it read. Moving a window along the strip is writing the seq.
+Scrolling is writing =at=. Changing workspace is writing =active=. Nothing
+subscribes to anything, and each of them is a line you can type:
+
+: pine write /wm/workspaces/active 2
+: pine write /wm/workspaces/1/at 340
+: pine watch /wm/placement
+
+That is the reason this lives in the namespace instead of in a struct. A window
+manager you cannot read from a terminal is a window manager you cannot see
+working.
+
+* Two compositors, one language
+
+On a compositor that manages its own windows, pine is a client of it and
+=/wm/workspaces= is what that compositor reports. On one that asks for a manager,
+pine is the manager and =/wm/workspaces= is what the loaded system maintains. A
+path under =/wm= means the same thing to whoever reads it either way; which
+compositor is behind it is a class, and that is what =pine/wm/compositor= is
+for.
+
+Reading =/wm/placement= where pine is not the manager answers nothing. Pine is
+not the one placing them.
+
+* Where this is not yet
+
+The protocol is bound and pine is the window manager under river, but the core
+above is not all there:
+
+| outputs   | =%area= takes the first one; the rest are not in the tree     |
+| hiding    | =hide=, =show= and =set_clip_box= are bound and never called  |
+| windows   | there is no =rect= and no =hidden= under a window             |
+| placement | entries carry no =clip= and no =stack=                        |
+| placement | a window left out is left where it was, not hidden             |
+| grouping  | =workspaces= answers nothing where pine is the manager         |
+
+Pine calls sixteen of the fifty-seven requests river's window management
+protocol offers. The ones it does not call are most of what a strip is made of.

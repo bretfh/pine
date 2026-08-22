@@ -1,7 +1,11 @@
 (defpackage #:pine/wm/tiles
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
-  (:export #:layout #:tall #:wide #:full #:stacked #:arrange
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
+                    (#:system #:pine/run/system) (#:command #:pine/run/command)
+                    (#:watch #:pine/run/watch) (#:fault #:pine/run/fault)
+                    (#:compositor #:pine/wm/compositor))
+  (:export #:tiles #:layout #:tall #:wide #:full #:stacked #:arrange
            #:named #:layouts #:share #:gaps #:*layout*))
 (in-package #:pine/wm/tiles)
 
@@ -96,3 +100,83 @@ per window, in the order they were given. AREA is (X Y WIDTH HEIGHT).")
                                                           (- width (* i each))
                                                           each)
                                                       rest))))))))))
+
+(defclass tiles (system:system)
+  ((layout-of :initarg :layout :accessor layout-of
+              :initform (make-instance 'tall))
+   (watching  :initform nil :accessor watching))
+  (:documentation "One of the window managers pine ships: it reads what the
+compositor handed over and writes where each window goes.
+
+Nothing in the substrate knows this is here. Dropping it takes /wm/layout and its
+commands away, and pine places nothing again."))
+
+(system:offers 'tiles)
+
+(defclass layout-node (node:node)
+  ((livep  :allocation :class :initform t   :reader node:livep)
+   (savedp :allocation :class :initform nil :reader node:savedp))
+  (:documentation "Which layout is in force, by name: pine write /wm/layout wide."))
+
+(defun %system () (system:named "tiles"))
+
+(defmethod node:contents ((n layout-node))
+  (let ((s (%system)))
+    (when s (string-downcase (class-name (class-of (layout-of s)))))))
+
+(defmethod (setf node:contents) (value (n layout-node))
+  (let ((s (%system))
+        (l (named value)))
+    (when (and s l) (setf (layout-of s) l) (place s)))
+  value)
+
+(defun %area (s)
+  (let ((c (tree:at nil "wm")))
+    (or (getf (first (compositor:outputs c)) :area)
+        (progn s (list 0 0 1920 1080)))))
+
+(defun %ids (s)
+  (declare (ignore s))
+  (compositor:ids (tree:at nil "wm")))
+
+(defun place (s)
+  "Work out where the windows go and say so. Writing /wm/placement is the whole
+of being the window manager here."
+  (let ((n (tree:at nil "wm" "placement")))
+    (when n
+      (setf (node:contents n)
+            (loop :for (id x y wide tall) :in (arrange (layout-of s) (%ids s)
+                                                       (%area s))
+                  :collect (list id x y wide tall))))))
+
+(defmethod job:start ((s tiles))
+  (let ((c (tree:at nil "wm")))
+    (unless c (error "no /wm: use the wm system before this one."))
+    (node:attach (make-instance 'layout-node :name "layout"
+                                :describes "which layout is in force")
+                 c)
+    (let ((said (node:resolve c "said")))
+      (when said
+        (setf (watching s)
+              (list (watch:watch said
+                                 (lambda (of value)
+                                   (declare (ignore of value))
+                                   (fault:attempt (lambda () (place s)) "tiles"))
+                                 :only nil :poll nil :name "tiles<-wm/said")))))
+    (command:defcommand "wm-layout" (&optional name)
+        (:describes "how windows are laid out")
+      (let ((n (tree:at nil "wm" "layout")))
+        (when (and n name) (setf (node:contents n) (princ-to-string name)))
+        (and n (node:contents n))))
+    (command:defcommand "wm-layouts" () (:describes "every layout there is")
+      (mapcar (lambda (c) (string-downcase (symbol-name (class-name c))))
+              (layouts)))
+    (place s))
+  s)
+
+(defmethod job:stop ((s tiles))
+  (dolist (w (watching s)) (ignore-errors (watch:unwatch w)))
+  (setf (watching s) nil)
+  (dolist (name '("wm-layout" "wm-layouts")) (command:forget name))
+  (tree:erase nil "wm" "layout")
+  s)

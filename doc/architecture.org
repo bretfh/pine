@@ -209,14 +209,15 @@ On a compositor that manages its own windows, pine is a client of it: a bar is a
 layer surface, a window is an xdg toplevel, and =/wm= is what that compositor
 says about itself. On one that asks for a window manager, pine is that too: it
 says what the compositor handed over at =/wm/said=, and puts each window where
-=/wm/placement= says. The layout is a class with one =arrange= method, so how
-windows are laid out is a config's to replace.
+=/wm/placement= says. Writing that place is the whole of being a window manager:
+core has outputs, windows and what has the keyboard, and holds no opinion about
+how any of them are arranged. See [[file:wm.org][doc/wm.org]].
 
 Being the window manager is what makes the rest of it work there rather than a
 separate world: pine binds the compositor's layer shell support, so its own bar
 maps the same way it does anywhere else, and the compositor tells it what area is
-left after that strip -- which is the area the layout is given. One bar, one
-layout, two compositors.
+left after that strip -- which is the area a layout is given. One bar, one
+namespace, two compositors.
 
 The wire is for the other case. =/surface/<name>/wire= is the tree written down
 as plain data, so a pine that mounted this one over the network can show its

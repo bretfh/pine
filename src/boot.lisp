@@ -56,6 +56,8 @@ PINE/WAYLAND fills it in.")
     (:pine/host "attend")
     (:pine/host/device "device" "readings")
     (:pine/run/log "note")
+    (:pine/wm/compositor "outputs" "windows" "focused" "rect" "hidden"
+     "hide" "show")
     (:pine/wm/tiles "layout" "arrange" "tall" "wide" "full" "stacked")
     (:pine/term/terminal "open-terminal")
     (:pine/data "map" "seq" "set" "with" "without" "keys" "vals" "pairs" "size"
