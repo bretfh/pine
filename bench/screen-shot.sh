@@ -56,6 +56,7 @@ env $env PINE_FRAME_DUMP=/tmp/pine-frame sbcl --dynamic-space-size 2048 --noinfo
   --eval '(setf pine/run/log:*to* *standard-output*)' \
   --eval '(pine:daemon :store nil :config nil)' \
   --eval '(pine:write-at "/wm-places" "tiles")' \
+  --eval '(pine:use :wm)' \
   --eval '(pine:use :text)' --eval '(pine:use :edit)' --eval '(pine:use :desk)' \
   --eval '(pine/edit:type-text "(defun hello (who) who)")' \
   --eval '(loop (sleep 60))' >"$run/pine.log" 2>&1 &

@@ -89,10 +89,16 @@ of it after the bars")
   (command:defcommand "wm-show" (id) (:describes "put one back")
     (and (compositor:show (current) (princ-to-string id)) t))
   (let ((places (places)))
-    (when places (system:use places)))
+    (when places
+      (when (system:named places) (system:drop places))
+      (system:use places)))
   s)
 
 (defmethod job:stop ((s wm))
+  "What places the windows goes first: its own places are under /wm, and /wm is
+what this erases."
+  (let ((places (places)))
+    (when (and places (system:named places)) (system:drop places)))
   (dolist (name '("wm-focus-next" "wm-focus-previous" "wm-close-window"
                   "wm-overview" "wm-split" "wm-exit" "wm-terminal"
                   "wm-windows" "wm-title" "wm-outputs" "wm-hide" "wm-show"))

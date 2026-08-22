@@ -123,6 +123,28 @@ a system you load."
                (subseq (pine/wm/tiles:arrange l '(1 2) '(0 0 1280 720)) 0 1))
         "the share and the gaps are what the layout was made with")))
 
+(test the-compositor-taking-the-windows-over-binds-the-places-again
+  "A config names what places the windows before /wm can exist, and a compositor
+that asks for a manager says so after. The wm goes away and comes back a
+different class in between, so what places the windows has to come with it."
+  (editing)
+  (when (system:named "tiles") (pine:drop :tiles))
+  (when (system:named "wm") (pine:drop :wm))
+  (setf (node:contents (tree:ensure nil "wm-places")) "tiles")
+  (setf (node:contents (tree:ensure nil "wm-manage")) nil)
+  (pine:use :wm)
+  (is (system:named "tiles") "the config's answer is used when the wm comes up")
+  (setf (node:contents (tree:ensure nil "wm-manage")) t)
+  (pine:drop :wm)
+  (pine:use :wm)
+  (is (typep (pine/wm:current) 'pine/wm/managed:managed))
+  (is (tree:at nil "wm/layout")
+      "and it is bound again to the wm that replaced the first")
+  (setf (node:contents (tree:at nil "wm/said")) +said+)
+  (is (equal '((1 0 0 640 720) (2 640 0 640 360) (3 640 360 640 360))
+             (node:contents (tree:at nil "wm/placement")))
+      "so what it was told still reaches the placement"))
+
 (test what-pine-wants-of-the-compositor-is-taken-once
   (%managed)
   (command:run "wm-focus-next")
