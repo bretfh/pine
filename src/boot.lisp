@@ -31,7 +31,7 @@ PINE/WAYLAND fills it in.")
   '((:pine "use" "drop" "reach" "spawn" "here" "style" "read-at" "write-at")
     (:pine/run/command "defcommand" "command" "named" "commands" "run")
     (:pine/run/system "system" "offers")
-    (:pine/text/mode "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
+    (:pine/mode "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
      "press" "insert" "indent" "complete" "save" "structure" "setting" "bind"
      "claims")
     (:pine/fs/node "node" "value" "derived" "contents" "nodes" "resolve" "stir"
@@ -58,6 +58,7 @@ PINE/WAYLAND fills it in.")
     (:pine/run/log "note")
     (:pine/wm/compositor "outputs" "windows" "focused" "rect" "hidden"
      "hide" "show")
+    (:pine/wm/keys "wm")
     (:pine/wm/tiles "layout" "arrange" "tall" "wide" "full" "stacked")
     (:pine/term/terminal "open-terminal")
     (:pine/data "map" "seq" "set" "with" "without" "keys" "vals" "pairs" "size"

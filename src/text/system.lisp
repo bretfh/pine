@@ -3,7 +3,7 @@
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:mount #:pine/fs/mount) (#:job #:pine/run/job)
                     (#:system #:pine/run/system) (#:command #:pine/run/command)
-                    (#:doc #:pine/text/document) (#:mode #:pine/text/mode)
+                    (#:doc #:pine/text/document) (#:mode #:pine/mode)
                     (#:fault #:pine/run/fault)
                     (#:runtime #:pine/text/ts/runtime)
                     (#:syntax #:pine/text/ts/syntax)

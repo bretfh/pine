@@ -12,7 +12,7 @@
                     (:grid :pine/ui/grid) (:layout :pine/ui/layout)
                     (:style :pine/ui/style) (:face :pine/ui/face)
                     (:surface :pine/ui/surface) (:key :pine/ui/key)
-                    (:lines :pine/text/lines) (:mode :pine/text/mode)
+                    (:lines :pine/text/lines) (:mode :pine/mode)
                     (:doc :pine/text/document) (:text :pine/text)
                     (:sh :pine/host/shell) (:device :pine/host/device)
                     (:window :pine/edit/window) (:render :pine/edit/render)

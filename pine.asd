@@ -45,6 +45,7 @@
                                        (:file "hit") (:file "wire")
                                        (:file "build") (:file "surface")
                                        (:file "key")))
+                 (:file "mode")
                  (:file "boot")
                  (:file "cli")))
 
@@ -54,7 +55,7 @@ the parse behind it"
                 :depends-on (#:pine)
                 :serial t
                 :pathname "src/text/"
-                :components ((:file "lines") (:file "mode") (:file "document")
+                :components ((:file "lines") (:file "document")
                              (:file "lisp") (:file "language")
                              (:module "ts"
                                       :serial t
@@ -105,8 +106,8 @@ the parse behind it"
                 :depends-on (#:pine/host)
                 :serial t
                 :pathname "src/wm/"
-                :components ((:file "compositor") (:file "managed")
-                             (:file "niri") (:file "system")))
+                :components ((:file "compositor") (:file "keys")
+                             (:file "managed") (:file "niri") (:file "system")))
 
 (asdf:defsystem #:pine/tiles
                 :description "One window manager: where the windows go"
@@ -142,7 +143,8 @@ dispatches on"
                                                    (:file "river-xkb")
                                                    (:file "river-layer-shell")))
                              (:file "pump") (:file "display") (:file "shell")
-                             (:file "pane") (:file "input") (:file "wm") (:file "screen")))
+                             (:file "pane") (:file "input") (:file "chords")
+                             (:file "wm") (:file "screen") (:file "hands")))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"

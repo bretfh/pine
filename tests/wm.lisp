@@ -173,3 +173,92 @@ different class in between, so what places the windows has to come with it."
   (node:contents (tree:at nil "wm/wants"))
   (setf (node:contents (tree:at nil "wm/focused")) "3")
   (is (equal '((:focus "3")) (node:contents (tree:at nil "wm/wants")))))
+
+(test the-window-manager-has-chords-of-its-own
+  "A chord the compositor took was not typed at anything: there is no document in
+it, and the mode that answers is the window manager's."
+  (%managed)
+  (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
+  (node:contents (tree:at nil "wm/wants"))
+  (setf (node:contents (tree:at nil "wm/key")) "s-q")
+  (is (null (node:contents (tree:at nil "wm/wants")))
+      "a chord nothing bound does nothing")
+  (setf (node:contents (tree:at nil "wm/key")) "s-c")
+  (is (equal '((:close)) (node:contents (tree:at nil "wm/wants")))
+      "and one that is bound runs its command"))
+
+(test a-chord-of-the-window-managers-is-not-the-editors
+  (%managed)
+  (mode:bind 'pine/wm/keys:wm "s-x s-r" "wm-outputs")
+  (setf (key:pending) (key:chord "C-x"))
+  (setf (node:contents (tree:at nil "wm/key")) "s-x")
+  (is (equal "s-x" (node:contents (tree:at nil "wm/key")))
+      "the window manager is half way through its own chord")
+  (is (equal "C-x" (key:text (key:pending)))
+      "and the editor is still half way through the one somebody was typing")
+  (setf (key:pending) nil)
+  (setf (node:contents (tree:at nil "wm/key")) "s-r")
+  (is (equal "" (node:contents (tree:at nil "wm/key")))
+      "finishing it clears what was standing"))
+
+(test what-the-compositor-has-to-be-asked-for-is-what-is-bound
+  (%managed)
+  (mode:bind 'pine/wm/keys:wm "s-Return" "wm-terminal")
+  (is (member "s-Return" (pine/wm/keys:chords) :test #'equal)))
+
+(test a-window-is-picked-the-way-a-buffer-is
+  "The editor asks for candidates by category and has never heard of a window
+manager; what it reads is a path."
+  (%managed)
+  (prompt:ask "Window: " :category :window :must-match t)
+  (let ((found (prompt:candidates)))
+    (is (= 3 (length found)))
+    (is (equal "2 browser" (match:name-of (second found))))
+    (is (equal "chrome" (match:annotation (second found))))
+    (is (equal '("2 browser")
+               (mapcar #'match:name-of (match:matches "brow" found)))
+        "and it narrows the way anything else typed at does"))
+  (command:run "cancel"))
+
+(test picking-one-gives-it-the-keyboard
+  (%managed)
+  (node:contents (tree:at nil "wm/wants"))
+  (command:run "switch-to-window" (list "3 notes"))
+  (is (equal '((:focus "3")) (node:contents (tree:at nil "wm/wants")))))
+
+(test a-chord-is-spelled-for-the-compositor-the-way-it-spells-one
+  "What pine calls s-Return xkb calls Return with mod4. The protocol spells a
+bitfield as the list of what is set, not a number."
+  (flet ((of (spec) (let ((k (key:parse spec)))
+                      (list (pine/wayland/chords:keysym k)
+                            (pine/wayland/chords:mask k)))))
+    (is (equal (list (xkb:xkb-keysym-from-name "Return" '()) '(:mod4))
+               (of "s-Return")))
+    (is (equal (list (xkb:xkb-keysym-from-name "x" '()) '(:ctrl :mod1))
+               (of "C-M-x")))
+    (is (equal (list (xkb:xkb-keysym-from-name "Tab" '()) '(:shift))
+               (of "S-TAB")))
+    (is (null (pine/wayland/chords:keysym (key:parse "NoSuchKeyAtAll")))
+        "a name xkb does not know is no chord"))
+  (is (equal '("s-x" "s-r") (mapcar (lambda (k) (key:text (list k)))
+                                    (pine/wayland/chords:every-key '("s-x s-r"))))
+      "and both keys of a chord have to be asked for, not just the first"))
+
+(test a-modes-chords-are-readable-wherever-the-mode-was-written
+  "/mode/?name/keys is the keymap in the namespace. A mode is a class anybody can
+write, and most of them are not written beside the root one."
+  (%managed)
+  (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
+  (unless (tree:at nil "mode") (mode:attach (tree:root)))
+  (is (typep (mode:named "wm") 'pine/wm/keys:wm)
+      "a mode is found by name whichever package it was written in")
+  (is (member "wm" (node:contents (tree:at nil "mode")) :test #'equal))
+  (let ((n (tree:at nil "mode/wm/keys")))
+    (is (not (null n)) "the keymap is a place")
+    (is (equal "wm-close-window" (cdr (assoc "s-c" (node:contents n)
+                                             :test #'equal)))
+        "as plain pairs, because a keymap crosses a wire like anything else"))
+  (let ((n (tree:at nil "mode/prompt/keys")))
+    (is (not (null n)))
+    (is (assoc "RET" (node:contents n) :test #'equal)
+        "and the editor's own modes, which were never readable here either")))

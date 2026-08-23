@@ -11,13 +11,23 @@
                     (#:pane #:pine/wayland/pane)
                     (#:input #:pine/wayland/input)
                     (#:wm #:pine/wayland/wm))
-  (:export #:screen #:open-screen #:close-screen #:wm-of #:availablep))
+  (:export #:screen #:open-screen #:close-screen #:wm-of #:availablep #:tell
+           #:pump #:keys #:pointer #:up #:says
+           #:pointing #:typing #:typed #:chorded #:chords-wanted))
 (in-package #:pine/wayland/screen)
 
 (defconstant +left+ #x110)
 (defparameter +settling+ 10
   "Turns of the loop between passes over what is up. A surface can go without
 saying so, and a pane with nothing behind it is a window nothing can close.")
+
+(defgeneric pointing (s sh &rest event)
+  (:documentation "What the pointer did. The screen holds the connection and says
+one arrived; what it was for is answered beside the other hands."))
+(defgeneric typing (s sh &rest event))
+(defgeneric typed (s said))
+(defgeneric chorded (s said))
+(defgeneric chords-wanted (s))
 
 (defclass screen (job:thread)
   ((display :initform nil     :accessor display-of)
@@ -147,97 +157,6 @@ name, and the old one is something nothing writes."
                                              :name (format nil "screen<-~a/shown"
                                                             name))))))))))
 
-(defun %pointer (s sh &rest event)
-  (let ((at (pointer s)))
-    (event-case event
-      (:enter (serial surface x y)
-       (setf (input:pointer-serial at) serial
-             (input:pointer-focus at) (shell:at-surface sh surface)
-             (input:pointer-at-x at) x
-             (input:pointer-at-y at) y))
-      (:motion (time-ms x y)
-       (declare (ignore time-ms))
-       (setf (input:pointer-at-x at) x (input:pointer-at-y at) y)
-       (when (input:pointer-drag at) (%drag s)))
-      (:leave (serial surface)
-       (declare (ignore serial surface))
-       (setf (input:pointer-focus at) nil))
-      (:button (serial time-ms button state)
-       (declare (ignore serial time-ms))
-       (when (= button +left+)
-         (ecase state
-           (:pressed (%press s))
-           (:released (%release s)))))
-      (:axis (time-ms axis delta) (declare (ignore time-ms axis delta)))
-      (:frame ()))))
-
-(defun %over (s)
-  (let* ((at (pointer s))
-         (p (input:pointer-focus at)))
-    (when (and p (pane:tree p))
-      (hit:at (pane:tree p) (round (input:pointer-at-y at))
-              (round (input:pointer-at-x at))))))
-
-(defun %press (s)
-  (let ((found (%over s)))
-    (if (typep found 'w:slider)
-        (progn (setf (input:pointer-drag (pointer s)) found) (%drag s))
-        (%click s))))
-
-(defun %drag (s)
-  (let ((slider (input:pointer-drag (pointer s)))
-        (p (input:pointer-focus (pointer s))))
-    (when (and slider p)
-      (setf (w:value slider)
-            (hit:value-at slider (round (input:pointer-at-x (pointer s)))))
-      (pane:paint p))))
-
-(defun %release (s)
-  (let ((slider (input:pointer-drag (pointer s))))
-    (when slider
-      (setf (input:pointer-drag (pointer s)) nil)
-      (let ((fn (w:changed slider)))
-        (when fn (tell s (lambda () (funcall fn (w:value slider)))))))))
-
-(defun %click (s)
-  (let* ((at (pointer s))
-         (p (input:pointer-focus at)))
-    (when (and p (pane:tree p))
-      (let ((thunk (hit:clicked-at (pane:tree p)
-                                   (round (input:pointer-at-y at))
-                                   (round (input:pointer-at-x at)))))
-        (when thunk (tell s thunk))))))
-
-(defun %keyboard (s sh &rest event)
-  (declare (ignore sh))
-  (let ((k (keys s)))
-    (event-case event
-      (:keymap (format fd size)
-       (assert (eq format :xkb-v1))
-       (input:keymap k fd size))
-      (:modifiers (serial depressed latched locked group)
-       (declare (ignore serial))
-       (input:modifiers k depressed latched locked group))
-      (:key (serial time-ms key state)
-       (declare (ignore serial time-ms))
-       (case state
-         (:pressed (let ((said (input:pressed k key)))
-                     (when said (%typed s said))))
-         (:released (input:released k key))))
-      (:enter (serial surface keys) (declare (ignore serial surface keys)))
-      (:leave (serial surface)
-       (declare (ignore serial surface))
-       (input:forget-held k))
-      (:repeat-info (rate delay)
-       (setf (input:keys-rate k) rate (input:keys-delay k) delay)))))
-
-(defun %typed (s said)
-  (tell s (lambda ()
-            (let ((n (tree:at nil "key")))
-              (if n
-                  (setf (node:contents n) said)
-                  (log:note "nothing at /key"))))))
-
 (defun %settle (s)
   "Take down what /surface no longer says."
   (d:do-each (name (d:keys (d:all (up s))))
@@ -251,7 +170,7 @@ name, and the old one is something nothing writes."
 
 (defun %tick (s)
   (let ((again (input:repeating (keys s))))
-    (when again (%typed s again)))
+    (when again (typed s again)))
   (when (zerop (mod (incf (turns s)) +settling+)) (%settle s)))
 
 (defun %loop (s)
@@ -305,7 +224,8 @@ A wm already up is the wrong one, so it goes first."
      (lambda ()
        (setf (node:contents (tree:ensure nil "wm-manage")) t)
        (when (system:named "wm") (system:drop "wm"))
-       (system:use "wm"))
+       (system:use "wm")
+       (chords-wanted s))
      "taking the windows over")))
 
 (defun %rebound (s name p)
@@ -344,11 +264,12 @@ compositor put it; what it draws is the new node's to say."
           (pump s) (pump:make-pump))
     (setf (shell-of s) (shell:bind d
                                    :on-pointer (lambda (sh &rest e)
-                                                 (apply #'%pointer s sh e))
+                                                 (apply #'pointing s sh e))
                                    :on-keyboard (lambda (sh &rest e)
-                                                  (apply #'%keyboard s sh e))))
+                                                  (apply #'typing s sh e))))
     (setf (wm-of s) (wm:bind d :on-said (lambda (said) (%managing s said))
-                               :on-render (lambda () (%rendering s))))
+                               :on-render (lambda () (%rendering s))
+                               :on-chord (lambda (said) (chorded s said))))
     (when (wm-of s)
       (setf (shell:chrome (shell-of s)) (wm:manager (wm-of s))))
     (setf (says s)

@@ -40,6 +40,19 @@
 
 (bind 'text "C-c h" "hello")
 
+;; The window manager has chords of its own, bound the same way. A chord in TEXT
+;; is what a key means in a document, so it is heard while a document has the
+;; keyboard; a chord in WM is one the compositor takes and hands over whatever is
+;; focused, which is what makes it a window manager's rather than an editor's.
+
+(write /wm-places "tiles")
+
+(bind 'wm "s-Return" "wm-terminal")
+(bind 'wm "s-q" "wm-close-window")
+(bind 'wm "s-j" "wm-focus-next")
+(bind 'wm "s-k" "wm-focus-previous")
+(bind 'wm "s-w" "switch-to-window")
+
 ;; A layout is a class too, where pine is the one laying the windows out: one
 ;; ARRANGE method and it is offered like the rest.
 

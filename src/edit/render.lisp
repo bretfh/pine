@@ -5,7 +5,7 @@
                     (#:build #:pine/ui/build)
                     (#:grid #:pine/ui/grid) (#:face #:pine/ui/face)
                     (#:w #:pine/ui/widget) (#:layout #:pine/ui/layout)
-                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
                     (#:match #:pine/edit/matching))

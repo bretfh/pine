@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter))
   (:shadow #:last)
   (:export #:key #:make-key #:parse #:chord #:text #:key= #:selfp #:typed
-           #:sym #:ctrl #:meta #:shift #:super
+           #:sym #:ctrl #:meta #:shift #:super #:keysym-name
            #:pending #:last #:taking #:take-next #:reading))
 (in-package #:pine/ui/key)
 
@@ -21,6 +21,12 @@
     ("Prior" . "PageUp") ("Next" . "PageDown"))
   "What a key is called here, whatever it was called where it came from.")
 
+(defparameter +as-keysym+
+  '(("SPC" . "space") ("RET" . "Return") ("TAB" . "Tab")
+    ("DEL" . "BackSpace") ("PageUp" . "Prior") ("PageDown" . "Next"))
+  "And back again. A compositor asked for a chord has to be asked in xkb's
+spelling, not this one.")
+
 (defstruct (key (:constructor %key) (:copier nil))
   (sym "" :type string :read-only t)
   (ctrl nil :read-only t)
@@ -35,6 +41,11 @@ arrives as `space'."
   (if (< (length sym) 2)
       sym
       (or (cdr (assoc sym +named+ :test #'string-equal)) sym)))
+
+(defun keysym-name (sym)
+  "What xkb calls this key. %NAMED took xkb's spelling and made it pine's; this
+takes it back, so a chord can be asked of a compositor in the spelling it knows."
+  (or (cdr (assoc sym +as-keysym+ :test #'string=)) sym))
 
 (defun make-key (sym &key ctrl meta shift super)
   "The one key for this chord. Two threads parsing the same chord get the same

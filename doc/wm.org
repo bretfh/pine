@@ -89,6 +89,37 @@ and the rest are words a config can say exactly when tiles is there, and are
 gone when it is dropped. That is the same machinery every other system uses, and
 it is why moving tiles out of core costs a config nothing.
 
+* The chords it owns
+
+A key only reaches a client the compositor has given the keyboard to, so a window
+manager that waits to be typed at hears nothing. What it does instead is ask for
+the keys it wants, and the compositor hands those over whatever is focused.
+
+The keymap is the one everything else uses. =wm= is a mode, and a chord in it is
+bound the way a chord in =text= is:
+
+: (bind 'wm "s-Return" "wm-terminal")
+: (bind 'wm "s-w" "switch-to-window")
+: (bind 'wm "s-x s-r" "reload")
+
+What separates them is not the machinery but when they are heard. A chord in
+=text= is what a key means in a document; a chord in =wm= is one nothing else
+ever sees. They keep their own place in a chord, too, so one arriving part way
+through the other does not finish it.
+
+=/wm/key= is where one arrives, the way =/key= is for a document. Writing it is
+pressing it:
+
+: pine write /wm/key s-Return
+
+so what a chord does is answerable without a compositor in the room.
+
+The compositor is asked for every key any bound chord is spelled with, not only
+the first: it says which key was pressed only for a key it was asked for, so the
+second key of =s-x s-r= has to be asked for as much as the first. A key that is
+only ever a continuation is therefore taken from the focused window when pressed
+alone. It does nothing, and nothing sees it.
+
 * The strip
 
 The niri shape -- workspaces, each of them a strip of windows you scroll along --
@@ -128,15 +159,9 @@ not the one placing them.
 
 * Where this is not yet
 
-The protocol is bound and pine is the window manager under river, but the core
-above is not all there:
+| grouping | =workspaces= answers nothing where pine is the manager: nothing keeps them yet, and the strip above is a sketch |
+| panels   | a layer surface never asks for keyboard interactivity, so a panel cannot be typed into and a picker goes to the editor's window |
+| submaps  | a prefix asks the compositor for the next key, but nothing has driven one end to end                            |
 
-| outputs   | =%area= takes the first one; the rest are not in the tree     |
-| hiding    | =hide=, =show= and =set_clip_box= are bound and never called  |
-| windows   | there is no =rect= and no =hidden= under a window             |
-| placement | entries carry no =clip= and no =stack=                        |
-| placement | a window left out is left where it was, not hidden             |
-| grouping  | =workspaces= answers nothing where pine is the manager         |
-
-Pine calls sixteen of the fifty-seven requests river's window management
-protocol offers. The ones it does not call are most of what a strip is made of.
+Pine calls twenty-six of the sixty-eight requests the two protocols offer. What
+is left is most of what a strip is made of.

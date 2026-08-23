@@ -1,6 +1,6 @@
 (defpackage #:pine/edit/mode
   (:use #:cl)
-  (:local-nicknames (#:mode #:pine/text/mode) (#:doc #:pine/text/document))
+  (:local-nicknames (#:mode #:pine/mode) (#:doc #:pine/text/document))
   (:export #:prompt #:listing #:debugger))
 (in-package #:pine/edit/mode)
 

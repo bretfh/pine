@@ -1,14 +1,15 @@
-(defpackage #:pine/text/mode
+(defpackage #:pine/mode
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:command #:pine/run/command)
-                    (#:key #:pine/ui/key))
+                    (#:fault #:pine/run/fault) (#:key #:pine/ui/key))
   (:shadow #:type #:structure)
   (:export #:mode #:text #:prose #:code #:lisp #:pine #:scheme #:org #:fundamental
            #:press #:insert #:indent #:complete #:save #:structure
            #:setting #:claims #:claimsp #:mode-for #:keys #:bind #:binding
+           #:bindings #:dispatch
            #:named #:modes #:prefixp #:type #:attach #:glob))
-(in-package #:pine/text/mode)
+(in-package #:pine/mode)
 
 (defvar *keys* (d:table)
   "Chords, by mode class name. A mode's own keymap; what a chord means comes from
@@ -115,12 +116,15 @@ anything has asked for one."
     (sort (remove (find-class 'mode) (under (find-class 'mode)))
           #'> :key (lambda (c) (length (c2mop:class-precedence-list c))))))
 
+(defun %class (name)
+  "The mode class this name stands for, whichever package it was written in."
+  (find (princ-to-string name) (modes)
+        :key (lambda (c) (string-downcase (symbol-name (class-name c))))
+        :test #'string-equal))
+
 (defun named (name)
-  (let ((class (find-symbol (string-upcase (princ-to-string name))
-                            :pine/text/mode)))
-    (when (and class (find-class class nil)
-               (subtypep class 'mode))
-      (make-instance class))))
+  (let ((class (%class name)))
+    (when class (ignore-errors (make-instance (class-name class))))))
 
 (defun claimsp (m path)
   (let ((leaf (file-namestring (pathname path)))
@@ -147,6 +151,32 @@ so a mode inherits bindings exactly as it inherits methods."
   (loop :for class :in (c2mop:class-precedence-list (class-of m))
         :for found := (d:at (keys (class-name class)) chord)
         :when found :do (return (command:named found))))
+
+(defun bindings (m)
+  "Every chord in force for a mode: its own, and its parents', nearest first."
+  (loop :for class :in (c2mop:class-precedence-list (class-of m))
+        :append (d:pairs (keys (class-name class)))))
+
+(defun dispatch (m subject k &optional (pending (key:pending)))
+  "What a key means to a mode. Answers :taken, what the command answered,
+:pending, (:insert . string) or :unbound, and the chord standing so far.
+
+SUBJECT is what the mode is understanding -- a document, or nothing where the mode
+is a compositor's and there is no document in it at all. PENDING is the chord
+already accumulated, so two keyboards, or a window manager and an editor, keep
+their own place in a chord and cannot take each other's."
+  (let* ((so-far (append pending (list k)))
+         (chord (key:text so-far))
+         (found (binding m chord)))
+    (cond ((press m subject k) (values :taken nil))
+          (found (values (fault:attempt (lambda () (command:run found))
+                                        (command:name found))
+                         nil
+                         (command:name found)))
+          ((prefixp m chord) (values :pending so-far))
+          ((and (null pending) (key:typed k))
+           (values (cons :insert (key:typed k)) nil))
+          (t (values :unbound nil)))))
 
 (defun prefixp (m chord)
   "Whether CHORD is the beginning of something longer bound in this mode."
@@ -195,10 +225,13 @@ so a mode inherits bindings exactly as it inherits methods."
 
 (defmethod node:contents ((n keys-node))
   "What this mode is bound to, as it stands. A chord a config added is here without
-anything having to be told about it."
-  (let ((class (find-symbol (string-upcase (node:name (node:over n)))
-                            :pine/text/mode)))
-    (and class (keys class))))
+anything having to be told about it.
+
+The class is looked for among the modes rather than in one package, because a
+mode is a class anybody can write and most of them are not written here."
+  (let ((class (%class (node:name (node:over n)))))
+    (when class
+      (sort (d:pairs (keys (class-name class))) #'string< :key #'car))))
 
 (defun attach (root)
   (node:attach (make-instance 'modes-node :name "mode"

@@ -4,7 +4,7 @@
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:surface #:pine/ui/surface)
                     (#:command #:pine/run/command) (#:log #:pine/run/log)
-                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:lines #:pine/text/lines)
                     (#:parser #:pine/text/ts/parser)
                     (#:runtime #:pine/text/ts/runtime)

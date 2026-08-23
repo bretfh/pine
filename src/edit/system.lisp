@@ -7,7 +7,7 @@
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
                     (#:key #:pine/ui/key) (#:surface #:pine/ui/surface)
                     (#:build #:pine/ui/build)
-                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
                     (#:emode #:pine/edit/mode) (#:window #:pine/edit/window)
                     (#:file #:pine/edit/file)
@@ -164,6 +164,19 @@ keyboard, a test and another pine all press keys the same way."))
                    (mapcar (lambda (each)
                              (cons (string-downcase (string (car each))) (cdr each)))
                            help:+settings+)))
+  (prompt:source :window
+                 (lambda (typed)
+                   (declare (ignore typed))
+                   "What the compositor says there is. Read through the namespace:
+the editor has never heard of a window manager, and does not have to."
+                   (let ((n (tree:at nil "wm" "windows")))
+                     (when n
+                       (loop :for id :in (node:contents n)
+                             :for each := (tree:at n (princ-to-string id))
+                             :for said := (and each (node:contents each))
+                             :collect (cons (format nil "~a ~a" id
+                                                    (or (getf said :title) ""))
+                                            (or (getf said :app) "")))))))
   (prompt:source :file #'match:files))
 
 (defun %asking (c)

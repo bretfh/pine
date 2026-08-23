@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:commit #:pine/fs/commit)
                     (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
-                    (#:lines #:pine/text/lines) (#:mode #:pine/text/mode))
+                    (#:lines #:pine/text/lines) (#:mode #:pine/mode))
   (:export #:document #:region #:make-document #:documents #:named #:kill
            #:current #:root #:scratch #:asidep #:*on-current* #:*on-kill* #:*visiting*
            #:lines #:line #:line-count #:text #:point #:at-line #:at-col #:mark

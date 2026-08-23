@@ -4,7 +4,7 @@
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command) (#:sh #:pine/host/shell)
                     (#:compositor #:pine/wm/compositor) (#:niri #:pine/wm/niri)
-                    (#:managed #:pine/wm/managed))
+                    (#:wkeys #:pine/wm/keys) (#:managed #:pine/wm/managed))
   (:export #:wm #:current #:terminal #:*terminal* #:*manage*))
 (in-package #:pine/wm)
 
@@ -47,7 +47,10 @@ where a third is added."
     (node:attach (make-instance class :name "wm"
                                 :describes "the compositor: its outputs, its
 windows, and what it takes")
-                 (tree:root)))
+                 (tree:root))
+    (node:attach (make-instance 'wkeys:keys-node :name "key"
+                                :describes "write a chord here to press it")
+                 (current)))
   (command:defcommand "wm-focus-next" ()
       (:describes "the keyboard to the next window")
     (compositor:step-window (current) 1))
@@ -88,6 +91,14 @@ of it after the bars")
     (and (compositor:hide (current) (princ-to-string id)) t))
   (command:defcommand "wm-show" (id) (:describes "put one back")
     (and (compositor:show (current) (princ-to-string id)) t))
+  (command:defcommand "switch-to-window" (which)
+      (:describes "go to a window by name"
+       :asks '((:prompt "Window: " :category :window :must-match t)))
+    (let* ((said (princ-to-string which))
+           (at (position #\Space said))
+           (id (if at (subseq said 0 at) said)))
+      (compositor:focus (current) id)
+      id))
   (let ((places (places)))
     (when places
       (when (system:named places) (system:drop places))
@@ -101,7 +112,8 @@ what this erases."
     (when (and places (system:named places)) (system:drop places)))
   (dolist (name '("wm-focus-next" "wm-focus-previous" "wm-close-window"
                   "wm-overview" "wm-split" "wm-exit" "wm-terminal"
-                  "wm-windows" "wm-title" "wm-outputs" "wm-hide" "wm-show"))
+                  "wm-windows" "wm-title" "wm-outputs" "wm-hide" "wm-show"
+                  "switch-to-window"))
     (command:forget name))
   (tree:erase nil "wm")
   s)

@@ -1,9 +1,11 @@
 (defpackage #:pine/wayland/wm
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
   (:local-nicknames (#:d #:pine/data) (#:log #:pine/run/log)
+                    (#:key #:pine/ui/key) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
   (:export #:wm #:bind #:managingp #:said #:apply-layout #:take #:laid #:wake
-           #:on-said #:on-render #:windows #:outputs #:focused #:manager
+           #:on-said #:on-render #:on-chord #:wants-chords #:eat-next
+           #:windows #:outputs #:focused #:manager
            #:*borders*))
 (in-package #:pine/wayland/wm)
 
@@ -31,6 +33,8 @@ where it sits."))
 (defclass wm ()
   ((manager :initarg :manager :reader manager)
    (layers  :initarg :layers  :accessor layers  :initform nil)
+   (chords  :initarg :chords  :accessor chords  :initform nil)
+   (wanted  :initform nil     :accessor wanted)
    (defaultp :initform nil    :accessor defaultp)
    (windows :initform nil     :accessor windows)
    (outputs :initform nil     :accessor outputs)
@@ -204,8 +208,18 @@ where a bar with no output of its own goes."
           (wl-proxy-hooks proxy))
     out))
 
+(defun wants-chords (w chords)
+  "Say which chords the window manager wants. Taken up on the next manage cycle,
+because that is the only place the protocol lets a binding be enabled."
+  (setf (wanted w) chords)
+  (when (manager w) (river-window-manager-v1.manage-dirty (manager w)))
+  chords)
+
+(defun eat-next (w) (chords:eat-next (chords w)))
+
 (defun %seat-events (w proxy)
   (push proxy (seats w))
+  (chords:attend (chords w) proxy)
   (push (evlambda
           (:wl-seat (name) (declare (ignore name)))
           (:window-interaction (window)
@@ -258,6 +272,7 @@ The answer comes from another image, so it is never waited for here: a manager
 that waits is one the compositor gives up on, and it says so after three
 seconds."
   (%default-output w)
+  (when (wanted w) (chords:ask-for (chords w) (wanted w)) (setf (wanted w) nil))
   (when (placedp w) (apply-layout w (pending w)))
   (river-window-manager-v1.manage-finish (manager w))
   (when (and (dirty w) (on-said w) (not (asking w)))
@@ -300,28 +315,36 @@ over data and not a protocol of its own."
         (t nil)))
     (setf (dirty w) t)))
 
-(defun bind (d &key on-said on-render)
+(defun bind (d &key on-said on-render on-chord)
   "Become the compositor's window manager, if it is asking for one. Answers
 nothing where the compositor manages its own windows."
   (let* ((it (display:of d))
          (registry (wl-display.get-registry it))
          (found nil)
-         (layers nil))
+         (layers nil)
+         (chords nil))
     (push (evlambda
             (:global (name interface version)
-             (declare (ignore version))
              (case (alexandria:when-let ((c (find-interface-named interface)))
                      (class-name c))
                (river-window-manager-v1
                 (setf found (wl-registry.bind registry name
-                                              'river-window-manager-v1 1)))
+                                              'river-window-manager-v1
+                                              (min version 4))))
                (river-layer-shell-v1
                 (setf layers (wl-registry.bind registry name
-                                               'river-layer-shell-v1 1))))))
+                                               'river-layer-shell-v1
+                                               (min version 1))))
+               (river-xkb-bindings-v1
+                (setf chords (wl-registry.bind registry name
+                                               'river-xkb-bindings-v1
+                                               (min version 2)))))))
           (wl-proxy-hooks registry))
     (wl-display-roundtrip it)
     (when found
       (let ((w (make-instance 'wm :manager found :layers layers
+                                  :chords (chords:make-chords chords
+                                                              :told on-chord)
                                   :on-said on-said :on-render on-render)))
         (push (evlambda
                 (:window (window) (%window-events w (%window w window)))

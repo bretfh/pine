@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:meter #:pine/run/meter) (#:job #:pine/run/job)
                     (#:actors #:pine/run/actors)
-                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:language #:pine/text/language)
                     (#:runtime #:pine/text/ts/runtime)
                     (#:syntax #:pine/text/ts/syntax)

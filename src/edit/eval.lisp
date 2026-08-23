@@ -5,7 +5,7 @@
                     (#:command #:pine/run/command) (#:job #:pine/run/job)
                     (#:image #:pine/run/image) (#:session #:pine/run/session)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
-                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:language #:pine/text/language)
                     (#:render #:pine/edit/render) (#:window #:pine/edit/window)
                     (#:prompt #:pine/edit/prompt))

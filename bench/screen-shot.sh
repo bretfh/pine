@@ -56,6 +56,8 @@ env $env PINE_FRAME_DUMP=/tmp/pine-frame sbcl --dynamic-space-size 2048 --noinfo
   --eval '(setf pine/run/log:*to* *standard-output*)' \
   --eval '(pine:daemon :store nil :config nil)' \
   --eval '(pine:write-at "/wm-places" "tiles")' \
+  --eval '(pine/run/command:defcommand "chord-ran" () (:describes "a mark a chord leaves") (pine:write-at "/chord-ran" t))' \
+  --eval '(pine/mode:bind (quote pine/wm/keys:wm) "s-c" "chord-ran")' \
   --eval '(pine:use :wm)' \
   --eval '(pine:use :text)' --eval '(pine:use :edit)' --eval '(pine:use :desk)' \
   --eval '(pine/edit:type-text "(defun hello (who) who)")' \
@@ -107,9 +109,19 @@ if command -v wtype >/dev/null 2>&1; then
   pine '"read"' '"/text/scratch"'
 fi
 
+echo "--- a chord the compositor took, with a window focused"
+foot -e sh -c 'sleep 20' >/dev/null 2>&1 &
+sleep 4
+pine '"run"' '"wm-windows"'
+echo "before: $(pine '"read"' '"/chord-ran"')"
+wtype -M logo -k c -m logo >/dev/null 2>&1 || echo "wtype failed"
+sleep 3
+echo "after:  $(pine '"read"' '"/chord-ran"')"
+
 echo "--- what pine is showing"
 pine '"read"' '"/wm/placement"'
 pine '"run"' '"wm-windows"'
 
 echo "--- pine"
+[ -n "$PINE_KEEP_LOG" ] && cp "$run/pine.log" "$PINE_KEEP_LOG"
 grep -a -v '^;' "$run/pine.log" | grep -a -vE '^( |$)' | tail -20

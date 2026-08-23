@@ -1,6 +1,6 @@
 (defpackage #:pine/term/mode
   (:use #:cl)
-  (:local-nicknames (#:mode #:pine/text/mode))
+  (:local-nicknames (#:mode #:pine/mode))
   (:export #:shell #:*send*))
 (in-package #:pine/term/mode)
 

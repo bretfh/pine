@@ -234,6 +234,7 @@ committed here either: that happens in a render sequence."
             (:close () (setf (configuredp s) nil)))
           (wl-proxy-hooks top))
     (xdg-toplevel.set-title top title)
+    (xdg-toplevel.set-app-id top "pine")
     (wl-surface.commit surface)
     s))
 

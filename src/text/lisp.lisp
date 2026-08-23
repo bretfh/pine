@@ -1,6 +1,6 @@
 (defpackage #:pine/text/lisp
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:mode #:pine/text/mode)
+  (:local-nicknames (#:d #:pine/data) (#:mode #:pine/mode)
                     (#:lines #:pine/text/lines) (#:doc #:pine/text/document))
   (:export #:forms #:head #:bodyp))
 (in-package #:pine/text/lisp)
