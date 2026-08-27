@@ -142,10 +142,9 @@ compiled in.")
    (loading     :reader loading
                 :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
-                :initform (pine/data:box
-                           (pl:map :loaded (pl:no-map) :missing (pl:no-set)))))
+                :initform (pl:map :loaded (pl:no-map) :missing (pl:no-set))))
   (:documentation "The grammars this image has loaded: {:loaded {LANGUAGE ENTRY}
-:missing #{LANGUAGE}} in an atomic reference. A hit is a slot read."))
+:missing #{LANGUAGE}}. A hit is a slot read."))
 
 (defclass ts-entry ()
   ((parser       :initarg :parser       :accessor entry-parser)

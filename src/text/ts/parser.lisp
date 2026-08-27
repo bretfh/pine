@@ -29,14 +29,14 @@ business knowing what a window is.")
    (language-of :initarg :language :reader language-of)
    (state-of    :initarg :state    :reader state-of)
    (running     :initarg :running  :reader running)
-   (found       :initform (d:box (d:no-map)) :reader found)
-   (banded      :initform (d:box nil) :reader banded)
-   (parsed      :initform (d:box -1)  :reader parsed)))
+   (found       :initform (d:no-map) :reader found)
+   (banded      :initform nil :accessor banded)
+   (parsed      :initform -1  :accessor parsed)))
 
 (defmethod print-object ((p parser) stream)
   (print-unreadable-object (p stream :type t)
     (format stream "~a ~(~a~) at ~d" (node:name (document-of p)) (language-of p)
-            (d:held (parsed p)))))
+            (parsed p))))
 
 (defun parsers () (d:vals (d:all *parsers*)))
 
@@ -82,7 +82,7 @@ the lines outside it are what they were."
 (defun %parse (p tick)
   (let* ((document (document-of p))
          (ps (state-of p))
-         (lines (d:held (doc:lines document)))
+         (lines (doc:lines document))
          (edit (doc:edit-of document))
          (band (showing document)))
     (setf (runtime:ps-package ps) (language:package-of document))
@@ -92,18 +92,18 @@ the lines outside it are what they were."
     (let ((runs (if band
                     (hl:parse-highlights ps :from-line (car band) :to-line (cdr band))
                     (hl:parse-highlights ps))))
-      (d:swap! (found p)
+      (d:swap (slot-value p 'found)
                (lambda (had) (%merged (%kept had edit) runs band))))
     (meter:counted :parse-lines (if band (- (cdr band) (car band))
                                    (doc:line-count document)))
-    (d:put! (banded p) band)
-    (d:put! (parsed p) tick)
+    (setf (banded p) band)
+    (setf (parsed p) tick)
     (when *on-parse* (funcall *on-parse* document))
-    (%flat (d:held (found p)))))
+    (%flat (found p))))
 
 (defun currentp (p)
-  (and (= (d:held (parsed p)) (doc:tick (document-of p)))
-       (equal (d:held (banded p)) (showing (document-of p)))))
+  (and (= (parsed p) (doc:tick (document-of p)))
+       (equal (banded p) (showing (document-of p)))))
 
 (defun %current (p tick)
   (unless (currentp p) (%parse p tick))
@@ -179,8 +179,8 @@ the other is freed rather than left holding a foreign parser."
   "Tell the parser it has fallen behind: the document moved, or what shows it is
 showing lines it has not been asked about."
   (let ((p (parser-for document)))
-    (when (and p (or (/= (d:held (parsed p)) (doc:tick document))
-                     (not (equal (d:held (banded p)) (showing document)))))
+    (when (and p (or (/= (parsed p) (doc:tick document))
+                     (not (equal (banded p) (showing document)))))
       (job:tell (running p) (list :parse (doc:tick document))))
     p))
 
@@ -190,7 +190,7 @@ stays coloured while the next band is being walked, so paging does not blink thr
 plain text."
   (meter:timing (:highlights)
     (let ((p (note document)))
-      (when p (%flat (d:held (found p)))))))
+      (when p (%flat (found p))))))
 
 (defun indent (document from to &key (width 2) then)
   (let ((p (note document)))

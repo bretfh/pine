@@ -8,9 +8,7 @@
 (in-package #:pine/fs/mount)
 
 
-(defclass mount (node:node)
-  ((savedp :allocation :class :initform nil :reader node:savedp)
-   (livep  :allocation :class :initform t   :reader node:livep))
+(defclass mount (node:node) ((livep :initform t))
   (:documentation "A namespace from somewhere else, grafted into this one. What is
 behind it keeps its own contents, so nothing here is snapshotted and everything
 here answers differently without being written."))

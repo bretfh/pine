@@ -67,7 +67,7 @@ content is here.")
     (declare (ignore width height))
     (d:map :edges nil :wide 0 :tall 0 :keeps 0 :margin '(0 0 0 0))))
 
-(defclass surface (node:derived)
+(defclass surface (node:node)
   ((role  :initarg :role  :accessor role)
    (shown :initarg :shown :accessor shown)
    (size  :initarg :size  :accessor size :initform nil))
@@ -75,12 +75,6 @@ content is here.")
 SHOWN is a node under it: writing /surface/audio/shown '(:toggle)' is the whole of
 putting a panel up. So is SIZE: what shows it says how big it came out there, and
 what the surface builds follows it like anything else it read."))
-
-(defclass click-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "Where another pine says something was clicked. Writing the id a
-widget crossed as runs what that widget meant."))
 
 (defmethod print-object ((s surface) stream)
   (print-unreadable-object (s stream :type t)
@@ -118,25 +112,19 @@ can be a frame behind."
   "This surface's tree written down, with every closure in it left here under the
 id it crossed as."
   (let ((name (node:name s))
-        (index (d:box -1))
+        (index -1)
         (tree (node:contents s)))
     (when tree
       (wire:to-wire tree
                     :on-action (lambda (thunk)
-                                 (let ((id (%id name (d:swap! index #'1+))))
+                                 (let ((id (%id name (incf index))))
                                    (d:keep! *acts* id thunk)
                                    id))))))
-
-(defmethod node:contents ((n click-node)) nil)
-
-(defmethod (setf node:contents) (value (n click-node))
-  (act value)
-  value)
 
 (defun builds (name reads &key (as 'panel) shown)
   (let* ((r (make-instance as))
          (s (make-instance 'surface :name (princ-to-string name) :reads reads
-                                    :role r
+                                    :cachedp t :role r
                                     :shown (if (eq shown :default) (not (asks r))
                                                shown)
                                     :describes "a widget tree, and where it goes")))
@@ -161,8 +149,9 @@ id it crossed as."
                     :over s
                     :describes "where the role says this goes")
                    s))
-    (node:attach (make-instance 'click-node :name "click"
-                                :describes "what another pine says was clicked")
+    (node:attach (node:place "click"
+                             :writes #'act
+                             :describes "what another pine says was clicked")
                  s)
     (when *on-declare* (funcall *on-declare* s))
     s))

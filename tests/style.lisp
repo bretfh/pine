@@ -137,13 +137,13 @@ whoever was here last, and it goes out of date without anything failing."
     (is (null using) "~{~%  ~a declares a readtable~}" (reverse using))))
 
 (test only-data-knows-what-a-value-is-kept-in
-  "fset is what a value is and sento.atomic is where one is kept. Both are behind
-pine/data, so what pine holds is one idea in one file."
+  "fset is what a value is and a compare-and-swap is how one is replaced. Both are
+behind pine/data, so what pine holds is one idea in one file."
   (is (null (%naming "fset:" :except '("data.lisp")))
       "~{~%  ~a names fset~}" (%naming "fset:" :except '("data.lisp")))
-  (is (null (%naming "sento.atomic" :except '("data.lisp")))
-      "~{~%  ~a names sento.atomic~}"
-      (%naming "sento.atomic" :except '("data.lisp"))))
+  (is (null (%naming "sb-ext:cas" :except '("data.lisp")))
+      "~{~%  ~a swaps a value for itself~}"
+      (%naming "sb-ext:cas" :except '("data.lisp"))))
 
 (test nothing-sleeps-in-a-loop-to-repeat
   "One clock: the actor system's wheel, and pine/run/actors over it."

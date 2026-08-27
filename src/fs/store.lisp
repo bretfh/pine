@@ -20,10 +20,6 @@ person running pine has to be able to find out about.")
   ((file-of :initarg :file :reader file-of)
    (db      :initarg :db   :reader db)))
 
-(defclass store-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
 (defmethod print-object ((s store) stream)
   (print-unreadable-object (s stream :type t)
     (write-string (princ-to-string (file-of s)) stream)))
@@ -144,8 +140,7 @@ with it."
               :when (node:nodep n) :do (keep n))))))
 
 (defun keeping (&optional (s *store*))
-  (setf node:*on-write* nil
-        node:*on-erase* (when s #'forget)
+  (setf node:*on-erase* (when s #'forget)
         (commit:on-commit :store) (when s #'kept))
   s)
 
@@ -157,8 +152,7 @@ read it, and a value node standing in its place would be saved forever after.
 
 Nothing is written through while this runs: the store is where these came from."
   (let ((n 0)
-        (was (commit:on-commit :store))
-        (node:*on-write* nil))
+        (was (commit:on-commit :store)))
     (setf (commit:on-commit :store) nil)
     (unwind-protect
          (loop :for (path text) :in (sqlite:execute-to-list
@@ -179,17 +173,14 @@ Nothing is written through while this runs: the store is where these came from."
         :unless (and names (apply #'tree:at root names))
           :collect path))
 
-(defmethod node:contents ((n store-node))
-  (let ((s *store*))
-    (and s (princ-to-string (file-of s)))))
-
-(defmethod node:verb ((n store-node) name arguments)
-  (declare (ignore arguments))
-  (case name
-    (:snapshot (and *store* (snapshot *store*)))
-    (t (error "/store takes :snapshot."))))
-
 (defun attach (root)
-  (node:attach (make-instance 'store-node :name "store"
-                                          :describes "where this pine persists")
+  (node:attach (node:place "store"
+                           :reads (lambda ()
+                                    (let ((s *store*))
+                                      (and s (princ-to-string (file-of s)))))
+                           :writes (lambda (value)
+                                     (declare (ignore value))
+                                     (and *store* (snapshot *store*)))
+                           :describes "where this pine persists, and writing it
+writes the tree down")
                root))

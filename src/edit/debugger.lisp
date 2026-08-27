@@ -6,10 +6,11 @@
                     (#:doc #:pine/text/document) (#:emode #:pine/edit/mode)
                     (#:window #:pine/edit/window) (#:log #:pine/run/log)
                     (#:evaluate #:pine/edit/eval))
-  (:export #:show #:standing #:choose #:next #:fault-of #:commands #:away #:*name* #:*standing*))
+  (:export #:show #:standing #:choose #:next #:fault-of #:away #:*name*
+           #:*standing*))
 (in-package #:pine/edit/debugger)
 
-(defvar *standing* (d:box nil))
+(defvar *standing* nil)
 (defparameter *name* "*debugger*")
 
 (defclass standing ()
@@ -23,7 +24,7 @@ restarts still being offered where it broke."))
   (print-unreadable-object (s stream :type t)
     (format stream "~a, ~d restart~:p" (of s) (length (restarts s)))))
 
-(defun standing () (d:held *standing*))
+(defun standing () *standing*)
 
 (defun %text (s)
   (with-output-to-string (out)
@@ -68,7 +69,7 @@ broke. What the target was is kept, and putting the debugger away puts it back."
          (document (or (doc:named *name*)
                        (doc:make-document *name*
                                           :mode (make-instance 'emode:debugger)))))
-    (d:put! *standing* s)
+    (setf *standing* s)
     (unless (typep (doc:mode-of document) 'emode:debugger)
       (setf (doc:mode-of document) (make-instance 'emode:debugger)))
     (setf (node:contents document) (%text s))
@@ -83,7 +84,7 @@ broke. What the target was is kept, and putting the debugger away puts it back."
     (when (and s (nth n (restarts s)))
       (let ((name (nth n (restarts s)))
             (f (fault-of s)))
-        (d:put! *standing* nil)
+        (setf *standing* nil)
         (if f
             (progn (fault:take f name) (log:note "took ~a" name))
             (log:note "~a" name))
@@ -99,34 +100,48 @@ broke. What the target was is kept, and putting the debugger away puts it back."
     (when f (show (fault:condition-of f) :fault f))))
 
 (defun away ()
-  (d:put! *standing* nil)
+  (setf *standing* nil)
   (%back)
   (when (doc:named *name*) (command:run "kill-document" (list *name*)))
   t)
 
-(defun commands ()
-  (command:defcommand "debugger-abort" () (:describes "leave the fault alone")
-    (away))
-  (command:defcommand "debugger-quit" () (:describes "put the debugger away")
-    (away))
-  (command:defcommand "debugger-restart" (n) (:describes "take one of the restarts")
-    (choose (if (integerp n)
-                n
-                (or (parse-integer (princ-to-string n) :junk-allowed t) 0))))
-  (command:defcommand "debugger" () (:describes "the last fault, as a document")
-    (let ((f (or (first (fault:standing)) (first (fault:faults)))))
-      (if f
-          (node:name (show (fault:condition-of f) :fault f))
-          (log:note "nothing has faulted"))))
-  (command:defcommand "debugger-next" () (:describes "the fault after this one")
-    (and (next) t))
-  (command:defcommand "toggle-debug-on-error" ()
-      (:describes "whether a fault stands its thread or unwinds")
-    (setf fault:*debugging* (not fault:*debugging*))
-    (log:note "the debugger is ~:[off~;on~]" fault:*debugging*)
-    fault:*debugging*)
-  (dolist (n '(0 1 2 3 4 5 6 7 8 9))
-    (let ((n n))
-      (command:command (format nil "debugger-restart-~d" n)
-                       (lambda () (choose n))
-                       :describes "take this restart"))))
+(command:defcommand "debugger-abort" ()
+    (:describes "leave the fault alone" :on '(debugger "a"))
+  (away))
+
+(command:defcommand "debugger-quit" ()
+    (:describes "put the debugger away" :on '(debugger "q"))
+  (away))
+
+(command:defcommand "debugger-restart" (n) (:describes "take one of the restarts")
+  (choose (if (integerp n)
+              n
+              (or (parse-integer (princ-to-string n) :junk-allowed t) 0))))
+
+(command:defcommand "debugger" ()
+    (:describes "the last fault, as a document" :on '(text "C-x e"))
+  (let ((f (or (first (fault:standing)) (first (fault:faults)))))
+    (if f
+        (node:name (show (fault:condition-of f) :fault f))
+        (log:note "nothing has faulted"))))
+
+(command:defcommand "debugger-next" ()
+    (:describes "the fault after this one" :on '(debugger "TAB"))
+  (and (next) t))
+
+(command:defcommand "toggle-debug-on-error" ()
+    (:describes "whether a fault stands its thread or unwinds")
+  (setf fault:*debugging* (not fault:*debugging*))
+  (log:note "the debugger is ~:[off~;on~]" fault:*debugging*)
+  fault:*debugging*)
+
+(macrolet ((restarts ()
+             `(progn
+                ,@(loop :for n :from 0 :to 9
+                        :collect
+                        `(command:defcommand ,(format nil "debugger-restart-~d" n)
+                             ()
+                             (:describes "take this restart"
+                              :on '(debugger ,(princ-to-string n)))
+                           (choose ,n))))))
+  (restarts))

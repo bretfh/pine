@@ -81,18 +81,20 @@ load is a fault like any other: the text still opens, uncoloured."
       (setf parser:*runtime* it)
       (syntax:attach (tree:root)))))
 
+(command:defcommand "documents" () (:describes "every document there is")
+  (mapcar #'node:name (doc:documents)))
+
+(command:defcommand "structure" (&optional name)
+    (:describes "what this document's mode makes of it")
+  (let ((d (if name (doc:named name) (doc:current))))
+    (when d (mapcar #'node:name (doc:regions d)))))
+
 (defmethod job:start ((s text))
   (setf doc:*visiting* #'visit
         doc:*on-kill* #'parser:forget)
   (%syntax)
   (mode:attach (tree:root))
   (doc:root)
-  (command:defcommand "documents" () (:describes "every document there is")
-    (mapcar #'node:name (doc:documents)))
-  (command:defcommand "structure" (&optional name)
-    (:describes "what this document's mode makes of it")
-    (let ((d (if name (doc:named name) (doc:current))))
-      (when d (mapcar #'node:name (doc:regions d)))))
   (let ((scratch (doc:make-document "scratch" :mode (make-instance 'mode:lisp))))
     (setf (doc:current) scratch))
   s)

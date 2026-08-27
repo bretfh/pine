@@ -97,6 +97,33 @@ what a crash costs is everything since the image came up."
              (store:close-store s)))
       (ignore-errors (delete-file file)))))
 
+(test a-walk-goes-all-the-way-down-and-stops-at-the-world
+  "What the snapshot is written on. Every store test drives the write-through, so
+a walk that stopped at the root would take all of them with it and none would
+say so."
+  (with-tree
+    (tree:put nil '("deep" "down" "here") "value")
+    (let ((seen nil))
+      (tree:walk (tree:root) (lambda (n) (push (node:full-name n) seen)))
+      (is (member "/deep/down/here" seen :test #'equal)
+          "a value three deep is reached: ~a" (reverse seen)))
+    (is (not (node:livep (tree:at nil "deep" "down" "here")))
+        "a value kept here is not live")
+    (is (node:livep (node:place "somewhere"))
+        "and a place, which the world answers for, is")))
+
+(test a-snapshot-writes-what-the-walk-reached
+  (let ((file (merge-pathnames "pine-walk-store.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (with-tree
+           (let ((s (store:open-store file)))
+             (tree:put nil '("walked" "into" "it") "kept")
+             (is (plusp (store:snapshot s)) "the snapshot found something")
+             (is (equal '(("/walked/into/it")) (%paths s "/walked%")))
+             (store:close-store s)))
+      (ignore-errors (delete-file file)))))
+
 (test a-snapshot-does-not-take-anything-out
   "The snapshot is belt and braces over the write-through. A system stopping takes
 its nodes off the tree, and that is not a reason to forget what they held."

@@ -175,7 +175,7 @@ name, and the old one is something nothing writes."
 
 (defun %loop (s)
   (let ((d (display-of s)))
-    (loop :until (or (done s) (d:held (job:stopping s)))
+    (loop :until (or (done s) (job:stopping s))
           :do (%tick s)
               (display:dispatch d)
               (pump:drain (pump s))

@@ -90,7 +90,7 @@ says and what a parse says. One kind of thing, painted one way."
   "Put what the screen says into the document, and say so. Point follows the
 program's cursor: what you are looking at is where it is writing."
   (multiple-value-bind (text spans) (screen term)
-    (d:put! (doc:lines term) (lines:of text))
+    (setf (doc:lines term) (lines:of text))
     (setf (doc:spans term) spans))
   (doc:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
   (setf (doc:modified term) nil)
@@ -153,7 +153,7 @@ it; anything else goes as it stands."
   "Read what the program wrote until it stops writing or we are asked to stop.
 This is what a thread is for: a pty read blocks, and nothing else here does."
   (lambda ()
-    (loop :until (d:held (job:stopping term))
+    (loop :until (job:stopping term)
           :do (when (vt:pty-wait (fd-of term) +waiting+)
                 (let ((said (ignore-errors (vt:pty-read-string (fd-of term)
                                                                *chunk*))))

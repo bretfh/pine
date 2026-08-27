@@ -13,7 +13,7 @@
 (defvar *timeout* 30)
 (defvar *asked* (d:table)
   "The faults this image is standing in on somebody else's behalf, by token.")
-(defvar *counter* (d:box 0))
+(defvar *counter* 0)
 
 (defclass peer (image:image mount:mount)
   ((uri :initarg :uri :accessor uri)
@@ -22,12 +22,6 @@
 can graft. One class because it is one thing, and that is why a read of
 /host/laptop/dev/audio/volume and a read of /dev/audio/volume are the same act."))
 
-(defclass remote (node:node)
-  ((peer  :initarg :peer :reader peer)
-   (where :initarg :where :reader where)
-   (livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "A place in another pine's namespace."))
 
 (defun peers () (remove-if-not (lambda (j) (typep j 'peer)) (job:jobs)))
 
@@ -85,39 +79,32 @@ than unwinding, so what comes back carries the restarts it is still offering."
 (defmethod fault:resume ((p peer) f restart)
   (%ask p (list :take restart (fault:token f))))
 
-(defun %crossed (n message)
-  (let ((said (%ask (peer n) (list* (first message) (where n) (rest message)))))
+(defun %crossed (p where message)
+  (let ((said (%ask p (list* (first message) where (rest message)))))
     (when (and (consp said) (eq :ok (first said))) (second said))))
 
-(defun %beneath (n name)
-  (node:child n name
-              (lambda ()
-                (make-instance 'remote :name name :over n :peer (peer n)
-                               :where (format nil "~a/~a"
-                                              (string-right-trim "/" (where n))
-                                              name)))))
+(defun %under (where name)
+  (format nil "~a/~a" (string-right-trim "/" where) name))
 
-(defmethod node:contents ((n remote)) (%crossed n (list :contents)))
-
-(defmethod (setf node:contents) (value (n remote))
-  (%crossed n (list :write value))
-  value)
-
-(defmethod node:nodes ((n remote))
-  (loop :for name :in (%crossed n (list :nodes)) :collect (%beneath n name)))
-
-(defmethod node:resolve ((n remote) name)
-  (let ((name (princ-to-string name)))
-    (when (member name (%crossed n (list :nodes)) :test #'equal)
-      (%beneath n name))))
+(defun remote (p where name)
+  "A place in another pine's namespace: four closures over which pine and which
+path. A read is a read and a write is a write, and what is under it is what that
+pine says is under it."
+  (node:place name
+              :describes (uri p)
+              :reads  (lambda () (%crossed p where (list :contents)))
+              :writes (lambda (value) (%crossed p where (list :write value)))
+              :names  (lambda () (%crossed p where (list :nodes)))
+              :each   (lambda (child)
+                        (let ((child (princ-to-string child)))
+                          (when (member child (%crossed p where (list :nodes))
+                                        :test #'equal)
+                            (remote p (%under where child) child))))))
 
 (defmethod mount:mount ((what peer) into name)
   "Graft another pine's namespace here. From now on a read of a path under it is a
 read, and a write is a write."
-  (let ((n (make-instance 'remote :name name :peer what :where "/"
-                                  :describes (uri what))))
-    (node:attach n into)
-    n))
+  (node:attach (remote what "/" name) into))
 
 (defun local-uri (name)
   "Where an actor in this image is reached from another one."
@@ -126,7 +113,7 @@ read, and a write is a write."
 (defun listen-to (p where tells &key name)
   "Ask another pine to say so whenever a place in it moves. What comes back is a
 job: stopping it is how you stop listening."
-  (let* ((name (or name (format nil "watch-~d" (d:swap! *counter* #'1+))))
+  (let* ((name (or name (format nil "watch-~d" (d:swap *counter* #'1+))))
          (j (make-instance 'job:actor
                            :name name :restarts nil :dispatcher :pinned
                            :describes (format nil "~a of ~a" where (job:name p))
@@ -173,7 +160,7 @@ read and nothing to tell."
 (defun %work (form)
   "Evaluate FORM on a thread that stands in whatever breaks, so the restarts it
 offers are the ones still there, and answer as soon as it has a value or a fault."
-  (let ((answered (d:box nil))
+  (let ((answered nil)
         (said (make-string-output-stream))
         (was (fault:standing)))
     (actors:blocking
@@ -181,22 +168,21 @@ offers are the ones still there, and answer as soon as it has a value or a fault
      (lambda ()
        (let ((*standard-output* said))
          (fault:with-debugger
-           (fault:attempt (lambda () (d:put! answered
-                                             (multiple-value-list (eval form))))
+           (fault:attempt (lambda () (setf answered (multiple-value-list (eval form))))
                           "answering a peer")))))
     (let ((broke nil))
       (loop :repeat (round (/ *timeout* 0.01))
-            :until (or (d:held answered) broke)
+            :until (or answered broke)
             :do (setf broke (find-if-not (lambda (f) (member f was))
                                          (fault:standing)))
                 (unless broke (sleep 0.01)))
       (cond (broke
-             (let ((token (d:swap! *counter* #'1+)))
+             (let ((token (d:swap *counter* #'1+)))
                (d:keep! *asked* token broke)
                (list :ok :said-broke (princ-to-string (fault:condition-of broke))
                      :offers (fault:offers broke) :token token
                      :said (get-output-stream-string said))))
-            (t (list :ok :answered (d:held answered)
+            (t (list :ok :answered answered
                      :said (get-output-stream-string said)))))))
 
 (defun %received (message)

@@ -1,8 +1,8 @@
 (defpackage #:pine/run/meter
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
   (:export #:timing #:counted #:said #:reading #:reset #:instruments #:report
-           #:now #:*on* #:*kept*))
+           #:attach #:now #:*on* #:*kept*))
 (in-package #:pine/run/meter)
 
 (defvar *on* t
@@ -15,7 +15,12 @@ small enough that a hundred instruments cost nothing to hold.")
 
 (defvar *instruments* (d:table))
 
-(defstruct (instrument (:constructor %instrument (name kind)))
+(defparameter +fields+ '("count" "per-second" "mean" "p50" "p95" "worst" "last"
+                         "total" "seconds")
+  "What an instrument answers for, as paths. Milliseconds where it is a duration,
+because that is what a person reads a frame in.")
+
+(defstruct (instrument (:constructor %made (name kind)))
   name
   kind
   (count 0)
@@ -36,25 +41,22 @@ steps in four millisecond jumps, which cannot see a frame, let alone a swap."
 (defun %of (name kind)
   (or (d:at (d:all *instruments*) name)
       (d:claim *instruments* name
-               (d:box (let ((it (%instrument name kind)))
-                        (setf (instrument-at it) (now))
-                        it)))))
+               (let ((it (%made name kind)))
+                 (setf (instrument-at it) (now))
+                 it))))
 
 (defun %record (name kind measure)
-  (d:swap! (%of name kind)
-           (lambda (had)
-             (let ((next (copy-instrument had)))
-               (incf (instrument-count next))
-               (incf (instrument-total next) measure)
-               (setf (instrument-last next) measure
-                     (instrument-most next) (max (instrument-most next) measure)
-                     (instrument-least next) (if (instrument-least next)
-                                                 (min (instrument-least next) measure)
-                                                 measure)
-                     (instrument-ring next)
-                     (let ((ring (cons measure (instrument-ring next))))
-                       (if (> (length ring) *kept*) (subseq ring 0 *kept*) ring)))
-               next)))
+  "One sample, into the instrument's own slots. Each is replaced where it stands
+rather than the whole thing being copied, which is what a sample costing under a
+microsecond is for."
+  (let ((it (%of name kind)))
+    (d:swap (instrument-count it) #'1+)
+    (d:swap (instrument-total it) #'+ measure)
+    (d:swap (instrument-most it) #'max measure)
+    (d:swap (instrument-least it)
+            (lambda (had) (if had (min had measure) measure)))
+    (d:swap (instrument-ring it) #'d:capped measure *kept*)
+    (setf (instrument-last it) measure))
   measure)
 
 (defmacro timing ((name) &body body)
@@ -92,7 +94,7 @@ has never been touched, which reads as `nothing walked this path' rather than
 as a zero."
   (let ((box (d:at (d:all *instruments*) name)))
     (when box
-      (let* ((it (d:held box))
+      (let* ((it box)
              (ring (instrument-ring it))
              (seconds (max 0.001 (/ (- (now) (instrument-at it)) 1000000000.0))))
         (list :name name
@@ -126,7 +128,51 @@ answer this, which is what lets one be laid beside the other."
       (d:clear! *instruments*))
   t)
 
-(defun %ms (nanoseconds) (if nanoseconds (/ nanoseconds 1000000.0) 0))
+(defun %ms (nanoseconds) (and nanoseconds (/ (round nanoseconds 1000) 1000.0)))
+
+(defun %named (name)
+  (find (princ-to-string name) (instruments)
+        :key (lambda (each) (string-downcase (princ-to-string each)))
+        :test #'equal))
+
+(defun %field (said field)
+  (cond ((null said) nil)
+        ((equal field "count") (getf said :count))
+        ((equal field "per-second") (float (getf said :per-second)))
+        ((equal field "seconds") (float (getf said :seconds)))
+        ((eq :count (getf said :kind)) nil)
+        ((equal field "mean") (%ms (getf said :mean)))
+        ((equal field "p50") (%ms (getf said :p50)))
+        ((equal field "p95") (%ms (getf said :p95)))
+        ((equal field "worst") (%ms (getf said :most)))
+        ((equal field "last") (%ms (getf said :last)))
+        ((equal field "total") (%ms (getf said :total)))))
+
+(defun %instrument (name)
+  (when (%named name)
+    (node:place name
+                :names (constantly +fields+)
+                :each (lambda (field)
+                        (when (member field +fields+ :test #'equal)
+                          (node:place field
+                                      :reads (lambda ()
+                                               (let ((key (%named name)))
+                                                 (when key
+                                                   (%field (reading key) field)))))))
+                :reads (lambda ()
+                         (let ((key (%named name))) (when key (reading key)))))))
+
+(defun attach (root)
+  (node:attach
+   (node:place "metric"
+               :names (lambda ()
+                        (mapcar (lambda (each)
+                                  (string-downcase (princ-to-string each)))
+                                (instruments)))
+               :each #'%instrument
+               :reads (lambda () (mapcar (lambda (row) (getf row :name)) (said)))
+               :describes "how long what pine does is taking")
+   root))
 
 (defun report (rows &key (to *standard-output*) about)
   "The table, said once. ABOUT is what produced these numbers: a workload and
@@ -143,5 +189,5 @@ is a number about nothing."
         (format to "~&~26a ~8:d ~12,1f ~11,3f ~11,3f ~11,3f~%"
                 (string-downcase (princ-to-string (getf row :name)))
                 (getf row :count) (float (getf row :per-second))
-                (%ms (getf row :mean)) (%ms (getf row :p95))
-                (%ms (getf row :most))))))
+                (or (%ms (getf row :mean)) 0) (or (%ms (getf row :p95)) 0)
+                (or (%ms (getf row :most)) 0)))))

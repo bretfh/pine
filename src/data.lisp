@@ -8,8 +8,8 @@
            #:as #:same #:merged #:union #:contains
            #:first #:last #:rest #:append #:subseq #:reverse #:sort
            #:find #:position #:some #:every #:remove
-           #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at
-           #:box #:held #:swap! #:cas #:put!
+           #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at #:capped
+           #:swap #:cas
            #:table #:all #:keep! #:drop! #:claim #:clear!))
 (in-package #:pine/data)
 
@@ -210,47 +210,81 @@ a shape this quietly steps over."
 (defun every (predicate c) (fset:every predicate c))
 (defun remove (item c) (fset:remove item c))
 
-(defun box (&optional value)
-  "A place one value stands in, that any thread may replace without a lock.
+(defun capped (list value n)
+  "LIST with VALUE in front of it, no longer than N: the newest N of something
+there is no point keeping all of. Takes what it is given first, so it is what
+SWAP! is handed rather than something wrapped in a lambda."
+  (let ((next (cons value list)))
+    (if (> (length next) n) (cl:subseq next 0 n) next)))
 
-Every value in pine is immutable; a box is where one of them is kept while it
-is the current one."
-  (sento.atomic:make-atomic-reference :value value))
+(defmacro swap (place function &rest arguments &environment env)
+  "Replace what PLACE holds with FUNCTION of it, and answer that.
 
-(defun held (box) (sento.atomic:atomic-get box))
+A place, not a cell: a slot, a global, anywhere a value is kept. FUNCTION runs
+again if another thread got there first, so it must be pure. Every value in pine
+is immutable, so this is the whole of how one is replaced, and there is no box
+to hold it in.
 
-(defun swap! (box function &rest arguments)
-  "Replace what BOX holds with FUNCTION of it, and answer that. FUNCTION runs
-again if another thread got there first, so it must be pure, and it must not
-answer :END, which is how the swap is told to give up."
-  (apply #'sento.atomic:atomic-swap box function arguments))
+PLACE's subforms are evaluated once, left to right, and so are FUNCTION and
+ARGUMENTS: a retry runs the function again and nothing else. Two things follow
+from the compare being EQ on the place itself:
 
-(defun cas (box old new)
-  "Put NEW in BOX if OLD is still what it holds. Answers whether it was."
-  (and (sento.atomic:atomic-cas box old new) t))
+A global is compared in whatever dynamic binding is in force here, not the
+global one, so a variable this replaces must be one nothing rebinds.
 
-(defun put! (box value)
-  (swap! box (lambda (had) (declare (ignore had)) value))
-  value)
+A number is compared by identity, which holds for a fixnum and stops holding
+above MOST-POSITIVE-FIXNUM. A counter this replaces must be one that cannot
+reach it."
+  (multiple-value-bind (temps values old new cas-form read-form)
+      (sb-ext:get-cas-expansion place env)
+    (let ((fn (gensym "FN"))
+          (args (loop :repeat (length arguments) :collect (gensym "ARG"))))
+      `(let* (,@(mapcar #'list temps values)
+              (,fn ,function)
+              ,@(mapcar #'list args arguments))
+         (loop :for ,old := ,read-form
+               :for ,new := (funcall ,fn ,old ,@args)
+               :until (eq ,old ,cas-form)
+               :finally (return ,new))))))
 
-(defun table ()
-  "A name-to-thing table nothing has to lock to touch: a map in a box."
-  (box +no-map+))
+(defmacro cas (place old new &environment env)
+  "Put NEW in PLACE if OLD is still what it holds. Answers whether it was.
 
-(defun all (table) (held table))
+PLACE's subforms, OLD and NEW are each evaluated once, left to right."
+  (multiple-value-bind (temps values old-var new-var cas-form read-form)
+      (sb-ext:get-cas-expansion place env)
+    (declare (ignore read-form))
+    `(let* (,@(mapcar #'list temps values)
+            (,old-var ,old)
+            (,new-var ,new))
+       (eq ,old-var ,cas-form))))
+
+(defstruct (table (:constructor %table) (:copier nil))
+  "A name-to-thing registry nothing has to lock to touch. A thing in its own
+right, unlike a slot: it is passed around and kept, so it is a struct and not a
+place somebody else owns."
+  (of +no-map+))
+
+(defun table () (%table))
+
+(defun all (table) (table-of table))
 
 (defun keep! (table key value)
-  (swap! table (lambda (m) (fset:with m key value)))
+  (swap (table-of table) (lambda (m) (fset:with m key value)))
   value)
 
 (defun drop! (table key)
-  (swap! table (lambda (m) (fset:less m key)))
+  (swap (table-of table) (lambda (m) (fset:less m key)))
   nil)
 
 (defun claim (table key value)
   "Put VALUE at KEY unless something is there already, and answer whatever is
 there afterwards, so the loser of a race gets the winner's object."
-  (fset:lookup (swap! table (lambda (m) (if (fset:lookup m key) m (fset:with m key value))))
+  (fset:lookup (swap (table-of table)
+                     (lambda (m)
+                       (if (fset:lookup m key) m (fset:with m key value))))
                key))
 
-(defun clear! (table) (put! table +no-map+))
+(defun clear! (table)
+  (swap (table-of table) (constantly +no-map+))
+  table)

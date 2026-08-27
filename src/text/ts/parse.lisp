@@ -12,22 +12,19 @@
           (when (claim-language parser lang language)
             (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
 
-(defun %grammars (runtime)
-  (pine/data:held (grammars runtime)))
+(defun %grammars (runtime) (grammars runtime))
 
 (defun %note-loaded (runtime language entry)
-  (pine/data:swap!
-   (grammars runtime)
-   (lambda (state)
-     (pl:with state :loaded
-              (pl:with (pl:at state :loaded) language entry)))))
+  (pl:swap (slot-value runtime 'grammars)
+           (lambda (state)
+             (pl:with state :loaded
+                      (pl:with (pl:at state :loaded) language entry)))))
 
 (defun %note-missing (runtime language)
-  (pine/data:swap!
-   (grammars runtime)
-   (lambda (state)
-     (pl:with state :missing
-              (pl:with (pl:at state :missing) language)))))
+  (pl:swap (slot-value runtime 'grammars)
+           (lambda (state)
+             (pl:with state :missing
+                      (pl:with (pl:at state :missing) language)))))
 
 (defun ensure-language (runtime language &optional lib fn)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its

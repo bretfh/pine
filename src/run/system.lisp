@@ -2,14 +2,18 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
-                    (#:log #:pine/run/log))
+                    (#:command #:pine/run/command) (#:log #:pine/run/log))
   (:export #:system #:offers #:use #:drop #:systems #:named #:attach #:offered
-           #:*on-loaded*))
+           #:owns #:*on-loaded*))
 (in-package #:pine/run/system)
 
 (defvar *offered* (d:table)
   "Name to the class a loaded system offers. A system says this as its code loads,
 so USE has something to make once the asdf system is there.")
+
+(defvar *owns* (d:table)
+  "Name to the package a system's code is written in. What it defined there stands
+while it runs, which is what replaces a list of names to forget by hand.")
 
 (defvar *under* nil)
 (defvar *on-loaded* nil
@@ -23,14 +27,24 @@ that runs, which is what replaces an INSTALL called by hand in a fixed order.
 Nothing here is privileged: the editor, the desktop, the window manager and the
 machine's own devices are all this class, and so is anything you write."))
 
-(defclass systems-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
 (defun offers (class &optional (name (string-downcase (symbol-name class))))
-  "Say what class this system is. Written once, where the system is defined."
+  "Say what class this system is, and that what is written here is its. Written
+once, where the system is defined."
   (d:keep! *offered* name class)
+  (d:keep! *owns* name (string-downcase (package-name *package*)))
+  (command:claim)
   name)
+
+(defun owns (name)
+  (d:at (d:all *owns*) (string-downcase (princ-to-string name))))
+
+(defmethod job:start :before ((s system))
+  (let ((prefix (owns (job:name s)))) (when prefix (command:offer prefix))))
+
+(defmethod job:stop :after ((s system))
+  "What a system defined goes when it does. Nothing keeps a list of names: a command
+knows the package it was written in, and the system knows which package is its."
+  (let ((prefix (owns (job:name s)))) (when prefix (command:withdraw prefix))))
 
 (defun offered () (d:keys (d:all *offered*)))
 
@@ -41,16 +55,9 @@ machine's own devices are all this class, and so is anything you write."))
   (let ((j (job:named (string-downcase (princ-to-string name)))))
     (and (typep j 'system) j)))
 
-(defmethod node:nodes ((n systems-node)) (systems))
-
-(defmethod node:resolve ((n systems-node) name)
-  (find (princ-to-string name) (systems) :key #'job:name :test #'equal))
-
-(defmethod node:contents ((n systems-node)) (mapcar #'job:name (systems)))
-
 (defun attach (root)
-  (setf *under* (node:attach (make-instance 'systems-node :name "system"
-                                            :describes "what pine has loaded")
+  (setf *under* (node:attach (node:place "system" :nodes #'systems
+                                         :describes "what pine has loaded")
                              root))
   (dolist (s (systems) *under*) (setf (node:over s) *under*)))
 

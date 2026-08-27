@@ -11,8 +11,9 @@ focused window, and that is the whole of the protocol for it. Nothing here is
 about arrangement -- that is whatever writes /wm/placement.")
 
 (defclass managed (compositor:compositor)
-  ((said  :initform (d:box nil) :reader said)
-   (wants :initform (d:box nil) :accessor wants)
+  ((said  :initform nil :accessor said)
+   (wants :initform nil :accessor wants)
+   (where :initform nil :accessor where)
    (kids  :initform nil :accessor kids))
   (:documentation "A compositor pine is the window manager of.
 
@@ -23,34 +24,11 @@ windows with titles, one of them focused, and verbs it takes.
 Where they go is not decided here. PLACEMENT is a place a system writes, and
 writing it is the whole of being a window manager."))
 
-(defclass said-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "What the process holding the compositor connection last saw:
-its windows, its outputs and what has the keyboard. Writing it is that process
-saying so."))
-
-(defclass placement-node (node:node)
-  ((where  :initform (d:box nil) :reader where)
-   (livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "Where each window goes: (ID X Y WIDTH HEIGHT &key CLIP STACK),
-one per window that is to be on screen. The answer is total -- a window it does
-not name is hidden.
-
-Nothing under src/ writes this. A window manager is a system that does."))
-
-(defclass wants-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "What pine wants done about it, for that process to take. It
-takes one and the node is empty again, so nothing is done twice."))
-
 (defun told (c)
   "What the wayland side last said: (:windows ((:id .. :title .. :app .. :size ..
 :hidden ..) ...) :outputs ((:name .. :position .. :size .. :area ..) ...)
 :focused id)."
-  (d:held (said c)))
+  (said c))
 
 (defun windows-of (c) (getf (told c) :windows))
 
@@ -59,19 +37,17 @@ takes one and the node is empty again, so nothing is done twice."))
         :key (lambda (w) (princ-to-string (getf w :id)))
         :test #'equal))
 
-(defun placement (c)
-  (let ((n (find "placement" (kids c) :key #'node:name :test #'equal)))
-    (and n (d:held (where n)))))
+(defun placement (c) (where c))
 
 (defun asked (c said)
   "Ask the wayland side for something. What it takes it takes once."
-  (d:swap! (wants c) (lambda (all) (append all (list said))))
+  (d:swap (slot-value c 'wants) (lambda (all) (append all (list said))))
   said)
 
 (defun take (c)
   "Everything asked for since the last time, and forget it."
-  (loop :for had := (d:held (wants c))
-        :when (d:cas (wants c) had nil) :do (return had)))
+  (loop :for had := (wants c)
+        :when (d:cas (slot-value c 'wants) had nil) :do (return had)))
 
 (defmethod compositor:outputs ((c managed)) (getf (told c) :outputs))
 
@@ -123,35 +99,29 @@ be. Until something places it there is nothing to say."
       (asked c (list* (intern (string-upcase verb) :keyword) arguments))
       t)))
 
-(defmethod node:contents ((n said-node)) (told (node:over n)))
-
-(defmethod (setf node:contents) (value (n said-node))
-  (let ((c (node:over n)))
-    (d:put! (said c) value)
-    (node:stir c))
-  value)
-
-(defmethod node:contents ((n placement-node)) (d:held (where n)))
-
-(defmethod (setf node:contents) (value (n placement-node))
-  (d:put! (where n) (d:as :list value))
-  (node:stir (node:over n))
-  value)
-
-(defmethod node:contents ((n wants-node)) (take (node:over n)))
-
-(defmethod (setf node:contents) (value (n wants-node))
-  (asked (node:over n) value)
-  value)
-
 (defmethod initialize-instance :after ((c managed) &key)
-  (setf (kids c)
-        (list (make-instance 'said-node :name "said" :over c
-                             :describes "what the compositor handed over")
-              (make-instance 'placement-node :name "placement" :over c
-                             :describes "where each window goes")
-              (make-instance 'wants-node :name "wants" :over c
-                             :describes "what pine wants done about it"))))
+  "What the process holding the connection last saw, where each window goes, and
+what pine wants done about it. Nothing under src/ writes the placement: a window
+manager is a system that does, and the answer is total -- a window it does not name
+is hidden. What is wanted is taken once, so nothing is done twice."
+  (let ((all (list (node:place "said"
+                               :reads (lambda () (told c))
+                               :writes (lambda (value)
+                                         (setf (said c) value)
+                                         (node:stir c))
+                               :describes "what the compositor handed over")
+                   (node:place "placement"
+                               :reads (lambda () (where c))
+                               :writes (lambda (value)
+                                         (setf (where c) (d:as :list value))
+                                         (node:stir c))
+                               :describes "where each window goes")
+                   (node:place "wants"
+                               :reads (lambda () (take c))
+                               :writes (lambda (value) (asked c value))
+                               :describes "what pine wants done about it"))))
+    (dolist (each all) (setf (node:over each) c))
+    (setf (kids c) all)))
 
 (defmethod node:nodes ((c managed))
   (append (call-next-method) (kids c)))

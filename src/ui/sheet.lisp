@@ -10,14 +10,13 @@
 (defvar *listeners* nil
   "What to tell when /style moves: the frontends, which keep their own copy.")
 
-(defclass themes-node (node:node)
-  ((savedp :allocation :class :initform nil :reader node:savedp)))
-(defclass theme-node (node:node)
-  ((savedp :allocation :class :initform nil :reader node:savedp)))
-(defclass faces-node (node:node)
-  ((savedp :allocation :class :initform nil :reader node:savedp)))
-(defclass face-node (node:node)
-  ((savedp :allocation :class :initform nil :reader node:savedp)))
+(defclass themes-node (node:node) ()
+  (:documentation "Every theme there is, and which is on.
+
+A class rather than a PLACE, and the one node in the tree where the two questions
+come apart: what is under it is worked out, which is what a place is for, but
+/theme/active is a value that persists and a snapshot does not walk into a live
+node."))
 
 (defun css-color (role) (face:color role))
 
@@ -122,7 +121,12 @@ needs to."
 
 (defun %theme (n name)
   (node:child n name
-              (lambda () (make-instance 'theme-node :name name :over n))))
+              (lambda ()
+                (node:place name :over n
+                            :reads (lambda ()
+                                     (let ((it (face:theme name)))
+                                       (list :palette (face:palette it)
+                                             :metrics (face:metrics it))))))))
 
 (defun %active (n)
   (node:child n "active" (lambda () (node:make "active" :over n))))
@@ -141,47 +145,37 @@ needs to."
 
 (defmethod node:contents ((n themes-node)) (%theme-names))
 
-(defmethod node:contents ((n theme-node))
-  (let ((it (face:theme (node:name n))))
-    (list :palette (face:palette it) :metrics (face:metrics it))))
-
-(defun %face (n name)
-  (node:child n name (lambda () (make-instance 'face-node :name name :over n))))
-
 (defun %key (name)
   "The keyword a face is kept under, without making one that is not already there:
 a path nobody named should not grow the keyword package."
   (find-symbol (string-upcase (princ-to-string name)) :keyword))
 
-(defmethod node:nodes ((n faces-node))
+(defun %face-names ()
   (let (acc)
     (maphash (lambda (name f)
                (declare (ignore f))
-               (push (%face n (string-downcase (symbol-name name))) acc))
+               (push (string-downcase (symbol-name name)) acc))
              (face:faces (face:theme (face:active))))
-    (sort acc #'string< :key #'node:name)))
+    (sort acc #'string<)))
 
-(defmethod node:resolve ((n faces-node) name)
+(defun %face (name)
   (let ((key (%key name)))
-    (when (and key (face:named key)) (%face n name))))
-
-(defmethod node:contents ((n faces-node))
-  (mapcar #'node:name (node:nodes n)))
-
-(defmethod node:contents ((n face-node))
-  (let* ((key (%key (node:name n)))
-         (f (and key (face:named key))))
-    (when f
-      (list :fg (face:fg f) :bg (face:bg f) :bold (face:bold f)
-            :italic (face:italic f) :underline (face:underline f)))))
+    (when (and key (face:named key))
+      (node:place name
+                  :reads (lambda ()
+                           (let ((f (face:named (%key name))))
+                             (when f
+                               (list :fg (face:fg f) :bg (face:bg f)
+                                     :bold (face:bold f) :italic (face:italic f)
+                                     :underline (face:underline f)))))))))
 
 (defun attach (root)
   (let ((themes (node:attach
                  (make-instance 'themes-node :name "theme"
                                 :describes "every theme there is, and which is on")
                  root)))
-    (node:attach (make-instance 'faces-node :name "faces"
-                                :describes "every face in force")
+    (node:attach (node:place "faces" :names #'%face-names :each #'%face
+                             :describes "every face in force")
                  root)
     (tree:ensure root "face")
     (tree:ensure root "style")

@@ -1,7 +1,7 @@
 (defpackage #:pine/run/session
   (:use #:cl)
   (:shadow #:read #:print #:close)
-  (:local-nicknames (#:command #:pine/run/command))
+  (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command))
   (:export #:session #:open-session #:sessions #:close #:openp
            #:name #:package-of #:readtable-of #:at #:history #:input #:output
            #:read #:evaluate #:print #:interact
@@ -69,10 +69,7 @@ sent from another image is evaluated in one."))
 
 (defmethod evaluate :around ((s session) form)
   (let ((e (call-next-method)))
-    (cl:push e (history s))
-    (let ((kept (history s)))
-      (when (> (length kept) *kept*)
-        (setf (history s) (cl:subseq kept 0 *kept*))))
+    (setf (history s) (d:capped (history s) e *kept*))
     e))
 
 (defun %command-for (form)

@@ -1,9 +1,9 @@
 (defpackage #:pine/term
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+  (:local-nicknames (#:node #:pine/fs/node)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
-                    (#:command #:pine/run/command) (#:log #:pine/run/log)
-                    (#:doc #:pine/text/document) (#:mode #:pine/mode)
+                    (#:command #:pine/run/command)
+                    (#:doc #:pine/text/document)
                     (#:window #:pine/edit/window)
                     (#:emode #:pine/term/mode)
                     (#:terminal #:pine/term/terminal))
@@ -11,12 +11,6 @@
 (in-package #:pine/term)
 
 (defvar *counter* 0)
-
-(defparameter +keys+
-  '(("C-c C-c" . "terminal-interrupt")
-    ("C-c C-k" . "terminal-close"))
-  "What a chord means in a terminal beyond what the program takes. Everything
-else goes to the program, because that is what PRESS on this mode does.")
 
 (defclass term (system:system) ()
   (:documentation "Programs with screens of their own, as documents.
@@ -47,28 +41,32 @@ fits."
     (%fit term win)
     term))
 
+(command:defcommand "terminal" (&optional line)
+    (:describes "a program with a screen of its own, in a document"
+     :on '(text "C-x t"))
+  (node:full-name (%open :runs (and line (princ-to-string line)))))
+
+(command:defcommand "terminal-interrupt" ()
+    (:describes "interrupt what the terminal is running" :on '(shell "C-c C-c"))
+  (let ((term (current)))
+    (when term (terminal:send term (string (code-char 3))) t)))
+
+(command:defcommand "terminal-close" ()
+    (:describes "end this terminal" :on '(shell "C-c C-k"))
+  (let ((term (current)))
+    (when term
+      (job:stop term)
+      (job:forget (node:name term))
+      (doc:kill (node:name term))
+      t)))
+
+(command:defcommand "terminals" () (:describes "every terminal there is")
+  (loop :for each :in (terminal:terminals)
+        :collect (list (node:name each) (terminal:runs each)
+                       (job:state each))))
+
 (defmethod job:start ((s term))
   (setf emode:*send* (lambda (document said) (terminal:send document said)))
-  (command:defcommand "terminal" (&optional line)
-      (:describes "a program with a screen of its own, in a document")
-    (node:full-name (%open :runs (and line (princ-to-string line)))))
-  (command:defcommand "terminal-interrupt" ()
-      (:describes "interrupt what the terminal is running")
-    (let ((term (current)))
-      (when term (terminal:send term (string (code-char 3))) t)))
-  (command:defcommand "terminal-close" () (:describes "end this terminal")
-    (let ((term (current)))
-      (when term
-        (job:stop term)
-        (job:forget (node:name term))
-        (doc:kill (node:name term))
-        t)))
-  (command:defcommand "terminals" () (:describes "every terminal there is")
-    (loop :for each :in (terminal:terminals)
-          :collect (list (node:name each) (terminal:runs each)
-                         (job:state each))))
-  (loop :for (chord . name) :in +keys+ :do (mode:bind 'emode:shell chord name))
-  (mode:bind 'mode:text "C-x t" "terminal")
   s)
 
 (defmethod job:stop ((s term))
@@ -77,6 +75,4 @@ fits."
     (job:stop each)
     (job:forget (node:name each))
     (doc:kill (node:name each)))
-  (dolist (name '("terminal" "terminal-interrupt" "terminal-close" "terminals"))
-    (command:forget name))
   s)

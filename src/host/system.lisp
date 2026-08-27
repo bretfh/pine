@@ -9,7 +9,7 @@
   (:export #:host #:attend #:leave #:attending))
 (in-package #:pine/host)
 
-(defvar *attending* (d:box nil))
+(defvar *attending* nil)
 
 (defclass host (system:system) ()
   (:documentation "The machine, in the namespace: its devices, its filesystem, its
@@ -63,19 +63,30 @@ A name in place of a node is made and put under /dev first:
                        (actors:repeat seconds (lambda () (node:stir n))
                                       :as (list :host (node:full-name n))
                                       :what (node:name n))))))
-      (d:swap! *attending* (lambda (all) (cons (list n watching ticking) all)))))
+      (d:swap *attending* (lambda (all) (cons (list n watching ticking) all)))))
   n)
 
-(defun attending () (mapcar #'first (d:held *attending*)))
+(defun attending () (mapcar #'first *attending*))
 
 (defun leave ()
-  (dolist (each (d:held *attending*))
+  (dolist (each *attending*)
     (destructuring-bind (n watching ticking) each
       (declare (ignore n))
       (mapc #'watch:unwatch watching)
       (when ticking (actors:cancel ticking))))
-  (d:put! *attending* nil)
+  (setf *attending* nil)
   (sh:forget-all))
+
+(command:defcommand "devices" () (:describes "what the machine has")
+  (tree:listing (tree:at (tree:root) "dev")))
+
+(command:defcommand "attend" (name &rest arguments)
+    (:describes "put a device in the tree")
+  (let ((it (apply #'attend name arguments)))
+    (and it (node:full-name it))))
+
+(command:defcommand "sh" (line) (:describes "run something")
+  (sh:run-line (princ-to-string line)))
 
 (defmethod job:start ((s host))
   (let ((root (tree:root)))
@@ -89,14 +100,7 @@ A name in place of a node is made and put under /dev first:
      (job:start (make-instance 'job:thread :name "clock" :seconds 1
                                            :restarts nil
                                            :thunk #'device:tick)))
-    (command:defcommand "devices" () (:describes "what the machine has")
-      (tree:listing (tree:at root "dev")))
-    (command:defcommand "attend" (name &rest arguments)
-        (:describes "put a device in the tree")
-      (let ((it (apply #'attend name arguments)))
-        (and it (node:full-name it))))
-    (command:defcommand "sh" (line) (:describes "run something")
-      (sh:run-line (princ-to-string line))))
+    root)
   s)
 
 (defmethod job:stop ((s host))

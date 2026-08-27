@@ -5,7 +5,7 @@
            #:rules #:forget-rules #:classes #:sheet #:*sheet*))
 (in-package #:pine/ui/style)
 
-(defvar *sheet* (d:box nil)
+(defvar *sheet* nil
   "The stylesheet as (SELECTOR PROPS) pairs, in the order they were written. What a
 config puts at /style is appended to what pine ships.")
 
@@ -60,7 +60,7 @@ order they were written in."
       (or (> as bs) (and (= as bs) (> ac bc))))))
 
 (defun sheet (&optional pairs)
-  (if pairs (d:put! *sheet* pairs) (d:held *sheet*)))
+  (if pairs (setf *sheet* pairs) *sheet*))
 
 (defun rules ()
   "Every rule, compiled, worked out once and kept until the tree moves."

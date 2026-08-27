@@ -1,9 +1,10 @@
 (defpackage #:pine/run/actors
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fault #:pine/run/fault))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:fault #:pine/run/fault))
   (:export #:boot #:leave #:actors #:runningp #:remoting
            #:pool #:pools #:dispatcher-for #:*pools* #:*workers* #:*soonest* #:*host* #:*port*
-           #:repeat #:after #:cancel #:ticks #:blocking))
+           #:repeat #:after #:cancel #:ticks #:blocking #:attach))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)
@@ -118,3 +119,23 @@ what was there."
   "A thread, for something that blocks: a pty read, a child's stdout, a frontend's
 own loop. Everything else is an actor or a tick."
   (bordeaux-threads:make-thread thunk :name (format nil "pine ~a" name)))
+
+(defun %named (name)
+  (find name (ticks) :key #'princ-to-string :test #'equal))
+
+(defun %tick (name)
+  (when (%named name)
+    (node:place name
+                :reads (lambda () (and (%named name) t))
+                :writes (lambda (value)
+                          (let ((had (%named name)))
+                            (when (and had (null value)) (cancel had)))))))
+
+(defun attach (root)
+  (node:attach
+   (node:place "tick"
+               :names #'ticks
+               :each #'%tick
+               :reads (lambda () (mapcar #'princ-to-string (ticks)))
+               :describes "what repeats on the image's clock")
+   root))

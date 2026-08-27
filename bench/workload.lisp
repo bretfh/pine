@@ -6,7 +6,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:mode #:pine/text/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
                     (#:keys #:pine/edit/keys) (#:key #:pine/ui/key)
                     (#:window #:pine/edit/window) (#:render #:pine/edit/render)
@@ -39,6 +39,16 @@ came from."
         (list :wide (* 9 +cols+) :tall (* 18 +lines+)
               :cols +cols+ :lines +lines+ :font 15)))
 
+(defun %parsed (d &key (seconds 60))
+  "Wait for the parse to catch up with the document. Setting a workload up is not
+the workload: what is timed below starts from a document already walked."
+  (let ((p (parser:parser-for d)))
+    (when p
+      (loop :repeat (round (/ seconds 0.02))
+            :until (parser:currentp p)
+            :do (sleep 0.02)))
+    p))
+
 (defun %shown (name lines)
   "A document of LINES lines, in the window, parsed once before anything is timed."
   (let ((d (doc:make-document name :mode (make-instance 'mode:lisp)))
@@ -49,7 +59,7 @@ came from."
     (setf (doc:current) d)
     (doc:goto d 10 0)
     (%sized)
-    (parser:wait d :seconds 60)
+    (%parsed d :seconds 60)
     d))
 
 (defun %wire (&optional (name "editor"))
@@ -69,7 +79,7 @@ keystroke really makes"
     (dotimes (n 200)
       (keys:dispatch (key:make-key (string (code-char (+ 97 (mod n 26))))))
       (%wire))
-    (parser:wait d :seconds 30)))
+    (%parsed d :seconds 30)))
 
 (workload paging ()
     "page down and back through a document being shown: the band moves, so the
@@ -81,12 +91,12 @@ parse and the highlight walk are re-driven at every screen"
       (setf (window:scroll w) (min (max 0 (- *size* 40)) (* n 40)))
       (doc:goto d (window:scroll w) 0)
       (%wire)
-      (parser:wait d :seconds 20))
+      (%parsed d :seconds 20))
     (dotimes (n 40)
       (setf (window:scroll w) (max 0 (- (window:scroll w) 40)))
       (doc:goto d (window:scroll w) 0)
       (%wire)
-      (parser:wait d :seconds 20))))
+      (%parsed d :seconds 20))))
 
 (workload huge ()
     "the same typing, in a hundred thousand lines"
@@ -124,7 +134,7 @@ surface built, the tree written down, and what came out the same as before"
     (dotimes (n 50)
       (keys:dispatch (key:make-key "x"))
       (%wire))
-    (parser:wait d :seconds 30)))
+    (%parsed d :seconds 30)))
 
 (workload idle ()
     "a daemon with the config loaded that nobody is touching: what ticks, what

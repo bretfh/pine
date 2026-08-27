@@ -37,15 +37,15 @@ own readtable. It is nothing but a file somebody wrote."
   (booted)
   (app)
   (command:run "note" '("watched" "before"))
-  (let ((heard (d:box nil)))
+  (let ((heard (cons nil nil)))
     (let ((w (watch:watch (tree:at nil "notes/watched")
                           (lambda (of said)
                             (declare (ignore of))
-                            (d:put! heard said)))))
+                            (setf (car heard) said)))))
       (unwind-protect
            (progn
              (setf (node:contents (tree:at nil "notes/watched")) "after")
-             (is (until (lambda () (equal "after" (d:held heard))))))
+             (is (until (lambda () (equal "after" (car heard))))))
         (watch:unwatch w)))))
 
 (test its-own-mode-gives-its-text-structure

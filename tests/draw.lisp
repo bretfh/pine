@@ -75,22 +75,22 @@ after it edits a document nothing shows."
   "A derived that faults keeps no value. If a stir on a stale one stops there, the
 screen is a picture until pine is restarted."
   (with-tree
-    (let* ((said (d:box nil))
-           (broken (d:box t))
+    (let* ((said (cons nil nil))
+           (broken (cons t nil))
            (n (tree:ensure nil "probe-src")))
       (setf (node:contents n) "first")
       (let ((s (surface:builds "probe-surface"
                                (lambda ()
                                  (let ((v (node:contents n)))
-                                   (when (d:held broken) (error "on purpose"))
-                                   (d:put! said v)
+                                   (when (car broken) (error "on purpose"))
+                                   (setf (car said) v)
                                    (build:label v)))
                                :as 'surface:panel :shown t)))
         (is (null (ignore-errors (node:contents s))))
-        (d:put! broken nil)
+        (setf (car broken) nil)
         (setf (node:contents n) "second")
         (ignore-errors (node:contents s))
-        (is (equal "second" (d:held said)))))))
+        (is (equal "second" (car said)))))))
 
 (test refresh-draws-everything-again
   (editing)

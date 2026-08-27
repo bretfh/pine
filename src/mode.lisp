@@ -137,13 +137,34 @@ anything has asked for one."
         :for m := (ignore-errors (make-instance (class-name class)))
         :when (and m (claims m) (claimsp m path)) :do (return m)))
 
+(defun %carried (class)
+  "The chords the commands themselves carry for this mode class. A command says
+what chord means it; nothing tells this file, and a chord goes when the command
+that named it does."
+  (let ((wanted (symbol-name class))
+        (out (d:no-map)))
+    (dolist (c (command:commands) out)
+      (let ((on (command:on c)))
+        (when (and on (string-equal wanted (string (first on))))
+          (dolist (chord (rest on))
+            (setf out (d:with out chord (command:name c)))))))))
+
 (defun keys (class)
-  (or (d:at (d:all *keys*) class) (d:no-map)))
+  "Every chord in force for a mode class: what its commands carry, and what
+somebody bound by hand on top of that."
+  (d:merged (%carried class) (or (d:at (d:all *keys*) class) (d:no-map))))
 
 (defun bind (class chord command)
-  "Bind a chord in a mode. A config binds one the way pine does."
-  (d:keep! *keys* class (d:with (keys class) chord command))
-  chord)
+  "Bind a chord in a mode. A config binds one the way pine does.
+
+The mode is named rather than identified: TEXT written in one package and TEXT
+written in another are two symbols and one class, and a keymap that told them apart
+would be two keymaps nobody asked for."
+  (let* ((found (%class class))
+         (class (if found (class-name found) class)))
+    (d:keep! *keys* class
+             (d:with (or (d:at (d:all *keys*) class) (d:no-map)) chord command))
+    chord))
 
 (defun binding (m chord)
   "What CHORD runs for this mode: its own keymap, then up the class precedence list,
@@ -188,52 +209,36 @@ their own place in a chord and cannot take each other's."
                    (char= #\Space (char had (length chord))))
           (return-from found t))))))
 
-(defclass modes-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
-(defclass mode-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
-(defclass keys-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
 (defun %names ()
   (mapcar (lambda (c) (string-downcase (symbol-name (class-name c)))) (modes)))
 
-(defun %mode-node (n name)
-  (node:child n name (lambda () (make-instance 'mode-node :name name :over n))))
-
-(defmethod node:nodes ((n modes-node))
-  (mapcar (lambda (name) (%mode-node n name)) (%names)))
-
-(defmethod node:resolve ((n modes-node) name)
-  (when (member (princ-to-string name) (%names) :test #'equal)
-    (%mode-node n (princ-to-string name))))
-
-(defmethod node:contents ((n modes-node)) (%names))
-
-(defmethod node:contents ((n mode-node))
-  (let ((m (named (node:name n))))
+(defun %said (name)
+  (let ((m (named name)))
     (when m (list :type (type m) :claims (claims m)))))
 
-(defmethod node:nodes ((n mode-node))
-  (list (node:child n "keys"
-                    (lambda () (make-instance 'keys-node :name "keys" :over n)))))
-
-(defmethod node:contents ((n keys-node))
-  "What this mode is bound to, as it stands. A chord a config added is here without
+(defun %chords (name)
+  "What a mode is bound to, as it stands. A chord a config added is here without
 anything having to be told about it.
 
 The class is looked for among the modes rather than in one package, because a
 mode is a class anybody can write and most of them are not written here."
-  (let ((class (%class (node:name (node:over n)))))
+  (let ((class (%class name)))
     (when class
       (sort (d:pairs (keys (class-name class))) #'string< :key #'car))))
 
+(defun %mode (name)
+  (when (%class name)
+    (node:place name
+                :names (constantly '("keys"))
+                :each (lambda (field)
+                        (when (equal field "keys")
+                          (node:place field
+                                      :reads (lambda () (%chords name)))))
+                :reads (lambda () (%said name)))))
+
 (defun attach (root)
-  (node:attach (make-instance 'modes-node :name "mode"
-                              :describes "every mode there is, and its chords")
+  (node:attach (node:place "mode"
+                           :names #'%names
+                           :each #'%mode
+                           :describes "every mode there is, and its chords")
                root))

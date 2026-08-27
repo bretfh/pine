@@ -1,6 +1,6 @@
 (defpackage #:pine/edit
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:commit #:pine/fs/commit)
                     (#:job #:pine/run/job)
                     (#:system #:pine/run/system) (#:command #:pine/run/command)
@@ -9,84 +9,14 @@
                     (#:build #:pine/ui/build)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
-                    (#:emode #:pine/edit/mode) (#:window #:pine/edit/window)
-                    (#:file #:pine/edit/file)
+                    (#:window #:pine/edit/window)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
                     (#:prompt #:pine/edit/prompt) (#:match #:pine/edit/matching)
-                    (#:listing #:pine/edit/listing)
-                    (#:isearch #:pine/edit/isearch) (#:commands #:pine/edit/commands)
-                    (#:help #:pine/edit/help) (#:evaluate #:pine/edit/eval)
+                    (#:isearch #:pine/edit/isearch)
+                    (#:help #:pine/edit/help)
                     (#:debugger #:pine/edit/debugger))
   (:export #:edit #:type-text))
 (in-package #:pine/edit)
-
-(defparameter +text-keys+
-  '(("C-f" . "forward-char") ("C-b" . "backward-char")
-    ("Right" . "forward-char") ("Left" . "backward-char")
-    ("M-f" . "forward-word") ("M-b" . "backward-word")
-    ("C-n" . "next-line") ("C-p" . "previous-line")
-    ("Down" . "next-line") ("Up" . "previous-line")
-    ("C-a" . "beginning-of-line") ("C-e" . "end-of-line")
-    ("Home" . "beginning-of-line") ("End" . "end-of-line")
-    ("M-<" . "beginning-of-document") ("M->" . "end-of-document")
-    ("PageUp" . "scroll-down") ("PageDown" . "scroll-up")
-    ("C-v" . "scroll-up") ("M-v" . "scroll-down") ("C-l" . "recenter")
-    ("RET" . "newline") ("DEL" . "delete-backward-char")
-    ("Delete" . "delete-char") ("C-d" . "delete-char")
-    ("TAB" . "indent-line")
-    ("C-SPC" . "set-mark") ("C-w" . "kill-region") ("M-w" . "copy-region")
-    ("C-y" . "yank") ("M-y" . "yank-pop")
-    ("C-/" . "undo") ("C-?" . "redo")
-    ("C-k" . "kill-line") ("M-d" . "kill-word") ("M-DEL" . "backward-kill-word")
-    ("C-o" . "open-line") ("C-t" . "transpose-chars")
-    ("C-g" . "keyboard-quit") ("Escape" . "keyboard-quit")
-    ("C-s" . "isearch-forward") ("C-r" . "isearch-backward")
-    ("M-%" . "query-replace")
-    ("M-;" . "comment-line") ("C-M-\\" . "indent-region")
-    ("M-u" . "upcase-word") ("M-l" . "downcase-word") ("M-c" . "capitalize-word")
-    ("M-x" . "run-command") ("M-:" . "eval-expression")
-    ("M-g g" . "goto-line") ("M-o" . "overwrite")
-    ("C-u" . "universal-argument") ("M--" . "negative-argument")
-    ("C-x C-f" . "find-file") ("C-x C-r" . "find-recent")
-    ("C-x C-s" . "save-document") ("C-x C-w" . "write-file")
-    ("C-x b" . "switch-to-document") ("C-x k" . "kill-document")
-    ("C-x n" . "new-document") ("C-x C-b" . "list-documents")
-    ("C-x h" . "mark-whole-document") ("C-x C-x" . "exchange-point-and-mark")
-    ("C-x 2" . "split-window-below") ("C-x 3" . "split-window-right")
-    ("C-x 0" . "delete-window") ("C-x 1" . "delete-other-windows")
-    ("C-x o" . "other-window")
-    ("C-x ^" . "enlarge-window") ("C-x -" . "shrink-window")
-    ("C-x +" . "balance-windows")
-    ("C-x j" . "list-jobs") ("C-x e" . "debugger")
-    ("C-h k" . "describe-key") ("C-h b" . "describe-bindings")
-    ("C-h m" . "describe-mode") ("C-h c" . "describe-command")
-    ("C-h f" . "describe-command") ("C-h v" . "describe-settings")))
-
-(defparameter +code-keys+
-  '(("C-M-f" . "forward-sexp") ("C-M-b" . "backward-sexp")
-    ("C-c C-l" . "load-file") ("C-c TAB" . "format-document")
-    ("C-c C-t" . "set-eval-target")
-    ("M-." . "find-definition") ("M-," . "go-back") ("M-?" . "find-references")
-    ("M-TAB" . "complete-symbol") ("C-M-i" . "complete-symbol")
-    ("C-c C-a" . "arglist") ("C-c C-d" . "describe-symbol")
-    ("C-x C-e" . "eval-last-expression") ("C-M-x" . "eval-defun")
-    ("C-c C-k" . "eval-document")))
-
-(defparameter +prompt-keys+
-  '(("RET" . "answer") ("C-g" . "cancel") ("Escape" . "cancel")
-    ("TAB" . "complete")
-    ("C-n" . "next-candidate") ("C-p" . "previous-candidate")
-    ("Down" . "next-candidate") ("Up" . "previous-candidate")
-    ("M-p" . "history-previous") ("M-n" . "history-next")))
-
-(defparameter +listing-keys+
-  '(("RET" . "list-activate") ("n" . "list-next") ("p" . "list-previous")
-    ("C-n" . "list-next") ("C-p" . "list-previous")
-    ("Down" . "list-next") ("Up" . "list-previous")
-    ("." . "list-place")))
-
-(defparameter +debugger-keys+
-  '(("a" . "debugger-abort") ("q" . "debugger-quit") ("TAB" . "debugger-next")))
 
 (defclass edit (system:system) ()
   (:documentation "Windows onto documents, the chords that act on them, and the
@@ -95,50 +25,21 @@ it."))
 
 (system:offers 'edit)
 
-(defclass key-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "Where a key arrives. Writing a chord here is typing it, so a
-keyboard, a test and another pine all press keys the same way."))
-
-(defmethod node:contents ((n key-node)) (key:text (key:pending)))
-
 (defun %drew (moved)
   (declare (ignore moved))
   (let ((s (surface:named "editor")))
     (when s (fault:attempt (lambda () (node:stir s)) "the frame"))))
 
-(defmethod (setf node:contents) (value (n key-node))
-  (commit:writing
-    (dolist (k (key:chord (princ-to-string value)))
-      (keys:dispatch k)))
-  value)
-
-(defun %keys ()
-  (loop :for (chord . name) :in +text-keys+ :do (mode:bind 'mode:text chord name))
-  (loop :for (chord . name) :in +code-keys+ :do (mode:bind 'mode:code chord name))
-  (loop :for (chord . name) :in +prompt-keys+
-        :do (mode:bind 'emode:prompt chord name))
-  (loop :for (chord . name) :in +listing-keys+
-        :do (mode:bind 'emode:listing chord name))
-  (loop :for (chord . name) :in +debugger-keys+
-        :do (mode:bind 'emode:debugger chord name))
-  (dolist (n '(0 1 2 3 4 5 6 7 8 9))
-    (mode:bind 'mode:text (format nil "M-~d" n)
-               (format nil "digit-argument-~d" n))
-    (mode:bind 'emode:debugger (princ-to-string n)
-               (format nil "debugger-restart-~d" n))))
-
-(defun %commands ()
-  (commands:commands)
-  (file:commands)
-  (window:commands)
-  (prompt:commands)
-  (listing:commands)
-  (isearch:commands)
-  (help:commands)
-  (evaluate:commands)
-  (debugger:commands))
+(defun %key ()
+  "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
+another pine all press keys the same way."
+  (node:place "key"
+              :reads (lambda () (key:text (key:pending)))
+              :writes (lambda (value)
+                        (commit:writing
+                          (dolist (k (key:chord (princ-to-string value)))
+                            (keys:dispatch k))))
+              :describes "write a chord here to type it"))
 
 (defun %sources ()
   (prompt:source :command
@@ -219,8 +120,6 @@ else it read."
   (doc:point (doc:current)))
 
 (defmethod job:start ((s edit))
-  (%commands)
-  (%keys)
   (%sources)
   (setf command:*asking* #'%asking
         build:*asking* #'%confirming
@@ -234,9 +133,7 @@ else it read."
           (if (fault:standingp f)
               (ignore-errors (debugger:show (fault:condition-of f) :fault f))
               (log:note "~a" (fault:condition-of f)))))
-  (node:attach (make-instance 'key-node :name "key"
-                              :describes "write a chord here to type it")
-               (tree:root))
+  (node:attach (%key) (tree:root))
   (let ((scratch (or (doc:named "scratch")
                      (doc:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))

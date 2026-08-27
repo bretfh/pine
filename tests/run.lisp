@@ -6,15 +6,15 @@
   (booted)
   (with-tree
     (job:attach (tree:root))
-    (let* ((n (d:box 0))
+    (let* ((n (cons 0 nil))
            (j (make-instance 'job:thread :name "ticker" :seconds 0.05
-                                         :thunk (lambda () (d:swap! n #'1+)))))
+                                         :thunk (lambda () (d:swap (car n) #'1+)))))
       (unwind-protect
            (progn
              (job:supervise j)
              (job:start j)
              (is (job:alivep j))
-             (is (until (lambda () (> (d:held n) 2))))
+             (is (until (lambda () (> (car n) 2))))
              (is (eq j (tree:at nil "proc" "ticker")))
              (is (eq :running (node:contents j)))
              (setf (node:contents j) (d:seq :stop))
@@ -47,10 +47,10 @@ returned without being asked to is failed, and the next sweep starts it."
   (booted)
   (with-tree
     (job:attach (tree:root))
-    (let* ((runs (d:box 0))
+    (let* ((runs (cons 0 nil))
            (j (make-instance 'job:thread :name "flaky" :restarts t
                                          :thunk (lambda ()
-                                                  (d:swap! runs #'1+)))))
+                                                  (d:swap (car runs) #'1+)))))
       (unwind-protect
            (progn
              (job:supervise j)
@@ -58,7 +58,7 @@ returned without being asked to is failed, and the next sweep starts it."
              (is (until (lambda () (eq :failed (job:state j))))
                  "a thread that ended by itself is failed, not stopped")
              (job:sweep)
-             (is (until (lambda () (> (d:held runs) 1)))
+             (is (until (lambda () (> (car runs) 1)))
                  "and a sweep starts it again"))
         (ignore-errors (job:stop j))
         (job:forget "flaky")))))
@@ -67,10 +67,12 @@ returned without being asked to is failed, and the next sweep starts it."
   (booted)
   (with-tree
     (job:attach (tree:root))
-    (let ((j (make-instance 'job:thread :name "quiet" :restarts t
-                                        :thunk (lambda ()
-                                                 (loop :until (job:stoppingp j)
-                                                       :do (sleep 0.01))))))
+    (let ((j nil))
+      (setf j (make-instance 'job:thread
+                             :name "quiet" :restarts t
+                             :thunk (lambda ()
+                                      (loop :until (job:stoppingp j)
+                                            :do (sleep 0.01)))))
       (unwind-protect
            (progn
              (job:supervise j)
@@ -84,17 +86,17 @@ returned without being asked to is failed, and the next sweep starts it."
 
 (test an-actor-takes-messages-in-order
   (booted)
-  (let* ((said (d:box nil))
+  (let* ((said (cons nil nil))
          (j (make-instance 'job:actor
                            :name "orderly" :restarts nil
                            :receive (lambda (m)
-                                      (d:swap! said (lambda (all) (cons m all)))))))
+                                      (d:swap (car said) (lambda (all) (cons m all)))))))
     (unwind-protect
          (progn
            (job:start j)
            (dolist (n '(1 2 3)) (job:tell j n))
-           (is (until (lambda () (= 3 (length (d:held said))))))
-           (is (equal '(1 2 3) (reverse (d:held said)))))
+           (is (until (lambda () (= 3 (length (car said))))))
+           (is (equal '(1 2 3) (reverse (car said)))))
       (ignore-errors (job:stop j))
       (job:forget "orderly"))))
 

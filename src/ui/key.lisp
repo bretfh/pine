@@ -8,9 +8,9 @@
 (in-package #:pine/ui/key)
 
 (defvar *keys* (d:table))
-(defvar *pending* (d:box nil))
-(defvar *last* (d:box nil))
-(defvar *taking* (d:box nil))
+(defvar *pending* nil)
+(defvar *last* nil)
+(defvar *taking* nil)
 
 (defparameter +named+
   '(("space" . "SPC") ("Space" . "SPC")
@@ -110,24 +110,24 @@ thing as the key that arrived."
 (defun shift (k) (key-shift k))
 (defun super (k) (key-super k))
 
-(defun pending () (d:held *pending*))
-(defun last () (d:held *last*))
-(defun taking () (d:held *taking*))
+(defun pending () *pending*)
+(defun last () *last*)
+(defun taking () *taking*)
 
-(defun (setf pending) (value) (d:put! *pending* value) value)
-(defun (setf last) (value) (d:put! *last* value) value)
+(defun (setf pending) (value) (setf *pending* value) value)
+(defun (setf last) (value) (setf *last* value) value)
 
 (defun take-next (fn)
   "Hand the next key to FN instead of the keymap. FN answers :again to keep taking
 them. An incremental search is exactly this: a reader that re-installs itself until
 something ends it."
-  (d:put! *taking* fn))
+  (setf *taking* fn))
 
 (defun reading (k)
   "Give K to whoever asked to read the next one, if anybody did."
   (let ((take (taking)))
     (when take
-      (d:put! *taking* nil)
+      (setf *taking* nil)
       (let ((said (funcall take k)))
-        (when (eq said :again) (d:put! *taking* take))
+        (when (eq said :again) (setf *taking* take))
         (or said :taken)))))

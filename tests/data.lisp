@@ -16,16 +16,47 @@
     (is (equal "three" (d:at now 1)))
     (is (= 2 (d:size now)))))
 
-(test a-box-swaps-under-two-threads
+(test a-place-swaps-under-two-threads
+  "SWAP is a compare-and-swap loop over a place, so four threads racing on one
+land a thousand increments and not fewer."
   (booted)
-  (let ((b (d:box 0))
+  (let ((cell (cons 0 nil))
         (threads nil))
     (dotimes (i 4)
       (push (bordeaux-threads:make-thread
-             (lambda () (dotimes (n 250) (d:swap! b #'1+))))
+             (lambda () (dotimes (n 250) (d:swap (car cell) #'1+))))
             threads))
     (mapc #'bordeaux-threads:join-thread threads)
-    (is (= 1000 (d:held b)))))
+    (is (= 1000 (car cell)))))
+
+(test a-swap-evaluates-what-it-was-handed-once
+  "The place's subforms, the function and the arguments are each evaluated once,
+left to right. A place whose subforms ran twice would step an index twice, and a
+retry that built the function again would build it once per contending thread."
+  (let* ((order nil)
+         (v (vector 10 20 30))
+         (i 0)
+         (fn-built 0))
+    (flet ((where () (push :place order) v)
+           (index () (push :index order) (prog1 i (incf i)))
+           (adder () (push :function order) (incf fn-built) #'+)
+           (by () (push :argument order) 5))
+      (is (= 15 (d:swap (svref (where) (index)) (adder) (by))))
+      (is (equal '(:place :index :function :argument) (reverse order)))
+      (is (= 15 (svref v 0)) "and it wrote the place it read")
+      (is (= 1 i) "the index moved once")
+      (is (= 1 fn-built)))))
+
+(test a-cas-evaluates-what-it-was-handed-once
+  (let ((order nil)
+        (v (vector :was)))
+    (flet ((where () (push :place order) v)
+           (had () (push :old order) :was)
+           (fresh () (push :new order) :now))
+      (is (d:cas (svref (where) 0) (had) (fresh)))
+      (is (equal '(:place :old :new) (reverse order)))
+      (is (eq :now (svref v 0)))
+      (is (not (d:cas (svref v 0) :was :never))))))
 
 (test a-table-claims-once
   (let ((table (d:table)))
@@ -50,7 +81,7 @@ that looks like it ran."
   (let ((n 0))
     (d:do-each (v (d:vals (d:map :a 1 :b 2)) n) (declare (ignore v)) (incf n))
     (is (eql 2 n)))
-  (let ((not-a-collection (d:held (d:box 42))))
+  (let ((not-a-collection 42))
     (signals error (d:do-each (v not-a-collection) (declare (ignore v))))))
 
 (test do-each-walks-a-map-a-seq-and-a-set

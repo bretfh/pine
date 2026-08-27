@@ -49,8 +49,8 @@ not."))
 
 (defclass child (image job:program)
   ((systems :initarg :systems :accessor systems :initform '(:pine))
-   (readyp  :initform (d:box nil) :reader readyp)
-   (held    :initform (d:box nil) :reader held)
+   (readyp  :initform nil :accessor readyp)
+   (held    :initform nil :accessor held)
    (turn    :initform (bordeaux-threads:make-lock "pine-image") :reader turn))
   (:documentation "An image started here, over pipes, that dies with pine.
 
@@ -111,7 +111,7 @@ an answer that may never come, so unattended the fault takes ABORT for it."
   (loop :repeat (round (/ timeout 0.05))
         :for line := (read-line (%out j) nil nil)
         :do (cond ((null line) (sleep 0.05))
-                  ((search *ready* line) (d:put! (readyp j) t) (return t))
+                  ((search *ready* line) (setf (readyp j) t) (return t))
                   (t (job:emit j line)))
         :finally (return nil)))
 
@@ -144,7 +144,7 @@ that image is still offering."
 
 (defun %settle (j &optional (seconds fault:*waiting*))
   (loop :repeat (round (/ seconds 0.02))
-        :while (d:held (held j))
+        :while (held j)
         :do (sleep 0.02)))
 
 (defmethod evaluate ((j child) form &key (timeout fault:*waiting*))
@@ -155,7 +155,7 @@ that image is still offering."
       (when line
         (multiple-value-bind (value said offers) (answered line)
           (cond (said
-                 (d:put! (held j) t)
+                 (setf (held j) t)
                  (borrowing j said offers)
                  (values nil said offers ""))
                 (t (values (list value) nil nil ""))))))))
@@ -167,4 +167,4 @@ that image is still offering."
          (progn (%say j (list :take restart))
                 (let ((line (%hear j fault:*waiting*)))
                   (when line (answered line))))
-      (d:put! (held j) nil))))
+      (setf (held j) nil))))

@@ -1,15 +1,15 @@
 (defpackage #:pine/run/fault
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
   (:export #:fault #:borrowed #:take #:resume
            #:faults #:standing #:attempt #:report #:borrow #:await #:defer
-           #:forget #:forget-faults #:with-debugger
+           #:forget #:forget-faults #:with-debugger #:attach
            #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
            #:standingp #:*kept* #:*on-fault* #:*waiting* #:*debugging*))
 (in-package #:pine/run/fault)
 
 (defvar *kept* 50)
-(defvar *faults* (d:box nil))
+(defvar *faults* nil)
 (defvar *on-fault* nil)
 (defvar *debugging* nil)
 (defvar *waiting* 120
@@ -46,17 +46,17 @@ is its own name for it, so taking a restart here is one act in both."))
 
 (defun standingp (f) (and (lock f) (null (taken f))))
 
-(defun faults () (d:held *faults*))
+(defun faults () *faults*)
 
 (defun standing ()
   "The faults whose thread is still there, waiting to be told what to do."
   (remove-if-not #'standingp (faults)))
 
 (defun forget (f)
-  (d:swap! *faults* (lambda (all) (remove f all)))
+  (d:swap *faults* (lambda (all) (remove f all)))
   f)
 
-(defun forget-faults () (d:put! *faults* nil))
+(defun forget-faults () (setf *faults* nil))
 
 (defun %backtrace ()
   (handler-case
@@ -68,10 +68,7 @@ is its own name for it, so taking a restart here is one act in both."))
           (remove nil (compute-restarts condition) :key #'restart-name)))
 
 (defun %noted (f)
-  (d:swap! *faults*
-           (lambda (all)
-             (let ((next (cons f all)))
-               (if (> (length next) *kept*) (subseq next 0 *kept*) next))))
+  (d:swap *faults* #'d:capped f *kept*)
   (when *on-fault* (ignore-errors (funcall *on-fault* f)))
   f)
 
@@ -163,3 +160,37 @@ is what is still there, because nothing has unwound yet."
 (defmacro with-debugger (&body body)
   "Inside, a fault stops its thread where it happened instead of unwinding."
   `(let ((*debugging* t)) ,@body))
+
+(defun %at (name)
+  (let ((i (parse-integer (princ-to-string name) :junk-allowed t)))
+    (when (and i (not (minusp i))) (nth i (faults)))))
+
+(defun %fault (name)
+  "One fault, at a place. Writing a restart's name takes it: the thread is still
+standing there, here or in another image, so this is the same act as taking one in
+the debugger."
+  (when (%at name)
+    (node:place name
+                :names (constantly '("offers"))
+                :each (lambda (field)
+                        (when (equal field "offers")
+                          (node:place field
+                                      :reads (lambda ()
+                                               (let ((f (%at name)))
+                                                 (and f (offers f)))))))
+                :reads (lambda ()
+                         (let ((f (%at name)))
+                           (and f (princ-to-string (condition-of f)))))
+                :writes (lambda (value)
+                          (let ((f (%at name)))
+                            (when f (take f (princ-to-string value))))))))
+
+(defun attach (root)
+  (node:attach
+   (node:place "fault"
+               :names (lambda ()
+                        (loop :for i :from 0 :below (length (faults)) :collect i))
+               :each #'%fault
+               :reads (lambda () (length (faults)))
+               :describes "what has broken, and what it stands in")
+   root))

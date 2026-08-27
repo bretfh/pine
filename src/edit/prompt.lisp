@@ -11,7 +11,7 @@
            #:showing #:category #:given
            #:must-match #:history #:remember #:walk-history #:filep
            #:descendsp #:descend
-           #:history-of #:commands #:*shown* #:*history-kept*))
+           #:history-of #:*shown* #:*history-kept*))
 (in-package #:pine/edit/prompt)
 
 (defvar *prompt* nil)
@@ -218,10 +218,8 @@ starting over."
   (let ((n (%history-node name)))
     (when (and n (stringp text) (plusp (length text)))
       (setf (node:contents n)
-            (let ((kept (cons text (remove text (node:contents n) :test #'equal))))
-              (if (> (length kept) *history-kept*)
-                  (subseq kept 0 *history-kept*)
-                  kept)))))
+            (d:capped (remove text (node:contents n) :test #'equal)
+                      text *history-kept*))))
   text)
 
 (defun walk-history (by &optional (p *prompt*))
@@ -290,32 +288,42 @@ typed, so walking back to the end gives it back."
       (format nil "~a~a" (question *prompt*) (said))
       (or (log:last-said) "")))
 
-(defun commands ()
-  (command:defcommand "run-command" () (:describes "run a command by name")
-    (ask "M-x " :category :command :must-match t :history :commands
-                :then (lambda (name)
-                        (let ((c (command:named name)))
-                          (if c
-                              (command:run c)
-                              (log:note "no command named ~a" name)))))
-    :asking)
-  (command:defcommand "answer" () (:describes "accept what is typed at the prompt")
-    (if (descendsp (asking))
-        (descend)
-        (answer)))
-  (command:defcommand "cancel" () (:describes "put the prompt away")
-    (cancel))
-  (command:defcommand "complete" ()
-      (:describes "fill the prompt from the candidates")
-    (complete))
-  (command:defcommand "next-candidate" () (:describes "the next candidate")
-    (choose 1))
-  (command:defcommand "previous-candidate" () (:describes "the candidate before")
-    (choose -1))
-  (command:defcommand "history-previous" ()
-      (:describes "what was answered here before")
-    (walk-history 1))
-  (command:defcommand "history-next" () (:describes "the answer after that one")
-    (walk-history -1))
-  (command:defcommand "cancel" () (:describes "put the prompt away")
-    (cancel)))
+(command:defcommand "run-command" ()
+    (:describes "run a command by name" :on '(text "M-x"))
+  (ask "M-x " :category :command :must-match t :history :commands
+              :then (lambda (name)
+                      (let ((c (command:named name)))
+                        (if c
+                            (command:run c)
+                            (log:note "no command named ~a" name)))))
+  :asking)
+
+(command:defcommand "answer" ()
+    (:describes "accept what is typed at the prompt" :on '(prompt "RET"))
+  (if (descendsp (asking))
+      (descend)
+      (answer)))
+
+(command:defcommand "cancel" ()
+    (:describes "put the prompt away" :on '(prompt "C-g" "Escape"))
+  (cancel))
+
+(command:defcommand "complete" ()
+    (:describes "fill the prompt from the candidates" :on '(prompt "TAB"))
+  (complete))
+
+(command:defcommand "next-candidate" ()
+    (:describes "the next candidate" :on '(prompt "C-n" "Down"))
+  (choose 1))
+
+(command:defcommand "previous-candidate" ()
+    (:describes "the candidate before" :on '(prompt "C-p" "Up"))
+  (choose -1))
+
+(command:defcommand "history-previous" ()
+    (:describes "what was answered here before" :on '(prompt "M-p"))
+  (walk-history 1))
+
+(command:defcommand "history-next" ()
+    (:describes "the answer after that one" :on '(prompt "M-n"))
+  (walk-history -1))

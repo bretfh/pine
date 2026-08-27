@@ -25,7 +25,6 @@ see one change underneath them.")
 (defun titles () (sort (keys *entries*) #'string<))
 
 (defmethod contents ((n journal)) (titles))
-
 (defmethod nodes ((n journal))
   (loop :for title :in (titles)
         :collect (child n title
@@ -38,7 +37,6 @@ Writing one is how an entry comes to exist."
     (child n title (lambda () (make-instance 'entry :name title :over n)))))
 
 (defmethod contents ((n entry)) (pine/data:at *entries* (name n)))
-
 (defmethod (setf contents) (said (n entry))
   (setf *entries* (if said
                       (with *entries* (name n) (princ-to-string said))
@@ -59,7 +57,7 @@ Writing one is how an entry comes to exist."
 (defmethod claims ((m note)) '("*.note"))
 
 (defmethod setting ((m note) key)
-  (case key (:comment "#") (t (call-next-method))))
+  (case key (:comment "#") (T (call-next-method))))
 
 (defun %headingp (line)
   (and (plusp (length line)) (char= #\* (char line 0))))
@@ -68,7 +66,7 @@ Writing one is how an entry comes to exist."
   "Every heading, and the lines under it. What comes back is put in the namespace
 under the document, so /text/x.note/heading/Today is a place you can read, write
 and watch."
-  (let ((found nil)
+  (let ((found NIL)
         (n (pine/text/document:line-count document)))
     (dotimes (at n)
       (let ((line (pine/text/document:line document at)))
@@ -104,7 +102,7 @@ and watch."
 variable behind it. That is what makes the surface follow it: what a surface reads
 is what it is worked out again for, and a place is what it can read."
   (let ((title (first (last (read "/notes")))))
-    (when title (list title (read (format nil "/notes/~a" title))))))
+    (when title (list title (read (format NIL "/notes/~a" title))))))
 
 ;;; The system. It starts and stops like anything else that runs, which is what
 ;;; puts it at /system/notes and lets you take it away again.
@@ -120,16 +118,16 @@ corner of the screen showing the last one."))
                                   :describes "what has been written down")
           (root))
   (defcommand "note" (title said)
-      (:describes "write something down"
-       :asks '((:prompt "Note: ")))
-    (setf (pine/fs/node:contents (at nil (format nil "notes/~a" title)))
+    (:describes "write something down"
+     :asks '((:prompt "Note: ")))
+    (setf (pine/fs/node:contents (at NIL (format NIL "notes/~a" title)))
           (or said ""))
     title)
   (defcommand "notes" () (:describes "everything written down")
     (titles))
   (defcommand "forget-note" (title) (:describes "take one back off")
-    (setf (pine/fs/node:contents (at nil (format nil "notes/~a" title))) nil)
-    t)
+    (setf (pine/fs/node:contents (at NIL (format NIL "notes/~a" title))) NIL)
+    T)
   (bind 'text "C-c n" "note")
   (defsurface sticky (:as 'sticky)
     (let ((latest (%latest)))
@@ -140,6 +138,6 @@ corner of the screen showing the last one."))
 
 (defmethod stop ((s notes))
   (dolist (name '("note" "notes" "forget-note")) (pine/run/command:forget name))
-  (erase nil "surface/sticky")
-  (erase nil "notes")
+  (erase NIL "surface/sticky")
+  (erase NIL "notes")
   s)

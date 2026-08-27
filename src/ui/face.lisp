@@ -62,7 +62,7 @@ read moves. Before there is a tree, it is worked out every time."
       (funcall thunk)
       (let* ((name (string-downcase (symbol-name which)))
              (under (or (node:resolve (tree:root) "memo")
-                        (node:attach (node:make "memo" :class 'node:node)
+                        (node:attach (node:make "memo" :savedp nil)
                                      (tree:root))))
              (n (node:resolve under name)))
         (unless n

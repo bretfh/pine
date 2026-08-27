@@ -9,16 +9,16 @@
 
 (defparameter *kept* 200)
 
-(defvar *now* (d:box (d:no-map)))
-(defvar *was* (d:box nil))
+(defvar *now* (d:no-map))
+(defvar *was* nil)
 (defvar *listening* (d:table))
 (defvar *moving* nil)
 
-(defun held () (d:held *now*))
+(defun held () *now*)
 
 (defun at (place &optional default) (d:at (held) place default))
 
-(defun roots () (d:held *was*))
+(defun roots () *was*)
 
 (defun root-at (n) (nth n (roots)))
 
@@ -39,13 +39,7 @@
              (let ((out had))
                (d:do-map (place value changes out)
                  (setf out (d:with out place value)))))
-           (superseded (had)
-             (d:swap! *was*
-                      (lambda (all)
-                        (let ((all (cons had all)))
-                          (if (> (length all) *kept*)
-                              (subseq all 0 *kept*)
-                              all))))))
+           (superseded (had) (d:swap *was* #'d:capped had *kept*)))
     (loop :for had := (held)
           :when (and when (refused had)) :return nil
           :do (let ((moved (moving had)))
@@ -59,18 +53,17 @@
     (flet ((underp (each)
              (and (> (length each) (length under))
                   (string= under each :end2 (length under)))))
-      (d:swap! *now*
+      (d:swap *now*
                (lambda (had)
                  (let ((out had))
                    (d:do-map (each value had out)
-                     (declare (ignore value))
                      (when (or (equal each place) (underp each))
                        (setf out (d:without out each))))))))
     place))
 
 (defun clear ()
-  (d:put! *now* (d:no-map))
-  (d:put! *was* nil)
+  (setf *now* (d:no-map))
+  (setf *was* nil)
   t)
 
 (defun listeners () (d:all *listening*))

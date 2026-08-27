@@ -2,13 +2,13 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:sh #:pine/host/shell))
-  (:export #:device #:readings #:attach #:audio #:screen #:power #:net #:media
+  (:export #:device #:attach #:audio #:screen #:power #:net #:media
            #:clip #:clock #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
-(defvar *now* (d:box 0))
-(defvar *sampled* (d:box nil))
-(defvar *busy* (d:box nil))
+(defvar *now* 0)
+(defvar *sampled* nil)
+(defvar *busy* nil)
 
 (defparameter +power-verbs+
   '(("lock" . "loginctl lock-session")
@@ -17,48 +17,40 @@
     ("poweroff" . "systemctl poweroff")
     ("logout" . "loginctl terminate-session $XDG_SESSION_ID")))
 
-(defclass device (node:node)
-  ((readings :initarg :readings :reader readings)
-   (announces :initarg :announces :initform nil :reader announces)
-   (refreshes :initarg :refreshes :initform nil :reader refreshes)
-   (livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
-  (:documentation "Something the machine has. Its readings are rows -- a name, how
-to read it, and how to write it -- not a class each.
-
-That is what DERIVED taking a write function is for: /dev/audio was four classes and
-twelve methods, and it is this list now."))
-
-(defmethod node:announces ((n device)) (announces n))
-(defmethod node:refreshes ((n device)) (refreshes n))
-
-(defmethod node:stir :after ((n device))
-  "What a device is told is that the world behind it moved, and what reads the world
-is the rows. Stirring one without the other leaves every reading at whatever it
-answered the first time."
-  (dolist (row (node:nodes n)) (node:stir row)))
+(defun %named-rows (readings)
+  (mapcar (lambda (r) (string (first r))) readings))
 
 (defun %reading (n row)
+  "One row of a device, as a node that works its value out.
+
+It reads the device on the way, which is what makes moving the device move it:
+the reading is a reader of the device, so the graph says so and nothing here has
+to say it again."
   (destructuring-bind (name reads &optional writes) row
     (let ((name (string name)))
-      (node:child n name
-                  (lambda () (node:derive name reads :over n :writes writes))))))
-
-(defmethod node:nodes ((n device))
-  (mapcar (lambda (row) (%reading n row)) (readings n)))
-
-(defmethod node:resolve ((n device) name)
-  (let ((row (find (princ-to-string name) (readings n)
-                   :key (lambda (r) (string (first r)))
-                   :test #'equal)))
-    (when row (%reading n row))))
-
-(defmethod node:contents ((n device))
-  (mapcar (lambda (r) (string (first r))) (readings n)))
+      (node:derive name
+                   (lambda () (node:reading n) (funcall reads))
+                   :over n :writes writes))))
 
 (defun device (name readings &key announces refreshes describes)
-  (make-instance 'device :name name :readings readings :announces announces
-                         :refreshes refreshes :describes describes))
+  "Something the machine has. Its readings are rows -- a name, how to read it, and
+how to write it -- not a class each, and not a class at all: a device is a place
+whose children are worked out from that list.
+
+That is what a node taking a write function is for: /dev/audio was four classes
+and twelve methods, and it is this list now."
+  (let ((self (list nil)))
+    (setf (first self)
+          (node:place name
+                      :announces announces :refreshes refreshes
+                      :describes describes
+                      :reads (lambda () (%named-rows readings))
+                      :names (lambda () (%named-rows readings))
+                      :each (lambda (want)
+                              (let ((row (find (princ-to-string want) readings
+                                               :key (lambda (r) (string (first r)))
+                                               :test #'equal)))
+                                (when row (%reading (first self) row))))))))
 
 (defun %sinks ()
   "Every sink wireplumber lists, and which one is the default."
@@ -239,17 +231,17 @@ this machine copied; writing it is copying."
           ((equal name "weekday") weekday))))
 
 (defun clock ()
-  (d:put! *now* (get-universal-time))
+  (setf *now* (get-universal-time))
   (device "clock"
           (loop :for name :in '("second" "minute" "hour" "day" "month" "year"
                                 "weekday")
                 :collect (list name (let ((name name))
-                                      (lambda () (%part name (d:held *now*))))))
+                                      (lambda () (%part name *now*)))))
           :refreshes 1
           :describes "the time, as paths"))
 
 (defun tick ()
-  (d:put! *now* (get-universal-time)))
+  (setf *now* (get-universal-time)))
 
 (defun %file (path)
   (when (probe-file path) (ignore-errors (uiop:read-file-string path))))
@@ -265,8 +257,8 @@ this machine copied; writing it is copying."
                         :when n :collect n))
          (total (reduce #'+ numbers :initial-value 0))
          (idle (+ (or (nth 3 numbers) 0) (or (nth 4 numbers) 0)))
-         (had (d:held *sampled*)))
-    (d:put! *sampled* (cons total idle))
+         (had *sampled*))
+    (setf *sampled* (cons total idle))
     (if (and had (consp had) (plusp (- total (car had))))
         (let ((moved (- total (car had))) (still (- idle (cdr had))))
           (max 0 (min 100 (round (* 100 (- moved still)) moved))))
@@ -276,9 +268,9 @@ this machine copied; writing it is copying."
   "How busy the machine is. Two readers a moment apart are asking about the same
 moment: sampling per read gives the second one no ticks to divide by."
   (let ((now (get-internal-real-time))
-        (had (d:held *busy*)))
+        (had *busy*))
     (cond ((and had (< (- now (cdr had)) internal-time-units-per-second)) (car had))
-          (t (let ((said (%busy))) (d:put! *busy* (cons said now)) said)))))
+          (t (let ((said (%busy))) (setf *busy* (cons said now)) said)))))
 
 (defun %ram ()
   (let ((total 0) (free 0))

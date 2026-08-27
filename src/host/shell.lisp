@@ -8,7 +8,7 @@
            #:stream-node #:attach #:forget-all #:*breath* #:*out*))
 (in-package #:pine/host/shell)
 
-(defvar *ran* (d:box (d:no-seq)))
+(defvar *ran* nil)
 (defvar *asked* (d:table))
 (defvar *streams* (d:table))
 (defvar *sh* nil)
@@ -32,22 +32,15 @@ pine keeps the other end of, so pine going -- stopped, crashed or killed outrigh
 closes that end and the stream goes with it.")
 
 (defclass stream-node (node:node)
-  ((line :initarg :line :reader line)
-   (took :initform (d:box nil) :reader took)
-   (said :initform (d:box nil) :reader said)
-   (livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
+  ((livep :initform t)
+   (line :initarg :line :reader line)
+   (took :initform nil :accessor took)
+   (said :initform nil :reader said)))
 
-(defclass shell-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
-(defun ran () (d:as :list (d:held *ran*)))
+(defun ran () *ran*)
 
 (defun %noted (line)
-  (d:swap! *ran* (lambda (all)
-                   (let ((next (d:insert-at all 0 line)))
-                     (if (> (d:size next) *kept*) (d:subseq next 0 *kept*) next))))
+  (d:swap *ran* #'d:capped line *kept*)
   line)
 
 (defun %output (line)
@@ -126,14 +119,14 @@ machine something, and telling it twice is twice."
   (launch (list "sh" "-l" "-c" (concatenate 'string "exec " line)))
   t)
 
-(defun hearing (n) (and (d:held (took n)) t))
+(defun hearing (n) (and (took n) t))
 
 (defun hear (n)
   (unless (hearing n)
     (let ((it (uiop:launch-program
                (list "sh" "-c" (format nil +tethered+ (line n)))
                :input :stream :output :stream :error-output nil)))
-      (d:put! (took n) it)
+      (setf (took n) it)
       (actors:blocking
        (format nil "sh ~a" (line n))
        (lambda ()
@@ -141,22 +134,17 @@ machine something, and telling it twice is twice."
                :for said := (handler-case (read-line out nil nil)
                               (stream-error () nil))
                :while said
-               :do (d:swap! (said n)
-                            (lambda (all)
-                              (let ((next (cons said all)))
-                                (if (> (length next) *lines-kept*)
-                                    (subseq next 0 *lines-kept*)
-                                    next))))
+               :do (d:swap (slot-value n 'said) #'d:capped said *lines-kept*)
                    (node:stir n))))))
   n)
 
 (defun quiet (n)
-  (let ((it (d:held (took n))))
+  (let ((it (took n)))
     (when it
       (ignore-errors (close (uiop:process-info-input it)))
       (ignore-errors (uiop:terminate-process it :urgent t))
       (ignore-errors (uiop:wait-process it))
-      (d:put! (took n) nil)))
+      (setf (took n) nil)))
   n)
 
 (defun streaming (line)
@@ -170,42 +158,25 @@ runs."
       (d:keep! *streams* line n)
       (hear n))))
 
-(defmethod node:contents ((n stream-node)) (first (d:held (said n))))
+(defmethod node:contents ((n stream-node)) (first (said n)))
 
 (defmethod (setf node:contents) (value (n stream-node))
   (if value (hear n) (quiet n))
   value)
 
-(defmethod node:contents ((n shell-node)) (ran))
-
-(defmethod node:nodes ((n shell-node))
-  (loop :for line :in (ran)
-        :collect (node:child n line
-                             (lambda ()
-                               (node:derive line
-                                            (lambda () (asked line))
-                                            :over n
-                                            :writes (lambda (v)
-                                                      (declare (ignore v))
-                                                      (run-line line)))))))
-
-(defmethod node:resolve ((n shell-node) name)
+(defun %line (line)
   "Reading a line runs it and answers what it said; writing one launches it. Every
-line is a place, whether or not anything has asked for it before."
-  (let ((line (princ-to-string name)))
-    (node:child n line
-                (lambda ()
-                  (node:derive line
-                               (lambda () (asked line))
-                               :over n
-                               :writes (lambda (v)
-                                         (declare (ignore v))
-                                         (run-line line)))))))
+line is a place, whether or not anything has asked for it before, which is why /sh
+lists what has run and answers for what has not."
+  (node:derive line
+               (lambda () (asked line))
+               :writes (lambda (v) (declare (ignore v)) (run-line line))))
 
 (defun attach (root)
-  (setf *sh* (node:attach (make-instance 'shell-node :name "sh"
-                                         :describes "running something, and what it said")
-                          root)))
+  (setf *sh* (node:attach
+              (node:place "sh" :names #'ran :each #'%line :reads #'ran
+                          :describes "running something, and what it said")
+              root)))
 
 (defun forget-all ()
   (dolist (n (d:vals (d:all *streams*)) t) (quiet n))

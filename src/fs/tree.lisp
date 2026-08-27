@@ -14,7 +14,7 @@ is reached by mounting it rather than by holding two here.")
 
 (defvar *ids* (make-hash-table :test 'eql))
 (defvar *by-node* (make-hash-table :test 'eq))
-(defvar *counter* (d:box 0))
+(defvar *counter* 0)
 (defvar *naming* (bordeaux-threads:make-lock "pine-ids"))
 
 (define-condition absent (error)
@@ -22,7 +22,7 @@ is reached by mounting it rather than by holding two here.")
   (:report (lambda (c s) (format s "nothing at ~a" (where c)))))
 
 (defun make-root ()
-  (let ((n (node:make nil :class 'node:node)))
+  (let ((n (node:make nil :savedp nil)))
     (setf *root* n)
     (commit:clear)
     (forget-ids)
@@ -37,7 +37,7 @@ swapped as one, and a counter that hands the same number to two nodes is a front
 clicking the wrong one."
   (bordeaux-threads:with-lock-held (*naming*)
     (or (gethash n *by-node*)
-        (let ((it (d:swap! *counter* #'1+)))
+        (let ((it (d:swap *counter* #'1+)))
           (setf (gethash n *by-node*) it
                 (gethash it *ids*) n)
           it))))
@@ -52,7 +52,7 @@ clicking the wrong one."
   (bordeaux-threads:with-lock-held (*naming*)
     (clrhash *ids*)
     (clrhash *by-node*)
-    (d:put! *counter* 0))
+    (setf *counter* 0))
   t)
 
 (defun split-name (text)
@@ -108,15 +108,14 @@ clicking the wrong one."
 
 (defun change (pairs &key when)
   (let ((placed (%placed pairs)))
-    (cond ((every (lambda (each) (typep (car each) 'node:value)) placed)
+    (cond ((every (lambda (each) (node:storedp (car each))) placed)
            (let ((moved (commit:change (%by-name placed)
                                        :when (and when (%by-name (%placed when))))))
              (when (and moved (not (d:emptyp moved)))
                (commit:writing
                  (loop :for (n . nil) :in placed
                        :when (d:contains moved (node:full-name n))
-                         :do (node:stir n)
-                             (commit:announce n))))
+                         :do (node:moved n))))
              moved))
           (t (commit:writing
                (loop :for (n . value) :in placed

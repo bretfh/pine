@@ -22,7 +22,7 @@ however well it runs afterwards.")
 (defvar *asking* 5)
 (defvar *every* 1)
 (defvar *jobs* (d:table))
-(defvar *supervised* (d:box nil))
+(defvar *supervised* nil)
 (defvar *under* nil)
 
 (define-condition blocking-ask (error)
@@ -33,23 +33,22 @@ A receive owes its mailbox an answer, so it may not wait for one: read what it w
 handed, or TELL and take the reply as a message." (of c)))))
 
 (defclass job (node:node)
-  ((state     :initform :stopped :accessor state)
+  ((livep :initform t)
+   (state     :initform :stopped :accessor state)
    (tries     :initform 0        :accessor tries)
    (restartsp :initarg :restarts :accessor restartsp :initform t)
    (took      :initform nil      :accessor took)
    (exit-of   :initform nil      :accessor exit-of)
    (since     :initform nil      :accessor since)
    (fault     :initform nil      :accessor fault)
-   (said      :initform (d:box nil) :reader said)
-   (livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp))
+   (said      :initform nil :reader said))
   (:documentation "Something that runs. Its state, its tries and what it last said
 are nodes under it, so what is running is read the way everything else is."))
 
 (defclass thread (job)
   ((thunk    :initarg :thunk   :accessor thunk)
    (seconds  :initarg :seconds :accessor seconds :initform nil)
-   (stopping :initform (d:box nil) :reader stopping))
+   (stopping :initform nil :accessor stopping))
   (:documentation "Blocks on something, or repeats on the wheel. With SECONDS it is
 a tick and takes no thread at all."))
 
@@ -63,22 +62,14 @@ a tick and takes no thread at all."))
    (env  :initarg :env  :accessor env :initform nil))
   (:documentation "An os child that is not lisp."))
 
-(defclass said-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
-(defclass jobs-node (node:node)
-  ((livep  :allocation :class :initform t   :reader node:livep)
-   (savedp :allocation :class :initform nil :reader node:savedp)))
-
 (defmethod print-object ((j job) stream)
   (print-unreadable-object (j stream :type t)
     (format stream "~a ~a" (name j) (state j))))
 
 (defmethod initialize-instance :after ((j job) &key)
   (node:slots j j "state" 'state "tries" 'tries)
-  (node:attach (make-instance 'said-node :name "said"
-                                         :describes "the last lines it said")
+  (node:attach (node:place "said" :reads (lambda () (said j))
+                                  :describes "the last lines it said")
                j)
   (d:keep! *jobs* (name j) j))
 
@@ -87,8 +78,6 @@ a tick and takes no thread at all."))
 (defun named (name) (d:at (d:all *jobs*) (princ-to-string name)))
 
 (defmethod node:contents ((j job)) (state j))
-
-(defmethod node:contents ((n said-node)) (d:held (said (node:over n))))
 
 (defmethod node:verb ((j job) name arguments)
   (declare (ignore arguments))
@@ -99,10 +88,7 @@ a tick and takes no thread at all."))
     (t (error "~a takes :start, :stop or :restart." (node:full-name j)))))
 
 (defun emit (j line)
-  (d:swap! (said j)
-           (lambda (all)
-             (let ((next (cons line all)))
-               (if (> (length next) *out-kept*) (subseq next 0 *out-kept*) next))))
+  (d:swap (slot-value j 'said) #'d:capped line *out-kept*)
   line)
 
 (defun backoff (j)
@@ -140,7 +126,7 @@ a tick and takes no thread at all."))
 (defun stoppingp (j)
   "Whether this thread has been asked to stop. A loop that blocks on a stream cannot
 be interrupted, so what can look between reads has to."
-  (and (typep j 'thread) (d:held (stopping j))))
+  (and (typep j 'thread) (stopping j)))
 
 (defmethod alivep ((j thread))
   (let ((it (took j)))
@@ -149,7 +135,7 @@ be interrupted, so what can look between reads has to."
           (t nil))))
 
 (defmethod start ((j thread))
-  (d:put! (stopping j) nil)
+  (setf (stopping j) nil)
   (setf (took j)
         (if (seconds j)
             (actors:repeat (seconds j) (thunk j) :as (name j) :what (name j))
@@ -158,13 +144,13 @@ be interrupted, so what can look between reads has to."
              (lambda ()
                (unwind-protect (fault:attempt (thunk j) (name j))
                  (setf (state j)
-                       (if (d:held (stopping j)) :stopped :failed)))))))
+                       (if (stopping j) :stopped :failed)))))))
   j)
 
 (defmethod stop ((j thread))
   (let ((it (took j)))
     (cond ((seconds j) (when it (actors:cancel it)))
-          (t (d:put! (stopping j) t)
+          (t (setf (stopping j) t)
              (loop :repeat 100 :while (alivep j) :do (sleep 0.02)))))
   j)
 
@@ -235,13 +221,13 @@ macro, so BOUNDP answers about the macro name and is false anywhere."
       (setf (exit-of j) (uiop:wait-process it))))
   j)
 
-(defun supervised () (d:held *supervised*))
+(defun supervised () *supervised*)
 
 (defun supervise (j)
   "Keep J running. A job is a node already; this is where it hangs, so pine read
 /proc/editor answers its state and pine write /proc/editor '(:restart)' starts it
 again."
-  (d:swap! *supervised*
+  (d:swap *supervised*
            (lambda (all)
              (append (remove (name j) all :key #'name :test #'equal) (list j))))
   (when *under* (setf (node:over j) *under*))
@@ -251,16 +237,9 @@ again."
   (let ((j (find name (supervised) :key #'name :test #'equal)))
     (when j
       (ignore-errors (stop j))
-      (d:swap! *supervised* (lambda (all) (remove j all)))
+      (d:swap *supervised* (lambda (all) (remove j all)))
       (d:drop! *jobs* name))
     j))
-
-(defmethod node:nodes ((n jobs-node)) (supervised))
-
-(defmethod node:resolve ((n jobs-node) name)
-  (find name (supervised) :key #'name :test #'equal))
-
-(defmethod node:contents ((n jobs-node)) (mapcar #'name (supervised)))
 
 (defun attend (&key (every *every*))
   "Look over what is supervised, on the wheel. Without this the backoff, the tries
@@ -268,8 +247,8 @@ and the restart are all written down and none of them ever happens."
   (actors:repeat every #'sweep :as :proc :what "starting again what died"))
 
 (defun attach (root)
-  (setf *under* (node:attach (make-instance 'jobs-node :name "proc"
-                                            :describes "what this pine is running")
+  (setf *under* (node:attach (node:place "proc" :nodes #'supervised
+                                         :describes "what this pine is running")
                              root))
   (dolist (j (supervised) *under*) (setf (node:over j) *under*)))
 
