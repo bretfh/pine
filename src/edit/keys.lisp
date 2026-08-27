@@ -4,10 +4,8 @@
                     (#:command #:pine/run/command) (#:key #:pine/ui/key)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:fault #:pine/run/fault))
-  (:export #:dispatch #:bindings #:*on-insert*))
+  (:export #:dispatch #:bindings))
 (in-package #:pine/edit/keys)
-
-(defvar *on-insert* nil)
 
 (defun bindings (m) (mode:bindings m))
 
@@ -23,7 +21,6 @@
              (setf (key:last) "insert")
              (unless (mode:insert m document (cdr said))
                (doc:insert document (cdr said)))
-             (when *on-insert* (funcall *on-insert* k))
              :inserted)
             (t
              (setf (key:pending) nil)

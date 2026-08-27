@@ -1,16 +1,16 @@
 (defpackage #:pine/run/fault
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
-  (:export #:fault #:borrowed #:take #:resume
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:log #:pine/run/log))
+  (:export #:fault #:borrowed #:take #:resume #:faulted
            #:faults #:standing #:attempt #:report #:borrow #:await #:defer
            #:forget #:forget-faults #:with-debugger #:attach
            #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
-           #:standingp #:*kept* #:*on-fault* #:*waiting* #:*debugging*))
+           #:standingp #:*kept* #:*waiting* #:*debugging*))
 (in-package #:pine/run/fault)
 
 (defvar *kept* 50)
 (defvar *faults* nil)
-(defvar *on-fault* nil)
 (defvar *debugging* nil)
 (defvar *waiting* 120
   "Seconds a fault stands unattended before it gives up. One number: a caller
@@ -67,9 +67,19 @@ is its own name for it, so taking a restart here is one act in both."))
   (mapcar (lambda (r) (princ-to-string (restart-name r)))
           (remove nil (compute-restarts condition) :key #'restart-name)))
 
+(defgeneric faulted (fault)
+  (:documentation "Say a fault happened, to whoever can do something about it.
+
+Answered above: an editor with somebody looking at it puts up the debugger. With
+nobody there it is said, because a fault nobody was told about is one nobody can
+act on.")
+  (:method (fault) (log:note "~a" (condition-of fault))))
+
 (defun %noted (f)
   (d:swap *faults* #'d:capped f *kept*)
-  (when *on-fault* (ignore-errors (funcall *on-fault* f)))
+  (handler-case (faulted f)
+    (error (broke)
+      (log:note "~a, and saying so broke too: ~a" (condition-of f) broke)))
   f)
 
 (defun report (condition &optional label)

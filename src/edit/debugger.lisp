@@ -78,6 +78,14 @@ broke. What the target was is kept, and putting the debugger away puts it back."
     (window:show (window:focused) document)
     document))
 
+(defmethod fault:faulted ((f fault:fault))
+  "A fault somebody can still do something about goes up in front of them. A
+window is what says somebody is there to look; with none, it is said instead,
+which is what the layer below already does."
+  (if (and (fault:standingp f) (window:focused))
+      (show (fault:condition-of f) :fault f)
+      (call-next-method)))
+
 (defun choose (n)
   "Take the nth restart: the thread standing in the fault is handed it and goes."
   (let ((s (standing)))

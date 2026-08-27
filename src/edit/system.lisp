@@ -4,7 +4,7 @@
                     (#:tree #:pine/fs/tree) (#:commit #:pine/fs/commit)
                     (#:job #:pine/run/job)
                     (#:system #:pine/run/system) (#:command #:pine/run/command)
-                    (#:fault #:pine/run/fault) (#:log #:pine/run/log)
+                    (#:fault #:pine/run/fault)
                     (#:key #:pine/ui/key) (#:surface #:pine/ui/surface)
                     (#:build #:pine/ui/build)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
@@ -13,8 +13,7 @@
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
                     (#:prompt #:pine/edit/prompt) (#:match #:pine/edit/matching)
                     (#:isearch #:pine/edit/isearch)
-                    (#:help #:pine/edit/help)
-                    (#:debugger #:pine/edit/debugger))
+                    (#:help #:pine/edit/help))
   (:export #:edit #:type-text))
 (in-package #:pine/edit)
 
@@ -131,12 +130,7 @@ else it read."
 (defmethod job:start ((s edit))
   (%sources)
   (setf command:*at* s
-        (commit:on-commit :edit) #'%drew
-        fault:*on-fault*
-        (lambda (f)
-          (if (fault:standingp f)
-              (ignore-errors (debugger:show (fault:condition-of f) :fault f))
-              (log:note "~a" (fault:condition-of f)))))
+        (commit:on-commit :edit) #'%drew)
   (node:attach (%key) (tree:root))
   (let ((scratch (or (doc:named "scratch")
                      (doc:make-document "scratch"
@@ -148,8 +142,7 @@ else it read."
 
 (defmethod job:stop ((s edit))
   (setf command:*at* nil
-        (commit:on-commit :edit) nil
-        fault:*on-fault* nil)
+        (commit:on-commit :edit) nil)
   (key:take-next nil)
   (isearch:took-all)
   (parser:forget-all)
