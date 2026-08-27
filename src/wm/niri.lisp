@@ -1,6 +1,7 @@
 (defpackage #:pine/wm/niri
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:sh #:pine/host/shell)
+                    (#:fault #:pine/run/fault)
                     (#:compositor #:pine/wm/compositor))
   (:export #:niri #:json))
 (in-package #:pine/wm/niri)
@@ -21,7 +22,8 @@
 
 (defun json (text)
   (when (and text (plusp (length text)))
-    (ignore-errors (com.inuoe.jzon:parse text))))
+    (fault:or-nothing "what the compositor said may not be json"
+      (com.inuoe.jzon:parse text))))
 
 (defun %list (command)
   (let ((value (json (sh:sh "niri msg --json ~a" command))))

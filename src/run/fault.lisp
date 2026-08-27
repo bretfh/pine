@@ -3,7 +3,8 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:log #:pine/run/log))
   (:export #:fault #:borrowed #:take #:resume #:faulted
-           #:faults #:standing #:attempt #:report #:borrow #:await #:defer
+           #:faults #:standing #:attempt #:or-nothing
+           #:report #:borrow #:await #:defer
            #:forget #:forget-faults #:with-debugger #:attach
            #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
            #:standingp #:*kept* #:*waiting* #:*debugging*))
@@ -16,6 +17,20 @@
   "Seconds a fault stands unattended before it gives up. One number: a caller
 waiting on a fault in another image waits at least this long too, or the fault is
 still standing when the call that would answer it has already timed out.")
+
+(defmacro or-nothing (why &body body)
+  "BODY, or nothing if it will not go, because WHY says that is an answer here.
+
+The other half of ATTEMPT. ATTEMPT is for work that was meant to happen: it
+breaking is a fault and a fault is kept. This is for a question with no answer --
+a process already reaped, a file that is not there, a symbol nothing was compiled
+from -- where nothing broke and there is nothing to keep.
+
+WHY is written down and not optional. The difference between this and swallowing
+a fault is entirely whether whoever wrote it knew which one they were doing, and
+a reason is the only evidence of that."
+  (declare (ignorable why))
+  `(handler-case (progn ,@body) (error () nil)))
 
 (defclass fault ()
   ((condition-of :initarg :condition :reader condition-of)
@@ -59,9 +74,8 @@ is its own name for it, so taking a restart here is one act in both."))
 (defun forget-faults () (setf *faults* nil))
 
 (defun %backtrace ()
-  (handler-case
-      (with-output-to-string (s) (sb-debug:print-backtrace :stream s :count 25))
-    (error () "")))
+  (or-nothing "a thread too deep or too far gone to walk"
+    (with-output-to-string (s) (sb-debug:print-backtrace :stream s :count 25))))
 
 (defun %offers (condition)
   (mapcar (lambda (r) (princ-to-string (restart-name r)))

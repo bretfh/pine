@@ -1,6 +1,7 @@
 (defpackage #:pine/ui/style
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:face #:pine/ui/face))
+  (:local-nicknames (#:d #:pine/data) (#:face #:pine/ui/face)
+                    (#:fault #:pine/run/fault))
   (:export #:resolve #:property #:properties #:selector #:specificity
            #:rules #:forget-rules #:classes #:sheet #:*sheet*))
 (in-package #:pine/ui/style)
@@ -248,8 +249,9 @@ shows. Nothing for transparent, none, or unparsable."
                    (n (if (realp v)
                           v
                           (and (stringp v)
-                               (ignore-errors
-                                (with-standard-io-syntax
-                                  (let ((*read-eval* nil))
-                                    (read-from-string v))))))))
+                               (fault:or-nothing
+                                   "a style value that is not a form is a string"
+                                 (with-standard-io-syntax
+                                   (let ((*read-eval* nil))
+                                     (read-from-string v))))))))
               (when (realp n) (float (max 0 (min 1 n)) 1.0)))))

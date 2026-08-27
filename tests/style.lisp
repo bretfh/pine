@@ -366,3 +366,10 @@ knowing which is meant."
                   (format nil "~a: ~{~a~^ ~}" (car each) (cdr each)))
                 (subseq (sort twice #'> :key (lambda (e) (length (cdr e))))
                         0 (min 12 (length twice)))))))
+
+(test nothing-swallows-a-fault-without-saying-why
+  "IGNORE-ERRORS says nothing about what was expected to go wrong, so a real fault
+being lost looks exactly like a question with no answer. FAULT:ATTEMPT keeps what
+broke; FAULT:OR-NOTHING says in words why nothing is an answer here."
+  (is (null (%naming "ignore-errors"))
+      "~{~%  ~a swallows without saying why~}" (%naming "ignore-errors")))

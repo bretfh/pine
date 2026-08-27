@@ -5,7 +5,8 @@
                     (#:hit #:pine/ui/hit) (#:pump #:pine/wayland/pump)
                     (#:shell #:pine/wayland/shell) (#:pane #:pine/wayland/pane)
                     (#:input #:pine/wayland/input) (#:wm #:pine/wayland/wm)
-                    (#:screen #:pine/wayland/screen)))
+                    (#:screen #:pine/wayland/screen)
+                    (#:fault #:pine/run/fault)))
 (in-package #:pine/wayland/hands)
 
 (defconstant +left+ #x110)
@@ -122,7 +123,7 @@ part way through a chord, the next key has to come here too."
   "Which chords the compositor is to take. What is bound is what is asked for."
   (let ((it (screen:wm-of s)))
     (when it
-      (let ((chords (ignore-errors
-                     (uiop:symbol-call :pine/wm/keys :chords))))
+      (let ((chords (fault:or-nothing "pine/wm may not be loaded here"
+                      (uiop:symbol-call :pine/wm/keys :chords))))
         (pump:hand (screen:pump s) (lambda () (wm:wants-chords it chords)))))))
 

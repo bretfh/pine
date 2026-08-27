@@ -1,6 +1,7 @@
 (defpackage #:pine/edit/file
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:command #:pine/run/command)
+  (:local-nicknames (#:fault #:pine/run/fault)
+                    (#:node #:pine/fs/node) (#:command #:pine/run/command)
                     (#:log #:pine/run/log)
                     (#:doc #:pine/text/document) (#:text #:pine/text)
                     (#:parser #:pine/text/ts/parser)
@@ -18,7 +19,9 @@
   (let ((path (match:expanded (princ-to-string path))))
     (if (uiop:directory-exists-p path)
         (log:note "~a is a directory" path)
-        (let* ((name (or (ignore-errors (file-namestring (pathname path))) path))
+        (let* ((name (or (fault:or-nothing "a node's path is not a file name"
+                           (file-namestring (pathname path)))
+                         path))
                (document (or (doc:named name) (doc:make-document name))))
           (text:visit document path)
           (setf (doc:current) document)

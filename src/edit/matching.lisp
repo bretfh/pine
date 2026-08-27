@@ -1,5 +1,6 @@
 (defpackage #:pine/edit/matching
   (:use #:cl)
+  (:local-nicknames (#:fault #:pine/run/fault))
   (:export #:name-of #:annotation #:shows #:matches #:common-prefix
            #:expanded #:split-path #:entries #:files #:*separator*))
 (in-package #:pine/edit/matching)
@@ -82,15 +83,14 @@ root, so an absolute path typed over a directory means that path."
         (values "" text))))
 
 (defun entries (where)
-  (handler-case
-      (append (sort (mapcar (lambda (p)
-                              (concatenate 'string
-                                           (car (last (pathname-directory p))) "/"))
-                            (uiop:subdirectories where))
-                    #'string<)
-              (sort (mapcar #'file-namestring (uiop:directory-files where))
-                    #'string<))
-    (error () nil)))
+  (fault:or-nothing "a directory that is not there has nothing in it"
+    (append (sort (mapcar (lambda (p)
+                            (concatenate 'string
+                                         (car (last (pathname-directory p))) "/"))
+                          (uiop:subdirectories where))
+                  #'string<)
+            (sort (mapcar #'file-namestring (uiop:directory-files where))
+                  #'string<))))
 
 (defun files (typed)
   (multiple-value-bind (where base) (split-path (expanded typed))

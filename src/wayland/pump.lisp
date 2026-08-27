@@ -1,5 +1,6 @@
 (defpackage #:pine/wayland/pump
   (:use #:cl)
+  (:local-nicknames (#:fault #:pine/run/fault))
   (:export #:pump #:make-pump #:close-pump #:wake-in #:wake #:hand #:queuedp
            #:drain #:drain-wake))
 (in-package #:pine/wayland/pump)
@@ -25,8 +26,10 @@ it did, so a thread waiting on descriptors can wait on this one too."
     (%pump :wake-in in :wake-out out)))
 
 (defun close-pump (p)
-  (ignore-errors (sb-unix:unix-close (pump-wake-in p)))
-  (ignore-errors (sb-unix:unix-close (pump-wake-out p)))
+  (fault:or-nothing "a descriptor already closed is closed"
+    (sb-unix:unix-close (pump-wake-in p)))
+  (fault:or-nothing "and so is the other end"
+    (sb-unix:unix-close (pump-wake-out p)))
   p)
 
 (defun wake-in (p) (pump-wake-in p))
@@ -56,10 +59,7 @@ but the pipe."
       (setf thunks (nreverse (pump-queue p))
             (pump-queue p) nil))
     (dolist (thunk thunks)
-      (handler-case (funcall thunk)
-        (error (broke)
-          (format *error-output* "pine: ~a~%" broke)
-          (finish-output *error-output*))))))
+      (fault:attempt thunk "something handed to the compositor thread"))))
 
 (defun drain-wake (p)
   "Read what the wakes wrote, so the pipe does not stay readable. Once: the read

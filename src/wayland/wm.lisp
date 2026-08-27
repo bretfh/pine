@@ -1,6 +1,7 @@
 (defpackage #:pine/wayland/wm
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
   (:local-nicknames (#:d #:pine/data) (#:log #:pine/run/log)
+                    (#:fault #:pine/run/fault)
                     (#:key #:pine/ui/key) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
   (:export #:wm #:bind #:managingp #:said #:apply-layout #:take #:laid #:wake
@@ -153,7 +154,8 @@ rather than a difference against what was there before."
           (:app-id (app-id) (setf (app it) (or app-id "")) (setf (dirty w) t))
           (:closed ()
            (%forget w it)
-           (ignore-errors (river-window-v1.destroy (of it))))
+           (fault:or-nothing "the window is already gone from the compositor"
+             (river-window-v1.destroy (of it))))
           (:dimensions (width height)
            (setf (wide it) width (tall it) height))
           (:dimensions-hint (min-width min-height max-width max-height)
@@ -358,9 +360,11 @@ nothing where the compositor manages its own windows."
                 (:session-unlocked () nil)
                 (:unavailable ()
                  (log:note "another window manager has this compositor")
-                 (ignore-errors (river-window-manager-v1.destroy found)))
-                (:finished () (ignore-errors
-                               (river-window-manager-v1.destroy found))))
+                 (fault:or-nothing "another manager has it, so let it go"
+                   (river-window-manager-v1.destroy found)))
+                (:finished ()
+                 (fault:or-nothing "the compositor has finished with us"
+                   (river-window-manager-v1.destroy found))))
               (wl-proxy-hooks found))
         (wl-display-roundtrip it)
         (log:note "pine is the window manager")

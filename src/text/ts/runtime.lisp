@@ -213,7 +213,8 @@ where a build outside Guix puts them."
 
 (defun load-grammar-library (library-name)
   (loop for candidate in (grammar-library-candidates library-name)
-        thereis (ignore-errors (cffi:load-foreign-library candidate))))
+        thereis (pine/run/fault:or-nothing "a candidate that is not there"
+                  (cffi:load-foreign-library candidate))))
 
 (defun grammar-language-pointer (library-name fn-name)
   "Call FN-NAME for its TSLanguage*, loading grammar LIBRARY-NAME first when the
@@ -242,7 +243,9 @@ two pointers and the grammar's ABI against the range this tree-sitter speaks."
           :format-control "~(~a~) refused: parser ~a, language ~a, abi ~a, ~
                            this tree-sitter speaks ~a..~a, set-language at ~a"
           :format-arguments (list language parser lang
-                                  (ignore-errors (ts-language-version lang))
+                                  (pine/run/fault:or-nothing
+                                      "a grammar too old to say its version"
+                                    (ts-language-version lang))
                                   (ts-min-compatible-version)
                                   (ts-language-version-max)
                                   (cffi:foreign-symbol-pointer

@@ -4,7 +4,8 @@
                     (#:job #:pine/run/job) (#:log #:pine/run/log)
                     (#:key #:pine/ui/key) (#:doc #:pine/text/document)
                     (#:lines #:pine/text/lines)
-                    (#:mode #:pine/mode) (#:vt #:pine/vt))
+                    (#:mode #:pine/mode) (#:fault #:pine/run/fault)
+                    (#:vt #:pine/vt))
   (:export #:terminal #:shell #:open-terminal #:terminals #:named #:send #:resize
            #:screen #:vt-of #:fd-of #:pid-of #:runs #:wide #:tall
            #:*shell* #:*chunk*))
@@ -127,7 +128,8 @@ it; anything else goes as it stands."
                     (character (string said))
                     (key:key (%escape term said)))))
         (when (and text (plusp (length text)))
-          (ignore-errors (vt:pty-write-string fd text))))))
+          (fault:attempt (lambda () (vt:pty-write-string fd text))
+                         "giving a program what was typed at it")))))
   term)
 
 (defclass shell (mode:text) ()
@@ -162,10 +164,13 @@ they do not take."))
 (defun %ended (term)
   (let ((fd (fd-of term)) (pid (pid-of term)))
     (setf (fd-of term) nil (pid-of term) nil)
-    (when fd (ignore-errors (vt:pty-close fd)))
+    (when fd (fault:or-nothing "the program may have closed it first"
+               (vt:pty-close fd)))
     (when pid
-      (ignore-errors (vt:pty-kill pid))
-      (ignore-errors (vt:pty-reap pid))))
+      (fault:or-nothing "one that has already ended cannot be killed"
+        (vt:pty-kill pid))
+      (fault:or-nothing "one already reaped has no status left to take"
+        (vt:pty-reap pid))))
   (log:note "~a ended" (node:name term))
   term)
 
@@ -175,8 +180,8 @@ This is what a thread is for: a pty read blocks, and nothing else here does."
   (lambda ()
     (loop :until (job:stopping term)
           :do (when (vt:pty-wait (fd-of term) +waiting+)
-                (let ((said (ignore-errors (vt:pty-read-string (fd-of term)
-                                                               *chunk*))))
+                (let ((said (fault:or-nothing "the program ending closes the pty"
+                              (vt:pty-read-string (fd-of term) *chunk*))))
                   (if (and said (plusp (length said)))
                       (progn (vt:term-process-output (vt-of term) said)
                              (%shown term))
@@ -190,7 +195,9 @@ the text is the program's, not yours."
   value)
 
 (defmethod job:stop :before ((term terminal))
-  (when (pid-of term) (ignore-errors (vt:pty-kill (pid-of term)))))
+  (when (pid-of term)
+    (fault:or-nothing "one that has already ended cannot be killed"
+      (vt:pty-kill (pid-of term)))))
 
 (defun shell ()
   (or *shell* (uiop:getenv "SHELL") "/bin/sh"))

@@ -1,6 +1,7 @@
 (defpackage #:pine/text/language
   (:use #:cl)
-  (:local-nicknames (#:doc #:pine/text/document))
+  (:local-nicknames (#:fault #:pine/run/fault)
+                    (#:doc #:pine/text/document))
   (:export #:package-of #:readtable-of #:reading))
 (in-package #:pine/text/language)
 
@@ -34,13 +35,13 @@ the walk and the evaluator what a name in it means."
 nothing where it is written in the standard one."
   (let ((said (%named-after document "in-readtable")))
     (when said
-      (or (ignore-errors
-           (named-readtables:find-readtable
-            (let ((*package* (find-package :cl-user)) (*read-eval* nil))
-              (read-from-string said))))
-          (ignore-errors
-           (named-readtables:find-readtable
-            (intern (string-upcase (string-left-trim "#:" said)) :keyword)))))))
+      (or (fault:or-nothing "what the file says may name no readtable"
+            (named-readtables:find-readtable
+             (let ((*package* (find-package :cl-user)) (*read-eval* nil))
+               (read-from-string said))))
+          (fault:or-nothing "nor as a keyword"
+            (named-readtables:find-readtable
+             (intern (string-upcase (string-left-trim "#:" said)) :keyword)))))))
 
 (defun reading (document)
   "What reading a form out of DOCUMENT means: its package and its readtable."

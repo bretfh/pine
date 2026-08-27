@@ -41,7 +41,8 @@ can graft. One class because it is one thing, and that is why a read of
 
 (defmethod job:start ((p peer))
   (setf (ref p) (sento.remoting:make-remote-ref (actors:actors) (uri p)))
-  (let ((said (ignore-errors (%ask p (list :ping) :timeout 5))))
+  (let ((said (fault:or-nothing "there may be no pine at that address"
+                (%ask p (list :ping) :timeout 5))))
     (unless (and (consp said) (eq :ok (first said)))
       (setf (ref p) nil)
       (error "no pine answering at ~a" (uri p))))

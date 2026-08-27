@@ -54,7 +54,8 @@ are told by whatever is behind them instead."
                                    :name (or name (node:full-name n)))))
     (node:depend w n)
     (d:swap *watchers* (lambda (all) (cons w all)))
-    (setf (was w) (ignore-errors (node:contents n)))
+    (setf (was w) (fault:or-nothing "nothing may stand there yet"
+                    (node:contents n)))
     (when (and poll (actors:runningp)) (attend :every every))
     w))
 

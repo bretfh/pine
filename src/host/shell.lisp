@@ -2,7 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:meter #:pine/run/meter)
-                    (#:actors #:pine/run/actors) (#:job #:pine/run/job))
+                    (#:actors #:pine/run/actors) (#:job #:pine/run/job)
+                    (#:fault #:pine/run/fault))
   (:export #:sh #:feed #:lines #:words #:number-in #:firstp #:has #:asked #:ran
            #:run-line #:launch #:streaming #:hear #:quiet #:hearing
            #:stream-node #:attach #:forget-all #:*breath* #:*out*))
@@ -93,7 +94,8 @@ machine something, and telling it twice is twice."
       (let ((end (or (position-if-not (lambda (c) (or (digit-char-p c) (char= c #\.)))
                                       text :start (1+ start))
                      (length text))))
-        (ignore-errors (read-from-string (subseq text start end)))))))
+        (fault:or-nothing "what a program printed may not be a form"
+          (read-from-string (subseq text start end)))))))
 
 (defun firstp (text) (first (lines text)))
 
@@ -141,9 +143,12 @@ machine something, and telling it twice is twice."
 (defun quiet (n)
   (let ((it (took n)))
     (when it
-      (ignore-errors (close (uiop:process-info-input it)))
-      (ignore-errors (uiop:terminate-process it :urgent t))
-      (ignore-errors (uiop:wait-process it))
+      (fault:or-nothing "a stream to a program that has gone is closed already"
+        (close (uiop:process-info-input it)))
+      (fault:or-nothing "a program that ended cannot be ended again"
+        (uiop:terminate-process it :urgent t))
+      (fault:or-nothing "one already reaped has no status left to take"
+        (uiop:wait-process it))
       (setf (took n) nil)))
   n)
 

@@ -3,7 +3,8 @@
   (:local-nicknames (#:d #:pine/data) (#:w #:pine/ui/widget)
                     (#:face #:pine/ui/face) (#:layout #:pine/ui/layout)
                     (#:hit #:pine/ui/hit) (#:canvas #:pine/paint/canvas)
-                    (#:shm #:posix-shm) (#:shell #:pine/wayland/shell))
+                    (#:shm #:posix-shm) (#:shell #:pine/wayland/shell)
+                    (#:fault #:pine/run/fault))
   (:export #:pane #:open-pane #:close-pane #:paint #:render #:resize #:measure
            #:on-resize
            #:name-of #:tree #:wide #:tall #:hover #:said #:configuredp #:took
@@ -101,7 +102,7 @@ arranged as it is painted, so what a click lands on is what was drawn there."
                 (cl-cairo2:destroy (canvas:context m))
                 (cl-cairo2:destroy it)))
             (when (uiop:getenv "PINE_FRAME_DUMP")
-              (ignore-errors
+              (fault:or-nothing "cairo may refuse the buffer it was handed"
                (let ((it (cl-cairo2:create-image-surface-for-data data :argb32
                                                                   width height
                                                                   stride)))
@@ -259,12 +260,13 @@ happens here: the thread that owns the compositor is the only one that may."
 (defun close-pane (s)
   (let ((it (took s)))
     (when it
-      (ignore-errors
+      (fault:or-nothing "a surface the compositor has dropped is dropped"
        (typecase it
          (zwlr-layer-surface-v1 (zwlr-layer-surface-v1.destroy it))
          (river-shell-surface-v1 (river-shell-surface-v1.destroy it))
          (t (xdg-toplevel.destroy it))))))
-  (when (surface s) (ignore-errors (wl-surface.destroy (surface s))))
+  (when (surface s) (fault:or-nothing "and so is the surface under it"
+                      (wl-surface.destroy (surface s))))
   (shell:forget (shell s) s)
   (setf (surface s) nil (took s) nil (configuredp s) nil)
   s)

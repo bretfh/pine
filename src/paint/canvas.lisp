@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:w #:pine/ui/widget)
                     (#:grid #:pine/ui/grid) (#:face #:pine/ui/face)
-                    (#:layout #:pine/ui/layout))
+                    (#:layout #:pine/ui/layout) (#:fault #:pine/run/fault))
   (:export #:canvas #:context #:font #:size #:with-canvas #:rgb #:*font*))
 (in-package #:pine/paint/canvas)
 
@@ -247,8 +247,9 @@ one place a canvas paints what a grid worked out."
     (let ((path (w:path widget)))
       (when (and path (probe-file path))
         (with-canvas (m)
-          (let ((image (ignore-errors (cl-cairo2:image-surface-create-from-png
-                                       (namestring path)))))
+          (let ((image (fault:or-nothing "the file may not be a png"
+                         (cl-cairo2:image-surface-create-from-png
+                          (namestring path)))))
             (when image
               (unwind-protect
                    (let ((iw (cl-cairo2:image-surface-get-width image))

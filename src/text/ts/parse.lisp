@@ -64,10 +64,17 @@ in, so a macro defined in the buffer's own package is found."
 
 (defun free-parse-state (ps)
   (when ps
-    (when (ps-tree ps) (ignore-errors (ts-tree-delete (ps-tree ps))) (setf (ps-tree ps) nil))
-    (when (ps-parser ps) (ignore-errors (ts-parser-delete (ps-parser ps))) (setf (ps-parser ps) nil))
+    (when (ps-tree ps)
+      (pine/run/fault:or-nothing "a tree already freed is not there to free"
+        (ts-tree-delete (ps-tree ps)))
+      (setf (ps-tree ps) nil))
+    (when (ps-parser ps)
+      (pine/run/fault:or-nothing "nor a parser"
+        (ts-parser-delete (ps-parser ps)))
+      (setf (ps-parser ps) nil))
     (when (ps-scratch ps)
-      (ignore-errors (cffi:foreign-free (ps-scratch ps)))
+      (pine/run/fault:or-nothing "nor the room it was working in"
+        (cffi:foreign-free (ps-scratch ps)))
       (setf (ps-scratch ps) nil))))
 
 (defun ps-read-buffer (ps)

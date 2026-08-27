@@ -31,8 +31,9 @@
                                        (:file "reader") (:file "mount")))
                  (:module "run"
                           :serial t
-                          :components ((:file "libs") (:file "log") (:file "meter")
-                                       (:file "fault") (:file "actors")
+                          :components ((:file "log") (:file "fault")
+                                       (:file "libs") (:file "meter")
+                                       (:file "actors")
                                        (:file "job") (:file "watch")
                                        (:file "command")
                                        (:file "image") (:file "peer")

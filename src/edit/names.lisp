@@ -30,7 +30,9 @@
     (when (and file (probe-file file))
       (multiple-value-bind (line col)
           (if at
-              (line-col (ignore-errors (uiop:read-file-string file)) at)
+              (line-col (fault:or-nothing "the source may not be on this machine"
+                          (uiop:read-file-string file))
+                        at)
               (values 0 0))
         (list (namestring file) line col kind)))))
 
@@ -39,16 +41,18 @@
     (when (symbolp s)
       (loop :for kind :in +kinds+
             :append (loop :for source
-                            :in (ignore-errors
-                                 (sb-introspect:find-definition-sources-by-name
-                                  s kind))
+                            :in (fault:or-nothing
+                                    "nothing was compiled from a source here"
+                                  (sb-introspect:find-definition-sources-by-name
+                                   s kind))
                           :for placed := (%placed source kind)
                           :when placed :collect placed)))))
 
 (defmethod references ((m mode:lisp) document &optional of)
   (let ((s (symbol-at document of)))
     (when (and s (symbolp s))
-      (loop :for (nil . source) :in (ignore-errors (sb-introspect:who-calls s))
+      (loop :for (nil . source) :in (fault:or-nothing "nothing may call it"
+                                      (sb-introspect:who-calls s))
             :for placed := (%placed source :caller)
             :when placed :collect placed))))
 
@@ -103,7 +107,9 @@ knew the document's package would be no use in it."
   (multiple-value-bind (s token) (symbol-at document of)
     (when (and s (symbolp s) (fboundp s))
       (format nil "~(~a ~a~)" token
-              (or (ignore-errors (sb-introspect:function-lambda-list s)) "()")))))
+              (or (fault:or-nothing "a function may have no lambda list kept"
+                    (sb-introspect:function-lambda-list s))
+                  "()")))))
 
 (defmethod explains ((m mode:lisp) document &optional of)
   (multiple-value-bind (s token) (symbol-at document of)

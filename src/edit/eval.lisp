@@ -57,7 +57,8 @@
     (when token
       (values (multiple-value-bind (*package* *readtable*)
                   (language:reading document)
-                (ignore-errors (read-from-string token)))
+                (fault:or-nothing "a token that is not a form is just a token"
+                  (read-from-string token)))
               token))))
 
 (defun %in-string-p (text at)

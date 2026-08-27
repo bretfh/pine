@@ -170,7 +170,8 @@ be interrupted, so what can look between reads has to."
 (defmethod stop ((j actor))
   (let ((it (took j)))
     (when it
-      (ignore-errors (sento.actor-context:stop (actors:actors) it :wait t))))
+      (fault:or-nothing "an actor that has already stopped is gone"
+        (sento.actor-context:stop (actors:actors) it :wait t))))
   j)
 
 (defun ref (j) (took j))
@@ -236,7 +237,8 @@ again."
 (defun forget (name)
   (let ((j (find name (supervised) :key #'name :test #'equal)))
     (when j
-      (ignore-errors (stop j))
+      (fault:or-nothing "forgetting a job it could not stop still forgets it"
+        (stop j))
       (d:swap *supervised* (lambda (all) (remove j all)))
       (d:drop! *jobs* name))
     j))

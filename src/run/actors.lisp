@@ -14,7 +14,7 @@
 (defvar *port* 17000)
 (defparameter *soonest* 0.05)
 (defvar *workers*
-  (max 2 (1- (or (ignore-errors
+  (max 2 (1- (or (fault:or-nothing "a machine that will not say how many cores"
                   (parse-integer (uiop:run-program '("nproc")
                                                    :output '(:string :stripped t))))
                  4))))
@@ -74,8 +74,10 @@ no thread that sleeps in a loop."
   (let ((sys *actors*))
     (when sys
       (when (sento.remoting:remoting-enabled-p sys)
-        (ignore-errors (sento.remoting:disable-remoting sys)))
-      (ignore-errors (sento.actor-context:shutdown sys :wait t))))
+        (fault:or-nothing "remoting may already be off"
+          (sento.remoting:disable-remoting sys)))
+      (fault:or-nothing "a system already down cannot be put down twice"
+        (sento.actor-context:shutdown sys :wait t))))
   (setf *actors* nil *wheel* nil)
   t)
 
@@ -94,7 +96,8 @@ thunks shell out, read files and paint."
 (defun cancel (name)
   (let ((had (d:at (d:all *ticks*) name)))
     (when (and had *wheel*)
-      (ignore-errors (sento.wheel-timer:cancel *wheel* had))
+      (fault:or-nothing "a tick that has already fired is not there to cancel"
+        (sento.wheel-timer:cancel *wheel* had))
       (d:drop! *ticks* name))
     name))
 

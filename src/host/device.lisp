@@ -1,7 +1,8 @@
 (defpackage #:pine/host/device
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:sh #:pine/host/shell))
+                    (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
+                    (#:sh #:pine/host/shell))
   (:export #:device #:attach #:audio #:screen #:power #:net #:media
            #:clip #:clock #:tick #:sys #:env))
 (in-package #:pine/host/device)
@@ -244,7 +245,9 @@ this machine copied; writing it is copying."
   (setf *now* (get-universal-time)))
 
 (defun %file (path)
-  (when (probe-file path) (ignore-errors (uiop:read-file-string path))))
+  (when (probe-file path)
+    (fault:or-nothing "a file under /proc can go between the look and the read"
+      (uiop:read-file-string path))))
 
 (defun %busy ()
   (let* ((line (first (sh:lines (%file "/proc/stat"))))
@@ -303,9 +306,11 @@ moment: sampling per read gives the second one no ticks to divide by."
                 (list "temp" #'%temp)
                 (list "uptime" (lambda () (round (or (sh:number-in (%file "/proc/uptime")) 0))))
                 (list "load" (lambda ()
-                               (mapcar (lambda (w) (or (ignore-errors
-                                                        (read-from-string w))
-                                                       0))
+                               (mapcar (lambda (w)
+                                         (or (fault:or-nothing
+                                                 "a field that is not a number"
+                                               (read-from-string w))
+                                             0))
                                        (subseq (uiop:split-string
                                                 (string-trim '(#\Newline)
                                                              (or (%file "/proc/loadavg") ""))

@@ -1,5 +1,6 @@
 (defpackage #:pine/run/libs
   (:use #:cl)
+  (:local-nicknames (#:fault #:pine/run/fault))
   (:export #:built-in #:dirs #:attend))
 (in-package #:pine/run/libs)
 
@@ -21,10 +22,11 @@ pine's own tree."
   (let ((roots (remove nil (list (sb-ext:posix-getenv "PINE_LIB")
                                  (sb-ext:posix-getenv "GUIX_ENVIRONMENT")
                                  +built-in+
-                                 (ignore-errors
-                                  (handler-bind ((warning #'muffle-warning))
-                                    (namestring
-                                     (asdf:system-source-directory :pine))))))))
+                                 (fault:or-nothing
+                                     "a saved image has no source tree"
+                                   (handler-bind ((warning #'muffle-warning))
+                                     (namestring
+                                      (asdf:system-source-directory :pine))))))))
     (remove-duplicates
      (loop :for root :in roots
            :append (loop :for under :in +under+

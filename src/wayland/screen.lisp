@@ -131,7 +131,8 @@ write to a node the surface reads, and on every repaint it never settles."
 
 (defun %unlisten (s name)
   (dolist (w (d:at (d:all (watching s)) name))
-    (ignore-errors (watch:unwatch w)))
+    (fault:or-nothing "a watch already let go of is let go of"
+      (watch:unwatch w)))
   (d:drop! (watching s) name))
 
 (defun %listen (s name)
@@ -283,10 +284,12 @@ compositor put it; what it draws is the new node's to say."
   (d:do-each (name (d:keys (d:all (watching s))))
     (%unlisten s name))
   (d:do-each (p (d:vals (d:all (up s))))
-    (ignore-errors (pane:close-pane p)))
+    (fault:or-nothing "a pane whose compositor has gone cannot be told"
+      (pane:close-pane p)))
   (d:do-each (name (d:keys (d:all (up s))))
     (d:drop! (up s) name))
-  (when (says s) (ignore-errors (job:stop (says s))))
+  (when (says s) (fault:or-nothing "one already stopped stays stopped"
+                   (job:stop (says s))))
   (when (pump s) (pump:close-pump (pump s)))
   (when (display-of s) (display:disconnect (display-of s)))
   (setf (display-of s) nil (shell-of s) nil (wm-of s) nil)

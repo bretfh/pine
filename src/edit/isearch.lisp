@@ -1,6 +1,7 @@
 (defpackage #:pine/edit/isearch
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:lines #:pine/text/lines)
+  (:local-nicknames (#:fault #:pine/run/fault)
+                    (#:d #:pine/data) (#:lines #:pine/text/lines)
                     (#:command #:pine/run/command) (#:prompt #:pine/edit/prompt)
                     (#:doc #:pine/text/document) (#:key #:pine/ui/key)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
@@ -128,7 +129,8 @@ keeps where it landed and C-g goes back."
 
 (defun took-all ()
   (let ((s (searching)))
-    (when s (ignore-errors (took s)))
+    (when s (fault:or-nothing "a search already given up on is given up on"
+              (took s)))
     (setf *search* nil))
   t)
 

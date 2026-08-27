@@ -1,6 +1,7 @@
 (defpackage #:pine/wayland/chords
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
-  (:local-nicknames (#:log #:pine/run/log) (#:key #:pine/ui/key))
+  (:local-nicknames (#:log #:pine/run/log) (#:key #:pine/ui/key)
+                    (#:fault #:pine/run/fault))
   (:export #:chords #:make-chords #:availablep #:attend #:ask-for #:forget
            #:eat-next #:every-key #:mask #:keysym))
 (in-package #:pine/wayland/chords)
@@ -55,7 +56,8 @@ to be asked for as much as the first."
   (when (and (availablep c) (null (seat c)))
     (setf (seat c) proxy)
     (setf (eating c)
-          (ignore-errors (river-xkb-bindings-v1.get-seat (of c) proxy)))
+          (fault:or-nothing "the compositor may not offer chord binding"
+            (river-xkb-bindings-v1.get-seat (of c) proxy)))
     (when (eating c)
       (push (evlambda (:ate-unbound-key () (%said c nil)))
             (wl-proxy-hooks (eating c)))))
@@ -66,7 +68,8 @@ to be asked for as much as the first."
 
 (defun forget (c)
   (dolist (each (bound c))
-    (ignore-errors (river-xkb-binding-v1.destroy (cdr each))))
+    (fault:or-nothing "a binding the compositor dropped is dropped"
+      (river-xkb-binding-v1.destroy (cdr each))))
   (setf (bound c) nil))
 
 (defun ask-for (c chords)
@@ -93,6 +96,6 @@ each. Only inside a manage sequence: that is where the protocol allows it."
   "Take the next key from whatever has focus too: pine is part way through a chord
 and the rest of it is not the focused window's to see."
   (when (and (availablep c) (eating c))
-    (ignore-errors
-     (river-xkb-bindings-seat-v1.ensure-next-key-eaten (eating c))))
+    (fault:or-nothing "the compositor may have taken the seat back"
+      (river-xkb-bindings-seat-v1.ensure-next-key-eaten (eating c))))
   c)

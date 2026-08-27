@@ -1,6 +1,7 @@
 (defpackage #:pine/text/ts/syntax
   (:use #:cl)
-  (:local-nicknames (#:pl #:pine/data) (#:hl #:pine/text/ts/highlight)
+  (:local-nicknames (#:fault #:pine/run/fault)
+                    (#:pl #:pine/data) (#:hl #:pine/text/ts/highlight)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:path #:pine/fs/path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
@@ -61,7 +62,8 @@ there are.")
         (find-symbol upper :cl-user))))
 
 (defun %body-position (sym)
-  (let ((args (ignore-errors (sb-introspect:function-lambda-list sym))))
+  (let ((args (fault:or-nothing "a symbol may have no lambda list kept"
+                (sb-introspect:function-lambda-list sym))))
     (loop :for a :in args
           :for i :from 0
           :when (and (symbolp a) (string= "&BODY" (symbol-name a)))
@@ -134,7 +136,8 @@ there are.")
   "The readtable a language is written in, when it says: a language whose
 reader is not the standard one names it here."
   (let ((said (pl:at (pl:at (%raw name) :options) :readtable)))
-    (when said (ignore-errors (named-readtables:find-readtable said)))))
+    (when said (fault:or-nothing "a declaration may name no readtable"
+                 (named-readtables:find-readtable said)))))
 
 (defun for-readtable (readtable)
   "The language written in READTABLE. This is what a buffer's own

@@ -29,7 +29,8 @@
 (defun usage () *usage*)
 
 (defun quiet ()
-  (ignore-errors (log4cl-impl:log-config :error))
+  (pine/run/fault:or-nothing "log4cl may not be loaded"
+    (log4cl-impl:log-config :error))
   t)
 
 (defun %system (&key (name "cli"))
@@ -44,14 +45,13 @@
   (sento.remoting:make-remote-ref sys (%uri host port *actor*)))
 
 (defun ask (message &key (host actors:*host*) (port actors:*port*) system)
-  (handler-case
-      (let* ((sys (or system (%system)))
-             (said (sento.actor:ask-s (%daemon sys :host host :port port)
-                                      message :time-out *timeout*)))
-        (if (and (consp said) (member (first said) '(:ok :no)))
-            said
-            (list :no (format nil "~a" said))))
-    (error () nil)))
+  (pine/run/fault:or-nothing "there may be no daemon listening"
+    (let* ((sys (or system (%system)))
+           (said (sento.actor:ask-s (%daemon sys :host host :port port)
+                                    message :time-out *timeout*)))
+      (if (and (consp said) (member (first said) '(:ok :no)))
+          said
+          (list :no (format nil "~a" said))))))
 
 (defun runningp (&key (port actors:*port*))
   (let ((said (ask (list :ping) :port port)))

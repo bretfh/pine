@@ -290,7 +290,9 @@ somewhere else."
   (job:start (make-instance 'job:thread :name "quit" :restarts nil
                                         :thunk (lambda ()
                                                  (sleep 0.2)
-                                                 (ignore-errors (stop))
+                                                 (fault:or-nothing
+                                                     "leaving anyway"
+                                                   (stop))
                                                  (sb-ext:exit :abort t :code 0))))
   t)
 

@@ -124,7 +124,8 @@ anything has asked for one."
 
 (defun named (name)
   (let ((class (%class name)))
-    (when class (ignore-errors (make-instance (class-name class))))))
+    (when class (fault:or-nothing "a mode class may take initargs nobody gave"
+                  (make-instance (class-name class))))))
 
 (defun claimsp (m path)
   (let ((leaf (file-namestring (pathname path)))
@@ -134,7 +135,8 @@ anything has asked for one."
 (defun mode-for (path)
   "The mode for a place: the most particular class that claims it."
   (loop :for class :in (modes)
-        :for m := (ignore-errors (make-instance (class-name class)))
+        :for m := (fault:or-nothing "a mode class may take initargs nobody gave"
+                     (make-instance (class-name class)))
         :when (and m (claims m) (claimsp m path)) :do (return m)))
 
 (defun %carried (class)
