@@ -6,7 +6,7 @@
   (:export #:job #:thread #:actor #:program
            #:start #:stop #:alivep #:tell #:ask
            #:jobs #:named #:supervise #:supervised #:sweep #:attend #:due #:backoff
-           #:settle #:emit #:stoppingp #:attach #:forget
+           #:settle #:emit #:stoppingp #:forget
            #:name #:state #:tries #:restartsp #:took #:exit-of #:since #:fault
            #:said #:thunk #:seconds #:stopping #:argv #:env #:receive
            #:dispatcher #:ref
@@ -254,7 +254,7 @@ again."
 and the restart are all written down and none of them ever happens."
   (actors:repeat every #'sweep :as :proc :what "starting again what died"))
 
-(defun attach (root)
+(defun %attach (root)
   (setf *under* (node:attach (node:place "proc" :nodes #'supervised
                                          :describes "what this pine is running")
                              root))
@@ -282,3 +282,5 @@ has run long enough to have earned it."
 
 (pine/word:lends "job" "thread" "actor" "program" "start" "stop" "alivep"
                 "tell" "ask")
+
+(pine/fs/tree:builder #'%attach)

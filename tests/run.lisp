@@ -5,7 +5,7 @@
 (test a-tick-is-a-job-and-a-node
   (booted)
   (with-tree
-    (job:attach (tree:root))
+    (tree:built)
     (let* ((n (cons 0 nil))
            (j (make-instance 'job:thread :name "ticker" :seconds 0.05
                                          :thunk (lambda () (d:swap (car n) #'1+)))))
@@ -46,7 +46,7 @@ supervised thing pine has is running and unreadable."
 returned without being asked to is failed, and the next sweep starts it."
   (booted)
   (with-tree
-    (job:attach (tree:root))
+    (tree:built)
     (let* ((runs (cons 0 nil))
            (j (make-instance 'job:thread :name "flaky" :restarts t
                                          :thunk (lambda ()
@@ -66,7 +66,7 @@ returned without being asked to is failed, and the next sweep starts it."
 (test being-asked-to-stop-is-not-dying
   (booted)
   (with-tree
-    (job:attach (tree:root))
+    (tree:built)
     (let ((j nil))
       (setf j (make-instance 'job:thread
                              :name "quiet" :restarts t

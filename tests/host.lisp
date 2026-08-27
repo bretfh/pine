@@ -41,7 +41,7 @@
 (test a-line-is-a-place-whether-or-not-it-was-asked-before
   (booted)
   (with-tree
-    (sh:attach (tree:root))
+    (node:attach (sh:sh-node) (tree:root))
     (is (equal "hello" (node:contents (tree:at nil "sh/echo hello"))))))
 
 (test the-clock-is-the-time-as-paths

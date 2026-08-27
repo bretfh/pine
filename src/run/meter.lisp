@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
   (:export #:timing #:counted #:said #:reading #:reset #:instruments #:report
-           #:attach #:now #:*on* #:*kept*))
+           #:now #:*on* #:*kept*))
 (in-package #:pine/run/meter)
 
 (defvar *on* t
@@ -162,7 +162,7 @@ answer this, which is what lets one be laid beside the other."
                 :reads (lambda ()
                          (let ((key (%named name))) (when key (reading key)))))))
 
-(defun attach (root)
+(defun %attach (root)
   (node:attach
    (node:place "metric"
                :names (lambda ()
@@ -191,3 +191,5 @@ is a number about nothing."
                 (getf row :count) (float (getf row :per-second))
                 (or (%ms (getf row :mean)) 0) (or (%ms (getf row :p95)) 0)
                 (or (%ms (getf row :most)) 0)))))
+
+(pine/fs/tree:builder #'%attach)

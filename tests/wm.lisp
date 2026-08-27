@@ -249,7 +249,7 @@ bitfield as the list of what is set, not a number."
 write, and most of them are not written beside the root one."
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
-  (unless (tree:at nil "mode") (mode:attach (tree:root)))
+  (unless (tree:at nil "mode") (node:attach (mode:mode-node) (tree:root)))
   (is (typep (mode:named "wm") 'pine/wm/keys:wm)
       "a mode is found by name whichever package it was written in")
   (is (member "wm" (node:contents (tree:at nil "mode")) :test #'equal))

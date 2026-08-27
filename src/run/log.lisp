@@ -1,7 +1,7 @@
 (defpackage #:pine/run/log
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
-  (:export #:note #:said #:forget #:attach
+  (:export #:note #:said #:forget
            #:*kept* #:*to* #:last-said))
 (in-package #:pine/run/log)
 
@@ -28,7 +28,7 @@ say itself, because nothing else can see *SAID* move.")
 
 (defun forget () (setf *said* nil))
 
-(defun attach (root)
+(defun %attach (root)
   (setf *node* (node:attach (node:place "log"
                                         :reads #'said
                                         :writes (lambda (value)
@@ -37,3 +37,5 @@ say itself, because nothing else can see *SAID* move.")
                             root)))
 
 (pine/word:lends "note")
+
+(pine/fs/tree:builder #'%attach)

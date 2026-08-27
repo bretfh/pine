@@ -5,7 +5,7 @@
   (:export #:fault #:borrowed #:take #:resume #:faulted
            #:faults #:standing #:attempt #:or-nothing
            #:report #:borrow #:await #:defer #:changed #:wait-until
-           #:forget #:forget-faults #:with-debugger #:attach
+           #:forget #:forget-faults #:with-debugger
            #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
            #:standingp #:*kept* #:*waiting* #:*debugging*))
 (in-package #:pine/run/fault)
@@ -238,7 +238,7 @@ the debugger."
                           (let ((f (%at name)))
                             (when f (take f (princ-to-string value))))))))
 
-(defun attach (root)
+(defun %attach (root)
   (node:attach
    (node:place "fault"
                :names (lambda ()
@@ -249,3 +249,5 @@ the debugger."
    root))
 
 (pine/word:lends "attempt")
+
+(pine/fs/tree:builder #'%attach)

@@ -90,7 +90,7 @@ A name in place of a node is made and put under /dev first:
 
 (defmethod job:start ((s host))
   (let ((root (tree:root)))
-    (sh:attach root)
+    (node:attach (sh:sh-node) root)
     (attend (node:attach (device:env) root))
     (attend (node:attach (device:sys) root))
     (mount:mount #p"/" root "file")

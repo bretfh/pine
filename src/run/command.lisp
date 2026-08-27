@@ -4,7 +4,7 @@
   (:export #:command #:commandp #:defcommand #:named #:commands #:forget
            #:name #:action #:describes #:asks #:from #:on #:arguments #:run #:word
            #:claim #:offer #:withdraw #:defined #:sorted
-           #:unknown-command #:attach #:asking #:*at*))
+           #:unknown-command #:asking #:*at*))
 (in-package #:pine/run/command)
 
 (defvar *commands* (d:table))
@@ -144,7 +144,7 @@ repl is the same path saying something else."
     (node:place name :reads (lambda ()
                               (let ((c (named name))) (and c (describes c)))))))
 
-(defun attach (root)
+(defun %attach (root)
   (node:attach (node:place "cmd"
                            :names (lambda () (mapcar #'name (sorted)))
                            :each #'%command
@@ -152,3 +152,5 @@ repl is the same path saying something else."
                root))
 
 (pine/word:lends "defcommand" "command" "commands" "run")
+
+(pine/fs/tree:builder #'%attach)

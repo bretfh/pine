@@ -8,7 +8,7 @@
            #:press #:insert #:indent #:complete #:save #:structure
            #:setting #:claims #:claimsp #:mode-for #:keys #:bind #:binding
            #:bindings #:dispatch
-           #:named #:modes #:prefixp #:type #:attach #:glob))
+           #:named #:modes #:prefixp #:type #:mode-node #:glob))
 (in-package #:pine/mode)
 
 (defvar *keys* (d:table)
@@ -238,12 +238,13 @@ mode is a class anybody can write and most of them are not written here."
                                       :reads (lambda () (%chords name)))))
                 :reads (lambda () (%said name)))))
 
-(defun attach (root)
-  (node:attach (node:place "mode"
-                           :names #'%names
-                           :each #'%mode
-                           :describes "every mode there is, and its chords")
-               root))
+(defun mode-node ()
+  "Every mode there is, and its chords, as a place. Made here and attached by
+whoever is putting it up, the way any other node is."
+  (node:place "mode"
+              :names #'%names
+              :each #'%mode
+              :describes "every mode there is, and its chords"))
 
 (pine/word:lends "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
                 "press" "insert" "indent" "complete" "save" "structure" "setting"

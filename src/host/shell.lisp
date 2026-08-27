@@ -6,7 +6,7 @@
                     (#:fault #:pine/run/fault))
   (:export #:sh #:feed #:lines #:words #:number-in #:firstp #:has #:asked #:ran
            #:run-line #:launch #:streaming #:hear #:quiet #:hearing
-           #:stream-node #:attach #:forget-all #:*breath* #:*out*))
+           #:stream-node #:sh-node #:forget-all #:*breath* #:*out*))
 (in-package #:pine/host/shell)
 
 (defvar *ran* nil)
@@ -177,11 +177,10 @@ lists what has run and answers for what has not."
                (lambda () (asked line))
                :writes (lambda (v) (declare (ignore v)) (run-line line))))
 
-(defun attach (root)
-  (setf *sh* (node:attach
-              (node:place "sh" :names #'ran :each #'%line :reads #'ran
-                          :describes "running something, and what it said")
-              root)))
+(defun sh-node ()
+  "Every shell line that has been run, and what it said."
+  (setf *sh* (node:place "sh" :names #'ran :each #'%line :reads #'ran
+                         :describes "running something, and what it said")))
 
 (defun forget-all ()
   (dolist (n (d:vals (d:all *streams*)) t) (quiet n))

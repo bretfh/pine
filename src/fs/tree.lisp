@@ -4,12 +4,17 @@
                     (#:commit #:pine/fs/commit))
   (:export #:*root* #:root #:make-root #:at #:ensure #:put #:erase #:walk
            #:listing #:paths #:split-name #:absent
-           #:change #:was #:revert #:diff))
+           #:change #:was #:revert #:diff #:builder #:built))
 (in-package #:pine/fs/tree)
 
 (defvar *root* nil
   "The namespace this image is. One per image: a second one is another pine, and it
 is reached by mounting it rather than by holding two here.")
+
+(defvar *builders* nil
+  "What each package puts on the tree, in the order the packages were loaded. They
+build separate branches and none of them reads another, so that order is the only
+one there is and nothing has to state it.")
 
 (define-condition absent (error)
   ((where :initarg :where :reader where))
@@ -22,6 +27,19 @@ is reached by mounting it rather than by holding two here.")
     n))
 
 (defun root () *root*)
+
+(defun builder (thunk)
+  "Say this package puts nodes on the tree, and how.
+
+Said in the file the nodes are defined in. What the namespace has at boot is the
+sum of what pine loaded, not a list somewhere else naming twelve packages in an
+order nobody can check."
+  (setf *builders* (append (cl:remove thunk *builders*) (list thunk)))
+  thunk)
+
+(defun built (&optional (root (root)))
+  "Put on the tree what every package said it puts there."
+  (dolist (thunk *builders* root) (funcall thunk root)))
 
 (defun split-name (text)
   (let ((names nil)

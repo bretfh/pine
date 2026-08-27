@@ -5,7 +5,7 @@
                     (#:log #:pine/run/log))
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
            #:storablep #:written #:read-back #:stale #:keep #:kept #:forget
-           #:keeping #:*store* #:attach))
+           #:keeping #:*store*))
 (in-package #:pine/fs/store)
 
 (defvar *schema*
@@ -174,7 +174,7 @@ Nothing is written through while this runs: the store is where these came from."
         :unless (and names (apply #'tree:at root names))
           :collect path))
 
-(defun attach (root)
+(defun %attach (root)
   (node:attach (node:place "store"
                            :reads (lambda ()
                                     (let ((s *store*))
@@ -185,3 +185,5 @@ Nothing is written through while this runs: the store is where these came from."
                            :describes "where this pine persists, and writing it
 writes the tree down")
                root))
+
+(pine/fs/tree:builder #'%attach)

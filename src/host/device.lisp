@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell))
-  (:export #:device #:attach #:audio #:screen #:power #:net #:media
+  (:export #:device #:audio #:screen #:power #:net #:media
            #:clip #:clock #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
@@ -335,8 +335,6 @@ moment: sampling per read gives the second one no ticks to divide by."
                                    v))))
           :describes "the environment this image was started in"))
 
-(defun attach (root name device)
-  (node:attach device (tree:ensure root name))
-  device)
+
 
 (pine/word:lends "device")

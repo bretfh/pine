@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:face #:pine/ui/face)
                     (#:style #:pine/ui/style))
-  (:export #:attach #:put #:styles #:built-in #:selector
+  (:export #:put #:styles #:built-in #:selector
            #:css-color #:css-glass #:css-mono #:css-rad))
 (in-package #:pine/ui/sheet)
 
@@ -159,7 +159,7 @@ a path nobody named should not grow the keyword package."
                                      :bold (face:bold f) :italic (face:italic f)
                                      :underline (face:underline f)))))))))
 
-(defun attach (root)
+(defun %attach (root)
   (let ((themes (node:attach
                  (make-instance 'themes-node :name "theme"
                                 :describes "every theme there is, and which is on")
@@ -176,3 +176,5 @@ a path nobody named should not grow the keyword package."
     root))
 
 (pine/word:lends "css-glass" "css-rad" "css-mono")
+
+(pine/fs/tree:builder #'%attach)

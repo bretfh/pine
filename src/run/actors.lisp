@@ -4,7 +4,7 @@
                     (#:fault #:pine/run/fault))
   (:export #:boot #:leave #:actors #:runningp #:remoting
            #:pool #:pools #:dispatcher-for #:*pools* #:*workers* #:*soonest* #:*host* #:*port*
-           #:repeat #:after #:cancel #:ticks #:blocking #:attach))
+           #:repeat #:after #:cancel #:ticks #:blocking))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)
@@ -134,7 +134,7 @@ own loop. Everything else is an actor or a tick."
                           (let ((had (%named name)))
                             (when (and had (null value)) (cancel had)))))))
 
-(defun attach (root)
+(defun %attach (root)
   (node:attach
    (node:place "tick"
                :names #'ticks
@@ -142,3 +142,5 @@ own loop. Everything else is an actor or a tick."
                :reads (lambda () (mapcar #'princ-to-string (ticks)))
                :describes "what repeats on the image's clock")
    root))
+
+(pine/fs/tree:builder #'%attach)

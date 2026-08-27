@@ -84,7 +84,7 @@ load is a fault like any other: the text still opens, uncoloured."
     (fault:attempt (lambda () (runtime:ensure-ts it)) "loading tree-sitter")
     (when (runtime:ts-loaded-p it)
       (setf parser:*runtime* it)
-      (syntax:attach (tree:root)))))
+      (syntax:lang-node (tree:root)))))
 
 (command:defcommand "documents" () (:describes "every document there is")
   (mapcar #'node:name (doc:documents)))
@@ -96,7 +96,7 @@ load is a fault like any other: the text still opens, uncoloured."
 
 (defmethod job:start ((s text))
   (%syntax)
-  (mode:attach (tree:root))
+  (node:attach (mode:mode-node) (tree:root))
   (doc:root)
   (let ((scratch (doc:make-document "scratch" :mode (make-instance 'mode:lisp))))
     (setf (doc:current) scratch))

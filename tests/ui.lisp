@@ -39,7 +39,7 @@ knows the roles by name."))
 
 (test the-more-particular-rule-wins
   (with-tree
-    (pine/ui/sheet:attach (tree:root))
+    (tree:built)
     (pine/ui/sheet:put (list (list ".a" (list :color "#ff0000" :min-width "20"))
                              (list ".a.b" (list :color "#00ff00"))))
     (let ((general (style:resolve '(("a"))))
@@ -56,7 +56,7 @@ knows the roles by name."))
   "A painter takes a colour from a style and a colour from a face and paints with
 both, so they have to be the same three numbers."
   (with-tree
-    (pine/ui/sheet:attach (tree:root))
+    (tree:built)
     (pine/ui/sheet:put (list (list ".x" (list :background-color
                                              (face:color :accent)))))
     (is (equal (face:rgb (face:color :accent))

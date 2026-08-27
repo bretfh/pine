@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
                     (#:command #:pine/run/command) (#:log #:pine/run/log))
-  (:export #:system #:offers #:use #:drop #:systems #:named #:attach #:offered
+  (:export #:system #:offers #:use #:drop #:systems #:named #:offered
            #:owns))
 (in-package #:pine/run/system)
 
@@ -52,7 +52,7 @@ knows the package it was written in, and the system knows which package is its."
   (let ((j (job:named (string-downcase (princ-to-string name)))))
     (and (typep j 'system) j)))
 
-(defun attach (root)
+(defun %attach (root)
   (setf *under* (node:attach (node:place "system" :nodes #'systems
                                          :describes "what pine has loaded")
                              root))
@@ -87,3 +87,5 @@ pine write /system/desk '(:stop)' takes it away again."
     s))
 
 (pine/word:lends "system" "offers")
+
+(pine/fs/tree:builder #'%attach)

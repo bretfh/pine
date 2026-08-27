@@ -323,7 +323,7 @@ systems. A substrate that names one of them has a favourite."
                      loose :test #'equal)))))
     (is (null loose) "~{~%  ~a~}" (reverse loose))))
 
-(defparameter +claimed-twice+ 158
+(defparameter +claimed-twice+ 157
   "How many exported names more than one package claims. Every one is a word that
 cannot be in the language until somebody says which package owns it, and until
 then a file that wants both has to spell one of them out.

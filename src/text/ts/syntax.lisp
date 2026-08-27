@@ -6,7 +6,7 @@
                     (#:path #:pine/fs/path))
   (:export #:language #:declare-language #:for #:grammar-of #:languages
            #:for-readtable #:readtable-of
-           #:attach #:compute-highlights #:hl-dump #:hl-dump-file
+           #:lang-node #:compute-highlights #:hl-dump #:hl-dump-file
            #:infers))
 (in-package #:pine/text/ts/syntax)
 
@@ -151,7 +151,8 @@ follows it rather than the path it happens to be under."
          (g (and lang (hl:lang-grammar lang))))
     (when g (values (pl:at g :lib) (pl:at g :fn)))))
 
-(defun attach (root)
+(defun lang-node (root)
+  "One node per language declared, saying what it is for."
   (dolist (name (languages) (tree:ensure root "lang"))
     (setf (node:contents (tree:ensure root "lang" (string-downcase (string name))))
           (pl:at (pl:at (%raw name) :options) :doc))))
