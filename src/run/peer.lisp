@@ -167,16 +167,19 @@ offers are the ones still there, and answer as soon as it has a value or a fault
     (actors:blocking
      "answering a peer"
      (lambda ()
-       (let ((*standard-output* said))
-         (fault:with-debugger
-           (fault:attempt (lambda () (setf answered (multiple-value-list (eval form))))
-                          "answering a peer")))))
-    (let ((broke nil))
-      (loop :repeat (round (/ *timeout* 0.01))
-            :until (or answered broke)
-            :do (setf broke (find-if-not (lambda (f) (member f was))
-                                         (fault:standing)))
-                (unless broke (sleep 0.01)))
+       (unwind-protect
+            (let ((*standard-output* said))
+              (fault:with-debugger
+                (fault:attempt
+                 (lambda () (setf answered (multiple-value-list (eval form))))
+                 "answering a peer")))
+         (fault:changed))))
+    (let ((broke (fault:wait-until
+                  (lambda ()
+                    (or (find-if-not (lambda (f) (member f was)) (fault:standing))
+                        (and answered :answered)))
+                  *timeout*)))
+      (when (eq broke :answered) (setf broke nil))
       (cond (broke
              (let ((token (d:swap *counter* #'1+)))
                (d:keep! *asked* token broke)

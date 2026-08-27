@@ -4,7 +4,7 @@
                     (#:log #:pine/run/log))
   (:export #:fault #:borrowed #:take #:resume #:faulted
            #:faults #:standing #:attempt #:or-nothing
-           #:report #:borrow #:await #:defer
+           #:report #:borrow #:await #:defer #:changed #:wait-until
            #:forget #:forget-faults #:with-debugger #:attach
            #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
            #:standingp #:*kept* #:*waiting* #:*debugging*))
@@ -13,6 +13,8 @@
 (defvar *kept* 50)
 (defvar *faults* nil)
 (defvar *debugging* nil)
+(defvar *noticing* (bordeaux-threads:make-lock "pine-faults"))
+(defvar *noticed* (bordeaux-threads:make-condition-variable))
 (defvar *waiting* 120
   "Seconds a fault stands unattended before it gives up. One number: a caller
 waiting on a fault in another image waits at least this long too, or the fault is
@@ -89,8 +91,28 @@ nobody there it is said, because a fault nobody was told about is one nobody can
 act on.")
   (:method (fault) (log:note "~a" (condition-of fault))))
 
+(defun changed ()
+  "Say what is standing has moved, so anybody waiting on it looks again."
+  (bordeaux-threads:with-lock-held (*noticing*)
+    (sb-thread:condition-broadcast *noticed*))
+  t)
+
+(defun wait-until (readyp &optional (seconds *waiting*))
+  "Wait until READYP answers something, woken by CHANGED, and answer what it said.
+
+For somebody who has to hear that a thread faulted the moment it does. The thread
+cannot tell them: under the debugger it is still standing in the fault, holding
+the frames, and it will not run again until somebody takes a restart."
+  (bordeaux-threads:with-lock-held (*noticing*)
+    (loop :with due := (+ (get-universal-time) seconds)
+          :for said := (funcall readyp)
+          :when said :do (return said)
+          :do (bordeaux-threads:condition-wait *noticed* *noticing* :timeout 1)
+              (when (> (get-universal-time) due) (return (funcall readyp))))))
+
 (defun %noted (f)
   (d:swap *faults* #'d:capped f *kept*)
+  (changed)
   (handler-case (faulted f)
     (error (broke)
       (log:note "~a, and saying so broke too: ~a" (condition-of f) broke)))

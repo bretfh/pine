@@ -110,13 +110,35 @@ an answer that may never come, so unattended the fault takes ABORT for it."
 (defun %in (j) (uiop:process-info-input (job:took j)))
 (defun %out (j) (uiop:process-info-output (job:took j)))
 
+(defun %line (j seconds)
+  "The next line the child wrote, or nothing if it writes none in that long.
+
+The descriptor is waited on, not the clock looked at. READ-LINE on a pipe blocks,
+so a caller that wants a deadline cannot have one by reading and looking: what it
+counted before was lines, not seconds, and a child that said nothing at all was
+waited on for ever."
+  (let ((stream (%out j)))
+    (cond ((listen stream) (read-line stream nil nil))
+          ((typep stream 'sb-sys:fd-stream)
+           (when (sb-sys:wait-until-fd-usable (sb-sys:fd-stream-fd stream)
+                                              :input (max 0 seconds))
+             (read-line stream nil nil)))
+          (t (read-line stream nil nil)))))
+
+(defun %until (j seconds sees)
+  "Read what the child says until SEES answers something, or SECONDS run out. A
+line it has nothing to say about is the child's own output and is emitted."
+  (loop :with due := (+ (get-universal-time) seconds)
+        :for line := (%line j (- due (get-universal-time)))
+        :while line
+        :do (let ((said (funcall sees line)))
+              (when said (return said))
+              (job:emit j line))
+            (when (>= (get-universal-time) due) (return nil))))
+
 (defun wait-ready (j &key (timeout 60))
-  (loop :repeat (round (/ timeout 0.05))
-        :for line := (read-line (%out j) nil nil)
-        :do (cond ((null line) (sleep 0.05))
-                  ((search *ready* line) (setf (readyp j) t) (return t))
-                  (t (job:emit j line)))
-        :finally (return nil)))
+  (and (%until j timeout (lambda (line) (search *ready* line)))
+       (setf (readyp j) t)))
 
 (defun saidp (line)
   (and line (>= (length line) (length *said*))
@@ -133,11 +155,7 @@ that image is still offering."
         (values value nil nil))))
 
 (defun %hear (j seconds)
-  (loop :repeat (round (/ seconds 0.02))
-        :for line := (read-line (%out j) nil nil)
-        :do (cond ((saidp line) (return line))
-                  (line (job:emit j line))
-                  (t (sleep 0.02)))))
+  (%until j seconds (lambda (line) (and (saidp line) line))))
 
 (defun %say (j form)
   (let ((in (%in j)))

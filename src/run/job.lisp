@@ -10,7 +10,8 @@
            #:name #:state #:tries #:restartsp #:took #:exit-of #:since #:fault
            #:said #:thunk #:seconds #:stopping #:argv #:env #:receive
            #:dispatcher #:ref
-           #:blocking-ask #:*out-kept* #:*settled* #:*asking* #:*every*))
+           #:blocking-ask #:*out-kept* #:*settled* #:*asking* #:*every*
+           #:*stopping*))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)
@@ -21,6 +22,10 @@ that failed six times is held at the longest backoff for the life of the image,
 however well it runs afterwards.")
 (defvar *asking* 5)
 (defvar *every* 1)
+(defvar *stopping* 2
+  "Seconds to wait for a thread asked to stop. It is asked and then joined: a
+thread blocked on a stream reads to the end of what it has and then looks, so the
+wait is for that look and not for a clock.")
 (defvar *jobs* (d:table))
 (defvar *supervised* nil)
 (defvar *under* nil)
@@ -151,7 +156,8 @@ be interrupted, so what can look between reads has to."
   (let ((it (took j)))
     (cond ((seconds j) (when it (actors:cancel it)))
           (t (setf (stopping j) t)
-             (loop :repeat 100 :while (alivep j) :do (sleep 0.02)))))
+             (when (typep it 'bordeaux-threads:thread)
+               (sb-thread:join-thread it :timeout *stopping* :default nil)))))
   j)
 
 (defmethod alivep ((j actor)) (and (took j) t))
