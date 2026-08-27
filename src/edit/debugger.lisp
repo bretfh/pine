@@ -6,7 +6,7 @@
                     (#:doc #:pine/text/document) (#:emode #:pine/edit/mode)
                     (#:window #:pine/edit/window) (#:log #:pine/run/log)
                     (#:evaluate #:pine/edit/eval))
-  (:export #:show #:standing #:choose #:next #:fault-of #:away #:*name*
+  (:export #:standing #:choose #:next #:fault-of #:away #:*name*
            #:*standing*))
 (in-package #:pine/edit/debugger)
 

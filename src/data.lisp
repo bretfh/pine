@@ -9,7 +9,7 @@
            #:first #:last #:rest #:append #:subseq #:reverse #:sort
            #:find #:position #:some #:every #:remove
            #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at #:capped
-           #:swap #:cas #:take
+           #:swap #:cas #:emptied
            #:table #:all #:keep! #:drop! #:claim #:clear!))
 (in-package #:pine/data)
 
@@ -252,7 +252,7 @@ reach it."
                :until (eq ,old ,cas-form)
                :finally (return ,new))))))
 
-(defmacro take (place &environment env)
+(defmacro emptied (place &environment env)
   "Take what PLACE holds, leaving nothing there, and answer what was there.
 
 The other half of SWAP. A queue two threads share is pushed with one and emptied

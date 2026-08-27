@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:compositor #:pine/wm/compositor))
-  (:export #:managed #:wants #:told #:asked #:take #:placement))
+  (:export #:managed #:wants #:told #:asked #:placement))
 (in-package #:pine/wm/managed)
 
 (defparameter +verbs+ '("close" "exit" "next" "previous")

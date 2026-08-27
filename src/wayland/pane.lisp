@@ -8,7 +8,7 @@
   (:export #:pane #:open-pane #:close-pane #:paint #:render #:resize #:measure
            #:on-resize
            #:name-of #:tree #:wide #:tall #:hover #:configuredp #:took
-           #:kind #:dirty #:chromep #:place #:clicked #:hint-of #:cell
+           #:kind #:dirty #:chromep #:clicked #:hint-of #:cell
            #:*namespace* #:*font*))
 (in-package #:pine/wayland/pane)
 

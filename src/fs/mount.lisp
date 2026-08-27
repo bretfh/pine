@@ -3,7 +3,7 @@
   (:shadow #:directory)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree))
-  (:export #:mount #:truename-of #:place
+  (:export #:mount #:truename-of #:node-for
            #:file #:directory))
 (in-package #:pine/fs/mount)
 
@@ -121,7 +121,7 @@ cannot cost a tree nobody looked at."
       (node:stir n))
     path))
 
-(defun place (n name)
+(defun node-for (n name)
   "The node N keeps for NAME, whether or not anything stands there yet. Reading one
 that is not there answers nothing and writing it makes it, which is what opening a
 file that does not exist is: a buffer on a place, not on a file."

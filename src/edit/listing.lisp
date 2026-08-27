@@ -4,8 +4,8 @@
                     (#:command #:pine/run/command)
                     (#:doc #:pine/text/document) (#:emode #:pine/edit/mode)
                     (#:log #:pine/run/log))
-  (:export #:listing #:into #:listings #:rows #:acts #:activate #:row-at #:place
-           #:step-row))
+  (:export #:listing #:into #:listings #:acts #:activate #:row-at
+           #:place #:step-row))
 (in-package #:pine/edit/listing)
 
 (defvar *listings* (d:table))

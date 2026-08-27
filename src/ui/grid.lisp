@@ -1,7 +1,7 @@
 (defpackage #:pine/ui/grid
   (:use #:cl)
   (:local-nicknames (#:face #:pine/ui/face))
-  (:export #:medium #:grid #:make-grid #:cols #:lines #:cells #:clip
+  (:export #:medium #:grid #:make-grid #:cols #:cells #:clip
            #:put #:put-bg #:put-rgb #:blit #:with-clip #:rows #:ink))
 (in-package #:pine/ui/grid)
 

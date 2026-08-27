@@ -6,7 +6,7 @@
   (:shadow #:type #:structure)
   (:export #:mode #:text #:prose #:code #:lisp #:pine #:scheme #:org #:fundamental
            #:press #:insert #:indent #:complete #:save #:structure
-           #:setting #:claims #:claimsp #:mode-for #:keys #:bind #:binding
+           #:setting #:claims #:claimsp #:mode-for #:bind #:binding
            #:bindings #:dispatch
            #:named #:modes #:prefixp #:type #:mode-node #:glob))
 (in-package #:pine/mode)

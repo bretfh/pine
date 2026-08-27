@@ -53,7 +53,7 @@ but the pipe."
 
 No lock: what this takes is what was queued when it looked, and anything handed
 over while it runs is there for the next look."
-  (dolist (thunk (nreverse (d:take (pump-queue p))))
+  (dolist (thunk (nreverse (d:emptied (pump-queue p))))
     (fault:attempt thunk "something handed to the compositor thread")))
 
 (defun drain-wake (p)

@@ -48,8 +48,7 @@ packages both claimed a word for.
 It is a language, not a grab bag: it carries Common Lisp and every word pine
 lends, so a package that uses this one and nothing else can say everything the
 editor can say.
-  (defpackage #:notes (:use #:pine/user))"
-
+"
   (let ((p (or (find-package *name*) (make-package *name* :use '(:cl))))
         (claimed (make-hash-table :test 'equal))
         (clashes nil)

@@ -36,7 +36,7 @@ there, and anything else is a place on the host."
                   (names (tree:split-name (namestring where))))
              (loop :while (and at (rest names))
                    :do (setf at (node:resolve at (pop names))))
-             (and at names (mount:place at (first names)))))))
+             (and at names (mount:node-for at (first names)))))))
 
 (defun visit (document where)
   "Open DOCUMENT onto WHERE: a file on the host, or any node in the tree. What it
