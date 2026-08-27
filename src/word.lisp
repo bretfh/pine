@@ -17,13 +17,18 @@ language has is the sum of what pine loaded, not a list somewhere else that has 
 be kept up with it.
 
 A name is a string. It may be (WORD FROM) to lend FROM under another word, which
-is how PINE:WRITE-AT is READ and WRITE there."
+is how PINE:WRITE-AT is READ and WRITE there.
+
+Once the language stands, lending a word puts it there at once: a system loaded
+after it can write in the words a system loaded before it lent."
   (let ((home (package-name *package*)))
-    (dolist (each names names)
+    (dolist (each names)
       (destructuring-bind (word &optional (from word))
           (if (consp each) each (list each))
         (let ((row (list home (string-upcase word) (string-upcase from))))
-          (setf *lent* (append (remove row *lent* :test #'equal) (list row))))))))
+          (setf *lent* (append (remove row *lent* :test #'equal) (list row))))))
+    (when (find-package *name*) (user))
+    names))
 
 (defun lent () *lent*)
 

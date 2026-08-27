@@ -19,7 +19,7 @@
                     (#:word #:pine/word))
   (:export #:start #:stop #:main #:daemon #:quit
            #:use #:drop #:reach #:serve #:mount #:spawn #:style
-           #:here #:describe #:read-at #:write-at
+           #:here #:describe #:node-at #:read-at #:write-at
            #:load-config #:config-file #:store-file #:user-package
            #:opening))
 (in-package #:pine)
@@ -59,6 +59,16 @@ otherwise."
   (if (and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
       (tree:root)
       (here)))
+
+(defun node-at (where &rest names)
+  "The node WHERE names, and NAMES from there.
+
+One word for it, because there was one question and three answers to it: TREE:AT
+took a root and names, PATH:AT took a path, and PINE:%PLACE took either. A node is
+itself, a path is what it names, a string starting with / is from the root and one
+that does not is from this session, and NIL is where you are."
+  (let ((n (%place where)))
+    (if (and n names) (apply #'tree:at n names) n)))
 
 (defun read-at (where &optional default)
   (let* ((n (%place where))
@@ -318,4 +328,4 @@ config would be the value node the surface then replaced."
   (tree:root))
 
 (pine/word:lends "use" "drop" "reach" "spawn" "style"
-                '("read" "read-at") '("write" "write-at"))
+                '("at" "node-at") '("read" "read-at") '("write" "write-at"))

@@ -204,3 +204,5 @@ the debugger."
                :reads (lambda () (length (faults)))
                :describes "what has broken, and what it stands in")
    root))
+
+(pine/word:lends "attempt")

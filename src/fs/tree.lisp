@@ -164,4 +164,4 @@ clicking the wrong one."
     (walk n (lambda (each) (push (node:full-name each) acc)))
     (nreverse acc)))
 
-(pine/word:lends "at" "ensure" "erase" "listing" "root")
+(pine/word:lends "ensure" "erase" "listing" "root")

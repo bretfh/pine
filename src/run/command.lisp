@@ -151,4 +151,4 @@ repl is the same path saying something else."
                            :describes "every command there is")
                root))
 
-(pine/word:lends "defcommand" "command" "named" "commands" "run")
+(pine/word:lends "defcommand" "command" "commands" "run")

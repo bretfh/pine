@@ -306,4 +306,5 @@ to read it and how to write it are two closures over the object."
 
 (pine/word:lends "node" "contents" "nodes" "resolve" "stir" "name" "over"
                 "full-name" "attach" "detach" "child" "derive" "describes"
-                "nodep" "savedp" "livep" "announces" "refreshes" "slots" "verb")
+                "nodep" "savedp" "livep" "announces" "refreshes" "slots" "verb"
+                "place")

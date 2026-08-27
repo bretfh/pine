@@ -1,13 +1,10 @@
 (defpackage #:pine/wm/tiles
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
-                    (#:system #:pine/run/system) (#:command #:pine/run/command)
-                    (#:watch #:pine/run/watch) (#:fault #:pine/run/fault)
-                    (#:compositor #:pine/wm/compositor))
+  (:use #:pine/user)
   (:export #:tiles #:layout #:tall #:wide #:full #:stacked #:arrange
            #:named #:layouts #:share #:gaps #:*layout*))
 (in-package #:pine/wm/tiles)
+
+(named-readtables:in-readtable pine/fs/reader:syntax)
 
 (defvar *layout* nil
   "The layout in force. A config puts its own class here and that is the whole of
@@ -101,7 +98,7 @@ per window, in the order they were given. AREA is (X Y WIDTH HEIGHT).")
                                                           each)
                                                       rest))))))))))
 
-(defclass tiles (system:system)
+(defclass tiles (system)
   ((layout-of :initarg :layout :accessor layout-of
               :initform (make-instance 'tall))
    (watching  :initform nil :accessor watching))
@@ -111,13 +108,15 @@ compositor handed over and writes where each window goes.
 Nothing in the substrate knows this is here. Dropping it takes /wm/layout and its
 commands away, and pine places nothing again."))
 
-(system:offers 'tiles)
+(offers 'tiles)
 
-(defun %system () (system:named "tiles"))
+(defun %system ()
+  "The system itself: a system is a node, and /system/tiles is where it stands."
+  (at /system/tiles))
 
 (defun %layout ()
   "Which layout is in force, by name: pine write /wm/layout wide."
-  (node:place "layout"
+  (place "layout"
               :reads (lambda ()
                        (let ((s (%system)))
                          (when s
@@ -127,57 +126,57 @@ commands away, and pine places nothing again."))
                         (let ((s (%system)) (l (named value)))
                           (when (and s l)
                             (setf (layout-of s) l)
-                            (place s))))
+                            (%placed s))))
               :describes "which layout is in force"))
 
 (defun %area (s)
-  (let ((c (tree:at nil "wm")))
-    (or (getf (first (compositor:outputs c)) :area)
+  (let ((c (at /wm)))
+    (or (getf (first (outputs c)) :area)
         (progn s (list 0 0 1920 1080)))))
 
 (defun %ids (s)
   (declare (ignore s))
-  (compositor:ids (tree:at nil "wm")))
+  (ids (at /wm)))
 
-(defun place (s)
+(defun %placed (s)
   "Work out where the windows go and say so. Writing /wm/placement is the whole
 of being the window manager here."
-  (let ((n (tree:at nil "wm" "placement")))
+  (let ((n (at /wm/placement)))
     (when n
-      (setf (node:contents n)
+      (setf (contents n)
             (loop :for (id x y wide tall) :in (arrange (layout-of s) (%ids s)
                                                        (%area s))
                   :collect (list id x y wide tall))))))
 
-(command:defcommand "wm-layout" (&optional name)
+(defcommand "wm-layout" (&optional name)
     (:describes "how windows are laid out")
-  (let ((n (tree:at nil "wm" "layout")))
-    (when (and n name) (setf (node:contents n) (princ-to-string name)))
-    (and n (node:contents n))))
+  (let ((n (at /wm/layout)))
+    (when (and n name) (setf (contents n) (princ-to-string name)))
+    (and n (contents n))))
 
-(command:defcommand "wm-layouts" () (:describes "every layout there is")
+(defcommand "wm-layouts" () (:describes "every layout there is")
   (mapcar (lambda (c) (string-downcase (symbol-name (class-name c))))
           (layouts)))
 
-(defmethod job:start ((s tiles))
-  (let ((c (tree:at nil "wm")))
+(defmethod start ((s tiles))
+  (let ((c (at /wm)))
     (unless c (error "no /wm: use the wm system before this one."))
-    (node:attach (%layout) c)
-    (let ((said (node:resolve c "said")))
+    (attach (%layout) c)
+    (let ((said (resolve c "said")))
       (when said
         (setf (watching s)
-              (list (watch:watch said
-                                 (lambda (of value)
-                                   (declare (ignore of value))
-                                   (fault:attempt (lambda () (place s)) "tiles"))
-                                 :only nil :poll nil :name "tiles<-wm/said")))))
-    (place s))
+              (list (watch said
+                           (lambda (of value)
+                             (declare (ignore of value))
+                             (attempt (lambda () (%placed s)) "tiles"))
+                           :only nil :poll nil :name "tiles<-wm/said")))))
+    (%placed s))
   s)
 
-(defmethod job:stop ((s tiles))
-  (dolist (w (watching s)) (ignore-errors (watch:unwatch w)))
+(defmethod stop ((s tiles))
+  (dolist (w (watching s)) (attempt (lambda () (unwatch w)) "letting a watch go"))
   (setf (watching s) nil)
-  (tree:erase nil "wm" "layout")
+  (erase nil "wm" "layout")
   s)
 
 (pine/word:lends "layout" "arrange" "tall" "wide" "full" "stacked")

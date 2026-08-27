@@ -71,3 +71,5 @@ are told by whatever is behind them instead."
 
 (defun watching (n)
   (remove n (watchers) :key #'watches :test-not #'eq))
+
+(pine/word:lends "watch" "unwatch")
