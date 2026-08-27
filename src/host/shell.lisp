@@ -56,7 +56,7 @@ closes that end and the stream goes with it.")
   "What a line says, remembered for a breath, so a panel reading three things out of
 one command runs it once and a bar built twice in a frame does not fork twice."
   (let ((now (get-internal-real-time))
-        (had (d:at (d:all *asked*) line)))
+        (had (d:lookup (d:all *asked*) line)))
     (cond ((and had (< (- now (cdr had))
                        (* *breath* internal-time-units-per-second)))
            (car had))

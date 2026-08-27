@@ -47,13 +47,13 @@ there are.")
       raw
       (let ((nodes (make-hash-table :test 'equal))
             (heads (make-hash-table :test 'equal)))
-        (maphash (lambda (k v) (setf (gethash k nodes) v)) (pl:at parent :node))
-        (maphash (lambda (k v) (setf (gethash k heads) v)) (pl:at parent :head))
-        (maphash (lambda (k v) (setf (gethash k nodes) v)) (pl:at raw :node))
-        (maphash (lambda (k v) (setf (gethash k heads) v)) (pl:at raw :head))
-        (pl:map :options (pl:merged (pl:at parent :options) (pl:at raw :options))
+        (maphash (lambda (k v) (setf (gethash k nodes) v)) (pl:lookup parent :node))
+        (maphash (lambda (k v) (setf (gethash k heads) v)) (pl:lookup parent :head))
+        (maphash (lambda (k v) (setf (gethash k nodes) v)) (pl:lookup raw :node))
+        (maphash (lambda (k v) (setf (gethash k heads) v)) (pl:lookup raw :head))
+        (pl:map :options (pl:merged (pl:lookup parent :options) (pl:lookup raw :options))
                 :node nodes :head heads
-                :otherwise (or (pl:at raw :otherwise) (pl:at parent :otherwise))))))
+                :otherwise (or (pl:lookup raw :otherwise) (pl:lookup parent :otherwise))))))
 
 (defun %symbol (name package)
   (let ((upper (string-upcase name)))
@@ -101,17 +101,17 @@ there are.")
       (setf (gethash (string-downcase (string name)) out) t))))
 
 (defun %compile (name raw)
-  (let* ((options (pl:at raw :options))
-         (indent (pl:at options :indent))
-         (infer (pl:at (pl:all *inferrers*) name)))
+  (let* ((options (pl:lookup raw :options))
+         (indent (pl:lookup options :indent))
+         (infer (pl:lookup (pl:all *inferrers*) name)))
     (hl:make-language
      :name name
-     :grammar (pl:at options :grammar)
-     :indent-width (or (pl:at indent :width) 2)
-     :nodes (pl:at raw :node)
-     :heads (pl:at raw :head)
-     :otherwise (pl:at raw :otherwise)
-     :constants (%names (pl:at options :constants))
+     :grammar (pl:lookup options :grammar)
+     :indent-width (or (pl:lookup indent :width) 2)
+     :nodes (pl:lookup raw :node)
+     :heads (pl:lookup raw :head)
+     :otherwise (pl:lookup raw :otherwise)
+     :constants (%names (pl:lookup options :constants))
      :infer infer
      :raw raw)))
 
@@ -120,14 +120,14 @@ there are.")
     (pl:keep! *compiled* name (cons full (%compile name full)))
     (when (tree:root)
       (setf (node:contents (tree:ensure nil "lang" (string-downcase (string name))))
-            (pl:at (pl:at full :options) :doc)))
+            (pl:lookup (pl:lookup full :options) :doc)))
     name))
 
 (defun %raw (name)
-  (car (pl:at (pl:all *compiled*) name)))
+  (car (pl:lookup (pl:all *compiled*) name)))
 
 (defun for (name)
-  (cdr (pl:at (pl:all *compiled*) name)))
+  (cdr (pl:lookup (pl:all *compiled*) name)))
 
 (defun languages ()
   (sort (pl:keys (pl:all *compiled*)) #'string< :key #'string))
@@ -135,7 +135,7 @@ there are.")
 (defun readtable-of (name)
   "The readtable a language is written in, when it says: a language whose
 reader is not the standard one names it here."
-  (let ((said (pl:at (pl:at (%raw name) :options) :readtable)))
+  (let ((said (pl:lookup (pl:lookup (%raw name) :options) :readtable)))
     (when said (fault:or-nothing "a declaration may name no readtable"
                  (named-readtables:find-readtable said)))))
 
@@ -149,13 +149,13 @@ follows it rather than the path it happens to be under."
 (defun grammar-of (name)
   (let* ((lang (for name))
          (g (and lang (hl:lang-grammar lang))))
-    (when g (values (pl:at g :lib) (pl:at g :fn)))))
+    (when g (values (pl:lookup g :lib) (pl:lookup g :fn)))))
 
 (defun lang-node (root)
   "One node per language declared, saying what it is for."
   (dolist (name (languages) (tree:ensure root "lang"))
     (setf (node:contents (tree:ensure root "lang" (string-downcase (string name))))
-          (pl:at (pl:at (%raw name) :options) :doc))))
+          (pl:lookup (pl:lookup (%raw name) :options) :doc))))
 
 (defun %state (runtime name)
   (multiple-value-bind (lib fn) (grammar-of name)

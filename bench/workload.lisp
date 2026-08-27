@@ -101,7 +101,7 @@ parse and the highlight walk are re-driven at every screen"
 (workload huge ()
     "the same typing, in a hundred thousand lines"
   (let ((*size* 100000))
-    (funcall (getf (d:at (d:all *workloads*) "typing") :run))))
+    (funcall (getf (d:lookup (d:all *workloads*) "typing") :run))))
 
 (workload cold ()
     "what the first of everything costs: the first parse of a document, and the
@@ -195,7 +195,7 @@ side never touched says so rather than showing a zero."
   (or (uiop:getenv "PINE_VERSION") (lisp-implementation-version)))
 
 (defun run (name)
-  (let ((it (d:at (d:all *workloads*) name)))
+  (let ((it (d:lookup (d:all *workloads*) name)))
     (unless it
       (format t "~&no workload called ~a. there is: ~{~a~^ ~}~%" name (workloads))
       (return-from run nil))

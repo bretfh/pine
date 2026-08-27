@@ -19,7 +19,7 @@ did not touch and two readers never see one change underneath them."
 
 (defun line-count (lines) (d:size lines))
 
-(defun line (lines n) (d:at lines n ""))
+(defun line (lines n) (d:lookup lines n ""))
 
 (defun clamp (lines at col)
   (let* ((n (max 0 (min at (max 0 (1- (d:size lines))))))

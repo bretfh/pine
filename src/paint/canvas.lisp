@@ -35,7 +35,7 @@ says whether that is cells or pixels."))
           (cl-cairo2:set-source-rgb (/ r 255.0) (/ g 255.0) (/ b 255.0)))
       t)))
 
-(defun %size (m w) (float (or (w:font w) (d:at (layout:styled w) :font) (size m))
+(defun %size (m w) (float (or (w:font w) (d:lookup (layout:styled w) :font) (size m))
                           1d0))
 
 (defun %face (m w)
@@ -72,7 +72,7 @@ says whether that is cells or pixels."))
           (cl-cairo2:close-path)))))
 
 (defun %radius (widget style width height)
-  (let ((r (or (d:at style :radius) (w:radius widget) 0)))
+  (let ((r (or (d:lookup style :radius) (w:radius widget) 0)))
     (cond ((eq r :round) (/ (min width height) 2.0))
           ((numberp r) r)
           (t 0))))
@@ -93,7 +93,7 @@ says whether that is cells or pixels."))
 (defun %shadow (style x y width height radius)
   "A feathered drop shadow, drawn as low-alpha rings around the shape, so a panel
 reads as floating over what is behind it."
-  (let ((said (d:at style :shadow)))
+  (let ((said (d:lookup style :shadow)))
     (when said
       (destructuring-bind (ox oy blur colour) said
         (let ((steps (max 1 (min 12 (round blur)))))
@@ -108,7 +108,7 @@ reads as floating over what is behind it."
 (defun %ink (widget style)
   "The colour this widget's content is drawn in: what its style says, else what its
 face says, else the plain one."
-  (or (d:at style :fg)
+  (or (d:lookup style :fg)
       (multiple-value-bind (fr fg fb) (grid:ink (or (w:face widget) :default))
         (list fr fg fb))))
 
@@ -117,10 +117,10 @@ face says, else the plain one."
     (when (and (plusp width) (plusp height))
       (let* ((style (layout:styled widget))
              (radius (%radius widget style width height))
-             (grad (or (w:grad widget) (d:at style :grad)))
-             (fill (or (w:fill-color widget) (d:at style :bg)))
-             (border (d:at style :border))
-             (opacity (or (d:at style :opacity) 1.0)))
+             (grad (or (w:grad widget) (d:lookup style :grad)))
+             (fill (or (w:fill-color widget) (d:lookup style :bg)))
+             (border (d:lookup style :border))
+             (opacity (or (d:lookup style :opacity) 1.0)))
         (with-canvas (m)
           (%shadow style x y width height radius)
           (cond (grad
@@ -171,7 +171,7 @@ face says, else the plain one."
     (let ((style (layout:styled widget))
           (upto (round (* (w:fraction widget) width))))
       (with-canvas (m)
-        (rgb (or (d:at style :bg) '(60 60 60)))
+        (rgb (or (d:lookup style :bg) '(60 60 60)))
         (%rounded x (+ y (floor height 3)) width (max 2 (floor height 3))
                   (floor height 6))
         (cl-cairo2:fill-path)
@@ -189,7 +189,7 @@ face says, else the plain one."
            (cy (+ y (/ height 2.0))))
       (with-canvas (m)
         (cl-cairo2:set-line-width (float (w:thickness widget) 1d0))
-        (rgb (or (d:at style :bg) '(60 60 60)))
+        (rgb (or (d:lookup style :bg) '(60 60 60)))
         (cl-cairo2:arc (float cx 1d0) (float cy 1d0) (float r 1d0) 0d0 (* 2 pi))
         (cl-cairo2:stroke)
         (rgb (%ink widget style))
@@ -294,7 +294,7 @@ one place a canvas paints what a grid worked out."
                         (row (floor at 7)))
                     (with-canvas (m)
                       (rgb (if (= day today)
-                               (or (d:at (layout:styled widget) :bg) '(255 255 255))
+                               (or (d:lookup (layout:styled widget) :bg) '(255 255 255))
                                (%ink widget (layout:styled widget)))))
                     (%text m widget (format nil "~2d" day)
                            (+ x (* col cell)) (+ y (* (+ row 2) ch)))))))))
@@ -303,7 +303,7 @@ one place a canvas paints what a grid worked out."
   (multiple-value-bind (x y width height) (%rect widget)
     (when (w:chosen widget)
       (with-canvas (m)
-        (when (rgb (or (d:at (layout:styled widget) :bg)
+        (when (rgb (or (d:lookup (layout:styled widget) :bg)
                        (multiple-value-list (grid:ink :completion-selected))))
           (cl-cairo2:rectangle (float x 1d0) (float y 1d0)
                                (float width 1d0) (float height 1d0))

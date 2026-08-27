@@ -106,7 +106,7 @@ it; that is what DERIVE, which does remember, is the other half of."
   "The child N keeps under NAME, made once. Two threads asking at once both answer
 the one that landed, which is what lets anything reading it be worked out again."
   (let ((name (princ-to-string name)))
-    (or (d:at (d:all (memo n)) name)
+    (or (d:lookup (d:all (memo n)) name)
         (d:claim (memo n) name (funcall builder)))))
 
 (defun %kid (n name)
@@ -241,7 +241,7 @@ that keeps nothing is one nothing can ever stir again."
               (t       (cl:first arguments)))))))
 
 (defun %verbp (v)
-  (and (d:seqp v) (plusp (d:size v)) (keywordp (d:at v 0))))
+  (and (d:seqp v) (plusp (d:size v)) (keywordp (d:lookup v 0))))
 
 (defgeneric contents (node)
   (:documentation "What NODE holds.")
@@ -252,7 +252,7 @@ that keeps nothing is one nothing can ever stir again."
           ((reads n) (funcall (reads n)))
           ((names-of n) (%listed n))
           ((nodes-of n) (mapcar #'name (funcall (nodes-of n))))
-          ((savedp n) (commit:at (full-name n)))
+          ((savedp n) (commit:held-at (full-name n)))
           (t nil))))
 
 (defun moved (n)
@@ -281,7 +281,7 @@ remember it too.")
 
 (defmethod (setf contents) :around (value (n node))
   (if (%verbp value)
-      (verb n (d:at value 0) (d:as :list (d:rest value)))
+      (verb n (d:lookup value 0) (d:as :list (d:rest value)))
       (call-next-method)))
 
 (defmethod (setf contents) :after (value (n node))

@@ -154,7 +154,7 @@ that named it does."
 (defun keys (class)
   "Every chord in force for a mode class: what its commands carry, and what
 somebody bound by hand on top of that."
-  (d:merged (%carried class) (or (d:at (d:all *keys*) class) (d:no-map))))
+  (d:merged (%carried class) (or (d:lookup (d:all *keys*) class) (d:no-map))))
 
 (defun bind (class chord command)
   "Bind a chord in a mode. A config binds one the way pine does.
@@ -165,14 +165,14 @@ would be two keymaps nobody asked for."
   (let* ((found (%class class))
          (class (if found (class-name found) class)))
     (d:keep! *keys* class
-             (d:with (or (d:at (d:all *keys*) class) (d:no-map)) chord command))
+             (d:with (or (d:lookup (d:all *keys*) class) (d:no-map)) chord command))
     chord))
 
 (defun binding (m chord)
   "What CHORD runs for this mode: its own keymap, then up the class precedence list,
 so a mode inherits bindings exactly as it inherits methods."
   (loop :for class :in (c2mop:class-precedence-list (class-of m))
-        :for found := (d:at (keys (class-name class)) chord)
+        :for found := (d:lookup (keys (class-name class)) chord)
         :when found :do (return (command:named found))))
 
 (defun bindings (m)

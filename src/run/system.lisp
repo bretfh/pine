@@ -33,7 +33,7 @@ once, where the system is defined."
   name)
 
 (defun owns (name)
-  (d:at (d:all *owns*) (string-downcase (princ-to-string name))))
+  (d:lookup (d:all *owns*) (string-downcase (princ-to-string name))))
 
 (defmethod job:start :before ((s system))
   (let ((prefix (owns (job:name s)))) (when prefix (command:offer prefix))))
@@ -64,10 +64,10 @@ pine write /system/desk '(:stop)' takes it away again."
   (let ((name (string-downcase (princ-to-string name))))
     (or (named name)
         (progn
-          (unless (d:at (d:all *offered*) name)
+          (unless (d:lookup (d:all *offered*) name)
             (asdf:load-system (format nil "pine/~a" name))
             (pine/word:user))
-          (let ((class (d:at (d:all *offered*) name)))
+          (let ((class (d:lookup (d:all *offered*) name)))
             (unless class
               (error "~a loaded but offered no system class." name))
             (let ((s (make-instance class :name name :restarts nil)))

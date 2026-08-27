@@ -121,8 +121,8 @@ order nobody can check."
         (out (d:no-map)))
     (when then
       (d:do-map (place value now)
-        (unless (d:same value (d:at then place))
-          (setf out (d:with out place (list (d:at then place) value)))))
+        (unless (d:same value (d:lookup then place))
+          (setf out (d:with out place (list (d:lookup then place) value)))))
       (d:do-map (place value then)
         (unless (d:contains now place)
           (setf out (d:with out place (list value nil))))))

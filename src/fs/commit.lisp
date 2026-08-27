@@ -1,8 +1,7 @@
 (defpackage #:pine/fs/commit
   (:use #:cl)
-  (:shadow #:at)
   (:local-nicknames (#:d #:pine/data))
-  (:export #:held #:at #:change #:forget #:clear
+  (:export #:held #:held-at #:change #:forget #:clear
            #:roots #:root-at #:was #:*kept*
            #:writing #:announce #:on-commit #:on-forget #:listeners
            #:forget-listeners))
@@ -20,24 +19,26 @@ that happen to a place, so they are two lists and not one with a tag on it.")
 
 (defun held () *now*)
 
-(defun at (place &optional default) (d:at (held) place default))
+(defun held-at (place &optional default)
+  "What stands at PLACE now. HELD is the whole of it; this is one place in it."
+  (d:lookup (held) place default))
 
 (defun roots () *was*)
 
 (defun root-at (n) (nth n (roots)))
 
 (defun was (place n)
-  (let ((it (root-at n))) (and it (d:at it place))))
+  (let ((it (root-at n))) (and it (d:lookup it place))))
 
 (defun change (changes &key when)
   (labels ((refused (had)
              (d:do-map (place value when nil)
-               (unless (d:same value (d:at had place))
+               (unless (d:same value (d:lookup had place))
                  (return-from refused place))))
            (moving (had)
              (let ((out (d:no-map)))
                (d:do-map (place value changes out)
-                 (unless (d:same value (d:at had place))
+                 (unless (d:same value (d:lookup had place))
                    (setf out (d:with out place value))))))
            (next (had)
              (let ((out had))
@@ -76,13 +77,13 @@ told who that is."
 
 (defun listeners () (d:all *listening*))
 
-(defun on-commit (key) (d:at (listeners) key))
+(defun on-commit (key) (d:lookup (listeners) key))
 
 (defun (setf on-commit) (tells key)
   (if tells (d:keep! *listening* key tells) (d:drop! *listening* key))
   tells)
 
-(defun on-forget (key) (d:at (d:all *forgetting*) key))
+(defun on-forget (key) (d:lookup (d:all *forgetting*) key))
 
 (defun (setf on-forget) (tells key)
   (if tells (d:keep! *forgetting* key tells) (d:drop! *forgetting* key))

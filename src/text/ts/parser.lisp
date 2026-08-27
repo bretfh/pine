@@ -75,7 +75,7 @@ the lines outside it are what they were."
     (dolist (run runs out)
       (destructuring-bind (line from to face) run
         (setf out (d:with out line (cons (list from to face)
-                                         (or (d:at out line) nil))))))))
+                                         (or (d:lookup out line) nil))))))))
 
 (defun %flat (map)
   (let ((out nil))
@@ -166,7 +166,7 @@ its mode says."
 just finished a parse both ask, so the one that lands is the one everybody gets and
 the other is freed rather than left holding a foreign parser."
   (let* ((language (%grammar document))
-         (had (d:at (d:all *parsers*) (node:name document))))
+         (had (d:lookup (d:all *parsers*) (node:name document))))
     (when (and had (not (eq language (language-of had))))
       (forget document)
       (setf had nil))
@@ -214,7 +214,7 @@ plain text."
 
 (defun forget (document)
   (let* ((name (if (stringp document) document (node:name document)))
-         (p (d:at (d:all *parsers*) name)))
+         (p (d:lookup (d:all *parsers*) name)))
     (when p
       (job:tell (running p) (list :stop))
       (job:stop (running p))

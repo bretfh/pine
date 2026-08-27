@@ -35,7 +35,7 @@ parse has one because text asked for it, not because this file knows about text.
   "The dispatcher an actor asks for, if this image has it. Sento fixes its pools
 when the system is made, so a system loaded after boot that asked for one of its
 own runs on the shared pool until the next start rather than refusing to run."
-  (if (or (member name '(:shared :pinned)) (d:at (pools) name))
+  (if (or (member name '(:shared :pinned)) (d:lookup (pools) name))
       name
       :shared))
 
@@ -94,7 +94,7 @@ thunks shell out, read files and paint."
             (run))))))
 
 (defun cancel (name)
-  (let ((had (d:at (d:all *ticks*) name)))
+  (let ((had (d:lookup (d:all *ticks*) name)))
     (when (and had *wheel*)
       (fault:or-nothing "a tick that has already fired is not there to cancel"
         (sento.wheel-timer:cancel *wheel* had))

@@ -39,7 +39,7 @@ steps in four millisecond jumps, which cannot see a frame, let alone a swap."
     (+ (* seconds 1000000000) nanoseconds)))
 
 (defun %of (name kind)
-  (or (d:at (d:all *instruments*) name)
+  (or (d:lookup (d:all *instruments*) name)
       (d:claim *instruments* name
                (let ((it (%made name kind)))
                  (setf (instrument-at it) (now))
@@ -92,7 +92,7 @@ and the table says so."
   "What one instrument has to say, in microseconds, as a plist. NIL where it
 has never been touched, which reads as `nothing walked this path' rather than
 as a zero."
-  (let ((box (d:at (d:all *instruments*) name)))
+  (let ((box (d:lookup (d:all *instruments*) name)))
     (when box
       (let* ((it box)
              (ring (instrument-ring it))
@@ -170,7 +170,7 @@ answer this, which is what lets one be laid beside the other."
                                   (string-downcase (princ-to-string each)))
                                 (instruments)))
                :each #'%instrument
-               :reads (lambda () (mapcar (lambda (row) (getf row :name)) (said)))
+               :reads (lambda () (mapcar (lambda (row) (getf row :name)) (readings)))
                :describes "how long what pine does is taking")
    root))
 

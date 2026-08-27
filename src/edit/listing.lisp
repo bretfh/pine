@@ -23,7 +23,7 @@ reading the line back out of the text."))
 
 (defun listings () (d:all *listings*))
 
-(defun %of (document) (d:at (d:all *listings*) (node:name document)))
+(defun %of (document) (d:lookup (d:all *listings*) (node:name document)))
 
 (defun said (row) (if (consp row) (car row) (princ-to-string row)))
 

@@ -102,7 +102,7 @@ says it was given. Nothing where it means nothing, because a pine showing this o
 can be a frame behind."
   (let* ((all (alexandria:ensure-list said))
          (id (princ-to-string (first all)))
-         (thunk (d:at (d:all *acts*) id)))
+         (thunk (d:lookup (d:all *acts*) id)))
     (when thunk
       (fault:attempt (lambda () (apply thunk (rest all)))
                      (format nil "the widget at ~a" id)))))

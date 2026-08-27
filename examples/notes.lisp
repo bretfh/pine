@@ -36,7 +36,7 @@ Writing one is how an entry comes to exist."
   (let ((title (princ-to-string title)))
     (child n title (lambda () (make-instance 'entry :name title :over n)))))
 
-(defmethod contents ((n entry)) (pine/data:at *entries* (name n)))
+(defmethod contents ((n entry)) (pine/data:lookup *entries* (name n)))
 (defmethod (setf contents) (said (n entry))
   (setf *entries* (if said
                       (with *entries* (name n) (princ-to-string said))

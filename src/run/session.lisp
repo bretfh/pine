@@ -3,7 +3,7 @@
   (:shadow #:read #:print #:close)
   (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command))
   (:export #:session #:open-session #:sessions #:close #:openp
-           #:name #:package-of #:readtable-of #:at #:history #:input #:output
+           #:name #:package-of #:readtable-of #:in #:history #:input #:output
            #:read #:evaluate #:print #:interact
            #:evaluation #:form #:answered #:fault #:at-time
            #:*session* #:*kept* #:*prompt*))
@@ -32,7 +32,7 @@ it broke on."))
    (package-of   :initarg :package   :accessor package-of
                  :initform (find-package :cl-user))
    (readtable-of :initarg :readtable :accessor readtable-of :initform nil)
-   (at           :initarg :at        :accessor at       :initform nil)
+   (in           :initarg :in        :accessor in       :initform nil)
    (history      :initform nil       :accessor history)
    (input        :initarg :input     :reader input      :initform *standard-input*)
    (output       :initarg :output    :reader output     :initform *standard-output*)

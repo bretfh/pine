@@ -39,7 +39,7 @@
   (let* ((at (screen:pointer s))
          (p (input:pointer-focus at)))
     (when (and p (pane:tree p))
-      (hit:at (pane:tree p) (round (input:pointer-at-y at))
+      (hit:under (pane:tree p) (round (input:pointer-at-y at))
               (round (input:pointer-at-x at))))))
 
 (defun press (s)

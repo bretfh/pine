@@ -1,21 +1,20 @@
 (defpackage #:pine/ui/hit
   (:use #:cl #:pine/ui/widget)
-  (:shadow #:at)
-  (:export #:at #:clicked #:clicked-at #:value-at))
+  (:export #:under #:clicked #:clicked-at #:value-at))
 (in-package #:pine/ui/hit)
 
 (defun %covers (w line col)
   (and (<= (top w) line) (<= line (bottom w))
        (<= (left w) col) (< col (right w))))
 
-(defgeneric at (widget line col)
+(defgeneric under (widget line col)
   (:documentation "The deepest widget at this place that answers interaction: an
 action, a choice, a slider, a field. Nothing where none does.
 
 The default descends, so a container needs no method and a widget says only what it
 does with a hit.")
   (:method ((w widget) line col)
-    (some (lambda (part) (at part line col)) (parts w)))
+    (some (lambda (part) (under part line col)) (parts w)))
   (:method ((w action) line col)
     (when (%covers w line col) (or (call-next-method) w)))
   (:method ((w choice) line col)
@@ -44,5 +43,5 @@ over its own text would swallow the clicks of whatever it sits inside."
       (when fn (lambda () (funcall fn v))))))
 
 (defun clicked-at (root line col)
-  (let ((hit (at root line col)))
+  (let ((hit (under root line col)))
     (and hit (clicked hit col))))

@@ -194,7 +194,7 @@ offers are the ones still there, and answer as soon as it has a value or a fault
     (:ping (list :ok :pong))
     (:evaluate (%work (second message)))
     (:watch (%watching (second message) (third message)))
-    (:take (let ((f (d:at (d:all *asked*) (third message))))
+    (:take (let ((f (d:lookup (d:all *asked*) (third message))))
              (list :ok (and f (fault:take f (second message))))))
     ((:contents :write :verb :nodes)
      (%place (second message) (list* (first message) (cddr message))))

@@ -46,7 +46,7 @@ that asks per cell spends most of its time asking where to look.")
   (sort (d:keys (d:all *themes*)) #'string< :key #'symbol-name))
 
 (defun theme (name)
-  (or (d:at (d:all *themes*) (%key name))
+  (or (d:lookup (d:all *themes*) (%key name))
       (error "no theme called ~s" name)))
 
 (defun active ()

@@ -79,7 +79,7 @@ covers."
       (destructuring-bind (head name from to) form
         (let* ((head (or head "form"))
                (name (or name (princ-to-string from)))
-               (had (or (d:at by-head head) nil)))
+               (had (or (d:lookup by-head head) nil)))
           (setf by-head
                 (d:with by-head head
                         (append had

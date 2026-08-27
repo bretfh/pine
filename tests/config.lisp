@@ -38,8 +38,8 @@ readtable, and a fault in it is a fault like any other rather than a crash."
   (pine:load-config (%example))
   (let* ((s (surface:named "ticker"))
          (where (surface:anchor (surface:role s) 100 20)))
-    (is (equal '(:bottom :right) (d:at where :edges)))
-    (is (equal '(0 12 12 0) (d:at where :margin)))))
+    (is (equal '(:bottom :right) (d:lookup where :edges)))
+    (is (equal '(0 12 12 0) (d:lookup where :margin)))))
 
 (test a-layout-written-in-a-config-lays-windows-out
   (editing)

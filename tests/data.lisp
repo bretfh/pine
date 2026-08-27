@@ -5,15 +5,15 @@
 (test a-map-shares-what-an-edit-did-not-touch
   (let* ((had (d:map :a 1 :b 2))
          (now (d:with had :b 3)))
-    (is (= 2 (d:at had :b)))
-    (is (= 3 (d:at now :b)))
-    (is (= 1 (d:at now :a)))))
+    (is (= 2 (d:lookup had :b)))
+    (is (= 3 (d:lookup now :b)))
+    (is (= 1 (d:lookup now :a)))))
 
 (test a-seq-is-indexed-and-immutable
   (let* ((had (d:as :seq '("one" "two")))
          (now (d:with-at had 1 "three")))
-    (is (equal "two" (d:at had 1)))
-    (is (equal "three" (d:at now 1)))
+    (is (equal "two" (d:lookup had 1)))
+    (is (equal "three" (d:lookup now 1)))
     (is (= 2 (d:size now)))))
 
 (test a-place-swaps-under-two-threads
@@ -63,7 +63,7 @@ retry that built the function again would build it once per contending thread."
     (is (equal "mine" (d:claim table :k "mine")))
     (is (equal "mine" (d:claim table :k "yours")))
     (d:drop! table :k)
-    (is (null (d:at (d:all table) :k)))))
+    (is (null (d:lookup (d:all table) :k)))))
 
 (test do-map-binds-what-it-was-given
   (let ((seen nil))

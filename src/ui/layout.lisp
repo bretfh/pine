@@ -54,19 +54,19 @@ and the style is what the sheet says on top of it."
   root)
 
 (defun %pad-x (w)
-  (let ((p (pad w)) (s (d:at (styled w) :pad)))
+  (let ((p (pad w)) (s (d:lookup (styled w) :pad)))
     (cond ((consp p) (car p)) ((realp p) p) ((consp s) (car s)) (t 0))))
 
 (defun %pad-y (w)
-  (let ((p (pad w)) (s (d:at (styled w) :pad)))
+  (let ((p (pad w)) (s (d:lookup (styled w) :pad)))
     (cond ((consp p) (cdr p)) ((realp p) p) ((consp s) (cdr s)) (t 0))))
 
-(defun %margin (w) (or (margin w) (d:at (styled w) :margin)))
+(defun %margin (w) (or (margin w) (d:lookup (styled w) :margin)))
 (defun %margin-x (w) (let ((m (%margin w))) (if m (+ (fourth m) (second m)) 0)))
 (defun %margin-y (w) (let ((m (%margin w))) (if m (+ (first m) (third m)) 0)))
-(defun %min-w (w) (max (min-w w) (or (d:at (styled w) :min-w) 0)))
-(defun %min-h (w) (max (min-h w) (or (d:at (styled w) :min-h) 0)))
-(defun %font (w) (or (font w) (d:at (styled w) :font)))
+(defun %min-w (w) (max (min-w w) (or (d:lookup (styled w) :min-w) 0)))
+(defun %min-h (w) (max (min-h w) (or (d:lookup (styled w) :min-h) 0)))
+(defun %font (w) (or (font w) (d:lookup (styled w) :font)))
 
 (defgeneric measure (widget medium avail-w avail-h)
   (:documentation "The widget's natural (values w h) in the space it is given.")

@@ -110,7 +110,7 @@ from."
   "LINE's own byte length, without its newline."
   (let ((lines (byte-index-lines index)))
     (if (< line (pine/data:size lines))
-        (%line-byte-length (pine/data:at lines line))
+        (%line-byte-length (pine/data:lookup lines line))
         0)))
 
 (defun byte-line (index byte)
@@ -152,7 +152,7 @@ asked for, which a walk asks about once per node."
       (byte-index-memo-text index)
       (let* ((lines (byte-index-lines index))
              (text (if (and (>= line 0) (< line (pine/data:size lines)))
-                       (pine/data:at lines line)
+                       (pine/data:lookup lines line)
                        "")))
         (setf (byte-index-memo-line index) line
               (byte-index-memo-text index) text

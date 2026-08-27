@@ -91,7 +91,7 @@
 (defun candidates (&optional (p *prompt*) (text (so-far)))
   (when p
     (or (given p)
-        (let ((fn (d:at (d:all *sources*) (category p))))
+        (let ((fn (d:lookup (d:all *sources*) (category p))))
           (when fn (fault:attempt (lambda () (funcall fn text))
                                   "the candidates"))))))
 

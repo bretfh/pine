@@ -80,7 +80,7 @@ a tick and takes no thread at all."))
 
 (defun jobs () (d:vals (d:all *jobs*)))
 
-(defun named (name) (d:at (d:all *jobs*) (princ-to-string name)))
+(defun named (name) (d:lookup (d:all *jobs*) (princ-to-string name)))
 
 (defmethod node:contents ((j job)) (state j))
 

@@ -36,7 +36,7 @@ ask about, and what crosses is what somebody can read back."
   "What this class carries, taken from its own slots. A property added to a widget
 crosses because it is there, not because somebody remembered to list it."
   (let ((name (class-name class)))
-    (or (d:at (d:all *classes*) name)
+    (or (d:lookup (d:all *classes*) name)
         (d:claim *classes* name (%slots class)))))
 
 (defun tag (widget)

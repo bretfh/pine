@@ -15,13 +15,13 @@
   (pl:swap (slot-value runtime 'grammars)
            (lambda (state)
              (pl:with state :loaded
-                      (pl:with (pl:at state :loaded) language entry)))))
+                      (pl:with (pl:lookup state :loaded) language entry)))))
 
 (defun %note-missing (runtime language)
   (pl:swap (slot-value runtime 'grammars)
            (lambda (state)
              (pl:with state :missing
-                      (pl:with (pl:at state :missing) language)))))
+                      (pl:with (pl:lookup state :missing) language)))))
 
 (defun ensure-language (runtime language library fn-name)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
@@ -31,17 +31,17 @@ itself is one thread at a time, because the loader's table is one table.
 The library and the C function come from the language's own declaration, which is
 why they are handed in: what grammars exist is something written rather than a
 list compiled in here."
-  (or (pl:at (pl:at (%grammars runtime) :loaded) language)
+  (or (pl:lookup (pl:lookup (%grammars runtime) :loaded) language)
       (bordeaux-threads:with-recursive-lock-held ((loading runtime))
         (unless (libs-loaded runtime) (ensure-ts runtime))
         (when (libs-loaded runtime)
           (let ((state (%grammars runtime)))
-            (or (pl:at (pl:at state :loaded) language)
-                (unless (pl:contains (pl:at state :missing) language)
+            (or (pl:lookup (pl:lookup state :loaded) language)
+                (unless (pl:contains (pl:lookup state :missing) language)
                   (let ((entry (load-language-entry language library fn-name)))
                     (cond
                       (entry (%note-loaded runtime language entry)
-                             (pl:at (pl:at (%grammars runtime) :loaded)
+                             (pl:lookup (pl:lookup (%grammars runtime) :loaded)
                                     language))
                       (t (%note-missing runtime language)
                          (pine/run/fault:report
@@ -94,7 +94,7 @@ how many were written, which is zero at the end of the buffer."
           (n (pine/data:size lines)))
       (block filling
         (loop :while (< line n)
-              :do (let* ((octets (sb-ext:string-to-octets (pine/data:at lines line)
+              :do (let* ((octets (sb-ext:string-to-octets (pine/data:lookup lines line)
                                                           :external-format :utf-8))
                          (len (length octets)))
                     (loop :for i :from (min offset len) :below len

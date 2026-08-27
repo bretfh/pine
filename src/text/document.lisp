@@ -156,7 +156,7 @@ is text plus something of its own."
 
 (defun setting (doc key)
   "What this document reads for KEY: its own, then its mode's."
-  (or (d:at (settings doc) key) (mode:setting (mode-of doc) key)))
+  (or (d:lookup (settings doc) key) (mode:setting (mode-of doc) key)))
 
 (defun (setf setting) (value doc key)
   (setf (settings doc) (d:with (settings doc) key value))
@@ -283,7 +283,7 @@ here, so the document is what was typed and nothing else."
   (node:stir doc)
   doc)
 
-(defun mark-at (doc name) (d:at (marks doc) name))
+(defun mark-at (doc name) (d:lookup (marks doc) name))
 
 (defun put-mark (doc name &optional (at (at-line doc)) (col (at-col doc)))
   (setf (marks doc) (d:with (marks doc) name (list at col)))
@@ -314,7 +314,7 @@ here, so the document is what was typed and nothing else."
 (defun origin (doc)
   (or (file-of doc) (let ((n (source doc))) (and n (node:full-name n)))))
 
-(defun visited (doc) (d:at *places* (origin doc)))
+(defun visited (doc) (d:lookup *places* (origin doc)))
 
 (defun leaving (doc)
   (let ((where (origin doc)))

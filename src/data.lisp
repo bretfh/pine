@@ -3,7 +3,7 @@
   (:shadow #:map #:set #:keys #:count #:remove #:union #:subseq #:last #:first
            #:rest #:reverse #:sort #:find #:position #:some #:every #:append)
   (:export #:map #:seq #:set #:mapp #:seqp #:setp #:collectionp
-           #:at #:with #:without #:size #:emptyp #:count
+           #:lookup #:with #:without #:size #:emptyp #:count
            #:keys #:vals #:pairs #:fold #:do-each #:do-pairs #:do-map #:do-seq
            #:as #:same #:merged #:union #:contains
            #:first #:last #:rest #:append #:subseq #:reverse #:sort
@@ -36,7 +36,12 @@
 (defun setp (x) (fset:set? x))
 (defun collectionp (x) (or (mapp x) (seqp x) (setp x)))
 
-(defgeneric at (collection key &optional default)
+(defgeneric lookup (collection key &optional default)
+  (:documentation "What COLLECTION holds at KEY, or DEFAULT where it holds nothing.
+
+Not AT: a node is at a path and a value is looked up in a collection, and reading
+(d:at (d:all *commands*) name) beside (tree:at nil \"wm\") meant knowing which was
+which before you could read either.")
   (:method ((c fset:map) key &optional default)
     (multiple-value-bind (value foundp) (fset:lookup c key)
       (if foundp value default)))
@@ -103,7 +108,7 @@
   (:method ((c null)) nil))
 
 (defun pairs (collection)
-  (loop :for key :in (keys collection) :collect (cons key (at collection key))))
+  (loop :for key :in (keys collection) :collect (cons key (lookup collection key))))
 
 (defgeneric fold (collection initial function)
   (:method ((c fset:map) initial function)
@@ -196,8 +201,8 @@ a shape this quietly steps over."
 (defun union (&rest sets)
   (reduce #'fset:union sets :initial-value +no-set+))
 
-(defun first (c) (at c 0))
-(defun last (c) (at c (1- (size c))))
+(defun first (c) (lookup c 0))
+(defun last (c) (lookup c (1- (size c))))
 (defun rest (c) (fset:subseq c 1))
 (defun append (a b) (fset:concat a b))
 (defun subseq (c from &optional to) (fset:subseq c from (or to (size c))))

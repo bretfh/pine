@@ -33,7 +33,7 @@ simply no method, which is the truth about that image.")
   (:method (what) (declare (ignore what)) nil))
 
 (defun here (&optional (s session:*session*))
-  (or (and s (session:at s)) (tree:root)))
+  (or (and s (session:in s)) (tree:root)))
 
 (defun %place (where &optional (s session:*session*))
   (cond ((null where) (here s))
@@ -115,7 +115,7 @@ stands in comes back here with the restarts it is still offering."
 
 (command:defcommand "cd" (&optional where) (:describes "go to a node")
   (let ((n (if where (%place where) (tree:root))))
-    (when (and n session:*session*) (setf (session:at session:*session*) n))
+    (when (and n session:*session*) (setf (session:in session:*session*) n))
     (and n (node:full-name n))))
 
 (command:defcommand "cat" (where) (:describes "what a node holds")

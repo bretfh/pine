@@ -90,7 +90,7 @@ worked out from the size."
   "Put a surface up. What has to be told to the compositor is only ever the thread
 holding it."
   (let ((tree (%tree name)))
-    (when (and tree (null (d:at (d:all (up s)) name)))
+    (when (and tree (null (d:lookup (d:all (up s)) name)))
       (let ((p (make-instance 'pane:pane
                               :name name :shell (shell-of s) :tree tree
                               :on-resize
@@ -113,7 +113,7 @@ holding it."
 (defun moved (s name)
   "The surface worked itself out again. How big it is is not said here: that is a
 write to a node the surface reads, and on every repaint it never settles."
-  (let ((p (d:at (d:all (up s)) name))
+  (let ((p (d:lookup (d:all (up s)) name))
         (tree (%tree name)))
     (cond ((and p tree)
            (pump:hand (pump s)
@@ -123,14 +123,14 @@ write to a node the surface reads, and on every repaint it never settles."
 
 (defun toggled (s name)
   (if (%shownp name)
-      (unless (d:at (d:all (up s)) name) (open-one s name))
-      (let ((p (d:at (d:all (up s)) name)))
+      (unless (d:lookup (d:all (up s)) name) (open-one s name))
+      (let ((p (d:lookup (d:all (up s)) name)))
         (when p
           (d:drop! (up s) name)
           (pump:hand (pump s) (lambda () (pane:close-pane p)))))))
 
 (defun %unlisten (s name)
-  (dolist (w (d:at (d:all (watching s)) name))
+  (dolist (w (d:lookup (d:all (watching s)) name))
     (fault:or-nothing "a watch already let go of is let go of"
       (watch:unwatch w)))
   (d:drop! (watching s) name))
@@ -162,7 +162,7 @@ name, and the old one is something nothing writes."
   "Take down what /surface no longer says."
   (d:do-each (name (d:keys (d:all (up s))))
     (unless (surface:named name)
-      (let ((p (d:at (d:all (up s)) name)))
+      (let ((p (d:lookup (d:all (up s)) name)))
         (%unlisten s name)
         (d:drop! (up s) name)
         (when p
@@ -241,7 +241,7 @@ compositor put it; what it draws is the new node's to say."
 (defun took-up (s name)
   "One surface, watched and shown, however it came to be declared."
   (%listen s name)
-  (let ((p (d:at (d:all (up s)) name)))
+  (let ((p (d:lookup (d:all (up s)) name)))
     (cond ((not (%shownp name))
            (when p
              (d:drop! (up s) name)

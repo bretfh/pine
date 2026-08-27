@@ -82,7 +82,7 @@ move: the chord is kept on the command, and whatever keeps keymaps asks."
          (c (make-instance 'command :name name :action action :from home
                                     :describes describes :asks asks :on on)))
     (d:keep! *defined* home
-             (d:with (or (d:at (d:all *defined*) home) (d:no-map)) name c))
+             (d:with (or (d:lookup (d:all *defined*) home) (d:no-map)) name c))
     (unless (%claimedp home) (d:keep! *commands* name c))
     c))
 
@@ -94,8 +94,8 @@ move: the chord is kept on the command, and whatever keeps keymaps asks."
   (etypecase name
     (null nil)
     (command name)
-    (string (d:at (d:all *commands*) name))
-    (symbol (d:at (d:all *commands*) (string-downcase (symbol-name name))))))
+    (string (d:lookup (d:all *commands*) name))
+    (symbol (d:lookup (d:all *commands*) (string-downcase (symbol-name name))))))
 
 (defun commands ()
   "Every command standing, in no order. A keymap asks this on every keystroke, so

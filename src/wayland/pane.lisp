@@ -8,7 +8,7 @@
   (:export #:pane #:open-pane #:close-pane #:paint #:render #:resize #:measure
            #:on-resize
            #:name-of #:tree #:wide #:tall #:hover #:configuredp #:took
-           #:kind #:dirty #:chromep #:place #:at #:clicked #:hint-of #:cell
+           #:kind #:dirty #:chromep #:place #:clicked #:hint-of #:cell
            #:*namespace* #:*font*))
 (in-package #:pine/wayland/pane)
 
@@ -291,7 +291,7 @@ happens here: the thread that owns the compositor is the only one that may."
   s)
 
 (defun at (s line col)
-  (and (tree s) (hit:at (tree s) line col)))
+  (and (tree s) (hit:under (tree s) line col)))
 
 (defun clicked (s line col)
   (let ((found (at s line col)))
