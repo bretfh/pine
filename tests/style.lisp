@@ -317,3 +317,52 @@ systems. A substrate that names one of them has a favourite."
             (pushnew (format nil "~a names ~a" (file-namestring file) name)
                      loose :test #'equal)))))
     (is (null loose) "~{~%  ~a~}" (reverse loose))))
+
+(defparameter +claimed-twice+ 158
+  "How many exported names more than one package claims. Every one is a word that
+cannot be in the language until somebody says which package owns it, and until
+then a file that wants both has to spell one of them out.
+
+This number goes down. It does not go up.")
+
+(defun %exported ()
+  "Every exported name under src/, and the packages that export it."
+  (let ((out (make-hash-table :test 'equal)))
+    (dolist (file (%files) out)
+      (let ((said (uiop:read-file-string file)) (home nil) (in-export nil))
+        (dolist (line (uiop:split-string said :separator '(#\Newline)))
+          (let ((at (search "(defpackage #:" line)))
+            (when at (setf home (subseq line (+ at 14)
+                                        (position-if
+                                         (lambda (c) (member c '(#\Space #\))))
+                                         line :start (+ at 14))))))
+          (when (search "(:export" line) (setf in-export t))
+          (when (search "(in-package" line) (setf in-export nil))
+          (when (and in-export home)
+            (let ((from 0))
+              (loop
+                (let ((at (search "#:" line :start2 from)))
+                  (unless at (return))
+                  (let* ((start (+ at 2))
+                         (end (or (position-if
+                                   (lambda (c) (member c '(#\Space #\))))
+                                   line :start start)
+                                  (length line)))
+                         (word (string-downcase (subseq line start end))))
+                    (pushnew home (gethash word out) :test #'equal)
+                    (setf from end)))))))))))
+
+(test a-word-belongs-to-one-package
+  "Two packages exporting one name is two things called the same thing. Only one
+of them can be in the language a config is written in, and reading either means
+knowing which is meant."
+  (let ((twice (loop :for word :being :the :hash-keys :of (%exported)
+                       :using (:hash-value packages)
+                     :when (rest packages) :collect (cons word packages))))
+    (is (<= (length twice) +claimed-twice+)
+        "~d names two packages claim, was ~d:~{~%  ~a~}"
+        (length twice) +claimed-twice+
+        (mapcar (lambda (each)
+                  (format nil "~a: ~{~a~^ ~}" (car each) (cdr each)))
+                (subseq (sort twice #'> :key (lambda (e) (length (cdr e))))
+                        0 (min 12 (length twice)))))))
