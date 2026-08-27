@@ -133,18 +133,25 @@ thread holding them go. Here or in another image, one act.")
     (when (member restart (offers f) :test #'equal)
       (setf (taken f) restart)
       (resume (where f) f restart)
+      (when (lock f)
+        (bordeaux-threads:with-lock-held ((lock f))
+          (bordeaux-threads:condition-notify (told f))))
       restart)))
 
 (defun %stand (f seconds)
   "Wait, holding the frames the fault was signalled in, until someone chooses a
-restart. Unattended, it gives up after a while rather than standing for ever."
+restart. Unattended, it gives up after a while rather than standing for ever.
+
+TAKEN as well as CHOICE, because a fault standing in another image is answered by
+being taken there: nothing here ever sets its choice, so waiting only on that is
+waiting out the whole timeout on a fault somebody already dealt with."
   (bordeaux-threads:with-lock-held ((lock f))
     (loop :with due := (+ (get-universal-time) seconds)
-          :until (choice f)
+          :until (or (choice f) (taken f))
           :do (bordeaux-threads:condition-wait (told f) (lock f) :timeout 1)
               (when (deferred f) (setf due (+ (get-universal-time) seconds)))
               (when (> (get-universal-time) due) (return))))
-  (choice f))
+  (or (choice f) (taken f)))
 
 (defun await (f &optional (seconds *waiting*))
   "Wait for someone to take one of the restarts F is standing in, and say which."

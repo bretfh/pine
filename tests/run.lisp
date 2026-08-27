@@ -223,3 +223,31 @@ something each caller has to remember."
                                        'sento.messageb:message-box/bt)
                           :collect (job:name j))))
     (is (null shared) "these queue behind each other: ~{~a~^, ~}" shared)))
+
+(defclass a-far-image () ()
+  (:documentation "Somewhere a fault is standing that is not here. Enough of an
+image to be told a restart was taken."))
+
+(defmethod fault:resume ((it a-far-image) f restart)
+  (declare (ignore f restart))
+  t)
+
+(test a-fault-taken-in-another-image-stops-standing-here
+  "A borrowed fault is answered by being taken there, and nothing here ever sets
+its choice. Waiting only on the choice waits out the whole timeout on a fault
+somebody already dealt with -- and then takes ABORT on a child that carried on two
+minutes ago."
+  (booted)
+  (let ((f (fault:borrow (make-instance 'a-far-image)
+                         (make-condition 'simple-error
+                                         :format-control "something over there")
+                         '("ABORT" "CARRY-ON"))))
+    (bordeaux-threads:make-thread
+     (lambda () (sleep 0.05) (fault:take f "CARRY-ON")))
+    (let ((from (get-internal-real-time)))
+      (is (equal "CARRY-ON" (fault:await f 30)))
+      (is (< (/ (- (get-internal-real-time) from)
+                internal-time-units-per-second)
+             10)
+          "it came back when the fault was taken, not when the wait ran out")))
+  (fault:forget-faults))

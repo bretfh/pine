@@ -50,7 +50,10 @@ not."))
 (defclass child (image job:program)
   ((systems :initarg :systems :accessor systems :initform '(:pine))
    (readyp  :initform nil :accessor readyp)
-   (held    :initform nil :accessor held)
+   (held    :initform nil :accessor held
+            :documentation "The fault this child is standing in, or nothing. The
+fault itself and not a flag, because whoever wants the pipe next has to wait for
+it to be answered, and a fault is a thing you can wait on.")
    (turn    :initform (bordeaux-threads:make-lock "pine-image") :reader turn))
   (:documentation "An image started here, over pipes, that dies with pine.
 
@@ -143,9 +146,10 @@ that image is still offering."
     (force-output in)))
 
 (defun %settle (j &optional (seconds fault:*waiting*))
-  (loop :repeat (round (/ seconds 0.02))
-        :while (held j)
-        :do (sleep 0.02)))
+  "Wait for whoever is standing in this child's fault to answer it. HELD is that
+fault, so this waits on the fault rather than looking at a flag over and over."
+  (let ((f (held j)))
+    (when f (fault:await f seconds))))
 
 (defmethod evaluate ((j child) form &key (timeout fault:*waiting*))
   (%settle j)
@@ -155,8 +159,7 @@ that image is still offering."
       (when line
         (multiple-value-bind (value said offers) (answered line)
           (cond (said
-                 (setf (held j) t)
-                 (borrowing j said offers)
+                 (setf (held j) (borrowing j said offers))
                  (values nil said offers ""))
                 (t (values (list value) nil nil ""))))))))
 
