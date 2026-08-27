@@ -9,11 +9,10 @@
            #:make #:derive #:place #:attach #:detach #:child #:children #:memo
            #:slots #:make-child #:erase-child
            #:reads #:writes #:names-of #:each-of #:nodes-of #:saw
-           #:readers #:depend #:undepend #:reading #:*reading* #:*on-erase*))
+           #:readers #:depend #:undepend #:reading #:*reading*))
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)
-(defvar *on-erase* nil)
 (defparameter +unread+ '#:unread)
 
 (defclass node ()
@@ -176,11 +175,14 @@ that ends in / asks for a branch.")
     (attach (make (string-right-trim "/" (princ-to-string name))) n)))
 
 (defgeneric erase-child (node name)
-  (:documentation "Take NAME out of NODE, and out of whatever stands behind it.")
+  (:documentation "Take NAME out of NODE, and out of whatever stands behind it.
+
+Saying the path went is COMMIT:FORGET's, not this one's: a store keeping a copy
+of the tree hears an erasure the same way it hears a write, and this layer names
+nothing that is listening.")
   (:method ((n node) name)
     (let ((gone (resolve n name)))
       (when gone
-        (when *on-erase* (funcall *on-erase* gone))
         (commit:forget (full-name gone)))
       (d:drop! (memo n) (princ-to-string name))
       (detach n name))))

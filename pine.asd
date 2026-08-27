@@ -27,16 +27,16 @@
                           :serial t
                           :components ((:file "commit")
                                        (:file "node") (:file "tree") (:file "path")
-                                       (:file "reader") (:file "mount")
-                                       (:file "store")))
+                                       (:file "reader") (:file "mount")))
                  (:module "run"
                           :serial t
                           :components ((:file "libs") (:file "log") (:file "meter")
                                        (:file "fault") (:file "actors")
                                        (:file "job") (:file "watch")
-                                       (:file "command") (:file "state")
+                                       (:file "command")
                                        (:file "image") (:file "peer")
                                        (:file "session") (:file "system")))
+                 (:file "fs/store")
                  (:module "ui"
                           :serial t
                           :components ((:file "widget") (:file "face")

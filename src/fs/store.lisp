@@ -1,20 +1,17 @@
 (defpackage #:pine/fs/store
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree))
+                    (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree)
+                    (#:log #:pine/run/log))
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
            #:storablep #:written #:read-back #:stale #:keep #:kept #:forget
-           #:keeping #:*store* #:attach #:*on-trouble*))
+           #:keeping #:*store* #:attach))
 (in-package #:pine/fs/store)
 
 (defvar *schema*
   "create table if not exists node (path text primary key, value text not null,
                                     at integer)")
 (defvar *store* nil)
-(defvar *on-trouble* nil
-  "Told when a write or a read-back would otherwise have failed in silence. A
-value that will not go down, and one that will not come back, are both things the
-person running pine has to be able to find out about.")
 
 (defclass store ()
   ((file-of :initarg :file :reader file-of)
@@ -25,7 +22,10 @@ person running pine has to be able to find out about.")
     (write-string (princ-to-string (file-of s)) stream)))
 
 (defun %trouble (what)
-  (if *on-trouble* (funcall *on-trouble* what) (warn "~a" what))
+  "A value that will not go down, and one that will not come back, are both things
+the person running pine has to be able to find out about, so they are said where
+everything else pine says is said."
+  (log:note "~a" what)
   nil)
 
 (defun open-store (file)
@@ -121,16 +121,15 @@ says so rather than vanishing."
                             (node:full-name n) c))))
       n)))
 
-(defun forget (n)
-  "Take N out of the store as it goes out of the tree, and whatever stood under it
-with it."
+(defun forget (path)
+  "Take PATH out of the store as it goes out of the tree, and whatever stood under
+it with it."
   (let ((s *store*))
-    (when (and s (node:savedp n))
-      (let ((path (node:full-name n)))
-        (sqlite:execute-non-query
-         (db s) "delete from node where path = ? or path like ?"
-         path (concatenate 'string path "/%"))))
-    n))
+    (when s
+      (sqlite:execute-non-query
+       (db s) "delete from node where path = ? or path like ?"
+       path (concatenate 'string path "/%")))
+    path))
 
 (defun kept (moved)
   (let ((s *store*))
@@ -140,8 +139,10 @@ with it."
               :when (node:nodep n) :do (keep n))))))
 
 (defun keeping (&optional (s *store*))
-  (setf node:*on-erase* (when s #'forget)
-        (commit:on-commit :store) (when s #'kept))
+  "Follow the tree: what moved is written down and what went is taken out. Two
+listeners, because a write and an erasure are two things that happen to a place."
+  (setf (commit:on-commit :store) (when s #'kept)
+        (commit:on-forget :store) (when s #'forget))
   s)
 
 (defun restore (s &optional (root (tree:root)))

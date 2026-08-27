@@ -2,7 +2,7 @@
   (:use :cl :fiveam)
   (:local-nicknames (:d :pine/data) (:node :pine/fs/node) (:tree :pine/fs/tree)
                     (:mount :pine/fs/mount) (:store :pine/fs/store)
-                    (:path :pine/fs/path)
+                    (:path :pine/fs/path) (:commit :pine/fs/commit)
                     (:actors :pine/run/actors) (:job :pine/run/job)
                     (:fault :pine/run/fault) (:image :pine/run/image)
                     (:peer :pine/run/peer) (:watch :pine/run/watch)

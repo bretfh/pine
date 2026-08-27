@@ -262,7 +262,6 @@ stands in comes back here with the restarts it is still offering."
   (tree:root))
 
 (defun stop ()
-  (setf node:*on-erase* nil)
   (commit:forget-listeners)
   (dolist (s (session:sessions)) (session:close s))
   (dolist (j (system:systems)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
@@ -367,7 +366,6 @@ config would be the value node the surface then replaced."
     (store:open-store store)
     (log:note "~d node~:p came back" (store:restore store:*store*))
     (store:keeping))
-  (setf store:*on-trouble* (lambda (said) (log:note "~a" said)))
   (when *screen* (fault:attempt *screen* "opening the display"))
   (log:note "~a: remoting ~a, ~d command~:p, ~d running"
             (node:contents (tree:at nil "name"))

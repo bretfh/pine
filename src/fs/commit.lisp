@@ -4,7 +4,8 @@
   (:local-nicknames (#:d #:pine/data))
   (:export #:held #:at #:change #:forget #:clear
            #:roots #:root-at #:was #:*kept*
-           #:writing #:announce #:on-commit #:listeners #:forget-listeners))
+           #:writing #:announce #:on-commit #:on-forget #:listeners
+           #:forget-listeners))
 (in-package #:pine/fs/commit)
 
 (defparameter *kept* 200)
@@ -12,6 +13,9 @@
 (defvar *now* (d:no-map))
 (defvar *was* nil)
 (defvar *listening* (d:table))
+(defvar *forgetting* (d:table)
+  "Who to tell that a path went, by name. A write and an erasure are two things
+that happen to a place, so they are two lists and not one with a tag on it.")
 (defvar *moving* nil)
 
 (defun held () *now*)
@@ -49,6 +53,9 @@
                   (return moved))))))
 
 (defun forget (place)
+  "Take PLACE and everything under it out of what stands, and say it went. Whatever
+keeps a copy of the tree hears it here, which is why nothing lower down has to be
+told who that is."
   (let ((under (concatenate 'string place "/")))
     (flet ((underp (each)
              (and (> (length each) (length under))
@@ -59,7 +66,8 @@
                    (d:do-map (each value had out)
                      (when (or (equal each place) (underp each))
                        (setf out (d:without out each))))))))
-    place))
+    (dolist (tells (d:vals (d:all *forgetting*)) place)
+      (funcall tells place))))
 
 (defun clear ()
   (setf *now* (d:no-map))
@@ -74,7 +82,15 @@
   (if tells (d:keep! *listening* key tells) (d:drop! *listening* key))
   tells)
 
-(defun forget-listeners () (d:clear! *listening*))
+(defun on-forget (key) (d:at (d:all *forgetting*) key))
+
+(defun (setf on-forget) (tells key)
+  (if tells (d:keep! *forgetting* key tells) (d:drop! *forgetting* key))
+  tells)
+
+(defun forget-listeners ()
+  (d:clear! *listening*)
+  (d:clear! *forgetting*))
 
 (defun %told (moved)
   (when moved

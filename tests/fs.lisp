@@ -134,7 +134,7 @@ its nodes off the tree, and that is not a reason to forget what they held."
            (let ((s (store:open-store file)))
              (store:keeping s)
              (tree:put nil '("going" "away") "kept")
-             (setf node:*on-erase* nil)
+             (setf (commit:on-forget :store) nil)
              (tree:erase nil "going")
              (store:snapshot s)
              (is (equal '(("/going/away")) (%paths s "/going%"))
