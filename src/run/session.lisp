@@ -5,7 +5,7 @@
   (:export #:session #:open-session #:sessions #:close #:openp
            #:name #:package-of #:readtable-of #:at #:history #:input #:output
            #:read #:evaluate #:print #:interact
-           #:evaluation #:form #:answered #:fault #:said #:at-time
+           #:evaluation #:form #:answered #:fault #:at-time
            #:*session* #:*kept* #:*prompt*))
 (in-package #:pine/run/session)
 

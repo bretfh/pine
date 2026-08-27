@@ -7,7 +7,7 @@
                     (#:fault #:pine/run/fault))
   (:export #:pane #:open-pane #:close-pane #:paint #:render #:resize #:measure
            #:on-resize
-           #:name-of #:tree #:wide #:tall #:hover #:said #:configuredp #:took
+           #:name-of #:tree #:wide #:tall #:hover #:configuredp #:took
            #:kind #:dirty #:chromep #:place #:at #:clicked #:hint-of #:cell
            #:*namespace* #:*font*))
 (in-package #:pine/wayland/pane)
@@ -30,7 +30,6 @@ whoever is showing it, and until it does the client picks.")
    (wide    :initarg :wide    :accessor wide :initform 0)
    (tall    :initarg :tall    :accessor tall :initform 0)
    (hover   :initform nil     :accessor hover)
-   (said    :initform nil     :accessor said)
    (kind    :initform nil     :accessor kind)
    (node-of :initform nil     :accessor node-of)
    (where   :initform nil     :accessor where)

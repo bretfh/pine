@@ -5,7 +5,7 @@
                     (#:emode #:pine/edit/mode) (#:log #:pine/run/log)
                     (#:match #:pine/edit/matching)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault))
-  (:export #:prompt #:asking #:askingp #:ask #:answer #:cancel #:said #:asked
+  (:export #:prompt #:asking #:askingp #:ask #:answer #:cancel #:so-far #:asked
            #:question #:answering #:then #:candidates #:chosen #:choose #:was
            #:matching #:complete #:source #:sources #:*prompt*
            #:showing #:category #:given
@@ -75,7 +75,8 @@
                                      (candidates p text)
                                      (match:matches text (candidates p text)))))))))))
 
-(defun said ()
+(defun so-far ()
+  "What has been typed into the prompt so far."
   (if (tree:root) (node:contents (%said-node)) (%text)))
 
 (defun asked ()
@@ -87,7 +88,7 @@
 
 (defun sources () (d:keys (d:all *sources*)))
 
-(defun candidates (&optional (p *prompt*) (text (said)))
+(defun candidates (&optional (p *prompt*) (text (so-far)))
   (when p
     (or (given p)
         (let ((fn (d:at (d:all *sources*) (category p))))
@@ -95,7 +96,7 @@
                                   "the candidates"))))))
 
 (defun %sync (p)
-  (let ((text (said)))
+  (let ((text (so-far)))
     (unless (equal text (seen p))
       (setf (seen p) text)
       (setf (node:contents (%chose-node)) 0)))
@@ -119,7 +120,7 @@ the directory it is in, so what it offers is what is there."
         (node:contents (%matching-node))
         (if (filep p)
             (candidates p)
-            (match:matches (said) (candidates p))))))
+            (match:matches (so-far) (candidates p))))))
 
 (defun here-directory ()
   (let* ((d (doc:current))
@@ -158,7 +159,7 @@ inside another one would otherwise leave the prompt as what every key edits."
                                           :history history
                                           :was (%where-from back))
           (doc:current) d)
-    (setf (seen *prompt*) (said)))
+    (setf (seen *prompt*) (so-far)))
   (%standing)
   *prompt*)
 
@@ -176,11 +177,11 @@ inside another one would otherwise leave the prompt as what every key edits."
   (let ((d (answering)))
     (setf (node:contents d) text)
     (doc:move d :text 1)
-    (when *prompt* (setf (seen *prompt*) (said)))
+    (when *prompt* (setf (seen *prompt*) (so-far)))
     text))
 
 (defun %complete-file (found)
-  (multiple-value-bind (where base) (match:split-path (match:expanded (said)))
+  (multiple-value-bind (where base) (match:split-path (match:expanded (so-far)))
     (declare (ignore base))
     (let ((shared (match:common-prefix (mapcar #'match:name-of found))))
       (when (plusp (length shared))
@@ -198,9 +199,9 @@ starting over."
           (%complete-file found)
           (let ((shared (match:common-prefix (mapcar #'match:name-of found))))
             (cond ((and (= 1 (length found))
-                        (equal (said) (match:name-of (first found))))
+                        (equal (so-far) (match:name-of (first found))))
                    (answer))
-                  ((and (plusp (length shared)) (> (length shared) (length (said))))
+                  ((and (plusp (length shared)) (> (length shared) (length (so-far))))
                    (%put shared))
                   (t (%put (match:name-of (nth (min (chosen p) (1- (length found)))
                                          found)))))
@@ -251,18 +252,18 @@ typed, so walking back to the end gives it back."
 
 (defun descendsp (p)
   (and (filep p)
-       (let ((typed (match:expanded (said))))
+       (let ((typed (match:expanded (so-far))))
          (and (plusp (length typed))
               (uiop:directory-exists-p typed)
               (not (eql #\/ (char typed (1- (length typed)))))))))
 
 (defun descend (&optional (p *prompt*))
   (declare (ignore p))
-  (let ((typed (match:expanded (said))))
+  (let ((typed (match:expanded (so-far))))
     (%put (concatenate 'string (string-right-trim "/" typed) "/"))))
 
 (defun %answered (p)
-  (let ((said (if (filep p) (match:expanded (said)) (said))))
+  (let ((said (if (filep p) (match:expanded (so-far)) (so-far))))
     (if (and p (must-match p))
         (let* ((found (matching p))
                (pick (nth (min (chosen p) (max 0 (1- (length found)))) found)))
@@ -285,7 +286,7 @@ typed, so walking back to the end gives it back."
 
 (defun showing ()
   (if (askingp)
-      (format nil "~a~a" (question *prompt*) (said))
+      (format nil "~a~a" (question *prompt*) (so-far))
       (or (log:last-said) "")))
 
 (command:defcommand "run-command" ()

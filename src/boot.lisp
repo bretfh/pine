@@ -201,7 +201,7 @@ stands in comes back here with the restarts it is still offering."
 
 (command:defcommand "metrics" ()
   (:describes "how long what pine does is taking")
-  (meter:said))
+  (meter:readings))
 
 (command:defcommand "metrics-reset" ()
   (:describes "start a fresh window of samples")

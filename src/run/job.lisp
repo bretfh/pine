@@ -8,7 +8,7 @@
            #:jobs #:named #:supervise #:supervised #:sweep #:attend #:due #:backoff
            #:settle #:emit #:stoppingp #:forget
            #:name #:state #:tries #:restartsp #:took #:exit-of #:since #:fault
-           #:said #:thunk #:seconds #:stopping #:argv #:env #:receive
+           #:thunk #:seconds #:stopping #:argv #:env #:receive
            #:dispatcher #:ref
            #:blocking-ask #:*out-kept* #:*settled* #:*asking* #:*every*
            #:*stopping*))

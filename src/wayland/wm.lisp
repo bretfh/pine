@@ -4,7 +4,7 @@
                     (#:fault #:pine/run/fault)
                     (#:key #:pine/ui/key) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
-  (:export #:wm #:bind #:managingp #:said #:apply-layout #:take #:laid #:wake
+  (:export #:wm #:bind #:managingp #:apply-layout #:take #:laid #:wake
            #:on-said #:on-render #:on-chord #:wants-chords #:eat-next
            #:windows #:outputs #:focused #:manager
            #:*borders*))

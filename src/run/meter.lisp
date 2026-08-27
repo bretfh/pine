@@ -1,7 +1,7 @@
 (defpackage #:pine/run/meter
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
-  (:export #:timing #:counted #:said #:reading #:reset #:instruments #:report
+  (:export #:timing #:counted #:readings #:reading #:reset #:instruments #:report
            #:now #:*on* #:*kept*))
 (in-package #:pine/run/meter)
 
@@ -117,7 +117,7 @@ as a zero."
               :total (instrument-total it)
               :seconds seconds)))))
 
-(defun said ()
+(defun readings ()
   "Every instrument, in one shape. The synthetic runs and the live daemon both
 answer this, which is what lets one be laid beside the other."
   (remove nil (mapcar #'reading (instruments))))

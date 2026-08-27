@@ -6,7 +6,7 @@
                     (#:doc #:pine/text/document) (#:key #:pine/ui/key)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
                     (#:log #:pine/run/log))
-  (:export #:searching #:start #:step-search #:took #:took-all #:said
+  (:export #:searching #:start #:step-search #:took #:took-all #:banner
            #:needle #:forward #:wrapped))
 (in-package #:pine/edit/isearch)
 
@@ -35,13 +35,14 @@ going, and where it started so quitting can go back."))
   (or (zerop (length (needle s)))
       (and (%look s (doc:at-line (of s)) (doc:at-col (of s))) t)))
 
-(defun said (&optional (s (searching)))
+(defun banner (&optional (s (searching)))
+  "The line the echo area shows while a search is running."
   (when s
     (format nil "~:[Failing ~;~]I-search~:[ backward~;~]~:[~; [wrapped]~]: ~a"
             (%found s) (forward s) (wrapped s) (needle s))))
 
 (defun %show (s)
-  (log:note "~a" (said s))
+  (log:note "~a" (banner s))
   s)
 
 (defun %land (s line col)

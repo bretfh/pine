@@ -204,7 +204,7 @@ side never touched says so rather than showing a zero."
     (let ((start (meter:now)))
       (unwind-protect (funcall (getf it :run))
         (let* ((seconds (/ (- (meter:now) start) 1000000000.0))
-               (rows (meter:said)))
+               (rows (meter:readings)))
           (meter:report
            rows
            :about (format nil "~&workload ~a, size ~d, for ~ds, sbcl ~a~%~
