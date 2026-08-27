@@ -208,3 +208,5 @@ hex; this is how a canvas reads one."
     (:ring-disk      :fg green)
     (:ring-temp      :fg yellow)
     (:ring-track     :fg bg-active))))
+
+(pine/word:lends "color" "metric")

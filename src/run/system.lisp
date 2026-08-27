@@ -4,7 +4,7 @@
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
                     (#:command #:pine/run/command) (#:log #:pine/run/log))
   (:export #:system #:offers #:use #:drop #:systems #:named #:attach #:offered
-           #:owns #:*on-loaded*))
+           #:owns))
 (in-package #:pine/run/system)
 
 (defvar *offered* (d:table)
@@ -16,9 +16,6 @@ so USE has something to make once the asdf system is there.")
 while it runs, which is what replaces a list of names to forget by hand.")
 
 (defvar *under* nil)
-(defvar *on-loaded* nil
-  "Told that a system's code is in the image. What somebody writes their own in
-takes its vocabulary from what is loaded, so it is built again here.")
 
 (defclass system (job:job) ()
   (:documentation "A package pine loaded. It starts and stops like anything else
@@ -69,7 +66,7 @@ pine write /system/desk '(:stop)' takes it away again."
         (progn
           (unless (d:at (d:all *offered*) name)
             (asdf:load-system (format nil "pine/~a" name))
-            (when *on-loaded* (funcall *on-loaded*)))
+            (pine/word:user))
           (let ((class (d:at (d:all *offered*) name)))
             (unless class
               (error "~a loaded but offered no system class." name))
@@ -88,3 +85,5 @@ pine write /system/desk '(:stop)' takes it away again."
       (job:forget (job:name s))
       (log:note "~a is down" (job:name s)))
     s))
+
+(pine/word:lends "system" "offers")

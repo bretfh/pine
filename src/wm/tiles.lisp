@@ -179,3 +179,5 @@ of being the window manager here."
   (setf (watching s) nil)
   (tree:erase nil "wm" "layout")
   s)
+
+(pine/word:lends "layout" "arrange" "tall" "wide" "full" "stacked")

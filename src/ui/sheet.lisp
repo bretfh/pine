@@ -174,3 +174,5 @@ a path nobody named should not grow the keyword package."
         (setf (node:contents active) (face:active))))
     (refresh)
     root))
+
+(pine/word:lends "css-glass" "css-rad" "css-mono")

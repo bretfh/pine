@@ -41,3 +41,5 @@ keyboard, a test and another pine all press the same way."
               :reads (lambda () (key:text (pending)))
               :writes #'dispatch
               :describes "write a chord here to press it"))
+
+(pine/word:lends "wm")

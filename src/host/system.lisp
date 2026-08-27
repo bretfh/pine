@@ -106,3 +106,5 @@ A name in place of a node is made and put under /dev first:
 (defmethod job:stop ((s host))
   (leave)
   s)
+
+(pine/word:lends "attend")

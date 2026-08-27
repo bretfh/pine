@@ -37,7 +37,7 @@
    (saw       :initform nil      :accessor saw))
   (:documentation "A name, what it sits under, and what is under it.
 
-One class, four closures and two flags, because that is all a node ever was.
+One class, four closures and three flags, because that is all a node ever was.
 
 READS answers what it holds and WRITES says what writing it means; with neither,
 the value is kept in the commit store and SAVEDP says so. NAMES says what is
@@ -303,3 +303,7 @@ to read it and how to write it are two closures over the object."
                                                        (not (eq object into)))
                                               (stir object))))
                            into))))
+
+(pine/word:lends "node" "contents" "nodes" "resolve" "stir" "name" "over"
+                "full-name" "attach" "detach" "child" "derive" "describes"
+                "nodep" "savedp" "livep" "announces" "refreshes" "slots" "verb")

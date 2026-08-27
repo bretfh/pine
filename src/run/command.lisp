@@ -150,3 +150,5 @@ repl is the same path saying something else."
                            :each #'%command
                            :describes "every command there is")
                root))
+
+(pine/word:lends "defcommand" "command" "named" "commands" "run")

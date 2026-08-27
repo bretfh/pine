@@ -115,3 +115,5 @@
                  (when (match pattern (parse (node:full-name each)))
                    (push each found))))
     (nreverse found)))
+
+(pine/word:lends "leaf")

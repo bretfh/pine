@@ -1,6 +1,7 @@
 (defpackage :pine/test
   (:use :cl :fiveam)
-  (:local-nicknames (:d :pine/data) (:node :pine/fs/node) (:tree :pine/fs/tree)
+  (:local-nicknames (:d :pine/data) (:word :pine/word)
+                    (:node :pine/fs/node) (:tree :pine/fs/tree)
                     (:mount :pine/fs/mount) (:store :pine/fs/store)
                     (:path :pine/fs/path) (:commit :pine/fs/commit)
                     (:actors :pine/run/actors) (:job :pine/run/job)

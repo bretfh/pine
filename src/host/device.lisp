@@ -333,3 +333,5 @@ moment: sampling per read gives the second one no ticks to divide by."
 (defun attach (root name device)
   (node:attach device (tree:ensure root name))
   device)
+
+(pine/word:lends "device")

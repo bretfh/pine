@@ -119,3 +119,23 @@ is under src/, this is not, and src/ has never heard of it."
                                    (search "(use :notes)" said)))
                          :collect (file-namestring f))))
     (is (null named) "~{~%  ~a names it~}" named)))
+
+(test the-language-is-what-every-package-lent-it
+  "PINE/USER is not a list kept somewhere else. A word is offered in the file that
+defines it, so a word renamed or taken away takes its offer with it, instead of a
+list going on naming it and FIND-SYMBOL dropping it in silence."
+  (multiple-value-bind (p clashes) (word:user)
+    (is (null clashes) "two packages claimed one word:~{~%  ~a~}" clashes)
+    (let ((gone (loop :for (home said from) :in (word:lent)
+                      :for package := (find-package home)
+                      :unless (and package
+                                   (eq :external
+                                       (nth-value 1 (find-symbol from package))))
+                        :collect (format nil "~a lends ~a, which it has not got"
+                                         home from))))
+      (is (null gone) "~{~%  ~a~}" gone))
+    (is (< (length (word:lent)) 200)
+        "~d words: a language, not a grab bag" (length (word:lent)))
+    (dolist (said '("SWAP" "CAS" "READ" "WRITE" "NODE" "DEFCOMMAND" "DEFSURFACE"))
+      (is (eq :external (nth-value 1 (find-symbol said p)))
+          "~a is something a user program can say" said))))

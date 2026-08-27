@@ -22,7 +22,8 @@
                 :serial t
                 :pathname "src/"
                 :components
-                ((:file "data")
+                ((:file "word")
+                 (:file "data")
                  (:module "fs"
                           :serial t
                           :components ((:file "commit")
@@ -56,6 +57,7 @@ the parse behind it"
                 :serial t
                 :pathname "src/text/"
                 :components ((:file "lines") (:file "document")
+                             (:file "structure")
                              (:file "lisp") (:file "language")
                              (:module "ts"
                                       :serial t

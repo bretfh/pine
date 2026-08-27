@@ -165,3 +165,6 @@ nothing more, which is exactly what it is in a test.")
   "Declare a surface. OPTIONS is :as and a role class."
   `(builds ,(string-downcase (string name)) (lambda () ,@body)
            ,@options :shown :default))
+
+(pine/word:lends "surface" "defsurface" "builds" "role" "anchor" "asks"
+                "shown" "bar" "panel" "overlay" "background" "window" "tile")

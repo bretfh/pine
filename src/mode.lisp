@@ -242,3 +242,7 @@ mode is a class anybody can write and most of them are not written here."
                            :each #'%mode
                            :describes "every mode there is, and its chords")
                root))
+
+(pine/word:lends "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
+                "press" "insert" "indent" "complete" "save" "structure" "setting"
+                "bind" "claims")

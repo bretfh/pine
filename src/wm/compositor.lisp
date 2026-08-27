@@ -230,3 +230,5 @@ manager attaches its own places under /wm and they are found like any other."
   (list :outputs (length (outputs c))
         :windows (length (windows c))
         :focused (focused c)))
+
+(pine/word:lends "outputs" "windows" "focused" "rect" "hidden" "hide" "show")

@@ -240,3 +240,8 @@ that has already been handed out."
                                          made))
                                      (funcall builder item i)))
            props)))
+
+(pine/word:lends "column" "row" "label" "icon" "button" "box" "center"
+                "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows"
+                "choice" "calendar" "image" "centerbox" "ring" "cells" "here"
+                "acting")

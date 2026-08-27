@@ -271,3 +271,6 @@ has run long enough to have earned it."
              (setf (state j) :failed (since j) now)
              (handler-case (start j)
                (error (e) (setf (fault j) e (state j) :failed))))))))
+
+(pine/word:lends "job" "thread" "actor" "program" "start" "stop" "alivep"
+                "tell" "ask")

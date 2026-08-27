@@ -127,3 +127,5 @@ that is not there answers nothing and writing it makes it, which is what opening
 file that does not exist is: a buffer on a place, not on a file."
   (or (node:resolve n name)
       (%node-for n (merge-pathnames (%bare name) (truename-of n)) (%bare name))))
+
+(pine/word:lends "mount")

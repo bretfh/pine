@@ -321,4 +321,8 @@ there being nothing painting is not a case anybody has to write down."
       (job:stop s))
     s))
 
-(setf pine:*screen* (lambda () (when (availablep) (open-screen))))
+(defmethod pine:opening ((what (eql :display)))
+  "Loading this is what says pine can paint. Nothing writes a closure anywhere:
+the method is here, in the file that knows how, and there being no display to
+open is answered here too."
+  (when (availablep) (open-screen)))

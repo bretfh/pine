@@ -35,3 +35,5 @@ say itself, because nothing else can see *SAID* move.")
                                                   (unless value (forget)))
                                         :describes "what pine said")
                             root)))
+
+(pine/word:lends "note")

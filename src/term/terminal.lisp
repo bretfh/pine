@@ -217,3 +217,5 @@ screen; writing it is typing at the program."
     (job:start term)
     (%shown term)
     term))
+
+(pine/word:lends "open-terminal")

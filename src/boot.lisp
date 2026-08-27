@@ -15,56 +15,22 @@
                     (#:peer #:pine/run/peer) (#:system #:pine/run/system)
                     (#:session #:pine/run/session)
                     (#:face #:pine/ui/face) (#:sheet #:pine/ui/sheet)
-                    (#:surface #:pine/ui/surface) (#:build #:pine/ui/build))
+                    (#:surface #:pine/ui/surface) (#:build #:pine/ui/build)
+                    (#:word #:pine/word))
   (:export #:start #:stop #:main #:daemon #:quit
            #:use #:drop #:reach #:serve #:mount #:spawn #:style
            #:here #:describe #:read-at #:write-at
            #:load-config #:config-file #:store-file #:user-package
-           #:*screen* #:+user-surface+))
+           #:opening))
 (in-package #:pine)
 
-(defvar *screen* nil
-  "What opens the display, and nothing when this image has none to open. Loading
-PINE/WAYLAND fills it in.")
+(defgeneric opening (what)
+  (:documentation "Open WHAT, if anything loaded here knows how.
 
-(defparameter +user-surface+
-  '((:pine "use" "drop" "reach" "spawn" "here" "style" "read-at" "write-at")
-    (:pine/run/command "defcommand" "command" "named" "commands" "run")
-    (:pine/run/system "system" "offers")
-    (:pine/mode "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
-     "press" "insert" "indent" "complete" "save" "structure" "setting" "bind"
-     "claims")
-    (:pine/fs/node "node" "value" "derived" "contents" "nodes" "resolve" "stir"
-     "name" "over" "full-name" "attach" "detach" "child" "derive" "describes"
-     "nodep" "savedp" "livep" "announces" "refreshes" "slots" "verb")
-    (:pine/fs/tree "at" "ensure" "erase" "listing" "root")
-    (:pine/fs/mount "mount")
-    (:pine/fs/path "leaf")
-    (:pine/run/job "job" "thread" "actor" "program" "start" "stop" "alivep"
-     "tell" "ask")
-    (:pine/ui/surface "surface" "defsurface" "builds" "role" "anchor" "asks"
-     "shown" "bar" "panel" "overlay" "background" "window" "tile")
-    (:pine/ui/widget "widget" "parts")
-    (:pine/ui/layout "measure" "paint")
-    (:pine/ui/face "color" "metric")
-    (:pine/ui/sheet "css-glass" "css-rad" "css-mono")
-    (:pine/ui/build "column" "row" "label" "icon" "button" "box" "center"
-     "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows" "choice"
-     "calendar" "image" "centerbox" "ring" "cells" "here" "acting")
-    (:pine/text/document "document" "make-document" "documents" "restructure"
-     "regions" "spans" "overlays")
-    (:pine/host "attend")
-    (:pine/host/device "device" "readings")
-    (:pine/run/log "note")
-    (:pine/wm/compositor "outputs" "windows" "focused" "rect" "hidden"
-     "hide" "show")
-    (:pine/wm/keys "wm")
-    (:pine/wm/tiles "layout" "arrange" "tall" "wide" "full" "stacked")
-    (:pine/term/terminal "open-terminal")
-    (:pine/data "map" "seq" "set" "with" "without" "keys" "vals" "pairs" "size"
-     "box" "held" "put!" "swap!"))
-  "What somebody writing their own package gets. The whole protocol and nothing
-private: a system they write is the editor's equal, and this is the proof of it.")
+:DISPLAY is the one pine asks for. A frontend answers it in its own file, so an
+image built without one has nothing to unset and nothing to check -- there is
+simply no method, which is the truth about that image.")
+  (:method (what) (declare (ignore what)) nil))
 
 (defun here (&optional (s session:*session*))
   (or (and s (session:at s)) (tree:root)))
@@ -238,7 +204,6 @@ stands in comes back here with the restarts it is still offering."
 
 (defun start (&key (name "pine") store remoting)
   (libs:attend)
-  (setf system:*on-loaded* #'user-package)
   (tree:make-root)
   (unless (actors:runningp) (actors:boot :remoting remoting))
   (let ((root (tree:root)))
@@ -281,35 +246,13 @@ stands in comes back here with the restarts it is still offering."
   (merge-pathnames "pine/tree.db" (uiop:xdg-data-home)))
 
 (defun user-package ()
-  "Where somebody writes their own. It is a language, not a grab bag: it carries
-Common Lisp and pine's whole protocol, so a package that uses this one and nothing
-else can say everything the editor can say.
+  "Where somebody writes their own, built from what every package lent.
 
-  (defpackage #:notes (:use #:pine/user))
-
-Built again whenever a system is loaded, because what it can name is what pine
-has and a system loaded later brings its own words."
-  (let ((p (or (find-package :pine/user) (make-package :pine/user :use '(:cl))))
-        (names nil))
-    (dolist (entry +user-surface+)
-      (let ((from (find-package (first entry))))
-        (when from
-          (dolist (name (rest entry))
-            (let ((symbol (find-symbol (string-upcase name) from)))
-              (when symbol
-                (shadowing-import symbol p)
-                (pushnew (symbol-name symbol) names :test #'equal)))))))
-    (shadow '("WRITE" "READ") p)
-    (setf (fdefinition (intern "WRITE" p)) #'write-at
-          (fdefinition (intern "READ" p)) #'read-at)
-    (do-external-symbols (symbol (find-package :cl))
-      (pushnew (symbol-name symbol) names :test #'equal))
-    (let (found)
-      (dolist (name names)
-        (multiple-value-bind (symbol status) (find-symbol name p)
-          (when status (push symbol found))))
-      (export found p))
-    p))
+Nothing here says what is in it. A word is offered in the file that defines it,
+so a system loaded later brings its own words and a word that is renamed or goes
+takes its offer with it, rather than being dropped in silence by a list kept
+somewhere else."
+  (word:user))
 
 (defun load-config (&optional (file (config-file)))
   (user-package)
@@ -366,10 +309,13 @@ config would be the value node the surface then replaced."
     (store:open-store store)
     (log:note "~d node~:p came back" (store:restore store:*store*))
     (store:keeping))
-  (when *screen* (fault:attempt *screen* "opening the display"))
+  (fault:attempt (lambda () (opening :display)) "opening the display")
   (log:note "~a: remoting ~a, ~d command~:p, ~d running"
             (node:contents (tree:at nil "name"))
             (actors:remoting)
             (length (command:commands))
             (length (job:jobs)))
   (tree:root))
+
+(pine/word:lends "use" "drop" "reach" "spawn" "style"
+                '("read" "read-at") '("write" "write-at"))

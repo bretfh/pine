@@ -375,3 +375,5 @@ weeks a month can fall across."
         (multiple-value-bind (cw ch) (measure part m width height)
           (arrange part m (+ x (floor (- width cw) 2))
                    (+ y (floor (- height ch) 2)) cw ch))))))
+
+(pine/word:lends "measure" "paint")

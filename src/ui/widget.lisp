@@ -163,3 +163,5 @@ it, which is what floats a completion list over the buffer."))
   (unless (numberp (value w)) (setf (value w) 0))
   (unless (numberp (low w))   (setf (low w) 0))
   (unless (numberp (high w))  (setf (high w) 100)))
+
+(pine/word:lends "widget" "parts")
