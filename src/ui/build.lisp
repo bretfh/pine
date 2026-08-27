@@ -7,12 +7,19 @@
   (:export #:label #:field #:icon #:button #:column #:row #:stack #:box #:center
            #:centerbox #:scroll #:gap #:rule #:slider #:ring #:grid #:choice
            #:calendar #:image #:cells #:rows
-           #:placep #:held #:shown #:acting #:here #:*asking* #:*editing*))
+           #:placep #:held #:shown #:acting #:here #:confirming))
 (in-package #:pine/ui/build)
 
 (defvar *here* nil)
-(defvar *asking* nil)
-(defvar *editing* nil)
+
+(defgeneric confirming (where question thunk)
+  (:documentation "Ask QUESTION before doing THUNK, of whoever there is to ask.
+
+Answered above, by whatever has somewhere to put a question. With nobody to ask
+there is nobody to say yes, so it is said rather than done.")
+  (:method (where question thunk)
+    (declare (ignore where thunk))
+    (log:note "~a: nothing here can ask" question)))
 
 (defun here ()
   "The path a row is being built for, inside ROWS. What a listing's row reads to say
@@ -59,10 +66,7 @@ it names."
         (ask (getf props :confirm)))
     (cond ((null thunk) nil)
           ((null ask) thunk)
-          (t (lambda ()
-               (if *asking*
-                   (funcall *asking* ask thunk)
-                   (log:note "~a: nothing here can ask" ask)))))))
+          (t (lambda () (confirming command:*at* ask thunk))))))
 
 (defun %without (props &rest keys)
   (loop :for (k v) :on props :by #'cddr

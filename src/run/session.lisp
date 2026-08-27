@@ -65,6 +65,22 @@ sent from another image is evaluated in one."))
           (cl:read-from-string from)
           (cl:read (input s) nil :eof)))))
 
+(defun %ask-one (spec input output)
+  (destructuring-bind (&key prompt (as :string) default) spec
+    (when prompt
+      (write-string prompt output)
+      (force-output output))
+    (let ((line (cl:read-line input nil nil)))
+      (cond ((or (null line) (and (string= line "") default)) default)
+            ((eq as :form) (cl:read-from-string line))
+            ((eq as :integer) (parse-integer line :junk-allowed t))
+            (t line)))))
+
+(defmethod command:asking ((s session) c)
+  "A session on a stream reads what the command needs off it, one line each."
+  (loop :for spec :in (command:asks c)
+        :collect (%ask-one spec (input s) (output s))))
+
 (defgeneric evaluate (session form))
 
 (defmethod evaluate :around ((s session) form)
@@ -90,13 +106,11 @@ nobody has fbound is still something to do."
               (values (multiple-value-list
                        (let ((*package* (package-of s))
                              (*readtable* (or (readtable-of s) *readtable*))
-                             (*session* s))
+                             (*session* s)
+                             (command:*at* s))
                          (if c
-                             (let ((args (if given
-                                             (mapcar #'command:word given)
-                                             (command:arguments c (input s)
-                                                                (output s)))))
-                               (if (eq args :asking) :asking (command:run c args)))
+                             (command:run c (and given
+                                                 (mapcar #'command:word given)))
                              (eval form))))
                       nil)
             (error (broke) (values nil broke)))

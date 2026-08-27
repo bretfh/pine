@@ -4,7 +4,7 @@
   (:export #:command #:commandp #:defcommand #:named #:commands #:forget
            #:name #:action #:describes #:asks #:from #:on #:arguments #:run #:word
            #:claim #:offer #:withdraw #:defined #:sorted
-           #:unknown-command #:attach #:*asking*))
+           #:unknown-command #:attach #:asking #:*at*))
 (in-package #:pine/run/command)
 
 (defvar *commands* (d:table))
@@ -12,7 +12,12 @@
   "Every command there is, by the package it was written in. A command is defined
 where its code is; whether it stands is whether its system is running.")
 (defvar *claimed* nil)
-(defvar *asking* nil)
+(defvar *at* nil
+  "Who there is to ask, when a command needs words nobody gave it: a session on a
+stream, an editor with somebody looking at it, or nothing.
+
+An object, not a function to call. What asking means is a method on it, so this
+layer knows there is somebody to ask and nothing whatever about how.")
 
 (define-condition unknown-command (error)
   ((name-of :initarg :name :reader name-of))
@@ -118,30 +123,19 @@ whoever wants them in an order sorts them there."
       (run c arguments)))
   (:method ((c command) &optional arguments)
     (if (and (null arguments) (asks c))
-        (let ((asked (arguments c *standard-input* *standard-output*)))
+        (let ((asked (asking *at* c)))
           (if (eq asked :asking) :asking (apply (action c) asked)))
         (apply (action c) arguments))))
 
-(defun %ask-one (spec input output)
-  (destructuring-bind (&key prompt (as :string) default) spec
-    (when prompt
-      (write-string prompt output)
-      (force-output output))
-    (let ((line (read-line input nil nil)))
-      (cond ((or (null line) (and (string= line "") default)) default)
-            ((eq as :form) (read-from-string line))
-            ((eq as :integer) (parse-integer line :junk-allowed t))
-            (t line)))))
+(defgeneric asking (where command)
+  (:documentation "The words COMMAND needs, asked of whoever there is to ask.
 
-(defgeneric arguments (command input output)
-  (:method ((name string) input output)
-    (let ((c (named name)))
-      (unless c (error 'unknown-command :name name))
-      (arguments c input output)))
-  (:method ((c command) input output)
-    (cond ((null (asks c)) nil)
-          (*asking* (funcall *asking* c))
-          (t (loop :for spec :in (asks c) :collect (%ask-one spec input output))))))
+Answered above: a session reads them off its stream, an editor puts the question
+on screen and answers :ASKING. Nothing to ask means nothing to say, and the
+command runs with what it was given.")
+  (:method (where (c command))
+    (declare (ignore where c))
+    nil))
 
 (defun %command (name)
   "What the command at this path is for, as it stands now: one redefined at the

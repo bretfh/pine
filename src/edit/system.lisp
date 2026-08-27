@@ -92,15 +92,15 @@ the editor has never heard of a window manager, and does not have to."
                 :then (lambda (answer) (command:run c (list answer))))
     :asking))
 
-(defun %confirming (question thunk)
+(defmethod command:asking ((s edit) c)
+  "An editor has somebody looking at it, so the question goes on the screen and
+the command runs again when they answer."
+  (%asking c))
+
+(defmethod build:confirming ((s edit) question thunk)
   (prompt:ask (format nil "~a " question)
               :candidates (list "yes" "no") :must-match t
               :then (lambda (said) (when (equal "yes" said) (funcall thunk))))
-  :asking)
-
-(defun %editing-value (question had write-back)
-  (prompt:ask question :initial (princ-to-string (or had ""))
-                       :then (lambda (said) (funcall write-back said)))
   :asking)
 
 (defun %frame ()
@@ -121,9 +121,7 @@ else it read."
 
 (defmethod job:start ((s edit))
   (%sources)
-  (setf command:*asking* #'%asking
-        build:*asking* #'%confirming
-        build:*editing* #'%editing-value
+  (setf command:*at* s
         doc:*on-current* #'window:follow
         parser:*showing* #'render:showing
         parser:*on-parse* (lambda (document) (declare (ignore document)) (%drew nil))
@@ -143,9 +141,7 @@ else it read."
   s)
 
 (defmethod job:stop ((s edit))
-  (setf command:*asking* nil
-        build:*asking* nil
-        build:*editing* nil
+  (setf command:*at* nil
         doc:*on-current* nil
         parser:*showing* nil
         parser:*on-parse* nil

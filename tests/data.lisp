@@ -82,7 +82,8 @@ that looks like it ran."
     (d:do-each (v (d:vals (d:map :a 1 :b 2)) n) (declare (ignore v)) (incf n))
     (is (eql 2 n)))
   (let ((not-a-collection 42))
-    (signals error (d:do-each (v not-a-collection) (declare (ignore v))))))
+    (declare (special not-a-collection))
+    (signals error (d:do-each (v not-a-collection) v))))
 
 (test do-each-walks-a-map-a-seq-and-a-set
   (flet ((count-of (c) (let ((n 0)) (d:do-each (v c n) (declare (ignore v))
