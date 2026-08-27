@@ -2,7 +2,7 @@
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
   (:local-nicknames (#:log #:pine/run/log) (#:key #:pine/ui/key)
                     (#:fault #:pine/run/fault))
-  (:export #:chords #:make-chords #:availablep #:attend #:ask-for #:forget
+  (:export #:chords #:make-chords #:availablep #:attend #:ask-for
            #:eat-next #:every-key #:mask #:keysym))
 (in-package #:pine/wayland/chords)
 

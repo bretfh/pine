@@ -3,7 +3,7 @@
   (:local-nicknames (#:display #:pine/wayland/display))
   (:export #:shell #:bind #:display-of #:compositor #:shm #:layer #:toplevel
            #:seat #:pointer #:keyboard #:on-pointer #:on-keyboard #:chrome
-           #:showing #:show #:forget #:at-surface))
+           #:showing #:show #:unshow #:at-surface))
 (in-package #:pine/wayland/shell)
 
 (defclass shell ()
@@ -32,7 +32,7 @@ own: the window manager hands it out, and pine is the window manager there."))
 
 (defun show (s surface shown) (push (cons surface shown) (showing s)))
 
-(defun forget (s shown)
+(defun unshow (s shown)
   (setf (showing s) (remove shown (showing s) :key #'cdr)))
 
 (defun %seat (s &rest event)

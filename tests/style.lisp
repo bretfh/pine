@@ -323,10 +323,12 @@ systems. A substrate that names one of them has a favourite."
                      loose :test #'equal)))))
     (is (null loose) "~{~%  ~a~}" (reverse loose))))
 
-(defparameter +claimed-twice+ 157
-  "How many exported names more than one package claims. Every one is a word that
-cannot be in the language until somebody says which package owns it, and until
-then a file that wants both has to spell one of them out.
+(defparameter +claimed-twice+ 239
+  "How many exports would have to go for every name to belong to one package: for
+each name two or more claim, one fewer than the number claiming it.
+
+Not the count of such names, which said the same thing about ATTACH across
+fourteen packages as about a word two share. This counts the weight.
 
 This number goes down. It does not go up.")
 
@@ -361,12 +363,13 @@ This number goes down. It does not go up.")
   "Two packages exporting one name is two things called the same thing. Only one
 of them can be in the language a config is written in, and reading either means
 knowing which is meant."
-  (let ((twice (loop :for word :being :the :hash-keys :of (%exported)
-                       :using (:hash-value packages)
-                     :when (rest packages) :collect (cons word packages))))
-    (is (<= (length twice) +claimed-twice+)
-        "~d names two packages claim, was ~d:~{~%  ~a~}"
-        (length twice) +claimed-twice+
+  (let* ((twice (loop :for word :being :the :hash-keys :of (%exported)
+                        :using (:hash-value packages)
+                      :when (rest packages) :collect (cons word packages)))
+         (weight (reduce #'+ twice :key (lambda (e) (1- (length (cdr e)))))))
+    (is (<= weight +claimed-twice+)
+        "~d exports too many across ~d names, was ~d:~{~%  ~a~}"
+        weight (length twice) +claimed-twice+
         (mapcar (lambda (each)
                   (format nil "~a: ~{~a~^ ~}" (car each) (cdr each)))
                 (subseq (sort twice #'> :key (lambda (e) (length (cdr e))))

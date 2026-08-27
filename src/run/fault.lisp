@@ -5,7 +5,7 @@
   (:export #:fault #:borrowed #:take #:resume #:faulted
            #:faults #:standing #:attempt #:or-nothing
            #:report #:borrow #:await #:defer #:changed #:wait-until
-           #:forget #:forget-faults #:with-debugger
+           #:forget-faults #:with-debugger
            #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
            #:standingp #:*kept* #:*waiting* #:*debugging*))
 (in-package #:pine/run/fault)
@@ -68,10 +68,6 @@ is its own name for it, so taking a restart here is one act in both."))
 (defun standing ()
   "The faults whose thread is still there, waiting to be told what to do."
   (remove-if-not #'standingp (faults)))
-
-(defun forget (f)
-  (d:swap *faults* (lambda (all) (remove f all)))
-  f)
 
 (defun forget-faults () (setf *faults* nil))
 

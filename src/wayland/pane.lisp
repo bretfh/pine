@@ -267,7 +267,7 @@ happens here: the thread that owns the compositor is the only one that may."
          (t (xdg-toplevel.destroy it))))))
   (when (surface s) (fault:or-nothing "and so is the surface under it"
                       (wl-surface.destroy (surface s))))
-  (shell:forget (shell s) s)
+  (shell:unshow (shell s) s)
   (setf (surface s) nil (took s) nil (configuredp s) nil)
   s)
 

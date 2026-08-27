@@ -1,7 +1,7 @@
 (defpackage #:pine/run/log
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
-  (:export #:note #:said #:forget
+  (:export #:note #:said
            #:*kept* #:*to* #:last-said))
 (in-package #:pine/run/log)
 
