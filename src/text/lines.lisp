@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data))
   (:shadow #:delete #:search)
-  (:export #:of #:text #:line #:line-count #:clamp #:insert #:delete #:region
+  (:export #:of #:joined #:line #:line-count #:clamp #:insert #:delete #:region
            #:move-by #:wordp #:indent #:search #:foldp
            #:*word-characters*))
 (in-package #:pine/text/lines)
@@ -15,7 +15,7 @@ did not touch and two readers never see one change underneath them."
   (let ((split (uiop:split-string (or text "") :separator '(#\Newline))))
     (d:as :seq (or split (list "")))))
 
-(defun text (lines) (format nil "~{~a~^~%~}" (d:as :list lines)))
+(defun joined (lines) (format nil "~{~a~^~%~}" (d:as :list lines)))
 
 (defun line-count (lines) (d:size lines))
 

@@ -137,7 +137,7 @@ both, so they have to be the same three numbers."
 
 (test a-key-is-one-object-for-one-chord
   (is (key:key= (key:parse "C-x") (key:make-key "x" :ctrl t)))
-  (is (equal "C-x C-s" (key:text (key:chord "C-x C-s"))))
+  (is (equal "C-x C-s" (key:spelled (key:chord "C-x C-s"))))
   (is (key:selfp (key:parse "a")))
   (is (not (key:selfp (key:parse "C-a"))))
   (is (key:key= (key:parse "space") (key:parse "SPC"))

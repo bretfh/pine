@@ -189,7 +189,7 @@ is a compositor's and there is no document in it at all. PENDING is the chord
 already accumulated, so two keyboards, or a window manager and an editor, keep
 their own place in a chord and cannot take each other's."
   (let* ((so-far (append pending (list k)))
-         (chord (key:text so-far))
+         (chord (key:spelled so-far))
          (found (binding m chord)))
     (cond ((press m subject k) (values :taken nil))
           (found (values (fault:attempt (lambda () (command:run found))

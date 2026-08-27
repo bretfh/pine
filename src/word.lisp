@@ -1,6 +1,6 @@
 (defpackage #:pine/word
-  (:use #:cl)
-  (:export #:lends #:lent #:user #:*name*))
+            (:use #:cl)
+            (:export #:lends #:lent #:user #:*name*))
 (in-package #:pine/word)
 
 (defparameter *name* :pine/user)
@@ -24,9 +24,9 @@ after it can write in the words a system loaded before it lent."
   (let ((home (package-name *package*)))
     (dolist (each names)
       (destructuring-bind (word &optional (from word))
-          (if (consp each) each (list each))
-        (let ((row (list home (string-upcase word) (string-upcase from))))
-          (setf *lent* (append (remove row *lent* :test #'equal) (list row))))))
+                          (if (consp each) each (list each))
+                          (let ((row (list home (string-upcase word) (string-upcase from))))
+                            (setf *lent* (append (remove row *lent* :test #'equal) (list row))))))
     (when (find-package *name*) (user))
     names))
 
@@ -48,8 +48,8 @@ packages both claimed a word for.
 It is a language, not a grab bag: it carries Common Lisp and every word pine
 lends, so a package that uses this one and nothing else can say everything the
 editor can say.
-
   (defpackage #:notes (:use #:pine/user))"
+
   (let ((p (or (find-package *name*) (make-package *name* :use '(:cl))))
         (claimed (make-hash-table :test 'equal))
         (clashes nil)
@@ -58,23 +58,23 @@ editor can say.
           :for package := (find-package home)
           :for symbol := (and package (find-symbol from package))
           :when symbol
-            :do (let ((had (gethash word claimed)))
-                  (when (and had (not (equal had home)))
-                    (pushnew (format nil "~a is ~a's and ~a's" word had home)
-                             clashes :test #'equal))
-                  (setf (gethash word claimed) home)
-                  (if (string= word from)
-                      (shadowing-import symbol p)
-                      (%renamed word symbol p))
-                  (pushnew word names :test #'equal)))
+          :do (let ((had (gethash word claimed)))
+                (when (and had (not (equal had home)))
+                  (pushnew (format nil "~a is ~a's and ~a's" word had home)
+                           clashes :test #'equal))
+                (setf (gethash word claimed) home)
+                (if (string= word from)
+                    (shadowing-import symbol p)
+                  (%renamed word symbol p))
+                (pushnew word names :test #'equal)))
     (do-external-symbols (symbol (find-package :cl))
-      (pushnew (symbol-name symbol) names :test #'equal))
+                         (pushnew (symbol-name symbol) names :test #'equal))
     (dolist (word names)
       (multiple-value-bind (symbol status) (find-symbol word p)
-        (when status
-          (handler-case (export (list symbol) p)
-            (sb-ext:name-conflict ()
-              (pushnew (format nil "~a is already something else where the language
+                           (when status
+                             (handler-case (export (list symbol) p)
+                               (sb-ext:name-conflict ()
+                                                     (pushnew (format nil "~a is already something else where the language
 is used" word)
-                       clashes :test #'equal))))))
+                                                              clashes :test #'equal))))))
     (values p (reverse clashes))))

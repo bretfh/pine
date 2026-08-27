@@ -66,7 +66,7 @@ its nodes are its sub-regions, and writing it replaces that stretch."))
 
 (defun line (doc n) (lines:line (lines doc) n))
 (defun line-count (doc) (lines:line-count (lines doc)))
-(defun text (doc) (lines:text (lines doc)))
+(defun text (doc) (lines:joined (lines doc)))
 (defun point (doc) (list (at-line doc) (at-col doc)))
 
 (defmethod node:contents ((doc document)) (text doc))

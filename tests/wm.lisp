@@ -194,7 +194,7 @@ it, and the mode that answers is the window manager's."
   (setf (node:contents (tree:at nil "wm/key")) "s-x")
   (is (equal "s-x" (node:contents (tree:at nil "wm/key")))
       "the window manager is half way through its own chord")
-  (is (equal "C-x" (key:text (key:pending)))
+  (is (equal "C-x" (key:spelled (key:pending)))
       "and the editor is still half way through the one somebody was typing")
   (setf (key:pending) nil)
   (setf (node:contents (tree:at nil "wm/key")) "s-r")
@@ -240,7 +240,7 @@ bitfield as the list of what is set, not a number."
                (of "S-TAB")))
     (is (null (pine/wayland/chords:keysym (key:parse "NoSuchKeyAtAll")))
         "a name xkb does not know is no chord"))
-  (is (equal '("s-x" "s-r") (mapcar (lambda (k) (key:text (list k)))
+  (is (equal '("s-x" "s-r") (mapcar (lambda (k) (key:spelled (list k)))
                                     (pine/wayland/chords:every-key '("s-x s-r"))))
       "and both keys of a chord have to be asked for, not just the first"))
 

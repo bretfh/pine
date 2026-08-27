@@ -64,7 +64,7 @@ to be asked for as much as the first."
   c)
 
 (defun %said (c k)
-  (when (told c) (funcall (told c) (and k (key:text (list k))))))
+  (when (told c) (funcall (told c) (and k (key:spelled (list k))))))
 
 (defun forget (c)
   (dolist (each (bound c))

@@ -38,7 +38,7 @@ from this: a key it was never told about is one it will not hand over."
   "Where a chord the compositor took arrives. Writing one here is pressing it, so a
 keyboard, a test and another pine all press the same way."
   (node:place "key"
-              :reads (lambda () (key:text (pending)))
+              :reads (lambda () (key:spelled (pending)))
               :writes #'dispatch
               :describes "write a chord here to press it"))
 

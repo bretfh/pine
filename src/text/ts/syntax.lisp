@@ -26,7 +26,7 @@ there are.")
 (defmacro language (options &rest clauses)
   `(%language ,options
               (list ,@(loop :for (p map) :in clauses
-                            :collect `(cons (path:text ,p) ,map)))))
+                            :collect `(cons (path:whole ,p) ,map)))))
 
 (defun %language (options clauses)
   (let ((nodes (make-hash-table :test 'equal))

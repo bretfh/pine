@@ -8,7 +8,7 @@
                     (#:runtime #:pine/text/ts/runtime)
                     (#:syntax #:pine/text/ts/syntax)
                     (#:parser #:pine/text/ts/parser))
-  (:export #:text #:visit #:save #:revert #:recent))
+  (:export #:visit #:save #:revert #:recent))
 (in-package #:pine/text)
 
 (defvar *recent* nil)

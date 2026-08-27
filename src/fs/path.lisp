@@ -2,7 +2,7 @@
   (:use #:cl)
   (:shadow #:parse)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
-  (:export #:path #:pathp #:segments #:text #:parse #:leaf #:parent #:rootp #:match #:prefixp
+  (:export #:path #:pathp #:segments #:whole #:parse #:leaf #:parent #:rootp #:match #:prefixp
            #:literal #:binding #:any #:deep #:segment #:segment-text #:kind
            #:value #:at #:ensure #:contents #:matching #:erase))
 (in-package #:pine/fs/path)
@@ -20,7 +20,7 @@
 
 (defmethod print-object ((p path) stream)
   (print-unreadable-object (p stream :type nil)
-    (write-string (text p) stream)))
+    (write-string (whole p) stream)))
 
 (defun pathp (x) (typep x 'path))
 
@@ -54,7 +54,8 @@
   (:method ((s segment)) (value s))
   (:method ((s binding)) (concatenate 'string "?" (value s))))
 
-(defun text (p)
+(defun whole (p)
+  "The path as it is written: /a/b/c."
   (if (rootp p)
       "/"
       (format nil "~{/~a~}" (mapcar #'segment-text (segments p)))))

@@ -42,7 +42,7 @@ their accessors. It does not, so this stands in for the edges that are missing."
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
 another pine all press keys the same way."
   (node:place "key"
-              :reads (lambda () (key:text (key:pending)))
+              :reads (lambda () (key:spelled (key:pending)))
               :writes (lambda (value)
                         (commit:writing
                           (dolist (k (key:chord (princ-to-string value)))

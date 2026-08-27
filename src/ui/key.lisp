@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter))
   (:shadow #:last)
-  (:export #:key #:make-key #:parse #:chord #:text #:key= #:selfp #:typed
+  (:export #:key #:make-key #:parse #:chord #:spelled #:key= #:selfp #:typed
            #:sym #:ctrl #:meta #:shift #:super #:keysym-name
            #:pending #:last #:taking #:take-next #:reading))
 (in-package #:pine/ui/key)
@@ -70,7 +70,8 @@ object, which is what lets KEY= be EQ."
               (incf i 2))
     (make-key (subseq spec i) :ctrl ctrl :meta meta :shift shift :super super)))
 
-(defun text (keys)
+(defun spelled (keys)
+  "A chord as it is written: C-x C-s."
   (format nil "~{~a~^ ~}"
           (mapcar (lambda (k)
                     (with-output-to-string (s)
