@@ -5,7 +5,7 @@
                     (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
                     (#:lines #:pine/text/lines) (#:mode #:pine/mode))
   (:export #:document #:region #:make-document #:documents #:named #:kill
-           #:current #:root #:scratch #:asidep #:*on-current* #:*on-kill* #:*visiting*
+           #:current #:root #:scratch #:asidep #:killing #:showing #:visiting
            #:lines #:line #:line-count #:text #:point #:at-line #:at-col #:mark
            #:mode-of #:source #:file-of #:origin #:tick #:past #:edit-of #:changed
            #:modified #:setting #:settings #:visited #:leaving
@@ -17,9 +17,6 @@
 (in-package #:pine/text/document)
 
 (defvar *current* nil)
-(defvar *on-current* nil)
-(defvar *on-kill* nil)
-(defvar *visiting* nil)
 (defvar *places* (d:no-map))
 (defvar *undo-kept* 200)
 
@@ -95,6 +92,23 @@ its nodes are its sub-regions, and writing it replaces that stretch."))
 NEW and it grew by BYTES, counted from HAD."
   (setf (edit-of doc) (list (list at old new bytes) had)))
 
+(defgeneric visiting (document where)
+  (:documentation "Open DOCUMENT onto WHERE. Answered above, by whatever knows how
+to turn a name into somewhere text is kept. Nothing here does, so a document on
+its own is a document and not a view of anything.")
+  (:method (document where) (declare (ignore document where)) nil))
+
+(defgeneric showing (document)
+  (:documentation "Say DOCUMENT is the one being shown now. Whatever is showing
+documents hangs a method here; a document does not have to know that anything is.")
+  (:method (document) (declare (ignore document)) nil))
+
+(defgeneric killing (document)
+  (:documentation "Say DOCUMENT is about to go, while it is still here to be
+asked. Whatever keeps something per document -- a parse, a window, a watcher --
+lets it go here.")
+  (:method (document) (declare (ignore document)) nil))
+
 (defun make-document (name &rest initargs &key (class 'document) &allow-other-keys)
   "A document, of whatever class. A terminal is one, and so is anything else that
 is text plus something of its own."
@@ -105,9 +119,7 @@ is text plus something of its own."
     (node:attach (node:place "source"
                              :reads (lambda () (origin doc))
                              :writes (lambda (value)
-                                       (when *visiting*
-                                         (funcall *visiting* doc
-                                                  (princ-to-string value))))
+                                       (visiting doc (princ-to-string value)))
                              :describes "where this document reads and writes")
                  doc)
     (tree:identify doc)
@@ -127,7 +139,7 @@ is text plus something of its own."
 (defun kill (name)
   (let ((doc (named name)))
     (when doc
-      (when *on-kill* (funcall *on-kill* doc))
+      (killing doc)
       (node:detach (root) (node:name doc))
       (when (eq doc *current*) (setf *current* (or (first (documents)) (scratch)))))
     doc))
@@ -137,7 +149,7 @@ is text plus something of its own."
 (defun (setf current) (doc)
   (when *current* (leaving *current*))
   (setf *current* (if (stringp doc) (named doc) doc))
-  (when (and *current* *on-current*) (funcall *on-current* *current*))
+  (when *current* (showing *current*))
   *current*)
 
 (defun asidep (doc)

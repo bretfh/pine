@@ -89,6 +89,11 @@ else or the document keeps to itself."
       (node:stir w))
     w))
 
+(defmethod doc:showing :after ((document doc:document))
+  "What became current is what the focused window shows. Said here, where the
+windows are, rather than by whoever sets the current document."
+  (follow document))
+
 (defun split (w side)
   (let* ((runs (if (member side '(:beside :right :left)) :row :column))
          (a (make-window :shows (shows w) :into w))

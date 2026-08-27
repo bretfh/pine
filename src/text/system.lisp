@@ -55,6 +55,11 @@ shows is whatever stands there, so /metric/frame reads like a file does."
       (setf (doc:modified document) nil))
     document))
 
+(defmethod doc:visiting ((document doc:document) where)
+  "Writing a document's source opens it onto what stands there. The document
+declares that somebody might know how; this is the somebody."
+  (visit document where))
+
 (defun save (document &optional where)
   "Write what DOCUMENT holds back where it came from. Whatever stands there says
 what writing means: a file is written, a device is acted on."
@@ -90,8 +95,6 @@ load is a fault like any other: the text still opens, uncoloured."
     (when d (mapcar #'node:name (doc:regions d)))))
 
 (defmethod job:start ((s text))
-  (setf doc:*visiting* #'visit
-        doc:*on-kill* #'parser:forget)
   (%syntax)
   (mode:attach (tree:root))
   (doc:root)
@@ -100,8 +103,6 @@ load is a fault like any other: the text still opens, uncoloured."
   s)
 
 (defmethod job:stop ((s text))
-  (setf doc:*visiting* nil
-        doc:*on-kill* nil)
   (parser:forget-all)
   (dolist (d (doc:documents)) (doc:kill (node:name d)))
   s)

@@ -26,9 +26,18 @@ it."))
 (system:offers 'edit)
 
 (defun %drew (moved)
+  "Work the editor's frame out again.
+
+Everything that moves anywhere goes through here, which is a sledgehammer where
+an edge belongs: the frame is a derived node and would follow what it read by
+itself, if the renderer read documents and windows as nodes rather than through
+their accessors. It does not, so this stands in for the edges that are missing."
   (declare (ignore moved))
   (let ((s (surface:named "editor")))
     (when s (fault:attempt (lambda () (node:stir s)) "the frame"))))
+
+(defmethod parser:reparsed ((document doc:document))
+  (%drew nil))
 
 (defun %key ()
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
@@ -122,9 +131,6 @@ else it read."
 (defmethod job:start ((s edit))
   (%sources)
   (setf command:*at* s
-        doc:*on-current* #'window:follow
-        parser:*showing* #'render:showing
-        parser:*on-parse* (lambda (document) (declare (ignore document)) (%drew nil))
         (commit:on-commit :edit) #'%drew
         fault:*on-fault*
         (lambda (f)
@@ -142,9 +148,6 @@ else it read."
 
 (defmethod job:stop ((s edit))
   (setf command:*at* nil
-        doc:*on-current* nil
-        parser:*showing* nil
-        parser:*on-parse* nil
         (commit:on-commit :edit) nil
         fault:*on-fault* nil)
   (key:take-next nil)

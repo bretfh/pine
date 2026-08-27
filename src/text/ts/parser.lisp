@@ -9,18 +9,13 @@
                     (#:syntax #:pine/text/ts/syntax)
                     (#:hl #:pine/text/ts/highlight))
   (:export #:parser #:parser-for #:parsers #:highlights #:note #:forget
-           #:forget-all #:state-of #:language-of #:document-of #:showing #:banded
-           #:parsed #:indent #:motion #:currentp #:running
-           #:*runtime* #:*on-parse* #:*showing*))
+           #:forget-all #:state-of #:language-of #:document-of #:band #:banded
+           #:parsed #:reparsed #:indent #:motion #:currentp #:running
+           #:*runtime*))
 (in-package #:pine/text/ts/parser)
 
 (defvar *parsers* (d:table))
 (defvar *runtime* nil)
-(defvar *on-parse* nil)
-(defvar *showing* nil
-  "A function answering the band of lines something is showing of a document, as
-(FROM . TO), or nothing. The editor puts its windows here; the parse itself has no
-business knowing what a window is.")
 (defvar *counter* 0)
 
 
@@ -40,10 +35,19 @@ business knowing what a window is.")
 
 (defun parsers () (d:vals (d:all *parsers*)))
 
-(defun showing (document)
-  "The band something shows of DOCUMENT. Past a few thousand lines only that band
-is given to tree-sitter at all."
-  (when *showing* (funcall *showing* document)))
+(defgeneric band (document)
+  (:documentation "The band of lines something is showing of DOCUMENT, as
+(FROM . TO), or nothing. Past a few thousand lines only that band is given to
+tree-sitter at all.
+
+Answered above, by whatever is showing it. The parse has no business knowing what
+a window is, and nothing showing a document has to tell it that it exists.")
+  (:method (document) (declare (ignore document)) nil))
+
+(defgeneric reparsed (document)
+  (:documentation "Say DOCUMENT's parse is fresh again. Whatever is drawn from the
+parse is worked out again here.")
+  (:method (document) (declare (ignore document)) nil))
 
 (defun %kept (had edit)
   "What stays of the runs already walked. The lines the edit replaced go; the ones
@@ -84,26 +88,27 @@ the lines outside it are what they were."
          (ps (state-of p))
          (lines (doc:lines document))
          (edit (doc:edit-of document))
-         (band (showing document)))
+         (shown (band document)))
     (setf (runtime:ps-package ps) (language:package-of document))
     (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
-                                   :viewport band)
+                                   :viewport shown)
     (setf (doc:edit-of document) nil)
-    (let ((runs (if band
-                    (hl:parse-highlights ps :from-line (car band) :to-line (cdr band))
+    (let ((runs (if shown
+                    (hl:parse-highlights ps :from-line (car shown)
+                                            :to-line (cdr shown))
                     (hl:parse-highlights ps))))
       (d:swap (slot-value p 'found)
-               (lambda (had) (%merged (%kept had edit) runs band))))
-    (meter:counted :parse-lines (if band (- (cdr band) (car band))
+               (lambda (had) (%merged (%kept had edit) runs shown))))
+    (meter:counted :parse-lines (if shown (- (cdr shown) (car shown))
                                    (doc:line-count document)))
-    (setf (banded p) band)
+    (setf (banded p) shown)
     (setf (parsed p) tick)
-    (when *on-parse* (funcall *on-parse* document))
+    (reparsed document)
     (%flat (found p))))
 
 (defun currentp (p)
   (and (= (parsed p) (doc:tick (document-of p)))
-       (equal (banded p) (showing (document-of p)))))
+       (equal (banded p) (band (document-of p)))))
 
 (defun %current (p tick)
   (unless (currentp p) (%parse p tick))
@@ -180,7 +185,7 @@ the other is freed rather than left holding a foreign parser."
 showing lines it has not been asked about."
   (let ((p (parser-for document)))
     (when (and p (or (/= (parsed p) (doc:tick document))
-                     (not (equal (banded p) (showing document)))))
+                     (not (equal (banded p) (band document)))))
       (job:tell (running p) (list :parse (doc:tick document))))
     p))
 
@@ -215,6 +220,11 @@ plain text."
       (job:stop (running p))
       (d:drop! *parsers* name))
     p))
+
+(defmethod doc:killing :after ((document doc:document))
+  "A document that goes takes its parse with it. Said here, where the parse is,
+rather than by whoever kills documents."
+  (forget document))
 
 (defun forget-all ()
   (dolist (p (parsers) (d:clear! *parsers*))

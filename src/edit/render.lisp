@@ -10,7 +10,7 @@
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
                     (#:match #:pine/edit/matching))
   (:export #:shows #:frame #:window-tree #:document-tree #:modeline #:echo
-           #:rows #:drawn-line #:drawn-col #:caret-col #:showing
+           #:rows #:drawn-line #:drawn-col #:caret-col
            #:scroll-to-point #:indenting #:modelinep
            #:*cols* #:*lines* #:*font*))
 (in-package #:pine/edit/render)
@@ -77,7 +77,7 @@ putting the caret where the text is not."
                 (t from)))
     (%sideways win)))
 
-(defun showing (document)
+(defmethod parser:band ((document doc:document))
   "The band of lines a window is showing of DOCUMENT, a screen either side, so
 paging lands on lines that were walked already."
   (let ((win (find document (window:windows) :key #'%document-of)))
