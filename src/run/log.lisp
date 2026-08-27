@@ -2,14 +2,16 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
   (:export #:note #:said #:forget #:attach
-           #:*kept* #:*to* #:*on-note* #:last-said))
+           #:*kept* #:*to* #:last-said))
 (in-package #:pine/run/log)
 
 (defvar *kept* 500)
 (defvar *to* nil)
 (defvar *said* nil)
-(defvar *on-note* nil
-  "Told that something was said, so a place holding it can say it moved.")
+(defvar *node* nil
+  "Where the log stands, once it stands anywhere. Adding a line is writing that
+place, so whatever is showing the log is worked out again -- which the log has to
+say itself, because nothing else can see *SAID* move.")
 
 (defun note (format &rest arguments)
   (let ((line (apply #'format nil format arguments)))
@@ -17,7 +19,7 @@
     (when *to*
       (format *to* "~&~a~%" line)
       (force-output *to*))
-    (when *on-note* (funcall *on-note* line))
+    (when *node* (node:stir *node*))
     line))
 
 (defun said () *said*)
@@ -27,10 +29,9 @@
 (defun forget () (setf *said* nil))
 
 (defun attach (root)
-  (let ((n (node:attach (node:place "log"
-                                    :reads #'said
-                                    :writes (lambda (value) (unless value (forget)))
-                                    :describes "what pine said")
-                        root)))
-    (setf *on-note* (lambda (line) (declare (ignore line)) (node:stir n)))
-    n))
+  (setf *node* (node:attach (node:place "log"
+                                        :reads #'said
+                                        :writes (lambda (value)
+                                                  (unless value (forget)))
+                                        :describes "what pine said")
+                            root)))

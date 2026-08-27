@@ -15,7 +15,7 @@
   "The faults this image is standing in on somebody else's behalf, by token.")
 (defvar *counter* 0)
 
-(defclass peer (image:image mount:mount)
+(defclass peer (image:image)
   ((uri :initarg :uri :accessor uri)
    (ref :initform nil :accessor ref))
   (:documentation "Another pine: an image you can evaluate in and a namespace you

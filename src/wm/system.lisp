@@ -5,14 +5,10 @@
                     (#:command #:pine/run/command) (#:sh #:pine/host/shell)
                     (#:compositor #:pine/wm/compositor) (#:niri #:pine/wm/niri)
                     (#:wkeys #:pine/wm/keys) (#:managed #:pine/wm/managed))
-  (:export #:wm #:current #:terminal #:*terminal* #:*manage*))
+  (:export #:wm #:current #:terminal #:*terminal*))
 (in-package #:pine/wm)
 
 (defvar *terminal* "alacritty")
-(defvar *manage* nil
-  "Whether pine is the window manager rather than a client of one. /wm-manage says
-so too: the screen, finding a compositor that asks for a manager, writes it there
-before it asks for this system, because it cannot name this package yet.")
 
 (defclass wm (system:system) ()
   (:documentation "The compositor, in the namespace, and the commands that act on
@@ -35,8 +31,12 @@ handed the windows over, which is after the config was read."
 (defun %under ()
   "Which compositor this session is under, as a class. Pine managing one and pine
 talking to one are the same protocol with two subclasses under it, and this is
-where a third is added."
-  (cond ((or *manage* (node:contents (tree:ensure nil "wm-manage")))
+where a third is added.
+
+Whether pine is the window manager is written at /wm-manage rather than held here:
+the screen finds a compositor asking for a manager before this system exists, and
+a path is what it can reach that a package it cannot name is not."
+  (cond ((node:contents (tree:ensure nil "wm-manage"))
          'managed:managed)
         ((uiop:getenv "NIRI_SOCKET") 'niri:niri)
         ((sh:has "niri") 'niri:niri)))
