@@ -73,7 +73,8 @@ editor can say.
                            (when status
                              (handler-case (export (list symbol) p)
                                (sb-ext:name-conflict ()
-                                                     (pushnew (format nil "~a is already something else where the language
+                                                     (pushnew
+                                                      (format nil "~a is already something else where the language
 is used" word)
-                                                              clashes :test #'equal))))))
+                                                      clashes :test #'equal))))))
     (values p (reverse clashes))))

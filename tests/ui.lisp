@@ -40,7 +40,7 @@ knows the roles by name."))
 (test the-more-particular-rule-wins
   (with-tree
     (tree:built)
-    (pine/ui/sheet:put (list (list ".a" (list :color "#ff0000" :min-width "20"))
+    (pine/ui/sheet:put-rules (list (list ".a" (list :color "#ff0000" :min-width "20"))
                              (list ".a.b" (list :color "#00ff00"))))
     (let ((general (style:resolve '(("a"))))
           (both (style:resolve '(("a" "b")))))
@@ -57,9 +57,9 @@ knows the roles by name."))
 both, so they have to be the same three numbers."
   (with-tree
     (tree:built)
-    (pine/ui/sheet:put (list (list ".x" (list :background-color
+    (pine/ui/sheet:put-rules (list (list ".x" (list :background-color
                                              (face:color :accent)))))
-    (is (equal (face:rgb (face:color :accent))
+    (is (equal (face:unhex (face:color :accent))
                (subseq (d:lookup (style:resolve '(("x"))) :bg) 0 3)))
     (is (eql 1.0 (fourth (d:lookup (style:resolve '(("x"))) :bg)))
         "and how much of it shows is still a fraction")))

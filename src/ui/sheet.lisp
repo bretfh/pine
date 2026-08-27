@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:face #:pine/ui/face)
                     (#:style #:pine/ui/style))
-  (:export #:put #:styles #:built-in #:selector
+  (:export #:put-rules #:styles #:built-in #:selector
            #:css-color #:css-glass #:css-mono #:css-rad))
 (in-package #:pine/ui/sheet)
 
@@ -18,7 +18,7 @@ node."))
 (defun css-color (role) (face:color role))
 
 (defun css-glass (role &optional (a (face:metric :opacity 0.4)))
-  (let ((rgb (face:rgb (face:color role))))
+  (let ((rgb (face:unhex (face:color role))))
     (format nil "rgba(~d, ~d, ~d, ~a)" (first rgb) (second rgb) (third rgb) a)))
 
 (defun css-rad () (format nil "~apx" (face:metric :radius 8)))
@@ -57,7 +57,7 @@ compound, a string the selector as written.")
             (push (list (%selector (node:name each)) props) acc)))))
     (sort acc #'string< :key #'first)))
 
-(defun put (pairs)
+(defun put-rules (pairs)
   "Put (SELECTOR PROPS) pairs at /style/?selector, replacing what stood there. A
 config does not call this: a config writes the path. This is the far end of
 BROADCAST, where a frontend puts what the daemon sent into its own tree."
@@ -150,10 +150,10 @@ a path nobody named should not grow the keyword package."
 
 (defun %face (name)
   (let ((key (%key name)))
-    (when (and key (face:named key))
+    (when (and key (face:face key))
       (node:place name
                   :reads (lambda ()
-                           (let ((f (face:named (%key name))))
+                           (let ((f (face:face (%key name))))
                              (when f
                                (list :fg (face:fg f) :bg (face:bg f)
                                      :bold (face:bold f) :italic (face:italic f)

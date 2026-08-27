@@ -23,7 +23,7 @@ touches every one of them."))
 through the theme, or an already-worked-out (FG BG ATTR). A face with no foreground
 of its own falls back to the plain one -- that fallback belongs here, where a cell
 is actually being coloured, and not in what a face is."
-  (flet ((plain () (or (face:rgb (face:fg (face:named face:+plain+)))
+  (flet ((plain () (or (face:unhex (face:fg (face:face face:+plain+)))
                        '(205 214 244))))
     (if (consp it)
         (destructuring-bind (fg bg attr) it
@@ -32,9 +32,9 @@ is actually being coloured, and not in what a face is."
                     (if bg (first bg) -1) (if bg (second bg) -1)
                     (if bg (third bg) -1)
                     (or attr 0))))
-        (let* ((f (face:named it))
-               (fg (or (and f (face:rgb (face:fg f))) (plain)))
-               (bg (and f (face:rgb (face:bg f)))))
+        (let* ((f (face:face it))
+               (fg (or (and f (face:unhex (face:fg f))) (plain)))
+               (bg (and f (face:unhex (face:bg f)))))
           (values (first fg) (second fg) (third fg)
                   (if bg (first bg) -1) (if bg (second bg) -1)
                   (if bg (third bg) -1)

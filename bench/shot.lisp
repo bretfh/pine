@@ -28,7 +28,7 @@ PINE_CONFIG names a config to read, and then it is that config's surfaces."
   (dolist (each (pine/ui/surface:surfaces))
     (setf (pine/ui/surface:shown each) t))
   (pine/edit:type-text "(defun hello (who) (format t \"hi ~a\" who))")
-  (dolist (each (pine/paint/shot:surfaces :into +into+ :width 1200 :height 1400))
+  (dolist (each (pine/paint/shot:every-surface :into +into+ :width 1200 :height 1400))
     (when each (format t "~&~a~%" each)))
   (pine:stop))
 

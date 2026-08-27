@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:face #:pine/ui/face)
                     (#:fault #:pine/run/fault))
-  (:export #:resolve #:property #:properties #:selector #:specificity
+  (:export #:resolve #:property #:properties #:segments #:specificity
            #:rules #:forget-rules #:classes #:sheet #:*sheet*))
 (in-package #:pine/ui/style)
 
@@ -36,7 +36,7 @@ that matched. Adding a property is one entry here, not an edit to RESOLVE.")
                  :pseudo pseudo)))
         (t nil)))
 
-(defun selector (s)
+(defun segments (s)
   "A selector string as its segments, or nothing when it names an element. Pine
 draws widgets, not elements: a selector that names one matches nothing, and saying
 so here is better than a rule that silently never fires."
@@ -44,7 +44,7 @@ so here is better than a rule that silently never fires."
     (unless (member nil segments) segments)))
 
 (defun %group (text)
-  (remove nil (mapcar (lambda (g) (selector (string-trim " " g)))
+  (remove nil (mapcar (lambda (g) (segments (string-trim " " g)))
                       (uiop:split-string text :separator '(#\,)))))
 
 (defun specificity (segments)
@@ -153,7 +153,7 @@ edited to carry something new."
 shows. Nothing for transparent, none, or unparsable."
   (cond ((or (null s) (equal s "transparent") (equal s "none")) nil)
         ((and (stringp s) (plusp (length s)) (char= (char s 0) #\#))
-         (let ((rgb (face:rgb s)))
+         (let ((rgb (face:unhex s)))
            (when rgb (append rgb (list 1.0)))))
         ((and (stringp s) (eql 0 (search "rgba(" s))) (%rgba s 4))
         ((and (stringp s) (eql 0 (search "rgb(" s)))  (%rgba s 3))

@@ -95,7 +95,7 @@ that does not is from this session, and NIL is where you are."
 
 (defun style (selector properties)
   "One rule, put on the sheet. What a config says on top of the theme."
-  (first (sheet:put (list (list selector properties)))))
+  (first (sheet:put-rules (list (list selector properties)))))
 
 (defun spawn (name &key (systems '(:pine)))
   "Another lisp of pine's own, supervised. Work can be done in it, and a fault it

@@ -114,7 +114,7 @@ paging lands on lines that were walked already."
 
 (defun %paint-region (g document from height width left)
   (let ((span (%region document))
-        (bg (face:rgb (face:bg (face:named :selection)))))
+        (bg (face:unhex (face:bg (face:face :selection)))))
     (when (and span bg)
       (destructuring-bind (start-line start-col end-line end-col) span
         (destructuring-bind (br bg bb) bg

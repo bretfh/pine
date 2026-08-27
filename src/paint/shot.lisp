@@ -5,7 +5,7 @@
                     (#:face #:pine/ui/face) (#:layout #:pine/ui/layout)
                     (#:surface #:pine/ui/surface)
                     (#:canvas #:pine/paint/canvas))
-  (:export #:shot #:draw #:measure #:surfaces))
+  (:export #:shot #:draw #:every-surface))
 (in-package #:pine/paint/shot)
 
 (defparameter +background+ '(30 30 46))
@@ -51,7 +51,7 @@ the screen, in a file you can look at."
       (cl-cairo2:destroy context)
       (cl-cairo2:destroy s))))
 
-(defun surfaces (&key (into "/tmp/") (width 800) (height 600))
+(defun every-surface (&key (into "/tmp/") (width 800) (height 600))
   "Every surface that is up, each as a PNG at the size it asked for. A bar is drawn
 as tall and as narrow as it measured, rather than stretched to fill a window it
 would never be given."

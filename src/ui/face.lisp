@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree))
   (:export #:face #:fg #:bg #:bold #:italic #:underline #:attrs
-           #:faces #:with-faces #:named #:rgb
+           #:faces #:with-faces #:unhex
            #:theme #:name #:palette #:metrics #:themes #:register #:active
            #:color #:metric #:hex #:memo #:build #:*themes* #:+plain+))
 (in-package #:pine/ui/face)
@@ -120,7 +120,10 @@ path every painted cell takes."
   "Run BODY with the faces in force worked out once."
   `(let ((*in-force* (faces-in-force))) ,@body))
 
-(defun named (name) (gethash name (faces-in-force)))
+(defun face (name)
+  "The face called NAME, as the render running here sees it. The class and the
+look-up are one word because they are one idea."
+  (gethash name (faces-in-force)))
 
 (defun attrs (f)
   "bit 0 bold, bit 1 italic, bit 2 underline."
@@ -137,7 +140,7 @@ path every painted cell takes."
   (let ((cell (assoc key (metrics (theme (active))) :test #'string=)))
     (if cell (cdr cell) default)))
 
-(defun rgb (h)
+(defun unhex (h)
   "A #rrggbb string as (r g b), or nothing for anything else. A face's FG and BG are
 hex; this is how a canvas reads one."
   (when (and (stringp h) (>= (length h) 7) (char= (char h 0) #\#))
