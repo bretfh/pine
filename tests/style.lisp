@@ -2,11 +2,14 @@
 
 (def-suite* :pine/style :in :pine)
 
-(defparameter +modules+ '("fs" "run" "ui" "text" "text/ts" "host" "edit" "wm"
-                          "desk" "paint" "wayland")
-  "Every directory of pine's own source. What is not here is not pine's; the
-wayland protocol bindings are generated from the compositor's own xml, so they
-are not here either.")
+(defparameter +modules+ '("fs" "run" "ui" "text" "text/ts" "text/ts/lang" "host"
+                          "edit" "term" "wm" "desk" "paint" "wayland")
+  "Every directory of pine's own source. What is not here is not pine's: the
+wayland protocol bindings are generated from the compositor's own xml, and vt is a
+terminal emulator that depends on cffi and nothing of pine's.
+
+A directory left out of this list is one every rule below silently skips, which is
+worse than having no rule.")
 
 (defparameter +line-limit+ 400)
 

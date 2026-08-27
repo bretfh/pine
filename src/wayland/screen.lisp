@@ -250,8 +250,6 @@ compositor put it; what it draws is the new node's to say."
 
 (defun %take-up (s)
   (%managing-windows s)
-  (setf surface:*on-declare*
-        (lambda (it) (tell s (lambda () (took-up s (node:name it))))))
   (dolist (name (%names)) (took-up s name))
   (log:note "~d surface~:p up, ~d watched" (d:size (d:all (up s)))
             (length (%names)))
@@ -282,7 +280,6 @@ compositor put it; what it draws is the new node's to say."
     s))
 
 (defun %shut (s)
-  (setf surface:*on-declare* nil)
   (d:do-each (name (d:keys (d:all (watching s))))
     (%unlisten s name))
   (d:do-each (p (d:vals (d:all (up s))))
@@ -307,6 +304,14 @@ compositor put it; what it draws is the new node's to say."
     (job:supervise s)
     (job:start s)
     s))
+
+(defmethod surface:declared ((it surface:surface))
+  "A surface declared while a screen is up goes up on it. The screen finds itself
+in the namespace: the surface layer holds no pointer to whatever is painting, and
+there being nothing painting is not a case anybody has to write down."
+  (let ((s (job:named "screen")))
+    (when (and (typep s 'screen) (job:alivep s))
+      (tell s (lambda () (took-up s (node:name it)))))))
 
 (defun close-screen (&optional (name "screen"))
   (let ((s (job:named name)))

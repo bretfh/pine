@@ -5,7 +5,6 @@
                     (#:command #:pine/run/command)
                     (#:doc #:pine/text/document)
                     (#:window #:pine/edit/window)
-                    (#:emode #:pine/term/mode)
                     (#:terminal #:pine/term/terminal))
   (:export #:term #:current))
 (in-package #:pine/term)
@@ -65,12 +64,9 @@ fits."
         :collect (list (node:name each) (terminal:runs each)
                        (job:state each))))
 
-(defmethod job:start ((s term))
-  (setf emode:*send* (lambda (document said) (terminal:send document said)))
-  s)
+(defmethod job:start ((s term)) s)
 
 (defmethod job:stop ((s term))
-  (setf emode:*send* nil)
   (dolist (each (terminal:terminals))
     (job:stop each)
     (job:forget (node:name each))

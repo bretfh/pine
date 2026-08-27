@@ -4,8 +4,8 @@
                     (#:job #:pine/run/job) (#:log #:pine/run/log)
                     (#:key #:pine/ui/key) (#:doc #:pine/text/document)
                     (#:lines #:pine/text/lines)
-                    (#:mode #:pine/term/mode) (#:vt #:pine/vt))
-  (:export #:terminal #:open-terminal #:terminals #:named #:send #:resize
+                    (#:mode #:pine/mode) (#:vt #:pine/vt))
+  (:export #:terminal #:shell #:open-terminal #:terminals #:named #:send #:resize
            #:screen #:vt-of #:fd-of #:pid-of #:runs #:wide #:tall
            #:*shell* #:*chunk*))
 (in-package #:pine/term/terminal)
@@ -130,6 +130,26 @@ it; anything else goes as it stands."
           (ignore-errors (vt:pty-write-string fd text))))))
   term)
 
+(defclass shell (mode:text) ()
+  (:documentation "Text a program is writing. A key is not an edit: it goes to the
+program, and what comes back is the text.
+
+This is what a mode is for. Nothing about the document is special -- PRESS and
+INSERT are methods, and the keymap this class inherits is still in force for what
+they do not take."))
+
+(defmethod mode:setting ((m shell) key)
+  (case key
+    (:aside t)
+    (:tab-width 8)
+    (t (call-next-method))))
+
+(defmethod mode:press ((m shell) (term terminal) key)
+  (send term key))
+
+(defmethod mode:insert ((m shell) (term terminal) string)
+  (send term string))
+
 (defun resize (term wide tall)
   (when (and (plusp wide) (plusp tall)
              (or (/= wide (wide term)) (/= tall (tall term))))
@@ -182,7 +202,7 @@ screen; writing it is typing at the program."
          (vt (vt:make-term :width wide :height tall))
          (term (doc:make-document (princ-to-string name)
                                   :class 'terminal
-                                  :mode (make-instance 'mode:shell)
+                                  :mode (make-instance 'shell)
                                   :vt vt :runs runs :wide wide :tall tall
                                   :restarts nil
                                   :describes runs)))

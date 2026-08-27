@@ -30,7 +30,7 @@ what the terminal is asked to colour."
     (is (typep term 'doc:document))
     (is (typep term 'job:job))
     (is (job:alivep term))
-    (is (typep (doc:mode-of term) 'pine/term/mode:shell))
+    (is (typep (doc:mode-of term) 'pine/term/terminal:shell))
     (is (eq term (doc:current)))))
 
 (test writing-a-terminal-is-typing-at-the-program

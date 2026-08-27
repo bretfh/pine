@@ -99,7 +99,7 @@ the parse behind it"
                 :depends-on (#:pine/edit #:pine/vt)
                 :serial t
                 :pathname "src/term/"
-                :components ((:file "mode") (:file "terminal") (:file "system")))
+                :components ((:file "terminal") (:file "system")))
 
 (asdf:defsystem #:pine/wm
                 :description "The compositor, in the namespace"

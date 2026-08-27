@@ -3,12 +3,9 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:face #:pine/ui/face)
                     (#:style #:pine/ui/style))
-  (:export #:attach #:put #:styles #:built-in #:broadcast #:selector
-           #:css-color #:css-glass #:css-mono #:css-rad #:*listeners*))
+  (:export #:attach #:put #:styles #:built-in #:selector
+           #:css-color #:css-glass #:css-mono #:css-rad))
 (in-package #:pine/ui/sheet)
-
-(defvar *listeners* nil
-  "What to tell when /style moves: the frontends, which keep their own copy.")
 
 (defclass themes-node (node:node) ()
   (:documentation "Every theme there is, and which is on.
@@ -109,13 +106,6 @@ BROADCAST, where a frontend puts what the daemon sent into its own tree."
   (style:sheet (append (built-in) (styles)))
   (style:forget-rules)
   (style:sheet))
-
-(defun broadcast ()
-  "Tell every frontend that /style moved. A config that wrote a path has said all it
-needs to."
-  (let ((all (styles)))
-    (dolist (each *listeners*) (ignore-errors (funcall each all)))
-    all))
 
 (defun %theme-names () (face:themes))
 

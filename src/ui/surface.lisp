@@ -6,10 +6,9 @@
   (:export #:surface #:defsurface #:surfaces #:named #:root #:builds
            #:role #:anchor #:shown #:asks #:size #:act
            #:bar #:panel #:overlay #:background #:window #:tile
-           #:*on-declare*))
+           #:declared))
 (in-package #:pine/ui/surface)
 
-(defvar *on-declare* nil)
 (defvar *acts* (d:table)
   "What clicking a widget means, by the id it crossed the wire as. A closure
 cannot cross, so what it meant stays here.")
@@ -121,6 +120,12 @@ id it crossed as."
                                    (d:keep! *acts* id thunk)
                                    id))))))
 
+(defgeneric declared (surface)
+  (:documentation "Say a surface was declared. Whatever paints surfaces puts this
+one up; with nothing painting, a declared surface is a node in the tree and
+nothing more, which is exactly what it is in a test.")
+  (:method (surface) (declare (ignore surface)) nil))
+
 (defun builds (name reads &key (as 'panel) shown)
   (let* ((r (make-instance as))
          (s (make-instance 'surface :name (princ-to-string name) :reads reads
@@ -153,7 +158,7 @@ id it crossed as."
                              :writes #'act
                              :describes "what another pine says was clicked")
                  s)
-    (when *on-declare* (funcall *on-declare* s))
+    (declared s)
     s))
 
 (defmacro defsurface (name options &body body)
