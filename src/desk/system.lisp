@@ -1,150 +1,133 @@
 (defpackage #:pine/desk
-  (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:path #:pine/fs/path) (#:job #:pine/run/job)
-                    (#:system #:pine/run/system) (#:command #:pine/run/command)
-                    (#:log #:pine/run/log)
-                    (#:surface #:pine/ui/surface) (#:build #:pine/ui/build))
-  (:export #:desk #:shown #:show #:hide #:toggle))
+  (:use #:pine/user)
+  (:export #:desk))
 (in-package #:pine/desk)
 
-(defclass desk (system:system) ()
+(named-readtables:in-readtable pine/fs/reader:syntax)
+
+(defclass desk (system) ()
   (:documentation "The desktop: a bar along the top, and the panels it opens.
 
-Nothing here is privileged. Every surface is declared the way a config declares
-one, and taking this system away takes them with it."))
+Nothing here is privileged, and nothing here is written in a language a config is
+not. It names no package of pine's: what it reads and writes, it says by path, and
+what it draws, it says in the words pine lends."))
 
-(system:offers 'desk)
+(offers 'desk)
 
-(defun shown (name)
-  (let ((n (tree:at nil (format nil "surface/~a/shown" name))))
-    (and n (node:contents n))))
+(defun %at (name) (at nil (format nil "surface/~a/shown" name)))
 
-(defun show (name &optional (value t))
-  (let ((n (tree:at nil (format nil "surface/~a/shown" name))))
-    (when n (setf (node:contents n) value))))
+(defun %shown (name)
+  (let ((n (%at name))) (and n (contents n))))
 
-(defun hide (name) (show name nil))
+(defun %show (name &optional (value t))
+  (let ((n (%at name))) (when n (setf (contents n) value))))
 
-(defun toggle (name) (show name (not (shown name))))
+(defun %hide (name) (%show name nil))
+
+(defun %toggle (name) (%show name (not (%shown name))))
 
 (defun %clock ()
-  (build:row :class "clock"
-             (build:label (path:parse "/dev/clock/hour"))
-             (build:label ":")
-             (build:label (path:parse "/dev/clock/minute"))))
+  (row :class "clock"
+       (label /dev/clock/hour) (label ":") (label /dev/clock/minute)))
 
 (defun %workspaces ()
-  (build:rows (path:parse "/wm/workspaces")
-              (lambda ()
-                (let ((here (build:here)))
-                  (build:button :class "workspace" :click here
-                                (build:label (path:leaf here)))))))
+  (rows /wm/workspaces
+        (lambda ()
+          (button :class "workspace" :click (here)
+                  (label (leaf (here)))))))
 
-(defun %title ()
-  (build:label (path:parse "/wm/focused") :class "title"))
+(defun %title () (label /wm/focused :class "title"))
 
 (defun %sound ()
-  (build:button :class "sound" :click (lambda () (toggle "sound"))
-                (build:row (build:label "vol ")
-                           (build:label (path:parse "/dev/audio/volume")))))
+  (button :class "sound" :click (lambda () (%toggle "sound"))
+          (row (label "vol ") (label /dev/audio/volume))))
 
 (defun %battery ()
-  (build:button :class "battery" :click (lambda () (toggle "power"))
-                (build:row (build:label (path:parse "/dev/power/battery"))
-                           (build:label "%"))))
+  (button :class "battery" :click (lambda () (%toggle "power"))
+          (row (label /dev/power/battery) (label "%"))))
 
 (defun %bar ()
-  (surface:builds
-   "bar"
-   (lambda ()
-     (build:centerbox
-      :class "bar"
-      :start (build:row :class "left" (%workspaces))
-      :center (build:row :class "middle" (%title))
-      :end (build:row :class "right" (%sound) (%battery)
-                      (build:button :class "clock-button"
-                                    :click (lambda () (toggle "calendar"))
-                                    (%clock)))))
-   :as 'surface:bar :shown t))
+  (builds "bar"
+          (lambda ()
+            (centerbox
+             :class "bar"
+             :start (row :class "left" (%workspaces))
+             :center (row :class "middle" (%title))
+             :end (row :class "right" (%sound) (%battery)
+                       (button :class "clock-button"
+                               :click (lambda () (%toggle "calendar"))
+                               (%clock)))))
+          :as 'bar :shown t))
 
 (defun %sound-panel ()
-  (surface:builds
-   "sound"
-   (lambda ()
-     (build:column :class "panel sound-panel"
-                   (build:label "sound")
-                   (build:slider (path:parse "/dev/audio/volume"))
-                   (build:button :class "mute"
-                                 :click (path:parse "/dev/audio/muted")
-                                 (build:label "mute"))))
-   :as 'surface:panel))
+  (builds "sound"
+          (lambda ()
+            (column :class "panel sound-panel"
+                    (label "sound")
+                    (slider /dev/audio/volume)
+                    (button :class "mute" :click /dev/audio/muted
+                            (label "mute"))))
+          :as 'panel))
 
 (defun %power-panel ()
-  (surface:builds
-   "power"
-   (lambda ()
-     (build:column :class "panel power-panel"
-                   (build:label "power")
-                   (build:row (build:label (path:parse "/dev/power/battery"))
-                              (build:label "%  ")
-                              (build:label (path:parse "/dev/power/state")))
-                   (build:rule)
-                   (build:rows '("lock" "suspend" "reboot" "poweroff" "logout")
-                               (lambda (verb i)
-                                 (declare (ignore i))
-                                 (build:button
-                                  :class "verb"
-                                  :click (path:parse
-                                          (format nil "/dev/power/~a" verb))
-                                  :confirm (format nil "~a?" verb)
-                                  (build:label verb))))))
-   :as 'surface:panel))
+  (builds "power"
+          (lambda ()
+            (column :class "panel power-panel"
+                    (label "power")
+                    (row (label /dev/power/battery) (label "%  ")
+                         (label /dev/power/state))
+                    (rule)
+                    (rows '("lock" "suspend" "reboot" "poweroff" "logout")
+                          (lambda (verb i)
+                            (declare (ignore i))
+                            (button :class "verb"
+                                    :click (path (format nil "/dev/power/~a"
+                                                         verb))
+                                    :confirm (format nil "~a?" verb)
+                                    (label verb))))))
+          :as 'panel))
 
 (defun %calendar ()
-  (surface:builds
-   "calendar"
-   (lambda ()
-     (build:column :class "panel calendar-panel"
-                   (build:calendar
-                    :year (or (build:held (path:parse "/dev/clock/year")) 2000)
-                    :month (or (build:held (path:parse "/dev/clock/month")) 1)
-                    :day (or (build:held (path:parse "/dev/clock/day")) 1))))
-   :as 'surface:panel))
+  (builds "calendar"
+          (lambda ()
+            (column :class "panel calendar-panel"
+                    (calendar :year (or (read /dev/clock/year) 2000)
+                              :month (or (read /dev/clock/month) 1)
+                              :day (or (read /dev/clock/day) 1))))
+          :as 'panel))
 
-(command:defcommand "show-surface" (name) (:describes "put a surface up")
-  (and (show (princ-to-string name)) t))
+(defcommand "show-surface" (name) (:describes "put a surface up")
+  (and (%show (princ-to-string name)) t))
 
-(command:defcommand "hide-surface" (name) (:describes "take a surface down")
-  (and (hide (princ-to-string name)) t))
+(defcommand "hide-surface" (name) (:describes "take a surface down")
+  (and (%hide (princ-to-string name)) t))
 
-(command:defcommand "toggle-surface" (name) (:describes "the panel, either way")
-  (toggle (princ-to-string name))
-  (shown (princ-to-string name)))
+(defcommand "toggle-surface" (name) (:describes "the panel, either way")
+  (%toggle (princ-to-string name))
+  (%shown (princ-to-string name)))
 
-(command:defcommand "surfaces" () (:describes "every surface there is")
-  (loop :for each :in (surface:surfaces)
-        :collect (list (node:name each)
-                       (string-downcase
-                        (class-name (class-of (surface:role each))))
-                       (and (surface:shown each) t))))
+(defcommand "surfaces" () (:describes "every surface there is")
+  (loop :for each :in (surfaces)
+        :collect (list (name each)
+                       (string-downcase (class-name (class-of (role each))))
+                       (and (shown each) t))))
 
-(command:defcommand "surface" (name) (:describes "what one surface is")
-  (let ((s (surface:named name)))
+(defcommand "surface" (said) (:describes "what one surface is")
+  (let ((s (at nil (format nil "surface/~a" said))))
     (when s
-      (list :role (string-downcase (class-name (class-of (surface:role s))))
-            :shown (and (surface:shown s) t)
-            :size (surface:size s)))))
+      (list :role (string-downcase (class-name (class-of (role s))))
+            :shown (and (shown s) t)
+            :size (read (at s "size"))))))
 
-(defmethod job:start ((s desk))
+(defmethod start ((s desk))
   (%bar)
   (%sound-panel)
   (%power-panel)
   (%calendar)
-  (log:note "~d surface~:p" (length (surface:surfaces)))
+  (note "~d surface~:p" (length (surfaces)))
   s)
 
-(defmethod job:stop ((s desk))
-  (dolist (name '("bar" "sound" "power" "calendar"))
-    (tree:erase nil (format nil "surface/~a" name)))
+(defmethod stop ((s desk))
+  (dolist (each '("bar" "sound" "power" "calendar"))
+    (erase nil (format nil "surface/~a" each)))
   s)

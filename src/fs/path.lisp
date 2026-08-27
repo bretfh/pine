@@ -116,4 +116,4 @@
                    (push each found))))
     (nreverse found)))
 
-(pine/word:lends "leaf")
+(pine/word:lends "leaf" '("path" "parse"))

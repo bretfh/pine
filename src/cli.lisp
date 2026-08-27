@@ -201,3 +201,5 @@ do and what it is given are two questions."
       ((equal verb "help") (format t "~a~%" *usage*))
       (t (format t "pine: no verb ~a~%~a~%" verb *usage*)))
     (finish-output)))
+
+(pine/word:user)

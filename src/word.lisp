@@ -64,9 +64,12 @@ editor can say.
                   (pushnew word names :test #'equal)))
     (do-external-symbols (symbol (find-package :cl))
       (pushnew (symbol-name symbol) names :test #'equal))
-    (let (found)
-      (dolist (word names)
-        (multiple-value-bind (symbol status) (find-symbol word p)
-          (when status (push symbol found))))
-      (export found p))
+    (dolist (word names)
+      (multiple-value-bind (symbol status) (find-symbol word p)
+        (when status
+          (handler-case (export (list symbol) p)
+            (sb-ext:name-conflict ()
+              (pushnew (format nil "~a is already something else where the language
+is used" word)
+                       clashes :test #'equal))))))
     (values p (reverse clashes))))

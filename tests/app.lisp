@@ -139,3 +139,21 @@ list going on naming it and FIND-SYMBOL dropping it in silence."
     (dolist (said '("SWAP" "CAS" "READ" "WRITE" "NODE" "DEFCOMMAND" "DEFSURFACE"))
       (is (eq :external (nth-value 1 (find-symbol said p)))
           "~a is something a user program can say" said))))
+
+(test a-system-pine-ships-is-written-the-way-one-you-write-is
+  "PINE/DESK uses PINE/USER and nothing else, says what it reads and writes by
+path, and names no package of pine's. It is the same claim NOTHING-PINE-SHIPS-
+NAMES-THIS-APP makes from the other side: if the desktop cannot be written in the
+language, the language is not one."
+  (let* ((file (merge-pathnames "src/desk/system.lisp"
+                                (asdf:system-source-directory :pine)))
+         (said (uiop:read-file-string file))
+         (named (loop :for line :in (uiop:split-string said :separator '(#\Newline))
+                      :when (and (search "pine/" line)
+                                 (not (search "#:pine/desk" line))
+                                 (not (search "#:pine/user" line))
+                                 (not (search "in-readtable" line)))
+                        :collect line)))
+    (is (null named) "~{~%  ~a~}" named)
+    (is (search "/dev/audio/volume" said) "it says what it reads by path")
+    (is (null (search "local-nicknames" said)))))

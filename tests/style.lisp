@@ -17,9 +17,10 @@ worse than having no rule.")
   '("defun" "defmacro" "defclass" "defmethod" "defgeneric" "define-condition"
     "defstruct" "deftype" "defsetf"))
 
-(defparameter +declarations+ '("syntax.lisp" "commonlisp.lisp" "scheme.lisp"
-                               "pine.lisp" "reader.lisp")
-  "Where the sugar belongs: the language declarations, and the module that is it.")
+(defparameter +substrate+ '("data.lisp" "commit.lisp" "node.lisp" "tree.lisp"
+                            "path.lisp" "reader.lisp" "mount.lisp" "store.lisp")
+  "What pine's own syntax is built out of. These may not read in the reader they
+are: everything else may, because pine's language is for pine too.")
 
 (defparameter +builds-fresh+ '("job.lisp" "system.lisp" "managed.lisp")
   "The files whose NODES or RESOLVE may answer without NODE:CHILD, because what
@@ -128,14 +129,19 @@ whoever was here last, and it goes out of date without anything failing."
     (is (null long) "~d file~:p over ~d lines:~{~%  ~a~}"
         (length long) +line-limit+ (reverse long))))
 
-(test the-operating-system-does-not-read-in-its-own-sugar
+(test the-substrate-does-not-read-in-its-own-sugar
+  "/a/b, {...} and [...] are pine's own syntax, and pine writes in it. What may not
+is the part that defines it: a file under fs/ or data.lisp reading in the reader it
+is building is a chicken asking to be its own egg.
+
+Everything above that may. A system pine ships and a system somebody writes are
+the same kind of thing, written the same way, or the claim is not true."
   (let ((using nil))
     (dolist (file (%files))
       (when (and (find-if (lambda (line)
                             (search "named-readtables:in-readtable" line))
                           (%lines file))
-                 (not (member (file-namestring file) +declarations+
-                              :test #'equal)))
+                 (member (file-namestring file) +substrate+ :test #'equal))
         (push (file-namestring file) using)))
     (is (null using) "~{~%  ~a declares a readtable~}" (reverse using))))
 

@@ -167,4 +167,5 @@ nothing more, which is exactly what it is in a test.")
            ,@options :shown :default))
 
 (pine/word:lends "surface" "defsurface" "builds" "role" "anchor" "asks"
-                "shown" "bar" "panel" "overlay" "background" "window" "tile")
+                "shown" "surfaces" "bar" "panel" "overlay" "background" "window"
+                "tile")
