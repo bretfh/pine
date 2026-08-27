@@ -1,8 +1,5 @@
 (in-package #:pine/text/ts/runtime)
 
-(defun %grammar-of (language)
-  (if *grammar-of* (funcall *grammar-of* language) (values nil nil)))
-
 (defun load-language-entry (language library fn-name)
   (progn
     (unless library (return-from load-language-entry nil))
@@ -26,35 +23,34 @@
              (pl:with state :missing
                       (pl:with (pl:at state :missing) language)))))
 
-(defun ensure-language (runtime language &optional lib fn)
+(defun ensure-language (runtime language library fn-name)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
 grammar is not here. A grammar already loaded is a slot read; only the loading
 itself is one thread at a time, because the loader's table is one table.
 
-The library and the C function come from the language's own declaration, so
-what grammars exist is something written rather than a list compiled in here."
-  (multiple-value-bind (library fn-name)
-      (if lib (values lib fn) (%grammar-of language))
+The library and the C function come from the language's own declaration, which is
+why they are handed in: what grammars exist is something written rather than a
+list compiled in here."
   (or (pl:at (pl:at (%grammars runtime) :loaded) language)
       (bordeaux-threads:with-recursive-lock-held ((loading runtime))
         (unless (libs-loaded runtime) (ensure-ts runtime))
         (when (libs-loaded runtime)
           (let ((state (%grammars runtime)))
-
             (or (pl:at (pl:at state :loaded) language)
                 (unless (pl:contains (pl:at state :missing) language)
                   (let ((entry (load-language-entry language library fn-name)))
                     (cond
                       (entry (%note-loaded runtime language entry)
                              (pl:at (pl:at (%grammars runtime) :loaded)
-                                          language))
+                                    language))
                       (t (%note-missing runtime language)
                          (pine/run/fault:report
                           (make-condition 'simple-error
                                           :format-control "no ~(~a~) grammar to load"
                                           :format-arguments (list language))
                           "loading a grammar")
-                         nil)))))))))))
+                         nil))))))))))
+
 (defun make-parse-state (runtime language lib fn &key syntax package)
 "A parse-state for LANGUAGE, or nil if the grammar is unavailable. SYNTAX is
 the compiled rules the walk follows; PACKAGE is the one a head symbol resolves

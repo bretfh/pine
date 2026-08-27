@@ -4,7 +4,7 @@
   (:export
 
    #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
-   #:*grammar-of* #:grammars #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
+   #:grammars #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
 
    #:grammar-library-candidates #:load-grammar-library
    #:grammar-language-pointer #:load-language-entry
@@ -16,8 +16,6 @@
    #:ps-band #:ps-band-lines #:ps-offset
    #:call-with-input #:+read-chunk+
    #:ps-hl-cache #:ps-hl-lines #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
-
-   #:call-with-root #:forward-sexp-pos #:backward-sexp-pos #:defun-bounds-pos
 
    #:build-line-index #:line-of-byte #:byte-to-line-col #:pos-to-byte
    #:byte-length #:char-byte-length
@@ -59,12 +57,6 @@ is bound per thread rather than passed through the payload pointer.")
   #+darwin ".dylib" #-darwin ".so"
   "What a shared library is called here. The loader's own search takes the
 suffix off our hands; the paths below are spelled out, so they cannot.")
-
-(defvar *grammar-of* nil
-  "How a language name answers (values LIBRARY FN-NAME). Whatever declares
-languages sets this; until something does, no grammar loads. It is here rather
-than a table in this file so that what grammars exist is written rather than
-compiled in.")
 
 (cffi:define-foreign-library libtree-sitter
   (t (:default "libtree-sitter")))

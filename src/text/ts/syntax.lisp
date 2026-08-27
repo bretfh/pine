@@ -6,14 +6,21 @@
   (:export #:language #:declare-language #:for #:grammar-of #:languages
            #:for-readtable #:readtable-of
            #:attach #:compute-highlights #:hl-dump #:hl-dump-file
-           #:*inferrers*))
+           #:infers))
 (in-package #:pine/text/ts/syntax)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
 (defvar *compiled* (pl:table))
+(defvar *inferrers* (pl:table)
+  "How to guess what a head means where the declaration says nothing, by language.
+A registry: a language adds itself here, and nothing here knows which languages
+there are.")
 
-(defparameter *inferrers* nil)
+(defun infers (language rule)
+  "Say RULE guesses for LANGUAGE what the declaration did not spell out."
+  (pl:keep! *inferrers* language rule)
+  language)
 
 (defmacro language (options &rest clauses)
   `(%language ,options
@@ -84,7 +91,7 @@
       ((and (boundp sym) (constantp sym)) {:face :function-call :constant t})
       (t (%by-name name)))))
 
-(setf *inferrers* (list (cons :commonlisp #'%commonlisp-rule)))
+(infers :commonlisp #'%commonlisp-rule)
 
 (defun %names (set)
   (let ((out (make-hash-table :test 'equal)))
@@ -94,7 +101,7 @@
 (defun %compile (name raw)
   (let* ((options (pl:at raw :options))
          (indent (pl:at options :indent))
-         (infer (cdr (assoc name *inferrers*))))
+         (infer (pl:at (pl:all *inferrers*) name)))
     (hl:make-language
      :name name
      :grammar (pl:at options :grammar)
