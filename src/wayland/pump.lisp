@@ -1,6 +1,6 @@
 (defpackage #:pine/wayland/pump
   (:use #:cl)
-  (:local-nicknames (#:fault #:pine/run/fault))
+  (:local-nicknames (#:d #:pine/data) (#:fault #:pine/run/fault))
   (:export #:pump #:make-pump #:close-pump #:wake-in #:wake #:hand #:queuedp
            #:drain #:drain-wake))
 (in-package #:pine/wayland/pump)
@@ -16,8 +16,7 @@ compositor connection. Work crosses on the queue and a pipe carries the news tha
 it did, so a thread waiting on descriptors can wait on this one too."
   wake-in
   wake-out
-  (queue nil)
-  (lock (bordeaux-threads:make-lock)))
+  (queue nil))
 
 (defun make-pump ()
   (multiple-value-bind (in out) (sb-unix:unix-pipe)
@@ -44,22 +43,18 @@ but the pipe."
 
 (defun hand (p thunk)
   "Hand THUNK to the thread on the other end, and say so."
-  (bordeaux-threads:with-lock-held ((pump-lock p))
-    (push thunk (pump-queue p)))
+  (d:swap (pump-queue p) (lambda (had) (cons thunk had)))
   (wake p))
 
-(defun queuedp (p)
-  (bordeaux-threads:with-lock-held ((pump-lock p))
-    (and (pump-queue p) t)))
+(defun queuedp (p) (and (pump-queue p) t))
 
 (defun drain (p)
-  "Run what was handed over. One that breaks is said so and the rest still run."
-  (let (thunks)
-    (bordeaux-threads:with-lock-held ((pump-lock p))
-      (setf thunks (nreverse (pump-queue p))
-            (pump-queue p) nil))
-    (dolist (thunk thunks)
-      (fault:attempt thunk "something handed to the compositor thread"))))
+  "Run what was handed over. One that breaks is said so and the rest still run.
+
+No lock: what this takes is what was queued when it looked, and anything handed
+over while it runs is there for the next look."
+  (dolist (thunk (nreverse (d:take (pump-queue p))))
+    (fault:attempt thunk "something handed to the compositor thread")))
 
 (defun drain-wake (p)
   "Read what the wakes wrote, so the pipe does not stay readable. Once: the read

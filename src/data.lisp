@@ -9,7 +9,7 @@
            #:first #:last #:rest #:append #:subseq #:reverse #:sort
            #:find #:position #:some #:every #:remove
            #:no-map #:no-seq #:no-set #:index-of #:with-at #:insert-at #:capped
-           #:swap #:cas
+           #:swap #:cas #:take
            #:table #:all #:keep! #:drop! #:claim #:clear!))
 (in-package #:pine/data)
 
@@ -246,6 +246,23 @@ reach it."
                :for ,new := (funcall ,fn ,old ,@args)
                :until (eq ,old ,cas-form)
                :finally (return ,new))))))
+
+(defmacro take (place &environment env)
+  "Take what PLACE holds, leaving nothing there, and answer what was there.
+
+The other half of SWAP. A queue two threads share is pushed with one and emptied
+with the other, and neither of them holds a lock: what the emptier gets is exactly
+what was there when it looked, and anything handed over after that is still there
+for the next look.
+
+PLACE's subforms are evaluated once, and the same two rules about EQ hold."
+  (multiple-value-bind (temps values old new cas-form read-form)
+      (sb-ext:get-cas-expansion place env)
+    `(let* (,@(mapcar #'list temps values)
+            (,new nil))
+       (loop :for ,old := ,read-form
+             :until (eq ,old ,cas-form)
+             :finally (return ,old)))))
 
 (defmacro cas (place old new &environment env)
   "Put NEW in PLACE if OLD is still what it holds. Answers whether it was.

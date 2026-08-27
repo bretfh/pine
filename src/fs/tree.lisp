@@ -4,18 +4,12 @@
                     (#:commit #:pine/fs/commit))
   (:export #:*root* #:root #:make-root #:at #:ensure #:put #:erase #:walk
            #:listing #:paths #:split-name #:absent
-           #:change #:was #:revert #:diff
-           #:id-of #:node-for-id #:identify #:forget-ids))
+           #:change #:was #:revert #:diff))
 (in-package #:pine/fs/tree)
 
 (defvar *root* nil
   "The namespace this image is. One per image: a second one is another pine, and it
 is reached by mounting it rather than by holding two here.")
-
-(defvar *ids* (make-hash-table :test 'eql))
-(defvar *by-node* (make-hash-table :test 'eq))
-(defvar *counter* 0)
-(defvar *naming* (bordeaux-threads:make-lock "pine-ids"))
 
 (define-condition absent (error)
   ((where :initarg :where :reader where))
@@ -25,35 +19,9 @@ is reached by mounting it rather than by holding two here.")
   (let ((n (node:make nil :savedp nil)))
     (setf *root* n)
     (commit:clear)
-    (forget-ids)
-    (identify n)
     n))
 
 (defun root () *root*)
-
-(defun identify (n)
-  "The number this node crosses the wire as. Under a lock: two hash tables cannot be
-swapped as one, and a counter that hands the same number to two nodes is a frontend
-clicking the wrong one."
-  (bordeaux-threads:with-lock-held (*naming*)
-    (or (gethash n *by-node*)
-        (let ((it (d:swap *counter* #'1+)))
-          (setf (gethash n *by-node*) it
-                (gethash it *ids*) n)
-          it))))
-
-(defun id-of (n)
-  (bordeaux-threads:with-lock-held (*naming*) (gethash n *by-node*)))
-
-(defun node-for-id (it)
-  (bordeaux-threads:with-lock-held (*naming*) (gethash it *ids*)))
-
-(defun forget-ids ()
-  (bordeaux-threads:with-lock-held (*naming*)
-    (clrhash *ids*)
-    (clrhash *by-node*)
-    (setf *counter* 0))
-  t)
 
 (defun split-name (text)
   (let ((names nil)
@@ -89,7 +57,7 @@ clicking the wrong one."
   (loop :with n := (%from where)
         :for name :in (%names pieces)
         :do (setf n (or (node:resolve n name) (node:make-child n name)))
-        :finally (progn (identify n) (return n))))
+        :finally (return n)))
 
 (defun put (where pieces value)
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))

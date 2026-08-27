@@ -122,7 +122,6 @@ is text plus something of its own."
                                        (visiting doc (princ-to-string value)))
                              :describes "where this document reads and writes")
                  doc)
-    (tree:identify doc)
     doc))
 
 (defun documents ()

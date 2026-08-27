@@ -91,3 +91,27 @@ that looks like it ran."
     (is (= 2 (count-of (d:map :a 1 :b 2))))
     (is (= 3 (count-of (d:as :seq '(1 2 3)))))
     (is (= 2 (count-of (d:as :set '(1 2)))))))
+
+(test a-take-empties-a-place-and-answers-what-was-there
+  "The other half of SWAP: what comes back is exactly what was there, and what is
+left is nothing. Four threads pushing while one takes lose nothing between them."
+  (booted)
+  (let ((cell (cons nil nil)))
+    (d:swap (car cell) (lambda (had) (cons 1 had)))
+    (d:swap (car cell) (lambda (had) (cons 2 had)))
+    (is (equal '(2 1) (d:take (car cell))))
+    (is (null (car cell)))
+    (is (null (d:take (car cell)))))
+  (let ((cell (cons nil nil))
+        (taken nil)
+        (threads nil))
+    (dotimes (i 4)
+      (push (bordeaux-threads:make-thread
+             (lambda () (dotimes (n 250)
+                          (d:swap (car cell) (lambda (had) (cons n had))))))
+            threads))
+    (loop :repeat 200
+          :do (setf taken (append (d:take (car cell)) taken)))
+    (mapc #'bordeaux-threads:join-thread threads)
+    (setf taken (append (d:take (car cell)) taken))
+    (is (= 1000 (length taken)) "nothing was pushed that did not come back")))

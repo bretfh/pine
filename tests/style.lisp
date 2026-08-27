@@ -32,9 +32,9 @@ added here for any other reason is a subtree taken out of the graph.")
   "Packages a file does not get to name for itself: the wayland protocol
 bindings are four files generated from xml, and one package between them.")
 
-(defparameter +identity-tables+ '("tree.lisp")
-  "Where a hash table is identity and not a registry: the number a node crosses
-the wire as, and the node that number is for.")
+(defparameter +identity-tables+ '()
+  "Where a hash table is identity and not a registry. Nothing is, now: what a node
+crossed the wire as was written and never read.")
 
 (defun %module-root ()
   (merge-pathnames "src/" (asdf:system-source-directory :pine)))
