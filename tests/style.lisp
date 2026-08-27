@@ -32,6 +32,11 @@ added here for any other reason is a subtree taken out of the graph.")
   "Packages a file does not get to name for itself: the wayland protocol
 bindings are four files generated from xml, and one package between them.")
 
+(defparameter +waits-on-a-clock+ '("cli.lisp" "boot.lisp")
+  "The two places a clock is the right thing to wait on. cli.lisp waits for a
+socket a separate process has not opened yet, so there is nothing here to be woken
+by. boot.lisp's are single delays on the way out, not a loop.")
+
 (defparameter +identity-tables+ '()
   "Where a hash table is identity and not a registry. Nothing is, now: what a node
 crossed the wire as was written and never read.")
@@ -373,3 +378,11 @@ being lost looks exactly like a question with no answer. FAULT:ATTEMPT keeps wha
 broke; FAULT:OR-NOTHING says in words why nothing is an answer here."
   (is (null (%naming "ignore-errors"))
       "~{~%  ~a swallows without saying why~}" (%naming "ignore-errors")))
+
+(test nothing-waits-by-looking-again
+  "A thread waits on the thing it is waiting for: a descriptor, a join, a fault, a
+mailbox. Looking and sleeping and looking again is a thread awake to find out that
+nothing has happened, and a timeout that counts turns rather than seconds."
+  (is (null (%naming "(sleep " :except +waits-on-a-clock+))
+      "~{~%  ~a waits by looking again~}"
+      (%naming "(sleep " :except +waits-on-a-clock+)))

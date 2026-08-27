@@ -120,7 +120,13 @@ do and what it is given are two questions."
                   (finish-output))))
     (let ((uri (%uri actors:*host* (sento.remoting:remoting-port sys) name)))
       (when (%say (ask (list :watch where uri) :system sys))
-        (loop (sleep 60))))))
+        (%park)))))
+
+(defun %park ()
+  "Block until this process is killed. A semaphore nobody holds and nobody signals
+waits on nothing at all, where a loop round a sleep wakes for ever to find out
+that nothing has happened."
+  (sb-thread:wait-on-semaphore (sb-thread:make-semaphore)))
 
 (defun %self ()
   (let ((self (first sb-ext:*posix-argv*)))
@@ -133,6 +139,16 @@ do and what it is given are two questions."
               "--eval" "(pine/cli:main (rest sb-ext:*posix-argv*))"
               "--end-toplevel-options"))))
 
+(defun %waiting-on-it (readyp seconds)
+  "Wait for another process to answer, or not to. The one place pine looks in a
+loop instead of waiting: what it is waiting for is a socket a separate process has
+not opened yet, so there is nothing here to be woken by."
+  (loop :with due := (+ (get-universal-time) seconds)
+        :until (funcall readyp)
+        :do (sleep 0.2)
+            (when (>= (get-universal-time) due) (return nil))
+        :finally (return t)))
+
 (defun %say-line (control &rest arguments)
   (apply #'format t control arguments)
   (finish-output))
@@ -143,17 +159,12 @@ do and what it is given are two questions."
       (progn
         (uiop:launch-program (append (%self) (list "daemon"))
                              :output nil :error-output nil)
-        (loop :repeat 60
-              :until (runningp)
-              :do (sleep 0.5))
+        (%waiting-on-it (lambda () (runningp)) 30)
         (%say-line "pine: ~:[did not come up~;running on ~d~]~%"
                    (runningp) actors:*port*))))
 
 (defun %gonep (&key (seconds 5))
-  (loop :repeat (round (/ seconds 0.2))
-        :unless (runningp) :do (return t)
-          :do (sleep 0.2)
-        :finally (return (not (runningp)))))
+  (%waiting-on-it (lambda () (not (runningp))) seconds))
 
 (defun %stop ()
   (cond ((not (runningp)) (%say-line "pine: not running~%"))
@@ -192,11 +203,11 @@ do and what it is given are two questions."
       ((equal verb "reload") (%run (list "reload")))
       ((equal verb "start") (%start))
       ((equal verb "stop") (%stop))
-      ((equal verb "restart") (%stop) (sleep 1) (%start))
+      ((equal verb "restart") (%stop) (%start))
       ((equal verb "daemon")
        (setf pine/run/log:*to* *standard-output*)
        (pine:daemon)
-       (loop (sleep 60)))
+       (%park))
       ((equal verb "shell") (pine:main))
       ((equal verb "help") (format t "~a~%" *usage*))
       (t (format t "pine: no verb ~a~%~a~%" verb *usage*)))
