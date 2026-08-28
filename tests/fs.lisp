@@ -180,3 +180,17 @@ name it never had, and answering nothing while nothing went."
     (tree:put nil '("a" "b") 1)
     (is (command:run "rm" '("/a/b")))
     (is (null (tree:at nil "a/b")) "which is what RM hands it")))
+
+(test a-name-nothing-answers-for-is-not-kept
+  "A child made once is made once; a child that was never made is not remembered as
+nothing. The memo a walk of the children reads would have a hole in it, and a name
+anybody can ask about would be a name anybody can grow it by."
+  (with-tree
+    (let ((p (node:place "empty" :names (lambda () nil)
+                                 :each (lambda (name) (declare (ignore name)) nil))))
+      (node:attach p (tree:root))
+      (is (null (node:resolve p "nobody")))
+      (is (null (d:keys (d:all (node:memo p)))) "and nothing was kept saying so")
+      (node:attach p (tree:root))
+      (is (equal "/empty" (node:full-name p))
+          "so renaming what is under it has something to rename"))))

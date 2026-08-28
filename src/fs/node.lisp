@@ -166,10 +166,15 @@ it; that is what DERIVE, which does remember, is the other half of."
 
 (defun child (n name builder)
   "The child N keeps under NAME, made once. Two threads asking at once both answer
-the one that landed, which is what lets anything reading it be worked out again."
+the one that landed, which is what lets anything reading it be worked out again.
+
+A builder that answers nothing leaves nothing behind: a name nobody has put
+anything at is asked about once per ask, rather than filling the memo with an
+entry that says so and that every walk of the children then has to step over."
   (let ((name (princ-to-string name)))
     (or (d:lookup (d:all (memo n)) name)
-        (d:claim (memo n) name (funcall builder)))))
+        (let ((made (funcall builder)))
+          (when made (d:claim (memo n) name made))))))
 
 (defun %kid (n name)
   (child n name
