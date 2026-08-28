@@ -114,7 +114,7 @@ paging lands on lines that were walked already."
 
 (defun %paint-region (g document from height width left)
   (let ((span (%region document))
-        (bg (face:unhex (face:bg (face:face :selection)))))
+        (bg (face:unhex (face:bg (face:in-force :selection)))))
     (when (and span bg)
       (destructuring-bind (start-line start-col end-line end-col) span
         (destructuring-bind (br bg bb) bg
@@ -138,7 +138,7 @@ tree and the name of a document are all things a window can hold; another kind i
 method somebody else writes, and nothing here has to know about it.")
   (:method (content win)
     (declare (ignore content))
-    (build:cells (grid:rows (grid:make-grid (max 1 (window:cols win))
+    (build:cells (grid:by-row (grid:make-grid (max 1 (window:cols win))
                                             (max 1 (window:lines win))))
                  :class "editor-view" :expand 1 :font *font*)))
 
@@ -157,7 +157,7 @@ window beside a document."
       (layout:measure content g cols rows)
       (layout:arrange content g 0 0 cols rows)
       (layout:paint content g))
-    (build:cells (grid:rows g) :class "editor-view" :expand 1 :font *font*)))
+    (build:cells (grid:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod shows ((document doc:document) win)
   (node:reading document)
@@ -187,7 +187,7 @@ window beside a document."
                                       :do (grid:put g row (+ at i) (char text i)
                                                     (or face :comment)))))))))
     (%paint-region g document from height width left)
-    (build:cells (grid:rows g)
+    (build:cells (grid:by-row g)
                  :class "editor-view" :expand 1 :font *font*
                  :caret (when caret
                           (cons (min (1- height)
@@ -219,7 +219,7 @@ on, and a widget tree has nothing of the sort to say."
           :do (grid:put g 0 col
                         (if (< col (length text)) (char text col) #\space)
                         :modeline))
-    (build:cells (grid:rows g) :class "modeline" :font *font*)))
+    (build:cells (grid:by-row g) :class "modeline" :font *font*)))
 
 (defun window-tree (win)
   (scroll-to-point win)
@@ -253,7 +253,7 @@ on, and a widget tree has nothing of the sort to say."
                     :do (grid:put g row col
                                   (if (< col (length text)) (char text col) #\space)
                                   face)))
-    (grid:rows g)))
+    (grid:by-row g)))
 
 (defun echo (width &optional said)
   (let* ((p (and (null said) (prompt:asking)))
@@ -264,7 +264,7 @@ on, and a widget tree has nothing of the sort to say."
           :do (grid:put g 0 col (char text col)
                         (if (< col (length question)) :prompt :echo)))
     (multiple-value-bind (found from) (and p (%candidates))
-      (let ((rows (grid:rows g)))
+      (let ((rows (grid:by-row g)))
         (build:cells (if found
                          (append (%candidate-rows found from width) rows)
                          rows)
@@ -314,7 +314,7 @@ moving means."
       (layout:measure tree g cols lines)
       (layout:arrange tree g 0 0 cols lines)
       (layout:paint tree g))
-    (grid:rows g)))
+    (grid:by-row g)))
 
 (defun %without-a-parse (document line)
   (or (mode:indent (doc:mode-of document) document line)

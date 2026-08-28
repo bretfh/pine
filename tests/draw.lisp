@@ -10,7 +10,7 @@ directly: what is on the screen."
       (labels ((walk (w)
                  (when w
                    (when (typep w 'widget:cells)
-                     (dolist (row (widget:rows w))
+                     (dolist (row (widget:by-row w))
                        (write-line (string-right-trim " " (car row)) out)))
                    (dolist (p (widget:parts w)) (walk p)))))
         (walk tree)))))
@@ -21,7 +21,7 @@ directly: what is on the screen."
         (out nil))
     (labels ((walk (w)
                (when w
-                 (when (typep w 'widget:cells) (push (widget:rows w) out))
+                 (when (typep w 'widget:cells) (push (widget:by-row w) out))
                  (dolist (p (widget:parts w)) (walk p)))))
       (walk tree))
     (princ-to-string out)))

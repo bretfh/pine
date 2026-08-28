@@ -206,7 +206,7 @@ one place a canvas paints what a grid worked out."
     (multiple-value-bind (cw ch) (layout:text-size m "M" (%size m widget))
       (with-canvas (m)
         (let ((up (or (w:over widget) 0)))
-          (loop :for row :in (w:rows widget)
+          (loop :for row :in (w:by-row widget)
                 :for line :from (- up)
                 :for top := (+ y (* line ch))
                 :do (destructuring-bind (text . runs) row

@@ -157,7 +157,7 @@ arrange, never from the space available -- answering that here would eat the axi
 
 (defmethod measure ((w cells) m aw ah)
   (declare (ignore aw ah))
-  (let* ((all (rows w))
+  (let* ((all (by-row w))
          (cols (reduce #'max all :initial-value 1 :key (lambda (r) (length (car r)))))
          (n (max 1 (- (length all) (or (over w) 0)))))
     (multiple-value-bind (cw ch) (text-size m "M" (%font w))
@@ -165,7 +165,7 @@ arrange, never from the space available -- answering that here would eat the axi
 
 (defmethod paint ((w cells) (m grid:grid))
   (let ((up (or (over w) 0)))
-    (loop :for row :in (rows w)
+    (loop :for row :in (by-row w)
           :for line :from (- (top w) up)
           :do (grid:blit m line (left w) (car row) (cdr row)))))
 

@@ -9,7 +9,7 @@
            #:top #:left #:bottom #:right #:width #:height #:placed #:wide #:tall
            #:content #:changed #:glyph #:upright #:align #:spacing
            #:value #:low #:high #:track #:thickness #:diameter #:fraction
-           #:rows #:caret #:over #:opacity #:path #:year #:month #:day
+           #:by-row #:caret #:over #:opacity #:path #:year #:month #:day
            #:start #:middle #:end #:offset #:runs #:click #:before #:after))
 (in-package #:pine/ui/widget)
 
@@ -121,7 +121,7 @@ something -- OF is what."))
   ((path :initarg :path :accessor path :initform "")))
 
 (defclass cells (widget)
-  ((rows    :initarg :rows    :accessor rows    :initform nil)
+  ((rows    :initarg :rows    :accessor by-row  :initform nil)
    (caret   :initarg :caret   :accessor caret   :initform nil)
    (over    :initarg :over    :accessor over    :initform nil)
    (opacity :initarg :opacity :accessor opacity :initform 1.0))

@@ -20,7 +20,7 @@ knows the roles by name."))
         (layout:measure tree m cols lines)
         (layout:arrange tree m 0 0 cols lines)
         (layout:paint tree m)
-        (values (mapcar (lambda (r) (string-right-trim " " (car r))) (grid:rows m))
+        (values (mapcar (lambda (r) (string-right-trim " " (car r))) (grid:by-row m))
                 tree m)))))
 
 (test a-tree-measures-arranges-and-paints

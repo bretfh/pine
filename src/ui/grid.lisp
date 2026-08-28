@@ -1,8 +1,8 @@
 (defpackage #:pine/ui/grid
   (:use #:cl)
   (:local-nicknames (#:face #:pine/ui/face))
-  (:export #:medium #:grid #:make-grid #:cols #:cells #:clip
-           #:put #:put-bg #:put-rgb #:blit #:with-clip #:rows #:ink))
+  (:export #:medium #:grid #:make-grid #:cols #:flat #:clip
+           #:put #:put-bg #:put-rgb #:blit #:with-clip #:by-row #:ink))
 (in-package #:pine/ui/grid)
 
 (defclass medium () ()
@@ -13,7 +13,7 @@ cairo canvas in pine/canvas, and anything else somebody writes."))
 (defclass grid (medium)
   ((cols  :initarg :cols  :reader cols)
    (lines :initarg :lines :reader lines)
-   (cells :initarg :cells :reader cells)
+   (cells :initarg :cells :reader flat)
    (clip  :initform nil   :accessor clip))
   (:documentation "A grid of character cells: ten slots each, flat, because a paint
 touches every one of them."))
@@ -23,7 +23,7 @@ touches every one of them."))
 through the theme, or an already-worked-out (FG BG ATTR). A face with no foreground
 of its own falls back to the plain one -- that fallback belongs here, where a cell
 is actually being coloured, and not in what a face is."
-  (flet ((plain () (or (face:unhex (face:fg (face:face face:+plain+)))
+  (flet ((plain () (or (face:unhex (face:fg (face:in-force face:+plain+)))
                        '(205 214 244))))
     (if (consp it)
         (destructuring-bind (fg bg attr) it
@@ -32,7 +32,7 @@ is actually being coloured, and not in what a face is."
                     (if bg (first bg) -1) (if bg (second bg) -1)
                     (if bg (third bg) -1)
                     (or attr 0))))
-        (let* ((f (face:face it))
+        (let* ((f (face:in-force it))
                (fg (or (and f (face:unhex (face:fg f))) (plain)))
                (bg (and f (face:unhex (face:bg f)))))
           (values (first fg) (second fg) (third fg)
@@ -73,7 +73,7 @@ is actually being coloured, and not in what a face is."
 (defun put (g line col ch it)
   (when (%inside g line col)
     (multiple-value-bind (fr fg fb br bg bb attr) (ink it)
-      (let ((off (%offset g line col)) (v (cells g)))
+      (let ((off (%offset g line col)) (v (flat g)))
         (setf (svref v (+ off 2)) (char-code ch)
               (svref v (+ off 3)) fr (svref v (+ off 4)) fg (svref v (+ off 5)) fb
               (svref v (+ off 9)) attr)
@@ -83,12 +83,12 @@ is actually being coloured, and not in what a face is."
 
 (defun put-bg (g line col br bg bb)
   (when (%inside g line col)
-    (let ((off (%offset g line col)) (v (cells g)))
+    (let ((off (%offset g line col)) (v (flat g)))
       (setf (svref v (+ off 6)) br (svref v (+ off 7)) bg (svref v (+ off 8)) bb))))
 
 (defun put-rgb (g line col ch fr fg fb br bg bb attr)
   (when (%inside g line col)
-    (let ((off (%offset g line col)) (v (cells g)))
+    (let ((off (%offset g line col)) (v (flat g)))
       (setf (svref v (+ off 2)) (char-code ch)
             (svref v (+ off 3)) fr (svref v (+ off 4)) fg (svref v (+ off 5)) fb
             (svref v (+ off 9)) (or attr 0))
@@ -106,10 +106,10 @@ attr) and its colours reach to the next run's column."
                       :do (put-rgb g line (+ col0 c) (char text c)
                                    fr fg fb br bg bb attr))))))
 
-(defun rows (g)
+(defun by-row (g)
   "The grid scanned back out as (TEXT . RUNS) rows -- the shape that crosses the
 wire, so one format serves the frame, the chrome and a buffer's lines."
-  (let ((cols (cols g)) (v (cells g)))
+  (let ((cols (cols g)) (v (flat g)))
     (loop :for line :from 0 :below (lines g)
           :collect
           (let ((text (make-string cols :initial-element #\space))

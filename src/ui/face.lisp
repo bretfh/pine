@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree))
   (:export #:face #:fg #:bg #:bold #:italic #:underline #:attrs
-           #:faces #:with-faces #:unhex
+           #:faces #:with-faces #:in-force #:unhex
            #:theme #:name #:palette #:metrics #:themes #:register #:active
            #:color #:metric #:hex #:memo #:build #:*themes* #:+plain+))
 (in-package #:pine/ui/face)
@@ -120,7 +120,7 @@ path every painted cell takes."
   "Run BODY with the faces in force worked out once."
   `(let ((*in-force* (faces-in-force))) ,@body))
 
-(defun face (name)
+(defun in-force (name)
   "The face called NAME, as the render running here sees it. The class and the
 look-up are one word because they are one idea."
   (gethash name (faces-in-force)))

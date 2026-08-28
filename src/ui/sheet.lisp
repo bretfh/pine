@@ -150,10 +150,10 @@ a path nobody named should not grow the keyword package."
 
 (defun %face (name)
   (let ((key (%key name)))
-    (when (and key (face:face key))
+    (when (and key (face:in-force key))
       (node:place name
                   :reads (lambda ()
-                           (let ((f (face:face (%key name))))
+                           (let ((f (face:in-force (%key name))))
                              (when f
                                (list :fg (face:fg f) :bg (face:bg f)
                                      :bold (face:bold f) :italic (face:italic f)

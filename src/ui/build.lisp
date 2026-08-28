@@ -7,7 +7,7 @@
   (:export #:label #:field #:icon #:button #:column #:row #:stack #:box #:center
            #:centerbox #:scroll #:gap #:rule #:slider #:ring #:grid #:choice
            #:calendar #:image #:cells #:rows
-           #:placep #:held #:shown #:acting #:here #:confirming))
+           #:placep #:held #:acting #:here #:confirming))
 (in-package #:pine/ui/build)
 
 (defvar *here* nil)
@@ -39,7 +39,7 @@ naming one."
       (setf (node:contents it) value)
       (setf (path:contents it) value)))
 
-(defun shown (it)
+(defun %shown (it)
   "What a slot shows. A place in place of a value is read, so a widget slot and the
 place it shows are one thing."
   (cond ((placep it) (let ((v (held it))) (if (null v) "" v)))
@@ -85,7 +85,7 @@ parts, dropping nils and splicing lists."
   "A run of text. TEXT may be a place, which is read: /sys/cpu holds a number, and a
 label that only took strings would make every config write PRINC-TO-STRING."
   (apply #'make-instance 'w:label
-         :content (let ((it (shown text)))
+         :content (let ((it (%shown text)))
                     (if (stringp it) it (princ-to-string it)))
          props))
 
@@ -93,7 +93,7 @@ label that only took strings would make every config write PRINC-TO-STRING."
   "A one-line editable field over the place it edits. The place is the whole of it:
 what it shows is what that place holds, and what is typed is written back there."
   (apply #'make-instance 'w:label
-         :content (princ-to-string (shown subject))
+         :content (princ-to-string (%shown subject))
          :of (when (placep subject) subject)
          :changed (when (placep subject)
                     (lambda (v) (setf (held subject) v)))
@@ -103,7 +103,7 @@ what it shows is what that place holds, and what is typed is written back there.
 (defun icon (glyph &rest props)
   "A glyph, from a codepoint or a string. With a click it becomes a clickable cell
 that centres the glyph."
-  (let* ((raw (shown glyph))
+  (let* ((raw (%shown glyph))
          (g (if (integerp raw) (string (code-char raw)) (string raw)))
          (thunk (%click props)))
     (if thunk
@@ -207,7 +207,7 @@ what it stands for."
 (defun calendar (&rest props) (apply #'make-instance 'w:calendar props))
 
 (defun image (where &rest props)
-  (apply #'make-instance 'w:picture :path (princ-to-string (shown where)) props))
+  (apply #'make-instance 'w:picture :path (princ-to-string (%shown where)) props))
 
 (defun cells (rows &rest props)
   "A leaf holding rows that are already laid out. Measure and arrange are one step
