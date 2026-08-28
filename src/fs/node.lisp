@@ -4,7 +4,7 @@
   (:export
    #:node #:value #:derived #:live
    #:nodep #:name #:over #:describes
-   #:savedp #:livep #:storedp #:announces #:refreshes
+   #:savedp #:livep #:held #:announces #:refreshes
    #:contents #:nodes #:resolve #:stir #:moved
    #:verb #:full-name #:root #:make #:derive
    #:place #:attach #:detach #:child #:children
@@ -48,9 +48,14 @@ stands behind it."))
   (:documentation "How often to ask again, where nothing announces itself.")
   (:method ((n node)) nil))
 
-(defclass value (node) ()
+(defclass value (node)
+  ((held :initarg :held :accessor held :initform nil))
   (:documentation "Holds one. Nothing works it out and nothing outside answers for
-it: it is written, and what it holds stands until it is written again."))
+it: it is written, and what it holds stands until it is written again.
+
+It holds it here, in the object that is the place. It used to live in a map keyed
+by path string, which meant the tree was kept twice and a write had to say where it
+landed in words."))
 
 (defclass derived (node)
   ((reads  :initarg :reads   :accessor reads  :initform nil)
@@ -95,11 +100,6 @@ keeps.
 
 A device is one of these and each of its readings is a closure pair, which is why
 a device is a table of rows rather than a class per reading."))
-
-(defun storedp (n)
-  "Whether this node's value is kept in the commit store, which is what a write
-of several at once can go through."
-  (and (typep n 'value) (savedp n)))
 
 (defmethod print-object ((n node) stream)
   (print-unreadable-object (n stream :type t)
@@ -297,7 +297,7 @@ that keeps nothing is one nothing can ever stir again."
 answer per kind: a branch holds nothing, a value holds what was written, a derived
 works it out and remembers, and a live one asks the world.")
   (:method ((n node)) nil)
-  (:method ((n value)) (when (savedp n) (commit:held-at (full-name n))))
+  (:method ((n value)) (held n))
   (:method ((n derived))
     (let ((v (cached n)))
       (if (eq v +unread+) (%work-out n) v)))
@@ -322,10 +322,7 @@ remember it too.")
     (declare (ignore v))
     (error "~a holds nothing that can be written." (full-name n)))
   (:method (v (n value))
-    (unless (savedp n)
-      (error "~a holds nothing that can be written." (full-name n)))
-    (commit:change (d:map (full-name n) v))
-    v)
+    (setf (held n) v))
   (:method (v (n derived))
     (if (writes n)
         (funcall (writes n) v)

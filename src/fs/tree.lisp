@@ -1,11 +1,10 @@
 (defpackage #:pine/fs/tree
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:commit #:pine/fs/commit))
+  (:local-nicknames (#:node #:pine/fs/node))
   (:export
    #:*root* #:root #:make-root #:at #:ensure
    #:put #:erase #:walk #:listing #:paths
-   #:split-name #:change #:builder
+   #:split-name #:builder
    #:built))
 (in-package #:pine/fs/tree)
 
@@ -23,10 +22,9 @@ one there is and nothing has to state it.")
   (:report (lambda (c s) (format s "nothing at ~a" (where c)))))
 
 (defun make-root ()
-  (let ((n (node:make nil :savedp nil)))
-    (setf *root* n)
-    (commit:clear)
-    n))
+  "The namespace this image is. A branch: it holds nothing itself, and what a
+fresh one has is nothing, because a value lives in the node that holds it."
+  (setf *root* (make-instance 'node:node :name nil)))
 
 (defun root () *root*)
 
@@ -83,32 +81,6 @@ order nobody can check."
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))
     (setf (node:contents n) value)
     n))
-
-(defun %placed (pairs)
-  (loop :for (place . value) :in (d:pairs pairs)
-        :collect (cons (ensure nil (alexandria:ensure-list place)) value)))
-
-(defun %by-name (placed)
-  (loop :with out := (d:no-map)
-        :for (n . value) :in placed
-        :do (setf out (d:with out (node:full-name n) value))
-        :finally (return out)))
-
-(defun change (pairs &key when)
-  (let ((placed (%placed pairs)))
-    (cond ((every (lambda (each) (node:storedp (car each))) placed)
-           (let ((moved (commit:change (%by-name placed)
-                                       :when (and when (%by-name (%placed when))))))
-             (when (and moved (not (d:emptyp moved)))
-               (commit:writing
-                 (loop :for (n . nil) :in placed
-                       :when (d:contains moved (node:full-name n))
-                         :do (node:moved n))))
-             moved))
-          (t (commit:writing
-               (loop :for (n . value) :in placed
-                     :do (setf (node:contents n) value))
-               (%by-name placed))))))
 
 (defun erase (where &rest pieces)
   (let* ((names (%names pieces))
