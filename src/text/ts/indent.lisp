@@ -210,8 +210,15 @@ no argument to align under and the first thing in it is the first thing."
       (1+ open-col)))
 
 (defun %headless-p (form)
-  "Whether FORM is a collection rather than a call. Its elements are elements."
-  (member (ts-node-type form) '("map_lit" "seq_lit" "set_lit") :test #'string=))
+  "Whether FORM's opening word is none of its named elements, so there is nothing
+to align its elements under but the first of them.
+
+A collection is one: every element is an element. A LOOP is the other: the
+grammar gives the word itself no node, so its first named element is its first
+clause, and aligning under the first argument would put the second clause one
+past the paren instead of under the first."
+  (member (ts-node-type form) '("map_lit" "seq_lit" "set_lit" "loop_macro")
+          :test #'string=))
 
 (defun %align-column (form open-col src)
   "Align under the first argument when it shares the head's line; otherwise one

@@ -98,6 +98,8 @@
                             :shape {1 :name} :rest :body})
    (/head/in-package       {:face :keyword :name-face :namespace :shape {1 :name}})
 
+   (/head/handler-case     {:face :keyword :indent 1 :rest :body})
+
    (/head/declare          {:face :keyword})
    (/head/declaim          {:face :keyword :rest :body})
    (/head/proclaim         {:face :keyword :rest :body})
