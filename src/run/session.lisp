@@ -1,7 +1,8 @@
 (defpackage #:pine/run/session
   (:use #:cl)
   (:shadow #:read #:print #:close)
-  (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command))
+  (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command)
+                    (#:tree #:pine/fs/tree))
   (:export
    #:open-session #:sessions #:close #:in #:read
    #:evaluate #:interact #:answered #:fault #:*session*))
@@ -105,6 +106,7 @@ nobody has fbound is still something to do."
                        (let ((*package* (package-of s))
                              (*readtable* (or (readtable-of s) *readtable*))
                              (*session* s)
+                             (tree:*here* (in s))
                              (command:*at* s))
                          (if c
                              (command:run c (and given

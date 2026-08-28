@@ -16,40 +16,49 @@ there is nobody to say yes, so it is said rather than done.")
 what it stands for."
   *here*)
 
-(defun placep (it)
-  "Whether IT is somewhere a value is kept rather than a value: a node, or a path
-naming one."
-  (or (node:nodep it) (path:pathp it)))
+(deftype somewhere ()
+  "What names a place rather than being a value: a node, or a path naming one."
+  '(or node:node path:path))
 
-(defun held (it)
-  (if (node:nodep it) (node:contents it) (path:contents it)))
+(defun placep (it) (typep it 'somewhere))
 
-(defun (setf held) (value it)
-  (if (node:nodep it)
-      (setf (node:contents it) value)
-      (setf (path:contents it) value)))
+(defgeneric held (it)
+  (:documentation "What IT holds. A widget slot takes a place or a value and shows
+what it finds, so this is the one question every builder asks of what it was
+handed, and a value answers it by being one.")
+  (:method ((it node:node)) (node:contents it))
+  (:method ((it path:path))
+    (let ((n (tree:at it))) (and n (node:contents n))))
+  (:method (it) it))
+
+(defgeneric (setf held) (value it)
+  (:method (value (it node:node)) (setf (node:contents it) value))
+  (:method (value (it path:path))
+    (setf (node:contents (tree:ensure it)) value)))
 
 (defun %shown (it)
-  "What a slot shows. A place in place of a value is read, so a widget slot and the
-place it shows are one thing."
-  (cond ((placep it) (let ((v (held it))) (if (null v) "" v)))
-        ((null it) "")
-        (t it)))
+  "What a slot shows: what HELD answers, with nothing shown as the empty string.
+SURFACE:SHOWN is a different question, and this one stays private rather than
+taking its word."
+  (let ((v (held it))) (if (null v) "" v)))
 
 (defun %writing (m)
   (lambda ()
     (d:do-pairs (where value m) (setf (held where) value))
     t))
 
-(defun acting (click)
-  "What a :click does: a function, a write-map, a node, a path, or a command's name.
-A config holds nodes, so clicking one writes it, the way clicking a path writes what
-it names."
-  (cond ((null click) nil)
-        ((functionp click) click)
-        ((d:mapp click) (%writing click))
-        ((placep click) (lambda () (setf (held click) t)))
-        (t (lambda () (command:run click)))))
+(defgeneric acting (click)
+  (:documentation "What a :click does. A config holds nodes, so clicking one
+writes it, the way clicking a path writes what it names; anything else is a
+command's name.")
+  (:method ((click null)) nil)
+  (:method ((click function)) click)
+  (:method ((click node:node)) (lambda () (setf (held click) t)))
+  (:method ((click path:path)) (lambda () (setf (held click) t)))
+  (:method (click)
+    (if (d:mapp click)
+        (%writing click)
+        (lambda () (command:run click)))))
 
 (defun %click (props)
   (let ((thunk (acting (or (getf props :click) (getf props :on-click))))
@@ -214,7 +223,7 @@ The rows are built here rather than at measure, so nothing is written into a tre
 that has already been handed out."
   (let* ((over-paths (path:pathp items))
          (all (if over-paths
-                  (let ((n (path:at items)))
+                  (let ((n (tree:at items)))
                     (and n (mapcar (lambda (each)
                                      (path:path (node:full-name each)))
                                    (node:nodes n))))

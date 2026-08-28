@@ -2,8 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
   (:export
-   #:path #:pathp #:whole #:leaf #:at
-   #:ensure #:contents))
+   #:path #:pathp #:whole #:leaf))
 (in-package #:pine/fs/path)
 
 (defclass segment ()
@@ -90,21 +89,15 @@
       (and (walk (segments pattern) (segments subject))
            (or (nreverse bound) t)))))
 
-(defun at (p &optional (where (tree:root)))
-  (apply #'tree:at where (mapcar #'value (segments p))))
+(defun %spelled (p) (mapcar #'value (segments p)))
 
-(defun ensure (p &optional (where (tree:root)))
-  (apply #'tree:ensure where (mapcar #'value (segments p))))
+(defmethod tree:at ((p path) &rest names)
+  "A path is one more thing you can name a place with, so it is one more method
+rather than a second way to walk the tree."
+  (apply #'tree:at (tree:root) (append (%spelled p) names)))
 
-(defun erase (p &optional (where (tree:root)))
-  (apply #'tree:erase where (mapcar #'value (segments p))))
-
-(defun contents (p &optional (where (tree:root)))
-  (let ((n (at p where)))
-    (and n (node:contents n))))
-
-(defun (setf contents) (value p &optional (where (tree:root)))
-  (setf (node:contents (ensure p where)) value))
+(defmethod tree:ensure ((p path) &rest names)
+  (apply #'tree:ensure (tree:root) (append (%spelled p) names)))
 
 (defun matching (pattern &optional (where (tree:root)))
   (let ((found nil))

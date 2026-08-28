@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node))
   (:export
-   #:*root* #:root #:make-root #:at #:ensure
+   #:*root* #:*here* #:here #:root #:make-root #:at #:ensure
    #:put #:erase #:walk #:listing #:paths
    #:split-name #:builder
    #:built))
@@ -11,6 +11,11 @@
 (defvar *root* nil
   "The namespace this image is. One per image: a second one is another pine, and it
 is reached by mounting it rather than by holding two here.")
+
+(defvar *here* nil
+  "Where a name with no leading / is measured from. Nothing is the root; a session
+binds it to wherever it stands, which is what makes a relative name mean something
+in one and not leak into another.")
 
 (defvar *builders* nil
   "What each package puts on the tree, in the order the packages were loaded. They
@@ -60,22 +65,37 @@ order nobody can check."
                   (symbol (list (string-downcase (symbol-name p))))
                   (t (list (princ-to-string p))))))
 
-(defun %from (where)
-  (etypecase where
-    (node:node where)
-    (null *root*)))
+(defun here () (or *here* *root*))
 
-(defun at (where &rest pieces)
-  (loop :with n := (%from where)
-        :for name :in (%names pieces)
-        :do (setf n (and n (node:resolve n name)))
-        :finally (return n)))
+(defun %rootedp (text)
+  (and (plusp (length text)) (char= #\/ (char text 0))))
 
-(defun ensure (where &rest pieces)
-  (loop :with n := (%from where)
+(defun %walk (n pieces makep)
+  (loop :with at := n
         :for name :in (%names pieces)
-        :do (setf n (or (node:resolve n name) (node:make-child n name)))
-        :finally (return n)))
+        :do (setf at (and at (or (node:resolve at name)
+                                 (and makep (node:make-child at name)))))
+        :finally (return at)))
+
+(defgeneric at (where &rest names)
+  (:documentation "The node WHERE names, and NAMES on from there.
+
+One question with one answer per kind of thing you can name a place with: a node
+is itself, nothing is where you are, a string beginning with / is from the root
+and one that does not is from where you are, and a path is what it spells.")
+  (:method ((where node:node) &rest names) (%walk where names nil))
+  (:method ((where null) &rest names) (%walk (here) names nil))
+  (:method ((where string) &rest names)
+    (%walk (if (%rootedp where) *root* (here)) (cons where names) nil)))
+
+(defgeneric ensure (where &rest names)
+  (:documentation "The same, making what is not there. That is the whole of the
+difference between a read and a write: a read finds what stands and a write makes
+what does not.")
+  (:method ((where node:node) &rest names) (%walk where names t))
+  (:method ((where null) &rest names) (%walk (here) names t))
+  (:method ((where string) &rest names)
+    (%walk (if (%rootedp where) *root* (here)) (cons where names) t)))
 
 (defun put (where pieces value)
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))

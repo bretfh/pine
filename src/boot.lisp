@@ -31,57 +31,25 @@ image built without one has nothing to unset and nothing to check -- there is
 simply no method, which is the truth about that image.")
             (:method (what) (declare (ignore what)) nil))
 
-(defun here (&optional (s session:*session*))
-  (or (and s (session:in s)) (tree:root)))
-
-(defun %place (where &optional (s session:*session*))
-  (cond ((null where) (here s))
-        ((node:nodep where) where)
-        ((path:pathp where) (path:at where))
-        ((and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
-         (tree:at (tree:root) where))
-        (t (tree:at (here s) (princ-to-string where)))))
-
-(defun %making (where &optional (s session:*session*))
-  "Where a write lands: the same place a read would find, and one made there when
-nothing has been put there yet."
-  (cond ((null where) (here s))
-        ((node:nodep where) where)
-        ((path:pathp where) (path:ensure where))
-        ((and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
-         (tree:ensure (tree:root) where))
-        (t (tree:ensure (here s) (princ-to-string where)))))
-
-(defun %from (where)
-  "What a path is measured from: the root when it starts at one, this session
-otherwise."
-  (if (and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
-      (tree:root)
-    (here)))
+(defun here () (tree:here))
 
 (defun at (where &rest names)
-  "The node WHERE names, and NAMES from there.
-
-One word for it, because there was one question and three answers to it: TREE:AT
-took a root and names, PATH:AT took a path, and PINE:%PLACE took either. A node is
-itself, a path is what it names, a string starting with / is from the root and one
-that does not is from this session, and NIL is where you are."
-  (let ((n (%place where)))
-    (if (and n names) (apply #'tree:at n names) n)))
+  "The node WHERE names, and NAMES on from there."
+  (apply #'tree:at where names))
 
 (defun read (where &optional default)
   "What stands at WHERE, or DEFAULT where nothing does."
-  (let* ((n (%place where))
+  (let* ((n (tree:at where))
          (value (and n (node:contents n))))
     (if (null value) default value)))
 
 (defun write (where value)
   "Put VALUE at WHERE, making the place if nothing has been put there yet: a read
 finds what is there and a write makes what is not."
-  (setf (node:contents (%making where)) value))
+  (setf (node:contents (tree:ensure where)) value))
 
 (defun describe (where)
-  (let ((n (%place where)))
+  (let ((n (tree:at where)))
     (when n
       (list :name (node:full-name n)
             :class (class-name (class-of n))
@@ -112,30 +80,30 @@ stands in comes back here with the restarts it is still offering."
                     (node:full-name (here)))
 
 (command:defcommand "ls" (&optional where) (:describes "what is under a node")
-                    (let ((n (%place where)))
+                    (let ((n (tree:at where)))
                       (if n (tree:listing n) (list))))
 
 (command:defcommand "cd" (&optional where) (:describes "go to a node")
-                    (let ((n (if where (%place where) (tree:root))))
+                    (let ((n (if where (tree:at where) (tree:root))))
                       (when (and n session:*session*) (setf (session:in session:*session*) n))
                       (and n (node:full-name n))))
 
 (command:defcommand "cat" (where) (:describes "what a node holds")
-                    (let ((n (%place where)))
+                    (let ((n (tree:at where)))
                       (and n (node:contents n))))
 
 (command:defcommand "put" (where value) (:describes "write a node")
-                    (setf (node:contents (tree:ensure (%from where) (princ-to-string where)))
+                    (setf (node:contents (tree:ensure where))
                           value))
 
 (command:defcommand "mkdir" (where) (:describes "make a branch")
-                    (node:full-name (tree:ensure (%from where) (princ-to-string where))))
+                    (node:full-name (tree:ensure where)))
 
 (command:defcommand "rm" (where) (:describes "take a node off")
-                    (and (tree:erase (%from where) (princ-to-string where)) t))
+                    (and (tree:erase where) t))
 
 (command:defcommand "tree" (&optional where) (:describes "every node under one")
-  (tree:paths (%place where)))
+  (tree:paths (tree:at where)))
 
 (command:defcommand "live" ()
                     (:describes "what answers from the world, not the store")

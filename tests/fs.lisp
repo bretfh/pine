@@ -39,11 +39,12 @@
     (is (null (tree:at nil "window/nothing")))))
 
 (test a-path-is-a-place
+  "A path is one more thing AT and ENSURE take, not a second way to walk the tree."
   (with-tree
     (setf (node:contents (tree:ensure nil "dev" "audio" "volume")) 40)
     (let ((p (path:path "/dev/audio/volume")))
-      (is (= 40 (path:contents p)))
-      (setf (path:contents p) 55)
+      (is (= 40 (node:contents (tree:at p))))
+      (setf (node:contents (tree:ensure p)) 55)
       (is (= 55 (node:contents (tree:at nil "dev/audio/volume"))))
       (is (equal "volume" (path:leaf p))))))
 
