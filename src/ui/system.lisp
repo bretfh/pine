@@ -1,7 +1,7 @@
 (defpackage #:pine/ui
   (:use #:cl)
   (:local-nicknames (#:command #:pine/run/command) (#:d #:pine/data)
-                    (#:fault #:pine/run/fault) (#:log #:pine/run/log)
+                    (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
                     (#:meter #:pine/run/meter) (#:node #:pine/fs/node)
                     (#:path #:pine/fs/path) (#:tree #:pine/fs/tree))
     (:export

@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree)
-                    (#:log #:pine/run/log))
+                    (#:log #:pine/fs/log))
   (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
            #:storablep #:written #:read-back #:stale #:keep #:kept
            #:keeping #:*store*))

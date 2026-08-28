@@ -3,7 +3,7 @@
   (:local-nicknames (#:text #:pine/text)
                     (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:job #:pine/run/job) (#:log #:pine/run/log)
+                    (#:job #:pine/run/job) (#:log #:pine/fs/log)
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
   (:export #:terminal #:shell #:open-terminal #:terminals #:named #:send #:resize

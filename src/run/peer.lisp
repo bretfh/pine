@@ -5,7 +5,7 @@
                     (#:job #:pine/run/job) (#:image #:pine/run/image)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:fault #:pine/run/fault)
-                    (#:log #:pine/run/log))
+                    (#:log #:pine/fs/log))
   (:export #:peer #:remote #:reach #:serve #:peers #:named #:uri #:ref
            #:listen-to #:local-uri #:*timeout*))
 (in-package #:pine/run/peer)

@@ -4,7 +4,7 @@
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
                     (#:watch #:pine/run/watch) (#:system #:pine/run/system)
-                    (#:fault #:pine/run/fault) (#:log #:pine/run/log)
+                    (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
                     (#:pump #:pine/wayland/pump) (#:display #:pine/wayland/display)
                     (#:shell #:pine/wayland/shell)
                     (#:pane #:pine/wayland/pane)

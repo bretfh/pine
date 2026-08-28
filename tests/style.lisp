@@ -389,3 +389,58 @@ nothing has happened, and a timeout that counts turns rather than seconds."
   (is (null (%naming "(sleep " :except +waits-on-a-clock+))
       "~{~%  ~a waits by looking again~}"
       (%naming "(sleep " :except +waits-on-a-clock+)))
+
+(defparameter +layers+
+  '(("pine/value" ("word.lisp" "data.lisp")     ("pine/word" "pine/data"))
+    ("pine/place" ("fs/")                       ("pine/fs"))
+    ("pine/run"   ("run/")                      ("pine/run"))
+    ("pine/ui"    ("ui/")                       ("pine/ui"))
+    ("pine"       ("mode.lisp" "boot.lisp" "cli.lisp") ("pine/mode" "pine")))
+  "The layers pine is built out of, lowest first: which files are in each, and
+which packages belong to it. Each is an asdf system that loads on its own, and
+each names only what is under it.
+
+That is the whole claim of a bottom-up program: not that the files sit in
+directories, but that every layer is a language you could write something else in
+without dragging the ones above it along.")
+
+(defun %layer-at (name)
+  "Which layer a file path or a package name belongs to, as its depth, or NIL for
+what is loaded on top of them all."
+  (loop :for (nil files packages) :in +layers+
+        :for depth :from 0
+        :when (or (some (lambda (f) (search (concatenate 'string "src/" f) name))
+                        files)
+                  (some (lambda (p)
+                          (or (equal name p)
+                              (and (> (length name) (length p))
+                                   (string= p name :end2 (length p))
+                                   (char= #\/ (char name (length p))))))
+                        packages))
+          :do (return depth)))
+
+(test a-layer-names-only-what-is-under-it
+  "A layer that reaches upward is not a layer. PINE/PLACE naming PINE/RUN means you
+cannot have the namespace without the job system, and then it was never a language
+of its own -- it was the bottom half of one program."
+  (let ((wrong nil))
+    (dolist (file (%files))
+      (let ((mine (%layer-at (namestring file))))
+        (when mine
+          (dolist (line (%lines file))
+            (let ((at 0))
+              (loop
+                (let ((found (search "#:pine/" line :start2 at)))
+                  (unless found (return))
+                  (let* ((from (+ found 2))
+                         (to (or (position-if (lambda (c) (member c '(#\Space #\))))
+                                              line :start from)
+                                 (length line)))
+                         (named (subseq line from to))
+                         (theirs (%layer-at named)))
+                    (when (or (null theirs) (> theirs mine))
+                      (pushnew (format nil "~a is in layer ~d and names ~a"
+                                       (file-namestring file) mine named)
+                               wrong :test #'equal)))
+                  (setf at (+ found 7)))))))))
+    (is (null wrong) "~{~%  ~a~}" (reverse wrong))))

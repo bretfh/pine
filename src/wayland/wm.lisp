@@ -1,7 +1,7 @@
 (defpackage #:pine/wayland/wm
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:log #:pine/run/log)
+                    (#:d #:pine/data) (#:log #:pine/fs/log)
                     (#:fault #:pine/run/fault) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
   (:export #:wm #:bind #:managingp #:apply-layout #:take #:laid #:wake

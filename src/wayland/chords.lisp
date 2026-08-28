@@ -1,7 +1,7 @@
 (defpackage #:pine/wayland/chords
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:log #:pine/run/log)
+                    (#:log #:pine/fs/log)
                     (#:fault #:pine/run/fault))
   (:export #:chords #:make-chords #:availablep #:attend #:ask-for
            #:eat-next #:every-key #:mask #:keysym))

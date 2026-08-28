@@ -1,56 +1,59 @@
+(asdf:defsystem #:pine/value
+                :description "What a value is, and how one is replaced"
+                :depends-on (#:fset)
+                :serial t
+                :pathname "src/"
+                :components ((:file "word") (:file "data")))
+
+(asdf:defsystem #:pine/place
+                :description "The namespace: what a node is, where it stands, what
+it says and what outlives the image"
+                :depends-on (#:pine/value #:alexandria #:named-readtables #:sqlite
+                             #:uiop)
+                :serial t
+                :pathname "src/fs/"
+                :components ((:file "commit")
+                             (:file "node") (:file "tree") (:file "path")
+                             (:file "reader") (:file "mount")
+                             (:file "log") (:file "store")))
+
+(asdf:defsystem #:pine/run
+                :description "What runs: jobs, actors, faults, commands, sessions,
+and other images"
+                :depends-on (#:pine/place #:bordeaux-threads #:sento #:sento-remoting
+                             #:usocket #:cffi #:cffi-libffi #:sb-posix
+                             #:sb-introspect #:uiop)
+                :serial t
+                :pathname "src/run/"
+                :components ((:file "fault") (:file "libs") (:file "meter")
+                             (:file "actors") (:file "job") (:file "watch")
+                             (:file "command") (:file "image") (:file "peer")
+                             (:file "session") (:file "system")))
+
+(asdf:defsystem #:pine/ui
+                :description "Widgets, what they are painted with, and the surfaces
+they are declared on"
+                :depends-on (#:pine/run #:closer-mop #:alexandria #:uiop)
+                :serial t
+                :pathname "src/ui/"
+                :components ((:file "system")
+                             (:file "widget") (:file "face")
+                             (:file "style") (:file "sheet")
+                             (:file "grid") (:file "layout")
+                             (:file "hit") (:file "wire")
+                             (:file "build") (:file "surface")
+                             (:file "key")))
+
 (asdf:defsystem #:pine
                 :description "Pine Is Not Emacs"
                 :author "Bret Horne"
                 :license "GPL"
                 :version "0.0.1"
-                :depends-on (#:alexandria
-                             #:bordeaux-threads
-                             #:closer-mop
-                             #:named-readtables
-                             #:cffi
-                             #:cffi-libffi
-                             #:fset
-                             #:sento
-                             #:sento-remoting
-                             #:usocket
-                             #:sqlite
-                             #:com.inuoe.jzon
-                             #:sb-posix
-                             #:sb-introspect
-                             #:uiop)
+                :depends-on (#:pine/ui #:com.inuoe.jzon)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
                 :serial t
                 :pathname "src/"
-                :components
-                ((:file "word")
-                 (:file "data")
-                 (:module "fs"
-                          :serial t
-                          :components ((:file "commit")
-                                       (:file "node") (:file "tree") (:file "path")
-                                       (:file "reader") (:file "mount")))
-                 (:module "run"
-                          :serial t
-                          :components ((:file "log") (:file "fault")
-                                       (:file "libs") (:file "meter")
-                                       (:file "actors")
-                                       (:file "job") (:file "watch")
-                                       (:file "command")
-                                       (:file "image") (:file "peer")
-                                       (:file "session") (:file "system")))
-                 (:file "fs/store")
-                 (:module "ui"
-                          :serial t
-                          :components ((:file "system")
-                                       (:file "widget") (:file "face")
-                                       (:file "style") (:file "sheet")
-                                       (:file "grid") (:file "layout")
-                                       (:file "hit") (:file "wire")
-                                       (:file "build") (:file "surface")
-                                       (:file "key")))
-                 (:file "mode")
-                 (:file "boot")
-                 (:file "cli")))
+                :components ((:file "mode") (:file "boot") (:file "cli")))
 
 (asdf:defsystem #:pine/text
                 :description "Documents, the structure their modes give them, and

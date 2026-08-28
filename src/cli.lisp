@@ -205,7 +205,7 @@ not opened yet, so there is nothing here to be woken by."
       ((equal verb "stop") (%stop))
       ((equal verb "restart") (%stop) (%start))
       ((equal verb "daemon")
-       (setf pine/run/log:*to* *standard-output*)
+       (setf pine/fs/log:*to* *standard-output*)
        (pine:daemon)
        (%park))
       ((equal verb "shell") (pine:main))

@@ -1,7 +1,7 @@
 (defpackage #:pine/run/fault
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:log #:pine/run/log))
+                    (#:log #:pine/fs/log))
   (:export #:fault #:borrowed #:take #:resume #:faulted
            #:faults #:standing #:attempt #:or-nothing
            #:report #:borrow #:await #:defer #:changed #:wait-until

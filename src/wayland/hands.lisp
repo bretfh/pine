@@ -2,7 +2,7 @@
   (:use #:cl #:wayflan-client)
   (:local-nicknames (#:ui #:pine/ui)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:log #:pine/run/log) (#:pump #:pine/wayland/pump)
+                    (#:log #:pine/fs/log) (#:pump #:pine/wayland/pump)
                     (#:shell #:pine/wayland/shell) (#:pane #:pine/wayland/pane)
                     (#:input #:pine/wayland/input) (#:wm #:pine/wayland/wm)
                     (#:screen #:pine/wayland/screen)

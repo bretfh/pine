@@ -4,7 +4,7 @@
                     (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
-                    (#:command #:pine/run/command) (#:log #:pine/run/log)
+                    (#:command #:pine/run/command) (#:log #:pine/fs/log)
                     (#:mode #:pine/mode)
                     (#:window #:pine/edit/window) (#:render #:pine/edit/render)
                     (#:prompt #:pine/edit/prompt))

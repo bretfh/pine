@@ -3,7 +3,7 @@
   (:local-nicknames (#:text #:pine/text)
                     (#:fault #:pine/run/fault)
                     (#:node #:pine/fs/node) (#:command #:pine/run/command)
-                    (#:log #:pine/run/log)
+                    (#:log #:pine/fs/log)
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
                     (#:match #:pine/edit/matching))
   (:export))

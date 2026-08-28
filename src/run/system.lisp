@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
-                    (#:command #:pine/run/command) (#:log #:pine/run/log))
+                    (#:command #:pine/run/command) (#:log #:pine/fs/log))
   (:export #:system #:offers #:use #:drop #:systems #:named #:offered
            #:owns))
 (in-package #:pine/run/system)

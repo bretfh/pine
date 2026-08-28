@@ -7,7 +7,7 @@
                               (#:tree #:pine/fs/tree)
                               (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
                               (#:store #:pine/fs/store)
-                              (#:libs #:pine/run/libs) (#:log #:pine/run/log)
+                              (#:libs #:pine/run/libs) (#:log #:pine/fs/log)
                               (#:meter #:pine/run/meter) (#:fault #:pine/run/fault)
                               (#:actors #:pine/run/actors) (#:job #:pine/run/job)
                               (#:watch #:pine/run/watch)

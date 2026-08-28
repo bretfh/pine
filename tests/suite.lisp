@@ -17,7 +17,7 @@
                     (:listing :pine/edit/listing)
                     (:isearch :pine/edit/isearch) (:keys :pine/edit/keys)
                     (:emode :pine/edit/mode)
-                    (:log :pine/run/log)
+                    (:log :pine/fs/log)
                     (:compositor :pine/wm/compositor) (:tiles :pine/wm/tiles)))
 
 (in-package :pine/test)

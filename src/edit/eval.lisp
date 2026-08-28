@@ -5,7 +5,7 @@
                     (#:tree #:pine/fs/tree)
                     (#:command #:pine/run/command) (#:job #:pine/run/job)
                     (#:image #:pine/run/image) (#:session #:pine/run/session)
-                    (#:fault #:pine/run/fault) (#:log #:pine/run/log)
+                    (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
                     (#:mode #:pine/mode)
                     (#:render #:pine/edit/render) (#:window #:pine/edit/window)
                     (#:prompt #:pine/edit/prompt))

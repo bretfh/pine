@@ -6,7 +6,7 @@
                     (#:d #:pine/data)
                     (#:command #:pine/run/command) (#:prompt #:pine/edit/prompt)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
-                    (#:log #:pine/run/log))
+                    (#:log #:pine/fs/log))
   (:export #:searching #:start #:step-search #:took #:took-all #:banner
            #:needle #:forward #:wrapped))
 (in-package #:pine/edit/isearch)

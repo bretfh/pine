@@ -4,7 +4,7 @@
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
                     (#:job #:pine/run/job) (#:emode #:pine/edit/mode)
-                    (#:window #:pine/edit/window) (#:log #:pine/run/log)
+                    (#:window #:pine/edit/window) (#:log #:pine/fs/log)
                     (#:evaluate #:pine/edit/eval))
   (:export #:standing #:choose #:next #:fault-of #:away #:*name*
            #:*standing*))
