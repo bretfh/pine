@@ -11,7 +11,7 @@
 
 (test a-seq-is-indexed-and-immutable
   (let* ((had (d:as :seq '("one" "two")))
-         (now (d:with-at had 1 "three")))
+         (now (d:with had 1 "three")))
     (is (equal "two" (d:lookup had 1)))
     (is (equal "three" (d:lookup now 1)))
     (is (= 2 (d:size now)))))

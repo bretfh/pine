@@ -1,7 +1,6 @@
 (defpackage #:pine/data
   (:use #:cl)
-  (:shadow #:map #:set #:keys #:count #:remove #:union #:subseq #:last #:first
-           #:rest #:reverse #:sort #:find #:position #:some #:every #:append)
+  (:shadow #:map #:set #:remove #:subseq #:rest #:sort #:append)
   (:export
    #:map #:seq #:set #:mapp #:seqp
    #:setp #:collectionp #:lookup #:with #:without
@@ -71,9 +70,7 @@ which before you could read either.")
   (:method ((c null) key &optional value)
     (if value (fset:with +no-map+ key value) (fset:with-last +no-seq+ key))))
 
-(defun with-at (collection index value) (fset:with collection index value))
 
-(defun insert-at (collection index value) (fset:insert collection index value))
 
 (defgeneric without (collection key)
   (:method ((c fset:map) key) (fset:less c key))
@@ -87,7 +84,6 @@ which before you could read either.")
   (:method ((c sequence)) (length c))
   (:method ((c hash-table)) (hash-table-count c)))
 
-(defun count (collection) (size collection))
 
 (defun emptyp (collection) (zerop (size collection)))
 
@@ -112,24 +108,6 @@ which before you could read either.")
 (defun pairs (collection)
   (loop :for key :in (keys collection) :collect (cons key (lookup collection key))))
 
-(defgeneric fold (collection initial function)
-  (:method ((c fset:map) initial function)
-    (let ((acc initial))
-      (fset:do-map (key value c acc) (setf acc (funcall function acc key value)))))
-  (:method ((c fset:seq) initial function)
-    (let ((acc initial) (i -1))
-      (fset:do-seq (value c)
-        (setf acc (funcall function acc (incf i) value)))
-      acc))
-  (:method ((c fset:set) initial function)
-    (let ((acc initial))
-      (fset:do-set (value c)
-        (setf acc (funcall function acc value value)))
-      acc))
-  (:method ((c null) initial function)
-    (declare (ignore function))
-    initial))
-
 (defmacro do-map ((key value collection &optional result) &body body)
   (let ((c (gensym)))
     `(let ((,c ,collection))
@@ -137,16 +115,6 @@ which before you could read either.")
          (fset:do-map (,key ,value ,c)
            (declare (ignorable ,key ,value))
            (locally ,@body)))
-       ,result)))
-
-(defmacro do-seq ((index value collection &optional result) &body body)
-  (let ((c (gensym)))
-    `(let ((,c ,collection) (,index -1))
-       (declare (ignorable ,index))
-       (fset:do-seq (,value ,c)
-         (declare (ignorable ,value))
-         (incf ,index)
-         (locally ,@body))
        ,result)))
 
 (defmacro do-pairs ((key value collection &optional result) &body body)
@@ -200,21 +168,10 @@ a shape this quietly steps over."
   (reduce (lambda (a b) (if (and (mapp a) (mapp b)) (fset:map-union a b) (or b a)))
           collections :initial-value +no-map+))
 
-(defun union (&rest sets)
-  (reduce #'fset:union sets :initial-value +no-set+))
-
-(defun first (c) (lookup c 0))
-(defun last (c) (lookup c (1- (size c))))
 (defun rest (c) (fset:subseq c 1))
 (defun append (a b) (fset:concat a b))
 (defun subseq (c from &optional to) (fset:subseq c from (or to (size c))))
-(defun reverse (c) (fset:reverse c))
 (defun sort (c predicate &key key) (fset:sort c predicate :key key))
-(defun find (item c &key (test #'fset:equal?)) (fset:find item c :test test))
-(defun position (item c) (fset:position item c))
-(defun index-of (item c) (fset:position item c))
-(defun some (predicate c) (fset:some predicate c))
-(defun every (predicate c) (fset:every predicate c))
 (defun remove (item c) (fset:remove item c))
 
 (defun capped (list value n)

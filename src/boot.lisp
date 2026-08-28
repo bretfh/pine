@@ -132,9 +132,7 @@ stands in comes back here with the restarts it is still offering."
                     (and (tree:erase (%from where) (princ-to-string where)) t))
 
 (command:defcommand "tree" (&optional where) (:describes "every node under one")
-                    (let (out)
-                      (tree:walk (%place where) (lambda (n) (push (node:full-name n) out)))
-                      (nreverse out)))
+  (tree:paths (%place where)))
 
 (command:defcommand "live" ()
                     (:describes "what answers from the world, not the store")

@@ -36,7 +36,7 @@ document answers for the lines it holds, because they are the same question.")
            (after (subseq text col))
            (pieces (uiop:split-string string :separator '(#\Newline))))
       (if (null (cl:rest pieces))
-          (values (d:with-at lines at
+          (values (d:with lines at
                              (concatenate 'string before (first pieces) after))
                   at (+ col (length (first pieces))))
           (let ((fresh (d:as :seq
@@ -76,7 +76,7 @@ document answers for the lines it holds, because they are the same question.")
                                  (subseq (line lines from-line) 0 from-col)
                                  (subseq (line lines to-line) to-col))))
         (values (if (= from-line to-line)
-                    (d:with-at lines from-line joined)
+                    (d:with lines from-line joined)
                     (%replace lines from-line (1+ to-line) (d:seq joined)))
                 from-line from-col taken)))))
 

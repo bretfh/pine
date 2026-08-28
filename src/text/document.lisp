@@ -289,7 +289,7 @@ here, so the document is what was typed and nothing else."
       (%remember doc)
       (let ((was (lines doc)))
         (%edited doc was at 1 1 (- (%bytes fresh) (%bytes text)))
-        (setf (lines doc) (d:with-at was at fresh)))
+        (setf (lines doc) (d:with was at fresh)))
       (when (= at (at-line doc))
         (setf (at-col doc) (max 0 (+ (at-col doc) (- target had)))))
       (changed doc))
