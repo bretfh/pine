@@ -275,8 +275,8 @@ somewhere else."
   (job:start (make-instance 'job:thread :name "quit-watchdog" :restarts nil
                             :thunk (lambda ()
                                      (sleep grace)
-                                     (job:start (make-instance 'job:thread :name "quit" :restarts nil
-                                                               (sb-ext:exit :abort t :code 0))))
+                                     (sb-ext:exit :abort t :code 0))))
+  (job:start (make-instance 'job:thread :name "quit" :restarts nil
                             :thunk (lambda ()
                                      (sleep 0.2)
                                      (fault:or-nothing
