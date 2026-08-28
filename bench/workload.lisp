@@ -4,13 +4,12 @@
 
 (defpackage #:pine/bench
   (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
+  (:local-nicknames (#:edit #:pine/edit)
+                    (#:text #:pine/text)
+                    (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:meter #:pine/run/meter)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
-                    (#:parser #:pine/text/ts/parser)
-                    (#:keys #:pine/edit/keys)
-                    (#:window #:pine/edit/window) (#:render #:pine/edit/render) (#:device #:pine/host/device))
+                    (#:mode #:pine/mode) (#:device #:pine/host/device))
   (:export #:run #:workloads))
 (in-package #:pine/bench)
 
@@ -42,22 +41,22 @@ came from."
 (defun %parsed (d &key (seconds 60))
   "Wait for the parse to catch up with the document. Setting a workload up is not
 the workload: what is timed below starts from a document already walked."
-  (let ((p (parser:parser-for d)))
+  (let ((p (text:parser-for d)))
     (when p
       (loop :repeat (round (/ seconds 0.02))
-            :until (parser:currentp p)
+            :until (text:currentp p)
             :do (sleep 0.02)))
     p))
 
 (defun %shown (name lines)
   "A document of LINES lines, in the window, parsed once before anything is timed."
-  (let ((d (doc:make-document name :mode (make-instance 'mode:lisp)))
-        (w (window:focused)))
+  (let ((d (text:make-document name :mode (make-instance 'mode:lisp)))
+        (w (edit:focused)))
     (setf (node:contents d) (%lisp-text lines))
-    (setf (window:cols w) +cols+ (window:lines w) +lines+)
-    (window:show w d)
-    (setf (doc:current) d)
-    (doc:goto d 10 0)
+    (setf (edit:across w) +cols+ (edit:down w) +lines+)
+    (edit:show w d)
+    (setf (text:current) d)
+    (text:goto d 10 0)
     (%sized)
     (%parsed d :seconds 60)
     d))
@@ -77,7 +76,7 @@ keystroke really makes"
   (%ready)
   (let ((d (%shown "typing" *size*)))
     (dotimes (n 200)
-      (keys:dispatch (ui:make-key (string (code-char (+ 97 (mod n 26))))))
+      (edit:dispatch (ui:make-key (string (code-char (+ 97 (mod n 26))))))
       (%wire))
     (%parsed d :seconds 30)))
 
@@ -86,15 +85,15 @@ keystroke really makes"
 parse and the highlight walk are re-driven at every screen"
   (%ready)
   (let ((d (%shown "paging" *size*))
-        (w (window:focused)))
+        (w (edit:focused)))
     (dotimes (n 40)
-      (setf (window:scroll w) (min (max 0 (- *size* 40)) (* n 40)))
-      (doc:goto d (window:scroll w) 0)
+      (setf (edit:scrolled w) (min (max 0 (- *size* 40)) (* n 40)))
+      (text:goto d (edit:scrolled w) 0)
       (%wire)
       (%parsed d :seconds 20))
     (dotimes (n 40)
-      (setf (window:scroll w) (max 0 (- (window:scroll w) 40)))
-      (doc:goto d (window:scroll w) 0)
+      (setf (edit:scrolled w) (max 0 (- (edit:scrolled w) 40)))
+      (text:goto d (edit:scrolled w) 0)
       (%wire)
       (%parsed d :seconds 20))))
 
@@ -127,12 +126,12 @@ surface built, the tree written down, and what came out the same as before"
     "two hundred documents and the frame that has to keep working with them open"
   (%ready)
   (dotimes (n 200)
-    (let ((d (doc:make-document (format nil "many-~d" n)
+    (let ((d (text:make-document (format nil "many-~d" n)
                                 :mode (make-instance 'mode:lisp))))
       (setf (node:contents d) (%lisp-text 50))))
   (let ((d (%shown "many-shown" *size*)))
     (dotimes (n 50)
-      (keys:dispatch (ui:make-key "x"))
+      (edit:dispatch (ui:make-key "x"))
       (%wire))
     (%parsed d :seconds 30)))
 
