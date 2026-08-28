@@ -1,9 +1,8 @@
 (defpackage #:pine/fs/path
   (:use #:cl)
-  (:shadow #:parse)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
   (:export
-   #:path #:pathp #:segments #:whole #:parse
+   #:path #:pathp #:segments #:whole
    #:leaf #:parent #:match #:prefixp #:literal
    #:binding #:any #:deep #:segment #:kind
    #:value #:at #:ensure #:contents #:matching
@@ -49,8 +48,6 @@
                                            (string (mapcar #'%segment
                                                            (tree:split-name p)))
                                            (t (list (%segment (princ-to-string p))))))))
-
-(defun parse (text) (path text))
 
 (defgeneric segment-text (segment)
   (:documentation "A segment as it was written, so a path prints as it reads.")
@@ -116,8 +113,8 @@
   (let ((found nil))
     (tree:walk where
                (lambda (each)
-                 (when (match pattern (parse (node:full-name each)))
+                 (when (match pattern (path (node:full-name each)))
                    (push each found))))
     (nreverse found)))
 
-(pine/word:lends "leaf" '("path" "parse"))
+(pine/word:lends "leaf" "path")

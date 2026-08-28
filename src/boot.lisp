@@ -1,6 +1,6 @@
 (defpackage #:pine
             (:use #:cl)
-            (:shadow #:describe)
+            (:shadow #:describe #:read #:write)
             (:local-nicknames (#:ui #:pine/ui)
                               (#:d #:pine/data)
                               (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
@@ -19,8 +19,8 @@
             (:export
    #:start #:stop #:main #:daemon #:quit
    #:use #:drop #:reach #:serve #:mount
-   #:spawn #:style #:here #:describe #:node-at
-   #:read-at #:write-at #:load-config #:user-package #:opening))
+   #:spawn #:style #:here #:describe #:at
+   #:read #:write #:load-config #:user-package #:opening))
 (in-package #:pine)
 
 (defgeneric opening (what)
@@ -59,7 +59,7 @@ otherwise."
       (tree:root)
     (here)))
 
-(defun node-at (where &rest names)
+(defun at (where &rest names)
   "The node WHERE names, and NAMES from there.
 
 One word for it, because there was one question and three answers to it: TREE:AT
@@ -69,12 +69,15 @@ that does not is from this session, and NIL is where you are."
   (let ((n (%place where)))
     (if (and n names) (apply #'tree:at n names) n)))
 
-(defun read-at (where &optional default)
+(defun read (where &optional default)
+  "What stands at WHERE, or DEFAULT where nothing does."
   (let* ((n (%place where))
          (value (and n (node:contents n))))
     (if (null value) default value)))
 
-(defun write-at (where value)
+(defun write (where value)
+  "Put VALUE at WHERE, making the place if nothing has been put there yet: a read
+finds what is there and a write makes what is not."
   (setf (node:contents (%making where)) value))
 
 (defun describe (where)
@@ -318,5 +321,4 @@ config would be the value node the surface then replaced."
             (length (job:jobs)))
   (tree:root))
 
-(pine/word:lends "use" "drop" "reach" "spawn" "style"
-                 '("at" "node-at") '("read" "read-at") '("write" "write-at"))
+(pine/word:lends "use" "drop" "reach" "spawn" "style" "at" "read" "write")

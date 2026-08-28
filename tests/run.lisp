@@ -36,7 +36,7 @@ supervised thing pine has is running and unreadable."
                 (progn (job:supervise j)
                        (job:start j)
                        (is (eq j (tree:at nil "proc" "probe")))
-                       (is (eq :running (pine:read-at "/proc/probe"))))
+                       (is (eq :running (pine:read "/proc/probe"))))
              (ignore-errors (job:stop j))
              (job:forget "probe")))
       (setf tree:*root* was))))

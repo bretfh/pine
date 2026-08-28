@@ -41,7 +41,7 @@
 (test a-path-is-a-place
   (with-tree
     (setf (node:contents (tree:ensure nil "dev" "audio" "volume")) 40)
-    (let ((p (path:parse "/dev/audio/volume")))
+    (let ((p (path:path "/dev/audio/volume")))
       (is (= 40 (path:contents p)))
       (setf (path:contents p) 55)
       (is (= 55 (node:contents (tree:at nil "dev/audio/volume"))))

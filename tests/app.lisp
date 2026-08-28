@@ -126,13 +126,13 @@ defines it, so a word renamed or taken away takes its offer with it, instead of 
 list going on naming it and FIND-SYMBOL dropping it in silence."
   (multiple-value-bind (p clashes) (word:user)
     (is (null clashes) "two packages claimed one word:~{~%  ~a~}" clashes)
-    (let ((gone (loop :for (home said from) :in (word:lent)
+    (let ((gone (loop :for (home said) :in (word:lent)
                       :for package := (find-package home)
                       :unless (and package
                                    (eq :external
-                                       (nth-value 1 (find-symbol from package))))
+                                       (nth-value 1 (find-symbol said package))))
                         :collect (format nil "~a lends ~a, which it has not got"
-                                         home from))))
+                                         home said))))
       (is (null gone) "~{~%  ~a~}" gone))
     (is (< (length (word:lent)) 200)
         "~d words: a language, not a grab bag" (length (word:lent)))

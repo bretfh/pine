@@ -216,7 +216,7 @@ that has already been handed out."
          (all (if over-paths
                   (let ((n (path:at items)))
                     (and n (mapcar (lambda (each)
-                                     (path:parse (node:full-name each)))
+                                     (path:path (node:full-name each)))
                                    (node:nodes n))))
                   items)))
     (apply #'make-instance 'column

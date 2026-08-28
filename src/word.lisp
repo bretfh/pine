@@ -16,30 +16,21 @@ Said in the file the code is in, because that is where it is known: what pine's
 language has is the sum of what pine loaded, not a list somewhere else that has to
 be kept up with it.
 
-A name is a string. It may be (WORD FROM) to lend FROM under another word, which
-is how PINE:WRITE-AT is READ and WRITE there.
+A name is a string, and it is the name the symbol already has: a word is lent as
+itself. Lending one under another name used to be possible, and it copied a
+FDEFINITION, so redefining the original at the repl left the language holding the
+old one.
 
 Once the language stands, lending a word puts it there at once: a system loaded
 after it can write in the words a system loaded before it lent."
   (let ((home (package-name *package*)))
     (dolist (each names)
-      (destructuring-bind (word &optional (from word))
-                          (if (consp each) each (list each))
-                          (let ((row (list home (string-upcase word) (string-upcase from))))
-                            (setf *lent* (append (remove row *lent* :test #'equal) (list row))))))
+      (let ((row (list home (string-upcase each))))
+        (setf *lent* (append (remove row *lent* :test #'equal) (list row)))))
     (when (find-package *name*) (user))
     names))
 
 (defun lent () *lent*)
-
-(defun %renamed (word symbol into)
-  "WORD in INTO, standing for SYMBOL under a different name. Only what it does
-carries over: a word lent under another name is a verb, and a verb is what it is
-fbound to."
-  (shadow (list word) into)
-  (let ((it (intern word into)))
-    (when (fboundp symbol) (setf (fdefinition it) (fdefinition symbol)))
-    it))
 
 (defun user ()
   "Build the package somebody writes their own in, and answer it and whatever two
@@ -53,18 +44,16 @@ editor can say.
         (claimed (make-hash-table :test 'equal))
         (clashes nil)
         (names nil))
-    (loop :for (home word from) :in (lent)
+    (loop :for (home word) :in (lent)
           :for package := (find-package home)
-          :for symbol := (and package (find-symbol from package))
+          :for symbol := (and package (find-symbol word package))
           :when symbol
           :do (let ((had (gethash word claimed)))
                 (when (and had (not (equal had home)))
                   (pushnew (format nil "~a is ~a's and ~a's" word had home)
                            clashes :test #'equal))
                 (setf (gethash word claimed) home)
-                (if (string= word from)
-                    (shadowing-import symbol p)
-                  (%renamed word symbol p))
+                (shadowing-import symbol p)
                 (pushnew word names :test #'equal)))
     (do-external-symbols (symbol (find-package :cl))
                          (pushnew (symbol-name symbol) names :test #'equal))

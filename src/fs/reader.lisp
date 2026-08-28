@@ -19,7 +19,7 @@
   (let ((text (%token stream)))
     (if (zerop (length text))
         (list 'function '/)
-        (list 'path:parse (concatenate 'string "/" text)))))
+        (list 'path:path (concatenate 'string "/" text)))))
 
 (defun %until (stream close)
   (loop :for ch := (peek-char t stream t nil t)

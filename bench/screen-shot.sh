@@ -55,8 +55,8 @@ env $env PINE_FRAME_DUMP=/tmp/pine-frame sbcl --dynamic-space-size 2048 --noinfo
   --eval "(setf pine/run/actors:*port* $port)" \
   --eval '(setf pine/run/log:*to* *standard-output*)' \
   --eval '(pine:daemon :store nil :config nil)' \
-  --eval '(pine:write-at "/wm-places" "tiles")' \
-  --eval '(pine/run/command:defcommand "chord-ran" () (:describes "a mark a chord leaves") (pine:write-at "/chord-ran" t))' \
+  --eval '(pine:write "/wm-places" "tiles")' \
+  --eval '(pine/run/command:defcommand "chord-ran" () (:describes "a mark a chord leaves") (pine:write "/chord-ran" t))' \
   --eval '(pine/mode:bind (quote pine/wm/keys:wm) "s-c" "chord-ran")' \
   --eval '(pine:use :wm)' \
   --eval '(pine:use :text)' --eval '(pine:use :edit)' --eval '(pine:use :desk)' \
