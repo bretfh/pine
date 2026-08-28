@@ -4,8 +4,8 @@
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell))
   (:export
-   #:device #:clip #:clock #:tick #:sys
-   #:env))
+   #:device #:audio #:clip #:clock #:media #:net
+   #:power #:screen #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
 (defvar *now* 0)

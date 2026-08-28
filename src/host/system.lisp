@@ -22,12 +22,14 @@ the substrate names either."))
 (system:offers 'host)
 
 (defun %make (name &rest arguments)
-  "The device NAME names, made. What builds one is a function in DEVICE with that
-name."
-  (let ((make (find-symbol (string-upcase (princ-to-string name))
-                           :pine/host/device)))
-    (when (and make (fboundp make))
-      (apply make arguments))))
+  "The device NAME names, made. What builds one is a function DEVICE exports under
+that name and that answers a node; a name it keeps to itself is not a device, and
+neither is one that answers something else, however well either reads."
+  (multiple-value-bind (make status)
+      (find-symbol (string-upcase (princ-to-string name)) :pine/host/device)
+    (when (and (eq :external status) (fboundp make))
+      (let ((it (apply make arguments)))
+        (when (node:nodep it) it)))))
 
 (defun attend (what &rest arguments)
   "Start what WHAT declared: the streams whose lines say the world behind it moved,
