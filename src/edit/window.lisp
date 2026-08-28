@@ -63,7 +63,7 @@ was split into."))
   w)
 
 (defun show (w it)
-  "Put something in a  a document, the name of one, or a widget tree."
+  "Put something in a window: a document, the name of one, or a widget tree."
   (let ((content (if (stringp it) (or (text:named it) it) it)))
     (setf (shows w) content)
     (when (typep content 'text:document) (setf (text:current) content))
