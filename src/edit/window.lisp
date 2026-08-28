@@ -1,14 +1,4 @@
-(defpackage #:pine/edit/window
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:command #:pine/run/command))
-  (:export
-   #:window #:windows #:named #:focused #:focus
-   #:root #:shows #:scroll #:sideways #:cols
-   #:lines #:runs #:weight #:parts #:split
-   #:close-window #:only #:seed #:show #:follow))
-(in-package #:pine/edit/window)
+(in-package #:pine/edit)
 
 (defvar *counter* 0)
 

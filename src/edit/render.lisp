@@ -1,16 +1,4 @@
-(defpackage #:pine/edit/render
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:meter #:pine/run/meter)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:mode #:pine/mode)
-                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
-                    (#:match #:pine/edit/matching))
-  (:export
-   #:drawn #:frame #:modeline #:echo #:rows
-   #:indenting #:*cols* #:*lines* #:*font*))
-(in-package #:pine/edit/render)
+(in-package #:pine/edit)
 
 (defparameter +candidates+ 12)
 (defvar *cols* 80)
@@ -38,7 +26,7 @@ Answers the text and the column each character landed in."
         (t (1+ (aref where (1- (length where)))))))
 
 (defun %document-of (win)
-  (let ((it (window:shows win)))
+  (let ((it (shows win)))
     (or (and (stringp it) (text:named it))
         (and (typep it 'text:document) it)
         (text:current))))
@@ -56,9 +44,9 @@ Answers the text and the column each character landed in."
 putting the caret where the text is not."
   (let* ((document (%document-of win))
          (col (caret-col document))
-         (left (window:sideways win))
-         (width (max 1 (window:cols win))))
-    (setf (window:sideways win)
+         (left (sideways win))
+         (width (max 1 (cols win))))
+    (setf (sideways win)
           (cond ((< col left) col)
                 ((>= col (+ left width)) (1+ (- col width)))
                 (t left)))))
@@ -66,9 +54,9 @@ putting the caret where the text is not."
 (defun scroll-to-point (win)
   (let* ((document (%document-of win))
          (line (text:at-line document))
-         (from (window:scroll win))
-         (height (max 1 (window:lines win))))
-    (setf (window:scroll win)
+         (from (scroll win))
+         (height (max 1 (lines win))))
+    (setf (scroll win)
           (cond ((< line from) line)
                 ((>= line (+ from height)) (1+ (- line height)))
                 (t from)))
@@ -77,10 +65,10 @@ putting the caret where the text is not."
 (defmethod text:band ((document text:document))
   "The band of lines a window is showing of DOCUMENT, a screen either side, so
 paging lands on lines that were walked already."
-  (let ((win (find document (window:windows) :key #'%document-of)))
+  (let ((win (find document (windows) :key #'%document-of)))
     (when win
-      (let* ((from (window:scroll win))
-             (height (max 1 (window:lines win))))
+      (let* ((from (scroll win))
+             (height (max 1 (lines win))))
         (cons (max 0 (- from height)) (+ from (* 2 height)))))))
 
 (defun %overlays (document line)
@@ -127,7 +115,7 @@ paging lands on lines that were walked already."
   (or (position drawn where) (max 0 (1- (length where)))))
 
 (defun %caretp (win)
-  (and (eq win (window:focused)) (not (prompt:askingp))))
+  (and (eq win (focused)) (not (askingp))))
 
 (defgeneric drawn (content win)
   (:documentation "The cells a window drawn of what it holds. A document, a widget
@@ -135,8 +123,8 @@ tree and the name of a document are all things a window can hold; another kind i
 method somebody else writes, and nothing here has to know about it.")
   (:method (content win)
     (declare (ignore content))
-    (ui:cells (ui:by-row (ui:make-grid (max 1 (window:cols win))
-                                            (max 1 (window:lines win))))
+    (ui:cells (ui:by-row (ui:make-grid (max 1 (cols win))
+                                            (max 1 (lines win))))
                  :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod drawn ((content string) win)
@@ -146,8 +134,8 @@ method somebody else writes, and nothing here has to know about it.")
 (defmethod drawn ((content ui:widget) win)
   "A widget tree draws to cells like a surface does, so a config can put one in a
 window beside a document."
-  (let* ((cols (max 1 (window:cols win)))
-         (rows (max 1 (window:lines win)))
+  (let* ((cols (max 1 (cols win)))
+         (rows (max 1 (lines win)))
          (g (ui:make-grid cols rows)))
     (ui:with-pass
       (ui:dress content)
@@ -158,10 +146,10 @@ window beside a document."
 
 (defmethod drawn ((document text:document) win)
   (node:reading document)
-  (let* ((from (window:scroll win))
-         (left (window:sideways win))
-         (width (max 1 (window:cols win)))
-         (height (max 1 (window:lines win)))
+  (let* ((from (scroll win))
+         (left (sideways win))
+         (width (max 1 (cols win)))
+         (height (max 1 (lines win)))
          (by-line (%by-line document))
          (g (ui:make-grid width height))
          (caret (%caretp win)))
@@ -193,18 +181,18 @@ window beside a document."
                                      (max 0 (- (caret-col document) left))))))))
 
 (defun document-tree (win)
-  (drawn (or (window:shows win) (text:current)) win))
+  (drawn (or (shows win) (text:current)) win))
 
 (defun modelinep (win)
   "Whether what this window holds has a modeline: a document says what line you are
 on, and a widget tree has nothing of the sort to say."
-  (let ((it (window:shows win)))
+  (let ((it (shows win)))
     (or (null it) (typep it 'text:document)
         (and (stringp it) (text:named it)))))
 
 (defun modeline (win)
   (let* ((document (%document-of win))
-         (width (max 1 (window:cols win)))
+         (width (max 1 (cols win)))
          (text (format nil " ~:[  ~;**~] ~a  ~a  L~d C~d"
                        (text:modified document)
                        (node:name document)
@@ -228,21 +216,21 @@ on, and a widget tree has nothing of the sort to say."
                     (document-tree win))))
 
 (defun %candidates ()
-  (let ((p (prompt:asking)))
+  (let ((p (asking)))
     (when p
-      (let* ((found (prompt:matching p))
+      (let* ((found (matching p))
              (n (length found))
-             (chosen (prompt:chosen p))
+             (chosen (chosen p))
              (from (max 0 (min (- n +candidates+)
                                (- chosen (floor +candidates+ 2))))))
         (values (subseq found (min from n) (min (+ from +candidates+) n)) from)))))
 
 (defun %candidate-rows (found from width)
-  (let ((chosen (prompt:chosen (prompt:asking)))
+  (let ((chosen (chosen (asking)))
         (g (ui:make-grid (max 1 width) (max 1 (length found)))))
     (loop :for each :in found
           :for row :from 0
-          :for text := (match:as-row each width)
+          :for text := (as-row each width)
           :for face := (if (= (+ row from) chosen)
                            :completion-selected
                            :completion)
@@ -253,9 +241,9 @@ on, and a widget tree has nothing of the sort to say."
     (ui:by-row g)))
 
 (defun echo (width &optional said)
-  (let* ((p (and (null said) (prompt:asking)))
-         (question (if p (or (prompt:asked) (prompt:question p)) ""))
-         (text (or said (prompt:showing)))
+  (let* ((p (and (null said) (asking)))
+         (question (if p (or (asked) (question p)) ""))
+         (text (or said (showing)))
          (g (ui:make-grid (max 1 width) 1)))
     (loop :for col :from 0 :below (min width (length text))
           :do (ui:put g 0 col (char text col)
@@ -271,23 +259,23 @@ on, and a widget tree has nothing of the sort to say."
                               (cons (if found (length found) 0)
                                     (min (1- width)
                                          (+ (length question)
-                                            (text:at-col (prompt:answering)))))))))))
+                                            (text:at-col (answering)))))))))))
 
 (defun %frame (cols lines said)
   "The frame, and what it read: every window, the question standing and what was
 last said. A surface follows what it read, so this is where the editor says what
 moving means."
-  (node:reading (window:root))
+  (node:reading (root))
   (node:reading (tree:ensure nil "prompt"))
   (node:reading (tree:ensure nil "log"))
-  (let* ((wins (window:windows))
-         (weight (reduce #'+ wins :key #'window:weight :initial-value 0))
+  (let* ((wins (windows))
+         (weight (reduce #'+ wins :key #'weight :initial-value 0))
          (room (max 2 (1- lines))))
     (dolist (win wins) (node:reading win))
     (dolist (win wins)
-      (setf (window:cols win) (max 1 cols)
-            (window:lines win)
-            (let ((share (max 2 (floor (* room (window:weight win))
+      (setf (cols win) (max 1 cols)
+            (lines win)
+            (let ((share (max 2 (floor (* room (weight win))
                                        (max 1 weight)))))
               (max 1 (if (modelinep win) (1- share) share)))))
     (apply #'ui:column :align :stretch :class "editor"

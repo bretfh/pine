@@ -1,14 +1,4 @@
-(defpackage #:pine/edit/help
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:node #:pine/fs/node) (#:command #:pine/run/command)
-                    (#:job #:pine/run/job) (#:actors #:pine/run/actors)
-                    (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
-                    (#:mode #:pine/mode)
-                    (#:keys #:pine/edit/keys) (#:listing #:pine/edit/listing)
-                    (#:prompt #:pine/edit/prompt))
-  (:export #:+settings+))
-(in-package #:pine/edit/help)
+(in-package #:pine/edit)
 
 (defparameter +settings+
   '((:tab-width      . "how wide a tab is drawn")
@@ -20,7 +10,7 @@
 
 (command:defcommand "describe-key" ()
     (:describes "what a chord runs" :on '(text "C-h k"))
-  (prompt:ask "Describe key: "
+  (ask "Describe key: "
               :then (lambda (chord)
                       (let ((c (mode:binding (text:mode-of (text:current)) chord)))
                         (log:note "~a: ~a" chord
@@ -32,12 +22,12 @@
 
 (command:defcommand "describe-bindings" ()
     (:describes "every chord in force here" :on '(text "C-h b"))
-  (listing:into
+  (into
    "*help*"
    (cons (format nil "chords in force in ~a" (node:name (text:current)))
          (cons ""
                (loop :for (chord . name)
-                       :in (sort (keys:bindings (text:mode-of (text:current))) #'string< :key #'car)
+                       :in (sort (bindings (text:mode-of (text:current))) #'string< :key #'car)
                      :collect (cons (format nil "~16a ~a" chord name)
                                     (command:named name)))))
    (lambda (c)
@@ -46,7 +36,7 @@
 (command:defcommand "describe-mode" ()
     (:describes "what this document's mode is" :on '(text "C-h m"))
   (let ((m (text:mode-of (text:current))))
-    (listing:into
+    (into
      "*help*"
      (list (mode:type m)
            ""
@@ -64,14 +54,14 @@
   (let ((c (command:named name)))
     (when c
       (log:note "~a: ~a~@[  (~a)~]" (command:name c) (command:describes c)
-                (car (rassoc (command:name c) (keys:bindings (text:mode-of (text:current)))
+                (car (rassoc (command:name c) (bindings (text:mode-of (text:current)))
                              :test #'equal)))
       (command:describes c))))
 
 (command:defcommand "describe-settings" ()
     (:describes "every setting, and what this document reads" :on '(text "C-h v"))
   (let ((document (text:current)))
-    (listing:into
+    (into
      "*help*"
      (cons (format nil "settings in ~a" (node:name document))
            (cons ""
@@ -87,7 +77,7 @@
   (let ((key (if (keywordp key)
                  key
                  (intern (string-upcase (princ-to-string key)) :keyword))))
-    (prompt:ask (format nil "~(~a~) here: " key)
+    (ask (format nil "~(~a~) here: " key)
                 :then (lambda (said)
                         (setf (text:setting (text:current) key)
                               (let ((*package* (find-package :keyword)))
@@ -97,7 +87,7 @@
 
 (command:defcommand "list-documents" ()
     (:describes "every document there is" :on '(text "C-x C-b"))
-  (listing:into "*documents*"
+  (into "*documents*"
                 (mapcar (lambda (d)
                           (cons (format nil "~a~30t~a" (node:name d)
                                         (or (text:file-of d) ""))
@@ -107,7 +97,7 @@
 
 (command:defcommand "list-jobs" ()
     (:describes "what this image is running" :on '(text "C-x j"))
-  (listing:into
+  (into
    "*jobs*"
    (append
     (list (format nil "~16a ~10a ~a" "what" "state" "name") "")
@@ -122,7 +112,7 @@
 
 (command:defcommand "list-faults" ()
     (:describes "what has broken, and what stands")
-  (listing:into
+  (into
    "*faults*"
    (loop :for f :in (fault:faults)
          :collect (cons (format nil "~10a ~a"

@@ -27,7 +27,7 @@ directly: what is on the screen."
     (princ-to-string out)))
 
 (defun quiet ()
-  (loop :repeat 3 :while (prompt:askingp) :do (command:run "cancel")))
+  (loop :repeat 3 :while (edit:askingp) :do (command:run "cancel")))
 
 (test typing-shows-up-on-the-screen
   (editing)
@@ -46,14 +46,14 @@ dead. This is that, asserted against the screen."
   (is (search "M-x" (on-screen)) "the question is drawn")
   (dolist (c '("b" "e" "g" "i"))
     (typed c)
-    (is (search (format nil "M-x ~a" (prompt:so-far)) (on-screen))
-        "~s is on the screen" (prompt:so-far)))
+    (is (search (format nil "M-x ~a" (edit:so-far)) (on-screen))
+        "~s is on the screen" (edit:so-far)))
   (is (search "beginning-of-" (on-screen)) "and so are the candidates")
   (let ((before (on-screen-painted)))
     (typed "C-n")
     (is (not (equal before (on-screen-painted))) "moving the choice moves the screen"))
   (typed "TAB")
-  (is (search (prompt:so-far) (on-screen)) "and so does filling it in")
+  (is (search (edit:so-far) (on-screen)) "and so does filling it in")
   (typed "C-g")
   (is (search "hello" (on-screen)) "and cancelling puts the buffer back"))
 
@@ -106,7 +106,7 @@ screen is a picture until pine is restarted."
 
 (defun faces-on-line (doc line)
   (settled doc)
-  (render:rows :cols 80 :lines 10)
+  (edit:rows :cols 80 :lines 10)
   (sort (loop :for run :in (text:highlights doc)
               :when (eql line (first run)) :collect (rest run))
         #'< :key #'first))
@@ -135,7 +135,7 @@ that was there a keystroke ago."
                  (text:make-document name :mode (make-instance 'mode:lisp)))))
     (setf (node:contents doc) text)
     (text:goto doc 0 0)
-    (window:show (window:focused) doc)
+    (edit:show (edit:focused) doc)
     (setf (text:current) doc)
     (settled doc)
     doc))

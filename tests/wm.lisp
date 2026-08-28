@@ -210,13 +210,13 @@ it, and the mode that answers is the window manager's."
   "The editor asks for candidates by category and has never heard of a window
 manager; what it reads is a path."
   (%managed)
-  (prompt:ask "Window: " :category :window :must-match t)
-  (let ((found (prompt:candidates)))
+  (edit:ask "Window: " :category :window :must-match t)
+  (let ((found (edit:candidates)))
     (is (= 3 (length found)))
-    (is (equal "2 browser" (match:name-of (second found))))
-    (is (equal "chrome" (match:annotation (second found))))
+    (is (equal "2 browser" (edit:name-of (second found))))
+    (is (equal "chrome" (edit:annotation (second found))))
     (is (equal '("2 browser")
-               (mapcar #'match:name-of (match:matches "brow" found)))
+               (mapcar #'edit:name-of (edit:matches "brow" found)))
         "and it narrows the way anything else typed at does"))
   (command:run "cancel"))
 

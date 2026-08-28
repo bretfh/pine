@@ -1,20 +1,9 @@
-(defpackage #:pine/edit/isearch
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:ui #:pine/ui)
-                    (#:fault #:pine/run/fault)
-                    (#:d #:pine/data)
-                    (#:command #:pine/run/command) (#:prompt #:pine/edit/prompt)
-                    (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
-                    (#:log #:pine/fs/log))
-  (:export #:searching #:start #:step-search #:took #:took-all #:banner
-           #:needle #:forward #:wrapped))
-(in-package #:pine/edit/isearch)
+(in-package #:pine/edit)
 
 (defvar *search* nil)
 (defvar *last* "")
 
-(defclass standing ()
+(defclass a-search ()
   ((of      :initarg :of      :reader of)
    (needle  :initarg :needle  :accessor needle  :initform "")
    (forward :initarg :forward :accessor forward :initform t)
@@ -23,7 +12,7 @@
   (:documentation "A search as it stands: what has been typed, which way it is
 going, and where it started so quitting can go back."))
 
-(defmethod print-object ((s standing) stream)
+(defmethod print-object ((s a-search) stream)
   (print-unreadable-object (s stream :type t)
     (format stream "~:[back~;forward~] ~s" (forward s) (needle s))))
 
@@ -116,13 +105,13 @@ going, and where it started so quitting can go back."))
        nil)
       ((ui:key= k (ui:parse "DEL")) (%shrink s))
       ((ui:selfp k) (%grow s (char (ui:sym k) 0)))
-      (t (took s) (keys:dispatch k) nil))))
+      (t (took s) (dispatch k) nil))))
 
 (defun start (&key (forward t))
   "Search as you type. Every key narrows it, C-s and C-r step and turn round, RET
 keeps where it landed and C-g goes back."
   (let* ((document (text:current))
-         (s (make-instance 'standing :of document :forward forward
+         (s (make-instance 'a-search :of document :forward forward
                                      :from (text:point document))))
     (setf *search* s)
     (ui:take-next #'%reading)
@@ -150,7 +139,7 @@ keeps where it landed and C-g goes back."
      :on '(text "M-%"))
   (let ((document (text:current))
         (from (princ-to-string from)))
-    (prompt:ask (format nil "Replace ~a with: " from)
+    (ask (format nil "Replace ~a with: " from)
                 :then (lambda (to)
                         (let ((n 0))
                           (loop

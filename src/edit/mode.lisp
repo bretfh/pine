@@ -1,9 +1,4 @@
-(defpackage #:pine/edit/mode
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:mode #:pine/mode))
-  (:export #:prompt #:listing #:debugger))
-(in-package #:pine/edit/mode)
+(in-package #:pine/edit)
 
 (defclass prompt (mode:text) ()
   (:documentation "The line you answer a question on. A mode rather than a flag laid

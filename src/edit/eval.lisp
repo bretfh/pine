@@ -1,18 +1,4 @@
-(defpackage #:pine/edit/eval
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree)
-                    (#:command #:pine/run/command) (#:job #:pine/run/job)
-                    (#:image #:pine/run/image) (#:session #:pine/run/session)
-                    (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
-                    (#:mode #:pine/mode)
-                    (#:render #:pine/edit/render) (#:window #:pine/edit/window)
-                    (#:prompt #:pine/edit/prompt))
-  (:export
-   #:definition #:arglist #:visit #:went #:images
-   #:target #:target-was))
-(in-package #:pine/edit/eval)
+(in-package #:pine/edit)
 
 (defvar *went* nil)
 (defvar *evaluating* nil)
@@ -196,7 +182,7 @@ here would."
         (let ((document (text:named name)))
           (when document
             (setf (text:current) document)
-            (window:show (window:focused) document)
+            (show (focused) document)
             (text:goto document line col)))))))
 
 (command:defcommand "find-references" ()
@@ -206,7 +192,7 @@ here would."
     (let ((found (references (text:mode-of (text:current)) (text:current))))
       (cond ((null found) (log:note "no references"))
             ((null (rest found)) (visit (first found)))
-            (t (prompt:ask "Reference: " :must-match t
+            (t (ask "Reference: " :must-match t
                            :candidates (mapcar (lambda (p)
                                                  (cons (says p)
                                                        (princ-to-string (fourth p))))
@@ -225,7 +211,7 @@ here would."
                      (mode:complete (text:mode-of (text:current)) document prefix))))
     (cond ((null found) (log:note "no completions"))
           ((null (rest found)) (put-completion document prefix (first found)))
-          (t (prompt:ask "Complete: " :must-match t :candidates found
+          (t (ask "Complete: " :must-match t :candidates found
                          :then (lambda (choice)
                                  (put-completion document prefix choice)))
              :asking))))
@@ -271,7 +257,7 @@ here would."
 (command:defcommand "set-eval-target" ()
     (:describes "which image a form is evaluated in" :on '(code "C-c C-t"))
   (let ((names (cons "here" (mapcar #'job:name (images)))))
-    (prompt:ask "Eval in: " :must-match t :candidates names
+    (ask "Eval in: " :must-match t :candidates names
                 :then (lambda (said)
                         (setf (target) (unless (equal said "here") said))
                         (log:note "evaluating in ~a"

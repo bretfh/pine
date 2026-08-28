@@ -1,4 +1,4 @@
-(in-package #:pine/edit/eval)
+(in-package #:pine/edit)
 
 (defgeneric definition (mode document &optional of)
   (:documentation "Where what is at point is defined, as (FILE LINE COL KIND).")

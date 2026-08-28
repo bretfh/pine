@@ -96,11 +96,12 @@ the parse behind it"
                 :depends-on (#:pine/text)
                 :serial t
                 :pathname "src/edit/"
-                :components ((:file "mode") (:file "window") (:file "matching") (:file "prompt")
-                             (:file "keys") (:file "render") (:file "listing")
-                             (:file "isearch") (:file "commands") (:file "file")
-                             (:file "help") (:file "eval") (:file "names") (:file "debugger")
-                             (:file "system")))
+                :components ((:file "system")
+                             (:file "mode") (:file "window") (:file "matching")
+                             (:file "prompt") (:file "keys") (:file "render")
+                             (:file "listing") (:file "isearch") (:file "commands")
+                             (:file "file") (:file "help") (:file "eval")
+                             (:file "names") (:file "debugger") (:file "editor")))
 
 (asdf:defsystem #:pine/term
                 :description "Programs with screens of their own, as documents"

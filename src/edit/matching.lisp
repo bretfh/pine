@@ -1,10 +1,4 @@
-(defpackage #:pine/edit/matching
-  (:use #:cl)
-  (:local-nicknames (#:fault #:pine/run/fault))
-  (:export
-   #:name-of #:annotation #:as-row #:matches #:common-prefix
-   #:expanded #:split-path #:entries #:files))
-(in-package #:pine/edit/matching)
+(in-package #:pine/edit)
 
 (defvar *separator* #\Space)
 

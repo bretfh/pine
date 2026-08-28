@@ -1,26 +1,16 @@
-(defpackage #:pine/edit/debugger
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:command #:pine/run/command) (#:fault #:pine/run/fault)
-                    (#:job #:pine/run/job) (#:emode #:pine/edit/mode)
-                    (#:window #:pine/edit/window) (#:log #:pine/fs/log)
-                    (#:evaluate #:pine/edit/eval))
-  (:export
-   #:standing #:choose #:next #:away #:*name*))
-(in-package #:pine/edit/debugger)
+(in-package #:pine/edit)
 
 (defvar *standing* nil)
 (defparameter *name* "*debugger*")
 
-(defclass standing ()
+(defclass offered ()
   ((of       :initarg :of       :reader of)
    (restarts :initarg :restarts :reader restarts :initform nil)
    (fault    :initarg :fault    :reader fault-of :initform nil))
   (:documentation "A fault put up as something to act on: what broke, and the
 restarts still being offered where it broke."))
 
-(defmethod print-object ((s standing) stream)
+(defmethod print-object ((s offered) stream)
   (print-unreadable-object (s stream :type t)
     (format stream "~a, ~d restart~:p" (of s) (length (restarts s)))))
 
@@ -46,20 +36,20 @@ restarts still being offered where it broke."))
 broke. What the target was is kept, and putting the debugger away puts it back."
   (let ((where (and f (fault:where f))))
     (when where
-      (unless (evaluate:target-was)
-        (setf (evaluate:target-was) (or (evaluate:target) :here)))
-      (setf (evaluate:target) (job:name where)))))
+      (unless (target-was)
+        (setf (target-was) (or (target) :here)))
+      (setf (target) (job:name where)))))
 
 (defun %back ()
-  (let ((was (evaluate:target-was)))
+  (let ((was (target-was)))
     (when was
-      (setf (evaluate:target) (unless (eq was :here) was))
-      (setf (evaluate:target-was) nil))))
+      (setf (target) (unless (eq was :here) was))
+      (setf (target-was) nil))))
 
 (defun put-up (condition &key restarts fault)
   "Put a fault up as a document you can act on rather than a line you cannot."
   (%follow fault)
-  (let* ((s (make-instance 'standing
+  (let* ((s (make-instance 'offered
                            :of condition
                            :restarts (or restarts
                                          (and fault (fault:offers fault))
@@ -68,21 +58,21 @@ broke. What the target was is kept, and putting the debugger away puts it back."
                            :fault fault))
          (document (or (text:named *name*)
                        (text:make-document *name*
-                                          :mode (make-instance 'emode:debugger)))))
+                                          :mode (make-instance 'debugger)))))
     (setf *standing* s)
-    (unless (typep (text:mode-of document) 'emode:debugger)
-      (setf (text:mode-of document) (make-instance 'emode:debugger)))
+    (unless (typep (text:mode-of document) 'debugger)
+      (setf (text:mode-of document) (make-instance 'debugger)))
     (setf (node:contents document) (%text s))
     (text:goto document 0 0)
     (setf (text:current) document)
-    (window:show (window:focused) document)
+    (show (focused) document)
     document))
 
 (defmethod fault:faulted ((f fault:fault))
   "A fault somebody can still do something about goes up in front of them. A
 window is what says somebody is there to look; with none, it is said instead,
 which is what the layer below already does."
-  (if (and (fault:standingp f) (window:focused))
+  (if (and (fault:standingp f) (focused))
       (put-up (fault:condition-of f) :fault f)
       (call-next-method)))
 

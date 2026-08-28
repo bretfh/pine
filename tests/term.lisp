@@ -76,8 +76,8 @@ thing, painted one way."
   (with-terminal (term)
     (setf (node:contents term) (%printf "[31mred[0m"))
     (is (until (lambda () (search "red" (text:text term))) :seconds 5))
-    (window:show (window:focused) term)
-    (let* ((rows (render:rows :cols 60 :lines 8))
+    (edit:show (edit:focused) term)
+    (let* ((rows (edit:rows :cols 60 :lines 8))
            (runs (loop :for row :in rows :append (cdr row))))
       (is (find-if (lambda (run) (equal '(172 66 66) (subseq run 1 4))) runs)
           "the cell the grid painted carries the program's own red"))))
@@ -87,8 +87,8 @@ thing, painted one way."
     (setf (node:contents term) (format nil "echo drawn-in-the-frame~%"))
     (is (until (lambda () (search "drawn-in-the-frame" (text:text term)))
                :seconds 5))
-    (window:show (window:focused) term)
-    (is (somewhere (render:rows :cols 80 :lines 24) "drawn-in-the-frame"))))
+    (edit:show (edit:focused) term)
+    (is (somewhere (edit:rows :cols 80 :lines 24) "drawn-in-the-frame"))))
 
 (test closing-one-takes-its-job-and-its-document-with-it
   (let ((term (%terminal)))

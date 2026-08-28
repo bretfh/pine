@@ -1,10 +1,10 @@
 (defpackage #:pine/term
   (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
+  (:local-nicknames (#:edit #:pine/edit)
+                    (#:text #:pine/text)
                     (#:node #:pine/fs/node)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command)
-                    (#:window #:pine/edit/window)
                     (#:terminal #:pine/term/terminal))
   (:export #:term #:current))
 (in-package #:pine/term)
@@ -27,16 +27,16 @@ shows any other and a command acts on one the same way."))
   "Give the program the size of the window showing it, so what it draws is what
 fits."
   (when (and term win)
-    (terminal:resize term (max 1 (window:cols win)) (max 1 (window:lines win)))))
+    (terminal:resize term (max 1 (edit:cols win)) (max 1 (edit:lines win)))))
 
 (defun %open (&key runs name)
   (let* ((name (or name (format nil "*shell*~[~:;-~:*~d~]" (incf *counter*))))
-         (win (window:focused))
+         (win (edit:focused))
          (term (terminal:open-terminal name :runs runs
-                                            :wide (if win (window:cols win) 80)
-                                            :tall (if win (window:lines win) 24))))
+                                            :wide (if win (edit:cols win) 80)
+                                            :tall (if win (edit:lines win) 24))))
     (setf (text:current) term)
-    (when win (window:show win term))
+    (when win (edit:show win term))
     (%fit term win)
     term))
 

@@ -1,19 +1,4 @@
-(defpackage #:pine/edit/prompt
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree)
-                    (#:emode #:pine/edit/mode) (#:log #:pine/fs/log)
-                    (#:match #:pine/edit/matching)
-                    (#:command #:pine/run/command) (#:fault #:pine/run/fault))
-  (:export
-   #:prompt #:asking #:askingp #:ask #:answer
-   #:cancel #:so-far #:asked #:question #:answering
-   #:then #:candidates #:chosen #:step-choice #:was
-   #:matching #:complete #:source #:sources #:*prompt*
-   #:showing #:category #:given #:must-match #:history
-   #:remember #:filep))
-(in-package #:pine/edit/prompt)
+(in-package #:pine/edit)
 
 (defvar *prompt* nil)
 (defvar *sources* (d:table))
@@ -21,7 +6,7 @@
 (defvar *history-kept* 200)
 (defparameter +document+ "*prompt*")
 
-(defclass prompt ()
+(defclass standing ()
   ((question   :initarg :question   :reader question)
    (was        :initarg :was        :reader was        :initform nil)
    (then       :initarg :then       :reader then       :initform nil)
@@ -34,7 +19,7 @@
    (seen       :initform nil        :accessor seen))
   (:documentation "A question standing, and what will be done with the answer."))
 
-(defmethod print-object ((p prompt) stream)
+(defmethod print-object ((p standing) stream)
   (print-unreadable-object (p stream :type t)
     (write-string (question p) stream)))
 
@@ -44,7 +29,7 @@
 
 (defun answering ()
   (or (text:named +document+)
-      (text:make-document +document+ :mode (make-instance 'emode:prompt))))
+      (text:make-document +document+ :mode (make-instance 'prompt))))
 
 (defun %under () (tree:ensure nil "prompt"))
 
@@ -74,7 +59,7 @@
                                (let ((text (node:contents (%said-node))))
                                  (if (filep p)
                                      (candidates p text)
-                                     (match:matches text (candidates p text)))))))))))
+                                     (matches text (candidates p text)))))))))))
 
 (defun so-far ()
   "What has been typed into the prompt so far."
@@ -121,7 +106,7 @@ the directory it is in, so what it offers is what is there."
         (node:contents (%matching-node))
         (if (filep p)
             (candidates p)
-            (match:matches (so-far) (candidates p))))))
+            (matches (so-far) (candidates p))))))
 
 (defun here-directory ()
   (let* ((d (text:current))
@@ -153,7 +138,7 @@ inside another one would otherwise leave the prompt as what every key edits."
         (back (or (and *prompt* (was *prompt*)) (text:current))))
     (setf (node:contents d) seed)
     (text:move d :text 1)
-    (setf *prompt* (make-instance 'prompt :question question :then then
+    (setf *prompt* (make-instance 'standing :question question :then then
                                           :category category
                                           :must-match must-match
                                           :candidates candidates
@@ -182,9 +167,9 @@ inside another one would otherwise leave the prompt as what every key edits."
     text))
 
 (defun %complete-file (found)
-  (multiple-value-bind (where base) (match:split-path (match:expanded (so-far)))
+  (multiple-value-bind (where base) (split-path (expanded (so-far)))
     (declare (ignore base))
-    (let ((shared (match:common-prefix (mapcar #'match:name-of found))))
+    (let ((shared (common-prefix (mapcar #'name-of found))))
       (when (plusp (length shared))
         (%put (concatenate 'string where shared)))
       (first found))))
@@ -198,13 +183,13 @@ starting over."
     (when found
       (if (filep p)
           (%complete-file found)
-          (let ((shared (match:common-prefix (mapcar #'match:name-of found))))
+          (let ((shared (common-prefix (mapcar #'name-of found))))
             (cond ((and (= 1 (length found))
-                        (equal (so-far) (match:name-of (first found))))
+                        (equal (so-far) (name-of (first found))))
                    (answer))
                   ((and (plusp (length shared)) (> (length shared) (length (so-far))))
                    (%put shared))
-                  (t (%put (match:name-of (nth (min (chosen p) (1- (length found)))
+                  (t (%put (name-of (nth (min (chosen p) (1- (length found)))
                                          found)))))
             (first found))))))
 
@@ -253,22 +238,22 @@ typed, so walking back to the end gives it back."
 
 (defun descendsp (p)
   (and (filep p)
-       (let ((typed (match:expanded (so-far))))
+       (let ((typed (expanded (so-far))))
          (and (plusp (length typed))
               (uiop:directory-exists-p typed)
               (not (eql #\/ (char typed (1- (length typed)))))))))
 
 (defun descend (&optional (p *prompt*))
   (declare (ignore p))
-  (let ((typed (match:expanded (so-far))))
+  (let ((typed (expanded (so-far))))
     (%put (concatenate 'string (string-right-trim "/" typed) "/"))))
 
 (defun %answered (p)
-  (let ((said (if (filep p) (match:expanded (so-far)) (so-far))))
+  (let ((said (if (filep p) (expanded (so-far)) (so-far))))
     (if (and p (must-match p))
         (let* ((found (matching p))
                (pick (nth (min (chosen p) (max 0 (1- (length found)))) found)))
-          (if pick (match:name-of pick) said))
+          (if pick (name-of pick) said))
         said)))
 
 (defun answer (&optional text)

@@ -1,19 +1,10 @@
-(defpackage #:pine/edit/file
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:fault #:pine/run/fault)
-                    (#:node #:pine/fs/node) (#:command #:pine/run/command)
-                    (#:log #:pine/fs/log)
-                    (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
-                    (#:match #:pine/edit/matching))
-  (:export))
-(in-package #:pine/edit/file)
+(in-package #:pine/edit)
 
 (command:defcommand "find-file" (path)
     (:describes "open a file in a document"
-     :asks (list (list :prompt "Find file: " :category :file :history :files))
+     :asks (list (list :prompt "Find  " :category :file :history :files))
      :on '(text "C-x C-f"))
-  (let ((path (match:expanded (princ-to-string path))))
+  (let ((path (expanded (princ-to-string path))))
     (if (uiop:directory-exists-p path)
         (log:note "~a is a directory" path)
         (let* ((name (or (fault:or-nothing "a node's path is not a file name"
@@ -22,15 +13,15 @@
                (document (or (text:named name) (text:make-document name))))
           (text:visit document path)
           (setf (text:current) document)
-          (let ((win (window:focused)))
-            (when win (window:show win document)))
+          (let ((win (focused)))
+            (when win (show win document)))
           (node:full-name document)))))
 
 (command:defcommand "find-recent" ()
     (:describes "a file opened here before" :on '(text "C-x C-r"))
   (let ((found (text:recent)))
     (if found
-        (progn (prompt:ask "Recent: " :must-match t :candidates found
+        (progn (ask "Recent: " :must-match t :candidates found
                            :then (lambda (said)
                                    (command:run "find-file" (list said))))
                :asking)
@@ -46,10 +37,10 @@
 
 (command:defcommand "write-file" (path)
     (:describes "write the document to a file you name"
-     :asks (list (list :prompt "Write file: " :category :file :history :files))
+     :asks (list (list :prompt "Write  " :category :file :history :files))
      :on '(text "C-x C-w"))
   (let ((document (text:current)))
-    (text:save document (match:expanded (princ-to-string path)))
+    (text:save document (expanded (princ-to-string path)))
     (log:note "wrote ~a" (text:origin document))
     (text:origin document)))
 
@@ -81,7 +72,7 @@
      :on '(text "C-x n"))
   (let ((document (text:make-document (princ-to-string name))))
     (setf (text:current) document)
-    (window:show (window:focused) document)
+    (show (focused) document)
     (node:full-name document)))
 
 (command:defcommand "kill-document" (&optional name)
@@ -94,7 +85,7 @@
       (text:forget name)
       (text:kill name)
       (let ((instead (text:current)))
-        (dolist (win (window:windows))
-          (when (eq gone (window:shows win))
-            (window:show win instead)))))
+        (dolist (win (windows))
+          (when (eq gone (shows win))
+            (show win instead)))))
     (and gone t)))

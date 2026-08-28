@@ -1,6 +1,7 @@
 (defpackage :pine/test
   (:use :cl :fiveam)
-  (:local-nicknames (:text :pine/text)
+  (:local-nicknames (:edit :pine/edit)
+                    (:text :pine/text)
                     (:ui :pine/ui)
                     (:d :pine/data) (:word :pine/word)
                     (:node :pine/fs/node) (:tree :pine/fs/tree)
@@ -12,11 +13,6 @@
                     (:command :pine/run/command) (:system :pine/run/system)
                     (:session :pine/run/session) (:mode :pine/mode)
                     (:sh :pine/host/shell) (:device :pine/host/device)
-                    (:window :pine/edit/window) (:render :pine/edit/render)
-                    (:prompt :pine/edit/prompt) (:match :pine/edit/matching)
-                    (:listing :pine/edit/listing)
-                    (:isearch :pine/edit/isearch) (:keys :pine/edit/keys)
-                    (:emode :pine/edit/mode)
                     (:log :pine/fs/log)
                     (:compositor :pine/wm/compositor) (:tiles :pine/wm/tiles)))
 

@@ -1,13 +1,4 @@
-(defpackage #:pine/edit/keys
-  (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
-                    (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:meter #:pine/run/meter)
-                    (#:command #:pine/run/command)
-                    (#:mode #:pine/mode)
-                    (#:fault #:pine/run/fault))
-  (:export #:dispatch #:bindings))
-(in-package #:pine/edit/keys)
+(in-package #:pine/edit)
 
 (defun bindings (m) (mode:bindings m))
 
