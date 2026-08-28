@@ -172,6 +172,17 @@ commands back off by hand."
                "withdrawing what this package wrote takes it off"))
       (command:forget "probe-home"))))
 
+(test a-pine-in-this-terminal-has-a-session-to-read-in
+  "What PINE SHELL stands in. OPEN-SESSION takes whatever initargs it is handed
+straight to MAKE-INSTANCE, so a slot renamed under it takes the console with it and
+says nothing until somebody runs the verb."
+  (with-tree
+    (let ((s (pine:console)))
+      (unwind-protect
+           (is (eq (tree:root) (session:in s))
+               "a relative name typed there is measured from the root")
+        (session:close s)))))
+
 (test a-session-evaluates-and-runs-commands
   (command:defcommand "probe-say" () (:describes "a word") :said)
   (unwind-protect

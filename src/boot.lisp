@@ -20,7 +20,7 @@
    #:start #:stop #:main #:daemon #:quit
    #:use #:drop #:reach #:spawn #:style
    #:at #:read #:write #:load-config #:user-package
-   #:opening))
+   #:console #:opening))
 (in-package #:pine)
 
 (defgeneric opening (what)
@@ -256,11 +256,16 @@ somewhere else."
                                      (sb-ext:exit :abort t :code 0))))
   t)
 
+(defun console ()
+  "The session a pine in this terminal reads its forms in: the language, and the
+root to measure a relative name from."
+  (session:open-session :name "console" :in (tree:root)
+                        :package (user-package)))
+
 (defun main (&key (store (store-file)))
   "A pine in this terminal, with no daemon: the namespace, and a repl on it."
   (start :store store)
-  (let ((s (session:open-session :name "console" :at (tree:root)
-                                 :package (user-package))))
+  (let ((s (console)))
     (unwind-protect (session:interact s)
       (stop))))
 
