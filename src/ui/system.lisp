@@ -23,7 +23,7 @@
    #:value-at #:to-wire #:from-wire #:field #:icon
    #:button #:image #:rows #:acting #:here
    #:confirming #:surface #:defsurface #:surfaces #:named
-   #:root #:builds #:role #:anchor #:shown
+   #:builds #:role #:anchor #:shown
    #:asks #:size #:bar #:panel #:overlay
    #:background #:window #:tile #:declared #:make-key
    #:parse #:chord #:spelled #:key= #:selfp

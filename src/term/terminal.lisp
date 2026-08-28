@@ -1,6 +1,6 @@
 (defpackage #:pine/term/terminal
   (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
+  (:local-nicknames (#:text #:pine/text) (#:tree #:pine/fs/tree)
                     (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
@@ -47,7 +47,7 @@ IMAGE and a MOUNT."))
             (wide term) (tall term) (fd-of term))))
 
 (defun terminals ()
-  (remove-if-not (lambda (n) (typep n 'terminal)) (node:nodes (text:root))))
+  (remove-if-not (lambda (n) (typep n 'terminal)) (node:nodes (tree:ensure "/text"))))
 
 (defun named (name)
   (let ((it (text:named (princ-to-string name))))

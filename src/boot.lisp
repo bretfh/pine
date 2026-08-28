@@ -187,7 +187,7 @@ stands in comes back here with the restarts it is still offering."
   (let ((root (tree:root)))
     (setf (node:contents (tree:ensure root "name")) name)
     (tree:built root)
-    (ui:root)
+    (tree:ensure "/surface")
     (mount:mount #p"/" root "file"))
   (job:attend)
   (when store
