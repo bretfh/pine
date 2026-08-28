@@ -7,8 +7,7 @@
                     (#:fault #:pine/run/fault)
                     (#:log #:pine/fs/log))
   (:export
-   #:peer #:reach #:serve #:named #:uri
-   #:ref #:*timeout*))
+   #:reach #:serve #:named))
 (in-package #:pine/run/peer)
 
 (defvar *timeout* 30)

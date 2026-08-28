@@ -1,9 +1,9 @@
 (defpackage #:pine/fs/commit
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data))
-  (:export #:forget
-           #:writing #:announce #:on-commit #:on-forget #:listeners
-           #:forget-listeners))
+  (:export
+   #:forget #:writing #:announce #:on-commit #:on-forget
+   #:forget-listeners))
 (in-package #:pine/fs/commit)
 
 (defvar *listening* (d:table))

@@ -7,9 +7,8 @@
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
   (:export
-   #:terminal #:shell #:open-terminal #:terminals #:named
-   #:send #:resize #:screen #:runs #:wide
-   #:tall #:*shell*))
+   #:terminal #:shell #:open-terminal #:terminals #:send
+   #:resize #:runs #:wide))
 (in-package #:pine/term/terminal)
 
 (defvar *shell* nil

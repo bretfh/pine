@@ -3,10 +3,9 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
   (:export
    #:command #:defcommand #:named #:commands #:forget
-   #:name #:action #:describes #:asks #:from
-   #:on #:arguments #:run #:word #:claim
-   #:offer #:withdraw #:defined #:sorted #:unknown-command
-   #:asking #:*at*))
+   #:name #:describes #:asks #:on #:run
+   #:word #:claim #:offer #:withdraw #:sorted
+   #:unknown-command #:asking #:*at*))
 (in-package #:pine/run/command)
 
 (defvar *commands* (d:table))

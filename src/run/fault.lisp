@@ -7,8 +7,8 @@
    #:faults #:standing #:attempt #:or-nothing #:report
    #:borrow #:await #:changed #:wait-until #:forget-faults
    #:with-debugger #:condition-of #:label #:backtrace-of #:offers
-   #:taken #:where #:token #:at-time #:standingp
-   #:*kept* #:*waiting* #:*debugging*))
+   #:taken #:where #:token #:standingp #:*waiting*
+   #:*debugging*))
 (in-package #:pine/run/fault)
 
 (defvar *kept* 50)

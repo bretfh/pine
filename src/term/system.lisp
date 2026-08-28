@@ -6,7 +6,8 @@
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command)
                     (#:terminal #:pine/term/terminal))
-  (:export #:term #:current))
+  (:export
+   #:current))
 (in-package #:pine/term)
 
 (defvar *counter* 0)

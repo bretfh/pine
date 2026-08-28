@@ -9,27 +9,15 @@
                     (#:system #:pine/run/system) (#:text #:pine/text)
                     (#:tree #:pine/fs/tree) (#:ui #:pine/ui))
   (:export
-   #:prompt #:standing #:listing #:listed
-   #:debugger #:offered #:window #:windows
-   #:named #:focused #:focus #:root #:shows
-   #:scrolled #:sideways #:across #:down #:runs
-   #:weight #:parts #:split #:close-window #:only
-   #:seed #:show #:follow #:name-of #:annotation
-   #:as-row #:matches #:common-prefix #:expanded #:split-path
-   #:entries #:files #:asking #:askingp #:ask
-   #:answer #:cancel #:so-far #:asked #:question
-   #:answering #:then #:candidates #:chosen #:step-choice
-   #:was #:matching #:complete #:source #:sources
-   #:*prompt* #:showing #:category #:given #:must-match
-   #:history #:remember #:filep #:dispatch #:bindings
-   #:drawn #:frame #:modeline #:echo #:rows
-   #:indenting #:*cols* #:*lines* #:*font* #:into
-   #:acts #:place #:searching #:start #:step-search
-   #:took #:took-all #:banner #:needle #:forward
-   #:wrapped #:kill #:yank #:times #:counting
-   #:+settings+ #:definition #:arglist #:visit #:went
-   #:images #:target #:target-was #:standing #:choose
-   #:next #:away #:*name* #:edit #:type-text))
+   #:prompt #:listing #:windows #:focused #:focus
+   #:shows #:scrolled #:sideways #:across #:down
+   #:split #:close-window #:only #:seed #:show
+   #:follow #:name-of #:annotation #:matches #:askingp
+   #:ask #:cancel #:so-far #:asked #:candidates
+   #:chosen #:matching #:filep #:dispatch #:rows
+   #:indenting #:*cols* #:*lines* #:into #:acts
+   #:place #:searching #:start #:step-search #:took
+   #:banner #:arglist #:type-text))
 (in-package #:pine/edit)
 
 (defclass edit (system:system) ()

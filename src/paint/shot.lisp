@@ -4,7 +4,7 @@
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:canvas #:pine/paint/canvas))
   (:export
-   #:draw #:every-surface))
+   #:every-surface))
 (in-package #:pine/paint/shot)
 
 (defparameter +background+ '(30 30 46))

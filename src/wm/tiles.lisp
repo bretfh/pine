@@ -1,9 +1,8 @@
 (defpackage #:pine/wm/tiles
   (:use #:pine/user)
   (:export
-   #:tiles #:layout #:tall #:wide #:full
-   #:stacked #:arrange #:named #:layouts #:share
-   #:gaps))
+   #:layout #:tall #:wide #:full #:stacked
+   #:arrange #:named #:layouts))
 (in-package #:pine/wm/tiles)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)

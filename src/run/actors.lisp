@@ -4,8 +4,8 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:boot #:leave #:actors #:runningp #:remoting
-   #:pool #:dispatcher-for #:*host* #:*port* #:repeat
-   #:after #:cancel #:ticks #:blocking))
+   #:dispatcher-for #:*host* #:*port* #:repeat #:cancel
+   #:ticks #:blocking))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)

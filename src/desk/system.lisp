@@ -1,6 +1,6 @@
 (defpackage #:pine/desk
   (:use #:pine/user)
-  (:export #:desk))
+  (:export))
 (in-package #:pine/desk)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)

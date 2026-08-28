@@ -10,8 +10,7 @@
    #:pine #:scheme #:org #:press #:typing
    #:indent #:complete #:saving #:structure #:setting
    #:claims #:mode-for #:bind #:binding #:bindings
-   #:dispatch #:named #:modes #:prefixp #:type
-   #:mode-node))
+   #:dispatch #:named #:modes #:type #:mode-node))
 (in-package #:pine/mode)
 
 (defvar *keys* (d:table)

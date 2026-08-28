@@ -3,8 +3,8 @@
   (:shadow #:directory)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree))
-  (:export #:mount #:truename-of #:node-for
-           #:file #:directory))
+  (:export
+   #:mount #:truename-of #:node-for #:file))
 (in-package #:pine/fs/mount)
 
 

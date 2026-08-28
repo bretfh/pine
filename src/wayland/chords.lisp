@@ -3,8 +3,9 @@
   (:local-nicknames (#:ui #:pine/ui)
                     (#:log #:pine/fs/log)
                     (#:fault #:pine/run/fault))
-  (:export #:chords #:make-chords #:availablep #:attend #:ask-for
-           #:eat-next #:every-key #:mask #:keysym))
+  (:export
+   #:make-chords #:attend #:ask-for #:eat-next #:every-key
+   #:mask #:keysym))
 (in-package #:pine/wayland/chords)
 
 (defparameter +modifiers+

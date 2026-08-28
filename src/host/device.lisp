@@ -3,8 +3,9 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell))
-  (:export #:device #:audio #:screen #:power #:net #:media
-           #:clip #:clock #:tick #:sys #:env))
+  (:export
+   #:device #:clip #:clock #:tick #:sys
+   #:env))
 (in-package #:pine/host/device)
 
 (defvar *now* 0)

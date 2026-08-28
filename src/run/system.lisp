@@ -3,8 +3,9 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
                     (#:command #:pine/run/command) (#:log #:pine/fs/log))
-  (:export #:system #:offers #:use #:drop #:systems #:named #:offered
-           #:owns))
+  (:export
+   #:system #:offers #:use #:drop #:systems
+   #:named #:offered))
 (in-package #:pine/run/system)
 
 (defvar *offered* (d:table)

@@ -1,7 +1,8 @@
 (defpackage #:pine/wayland/display
   (:use #:cl #:wayflan-client)
   (:local-nicknames (#:wayflan #:xyz.shunter.wayflan.wire) (#:pump #:pine/wayland/pump))
-  (:export #:display #:connect #:of #:fd #:dispatch #:disconnect #:wait #:path))
+  (:export
+   #:connect #:of #:dispatch #:disconnect #:wait))
 (in-package #:pine/wayland/display)
 
 (defconstant +af-unix+ 1)

@@ -18,9 +18,9 @@
                               (#:word #:pine/word))
             (:export
    #:start #:stop #:main #:daemon #:quit
-   #:use #:drop #:reach #:serve #:mount
-   #:spawn #:style #:here #:describe #:at
-   #:read #:write #:load-config #:user-package #:opening))
+   #:use #:drop #:reach #:spawn #:style
+   #:at #:read #:write #:load-config #:user-package
+   #:opening))
 (in-package #:pine)
 
 (defgeneric opening (what)

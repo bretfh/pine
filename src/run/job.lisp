@@ -6,11 +6,9 @@
   (:export
    #:job #:thread #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
-   #:named #:supervise #:supervised #:sweep #:attend
-   #:due #:settle #:emit #:stoppingp #:forget
-   #:name #:state #:tries #:took #:since
-   #:fault #:thunk #:seconds #:stopping #:argv
-   #:env #:receive #:dispatcher #:ref #:*every*))
+   #:named #:supervise #:sweep #:attend #:emit
+   #:stoppingp #:forget #:name #:state #:tries
+   #:took #:thunk #:stopping #:argv #:ref))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)

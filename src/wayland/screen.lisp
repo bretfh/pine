@@ -11,9 +11,9 @@
                     (#:input #:pine/wayland/input)
                     (#:wm #:pine/wayland/wm))
   (:export
-   #:screen #:wm-of #:availablep #:tell #:pump
-   #:keys #:pointer #:up #:says #:pointing
-   #:keyboard-said #:typed #:chorded #:chords-wanted))
+   #:screen #:wm-of #:tell #:pump #:keys
+   #:pointer #:pointing #:keyboard-said #:typed #:chorded
+   #:chords-wanted))
 (in-package #:pine/wayland/screen)
 
 (defconstant +left+ #x110)

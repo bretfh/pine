@@ -4,14 +4,12 @@
   (:export
    #:map #:seq #:set #:mapp #:seqp
    #:setp #:collectionp #:lookup #:with #:without
-   #:size #:emptyp #:count #:keys #:vals
-   #:pairs #:do-each #:do-pairs #:do-map #:as
-   #:same #:merged #:contains #:first #:last
-   #:rest #:append #:subseq #:reverse #:sort
-   #:find #:position #:some #:every #:remove
-   #:no-map #:no-seq #:no-set #:with-at #:capped
-   #:swap #:cas #:emptied #:table #:all
-   #:keep! #:drop! #:claim #:clear!))
+   #:size #:keys #:vals #:pairs #:do-each
+   #:do-pairs #:do-map #:as #:merged #:contains
+   #:rest #:append #:subseq #:remove #:no-map
+   #:no-seq #:no-set #:capped #:swap #:cas
+   #:emptied #:table #:all #:keep! #:drop!
+   #:claim #:clear!))
 (in-package #:pine/data)
 
 (defvar +no-map+ (fset:empty-map))

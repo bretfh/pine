@@ -3,8 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:job #:pine/run/job)
                     (#:fault #:pine/run/fault) (#:actors #:pine/run/actors))
   (:export
-   #:image #:child #:evaluate #:systems #:readyp
-   #:answered #:borrowing))
+   #:image #:child #:evaluate #:borrowing))
 (in-package #:pine/run/image)
 
 (defvar *sbcl* (namestring sb-ext:*runtime-pathname*))

@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:actors #:pine/run/actors))
   (:export
-   #:main #:ask #:runningp #:quiet #:*timeout*))
+   #:main))
 (in-package #:pine/cli)
 
 (defparameter *usage*

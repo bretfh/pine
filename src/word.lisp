@@ -1,6 +1,7 @@
 (defpackage #:pine/word
             (:use #:cl)
-            (:export #:lends #:lent #:user #:*name*))
+            (:export
+   #:lends #:lent #:user))
 (in-package #:pine/word)
 
 (defparameter *name* :pine/user)

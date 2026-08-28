@@ -6,7 +6,7 @@
                     (#:compositor #:pine/wm/compositor) (#:niri #:pine/wm/niri)
                     (#:wkeys #:pine/wm/keys) (#:managed #:pine/wm/managed))
   (:export
-   #:wm #:current #:terminal))
+   #:current))
 (in-package #:pine/wm)
 
 (defvar *terminal* "alacritty")

@@ -2,11 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
   (:export
-   #:path #:pathp #:segments #:whole
-   #:leaf #:parent #:match #:prefixp #:literal
-   #:binding #:any #:deep #:segment #:kind
-   #:value #:at #:ensure #:contents #:matching
-   #:erase))
+   #:path #:pathp #:whole #:leaf #:at
+   #:ensure #:contents))
 (in-package #:pine/fs/path)
 
 (defclass segment ()

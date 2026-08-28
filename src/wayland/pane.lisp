@@ -6,9 +6,8 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:pane #:open-pane #:close-pane #:paint #:render
-   #:resize #:measure #:on-resize #:name-of #:tree
-   #:wide #:tall #:hover #:took #:kind
-   #:dirty #:chromep #:clicked #:cell #:*font*))
+   #:measure #:name-of #:tree #:wide #:tall
+   #:dirty #:chromep #:cell #:*font*))
 (in-package #:pine/wayland/pane)
 
 (defvar *namespace* "gtk-layer-shell"

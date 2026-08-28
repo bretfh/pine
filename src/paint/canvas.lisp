@@ -2,7 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:fault #:pine/run/fault))
-  (:export #:canvas #:context #:font #:size #:with-canvas #:rgb #:*font*))
+  (:export
+   #:canvas #:context #:with-canvas #:rgb))
 (in-package #:pine/paint/canvas)
 
 (defvar *font* "Maple Mono NF")

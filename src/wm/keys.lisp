@@ -2,7 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node) (#:mode #:pine/mode))
-  (:export #:wm #:dispatch #:pending #:chords #:keys-node))
+  (:export
+   #:wm #:chords #:keys-node))
 (in-package #:pine/wm/keys)
 
 (defvar *pending* nil

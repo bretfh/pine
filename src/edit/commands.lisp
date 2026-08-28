@@ -1,6 +1,6 @@
 (defpackage #:pine/edit/commands
   (:use #:pine/user)
-  (:export #:kill #:yank #:times #:counting #:*kill-ring*))
+  (:export))
 (in-package #:pine/edit/commands)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)

@@ -4,8 +4,7 @@
                     (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree)
                     (#:log #:pine/fs/log))
   (:export
-   #:store #:open-store #:close-store #:snapshot #:restore
-   #:file-of #:written #:stale #:keep #:kept
+   #:open-store #:close-store #:snapshot #:restore #:stale
    #:keeping #:*store*))
 (in-package #:pine/fs/store)
 

@@ -1,9 +1,9 @@
 (defpackage #:pine/wayland/shell
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol)
   (:local-nicknames (#:display #:pine/wayland/display))
-  (:export #:shell #:bind #:display-of #:compositor #:shm #:layer #:toplevel
-           #:seat #:pointer #:keyboard #:on-pointer #:on-keyboard #:chrome
-           #:showing #:show #:unshow #:at-surface))
+  (:export
+   #:bind #:compositor #:shm #:layer #:toplevel
+   #:chrome #:show #:unshow #:at-surface))
 (in-package #:pine/wayland/shell)
 
 (defclass shell ()

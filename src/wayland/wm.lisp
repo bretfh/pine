@@ -5,9 +5,8 @@
                     (#:fault #:pine/run/fault) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
   (:export
-   #:wm #:bind #:take #:laid #:wake
-   #:on-said #:on-render #:on-chord #:wants-chords #:eat-next
-   #:windows #:outputs #:focused #:manager))
+   #:bind #:take #:laid #:wake #:wants-chords
+   #:eat-next #:manager))
 (in-package #:pine/wayland/wm)
 
 (defvar *borders* 2
