@@ -10,9 +10,8 @@
 
 (defparameter +window-fields+ '("title" "app" "rect" "hidden" "focused"))
 
-(defclass compositor (node:node)
-  ((livep :initform t)
-   (places :initform nil :accessor places))
+(defclass compositor (node:live)
+  ((places :initform nil :accessor places))
   (:documentation "The compositor this session is under, in the namespace: its
 outputs, its windows, and what it will take.
 

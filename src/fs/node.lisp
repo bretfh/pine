@@ -35,9 +35,10 @@ it and what makes a watcher ask rather than be told. Both are here rather than o
 one subclass because a store walks every node and a watcher may follow any of
 them.
 
-What a node can be instead of a branch is three classes below, and they are three
-classes rather than three flags because they answer CONTENTS three different
-ways."))
+What a node can be instead of a branch is the classes below, and they are classes
+rather than flags because each answers CONTENTS its own way: a VALUE holds what
+was written, a DERIVED works it out and remembers, and a LIVE one asks whatever
+stands behind it."))
 
 (defgeneric announces (node)
   (:documentation "The lines whose output says the world behind this moved.")
@@ -65,17 +66,27 @@ WRITES because working a value out and being able to write it are two questions:
 volume. Without one, writing replaces what it works out with what you wrote."))
 
 (defclass live (node)
+  ((livep :initform t))
+  (:documentation "The world behind this answers, rather than a value kept here.
+
+Nothing is remembered, because the world moves without anybody writing it; that is
+what DERIVED, which does remember, is the other half of. A job, a mounted
+directory, a compositor and a region of a document are all this: each answers
+CONTENTS from whatever stands behind it, and saying so is the whole of what they
+have in common.
+
+PLACE below is the one that answers through closures rather than through a method
+of its own."))
+
+(defclass place (live)
   ((reads     :initarg :reads     :accessor reads     :initform nil)
    (writes    :initarg :writes    :accessor writes    :initform nil)
    (names     :initarg :names     :reader  names-of   :initform nil)
    (each      :initarg :each      :reader  each-of    :initform nil)
    (listing   :initarg :nodes     :reader  nodes-of   :initform nil)
    (announces :initarg :announces :reader  announces  :initform nil)
-   (refreshes :initarg :refreshes :reader  refreshes  :initform nil)
-   (livep     :initform t))
+   (refreshes :initarg :refreshes :reader  refreshes  :initform nil))
   (:documentation "Somewhere the world answers, through the closures it was given.
-Nothing is remembered, because the world moves without anybody writing it; that is
-what DERIVED, which does remember, is the other half of.
 
 READS answers what it holds and WRITES says what writing it means. NAMES says what
 is under it and EACH makes one, and what EACH made is kept, so the same name is
@@ -109,7 +120,7 @@ of several at once can go through."
   "Somewhere the world answers: how to read it, how to write it, and what is
 under it. Nothing is remembered, because the world moves without anybody writing
 it; that is what DERIVE, which does remember, is the other half of."
-  (apply #'make-instance 'live :name (princ-to-string name) initargs))
+  (apply #'make-instance 'place :name (princ-to-string name) initargs))
 
 (defun %named (n)
   (let ((names (loop :for at := n :then (over at)
@@ -156,7 +167,7 @@ the one that landed, which is what lets anything reading it be worked out again.
 The one place a class says what it contains. RESOLVE and LEAFP are written on this,
 so a class that answers here answers everywhere.")
   (:method ((n node)) (d:as :list (beneath n)))
-  (:method ((n live))
+  (:method ((n place))
     (cond ((nodes-of n) (funcall (nodes-of n)))
           ((names-of n)
            (remove nil (mapcar (lambda (each) (%kid n each)) (%listed n))))
@@ -173,7 +184,7 @@ ones that have.")
   (:method ((n node) name)
     (find (princ-to-string name) (d:as :list (beneath n))
           :key #'name :test #'equal))
-  (:method ((n live) name)
+  (:method ((n place) name)
     (let ((name (princ-to-string name)))
       (cond ((nodes-of n)
              (find name (funcall (nodes-of n)) :key #'name :test #'equal))
@@ -290,7 +301,7 @@ works it out and remembers, and a live one asks the world.")
   (:method ((n derived))
     (let ((v (cached n)))
       (if (eq v +unread+) (%work-out n) v)))
-  (:method ((n live))
+  (:method ((n place))
     (cond ((reads n) (funcall (reads n)))
           ((names-of n) (%listed n))
           ((nodes-of n) (mapcar #'name (funcall (nodes-of n))))
@@ -321,7 +332,7 @@ remember it too.")
         (progn (setf (reads n) (constantly v))
                (setf (cached n) +unread+)))
     v)
-  (:method (v (n live))
+  (:method (v (n place))
     (unless (writes n)
       (error "~a holds nothing that can be written." (full-name n)))
     (funcall (writes n) v)
@@ -346,7 +357,7 @@ to read it and how to write it are two closures over the object."
   (loop :for (name slot) :on pairs :by #'cddr
         :collect (let ((slot slot))
                    (attach (make-instance
-                            'live :name (string-downcase (string name))
+                            'place :name (string-downcase (string name))
                             :savedp t :livep nil
                             :reads (lambda () (slot-value object slot))
                                   :writes (lambda (value)

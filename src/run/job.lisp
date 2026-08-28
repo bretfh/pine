@@ -36,9 +36,8 @@ wait is for that look and not for a clock.")
 A receive owes its mailbox an answer, so it may not wait for one: read what it was
 handed, or TELL and take the reply as a message." (of c)))))
 
-(defclass job (node:node)
-  ((livep :initform t)
-   (state     :initform :stopped :accessor state)
+(defclass job (node:live)
+  ((state     :initform :stopped :accessor state)
    (tries     :initform 0        :accessor tries)
    (restartsp :initarg :restarts :accessor restartsp :initform t)
    (took      :initform nil      :accessor took)

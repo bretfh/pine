@@ -36,9 +36,8 @@ says a span, a parse says spans, and a terminal says one for every run of colour
 its program asked for -- the same few numbers a cell is painted with, whoever
 worked them out. They belong to the document, so they go when it does."))
 
-(defclass region (node:node)
-  ((livep :initform t)
-   (covers :initarg :covers :accessor covers))
+(defclass region (node:live)
+  ((covers :initarg :covers :accessor covers))
   (:documentation "A stretch of a document. Its contents is the text it covers,
 its nodes are its sub-regions, and writing it replaces that stretch."))
 

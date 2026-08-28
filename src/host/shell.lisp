@@ -34,9 +34,8 @@ not inherit.")
 pine keeps the other end of, so pine going -- stopped, crashed or killed outright --
 closes that end and the stream goes with it.")
 
-(defclass stream-node (node:node)
-  ((livep :initform t)
-   (line :initarg :line :reader line)
+(defclass stream-node (node:live)
+  ((line :initarg :line :reader line)
    (took :initform nil :accessor took)
    (said :initform nil :reader said)))
 

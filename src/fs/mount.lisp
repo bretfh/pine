@@ -8,7 +8,7 @@
 (in-package #:pine/fs/mount)
 
 
-(defclass mount (node:node) ((livep :initform t))
+(defclass mount (node:live) ()
   (:documentation "A namespace from somewhere else, grafted into this one. What is
 behind it keeps its own contents, so nothing here is snapshotted and everything
 here answers differently without being written."))
