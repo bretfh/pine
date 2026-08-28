@@ -103,9 +103,16 @@ what does not.")
     n))
 
 (defun erase (where &rest pieces)
-  (let* ((names (%names pieces))
-         (holder (apply #'at where (butlast names))))
-    (when holder (node:erase-child holder (car (last names))))))
+  "Take off the last name in what WHERE and PIECES spell between them.
+
+WHERE names a place the way AT does, so the name that goes may be the end of it:
+(erase \"/a/b\") and (erase nil \"a\" \"b\") take off the same node. Only a node
+stands for a place and nothing else, so only a node is walked from."
+  (let* ((fromp (node:nodep where))
+         (names (%names (if (or fromp (null where)) pieces (cons where pieces))))
+         (gone (car (last names)))
+         (holder (and gone (apply #'at (and fromp where) (butlast names)))))
+    (when holder (node:erase-child holder gone))))
 
 (defun walk (n function &key (depth -1) (into (complement #'node:livep)))
   (funcall function n)

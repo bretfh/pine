@@ -168,3 +168,15 @@ its nodes off the tree, and that is not a reason to forget what they held."
     (is (tree:at nil "a/b"))
     (tree:erase nil "a/b")
     (is (null (tree:at nil "a/b")))))
+
+(test a-place-to-erase-is-named-the-way-every-other-place-is
+  "WHERE names a place the way AT does, so the name that goes may be the end of it.
+Reading it as a node to walk from left the RM command taking a path apart from a
+name it never had, and answering nothing while nothing went."
+  (with-tree
+    (tree:put nil '("a" "b") 1)
+    (tree:erase "/a/b")
+    (is (null (tree:at nil "a/b")) "one string, spelling the whole path")
+    (tree:put nil '("a" "b") 1)
+    (is (command:run "rm" '("/a/b")))
+    (is (null (tree:at nil "a/b")) "which is what RM hands it")))
