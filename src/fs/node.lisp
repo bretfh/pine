@@ -21,22 +21,29 @@
    (beneath   :initform (d:no-seq) :reader beneath)
    (memo      :initform (d:table)  :reader memo)
    (readers   :initform (d:no-set) :reader readers)
-   (named     :initform nil        :accessor named)
-   (savedp    :initarg :savedp  :reader  savedp    :initform nil)
-   (livep     :initarg :livep   :reader  livep     :initform nil))
+   (named     :initform nil        :accessor named))
   (:documentation "A name, what it sits under, and what is under it. On its own it
 is a branch: it holds nothing, and what is under it is whatever was attached.
 
 SAVEDP says what it holds outlives the image; LIVEP says the world behind it
 answers rather than a value kept here, which is what stops a snapshot walking into
-it and what makes a watcher ask rather than be told. Both are here rather than on
-one subclass because a store walks every node and a watcher may follow any of
-them.
+it and what makes a watcher ask rather than be told. Neither is a slot: they are
+questions a class answers by being that class.
 
 What a node can be instead of a branch is the classes below, and they are classes
 rather than flags because each answers CONTENTS its own way: a VALUE holds what
 was written, a DERIVED works it out and remembers, and a LIVE one asks whatever
 stands behind it."))
+
+(defgeneric savedp (node)
+  (:documentation "Whether what this holds outlives the image.")
+  (:method ((n node)) nil))
+
+(defgeneric livep (node)
+  (:documentation "Whether the world behind this answers, rather than a value kept
+here. A snapshot has no business walking into one, and a watcher on one has to ask
+rather than be told.")
+  (:method ((n node)) nil))
 
 (defgeneric announces (node)
   (:documentation "The lines whose output says the world behind this moved.")
@@ -68,8 +75,7 @@ WRITES because working a value out and being able to write it are two questions:
 /dev/audio/volume is worked out from what wpctl says and writing it sets the
 volume. Without one, writing replaces what it works out with what you wrote."))
 
-(defclass live (node)
-  ((livep :initform t))
+(defclass live (node) ()
   (:documentation "The world behind this answers, rather than a value kept here.
 
 Nothing is remembered, because the world moves without anybody writing it; that is
@@ -99,16 +105,31 @@ keeps.
 A device is one of these and each of its readings is a closure pair, which is why
 a device is a table of rows rather than a class per reading."))
 
+(defclass slot (node)
+  ((object-of :initarg :object :reader object-of)
+   (slot-of   :initarg :slot   :reader slot-of)
+   (into      :initarg :into   :reader into-of :initform nil))
+  (:documentation "One slot of a lisp object, standing in the tree.
+
+A value like any other, held somewhere else: the object owns it and this is where
+it is read and written from. Not LIVE -- nothing outside answers for it, and
+writing it here says so, so a watcher is told rather than having to ask."))
+
+(defmethod savedp ((n value)) t)
+(defmethod savedp ((n slot)) t)
+(defmethod livep ((n live)) t)
+
 (defmethod print-object ((n node) stream)
   (print-unreadable-object (n stream :type t)
     (write-string (full-name n) stream)))
 
 (defun nodep (x) (typep x 'node))
 
-(defun make (name &rest initargs &key (class 'value) (savedp t) &allow-other-keys)
-  "A node holding one value, kept where it will be found again."
-  (apply #'make-instance class :name name :savedp savedp
-         (alexandria:remove-from-plist initargs :class :savedp)))
+(defun make (name &rest initargs &key (class 'value) &allow-other-keys)
+  "A node holding one value, kept where it will be found again. That it is kept is
+the class saying so, not a flag anybody has to remember to pass."
+  (apply #'make-instance class :name name
+         (alexandria:remove-from-plist initargs :class)))
 
 (defun derive (name reads &rest initargs)
   "A node that works its value out and remembers it until something it read moves."
@@ -333,6 +354,17 @@ remember it too.")
     (funcall (writes n) v)
     v))
 
+(defmethod contents ((n slot))
+  (slot-value (object-of n) (slot-of n)))
+
+(defmethod (setf contents) (v (n slot))
+  "Writing it writes the object's slot, and says the object moved -- unless the
+object is what this hangs under, which has already been said."
+  (setf (slot-value (object-of n) (slot-of n)) v)
+  (let ((o (object-of n)))
+    (when (and (nodep o) (not (eq o (into-of n)))) (stir o)))
+  v)
+
 (defmethod contents :around ((n node))
   (reading n)
   (call-next-method))
@@ -347,20 +379,12 @@ remember it too.")
   (moved n))
 
 (defun slots (object into &rest pairs)
-  "One node per slot of OBJECT, under INTO. A slot is a place like any other: how
-to read it and how to write it are two closures over the object."
+  "One node per slot of OBJECT, under INTO."
   (loop :for (name slot) :on pairs :by #'cddr
-        :collect (let ((slot slot))
-                   (attach (make-instance
-                            'place :name (string-downcase (string name))
-                            :savedp t :livep nil
-                            :reads (lambda () (slot-value object slot))
-                                  :writes (lambda (value)
-                                            (setf (slot-value object slot) value)
-                                            (when (and (nodep object)
-                                                       (not (eq object into)))
-                                              (stir object))))
-                           into))))
+        :collect (attach (make-instance 'slot
+                                        :name (string-downcase (string name))
+                                        :object object :slot slot :into into)
+                         into)))
 
 (pine/word:lends "node" "contents" "nodes" "resolve" "stir" "name" "over"
                 "full-name" "attach" "detach" "child" "derive" "describes"
