@@ -1,18 +1,10 @@
 (in-package #:pine/edit)
 
-(defun %drew (moved)
-  "Work the editor's frame out again.
-
-Everything that moves anywhere goes through here, which is a sledgehammer where
-an edge belongs: the frame is a derived node and would follow what it read by
-itself, if the renderer read documents and windows as nodes rather than through
-their accessors. It does not, so this stands in for the edges that are missing."
-  (declare (ignore moved))
-  (let ((s (ui:named "editor")))
-    (when s (fault:attempt (lambda () (node:stir s)) "the frame"))))
-
 (defmethod text:reparsed ((document text:document))
-  (%drew nil))
+  "A parse that has landed says the document moved. Its text did not, but what is
+laid over it did, and the frame read this document -- so saying so here is the
+edge, and whatever else is reading it hears the same way."
+  (node:stir document))
 
 (defun %key ()
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
@@ -105,8 +97,7 @@ else it read."
 
 (defmethod job:start ((s edit))
   (%sources)
-  (setf command:*at* s
-        (commit:on-commit :edit) #'%drew)
+  (setf command:*at* s)
   (node:attach (%key) (tree:root))
   (let ((scratch (or (text:named "scratch")
                      (text:make-document "scratch"
@@ -117,8 +108,7 @@ else it read."
   s)
 
 (defmethod job:stop ((s edit))
-  (setf command:*at* nil
-        (commit:on-commit :edit) nil)
+  (setf command:*at* nil)
   (ui:take-next nil)
   (took-all)
   (text:forget-all)
