@@ -1,11 +1,4 @@
-(defpackage #:pine/ui/sheet
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:face #:pine/ui/face)
-                    (#:style #:pine/ui/style))
-  (:export #:put-rules #:styles #:built-in #:selector
-           #:css-color #:css-glass #:css-mono #:css-rad))
-(in-package #:pine/ui/sheet)
+(in-package #:pine/ui)
 
 (defclass themes-node (node:node) ()
   (:documentation "Every theme there is, and which is on.
@@ -15,15 +8,15 @@ come apart: what is under it is worked out, which is what a place is for, but
 /theme/active is a value that persists and a snapshot does not walk into a live
 node."))
 
-(defun css-color (role) (face:color role))
+(defun css-color (role) (color role))
 
-(defun css-glass (role &optional (a (face:metric :opacity 0.4)))
-  (let ((rgb (face:unhex (face:color role))))
+(defun css-glass (role &optional (a (metric :opacity 0.4)))
+  (let ((rgb (unhex (color role))))
     (format nil "rgba(~d, ~d, ~d, ~a)" (first rgb) (second rgb) (third rgb) a)))
 
-(defun css-rad () (format nil "~apx" (face:metric :radius 8)))
+(defun css-rad () (format nil "~apx" (metric :radius 8)))
 
-(defun css-mono () (format nil "~s, monospace" (face:metric :font "Maple Mono NF")))
+(defun css-mono () (format nil "~s, monospace" (metric :font "Maple Mono NF")))
 
 (defgeneric selector (it)
   (:documentation "IT as a selector: a symbol is one class, a list of symbols a
@@ -35,7 +28,7 @@ compound, a string the selector as written.")
 (defun %compound (s &optional (from 0))
   (and (find-if (lambda (c) (member c '(#\Space #\, #\: #\.))) s :start from) t))
 
-(defun %segment (sel)
+(defun %path-segment (sel)
   "The path segment a selector is written at. One class is its own name, so
 .editor-view is the path /style/editor-view."
   (let ((s (selector sel)))
@@ -62,7 +55,7 @@ compound, a string the selector as written.")
 config does not call this: a config writes the path. This is the far end of
 BROADCAST, where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (setf (node:contents (tree:ensure nil "style" (%segment (first each))))
+    (setf (node:contents (tree:ensure nil "style" (%path-segment (first each))))
           (second each)))
   (refresh)
   (styles))
@@ -103,20 +96,20 @@ BROADCAST, where a frontend puts what the daemon sent into its own tree."
 
 (defun refresh ()
   "The stylesheet in cascade order: what pine ships, then what is at /style."
-  (style:sheet (append (built-in) (styles)))
-  (style:forget-rules)
-  (style:sheet))
+  (sheet (append (built-in) (styles)))
+  (forget-rules)
+  (sheet))
 
-(defun %theme-names () (face:themes))
+(defun %theme-names () (themes))
 
 (defun %theme (n name)
   (node:child n name
               (lambda ()
                 (node:place name :over n
                             :reads (lambda ()
-                                     (let ((it (face:theme name)))
-                                       (list :palette (face:palette it)
-                                             :metrics (face:metrics it))))))))
+                                     (let ((it (theme name)))
+                                       (list :palette (palette it)
+                                             :metrics (metrics it))))))))
 
 (defun %active (n)
   (node:child n "active" (lambda () (node:make "active" :over n))))
@@ -135,7 +128,7 @@ BROADCAST, where a frontend puts what the daemon sent into its own tree."
 
 (defmethod node:contents ((n themes-node)) (%theme-names))
 
-(defun %key (name)
+(defun %face-key (name)
   "The keyword a face is kept under, without making one that is not already there:
 a path nobody named should not grow the keyword package."
   (find-symbol (string-upcase (princ-to-string name)) :keyword))
@@ -145,19 +138,19 @@ a path nobody named should not grow the keyword package."
     (maphash (lambda (name f)
                (declare (ignore f))
                (push (string-downcase (symbol-name name)) acc))
-             (face:faces (face:theme (face:active))))
+             (faces (theme (active))))
     (sort acc #'string<)))
 
 (defun %face (name)
-  (let ((key (%key name)))
-    (when (and key (face:in-force key))
+  (let ((key (%face-key name)))
+    (when (and key (in-force key))
       (node:place name
                   :reads (lambda ()
-                           (let ((f (face:in-force (%key name))))
+                           (let ((f (in-force (%face-key name))))
                              (when f
-                               (list :fg (face:fg f) :bg (face:bg f)
-                                     :bold (face:bold f) :italic (face:italic f)
-                                     :underline (face:underline f)))))))))
+                               (list :fg (fg f) :bg (bg f)
+                                     :bold (bold f) :italic (italic f)
+                                     :underline (underline f)))))))))
 
 (defun %attach (root)
   (let ((themes (node:attach
@@ -171,7 +164,7 @@ a path nobody named should not grow the keyword package."
     (tree:ensure root "style")
     (let ((active (%active themes)))
       (unless (node:contents active)
-        (setf (node:contents active) (face:active))))
+        (setf (node:contents active) (active))))
     (refresh)
     root))
 

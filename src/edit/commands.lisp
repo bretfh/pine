@@ -1,8 +1,8 @@
 (defpackage #:pine/edit/commands
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
-                    (#:surface #:pine/ui/surface)
                     (#:command #:pine/run/command) (#:log #:pine/run/log)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:lines #:pine/text/lines)
@@ -359,7 +359,7 @@ by whoever asks for it."
 
 (command:defcommand "refresh" () (:describes "draw everything again")
   (let ((n 0))
-    (dolist (each (surface:surfaces) n)
+    (dolist (each (ui:surfaces) n)
       (fault:attempt (lambda () (node:stir each)) (node:name each))
       (incf n))))
 

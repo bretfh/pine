@@ -14,7 +14,7 @@ images, and there is one."
     (setf *editing* t))
   (when (prompt:askingp) (command:run "cancel"))
   (when (isearch:searching) (isearch:took (isearch:searching)))
-  (key:take-next nil)
+  (ui:take-next nil)
   (let ((scratch (or (doc:named "scratch")
                      (doc:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
@@ -102,10 +102,10 @@ the path a person is on; a test that reaches past /key proves nothing about it."
 
 (test a-prefix-chord-waits-for-the-rest-of-itself
   (editing)
-  (keys:dispatch (key:parse "C-x"))
-  (is (key:pending) "C-x on its own is pending")
-  (keys:dispatch (key:parse "C-g"))
-  (is (null (key:pending))))
+  (keys:dispatch (ui:parse "C-x"))
+  (is (ui:pending) "C-x on its own is pending")
+  (keys:dispatch (ui:parse "C-g"))
+  (is (null (ui:pending))))
 
 (test the-prompt-is-a-mode-and-narrows-as-you-type
   (editing)

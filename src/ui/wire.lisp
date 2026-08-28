@@ -1,8 +1,4 @@
-(defpackage #:pine/ui/wire
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:w #:pine/ui/widget))
-  (:export #:to-wire #:from-wire))
-(in-package #:pine/ui/wire)
+(in-package #:pine/ui)
 
 (defparameter +skip+ '(:key :of :parts :hovered :pad)
   "What does not cross: the identity the daemon keeps, what a widget stands for,
@@ -43,7 +39,7 @@ crosses because it is there, not because somebody remembered to list it."
   (intern (symbol-name (class-name (class-of widget))) :keyword))
 
 (defun %class (tag)
-  (or (find-symbol (symbol-name tag) :pine/ui/widget)
+  (or (find-symbol (symbol-name tag) :pine/ui)
       (error "no widget crosses the wire as ~s" tag)))
 
 (defun %ordered (props)
@@ -58,7 +54,7 @@ may go as a patch is decided by comparing it with the one before."
   "Whether a slot's value is a widget written down: a centerbox holds its start,
 middle and end in slots of its own, and they cross the way a part does."
   (and (consp v) (keywordp (first v)) (find-symbol (symbol-name (first v))
-                                                   :pine/ui/widget)
+                                                   :pine/ui)
        (consp (rest v)) (listp (second v))))
 
 (defun to-wire (widget &key on-action)
@@ -71,16 +67,16 @@ place."
           (let ((v (funcall reader widget)))
             (when (member key +thunks+)
               (setf v (and v on-action (funcall on-action v))))
-            (when (typep v 'w:widget)
+            (when (typep v 'widget)
               (setf v (to-wire v :on-action on-action)))
             (unless (equal v default) (setf props (list* key v props))))))
-      (when (w:placed widget)
-        (setf props (list* :rect (list (w:top widget) (w:left widget)
-                                       (w:bottom widget) (w:right widget))
+      (when (placed widget)
+        (setf props (list* :rect (list (top widget) (left widget)
+                                       (bottom widget) (right widget))
                            props)))
       (list* (tag widget) (%ordered props)
              (mapcar (lambda (p) (to-wire p :on-action on-action))
-                     (w:parts widget))))))
+                     (parts widget))))))
 
 (defun from-wire (form &key on-action)
   "Build a widget back from wire FORM, restoring the rect it was arranged at.
@@ -104,7 +100,7 @@ ON-ACTION, given an id, answers what to do about it."
                             args)))
         (when rect
           (destructuring-bind (top left bottom right) rect
-            (setf (w:top widget) top (w:left widget) left
-                  (w:bottom widget) bottom (w:right widget) right)))
+            (setf (top widget) top (left widget) left
+                  (bottom widget) bottom (right widget) right)))
         widget))))
 

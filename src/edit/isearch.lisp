@@ -1,9 +1,10 @@
 (defpackage #:pine/edit/isearch
   (:use #:cl)
-  (:local-nicknames (#:fault #:pine/run/fault)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:fault #:pine/run/fault)
                     (#:d #:pine/data) (#:lines #:pine/text/lines)
                     (#:command #:pine/run/command) (#:prompt #:pine/edit/prompt)
-                    (#:doc #:pine/text/document) (#:key #:pine/ui/key)
+                    (#:doc #:pine/text/document)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
                     (#:log #:pine/run/log))
   (:export #:searching #:start #:step-search #:took #:took-all #:banner
@@ -107,14 +108,14 @@ going, and where it started so quitting can go back."))
   (let ((s (searching)))
     (cond
       ((null s) nil)
-      ((key:key= k (key:parse "C-s")) (step-search s t))
-      ((key:key= k (key:parse "C-r")) (step-search s nil))
-      ((key:key= k (key:parse "C-g")) (took s :keep nil) nil)
-      ((or (key:key= k (key:parse "RET")) (key:key= k (key:parse "Escape")))
+      ((ui:key= k (ui:parse "C-s")) (step-search s t))
+      ((ui:key= k (ui:parse "C-r")) (step-search s nil))
+      ((ui:key= k (ui:parse "C-g")) (took s :keep nil) nil)
+      ((or (ui:key= k (ui:parse "RET")) (ui:key= k (ui:parse "Escape")))
        (took s)
        nil)
-      ((key:key= k (key:parse "DEL")) (%shrink s))
-      ((key:selfp k) (%grow s (char (key:sym k) 0)))
+      ((ui:key= k (ui:parse "DEL")) (%shrink s))
+      ((ui:selfp k) (%grow s (char (ui:sym k) 0)))
       (t (took s) (keys:dispatch k) nil))))
 
 (defun start (&key (forward t))
@@ -124,7 +125,7 @@ keeps where it landed and C-g goes back."
          (s (make-instance 'standing :of document :forward forward
                                      :from (doc:point document))))
     (setf *search* s)
-    (key:take-next #'%reading)
+    (ui:take-next #'%reading)
     (%show s)
     s))
 

@@ -4,13 +4,13 @@
 
 (defpackage #:pine/bench
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:meter #:pine/run/meter)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
-                    (#:keys #:pine/edit/keys) (#:key #:pine/ui/key)
-                    (#:window #:pine/edit/window) (#:render #:pine/edit/render)
-                    (#:surface #:pine/ui/surface) (#:device #:pine/host/device))
+                    (#:keys #:pine/edit/keys)
+                    (#:window #:pine/edit/window) (#:render #:pine/edit/render) (#:device #:pine/host/device))
   (:export #:run #:workloads))
 (in-package #:pine/bench)
 
@@ -77,7 +77,7 @@ keystroke really makes"
   (%ready)
   (let ((d (%shown "typing" *size*)))
     (dotimes (n 200)
-      (keys:dispatch (key:make-key (string (code-char (+ 97 (mod n 26))))))
+      (keys:dispatch (ui:make-key (string (code-char (+ 97 (mod n 26))))))
       (%wire))
     (%parsed d :seconds 30)))
 
@@ -119,8 +119,8 @@ surface built, the tree written down, and what came out the same as before"
   (let ((until (+ (get-universal-time) *for*)))
     (loop :while (< (get-universal-time) until)
           :do (device:tick)
-              (dolist (each (surface:surfaces))
-                (when (surface:shown each) (%wire (node:name each))))
+              (dolist (each (ui:surfaces))
+                (when (ui:shown each) (%wire (node:name each))))
               (sleep 1/20))))
 
 (workload many ()
@@ -132,7 +132,7 @@ surface built, the tree written down, and what came out the same as before"
       (setf (node:contents d) (%lisp-text 50))))
   (let ((d (%shown "many-shown" *size*)))
     (dotimes (n 50)
-      (keys:dispatch (key:make-key "x"))
+      (keys:dispatch (ui:make-key "x"))
       (%wire))
     (%parsed d :seconds 30)))
 

@@ -1,8 +1,7 @@
 (defpackage #:pine/wayland/pane
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol)
-  (:local-nicknames (#:d #:pine/data) (#:w #:pine/ui/widget)
-                    (#:face #:pine/ui/face) (#:layout #:pine/ui/layout)
-                    (#:hit #:pine/ui/hit) (#:canvas #:pine/paint/canvas)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:canvas #:pine/paint/canvas)
                     (#:shm #:posix-shm) (#:shell #:pine/wayland/shell)
                     (#:fault #:pine/run/fault))
   (:export #:pane #:open-pane #:close-pane #:paint #:render #:resize #:measure
@@ -92,12 +91,12 @@ arranged as it is painted, so what a click lands on is what was drawn there."
                        (cl-cairo2:set-source-rgba 0d0 0d0 0d0 0d0)
                        (cl-cairo2:paint)
                        (cl-cairo2:set-operator :over))
-                     (layout:with-pass
-                       (face:with-faces
-                         (layout:dress (tree s))
-                         (layout:measure (tree s) m width height)
-                         (layout:arrange (tree s) m 0 0 width height)
-                         (layout:paint (tree s) m))))
+                     (ui:with-pass
+                       (ui:with-faces
+                         (ui:dress (tree s))
+                         (ui:measure (tree s) m width height)
+                         (ui:arrange (tree s) m 0 0 width height)
+                         (ui:paint (tree s) m))))
                 (cl-cairo2:destroy (canvas:context m))
                 (cl-cairo2:destroy it)))
             (when (uiop:getenv "PINE_FRAME_DUMP")
@@ -148,10 +147,10 @@ answers to the compositor rather than to us."
          (m (make-instance 'canvas:canvas :context (cl-cairo2:create-context it)
                                           :size *font*)))
     (unwind-protect
-         (layout:with-pass
-           (face:with-faces
-             (layout:dress (tree s))
-             (layout:measure (tree s) m avail avail)))
+         (ui:with-pass
+           (ui:with-faces
+             (ui:dress (tree s))
+             (ui:measure (tree s) m avail avail)))
       (cl-cairo2:destroy it))))
 
 (defun cell (s)
@@ -161,7 +160,7 @@ lands in them."
   (let* ((it (cl-cairo2:create-image-surface :argb32 1 1))
          (m (make-instance 'canvas:canvas :context (cl-cairo2:create-context it)
                                           :size *font*)))
-    (unwind-protect (layout:text-size m "M" *font*)
+    (unwind-protect (ui:text-size m "M" *font*)
       (cl-cairo2:destroy it))))
 
 (defun %layer (where)
@@ -291,10 +290,10 @@ happens here: the thread that owns the compositor is the only one that may."
   s)
 
 (defun at (s line col)
-  (and (tree s) (hit:under (tree s) line col)))
+  (and (tree s) (ui:under (tree s) line col)))
 
 (defun clicked (s line col)
   (let ((found (at s line col)))
-    (and found (values (hit:clicked found col) found))))
+    (and found (values (ui:clicked found col) found))))
 
-(defun hint-of (found) (or (and found (w:hint found)) ""))
+(defun hint-of (found) (or (and found (ui:hint found)) ""))

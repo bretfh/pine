@@ -1,17 +1,4 @@
-(defpackage #:pine/ui/widget
-  (:use #:cl)
-  (:export #:widget #:parts
-           #:label #:rule #:gap #:cells #:picture #:calendar #:slider #:ring
-           #:column #:row #:stack #:box #:center #:centerbox #:scroll
-           #:action #:choice
-           #:key #:of #:face #:css-class #:hint #:hovered #:radius #:fill-color #:grad
-           #:font #:pad #:margin #:expand #:min-w #:min-h #:chosen
-           #:top #:left #:bottom #:right #:width #:height #:placed #:wide #:tall
-           #:content #:changed #:glyph #:upright #:align #:spacing
-           #:value #:low #:high #:track #:thickness #:diameter #:fraction
-           #:by-row #:caret #:over #:opacity #:path #:year #:month #:day
-           #:start #:middle #:end #:offset #:runs #:click #:before #:after))
-(in-package #:pine/ui/widget)
+(in-package #:pine/ui)
 
 (defclass widget ()
   ((parts   :initarg :parts   :accessor parts   :initform nil)
@@ -121,7 +108,7 @@ something -- OF is what."))
   ((path :initarg :path :accessor path :initform "")))
 
 (defclass cells (widget)
-  ((rows    :initarg :rows    :accessor by-row  :initform nil)
+  ((rows    :initarg :rows    :accessor rows-of :initform nil)
    (caret   :initarg :caret   :accessor caret   :initform nil)
    (over    :initarg :over    :accessor over    :initform nil)
    (opacity :initarg :opacity :accessor opacity :initform 1.0))

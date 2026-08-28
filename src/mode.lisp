@@ -1,8 +1,9 @@
 (defpackage #:pine/mode
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:command #:pine/run/command)
-                    (#:fault #:pine/run/fault) (#:key #:pine/ui/key))
+                    (#:fault #:pine/run/fault))
   (:shadow #:type #:structure)
   (:export #:mode #:text #:prose #:code #:lisp #:pine #:scheme #:org #:fundamental
            #:press #:insert #:indent #:complete #:save #:structure
@@ -180,7 +181,7 @@ so a mode inherits bindings exactly as it inherits methods."
   (loop :for class :in (c2mop:class-precedence-list (class-of m))
         :append (d:pairs (keys (class-name class)))))
 
-(defun dispatch (m subject k &optional (pending (key:pending)))
+(defun dispatch (m subject k &optional (pending (ui:pending)))
   "What a key means to a mode. Answers :taken, what the command answered,
 :pending, (:insert . string) or :unbound, and the chord standing so far.
 
@@ -189,7 +190,7 @@ is a compositor's and there is no document in it at all. PENDING is the chord
 already accumulated, so two keyboards, or a window manager and an editor, keep
 their own place in a chord and cannot take each other's."
   (let* ((so-far (append pending (list k)))
-         (chord (key:spelled so-far))
+         (chord (ui:spelled so-far))
          (found (binding m chord)))
     (cond ((press m subject k) (values :taken nil))
           (found (values (fault:attempt (lambda () (command:run found))
@@ -197,8 +198,8 @@ their own place in a chord and cannot take each other's."
                          nil
                          (command:name found)))
           ((prefixp m chord) (values :pending so-far))
-          ((and (null pending) (key:typed k))
-           (values (cons :insert (key:typed k)) nil))
+          ((and (null pending) (ui:typed k))
+           (values (cons :insert (ui:typed k)) nil))
           (t (values :unbound nil)))))
 
 (defun prefixp (m chord)

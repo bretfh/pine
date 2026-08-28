@@ -323,7 +323,7 @@ systems. A substrate that names one of them has a favourite."
                      loose :test #'equal)))))
     (is (null loose) "~{~%  ~a~}" (reverse loose))))
 
-(defparameter +claimed-twice+ 208
+(defparameter +claimed-twice+ 190
   "How many exports would have to go for every name to belong to one package: for
 each name two or more claim, one fewer than the number claiming it.
 

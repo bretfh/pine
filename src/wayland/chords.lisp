@@ -1,6 +1,7 @@
 (defpackage #:pine/wayland/chords
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
-  (:local-nicknames (#:log #:pine/run/log) (#:key #:pine/ui/key)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:log #:pine/run/log)
                     (#:fault #:pine/run/fault))
   (:export #:chords #:make-chords #:availablep #:attend #:ask-for
            #:eat-next #:every-key #:mask #:keysym))
@@ -33,13 +34,13 @@ at it."))
   "The modifiers a key is held with, as the protocol spells them."
   (loop :for (mine . theirs) :in +modifiers+
         :when (ecase mine
-                (:shift (key:shift k)) (:ctrl (key:ctrl k))
-                (:meta (key:meta k)) (:super (key:super k)))
+                (:shift (ui:shift k)) (:ctrl (ui:ctrl k))
+                (:meta (ui:meta k)) (:super (ui:super k)))
           :collect theirs))
 
 (defun keysym (k)
   "The keysym a key is, as xkb numbers it. A name it does not know is no chord."
-  (let ((said (xkb:xkb-keysym-from-name (key:keysym-name (key:sym k)) '())))
+  (let ((said (xkb:xkb-keysym-from-name (ui:keysym-name (ui:sym k)) '())))
     (when (and said (plusp said)) said)))
 
 (defun every-key (chords)
@@ -48,7 +49,7 @@ key was pressed only for a key it was asked for, so the second key of a chord ha
 to be asked for as much as the first."
   (let ((all nil))
     (dolist (chord chords (nreverse all))
-      (dolist (k (key:chord chord))
+      (dolist (k (ui:chord chord))
         (pushnew k all :test #'eq)))))
 
 (defun attend (c proxy)
@@ -64,7 +65,7 @@ to be asked for as much as the first."
   c)
 
 (defun %said (c k)
-  (when (told c) (funcall (told c) (and k (key:spelled (list k))))))
+  (when (told c) (funcall (told c) (and k (ui:spelled (list k))))))
 
 (defun forget (c)
   (dolist (each (bound c))

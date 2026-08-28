@@ -1,11 +1,4 @@
-(defpackage #:pine/ui/key
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter))
-  (:shadow #:last)
-  (:export #:key #:make-key #:parse #:chord #:spelled #:key= #:selfp #:typed
-           #:sym #:ctrl #:meta #:shift #:super #:keysym-name
-           #:pending #:last #:taking #:take-next #:reading))
-(in-package #:pine/ui/key)
+(in-package #:pine/ui)
 
 (defvar *keys* (d:table))
 (defvar *pending* nil)
@@ -112,11 +105,13 @@ thing as the key that arrived."
 (defun super (k) (key-super k))
 
 (defun pending () *pending*)
-(defun last () *last*)
+(defun last-said ()
+  "What the last key that arrived turned out to mean. A modeline reads it."
+  *last*)
 (defun taking () *taking*)
 
 (defun (setf pending) (value) (setf *pending* value) value)
-(defun (setf last) (value) (setf *last* value) value)
+(defun (setf last-said) (value) (setf *last* value) value)
 
 (defun take-next (fn)
   "Hand the next key to FN instead of the keymap. FN answers :again to keep taking

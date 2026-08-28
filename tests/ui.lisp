@@ -2,128 +2,128 @@
 
 (def-suite* :pine/ui :in :pine)
 
-(defclass ticker (surface:role) ()
+(defclass ticker (ui:role) ()
   (:documentation "A role written outside the substrate, to prove nothing in it
 knows the roles by name."))
 
-(defmethod surface:anchor ((r ticker) width height)
+(defmethod ui:anchor ((r ticker) width height)
   (d:map :edges '(:bottom :right) :wide width :tall height :keeps 0
          :margin '(4 4 4 4)))
 
-(defmethod surface:asks ((r ticker)) nil)
+(defmethod ui:asks ((r ticker)) nil)
 
 (defun drawn (tree cols &optional (lines 4))
-  (layout:with-pass
-    (face:with-faces
-      (layout:dress tree)
-      (let ((m (grid:make-grid cols lines)))
-        (layout:measure tree m cols lines)
-        (layout:arrange tree m 0 0 cols lines)
-        (layout:paint tree m)
-        (values (mapcar (lambda (r) (string-right-trim " " (car r))) (grid:by-row m))
+  (ui:with-pass
+    (ui:with-faces
+      (ui:dress tree)
+      (let ((m (ui:make-grid cols lines)))
+        (ui:measure tree m cols lines)
+        (ui:arrange tree m 0 0 cols lines)
+        (ui:paint tree m)
+        (values (mapcar (lambda (r) (string-right-trim " " (car r))) (ui:by-row m))
                 tree m)))))
 
 (test a-tree-measures-arranges-and-paints
   (with-tree
     (is (equal '("hello" "there" "" "")
-               (drawn (build:column :align :stretch
-                                    (build:label "hello") (build:label "there"))
+               (drawn (ui:column :align :stretch
+                                    (ui:label "hello") (ui:label "there"))
                       20)))
-    (is (search "ab cd" (first (drawn (build:row (build:label "ab")
-                                                 (build:label "cd"))
+    (is (search "ab cd" (first (drawn (ui:row (ui:label "ab")
+                                                 (ui:label "cd"))
                                       20))))
     (is (equal '("ab" "----------" "" "")
-               (drawn (build:column :align :stretch (build:label "ab")
-                                    (build:rule :glyph #\-))
+               (drawn (ui:column :align :stretch (ui:label "ab")
+                                    (ui:rule :glyph #\-))
                       10)))))
 
 (test the-more-particular-rule-wins
   (with-tree
     (tree:built)
-    (pine/ui/sheet:put-rules (list (list ".a" (list :color "#ff0000" :min-width "20"))
+    (pine/ui:put-rules (list (list ".a" (list :color "#ff0000" :min-width "20"))
                              (list ".a.b" (list :color "#00ff00"))))
-    (let ((general (style:resolve '(("a"))))
-          (both (style:resolve '(("a" "b")))))
+    (let ((general (ui:resolve '(("a"))))
+          (both (ui:resolve '(("a" "b")))))
       (is (equal '(255 0 0) (d:lookup general :fg))
           "and a rule says a colour the way everything else does")
       (is (equal '(0 255 0) (d:lookup both :fg))
           "whatever order the rules were written in")
       (is (eql 20 (d:lookup both :min-w))
           "and what the winning rule does not say still comes through"))
-    (is (member :shadow (style:properties)))))
+    (is (member :shadow (ui:properties)))))
 
 (test a-rule-and-a-face-say-a-colour-the-same-way
   "A painter takes a colour from a style and a colour from a face and paints with
 both, so they have to be the same three numbers."
   (with-tree
     (tree:built)
-    (pine/ui/sheet:put-rules (list (list ".x" (list :background-color
-                                             (face:color :accent)))))
-    (is (equal (face:unhex (face:color :accent))
-               (subseq (d:lookup (style:resolve '(("x"))) :bg) 0 3)))
-    (is (eql 1.0 (fourth (d:lookup (style:resolve '(("x"))) :bg)))
+    (pine/ui:put-rules (list (list ".x" (list :background-color
+                                             (ui:color :accent)))))
+    (is (equal (ui:unhex (ui:color :accent))
+               (subseq (d:lookup (ui:resolve '(("x"))) :bg) 0 3)))
+    (is (eql 1.0 (fourth (d:lookup (ui:resolve '(("x"))) :bg)))
         "and how much of it shows is still a fraction")))
 
 (test nothing-is-written-into-the-tree-during-a-pass
   (with-tree
-    (let ((tree (build:column :pad 2 (build:label "ab"))))
+    (let ((tree (ui:column :pad 2 (ui:label "ab"))))
       (drawn tree 20)
-      (is (eql 2 (widget:pad tree)) "what a config authored is what it still says")
-      (is (null (widget:font (first (widget:parts tree))))
+      (is (eql 2 (ui:pad tree)) "what a config authored is what it still says")
+      (is (null (ui:font (first (ui:parts tree))))
           "and the style did not leak into it"))))
 
 (test padding-grows-the-border-box
   (with-tree
-    (let ((tree (build:column :pad 2 (build:label "ab"))))
-      (layout:with-pass
-        (let ((m (grid:make-grid 40 40)))
-          (multiple-value-bind (cw ch) (layout:measure tree m 40 40)
+    (let ((tree (ui:column :pad 2 (ui:label "ab"))))
+      (ui:with-pass
+        (let ((m (ui:make-grid 40 40)))
+          (multiple-value-bind (cw ch) (ui:measure tree m 40 40)
             (is (equal '(6 5) (list cw ch)))))))))
 
 (test a-control-takes-the-place-it-edits
   (with-tree
     (let ((volume (tree:ensure nil "dev" "audio" "volume")))
       (setf (node:contents volume) 40)
-      (let ((s (build:slider volume :low 0 :high 100)))
-        (is (= 40 (widget:value s)))
-        (funcall (widget:changed s) 75)
+      (let ((s (ui:slider volume :low 0 :high 100)))
+        (is (= 40 (ui:value s)))
+        (funcall (ui:changed s) 75)
         (is (= 75 (node:contents volume)))))))
 
 (test a-click-lands-on-what-was-drawn-there
   (with-tree
     (let* ((fired nil)
-           (tree (build:column :align :stretch
-                               (build:label "plain")
-                               (build:button :on-click (lambda ()
+           (tree (ui:column :align :stretch
+                               (ui:label "plain")
+                               (ui:button :on-click (lambda ()
                                                          (setf fired :yes))
-                                             (build:label "go")))))
+                                             (ui:label "go")))))
       (multiple-value-bind (rows arranged) (drawn tree 10 2)
         (declare (ignore rows))
-        (is (null (pine/ui/hit:under arranged 0 1)) "a label answers no hit")
-        (let ((hit (pine/ui/hit:under arranged 1 1)))
-          (is (typep hit 'widget:action))
-          (funcall (pine/ui/hit:clicked hit 1))
+        (is (null (pine/ui:under arranged 0 1)) "a label answers no hit")
+        (let ((hit (pine/ui:under arranged 1 1)))
+          (is (typep hit 'ui:action))
+          (funcall (pine/ui:clicked hit 1))
           (is (eq :yes fired)))))))
 
 (test a-surface-carries-its-role-and-follows-what-it-read
   (with-tree
     (let ((where (tree:ensure nil "probe")))
       (setf (node:contents where) "one")
-      (let ((s (surface:builds "ticker"
-                               (lambda () (build:label (node:contents where)))
+      (let ((s (ui:builds "ticker"
+                               (lambda () (ui:label (node:contents where)))
                                :as 'ticker :shown :default)))
-        (is (typep (surface:role s) 'ticker))
-        (is (surface:shown s) "a role that is not asked for is up already")
-        (let ((placed (surface:anchor (surface:role s) 100 20)))
+        (is (typep (ui:role s) 'ticker))
+        (is (ui:shown s) "a role that is not asked for is up already")
+        (let ((placed (ui:anchor (ui:role s) 100 20)))
           (is (equal '(:bottom :right) (d:lookup placed :edges)))
           (is (equal '(4 4 4 4) (d:lookup placed :margin))))
-        (is (equal "one" (widget:content (node:contents s))))
+        (is (equal "one" (ui:content (node:contents s))))
         (setf (node:contents where) "two")
-        (is (equal "two" (widget:content (node:contents s)))
+        (is (equal "two" (ui:content (node:contents s)))
             "it follows what it read, with nothing subscribing")
-        (is (eq s (surface:named "ticker")))
+        (is (eq s (ui:named "ticker")))
         (setf (node:contents (tree:at nil "surface" "ticker" "shown")) nil)
-        (is (null (surface:shown s)))))))
+        (is (null (ui:shown s)))))))
 
 (test nothing-in-the-source-names-that-role
   (let ((named (loop :for f :in (directory
@@ -136,17 +136,17 @@ both, so they have to be the same three numbers."
     (is (null named) "~{~%  ~a names it~}" named)))
 
 (test a-key-is-one-object-for-one-chord
-  (is (key:key= (key:parse "C-x") (key:make-key "x" :ctrl t)))
-  (is (equal "C-x C-s" (key:spelled (key:chord "C-x C-s"))))
-  (is (key:selfp (key:parse "a")))
-  (is (not (key:selfp (key:parse "C-a"))))
-  (is (key:key= (key:parse "space") (key:parse "SPC"))
+  (is (ui:key= (ui:parse "C-x") (ui:make-key "x" :ctrl t)))
+  (is (equal "C-x C-s" (ui:spelled (ui:chord "C-x C-s"))))
+  (is (ui:selfp (ui:parse "a")))
+  (is (not (ui:selfp (ui:parse "C-a"))))
+  (is (ui:key= (ui:parse "space") (ui:parse "SPC"))
       "one name for a key however it was spelled"))
 
 (test a-widget-crosses-the-wire-and-comes-back
-  (let* ((tree (build:column :class "bar" (build:label "hi")))
-         (form (pine/ui/wire:to-wire tree))
-         (back (pine/ui/wire:from-wire form)))
-    (is (typep back 'widget:column))
-    (is (equal "bar" (widget:css-class back)))
-    (is (equal "hi" (widget:content (first (widget:parts back)))))))
+  (let* ((tree (ui:column :class "bar" (ui:label "hi")))
+         (form (pine/ui:to-wire tree))
+         (back (pine/ui:from-wire form)))
+    (is (typep back 'ui:column))
+    (is (equal "bar" (ui:css-class back)))
+    (is (equal "hi" (ui:content (first (ui:parts back)))))))

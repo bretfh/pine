@@ -1,36 +1,35 @@
 (defpackage #:pine
-  (:use #:cl)
-  (:shadow #:describe)
-  (:local-nicknames (#:d #:pine/data)
-                    (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
-                    (#:tree #:pine/fs/tree)
-                    (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
-                    (#:store #:pine/fs/store)
-                    (#:libs #:pine/run/libs) (#:log #:pine/run/log)
-                    (#:meter #:pine/run/meter) (#:fault #:pine/run/fault)
-                    (#:actors #:pine/run/actors) (#:job #:pine/run/job)
-                    (#:watch #:pine/run/watch)
-                    (#:command #:pine/run/command)
-                    (#:image #:pine/run/image)
-                    (#:peer #:pine/run/peer) (#:system #:pine/run/system)
-                    (#:session #:pine/run/session)
-                    (#:face #:pine/ui/face) (#:sheet #:pine/ui/sheet)
-                    (#:surface #:pine/ui/surface) (#:build #:pine/ui/build)
-                    (#:word #:pine/word))
-  (:export #:start #:stop #:main #:daemon #:quit
-           #:use #:drop #:reach #:serve #:mount #:spawn #:style
-           #:here #:describe #:node-at #:read-at #:write-at
-           #:load-config #:config-file #:store-file #:user-package
-           #:opening))
+            (:use #:cl)
+            (:shadow #:describe)
+            (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data)
+                              (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
+                              (#:tree #:pine/fs/tree)
+                              (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
+                              (#:store #:pine/fs/store)
+                              (#:libs #:pine/run/libs) (#:log #:pine/run/log)
+                              (#:meter #:pine/run/meter) (#:fault #:pine/run/fault)
+                              (#:actors #:pine/run/actors) (#:job #:pine/run/job)
+                              (#:watch #:pine/run/watch)
+                              (#:command #:pine/run/command)
+                              (#:image #:pine/run/image)
+                              (#:peer #:pine/run/peer) (#:system #:pine/run/system)
+                              (#:session #:pine/run/session)
+                              (#:word #:pine/word))
+            (:export #:start #:stop #:main #:daemon #:quit
+                     #:use #:drop #:reach #:serve #:mount #:spawn #:style
+                     #:here #:describe #:node-at #:read-at #:write-at
+                     #:load-config #:config-file #:store-file #:user-package
+                     #:opening))
 (in-package #:pine)
 
 (defgeneric opening (what)
-  (:documentation "Open WHAT, if anything loaded here knows how.
+            (:documentation "Open WHAT, if anything loaded here knows how.
 
 :DISPLAY is the one pine asks for. A frontend answers it in its own file, so an
 image built without one has nothing to unset and nothing to check -- there is
 simply no method, which is the truth about that image.")
-  (:method (what) (declare (ignore what)) nil))
+            (:method (what) (declare (ignore what)) nil))
 
 (defun here (&optional (s session:*session*))
   (or (and s (session:in s)) (tree:root)))
@@ -58,7 +57,7 @@ nothing has been put there yet."
 otherwise."
   (if (and (stringp where) (plusp (length where)) (char= #\/ (char where 0)))
       (tree:root)
-      (here)))
+    (here)))
 
 (defun node-at (where &rest names)
   "The node WHERE names, and NAMES from there.
@@ -95,121 +94,121 @@ that does not is from this session, and NIL is where you are."
 
 (defun style (selector properties)
   "One rule, put on the sheet. What a config says on top of the theme."
-  (first (sheet:put-rules (list (list selector properties)))))
+  (first (ui:put-rules (list (list selector properties)))))
 
 (defun spawn (name &key (systems '(:pine)))
   "Another lisp of pine's own, supervised. Work can be done in it, and a fault it
 stands in comes back here with the restarts it is still offering."
   (let ((j (make-instance 'image:child :name (princ-to-string name)
-                                       :systems systems)))
+                          :systems systems)))
     (job:supervise j)
     (job:start j)
     j))
 
 (command:defcommand "pwd" () (:describes "where this session is")
-  (node:full-name (here)))
+                    (node:full-name (here)))
 
 (command:defcommand "ls" (&optional where) (:describes "what is under a node")
-  (let ((n (%place where)))
-    (if n (tree:listing n) (list))))
+                    (let ((n (%place where)))
+                      (if n (tree:listing n) (list))))
 
 (command:defcommand "cd" (&optional where) (:describes "go to a node")
-  (let ((n (if where (%place where) (tree:root))))
-    (when (and n session:*session*) (setf (session:in session:*session*) n))
-    (and n (node:full-name n))))
+                    (let ((n (if where (%place where) (tree:root))))
+                      (when (and n session:*session*) (setf (session:in session:*session*) n))
+                      (and n (node:full-name n))))
 
 (command:defcommand "cat" (where) (:describes "what a node holds")
-  (let ((n (%place where)))
-    (and n (node:contents n))))
+                    (let ((n (%place where)))
+                      (and n (node:contents n))))
 
 (command:defcommand "put" (where value) (:describes "write a node")
-  (setf (node:contents (tree:ensure (%from where) (princ-to-string where)))
-        value))
+                    (setf (node:contents (tree:ensure (%from where) (princ-to-string where)))
+                          value))
 
 (command:defcommand "mkdir" (where) (:describes "make a branch")
-  (node:full-name (tree:ensure (%from where) (princ-to-string where))))
+                    (node:full-name (tree:ensure (%from where) (princ-to-string where))))
 
 (command:defcommand "rm" (where) (:describes "take a node off")
-  (and (tree:erase (%from where) (princ-to-string where)) t))
+                    (and (tree:erase (%from where) (princ-to-string where)) t))
 
 (command:defcommand "tree" (&optional where) (:describes "every node under one")
-  (let (out)
-    (tree:walk (%place where) (lambda (n) (push (node:full-name n) out)))
-    (nreverse out)))
+                    (let (out)
+                      (tree:walk (%place where) (lambda (n) (push (node:full-name n) out)))
+                      (nreverse out)))
 
 (command:defcommand "live" ()
-  (:describes "what answers from the world, not the store")
-  (let (out)
-    (tree:walk (tree:root)
-      (lambda (n) (when (node:livep n) (push (node:full-name n) out))))
-    (nreverse out)))
+                    (:describes "what answers from the world, not the store")
+                    (let (out)
+                      (tree:walk (tree:root)
+                                 (lambda (n) (when (node:livep n) (push (node:full-name n) out))))
+                      (nreverse out)))
 
 (command:defcommand "mount" (what name)
-  (:describes "put a directory, or another pine, in the tree")
-  (let ((it (or (peer:named what) (pathname (princ-to-string what)))))
-    (node:full-name (mount:mount it (tree:root) (princ-to-string name)))))
+                    (:describes "put a directory, or another pine, in the tree")
+                    (let ((it (or (peer:named what) (pathname (princ-to-string what)))))
+                      (node:full-name (mount:mount it (tree:root) (princ-to-string name)))))
 
 (command:defcommand "reach" (name port &optional host)
-  (:describes "get to another pine")
-  (job:name (peer:reach (princ-to-string name)
-                        :host (and host (princ-to-string host))
-                        :port (if (integerp port)
-                                  port
-                                  (parse-integer (princ-to-string port))))))
+                    (:describes "get to another pine")
+                    (job:name (peer:reach (princ-to-string name)
+                                          :host (and host (princ-to-string host))
+                                          :port (if (integerp port)
+                                                    port
+                                                  (parse-integer (princ-to-string port))))))
 
 (command:defcommand "use" (name) (:describes "load a system and start it")
-  (let ((s (use name))) (and s (job:name s))))
+                    (let ((s (use name))) (and s (job:name s))))
 
 (command:defcommand "drop" (name) (:describes "stop a system and take it off")
-  (let ((s (drop name))) (and s (job:name s))))
+                    (let ((s (drop name))) (and s (job:name s))))
 
 (command:defcommand "systems" () (:describes "what pine has loaded, and what it offers")
-  (list :running (mapcar #'job:name (system:systems))
-        :offered (system:offered)))
+                    (list :running (mapcar #'job:name (system:systems))
+                          :offered (system:offered)))
 
 (command:defcommand "jobs" () (:describes "what is running")
-  (loop :for j :in (job:jobs)
-        :collect (list (job:name j) (job:state j) (job:tries j))))
+                    (loop :for j :in (job:jobs)
+                          :collect (list (job:name j) (job:state j) (job:tries j))))
 
 (command:defcommand "spawn" (name) (:describes "another lisp of pine's own")
-  (job:name (spawn name)))
+                    (job:name (spawn name)))
 
 (command:defcommand "kill" (name) (:describes "stop a job and forget it")
-  (let ((j (job:named (princ-to-string name))))
-    (when j (job:stop j) (job:forget (job:name j)) t)))
+                    (let ((j (job:named (princ-to-string name))))
+                      (when j (job:stop j) (job:forget (job:name j)) t)))
 
 (command:defcommand "help" (&optional name) (:describes "what a command is for")
-  (if name
-      (let ((c (command:named (princ-to-string name))))
-        (and c (command:describes c)))
-      (loop :for c :in (command:sorted)
-            :collect (list (command:name c) (command:describes c)))))
+                    (if name
+                        (let ((c (command:named (princ-to-string name))))
+                          (and c (command:describes c)))
+                      (loop :for c :in (command:sorted)
+                            :collect (list (command:name c) (command:describes c)))))
 
 (command:defcommand "faults" () (:describes "what has broken here")
-  (loop :for f :in (fault:faults)
-        :collect (list (fault:label f)
-                       (if (fault:standingp f) :standing :done)
-                       (princ-to-string (fault:condition-of f)))))
+                    (loop :for f :in (fault:faults)
+                          :collect (list (fault:label f)
+                                         (if (fault:standingp f) :standing :done)
+                                         (princ-to-string (fault:condition-of f)))))
 
 (command:defcommand "take" (restart)
-  (:describes "hand a standing fault one of its restarts")
-  (let ((f (first (fault:standing))))
-    (and f (fault:take f (princ-to-string restart)))))
+                    (:describes "hand a standing fault one of its restarts")
+                    (let ((f (first (fault:standing))))
+                      (and f (fault:take f (princ-to-string restart)))))
 
 (command:defcommand "snapshot" () (:describes "write the tree to its store")
-  (and store:*store* (store:snapshot store:*store*)))
+                    (and store:*store* (store:snapshot store:*store*)))
 
 (command:defcommand "metrics" ()
-  (:describes "how long what pine does is taking")
-  (meter:readings))
+                    (:describes "how long what pine does is taking")
+                    (meter:readings))
 
 (command:defcommand "metrics-reset" ()
-  (:describes "start a fresh window of samples")
-  (meter:reset)
-  :reset)
+                    (:describes "start a fresh window of samples")
+                    (meter:reset)
+                    :reset)
 
 (command:defcommand "describe" (where) (:describes "what stands at a place")
-  (describe where))
+                    (describe where))
 
 
 (defun start (&key (name "pine") store remoting)
@@ -219,7 +218,7 @@ stands in comes back here with the restarts it is still offering."
   (let ((root (tree:root)))
     (setf (node:contents (tree:ensure root "name")) name)
     (tree:built root)
-    (surface:root)
+    (ui:root)
     (mount:mount #p"/" root "file"))
   (job:attend)
   (when store
@@ -276,16 +275,16 @@ somewhere else."
 
 (defun quit (&optional (grace 5))
   (job:start (make-instance 'job:thread :name "quit-watchdog" :restarts nil
-                                        :thunk (lambda ()
-                                                 (sleep grace)
-                                                 (sb-ext:exit :abort t :code 0))))
+                            :thunk (lambda ()
+                                     (sleep grace)
+                                     (sb-ext:exit :abort t :code 0))))
   (job:start (make-instance 'job:thread :name "quit" :restarts nil
-                                        :thunk (lambda ()
-                                                 (sleep 0.2)
-                                                 (fault:or-nothing
-                                                     "leaving anyway"
-                                                   (stop))
-                                                 (sb-ext:exit :abort t :code 0))))
+                            :thunk (lambda ()
+                                     (sleep 0.2)
+                                     (fault:or-nothing
+                                      "leaving anyway"
+                                      (stop))
+                                     (sb-ext:exit :abort t :code 0))))
   t)
 
 (defun main (&key (store (store-file)))
@@ -297,17 +296,17 @@ somewhere else."
       (stop))))
 
 (defun daemon (&key (store (store-file)) (remoting actors:*port*)
-                 (config (config-file)))
+                    (config (config-file)))
   "A pine other images talk to. The store is opened after the config: a surface a
 config declares takes the name it is declared under, so a panel restored before the
 config would be the value node the surface then replaced."
   (start :remoting remoting)
   (peer:serve)
   (command:defcommand "quit" () (:describes "stop this pine")
-    (quit))
+                      (quit))
   (command:defcommand "reload" () (:describes "read the config again")
-    (load-config config)
-    :reloaded)
+                      (load-config config)
+                      :reloaded)
   (load-config config)
   (when store
     (store:open-store store)
@@ -322,4 +321,4 @@ config would be the value node the surface then replaced."
   (tree:root))
 
 (pine/word:lends "use" "drop" "reach" "spawn" "style"
-                '("at" "node-at") '("read" "read-at") '("write" "write-at"))
+                 '("at" "node-at") '("read" "read-at") '("write" "write-at"))

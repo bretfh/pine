@@ -41,7 +41,8 @@
                  (:file "fs/store")
                  (:module "ui"
                           :serial t
-                          :components ((:file "widget") (:file "face")
+                          :components ((:file "system")
+                                       (:file "widget") (:file "face")
                                        (:file "style") (:file "sheet")
                                        (:file "grid") (:file "layout")
                                        (:file "hit") (:file "wire")

@@ -1,8 +1,8 @@
 (defpackage #:pine/wayland/wm
   (:use #:cl #:wayflan-client #:pine/wayland/protocol)
-  (:local-nicknames (#:d #:pine/data) (#:log #:pine/run/log)
-                    (#:fault #:pine/run/fault)
-                    (#:key #:pine/ui/key) (#:chords #:pine/wayland/chords)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:log #:pine/run/log)
+                    (#:fault #:pine/run/fault) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
   (:export #:wm #:bind #:managingp #:apply-layout #:take #:laid #:wake
            #:on-said #:on-render #:on-chord #:wants-chords #:eat-next

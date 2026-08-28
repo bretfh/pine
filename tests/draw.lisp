@@ -5,24 +5,24 @@
 (defun on-screen ()
   "What the editor surface holds, as text. Not what a function answers when asked
 directly: what is on the screen."
-  (let ((tree (node:contents (surface:named "editor"))))
+  (let ((tree (node:contents (ui:named "editor"))))
     (with-output-to-string (out)
       (labels ((walk (w)
                  (when w
-                   (when (typep w 'widget:cells)
-                     (dolist (row (widget:by-row w))
+                   (when (typep w 'ui:cells)
+                     (dolist (row (ui:rows-of w))
                        (write-line (string-right-trim " " (car row)) out)))
-                   (dolist (p (widget:parts w)) (walk p)))))
+                   (dolist (p (ui:parts w)) (walk p)))))
         (walk tree)))))
 
 (defun on-screen-painted ()
   "The rows with their colours, so a selection moving is a change."
-  (let ((tree (node:contents (surface:named "editor")))
+  (let ((tree (node:contents (ui:named "editor")))
         (out nil))
     (labels ((walk (w)
                (when w
-                 (when (typep w 'widget:cells) (push (widget:by-row w) out))
-                 (dolist (p (widget:parts w)) (walk p)))))
+                 (when (typep w 'ui:cells) (push (ui:rows-of w) out))
+                 (dolist (p (ui:parts w)) (walk p)))))
       (walk tree))
     (princ-to-string out)))
 
@@ -79,13 +79,13 @@ screen is a picture until pine is restarted."
            (broken (cons t nil))
            (n (tree:ensure nil "probe-src")))
       (setf (node:contents n) "first")
-      (let ((s (surface:builds "probe-surface"
+      (let ((s (ui:builds "probe-surface"
                                (lambda ()
                                  (let ((v (node:contents n)))
                                    (when (car broken) (error "on purpose"))
                                    (setf (car said) v)
-                                   (build:label v)))
-                               :as 'surface:panel :shown t)))
+                                   (ui:label v)))
+                               :as 'ui:panel :shown t)))
         (is (null (ignore-errors (node:contents s))))
         (setf (car broken) nil)
         (setf (node:contents n) "second")

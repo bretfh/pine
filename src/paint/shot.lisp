@@ -1,9 +1,7 @@
 (defpackage #:pine/paint/shot
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:w #:pine/ui/widget) (#:grid #:pine/ui/grid)
-                    (#:face #:pine/ui/face) (#:layout #:pine/ui/layout)
-                    (#:surface #:pine/ui/surface)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:canvas #:pine/paint/canvas))
   (:export #:shot #:draw #:every-surface))
 (in-package #:pine/paint/shot)
@@ -18,10 +16,10 @@ measurement is cairo's, so it is the one the paint will use."
                            :context (cl-cairo2:create-context s)
                            :size font)))
     (unwind-protect
-         (layout:with-pass
-           (face:with-faces
-             (layout:dress tree)
-             (multiple-value-bind (cw ch) (layout:measure tree m width height)
+         (ui:with-pass
+           (ui:with-faces
+             (ui:dress tree)
+             (multiple-value-bind (cw ch) (ui:measure tree m width height)
                (values cw ch m))))
       (cl-cairo2:destroy s))))
 
@@ -37,12 +35,12 @@ the screen, in a file you can look at."
            (canvas:with-canvas (m)
              (canvas:rgb background)
              (cl-cairo2:paint))
-           (layout:with-pass
-             (face:with-faces
-               (layout:dress tree)
-               (layout:measure tree m width height)
-               (layout:arrange tree m 0 0 width height)
-               (layout:paint tree m)))
+           (ui:with-pass
+             (ui:with-faces
+               (ui:dress tree)
+               (ui:measure tree m width height)
+               (ui:arrange tree m 0 0 width height)
+               (ui:paint tree m)))
            (ensure-directories-exist path)
            (cl-cairo2:surface-write-to-png s (namestring path))
            (unless (probe-file path)
@@ -55,8 +53,8 @@ the screen, in a file you can look at."
   "Every surface that is up, each as a PNG at the size it asked for. A bar is drawn
 as tall and as narrow as it measured, rather than stretched to fill a window it
 would never be given."
-  (loop :for each :in (surface:surfaces)
-        :when (surface:shown each)
+  (loop :for each :in (ui:surfaces)
+        :when (ui:shown each)
           :collect (let ((tree (node:contents each)))
                      (when tree
                        (multiple-value-bind (cw ch) (measure tree :width width

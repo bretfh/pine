@@ -190,13 +190,13 @@ it, and the mode that answers is the window manager's."
 (test a-chord-of-the-window-managers-is-not-the-editors
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-x s-r" "wm-outputs")
-  (setf (key:pending) (key:chord "C-x"))
+  (setf (ui:pending) (ui:chord "C-x"))
   (setf (node:contents (tree:at nil "wm/key")) "s-x")
   (is (equal "s-x" (node:contents (tree:at nil "wm/key")))
       "the window manager is half way through its own chord")
-  (is (equal "C-x" (key:spelled (key:pending)))
+  (is (equal "C-x" (ui:spelled (ui:pending)))
       "and the editor is still half way through the one somebody was typing")
-  (setf (key:pending) nil)
+  (setf (ui:pending) nil)
   (setf (node:contents (tree:at nil "wm/key")) "s-r")
   (is (equal "" (node:contents (tree:at nil "wm/key")))
       "finishing it clears what was standing"))
@@ -229,7 +229,7 @@ manager; what it reads is a path."
 (test a-chord-is-spelled-for-the-compositor-the-way-it-spells-one
   "What pine calls s-Return xkb calls Return with mod4. The protocol spells a
 bitfield as the list of what is set, not a number."
-  (flet ((of (spec) (let ((k (key:parse spec)))
+  (flet ((of (spec) (let ((k (ui:parse spec)))
                       (list (pine/wayland/chords:keysym k)
                             (pine/wayland/chords:mask k)))))
     (is (equal (list (xkb:xkb-keysym-from-name "Return" '()) '(:mod4))
@@ -238,9 +238,9 @@ bitfield as the list of what is set, not a number."
                (of "C-M-x")))
     (is (equal (list (xkb:xkb-keysym-from-name "Tab" '()) '(:shift))
                (of "S-TAB")))
-    (is (null (pine/wayland/chords:keysym (key:parse "NoSuchKeyAtAll")))
+    (is (null (pine/wayland/chords:keysym (ui:parse "NoSuchKeyAtAll")))
         "a name xkb does not know is no chord"))
-  (is (equal '("s-x" "s-r") (mapcar (lambda (k) (key:spelled (list k)))
+  (is (equal '("s-x" "s-r") (mapcar (lambda (k) (ui:spelled (list k)))
                                     (pine/wayland/chords:every-key '("s-x s-r"))))
       "and both keys of a chord have to be asked for, not just the first"))
 

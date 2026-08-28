@@ -1,7 +1,7 @@
 (defpackage #:pine/wm/keys
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:key #:pine/ui/key) (#:mode #:pine/mode))
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:node #:pine/fs/node) (#:mode #:pine/mode))
   (:export #:wm #:dispatch #:pending #:chords #:keys-node))
 (in-package #:pine/wm/keys)
 
@@ -28,7 +28,7 @@ from this: a key it was never told about is one it will not hand over."
 (defun dispatch (said)
   "Take a chord the compositor handed over."
   (let ((m (make-instance 'wm)))
-    (loop :for k :in (key:chord (princ-to-string said))
+    (loop :for k :in (ui:chord (princ-to-string said))
           :do (multiple-value-bind (answer so-far) (mode:dispatch m nil k
                                                                   (pending))
                 (setf *pending* (if (eq answer :pending) so-far nil))
@@ -38,7 +38,7 @@ from this: a key it was never told about is one it will not hand over."
   "Where a chord the compositor took arrives. Writing one here is pressing it, so a
 keyboard, a test and another pine all press the same way."
   (node:place "key"
-              :reads (lambda () (key:spelled (pending)))
+              :reads (lambda () (ui:spelled (pending)))
               :writes #'dispatch
               :describes "write a chord here to press it"))
 

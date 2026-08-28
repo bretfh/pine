@@ -1,9 +1,4 @@
-(defpackage #:pine/ui/grid
-  (:use #:cl)
-  (:local-nicknames (#:face #:pine/ui/face))
-  (:export #:medium #:grid #:make-grid #:cols #:flat #:clip
-           #:put #:put-bg #:put-rgb #:blit #:with-clip #:by-row #:ink))
-(in-package #:pine/ui/grid)
+(in-package #:pine/ui)
 
 (defclass medium () ()
   (:documentation "What a widget is painted onto. PAINT specializes on it, so there
@@ -23,7 +18,7 @@ touches every one of them."))
 through the theme, or an already-worked-out (FG BG ATTR). A face with no foreground
 of its own falls back to the plain one -- that fallback belongs here, where a cell
 is actually being coloured, and not in what a face is."
-  (flet ((plain () (or (face:unhex (face:fg (face:in-force face:+plain+)))
+  (flet ((plain () (or (unhex (fg (in-force +plain+)))
                        '(205 214 244))))
     (if (consp it)
         (destructuring-bind (fg bg attr) it
@@ -32,13 +27,13 @@ is actually being coloured, and not in what a face is."
                     (if bg (first bg) -1) (if bg (second bg) -1)
                     (if bg (third bg) -1)
                     (or attr 0))))
-        (let* ((f (face:in-force it))
-               (fg (or (and f (face:unhex (face:fg f))) (plain)))
-               (bg (and f (face:unhex (face:bg f)))))
+        (let* ((f (in-force it))
+               (fg (or (and f (unhex (fg f))) (plain)))
+               (bg (and f (unhex (bg f)))))
           (values (first fg) (second fg) (third fg)
                   (if bg (first bg) -1) (if bg (second bg) -1)
                   (if bg (third bg) -1)
-                  (face:attrs f))))))
+                  (attrs f))))))
 
 (defun make-grid (cols lines)
   (let* ((n (* cols lines)) (v (make-array (* 10 n))))

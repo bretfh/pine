@@ -1,12 +1,11 @@
 (defpackage #:pine/edit
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:commit #:pine/fs/commit)
                     (#:job #:pine/run/job)
                     (#:system #:pine/run/system) (#:command #:pine/run/command)
                     (#:fault #:pine/run/fault)
-                    (#:key #:pine/ui/key) (#:surface #:pine/ui/surface)
-                    (#:build #:pine/ui/build)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
                     (#:window #:pine/edit/window)
@@ -32,7 +31,7 @@ an edge belongs: the frame is a derived node and would follow what it read by
 itself, if the renderer read documents and windows as nodes rather than through
 their accessors. It does not, so this stands in for the edges that are missing."
   (declare (ignore moved))
-  (let ((s (surface:named "editor")))
+  (let ((s (ui:named "editor")))
     (when s (fault:attempt (lambda () (node:stir s)) "the frame"))))
 
 (defmethod parser:reparsed ((document doc:document))
@@ -42,10 +41,10 @@ their accessors. It does not, so this stands in for the edges that are missing."
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
 another pine all press keys the same way."
   (node:place "key"
-              :reads (lambda () (key:spelled (key:pending)))
+              :reads (lambda () (ui:spelled (ui:pending)))
               :writes (lambda (value)
                         (commit:writing
-                          (dolist (k (key:chord (princ-to-string value)))
+                          (dolist (k (ui:chord (princ-to-string value)))
                             (keys:dispatch k))))
               :describes "write a chord here to type it"))
 
@@ -105,7 +104,7 @@ the editor has never heard of a window manager, and does not have to."
 the command runs again when they answer."
   (%asking c))
 
-(defmethod build:confirming ((s edit) question thunk)
+(defmethod ui:confirming ((s edit) question thunk)
   (prompt:ask (format nil "~a " question)
               :candidates (list "yes" "no") :must-match t
               :then (lambda (said) (when (equal "yes" said) (funcall thunk))))
@@ -115,8 +114,8 @@ the command runs again when they answer."
   "The editor, laid out for whatever is showing it. The screen says how big it is by
 writing /surface/editor/size, and this follows that the way it follows anything
 else it read."
-  (let* ((s (surface:named "editor"))
-         (size (and s (surface:size s)))
+  (let* ((s (ui:named "editor"))
+         (size (and s (ui:size s)))
          (render:*font* (getf size :font)))
     (render:frame :cols (or (getf size :cols) render:*cols*)
                   :lines (or (getf size :lines) render:*lines*))))
@@ -124,7 +123,7 @@ else it read."
 (defun type-text (text)
   "Type TEXT a character at a time, the way a keyboard does."
   (loop :for ch :across text
-        :do (keys:dispatch (key:make-key (string ch))))
+        :do (keys:dispatch (ui:make-key (string ch))))
   (doc:point (doc:current)))
 
 (defmethod job:start ((s edit))
@@ -137,13 +136,13 @@ else it read."
                                         :mode (make-instance 'mode:lisp)))))
     (setf (doc:current) scratch)
     (window:seed scratch))
-  (surface:builds "editor" #'%frame :as 'surface:window :shown t)
+  (ui:builds "editor" #'%frame :as 'ui:window :shown t)
   s)
 
 (defmethod job:stop ((s edit))
   (setf command:*at* nil
         (commit:on-commit :edit) nil)
-  (key:take-next nil)
+  (ui:take-next nil)
   (isearch:took-all)
   (parser:forget-all)
   (dolist (win (window:windows)) (node:detach (node:over win) (node:name win)))

@@ -1,10 +1,4 @@
-(defpackage #:pine/ui/style
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:face #:pine/ui/face)
-                    (#:fault #:pine/run/fault))
-  (:export #:resolve #:property #:properties #:segments #:specificity
-           #:rules #:forget-rules #:classes #:sheet #:*sheet*))
-(in-package #:pine/ui/style)
+(in-package #:pine/ui)
 
 (defvar *sheet* nil
   "The stylesheet as (SELECTOR PROPS) pairs, in the order they were written. What a
@@ -65,7 +59,7 @@ order they were written in."
 
 (defun rules ()
   "Every rule, compiled, worked out once and kept until the tree moves."
-  (face:memo
+  (memo
    :rules
    (lambda ()
      (loop :for (text props) :in (sheet)
@@ -153,7 +147,7 @@ edited to carry something new."
 shows. Nothing for transparent, none, or unparsable."
   (cond ((or (null s) (equal s "transparent") (equal s "none")) nil)
         ((and (stringp s) (plusp (length s)) (char= (char s 0) #\#))
-         (let ((rgb (face:unhex s)))
+         (let ((rgb (unhex s)))
            (when rgb (append rgb (list 1.0)))))
         ((and (stringp s) (eql 0 (search "rgba(" s))) (%rgba s 4))
         ((and (stringp s) (eql 0 (search "rgb(" s)))  (%rgba s 3))

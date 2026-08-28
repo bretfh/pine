@@ -72,19 +72,19 @@ own readtable. It is nothing but a file somebody wrote."
 
 (test its-own-role-says-where-its-surface-goes
   (app)
-  (let* ((s (surface:named "sticky"))
-         (where (surface:anchor (surface:role s) 40 20)))
+  (let* ((s (ui:named "sticky"))
+         (where (ui:anchor (ui:role s) 40 20)))
     (is (not (null s)))
     (is (equal '(:top :right) (d:lookup where :edges)))
     (is (equal '(16 16 0 0) (d:lookup where :margin)))
-    (is (null (surface:shown s)) "and it waits to be asked for")))
+    (is (null (ui:shown s)) "and it waits to be asked for")))
 
 (test its-surface-follows-what-it-read-and-crosses-the-wire
   (app)
   (command:run "note" '("zzz" "the last one written"))
   (let ((form (node:contents (tree:at nil "surface/sticky/wire"))))
     (is (search "zzz" (princ-to-string form)))
-    (is (typep (pine/ui/wire:from-wire form) 'widget:column)))
+    (is (typep (pine/ui:from-wire form) 'ui:column)))
   (command:run "note" '("zzzz" "later still"))
   (is (search "zzzz" (princ-to-string
                       (node:contents (tree:at nil "surface/sticky/wire"))))
@@ -102,7 +102,7 @@ own readtable. It is nothing but a file somebody wrote."
   (setf *app* t)
   (is (null (system:named "notes")))
   (is (null (tree:at nil "notes")))
-  (is (null (surface:named "sticky")))
+  (is (null (ui:named "sticky")))
   (is (null (command:named "note")))
   (is (null (tree:at nil "system/notes"))))
 

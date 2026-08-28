@@ -1,12 +1,4 @@
-(defpackage #:pine/ui/face
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree))
-  (:export #:face #:fg #:bg #:bold #:italic #:underline #:attrs
-           #:faces #:with-faces #:in-force #:unhex
-           #:theme #:name #:palette #:metrics #:themes #:register #:active
-           #:color #:metric #:hex #:memo #:build #:*themes* #:+plain+))
-(in-package #:pine/ui/face)
+(in-package #:pine/ui)
 
 (defvar *in-force* nil
   "The face table for the render running on this thread. Bound for the extent of one
@@ -34,7 +26,7 @@ that asks per cell spends most of its time asking where to look.")
    (faces   :initarg :faces   :reader faces
             :initform (make-hash-table :test 'eq))))
 
-(defun %key (name)
+(defun %as-keyword (name)
   (etypecase name
     (keyword name)
     (symbol (intern (symbol-name name) :keyword))
@@ -46,7 +38,7 @@ that asks per cell spends most of its time asking where to look.")
   (sort (d:keys (d:all *themes*)) #'string< :key #'symbol-name))
 
 (defun theme (name)
-  (or (d:lookup (d:all *themes*) (%key name))
+  (or (d:lookup (d:all *themes*) (%as-keyword name))
       (error "no theme called ~s" name)))
 
 (defun active ()
@@ -91,7 +83,7 @@ names.")
               (make-instance 'face :fg (hex fg palette) :bg (hex bg palette)
                                    :bold bold :italic italic
                                    :underline underline))))
-    (make-instance 'theme :name (%key name) :palette palette :metrics metrics
+    (make-instance 'theme :name (%as-keyword name) :palette palette :metrics metrics
                           :faces faces)))
 
 (defun %as-face (m)
@@ -108,7 +100,7 @@ names.")
     (when written
       (dolist (each (node:nodes written))
         (let ((f (%as-face (node:contents each))))
-          (when f (setf (gethash (%key (node:name each)) out) f)))))
+          (when f (setf (gethash (%as-keyword (node:name each)) out) f)))))
     out))
 
 (defun faces-in-force ()

@@ -25,8 +25,8 @@ readtable, and a fault in it is a fault like any other rather than a crash."
   (is (equal "hello from the config" (command:run "hello")))
   (is (not (null (mode:binding (make-instance 'mode:text) "C-c h")))
       "a chord it bound")
-  (is (not (null (surface:named "ticker"))) "a surface it declared")
-  (is (not (null (surface:named "sound"))))
+  (is (not (null (ui:named "ticker"))) "a surface it declared")
+  (is (not (null (ui:named "sound"))))
   (is (not (null (find "notes" (mode:modes)
                        :key (lambda (c)
                               (string-downcase (symbol-name (class-name c))))
@@ -36,8 +36,8 @@ readtable, and a fault in it is a fault like any other rather than a crash."
 (test a-role-written-in-a-config-says-where-it-goes
   (editing)
   (pine:load-config (%example))
-  (let* ((s (surface:named "ticker"))
-         (where (surface:anchor (surface:role s) 100 20)))
+  (let* ((s (ui:named "ticker"))
+         (where (ui:anchor (ui:role s) 100 20)))
     (is (equal '(:bottom :right) (d:lookup where :edges)))
     (is (equal '(0 12 12 0) (d:lookup where :margin)))))
 
@@ -62,4 +62,4 @@ readtable, and a fault in it is a fault like any other rather than a crash."
   (pine:load-config (%example))
   (let ((form (node:contents (tree:at nil "surface/ticker/wire"))))
     (is (not (null form)))
-    (is (typep (pine/ui/wire:from-wire form) 'widget:row))))
+    (is (typep (pine/ui:from-wire form) 'ui:row))))

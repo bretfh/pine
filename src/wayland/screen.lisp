@@ -1,11 +1,10 @@
 (defpackage #:pine/wayland/screen
   (:use #:cl #:wayflan-client)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
                     (#:watch #:pine/run/watch) (#:system #:pine/run/system)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
-                    (#:w #:pine/ui/widget) (#:hit #:pine/ui/hit)
-                    (#:surface #:pine/ui/surface)
                     (#:pump #:pine/wayland/pump) (#:display #:pine/wayland/display)
                     (#:shell #:pine/wayland/shell)
                     (#:pane #:pine/wayland/pane)
@@ -54,17 +53,17 @@ connection is a thing you block on."))
   (let ((to (says s)))
     (when to (job:tell to thunk) t)))
 
-(defun %named (name) (surface:named name))
+(defun %named (name) (ui:named name))
 
 (defun %tree (name)
   (let ((it (%named name))) (when it (node:contents it))))
 
 (defun %shownp (name)
-  (let ((it (%named name))) (and it (surface:shown it) t)))
+  (let ((it (%named name))) (and it (ui:shown it) t)))
 
 (defun %windowp (name)
   (let ((it (%named name)))
-    (and it (typep (surface:role it) '(or surface:window surface:tile)) t)))
+    (and it (typep (ui:role it) '(or ui:window ui:tile)) t)))
 
 (defun %where (name)
   (let ((n (%at name "where")))
@@ -161,7 +160,7 @@ name, and the old one is something nothing writes."
 (defun %settle (s)
   "Take down what /surface no longer says."
   (d:do-each (name (d:keys (d:all (up s))))
-    (unless (surface:named name)
+    (unless (ui:named name)
       (let ((p (d:lookup (d:all (up s)) name)))
         (%unlisten s name)
         (d:drop! (up s) name)
@@ -308,7 +307,7 @@ compositor put it; what it draws is the new node's to say."
     (job:start s)
     s))
 
-(defmethod surface:declared ((it surface:surface))
+(defmethod ui:declared ((it ui:surface))
   "A surface declared while a screen is up goes up on it. The screen finds itself
 in the namespace: the surface layer holds no pointer to whatever is painting, and
 there being nothing painting is not a case anybody has to write down."

@@ -1,10 +1,4 @@
-(defpackage #:pine/ui/layout
-  (:use #:cl #:pine/ui/widget)
-  (:local-nicknames (#:d #:pine/data) (#:face #:pine/ui/face)
-                    (#:style #:pine/ui/style) (#:grid #:pine/ui/grid))
-  (:export #:measure #:arrange #:paint #:text-size #:line-height
-           #:dress #:styled #:with-pass #:*hover*))
-(in-package #:pine/ui/layout)
+(in-package #:pine/ui)
 
 (defvar *styles* nil
   "Widget to resolved style, for one pass. Resolution answers a style and layout
@@ -24,7 +18,7 @@ parts, and it has just measured them.")
   (:documentation "How big TEXT is on this medium, as (values w h). A grid answers
 in cells and a canvas in pixels: that is the whole of the difference between them,
 and it lives here rather than in every widget.")
-  (:method ((m grid:grid) text font)
+  (:method ((m grid) text font)
     (declare (ignore font))
     (values (length text) 1)))
 
@@ -44,11 +38,11 @@ and it lives here rather than in every widget.")
 Nothing is written into the widgets: what a config authored stays what it authored,
 and the style is what the sheet says on top of it."
   (labels ((walk (w chain)
-             (let* ((classes (append (style:classes (css-class w))
+             (let* ((classes (append (classes (css-class w))
                                      (and (chosen w) (list "sel"))))
                     (full (append chain (list classes))))
                (when *styles*
-                 (setf (gethash w *styles*) (style:resolve full :hover (hovered w))))
+                 (setf (gethash w *styles*) (resolve full :hover (hovered w))))
                (dolist (part (parts w)) (walk part full)))))
     (walk root chain))
   root)
@@ -116,26 +110,26 @@ medium you were handed is what says whether that is cells or pixels.")
 (defun %fill (w m)
   (let ((f (if (and (hovered w) *hover*) *hover* (face w))))
     (when f
-      (multiple-value-bind (fr fg fb br bg bb attr) (grid:ink f)
+      (multiple-value-bind (fr fg fb br bg bb attr) (ink f)
         (declare (ignore fr fg fb attr))
         (when (>= br 0)
           (loop :for line :from (top w) :to (bottom w)
                 :do (loop :for col :from (left w) :below (right w)
-                          :do (grid:put-bg m line col br bg bb))))))))
+                          :do (put-bg m line col br bg bb))))))))
 
-(defmethod paint :before ((w widget) (m grid:grid)) (%fill w m))
+(defmethod paint :before ((w widget) (m grid)) (%fill w m))
 
-(defmethod paint ((w widget) (m grid:grid))
+(defmethod paint ((w widget) (m grid))
   (dolist (part (parts w)) (paint part m)))
 
 (defmethod measure ((w label) m aw ah)
   (declare (ignore aw ah))
   (text-size m (content w) (%font w)))
 
-(defmethod paint ((w label) (m grid:grid))
+(defmethod paint ((w label) (m grid))
   (let ((s (content w)) (n (width w)))
     (loop :for i :from 0 :below (min (length s) n)
-          :do (grid:put m (top w) (+ (left w) i) (char s i) (face w)))))
+          :do (put m (top w) (+ (left w) i) (char s i) (face w)))))
 
 (defmethod measure ((w rule) m aw ah)
   "A rule's natural size is its thickness; its length comes from the container's
@@ -143,43 +137,43 @@ arrange, never from the space available -- answering that here would eat the axi
   (declare (ignore aw ah))
   (let ((thick (max 1 (nth-value 1 (text-size m "M" nil)))))
     (if (upright w)
-        (values (if (typep m 'grid:grid) 1 thick) 1)
-        (values 1 (if (typep m 'grid:grid) 1 thick)))))
+        (values (if (typep m 'grid) 1 thick) 1)
+        (values 1 (if (typep m 'grid) 1 thick)))))
 
-(defmethod paint ((w rule) (m grid:grid))
+(defmethod paint ((w rule) (m grid))
   (if (upright w)
       (loop :for line :from (top w) :to (bottom w)
-            :do (grid:put m line (left w) (glyph w) (face w)))
+            :do (put m line (left w) (glyph w) (face w)))
       (loop :for col :from (left w) :below (right w)
-            :do (grid:put m (top w) col (glyph w) (face w)))))
+            :do (put m (top w) col (glyph w) (face w)))))
 
 (defmethod measure ((w gap) m aw ah) (declare (ignore m aw ah)) (values 0 0))
 
 (defmethod measure ((w cells) m aw ah)
   (declare (ignore aw ah))
-  (let* ((all (by-row w))
+  (let* ((all (rows-of w))
          (cols (reduce #'max all :initial-value 1 :key (lambda (r) (length (car r)))))
          (n (max 1 (- (length all) (or (over w) 0)))))
     (multiple-value-bind (cw ch) (text-size m "M" (%font w))
       (values (* cols cw) (* n ch)))))
 
-(defmethod paint ((w cells) (m grid:grid))
+(defmethod paint ((w cells) (m grid))
   (let ((up (or (over w) 0)))
-    (loop :for row :in (by-row w)
+    (loop :for row :in (rows-of w)
           :for line :from (- (top w) up)
-          :do (grid:blit m line (left w) (car row) (cdr row)))))
+          :do (blit m line (left w) (car row) (cdr row)))))
 
 (defmethod measure ((w slider) m aw ah)
   (declare (ignore aw ah))
-  (if (typep m 'grid:grid)
+  (if (typep m 'grid)
       (values (track w) 1)
       (values (* 8 (track w)) (line-height m (%font w)))))
 
-(defmethod paint ((w slider) (m grid:grid))
+(defmethod paint ((w slider) (m grid))
   (let* ((n (track w))
          (upto (round (* (fraction w) n))))
     (loop :for i :from 0 :below n
-          :do (grid:put m (top w) (+ (left w) i)
+          :do (put m (top w) (+ (left w) i)
                         (if (< i upto) +filled+ +empty+)
                         (if (< i upto) :function-name :comment)))))
 
@@ -188,7 +182,7 @@ arrange, never from the space available -- answering that here would eat the axi
 weeks a month can fall across."
   (declare (ignore aw ah))
   (multiple-value-bind (cw ch) (text-size m "MM " (%font w))
-    (if (typep m 'grid:grid)
+    (if (typep m 'grid)
         (values (* 7 3) 8)
         (values (* 7 cw) (* 8 ch)))))
 
@@ -338,10 +332,10 @@ weeks a month can fall across."
       (let ((ch (nth-value 1 (measure part m width 100000))))
         (arrange part m x (- y (offset w)) width ch)))))
 
-(defmethod paint ((w scroll) (m grid:grid))
+(defmethod paint ((w scroll) (m grid))
   (let ((part (first (parts w))))
     (when part
-      (grid:with-clip (m (left w) (top w) (right w) (+ (top w) (tall w)))
+      (with-clip (m (left w) (top w) (right w) (+ (top w) (tall w)))
         (paint part m)))))
 
 (defmethod measure ((w choice) m aw ah)
@@ -357,10 +351,10 @@ weeks a month can fall across."
     (when part
       (arrange part m (+ x (length mark)) y (- width (length mark)) height))))
 
-(defmethod paint ((w choice) (m grid:grid))
+(defmethod paint ((w choice) (m grid))
   (let ((mark (if (chosen w) (before w) (after w))))
     (loop :for i :from 0 :below (length mark)
-          :do (grid:put m (top w) (+ (left w) i) (char mark i) (face w)))
+          :do (put m (top w) (+ (left w) i) (char mark i) (face w)))
     (dolist (part (parts w)) (paint part m))))
 
 (defmethod measure ((w action) m aw ah)

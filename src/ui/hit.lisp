@@ -1,7 +1,4 @@
-(defpackage #:pine/ui/hit
-  (:use #:cl #:pine/ui/widget)
-  (:export #:under #:clicked #:clicked-at #:value-at))
-(in-package #:pine/ui/hit)
+(in-package #:pine/ui)
 
 (defun %covers (w line col)
   (and (<= (top w) line) (<= line (bottom w))

@@ -1,13 +1,4 @@
-(defpackage #:pine/ui/surface
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:wire #:pine/ui/wire)
-                    (#:fault #:pine/run/fault))
-  (:export #:surface #:defsurface #:surfaces #:named #:root #:builds
-           #:role #:anchor #:shown #:asks #:size #:act
-           #:bar #:panel #:overlay #:background #:window #:tile
-           #:declared))
-(in-package #:pine/ui/surface)
+(in-package #:pine/ui)
 
 (defvar *acts* (d:table)
   "What clicking a widget means, by the id it crossed the wire as. A closure
@@ -114,7 +105,7 @@ id it crossed as."
         (index -1)
         (tree (node:contents s)))
     (when tree
-      (wire:to-wire tree
+      (to-wire tree
                     :on-action (lambda (thunk)
                                  (let ((id (%id name (incf index))))
                                    (d:keep! *acts* id thunk)

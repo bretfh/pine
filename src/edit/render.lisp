@@ -1,10 +1,8 @@
 (defpackage #:pine/edit/render
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:meter #:pine/run/meter)
+  (:local-nicknames (#:ui #:pine/ui)
+                    (#:d #:pine/data) (#:meter #:pine/run/meter)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:build #:pine/ui/build)
-                    (#:grid #:pine/ui/grid) (#:face #:pine/ui/face)
-                    (#:w #:pine/ui/widget) (#:layout #:pine/ui/layout)
                     (#:mode #:pine/mode) (#:doc #:pine/text/document)
                     (#:parser #:pine/text/ts/parser)
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
@@ -114,7 +112,7 @@ paging lands on lines that were walked already."
 
 (defun %paint-region (g document from height width left)
   (let ((span (%region document))
-        (bg (face:unhex (face:bg (face:in-force :selection)))))
+        (bg (ui:unhex (ui:bg (ui:in-force :selection)))))
     (when (and span bg)
       (destructuring-bind (start-line start-col end-line end-col) span
         (destructuring-bind (br bg bb) bg
@@ -123,7 +121,7 @@ paging lands on lines that were walked already."
                 :do (loop :for col :from (if (= line start-line) start-col 0)
                             :below (if (= line end-line) end-col (+ left width))
                           :when (>= col left)
-                            :do (grid:put-bg g (- line from) (- col left)
+                            :do (ui:put-bg g (- line from) (- col left)
                                              br bg bb))))))))
 
 (defun %at-col (where drawn)
@@ -138,7 +136,7 @@ tree and the name of a document are all things a window can hold; another kind i
 method somebody else writes, and nothing here has to know about it.")
   (:method (content win)
     (declare (ignore content))
-    (build:cells (grid:by-row (grid:make-grid (max 1 (window:cols win))
+    (ui:cells (ui:by-row (ui:make-grid (max 1 (window:cols win))
                                             (max 1 (window:lines win))))
                  :class "editor-view" :expand 1 :font *font*)))
 
@@ -146,18 +144,18 @@ method somebody else writes, and nothing here has to know about it.")
   (let ((document (doc:named content)))
     (if document (shows document win) (call-next-method))))
 
-(defmethod shows ((content w:widget) win)
+(defmethod shows ((content ui:widget) win)
   "A widget tree draws to cells like a surface does, so a config can put one in a
 window beside a document."
   (let* ((cols (max 1 (window:cols win)))
          (rows (max 1 (window:lines win)))
-         (g (grid:make-grid cols rows)))
-    (layout:with-pass
-      (layout:dress content)
-      (layout:measure content g cols rows)
-      (layout:arrange content g 0 0 cols rows)
-      (layout:paint content g))
-    (build:cells (grid:by-row g) :class "editor-view" :expand 1 :font *font*)))
+         (g (ui:make-grid cols rows)))
+    (ui:with-pass
+      (ui:dress content)
+      (ui:measure content g cols rows)
+      (ui:arrange content g 0 0 cols rows)
+      (ui:paint content g))
+    (ui:cells (ui:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod shows ((document doc:document) win)
   (node:reading document)
@@ -166,7 +164,7 @@ window beside a document."
          (width (max 1 (window:cols win)))
          (height (max 1 (window:lines win)))
          (by-line (%by-line document))
-         (g (grid:make-grid width height))
+         (g (ui:make-grid width height))
          (caret (%caretp win)))
     (loop :with tab := (max 1 (or (doc:setting document :tab-width) 8))
           :for line :from from :below (min (doc:line-count document) (+ from height))
@@ -174,7 +172,7 @@ window beside a document."
           :do (multiple-value-bind (drawn where)
                   (drawn-line (doc:line document line) tab)
                 (loop :for col :from left :below (min (+ left width) (length drawn))
-                      :do (grid:put g row (- col left) (char drawn col)
+                      :do (ui:put g row (- col left) (char drawn col)
                                     (or (%face-at by-line line (%at-col where col))
                                         :default)))
                 (let ((said (%overlays document line)))
@@ -184,10 +182,10 @@ window beside a document."
                       (loop :for (nil text face) :in said
                             :do (loop :for i :from 0
                                         :below (min (- width at) (length text))
-                                      :do (grid:put g row (+ at i) (char text i)
+                                      :do (ui:put g row (+ at i) (char text i)
                                                     (or face :comment)))))))))
     (%paint-region g document from height width left)
-    (build:cells (grid:by-row g)
+    (ui:cells (ui:by-row g)
                  :class "editor-view" :expand 1 :font *font*
                  :caret (when caret
                           (cons (min (1- height)
@@ -214,20 +212,20 @@ on, and a widget tree has nothing of the sort to say."
                        (mode:type (doc:mode-of document))
                        (1+ (doc:at-line document))
                        (doc:at-col document)))
-         (g (grid:make-grid width 1)))
+         (g (ui:make-grid width 1)))
     (loop :for col :from 0 :below width
-          :do (grid:put g 0 col
+          :do (ui:put g 0 col
                         (if (< col (length text)) (char text col) #\space)
                         :modeline))
-    (build:cells (grid:by-row g) :class "modeline" :font *font*)))
+    (ui:cells (ui:by-row g) :class "modeline" :font *font*)))
 
 (defun window-tree (win)
   (scroll-to-point win)
   (if (modelinep win)
-      (build:column :align :stretch :class "window" :expand 1
+      (ui:column :align :stretch :class "window" :expand 1
                     (document-tree win)
                     (modeline win))
-      (build:column :align :stretch :class "window" :expand 1
+      (ui:column :align :stretch :class "window" :expand 1
                     (document-tree win))))
 
 (defun %candidates ()
@@ -242,7 +240,7 @@ on, and a widget tree has nothing of the sort to say."
 
 (defun %candidate-rows (found from width)
   (let ((chosen (prompt:chosen (prompt:asking)))
-        (g (grid:make-grid (max 1 width) (max 1 (length found)))))
+        (g (ui:make-grid (max 1 width) (max 1 (length found)))))
     (loop :for each :in found
           :for row :from 0
           :for text := (match:shows each width)
@@ -250,22 +248,22 @@ on, and a widget tree has nothing of the sort to say."
                            :completion-selected
                            :completion)
           :do (loop :for col :from 0 :below width
-                    :do (grid:put g row col
+                    :do (ui:put g row col
                                   (if (< col (length text)) (char text col) #\space)
                                   face)))
-    (grid:by-row g)))
+    (ui:by-row g)))
 
 (defun echo (width &optional said)
   (let* ((p (and (null said) (prompt:asking)))
          (question (if p (or (prompt:asked) (prompt:question p)) ""))
          (text (or said (prompt:showing)))
-         (g (grid:make-grid (max 1 width) 1)))
+         (g (ui:make-grid (max 1 width) 1)))
     (loop :for col :from 0 :below (min width (length text))
-          :do (grid:put g 0 col (char text col)
+          :do (ui:put g 0 col (char text col)
                         (if (< col (length question)) :prompt :echo)))
     (multiple-value-bind (found from) (and p (%candidates))
-      (let ((rows (grid:by-row g)))
-        (build:cells (if found
+      (let ((rows (ui:by-row g)))
+        (ui:cells (if found
                          (append (%candidate-rows found from width) rows)
                          rows)
                      :class "echo" :font *font*
@@ -293,12 +291,12 @@ moving means."
             (let ((share (max 2 (floor (* room (window:weight win))
                                        (max 1 weight)))))
               (max 1 (if (modelinep win) (1- share) share)))))
-    (apply #'build:column :align :stretch :class "editor"
+    (apply #'ui:column :align :stretch :class "editor"
            (append (loop :for win :in wins
                          :for first := t :then nil
                          :append (if first
                                      (list (window-tree win))
-                                     (list (build:rule :face :border-inactive)
+                                     (list (ui:rule :face :border-inactive)
                                            (window-tree win))))
                    (list (echo cols said))))))
 
@@ -308,13 +306,13 @@ moving means."
 (defun rows (&key (cols 80) (lines 24) said)
   "The frame as rows of cells: what the screen blits, and what a test reads."
   (let ((tree (frame :cols cols :lines lines :said said))
-        (g (grid:make-grid cols lines)))
-    (layout:with-pass
-      (layout:dress tree)
-      (layout:measure tree g cols lines)
-      (layout:arrange tree g 0 0 cols lines)
-      (layout:paint tree g))
-    (grid:by-row g)))
+        (g (ui:make-grid cols lines)))
+    (ui:with-pass
+      (ui:dress tree)
+      (ui:measure tree g cols lines)
+      (ui:arrange tree g 0 0 cols lines)
+      (ui:paint tree g))
+    (ui:by-row g)))
 
 (defun %without-a-parse (document line)
   (or (mode:indent (doc:mode-of document) document line)
