@@ -27,14 +27,14 @@ shows any other and a command acts on one the same way."))
   "Give the program the size of the window showing it, so what it draws is what
 fits."
   (when (and term win)
-    (terminal:resize term (max 1 (edit:cols win)) (max 1 (edit:lines win)))))
+    (terminal:resize term (max 1 (edit:across win)) (max 1 (edit:down win)))))
 
 (defun %open (&key runs name)
   (let* ((name (or name (format nil "*shell*~[~:;-~:*~d~]" (incf *counter*))))
          (win (edit:focused))
          (term (terminal:open-terminal name :runs runs
-                                            :wide (if win (edit:cols win) 80)
-                                            :tall (if win (edit:lines win) 24))))
+                                            :wide (if win (edit:across win) 80)
+                                            :tall (if win (edit:down win) 24))))
     (setf (text:current) term)
     (when win (edit:show win term))
     (%fit term win)

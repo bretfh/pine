@@ -314,3 +314,5 @@ typed, so walking back to the end gives it back."
 (command:defcommand "history-next" ()
     (:describes "the answer after that one" :on '(prompt "M-n"))
   (walk-history -1))
+
+(pine/word:lends "askingp" "cancel" "so-far" "asked")

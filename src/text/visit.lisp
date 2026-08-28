@@ -89,7 +89,7 @@ load is a fault like any other: the text still opens, uncoloured."
   s)
 
 (pine/word:lends
- "document" "make-document" "documents" "current" "kill"
+ "document" "make-document" "documents" "current"
  "lines" "line" "line-count" "point" "at-line" "at-col" "mark"
  "goto" "move" "move-by" "motion" "insert" "newline" "delete-back"
  "delete-region" "region-of" "undo" "redo" "mode-of" "leading"

@@ -12,7 +12,7 @@
    #:prompt #:standing #:listing #:listed
    #:debugger #:offered #:window #:windows
    #:named #:focused #:focus #:root #:shows
-   #:scroll #:sideways #:cols #:lines #:runs
+   #:scrolled #:sideways #:across #:down #:runs
    #:weight #:parts #:split #:close-window #:only
    #:seed #:show #:follow #:name-of #:annotation
    #:as-row #:matches #:common-prefix #:expanded #:split-path

@@ -4,10 +4,10 @@
 
 (defclass window (node:node)
   ((shows    :initarg :shows    :accessor shows    :initform nil)
-   (scroll   :initarg :scroll   :accessor scroll   :initform 0)
+   (scrolled   :initarg :scroll   :accessor scrolled   :initform 0)
    (sideways :initarg :sideways :accessor sideways :initform 0)
-   (cols     :initarg :cols     :accessor cols     :initform 80)
-   (lines    :initarg :lines    :accessor lines    :initform 24)
+   (across     :initarg :cols     :accessor across     :initform 80)
+   (down    :initarg :lines    :accessor down    :initform 24)
    (runs     :initarg :runs     :accessor runs     :initform nil)
    (weight   :initarg :weight   :accessor weight   :initform 1))
   (:documentation "A view onto something. What a window holds is only what the
@@ -159,3 +159,6 @@ windows are, rather than by whoever sets the current document."
 (command:defcommand "balance-windows" ()
     (:describes "every window the same size" :on '(text "C-x +"))
   (dolist (win (windows) t) (setf (weight win) 1)))
+
+(pine/word:lends "windows" "focused" "focus" "split" "close-window" "only"
+                "seed" "follow" "scrolled" "sideways" "across" "down")

@@ -45,7 +45,7 @@ putting the caret where the text is not."
   (let* ((document (%document-of win))
          (col (caret-col document))
          (left (sideways win))
-         (width (max 1 (cols win))))
+         (width (max 1 (across win))))
     (setf (sideways win)
           (cond ((< col left) col)
                 ((>= col (+ left width)) (1+ (- col width)))
@@ -54,9 +54,9 @@ putting the caret where the text is not."
 (defun scroll-to-point (win)
   (let* ((document (%document-of win))
          (line (text:at-line document))
-         (from (scroll win))
-         (height (max 1 (lines win))))
-    (setf (scroll win)
+         (from (scrolled win))
+         (height (max 1 (down win))))
+    (setf (scrolled win)
           (cond ((< line from) line)
                 ((>= line (+ from height)) (1+ (- line height)))
                 (t from)))
@@ -67,8 +67,8 @@ putting the caret where the text is not."
 paging lands on lines that were walked already."
   (let ((win (find document (windows) :key #'%document-of)))
     (when win
-      (let* ((from (scroll win))
-             (height (max 1 (lines win))))
+      (let* ((from (scrolled win))
+             (height (max 1 (down win))))
         (cons (max 0 (- from height)) (+ from (* 2 height)))))))
 
 (defun %overlays (document line)
@@ -123,8 +123,8 @@ tree and the name of a document are all things a window can hold; another kind i
 method somebody else writes, and nothing here has to know about it.")
   (:method (content win)
     (declare (ignore content))
-    (ui:cells (ui:by-row (ui:make-grid (max 1 (cols win))
-                                            (max 1 (lines win))))
+    (ui:cells (ui:by-row (ui:make-grid (max 1 (across win))
+                                            (max 1 (down win))))
                  :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod drawn ((content string) win)
@@ -134,22 +134,22 @@ method somebody else writes, and nothing here has to know about it.")
 (defmethod drawn ((content ui:widget) win)
   "A widget tree draws to cells like a surface does, so a config can put one in a
 window beside a document."
-  (let* ((cols (max 1 (cols win)))
-         (rows (max 1 (lines win)))
-         (g (ui:make-grid cols rows)))
+  (let* ((across (max 1 (across win)))
+         (rows (max 1 (down win)))
+         (g (ui:make-grid across rows)))
     (ui:with-pass
       (ui:dress content)
-      (ui:measure content g cols rows)
-      (ui:arrange content g 0 0 cols rows)
+      (ui:measure content g across rows)
+      (ui:arrange content g 0 0 across rows)
       (ui:paint content g))
     (ui:cells (ui:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod drawn ((document text:document) win)
   (node:reading document)
-  (let* ((from (scroll win))
+  (let* ((from (scrolled win))
          (left (sideways win))
-         (width (max 1 (cols win)))
-         (height (max 1 (lines win)))
+         (width (max 1 (across win)))
+         (height (max 1 (down win)))
          (by-line (%by-line document))
          (g (ui:make-grid width height))
          (caret (%caretp win)))
@@ -192,7 +192,7 @@ on, and a widget tree has nothing of the sort to say."
 
 (defun modeline (win)
   (let* ((document (%document-of win))
-         (width (max 1 (cols win)))
+         (width (max 1 (across win)))
          (text (format nil " ~:[  ~;**~] ~a  ~a  L~d C~d"
                        (text:modified document)
                        (node:name document)
@@ -261,7 +261,7 @@ on, and a widget tree has nothing of the sort to say."
                                          (+ (length question)
                                             (text:at-col (answering)))))))))))
 
-(defun %frame (cols lines said)
+(defun %frame (across lines said)
   "The frame, and what it read: every window, the question standing and what was
 last said. A surface follows what it read, so this is where the editor says what
 moving means."
@@ -273,8 +273,8 @@ moving means."
          (room (max 2 (1- lines))))
     (dolist (win wins) (node:reading win))
     (dolist (win wins)
-      (setf (cols win) (max 1 cols)
-            (lines win)
+      (setf (across win) (max 1 across)
+            (down win)
             (let ((share (max 2 (floor (* room (weight win))
                                        (max 1 weight)))))
               (max 1 (if (modelinep win) (1- share) share)))))
@@ -285,7 +285,7 @@ moving means."
                                      (list (window-tree win))
                                      (list (ui:rule :face :border-inactive)
                                            (window-tree win))))
-                   (list (echo cols said))))))
+                   (list (echo across said))))))
 
 (defun frame (&key (cols *cols*) (lines *lines*) said)
   (meter:timing (:frame) (%frame cols lines said)))
@@ -311,3 +311,5 @@ moving means."
     (or (text:indent document from to :width width :then then)
         (funcall then (loop :for line :from from :to to
                             :collect (cons line (%without-a-parse document line)))))))
+
+(pine/word:lends "indenting")

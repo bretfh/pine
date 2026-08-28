@@ -86,3 +86,5 @@ ACTS the place that row stands for."
                          ((node:nodep it) (node:full-name it))
                          (t it)))
     it))
+
+(pine/word:lends "into" "acts")

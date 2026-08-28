@@ -156,3 +156,5 @@ keeps where it landed and C-g goes back."
                           (log:note "replaced ~d" n)
                           n)))
     :asking))
+
+(pine/word:lends "banner")

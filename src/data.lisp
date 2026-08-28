@@ -271,4 +271,4 @@ there afterwards, so the loser of a race gets the winner's object."
   table)
 
 (pine/word:lends "map" "seq" "set" "with" "without" "keys" "vals" "pairs"
-                "size" "swap" "cas")
+                "size" "swap" "cas" "capped" "emptied")
