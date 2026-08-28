@@ -157,6 +157,21 @@ returned without being asked to is failed, and the next sweep starts it."
          (signals command:unknown-command (command:run "nothing-of-the-sort")))
     (command:forget "probe-add")))
 
+(test a-command-belongs-where-it-was-written-not-where-it-was-run
+  "A system may define commands as it starts, and START runs in whatever package
+called it. Taking the package standing at that moment made the command the
+caller's, so the system stopping left it behind and an app had to name its own
+commands back off by hand."
+  (let ((home (string-downcase (package-name *package*))))
+    (unwind-protect
+         (let ((*package* (find-package :cl-user)))
+           (command:defcommand "probe-home" () (:describes "written here") t)
+           (is (not (null (command:named "probe-home"))))
+           (command:withdraw home)
+           (is (null (command:named "probe-home"))
+               "withdrawing what this package wrote takes it off"))
+      (command:forget "probe-home"))))
+
 (test a-session-evaluates-and-runs-commands
   (command:defcommand "probe-say" () (:describes "a word") :said)
   (unwind-protect

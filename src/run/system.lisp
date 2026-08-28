@@ -36,7 +36,9 @@ once, where the system is defined."
 (defun owns (name)
   (d:lookup (d:all *owns*) (string-downcase (princ-to-string name))))
 
-(defmethod job:start :before ((s system))
+(defmethod job:start :after ((s system))
+  "After, not before: a system may define commands as it starts, and those are
+its as much as the ones its file defined."
   (let ((prefix (owns (job:name s)))) (when prefix (command:offer prefix))))
 
 (defmethod job:stop :after ((s system))

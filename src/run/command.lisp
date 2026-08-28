@@ -76,10 +76,15 @@ not before. Whatever was already defined stands down until it starts."
 (defun withdraw (prefix)
   (dolist (c (defined prefix) prefix) (d:drop! *commands* (name c))))
 
-(defun command (name action &key (describes "") asks on)
+(defun command (name action &key (describes "") asks on (from (%home)))
   "A binding beside the command it names is one thing to read and one thing to
-move: the chord is kept on the command, and whatever keeps keymaps asks."
-  (let* ((home (%home))
+move: the chord is kept on the command, and whatever keeps keymaps asks.
+
+FROM is the package the command was written in. DEFCOMMAND says it, because only
+the form knows: a command defined inside a system's START runs with whatever
+package the caller of START stood in, and taking that would make the command the
+caller's rather than the system's."
+  (let* ((home from)
          (c (make-instance 'command :name name :action action :from home
                                     :describes describes :asks asks :on on)))
     (d:keep! *defined* home
@@ -107,7 +112,7 @@ whoever wants them in an order sorts them there."
   (sort (commands) #'string< :key #'name))
 
 (defmacro defcommand (name lambda-list options &body body)
-  `(command ,name (lambda ,lambda-list ,@body) ,@options))
+  `(command ,name (lambda ,lambda-list ,@body) ,@options :from ,(%home)))
 
 (defun word (x)
   (cond ((null x) x)
