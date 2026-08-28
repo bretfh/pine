@@ -6,9 +6,10 @@
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
-  (:export #:terminal #:shell #:open-terminal #:terminals #:named #:send #:resize
-           #:screen #:vt-of #:fd-of #:pid-of #:runs #:wide #:tall
-           #:*shell* #:*chunk*))
+  (:export
+   #:terminal #:shell #:open-terminal #:terminals #:named
+   #:send #:resize #:screen #:runs #:wide
+   #:tall #:*shell*))
 (in-package #:pine/term/terminal)
 
 (defvar *shell* nil

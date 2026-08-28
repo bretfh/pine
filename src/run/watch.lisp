@@ -2,8 +2,9 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:actors #:pine/run/actors) (#:fault #:pine/run/fault))
-  (:export #:watcher #:watch #:unwatch #:watchers #:watching
-           #:watches #:tells #:forget-all #:*every*))
+  (:export
+   #:watcher #:watch #:unwatch #:watching #:tells
+   #:forget-all #:*every*))
 (in-package #:pine/run/watch)
 
 (defvar *watchers* nil)

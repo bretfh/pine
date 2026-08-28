@@ -3,9 +3,11 @@
   (:local-nicknames (#:text #:pine/text)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
                     (#:command #:pine/run/command))
-  (:export #:window #:make-window #:windows #:named #:focused #:focus #:root
-           #:shows #:scroll #:sideways #:cols #:lines #:runs #:weight #:parts
-           #:splitp #:split #:close-window #:only #:seed #:show #:follow))
+  (:export
+   #:window #:windows #:named #:focused #:focus
+   #:root #:shows #:scroll #:sideways #:cols
+   #:lines #:runs #:weight #:parts #:split
+   #:close-window #:only #:seed #:show #:follow))
 (in-package #:pine/edit/window)
 
 (defvar *counter* 0)

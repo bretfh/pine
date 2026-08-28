@@ -7,10 +7,9 @@
                     (#:mode #:pine/mode)
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
                     (#:match #:pine/edit/matching))
-  (:export #:shows #:frame #:window-tree #:document-tree #:modeline #:echo
-           #:rows #:drawn-line #:drawn-col #:caret-col
-           #:scroll-to-point #:indenting #:modelinep
-           #:*cols* #:*lines* #:*font*))
+  (:export
+   #:shows #:frame #:modeline #:echo #:rows
+   #:indenting #:*cols* #:*lines* #:*font*))
 (in-package #:pine/edit/render)
 
 (defparameter +candidates+ 12)

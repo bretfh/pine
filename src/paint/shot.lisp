@@ -3,7 +3,8 @@
   (:local-nicknames (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:canvas #:pine/paint/canvas))
-  (:export #:shot #:draw #:every-surface))
+  (:export
+   #:draw #:every-surface))
 (in-package #:pine/paint/shot)
 
 (defparameter +background+ '(30 30 46))

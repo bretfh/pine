@@ -2,12 +2,13 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:log #:pine/fs/log))
-  (:export #:fault #:borrowed #:take #:resume #:faulted
-           #:faults #:standing #:attempt #:or-nothing
-           #:report #:borrow #:await #:defer #:changed #:wait-until
-           #:forget-faults #:with-debugger
-           #:condition-of #:label #:backtrace-of #:offers #:taken #:where #:token #:at-time
-           #:standingp #:*kept* #:*waiting* #:*debugging*))
+  (:export
+   #:fault #:borrowed #:take #:resume #:faulted
+   #:faults #:standing #:attempt #:or-nothing #:report
+   #:borrow #:await #:changed #:wait-until #:forget-faults
+   #:with-debugger #:condition-of #:label #:backtrace-of #:offers
+   #:taken #:where #:token #:at-time #:standingp
+   #:*kept* #:*waiting* #:*debugging*))
 (in-package #:pine/run/fault)
 
 (defvar *kept* 50)

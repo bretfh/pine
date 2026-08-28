@@ -2,9 +2,10 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:fault #:pine/run/fault))
-  (:export #:boot #:leave #:actors #:runningp #:remoting
-           #:pool #:pools #:dispatcher-for #:*pools* #:*workers* #:*soonest* #:*host* #:*port*
-           #:repeat #:after #:cancel #:ticks #:blocking))
+  (:export
+   #:boot #:leave #:actors #:runningp #:remoting
+   #:pool #:dispatcher-for #:*host* #:*port* #:repeat
+   #:after #:cancel #:ticks #:blocking))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)

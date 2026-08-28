@@ -6,8 +6,8 @@
                     (#:job #:pine/run/job) (#:emode #:pine/edit/mode)
                     (#:window #:pine/edit/window) (#:log #:pine/fs/log)
                     (#:evaluate #:pine/edit/eval))
-  (:export #:standing #:choose #:next #:fault-of #:away #:*name*
-           #:*standing*))
+  (:export
+   #:standing #:choose #:next #:away #:*name*))
 (in-package #:pine/edit/debugger)
 
 (defvar *standing* nil)

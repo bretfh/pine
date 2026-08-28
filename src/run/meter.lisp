@@ -1,8 +1,9 @@
 (defpackage #:pine/run/meter
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
-  (:export #:timing #:counted #:readings #:reading #:reset #:instruments #:report
-           #:now #:*on* #:*kept*))
+  (:export
+   #:timing #:counted #:readings #:reading #:reset
+   #:instruments #:report #:now #:*kept*))
 (in-package #:pine/run/meter)
 
 (defvar *on* t

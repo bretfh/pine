@@ -8,7 +8,8 @@
                     (#:mode #:pine/mode)
                     (#:window #:pine/edit/window) (#:render #:pine/edit/render)
                     (#:prompt #:pine/edit/prompt))
-  (:export #:kill #:yank #:times #:counting #:*kill-ring*))
+  (:export
+   #:kill #:yank #:times #:counting))
 (in-package #:pine/edit/commands)
 
 (defvar *kill-ring* nil)

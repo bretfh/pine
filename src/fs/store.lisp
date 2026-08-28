@@ -3,9 +3,10 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree)
                     (#:log #:pine/fs/log))
-  (:export #:store #:open-store #:close-store #:snapshot #:restore #:file-of
-           #:storablep #:written #:read-back #:stale #:keep #:kept
-           #:keeping #:*store*))
+  (:export
+   #:store #:open-store #:close-store #:snapshot #:restore
+   #:file-of #:written #:stale #:keep #:kept
+   #:keeping #:*store*))
 (in-package #:pine/fs/store)
 
 (defvar *schema*

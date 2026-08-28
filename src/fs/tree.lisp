@@ -2,9 +2,11 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:commit #:pine/fs/commit))
-  (:export #:*root* #:root #:make-root #:at #:ensure #:put #:erase #:walk
-           #:listing #:paths #:split-name #:absent
-           #:change #:was #:revert #:diff #:builder #:built))
+  (:export
+   #:*root* #:root #:make-root #:at #:ensure
+   #:put #:erase #:walk #:listing #:paths
+   #:split-name #:change #:was #:revert #:builder
+   #:built))
 (in-package #:pine/fs/tree)
 
 (defvar *root* nil

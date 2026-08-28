@@ -9,10 +9,9 @@
                     (#:mode #:pine/mode)
                     (#:render #:pine/edit/render) (#:window #:pine/edit/window)
                     (#:prompt #:pine/edit/prompt))
-  (:export #:definition #:references #:arglist #:explains
-           #:token-at #:symbol-at #:offset-of #:line-col #:form-before
-           #:form-around #:visit #:went #:images #:image-named
-           #:evaluating #:target #:target-was #:*went*))
+  (:export
+   #:definition #:arglist #:visit #:went #:images
+   #:target #:target-was))
 (in-package #:pine/edit/eval)
 
 (defvar *went* nil)

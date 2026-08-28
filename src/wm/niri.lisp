@@ -3,7 +3,8 @@
   (:local-nicknames (#:node #:pine/fs/node) (#:sh #:pine/host/shell)
                     (#:fault #:pine/run/fault)
                     (#:compositor #:pine/wm/compositor))
-  (:export #:niri #:json))
+  (:export
+   #:niri))
 (in-package #:pine/wm/niri)
 
 (defparameter +actions+

@@ -10,9 +10,10 @@
                     (#:pane #:pine/wayland/pane)
                     (#:input #:pine/wayland/input)
                     (#:wm #:pine/wayland/wm))
-  (:export #:screen #:open-screen #:close-screen #:wm-of #:availablep #:tell
-           #:pump #:keys #:pointer #:up #:says
-           #:pointing #:typing #:typed #:chorded #:chords-wanted))
+  (:export
+   #:screen #:wm-of #:availablep #:tell #:pump
+   #:keys #:pointer #:up #:says #:pointing
+   #:typing #:typed #:chorded #:chords-wanted))
 (in-package #:pine/wayland/screen)
 
 (defconstant +left+ #x110)

@@ -1,7 +1,8 @@
 (defpackage #:pine/run/libs
   (:use #:cl)
   (:local-nicknames (#:fault #:pine/run/fault))
-  (:export #:built-in #:dirs #:attend))
+  (:export
+   #:built-in #:attend))
 (in-package #:pine/run/libs)
 
 (defparameter +built-in+ (sb-ext:posix-getenv "GUIX_ENVIRONMENT")

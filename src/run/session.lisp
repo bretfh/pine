@@ -2,11 +2,12 @@
   (:use #:cl)
   (:shadow #:read #:print #:close)
   (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command))
-  (:export #:session #:open-session #:sessions #:close #:openp
-           #:name #:package-of #:readtable-of #:in #:history #:input #:output
-           #:read #:evaluate #:print #:interact
-           #:evaluation #:form #:answered #:fault #:at-time
-           #:*session* #:*kept* #:*prompt*))
+  (:export
+   #:session #:open-session #:sessions #:close #:name
+   #:package-of #:readtable-of #:in #:history #:input
+   #:output #:read #:evaluate #:print #:interact
+   #:evaluation #:form #:answered #:fault #:at-time
+   #:*session* #:*kept* #:*prompt*))
 (in-package #:pine/run/session)
 
 (defvar *session* nil)

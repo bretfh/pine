@@ -16,11 +16,11 @@
                               (#:peer #:pine/run/peer) (#:system #:pine/run/system)
                               (#:session #:pine/run/session)
                               (#:word #:pine/word))
-            (:export #:start #:stop #:main #:daemon #:quit
-                     #:use #:drop #:reach #:serve #:mount #:spawn #:style
-                     #:here #:describe #:node-at #:read-at #:write-at
-                     #:load-config #:config-file #:store-file #:user-package
-                     #:opening))
+            (:export
+   #:start #:stop #:main #:daemon #:quit
+   #:use #:drop #:reach #:serve #:mount
+   #:spawn #:style #:here #:describe #:node-at
+   #:read-at #:write-at #:load-config #:user-package #:opening))
 (in-package #:pine)
 
 (defgeneric opening (what)

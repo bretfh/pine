@@ -4,11 +4,11 @@
                     (#:d #:pine/data) (#:canvas #:pine/paint/canvas)
                     (#:shm #:posix-shm) (#:shell #:pine/wayland/shell)
                     (#:fault #:pine/run/fault))
-  (:export #:pane #:open-pane #:close-pane #:paint #:render #:resize #:measure
-           #:on-resize
-           #:name-of #:tree #:wide #:tall #:hover #:configuredp #:took
-           #:kind #:dirty #:chromep #:clicked #:hint-of #:cell
-           #:*namespace* #:*font*))
+  (:export
+   #:pane #:open-pane #:close-pane #:paint #:render
+   #:resize #:measure #:on-resize #:name-of #:tree
+   #:wide #:tall #:hover #:took #:kind
+   #:dirty #:chromep #:clicked #:cell #:*font*))
 (in-package #:pine/wayland/pane)
 
 (defvar *namespace* "gtk-layer-shell"

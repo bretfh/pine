@@ -4,8 +4,8 @@
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:command #:pine/run/command) (#:emode #:pine/edit/mode)
                     (#:log #:pine/fs/log))
-  (:export #:listing #:into #:listings #:acts #:activate #:row-at
-           #:place #:step-row))
+  (:export
+   #:listing #:into #:acts #:place))
 (in-package #:pine/edit/listing)
 
 (defvar *listings* (d:table))

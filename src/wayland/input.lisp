@@ -1,12 +1,11 @@
 (defpackage #:pine/wayland/input
   (:use #:cl #:wayflan-client)
   (:local-nicknames (#:shm #:posix-shm))
-  (:export #:keys #:make-keys #:chord #:heldp #:modifierp #:forget-held
-           #:keys-rate #:keys-delay #:keymap #:modifiers #:pressed #:released
-           #:repeating #:now-ms #:deadline
-           #:pointer #:make-pointer #:pointer-at-x #:pointer-at-y
-           #:pointer-focus #:pointer-drag #:pointer-serial
-           #:+modifiers+))
+  (:export
+   #:keys #:make-keys #:chord #:forget-held #:keys-rate
+   #:keys-delay #:keymap #:modifiers #:pressed #:released
+   #:repeating #:deadline #:pointer #:make-pointer #:pointer-at-x
+   #:pointer-at-y #:pointer-focus #:pointer-drag #:pointer-serial #:+modifiers+))
 (in-package #:pine/wayland/input)
 
 (defparameter +modifiers+

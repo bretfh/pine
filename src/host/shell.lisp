@@ -4,9 +4,11 @@
                     (#:tree #:pine/fs/tree) (#:meter #:pine/run/meter)
                     (#:actors #:pine/run/actors) (#:job #:pine/run/job)
                     (#:fault #:pine/run/fault))
-  (:export #:sh #:feed #:lines #:words #:number-in #:firstp #:has #:asked #:ran
-           #:run-line #:launch #:streaming #:hear #:quiet #:hearing
-           #:stream-node #:sh-node #:forget-all #:*breath* #:*out*))
+  (:export
+   #:sh #:feed #:lines #:words #:number-in
+   #:firstp #:has #:asked #:ran #:run-line
+   #:launch #:streaming #:hear #:quiet #:sh-node
+   #:forget-all #:*breath*))
 (in-package #:pine/host/shell)
 
 (defvar *ran* nil)

@@ -6,8 +6,9 @@
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:fault #:pine/run/fault)
                     (#:log #:pine/fs/log))
-  (:export #:peer #:remote #:reach #:serve #:peers #:named #:uri #:ref
-           #:listen-to #:local-uri #:*timeout*))
+  (:export
+   #:peer #:reach #:serve #:named #:uri
+   #:ref #:*timeout*))
 (in-package #:pine/run/peer)
 
 (defvar *timeout* 30)

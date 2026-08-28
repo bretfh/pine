@@ -3,15 +3,14 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:actors #:pine/run/actors) (#:fault #:pine/run/fault))
   (:import-from #:pine/fs/node #:name)
-  (:export #:job #:thread #:actor #:program
-           #:start #:stop #:alivep #:tell #:ask
-           #:jobs #:named #:supervise #:supervised #:sweep #:attend #:due #:backoff
-           #:settle #:emit #:stoppingp #:forget
-           #:name #:state #:tries #:restartsp #:took #:exit-of #:since #:fault
-           #:thunk #:seconds #:stopping #:argv #:env #:receive
-           #:dispatcher #:ref
-           #:blocking-ask #:*out-kept* #:*settled* #:*asking* #:*every*
-           #:*stopping*))
+  (:export
+   #:job #:thread #:actor #:program #:start
+   #:stop #:alivep #:tell #:ask #:jobs
+   #:named #:supervise #:supervised #:sweep #:attend
+   #:due #:settle #:emit #:stoppingp #:forget
+   #:name #:state #:tries #:took #:since
+   #:fault #:thunk #:seconds #:stopping #:argv
+   #:env #:receive #:dispatcher #:ref #:*every*))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)

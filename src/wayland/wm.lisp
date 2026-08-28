@@ -4,10 +4,10 @@
                     (#:d #:pine/data) (#:log #:pine/fs/log)
                     (#:fault #:pine/run/fault) (#:chords #:pine/wayland/chords)
                     (#:display #:pine/wayland/display))
-  (:export #:wm #:bind #:managingp #:apply-layout #:take #:laid #:wake
-           #:on-said #:on-render #:on-chord #:wants-chords #:eat-next
-           #:windows #:outputs #:focused #:manager
-           #:*borders*))
+  (:export
+   #:wm #:bind #:take #:laid #:wake
+   #:on-said #:on-render #:on-chord #:wants-chords #:eat-next
+   #:windows #:outputs #:focused #:manager))
 (in-package #:pine/wayland/wm)
 
 (defvar *borders* 2

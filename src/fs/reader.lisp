@@ -1,7 +1,8 @@
 (defpackage #:pine/fs/reader
   (:use #:cl)
   (:local-nicknames (#:path #:pine/fs/path))
-  (:export #:syntax #:read-path))
+  (:export
+   #:syntax))
 (in-package #:pine/fs/reader)
 
 (defvar +stops+

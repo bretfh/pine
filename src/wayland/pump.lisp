@@ -1,8 +1,9 @@
 (defpackage #:pine/wayland/pump
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:fault #:pine/run/fault))
-  (:export #:pump #:make-pump #:close-pump #:wake-in #:wake #:hand #:queuedp
-           #:drain #:drain-wake))
+  (:export
+   #:pump #:make-pump #:close-pump #:wake-in #:wake
+   #:hand #:drain #:drain-wake))
 (in-package #:pine/wayland/pump)
 
 (defparameter +nonblock+ 2048

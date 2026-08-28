@@ -1,15 +1,15 @@
 (defpackage #:pine/fs/node
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:commit #:pine/fs/commit))
-  (:export #:node #:nodep
-           #:name #:over #:describes #:savedp #:livep #:storedp
-           #:announces #:refreshes
-           #:contents #:nodes #:resolve #:stir #:moved #:verb
-           #:full-name #:leafp #:stalep #:root
-           #:make #:derive #:place #:attach #:detach #:child #:children #:memo
-           #:slots #:make-child #:erase-child
-           #:reads #:writes #:names-of #:each-of #:nodes-of #:saw
-           #:readers #:depend #:undepend #:reading #:*reading*))
+  (:export
+   #:node #:nodep #:name #:over #:describes
+   #:savedp #:livep #:storedp #:announces #:refreshes
+   #:contents #:nodes #:resolve #:stir #:moved
+   #:verb #:full-name #:root #:make #:derive
+   #:place #:attach #:detach #:child #:children
+   #:memo #:slots #:make-child #:erase-child #:reads
+   #:writes #:saw #:readers #:depend #:undepend
+   #:reading #:*reading*))
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)

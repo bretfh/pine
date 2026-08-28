@@ -1,8 +1,9 @@
 (defpackage #:pine/edit/matching
   (:use #:cl)
   (:local-nicknames (#:fault #:pine/run/fault))
-  (:export #:name-of #:annotation #:shows #:matches #:common-prefix
-           #:expanded #:split-path #:entries #:files #:*separator*))
+  (:export
+   #:name-of #:annotation #:shows #:matches #:common-prefix
+   #:expanded #:split-path #:entries #:files))
 (in-package #:pine/edit/matching)
 
 (defvar *separator* #\Space)

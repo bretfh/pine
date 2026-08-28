@@ -6,13 +6,13 @@
                     (#:emode #:pine/edit/mode) (#:log #:pine/fs/log)
                     (#:match #:pine/edit/matching)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault))
-  (:export #:prompt #:asking #:askingp #:ask #:answer #:cancel #:so-far #:asked
-           #:question #:answering #:then #:candidates #:chosen #:choose #:was
-           #:matching #:complete #:source #:sources #:*prompt*
-           #:showing #:category #:given
-           #:must-match #:history #:remember #:walk-history #:filep
-           #:descendsp #:descend
-           #:history-of #:*shown* #:*history-kept*))
+  (:export
+   #:prompt #:asking #:askingp #:ask #:answer
+   #:cancel #:so-far #:asked #:question #:answering
+   #:then #:candidates #:chosen #:choose #:was
+   #:matching #:complete #:source #:sources #:*prompt*
+   #:showing #:category #:given #:must-match #:history
+   #:remember #:filep))
 (in-package #:pine/edit/prompt)
 
 (defvar *prompt* nil)

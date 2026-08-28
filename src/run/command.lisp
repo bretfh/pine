@@ -1,10 +1,12 @@
 (defpackage #:pine/run/command
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
-  (:export #:command #:commandp #:defcommand #:named #:commands #:forget
-           #:name #:action #:describes #:asks #:from #:on #:arguments #:run #:word
-           #:claim #:offer #:withdraw #:defined #:sorted
-           #:unknown-command #:asking #:*at*))
+  (:export
+   #:command #:defcommand #:named #:commands #:forget
+   #:name #:action #:describes #:asks #:from
+   #:on #:arguments #:run #:word #:claim
+   #:offer #:withdraw #:defined #:sorted #:unknown-command
+   #:asking #:*at*))
 (in-package #:pine/run/command)
 
 (defvar *commands* (d:table))

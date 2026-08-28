@@ -5,7 +5,8 @@
                     (#:command #:pine/run/command) (#:sh #:pine/host/shell)
                     (#:compositor #:pine/wm/compositor) (#:niri #:pine/wm/niri)
                     (#:wkeys #:pine/wm/keys) (#:managed #:pine/wm/managed))
-  (:export #:wm #:current #:terminal #:*terminal*))
+  (:export
+   #:wm #:current #:terminal))
 (in-package #:pine/wm)
 
 (defvar *terminal* "alacritty")

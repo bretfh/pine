@@ -6,7 +6,8 @@
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell) (#:device #:pine/host/device))
-  (:export #:host #:attend #:leave #:attending))
+  (:export
+   #:host #:attend #:leave))
 (in-package #:pine/host)
 
 (defvar *attending* nil)

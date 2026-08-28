@@ -2,9 +2,12 @@
   (:use #:cl)
   (:shadow #:parse)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
-  (:export #:path #:pathp #:segments #:whole #:parse #:leaf #:parent #:rootp #:match #:prefixp
-           #:literal #:binding #:any #:deep #:segment #:segment-text #:kind
-           #:value #:at #:ensure #:contents #:matching #:erase))
+  (:export
+   #:path #:pathp #:segments #:whole #:parse
+   #:leaf #:parent #:match #:prefixp #:literal
+   #:binding #:any #:deep #:segment #:kind
+   #:value #:at #:ensure #:contents #:matching
+   #:erase))
 (in-package #:pine/fs/path)
 
 (defclass segment ()

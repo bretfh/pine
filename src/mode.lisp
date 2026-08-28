@@ -5,11 +5,13 @@
                     (#:tree #:pine/fs/tree) (#:command #:pine/run/command)
                     (#:fault #:pine/run/fault))
   (:shadow #:type #:structure)
-  (:export #:mode #:text #:prose #:code #:lisp #:pine #:scheme #:org #:fundamental
-           #:press #:insert #:indent #:complete #:save #:structure
-           #:setting #:claims #:claimsp #:mode-for #:bind #:binding
-           #:bindings #:dispatch
-           #:named #:modes #:prefixp #:type #:mode-node #:glob))
+  (:export
+   #:mode #:text #:prose #:code #:lisp
+   #:pine #:scheme #:org #:press #:insert
+   #:indent #:complete #:save #:structure #:setting
+   #:claims #:mode-for #:bind #:binding #:bindings
+   #:dispatch #:named #:modes #:prefixp #:type
+   #:mode-node))
 (in-package #:pine/mode)
 
 (defvar *keys* (d:table)
