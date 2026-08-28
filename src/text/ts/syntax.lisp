@@ -1,14 +1,4 @@
-(defpackage #:pine/text/ts/syntax
-  (:use #:cl)
-  (:local-nicknames (#:fault #:pine/run/fault)
-                    (#:pl #:pine/data) (#:hl #:pine/text/ts/highlight)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:path #:pine/fs/path))
-  (:export #:language #:declare-language #:for #:grammar-of #:languages
-           #:for-readtable #:readtable-of
-           #:lang-node #:compute-highlights #:hl-dump #:hl-dump-file
-           #:infers))
-(in-package #:pine/text/ts/syntax)
+(in-package #:pine/text)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
@@ -104,7 +94,7 @@ there are.")
   (let* ((options (pl:lookup raw :options))
          (indent (pl:lookup options :indent))
          (infer (pl:lookup (pl:all *inferrers*) name)))
-    (hl:make-language
+    (make-language
      :name name
      :grammar (pl:lookup options :grammar)
      :indent-width (or (pl:lookup indent :width) 2)
@@ -132,7 +122,7 @@ there are.")
 (defun languages ()
   (sort (pl:keys (pl:all *compiled*)) #'string< :key #'string))
 
-(defun readtable-of (name)
+(defmethod readtable-of ((name symbol))
   "The readtable a language is written in, when it says: a language whose
 reader is not the standard one names it here."
   (let ((said (pl:lookup (pl:lookup (%raw name) :options) :readtable)))
@@ -148,7 +138,7 @@ follows it rather than the path it happens to be under."
 
 (defun grammar-of (name)
   (let* ((lang (for name))
-         (g (and lang (hl:lang-grammar lang))))
+         (g (and lang (lang-grammar lang))))
     (when g (values (pl:lookup g :lib) (pl:lookup g :fn)))))
 
 (defun lang-node (root)
@@ -160,29 +150,29 @@ follows it rather than the path it happens to be under."
 (defun %state (runtime name)
   (multiple-value-bind (lib fn) (grammar-of name)
     (when lib
-      (pine/text/ts/runtime:make-parse-state runtime name lib fn :syntax (for name)))))
+      (make-parse-state runtime name lib fn :syntax (for name)))))
 
 (defun compute-highlights (runtime language text)
   (let ((ps (%state runtime language)))
     (when ps
       (unwind-protect
            (progn
-             (pine/text/ts/runtime:parse-lines!
+             (parse-lines!
               ps (uiop:split-string text :separator '(#\Newline)))
-             (hl:parse-highlights ps))
-        (pine/text/ts/runtime:free-parse-state ps)))))
+             (parse-highlights ps))
+        (free-parse-state ps)))))
 
 (defun hl-dump (source &optional (language :commonlisp))
-  (let* ((runtime (pine/text/ts/runtime:make-ts-runtime))
-         (ps (progn (pine/text/ts/runtime:ensure-ts runtime)
+  (let* ((runtime (make-ts-runtime))
+         (ps (progn (ensure-ts runtime)
                     (%state runtime language))))
     (if (null ps)
         (format t "~&no grammar loaded for ~a~%" language)
         (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
                              'vector)))
-          (pine/text/ts/runtime:parse-lines!
+          (parse-lines!
            ps (uiop:split-string source :separator '(#\Newline)))
-          (dolist (h (hl:parse-highlights ps))
+          (dolist (h (parse-highlights ps))
             (destructuring-bind (line start-col end-col face) h
               (let* ((text (if (< line (length lines)) (aref lines line) ""))
                      (end (min end-col (length text))))

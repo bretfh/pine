@@ -1,9 +1,4 @@
-(defpackage #:pine/text/lisp
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:mode #:pine/mode)
-                    (#:lines #:pine/text/lines) (#:doc #:pine/text/document))
-  (:export #:forms #:head #:bodyp))
-(in-package #:pine/text/lisp)
+(in-package #:pine/text)
 
 (defparameter +bodies+ '("def" "with-" "do-" "when" "unless" "let" "loop" "lambda"
                          "case" "cond" "dolist" "dotimes" "handler" "unwind"
@@ -59,8 +54,8 @@ here, and looking it up in the image is the parser's business, not this file's."
   "Every toplevel form in DOCUMENT: its head, what it names, and the lines it
 covers."
   (let ((depth 0) (in-string nil) (start nil) (head nil) (name nil) (found nil))
-    (dotimes (at (doc:line-count document) (nreverse found))
-      (let ((text (doc:line document at)))
+    (dotimes (at (line-count document) (nreverse found))
+      (let ((text (line document at)))
         (when (and (null start) (zerop depth) (plusp (length text))
                    (char= #\( (char text 0)))
           (setf start at)
@@ -84,7 +79,7 @@ covers."
                 (d:with by-head head
                         (append had
                                 (list (list name (cons from 0)
-                                            (cons to (length (doc:line document to)))))))))))
+                                            (cons to (length (line document to)))))))))))
     (let (out)
       (d:do-map (head kids by-head (nreverse out))
         (push (list* head
@@ -98,7 +93,7 @@ covers."
 its head is a body form."
   (let ((depth 0) (in-string nil) (stack nil))
     (dotimes (line at)
-      (let ((text (doc:line document line))
+      (let ((text (line document line))
             (i 0))
         (let ((n (length text)))
           (loop :while (< i n)

@@ -1,20 +1,4 @@
-(defpackage #:pine/text/ts/highlight
-  (:use #:cl #:pine/text/ts/runtime #:pine/text/ts/index)
-  (:local-nicknames (#:pl #:pine/data))
-  (:export
-
-   #:parse-highlights #:walk-highlights
-
-   #:parse-indent #:body-form-p
-
-   #:language #:make-language #:languagep #:lang-name
-   #:lang-nodes #:lang-heads #:lang-otherwise #:lang-indent-width #:lang-raw
-   #:lang-grammar #:lang-constants #:lang-infer #:lang-memo
-   #:head-rule #:node-rule #:+roles+
-   #:delimiter-face #:lambda-list-keyword-p
-
-   #:ts-type #:ts-type= #:ts-field #:ts-named-nodes))
-(in-package #:pine/text/ts/highlight)
+(in-package #:pine/text)
 
 (declaim (ftype function %walk walk-highlights))
 

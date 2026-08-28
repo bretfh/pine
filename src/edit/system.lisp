@@ -1,13 +1,13 @@
 (defpackage #:pine/edit
   (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:ui #:pine/ui)
                     (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:commit #:pine/fs/commit)
                     (#:job #:pine/run/job)
                     (#:system #:pine/run/system) (#:command #:pine/run/command)
                     (#:fault #:pine/run/fault)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
-                    (#:parser #:pine/text/ts/parser)
+                    (#:mode #:pine/mode)
                     (#:window #:pine/edit/window)
                     (#:keys #:pine/edit/keys) (#:render #:pine/edit/render)
                     (#:prompt #:pine/edit/prompt) (#:match #:pine/edit/matching)
@@ -34,7 +34,7 @@ their accessors. It does not, so this stands in for the edges that are missing."
   (let ((s (ui:named "editor")))
     (when s (fault:attempt (lambda () (node:stir s)) "the frame"))))
 
-(defmethod parser:reparsed ((document doc:document))
+(defmethod text:reparsed ((document text:document))
   (%drew nil))
 
 (defun %key ()
@@ -59,8 +59,8 @@ another pine all press keys the same way."
                  (lambda (typed)
                    (declare (ignore typed))
                    (mapcar (lambda (d) (cons (node:name d)
-                                             (or (doc:file-of d) "")))
-                           (doc:documents))))
+                                             (or (text:file-of d) "")))
+                           (text:documents))))
   (prompt:source :mode
                  (lambda (typed)
                    (declare (ignore typed))
@@ -124,17 +124,17 @@ else it read."
   "Type TEXT a character at a time, the way a keyboard does."
   (loop :for ch :across text
         :do (keys:dispatch (ui:make-key (string ch))))
-  (doc:point (doc:current)))
+  (text:point (text:current)))
 
 (defmethod job:start ((s edit))
   (%sources)
   (setf command:*at* s
         (commit:on-commit :edit) #'%drew)
   (node:attach (%key) (tree:root))
-  (let ((scratch (or (doc:named "scratch")
-                     (doc:make-document "scratch"
+  (let ((scratch (or (text:named "scratch")
+                     (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
-    (setf (doc:current) scratch)
+    (setf (text:current) scratch)
     (window:seed scratch))
   (ui:builds "editor" #'%frame :as 'ui:window :shown t)
   s)
@@ -144,7 +144,7 @@ else it read."
         (commit:on-commit :edit) nil)
   (ui:take-next nil)
   (isearch:took-all)
-  (parser:forget-all)
+  (text:forget-all)
   (dolist (win (window:windows)) (node:detach (node:over win) (node:name win)))
   (tree:erase nil "surface/editor")
   s)

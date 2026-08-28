@@ -27,25 +27,25 @@ what the terminal is asked to colour."
 
 (test a-terminal-is-a-document-and-a-job-at-once
   (with-terminal (term)
-    (is (typep term 'doc:document))
+    (is (typep term 'text:document))
     (is (typep term 'job:job))
     (is (job:alivep term))
-    (is (typep (doc:mode-of term) 'pine/term/terminal:shell))
-    (is (eq term (doc:current)))))
+    (is (typep (text:mode-of term) 'pine/term/terminal:shell))
+    (is (eq term (text:current)))))
 
 (test writing-a-terminal-is-typing-at-the-program
   (with-terminal (term)
     (setf (node:contents term) (format nil "echo the-pty-answered~%"))
-    (is (until (lambda () (search "the-pty-answered" (doc:text term)))
+    (is (until (lambda () (search "the-pty-answered" (text:text term)))
                :seconds 5))))
 
 (test what-a-key-means-here-is-a-method-not-an-edit
   (with-terminal (term)
-    (let ((was (doc:text term)))
+    (let ((was (text:text term)))
       (pine/edit:type-text "echo two")
-      (is (until (lambda () (search "echo two" (doc:text term))) :seconds 5)
+      (is (until (lambda () (search "echo two" (text:text term))) :seconds 5)
           "it reached the program, and the program echoed it")
-      (is (not (equal was (doc:text term)))))))
+      (is (not (equal was (text:text term)))))))
 
 (test a-terminals-size-is-a-node
   (with-terminal (term)
@@ -61,8 +61,8 @@ is what a search that has just landed says and what a parse says. One kind of
 thing, painted one way."
   (with-terminal (term)
     (setf (node:contents term) (%printf "[31mred[0m [1;32mgreen[0m"))
-    (is (until (lambda () (search "red green" (doc:text term))) :seconds 5))
-    (let* ((spans (doc:spans term))
+    (is (until (lambda () (search "red green" (text:text term))) :seconds 5))
+    (let* ((spans (text:spans term))
            (red (find-if (lambda (each) (equal '(172 66 66) (first (fourth each))))
                          spans))
            (green (find-if (lambda (each)
@@ -75,7 +75,7 @@ thing, painted one way."
 (test what-the-grid-paints-is-what-the-program-asked-for
   (with-terminal (term)
     (setf (node:contents term) (%printf "[31mred[0m"))
-    (is (until (lambda () (search "red" (doc:text term))) :seconds 5))
+    (is (until (lambda () (search "red" (text:text term))) :seconds 5))
     (window:show (window:focused) term)
     (let* ((rows (render:rows :cols 60 :lines 8))
            (runs (loop :for row :in rows :append (cdr row))))
@@ -85,7 +85,7 @@ thing, painted one way."
 (test the-frame-draws-a-terminal-like-any-document
   (with-terminal (term)
     (setf (node:contents term) (format nil "echo drawn-in-the-frame~%"))
-    (is (until (lambda () (search "drawn-in-the-frame" (doc:text term)))
+    (is (until (lambda () (search "drawn-in-the-frame" (text:text term)))
                :seconds 5))
     (window:show (window:focused) term)
     (is (somewhere (render:rows :cols 80 :lines 24) "drawn-in-the-frame"))))
@@ -94,7 +94,7 @@ thing, painted one way."
   (let ((term (%terminal)))
     (let ((name (node:name term)))
       (pine/run/command:run "terminal-close")
-      (is (null (doc:named name)))
+      (is (null (text:named name)))
       (is (null (job:named name)))
       (is (null (pine/term/terminal:terminals))))))
 
@@ -104,7 +104,7 @@ program and what it wrote is text a window shows."
   (with-terminal (term)
     (is (job:alivep term))
     (setf (node:contents term) (format nil "echo from-the-program~%"))
-    (is (until (lambda () (search "from-the-program" (doc:text term)))
+    (is (until (lambda () (search "from-the-program" (text:text term)))
                :seconds 5))
     (pine/term/terminal:resize term 100 30)
     (is (eql 100 (node:contents (tree:at term "wide"))))

@@ -1,6 +1,6 @@
 (defpackage #:pine/text/ts/lang/pine
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine/text/ts/syntax))
+  (:local-nicknames (#:syntax #:pine/text))
   (:export #:pine))
 (in-package #:pine/text/ts/lang/pine)
 

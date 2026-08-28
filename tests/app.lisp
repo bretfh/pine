@@ -50,25 +50,25 @@ own readtable. It is nothing but a file somebody wrote."
 
 (test its-own-mode-gives-its-text-structure
   (app)
-  (let ((document (doc:make-document "diary.note")))
+  (let ((document (text:make-document "diary.note")))
     (setf (node:contents document)
           (format nil "* Today~%it works~%* Tomorrow~%it still does~%"))
-    (setf (doc:mode-of document) (mode:mode-for "diary.note"))
+    (setf (text:mode-of document) (mode:mode-for "diary.note"))
     (is (string-equal "notes"
                       (package-name
                        (symbol-package
-                        (class-name (class-of (doc:mode-of document))))))
+                        (class-name (class-of (text:mode-of document))))))
         "the mode that claims the file is the app's own")
-    (doc:restructure document)
+    (text:restructure document)
     (is (equal '("Today" "Tomorrow")
                (mapcar #'node:name (node:nodes (tree:at document "heading")))))
     (is (equal (format nil "* Today~%it works")
                (node:contents (tree:at document "heading/Today"))))
     (setf (node:contents (tree:at document "heading/Today"))
           (format nil "* Today~%it really works"))
-    (is (search "it really works" (doc:text document))
+    (is (search "it really works" (text:text document))
         "and writing one replaces that span")
-    (doc:kill "diary.note")))
+    (text:kill "diary.note")))
 
 (test its-own-role-says-where-its-surface-goes
   (app)

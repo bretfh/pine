@@ -1,9 +1,9 @@
 (defpackage #:pine/edit/debugger
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
-                    (#:job #:pine/run/job)
-                    (#:doc #:pine/text/document) (#:emode #:pine/edit/mode)
+                    (#:job #:pine/run/job) (#:emode #:pine/edit/mode)
                     (#:window #:pine/edit/window) (#:log #:pine/run/log)
                     (#:evaluate #:pine/edit/eval))
   (:export #:standing #:choose #:next #:fault-of #:away #:*name*
@@ -66,15 +66,15 @@ broke. What the target was is kept, and putting the debugger away puts it back."
                                          (mapcar #'princ-to-string
                                                  (compute-restarts condition)))
                            :fault fault))
-         (document (or (doc:named *name*)
-                       (doc:make-document *name*
+         (document (or (text:named *name*)
+                       (text:make-document *name*
                                           :mode (make-instance 'emode:debugger)))))
     (setf *standing* s)
-    (unless (typep (doc:mode-of document) 'emode:debugger)
-      (setf (doc:mode-of document) (make-instance 'emode:debugger)))
+    (unless (typep (text:mode-of document) 'emode:debugger)
+      (setf (text:mode-of document) (make-instance 'emode:debugger)))
     (setf (node:contents document) (%text s))
-    (doc:goto document 0 0)
-    (setf (doc:current) document)
+    (text:goto document 0 0)
+    (setf (text:current) document)
     (window:show (window:focused) document)
     document))
 
@@ -110,7 +110,7 @@ which is what the layer below already does."
 (defun away ()
   (setf *standing* nil)
   (%back)
-  (when (doc:named *name*) (command:run "kill-document" (list *name*)))
+  (when (text:named *name*) (command:run "kill-document" (list *name*)))
   t)
 
 (command:defcommand "debugger-abort" ()

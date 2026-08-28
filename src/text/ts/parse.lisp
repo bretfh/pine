@@ -1,4 +1,4 @@
-(in-package #:pine/text/ts/runtime)
+(in-package #:pine/text)
 
 (defun load-language-entry (language library fn-name)
   (progn
@@ -89,12 +89,12 @@ in, so a macro defined in the buffer's own package is found."
 (defun %fill-scratch (lines index byte scratch size)
   "Copy up to SIZE bytes of LINES from byte offset BYTE into SCRATCH. Answers
 how many were written, which is zero at the end of the buffer."
-  (multiple-value-bind (line offset) (pine/text/ts/index:byte-line index byte)
+  (multiple-value-bind (line offset) (byte-line index byte)
     (let ((written 0)
-          (n (pine/data:size lines)))
+          (n (d:size lines)))
       (block filling
         (loop :while (< line n)
-              :do (let* ((octets (sb-ext:string-to-octets (pine/data:lookup lines line)
+              :do (let* ((octets (sb-ext:string-to-octets (d:lookup lines line)
                                                           :external-format :utf-8))
                          (len (length octets)))
                     (loop :for i :from (min offset len) :below len
@@ -203,7 +203,7 @@ the next highlight call, or any failure here, marks the cache stale."
 
 (defun %band (lines viewport)
   "The line band to parse for VIEWPORT over LINES, or NIL for all of them."
-  (let ((n (pine/data:size lines)))
+  (let ((n (d:size lines)))
     (when (and viewport (> n +whole-file-lines+))
       (cons (max 0 (* +band-lines+ (floor (car viewport) +band-lines+)))
             (min (1- n) (1- (* +band-lines+ (ceiling (1+ (cdr viewport))
@@ -212,8 +212,8 @@ the next highlight call, or any failure here, marks the cache stale."
 (defun %band-lines (lines band)
   "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
   (if band
-      (pine/data:subseq lines (car band)
-                        (min (pine/data:size lines) (1+ (cdr band))))
+      (d:subseq lines (car band)
+                        (min (d:size lines) (1+ (cdr band))))
       lines))
 
 (defun %parse-band (ps lines band band-lines same-band edit)
@@ -222,19 +222,19 @@ the next highlight call, or any failure here, marks the cache stale."
          (shifted (and edit old-index old-tree same-band
                        (<= (car (or band '(0))) (first edit))
                        (< (first edit) (+ (or (and band (car band)) 0)
-                                          (pine/data:size band-lines)))))
+                                          (d:size band-lines)))))
          (index nil))
     (when shifted
       (destructuring-bind (line old-lines new-lines byte-delta) edit
         (let* ((at (- line (if band (car band) 0)))
-               (start (pine/text/ts/index:line-start old-index at))
-               (old-end (pine/text/ts/index:line-start old-index (+ at old-lines))))
-          (setf index (pine/text/ts/index:index-edit old-index band-lines at byte-delta
+               (start (line-start old-index at))
+               (old-end (line-start old-index (+ at old-lines))))
+          (setf index (index-edit old-index band-lines at byte-delta
                                                 (- new-lines old-lines)))
           (%tree-edit old-tree start old-end
-                      (pine/text/ts/index:line-start index (+ at new-lines))
+                      (line-start index (+ at new-lines))
                       at (+ at old-lines) (+ at new-lines)))))
-    (unless index (setf index (pine/text/ts/index:build-index band-lines)))
+    (unless index (setf index (build-index band-lines)))
     (let ((incremental shifted))
       (let ((new (call-with-input
                   band-lines index (ps-read-buffer ps)
@@ -250,7 +250,7 @@ the next highlight call, or any failure here, marks the cache stale."
                             :format-control "the ~(~a~) parser answered no tree ~
                                              for ~d line~:p"
                             :format-arguments (list (ps-language ps)
-                                                    (pine/data:size band-lines)))
+                                                    (d:size band-lines)))
             "parsing")
            nil)
           (t (if incremental

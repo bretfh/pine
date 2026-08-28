@@ -1,9 +1,9 @@
 (defpackage #:pine/term/terminal
   (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:job #:pine/run/job) (#:log #:pine/run/log) (#:doc #:pine/text/document)
-                    (#:lines #:pine/text/lines)
+                    (#:job #:pine/run/job) (#:log #:pine/run/log)
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
   (:export #:terminal #:shell #:open-terminal #:terminals #:named #:send #:resize
@@ -27,7 +27,7 @@ names it.")
     ("Escape" . #\Escape))
   "What a terminal calls the keys pine names.")
 
-(defclass terminal (doc:document job:thread)
+(defclass terminal (text:document job:thread)
   ((vt-of  :initarg :vt   :reader vt-of)
    (fd-of  :initform nil  :accessor fd-of)
    (pid-of :initform nil  :accessor pid-of)
@@ -47,10 +47,10 @@ IMAGE and a MOUNT."))
             (wide term) (tall term) (fd-of term))))
 
 (defun terminals ()
-  (remove-if-not (lambda (n) (typep n 'terminal)) (node:nodes (doc:root))))
+  (remove-if-not (lambda (n) (typep n 'terminal)) (node:nodes (text:root))))
 
 (defun named (name)
-  (let ((it (doc:named (princ-to-string name))))
+  (let ((it (text:named (princ-to-string name))))
     (and (typep it 'terminal) it)))
 
 (defun %rgb (colour)
@@ -91,10 +91,10 @@ says and what a parse says. One kind of thing, painted one way."
   "Put what the screen says into the document, and say so. Point follows the
 program's cursor: what you are looking at is where it is writing."
   (multiple-value-bind (text spans) (screen term)
-    (setf (doc:lines term) (lines:of text))
-    (setf (doc:spans term) spans))
-  (doc:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
-  (setf (doc:modified term) nil)
+    (setf (text:lines term) (text:of text))
+    (setf (text:spans term) spans))
+  (text:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
+  (setf (text:modified term) nil)
   (node:stir term)
   term)
 
@@ -207,7 +207,7 @@ the text is the program's, not yours."
 screen; writing it is typing at the program."
   (let* ((runs (or runs (shell)))
          (vt (vt:make-term :width wide :height tall))
-         (term (doc:make-document (princ-to-string name)
+         (term (text:make-document (princ-to-string name)
                                   :class 'terminal
                                   :mode (make-instance 'shell)
                                   :vt vt :runs runs :wide wide :tall tall

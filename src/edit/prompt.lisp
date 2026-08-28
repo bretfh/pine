@@ -1,7 +1,8 @@
 (defpackage #:pine/edit/prompt
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:doc #:pine/text/document)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:tree #:pine/fs/tree)
                     (#:emode #:pine/edit/mode) (#:log #:pine/run/log)
                     (#:match #:pine/edit/matching)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault))
@@ -42,8 +43,8 @@
 (defun askingp () (and *prompt* t))
 
 (defun answering ()
-  (or (doc:named +document+)
-      (doc:make-document +document+ :mode (make-instance 'emode:prompt))))
+  (or (text:named +document+)
+      (text:make-document +document+ :mode (make-instance 'emode:prompt))))
 
 (defun %under () (tree:ensure nil "prompt"))
 
@@ -57,7 +58,7 @@
 (defun %chose-node () (%place "chose" (lambda () (node:make "chose"))))
 
 (defun %text ()
-  (let ((d (doc:named +document+)))
+  (let ((d (text:named +document+)))
     (if d (node:contents d) "")))
 
 (defun %said-node ()
@@ -123,8 +124,8 @@ the directory it is in, so what it offers is what is there."
             (match:matches (so-far) (candidates p))))))
 
 (defun here-directory ()
-  (let* ((d (doc:current))
-         (file (and d (typep d 'doc:document) (doc:file-of d))))
+  (let* ((d (text:current))
+         (file (and d (typep d 'text:document) (text:file-of d))))
     (if file
         (directory-namestring (pathname file))
         (namestring (uiop:getcwd)))))
@@ -142,23 +143,23 @@ what it read, and a slot nobody reads is a thing nothing can follow."
 (defun %where-from (had)
   "Where answering goes back to. Never the prompt itself: a question asked from
 inside another one would otherwise leave the prompt as what every key edits."
-  (let ((it (and had (doc:named (node:name had)))))
-    (cond ((and it (not (eq it (doc:named +document+)))) it)
-          (t (find-if-not #'doc:asidep (doc:documents))))))
+  (let ((it (and had (text:named (node:name had)))))
+    (cond ((and it (not (eq it (text:named +document+)))) it)
+          (t (find-if-not #'text:asidep (text:documents))))))
 
 (defun ask (question &key then category initial must-match candidates history)
   (let ((d (answering))
         (seed (or initial (when (eq category :file) (here-directory)) ""))
-        (back (or (and *prompt* (was *prompt*)) (doc:current))))
+        (back (or (and *prompt* (was *prompt*)) (text:current))))
     (setf (node:contents d) seed)
-    (doc:move d :text 1)
+    (text:move d :text 1)
     (setf *prompt* (make-instance 'prompt :question question :then then
                                           :category category
                                           :must-match must-match
                                           :candidates candidates
                                           :history history
                                           :was (%where-from back))
-          (doc:current) d)
+          (text:current) d)
     (setf (seen *prompt*) (so-far)))
   (%standing)
   *prompt*)
@@ -176,7 +177,7 @@ inside another one would otherwise leave the prompt as what every key edits."
 (defun %put (text)
   (let ((d (answering)))
     (setf (node:contents d) text)
-    (doc:move d :text 1)
+    (text:move d :text 1)
     (when *prompt* (setf (seen *prompt*) (so-far)))
     text))
 
@@ -240,13 +241,13 @@ typed, so walking back to the end gives it back."
           (nth (or next 0) all))))))
 
 (defun %close ()
-  (setf (doc:current)
+  (setf (text:current)
         (or (%where-from (and *prompt* (was *prompt*)))
-            (doc:named "scratch")
-            (doc:scratch)))
+            (text:named "scratch")
+            (text:scratch)))
   (setf *prompt* nil)
   (%standing nil)
-  (let ((d (doc:named +document+)))
+  (let ((d (text:named +document+)))
     (when d (setf (node:contents d) "")))
   nil)
 

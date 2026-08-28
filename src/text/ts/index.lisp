@@ -1,31 +1,4 @@
-(defpackage #:pine/text/ts/index
-  (:use #:cl)
-  (:export
-   #:byte-index
-   #:build-index
-   #:byte-index-lines
-   #:byte-index-pending
-   #:index-total
-   #:index-line-count
-   #:line-start
-   #:line-bytes
-   #:byte-line
-   #:index-edit
-   #:compact-index
-   #:string-bytes
-
-   #:line-string
-   #:source-line-col
-   #:source-byte
-   #:source-substring
-   #:source-char-at)
-  (:documentation "Byte offsets over a buffer's lines, without a flat string.
-
-Tree-sitter asks for the bytes at an offset; the buffer is an fset seq of lines.
-This is the map between them, and it has to survive an edit without walking the
-file: an edit records a pending shift instead, and the base is rebuilt once the
-pending list is long enough to be worth it."))
-(in-package #:pine/text/ts/index)
+(in-package #:pine/text)
 
 (defparameter +compact-after+ 64
   "Pending edits to carry before rebuilding the base. A query costs one pass over
@@ -65,12 +38,12 @@ bounded per-query cost against an amortised per-edit one.")
 
 (defun build-index (lines)
   "A fresh index over LINES, with no pending edits."
-  (let* ((n (pine/data:size lines))
+  (let* ((n (d:size lines))
          (starts (make-array (1+ n) :element-type '(unsigned-byte 62)))
          (offset 0)
          (i 0))
     (declare (type (unsigned-byte 62) offset))
-    (pine/data:do-each (line lines)
+    (d:do-each (line lines)
       (setf (aref starts i) offset)
       (incf offset (%line-byte-length line))
       (when (< i (1- n)) (incf offset))
@@ -79,7 +52,7 @@ bounded per-query cost against an amortised per-edit one.")
     (%make-index :base-lines lines :starts starts :base-total offset :lines lines)))
 
 (defun index-line-count (index)
-  (pine/data:size (byte-index-lines index)))
+  (d:size (byte-index-lines index)))
 
 (defun %shift (index line)
   "The byte shift the pending edits apply at LINE, and the base line LINE came
@@ -109,8 +82,8 @@ from."
 (defun line-bytes (index line)
   "LINE's own byte length, without its newline."
   (let ((lines (byte-index-lines index)))
-    (if (< line (pine/data:size lines))
-        (%line-byte-length (pine/data:lookup lines line))
+    (if (< line (d:size lines))
+        (%line-byte-length (d:lookup lines line))
         0)))
 
 (defun byte-line (index byte)
@@ -151,8 +124,8 @@ asked for, which a walk asks about once per node."
   (if (= line (byte-index-memo-line index))
       (byte-index-memo-text index)
       (let* ((lines (byte-index-lines index))
-             (text (if (and (>= line 0) (< line (pine/data:size lines)))
-                       (pine/data:lookup lines line)
+             (text (if (and (>= line 0) (< line (d:size lines)))
+                       (d:lookup lines line)
                        "")))
         (setf (byte-index-memo-line index) line
               (byte-index-memo-text index) text

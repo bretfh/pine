@@ -1,4 +1,4 @@
-(in-package #:pine/text/ts/highlight)
+(in-package #:pine/text)
 
 (defparameter +form-openers+
   '(("list_lit" . 1) ("defun" . 1) ("loop_macro" . 1) ("set_lit" . 2)
@@ -239,7 +239,7 @@ the line as-is (inside a multiline string). 0 at top level. No reparse.
 WIDTH is what the buffer's mode says a body indents by, so a mode that indents
 by four does, rather than by the two that used to be written here."
   (let ((tree (ps-tree ps)) (src (ps-byte-index ps)) (lang (ps-syntax ps))
-        (line (- line (pine/text/ts/runtime:ps-offset ps))))
+        (line (- line (ps-offset ps))))
     (when (and tree src (<= 0 line))
       (handler-case
           (let* ((line (max 0 (min line (1- (index-line-count src)))))

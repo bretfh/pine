@@ -1,34 +1,4 @@
-(defpackage #:pine/text/ts/runtime
-  (:use :cl)
-  (:local-nicknames (#:pl #:pine/data))
-  (:export
-
-   #:ts-runtime #:make-ts-runtime #:ts-loaded-p #:ensure-ts #:libs-loaded
-   #:grammars #:ts-entry #:entry-parser #:entry-language-ptr #:ensure-language
-
-   #:grammar-library-candidates #:load-grammar-library
-   #:grammar-language-pointer #:load-language-entry
-
-   #:parse-state #:make-parse-state #:free-parse-state
-   #:parse-lines! #:parse-text! #:parse-motion
-   #:ps-language #:ps-syntax #:ps-package #:ps-parser #:ps-tree
-   #:ps-byte-index #:ps-lines #:ps-scratch #:ps-read-buffer
-   #:ps-band #:ps-band-lines #:ps-offset
-   #:call-with-input #:+read-chunk+
-   #:ps-hl-cache #:ps-hl-lines #:ps-hl-pending #:ps-hl-stale #:ps-hl-window
-
-   #:build-line-index #:line-of-byte #:byte-to-line-col #:pos-to-byte
-   #:byte-length #:char-byte-length
-
-   #:ts-parser-new #:ts-parser-delete #:ts-parser-set-language
-   #:ts-parser-parse-string
-   #:ts-tree-delete #:ts-tree-edit #:ts-tree-root-node
-   #:ts-tree-get-changed-ranges
-   #:ts-node-type #:ts-node-is-null #:ts-node-parent
-   #:ts-node-start-byte #:ts-node-end-byte
-   #:ts-node-named-nth #:ts-node-named-count
-   #:ts-node-by-field-name #:ts-node-named-descendant-for-byte-range))
-(in-package #:pine/text/ts/runtime)
+(in-package #:pine/text)
 
 (defconstant +input-encoding-utf8+ 0)
 
@@ -186,7 +156,7 @@ buffers parse concurrently."))
 (defun ensure-ts (runtime)
   "Load libtree-sitter once. A pine built without it still edits, so this
 reports rather than refuses and LIBS-LOADED stays false. Whether it is here is
-asked of the loader, not of this runtime: cffi's LOAD-FOREIGN-LIBRARY closes the
+asked of the loader, not of this  cffi's LOAD-FOREIGN-LIBRARY closes the
 library it is about to open, so a second runtime loading it again unmaps the
 copy the first one is still pointing into."
   (unless (libs-loaded runtime)

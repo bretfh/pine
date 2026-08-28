@@ -1,14 +1,56 @@
 (defpackage #:pine/text
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:mount #:pine/fs/mount) (#:job #:pine/run/job)
-                    (#:system #:pine/run/system) (#:command #:pine/run/command)
-                    (#:doc #:pine/text/document) (#:mode #:pine/mode)
-                    (#:fault #:pine/run/fault)
-                    (#:runtime #:pine/text/ts/runtime)
-                    (#:syntax #:pine/text/ts/syntax)
-                    (#:parser #:pine/text/ts/parser))
-  (:export #:visit #:save #:revert #:recent))
+  (:local-nicknames (#:actors #:pine/run/actors) (#:command #:pine/run/command)
+                    (#:commit #:pine/fs/commit) (#:d #:pine/data)
+                    (#:fault #:pine/run/fault) (#:job #:pine/run/job)
+                    (#:meter #:pine/run/meter) (#:mode #:pine/mode)
+                    (#:mount #:pine/fs/mount) (#:node #:pine/fs/node)
+                    (#:path #:pine/fs/path) (#:pl #:pine/data)
+                    (#:system #:pine/run/system) (#:tree #:pine/fs/tree))
+  (:export
+   #:of #:joined #:line #:line-count #:clamp
+   #:inserted #:cut #:region #:move-by #:wordp
+   #:leading #:find-in #:foldp #:*word-characters* #:document
+   #:make-document #:documents #:named #:kill #:current
+   #:root #:scratch #:asidep #:killing #:showing
+   #:visiting #:lines #:text #:point #:at-line
+   #:at-col #:mark #:mode-of #:source #:file-of
+   #:origin #:tick #:past #:edit-of #:changed
+   #:modified #:setting #:settings #:visited #:leaving
+   #:goto #:move #:insert #:delete-back #:newline
+   #:delete-region #:mark-at #:put-mark #:drop-mark #:region-of
+   #:indent-line #:indent-of #:undo #:redo #:undoable
+   #:redoable #:span #:spans #:forget-spans #:overlay
+   #:overlays #:forget-overlays #:covers #:regions #:restructure
+   #:fresh-structure #:forms #:head #:bodyp #:package-of
+   #:readtable-of #:reading #:visit #:save #:revert
+   #:recent #:byte-index #:build-index #:byte-index-lines #:byte-index-pending
+   #:index-total #:index-line-count #:line-start #:line-bytes #:byte-line
+   #:index-edit #:compact-index #:string-bytes #:line-string #:source-line-col
+   #:source-byte #:source-substring #:source-char-at #:ts-runtime #:make-ts-runtime
+   #:ts-loaded-p #:ensure-ts #:libs-loaded #:grammars #:ts-entry
+   #:entry-parser #:entry-language-ptr #:ensure-language #:grammar-library-candidates #:load-grammar-library
+   #:grammar-language-pointer #:load-language-entry #:parse-state #:make-parse-state #:free-parse-state
+   #:parse-lines! #:parse-text! #:parse-motion #:ps-language #:ps-syntax
+   #:ps-package #:ps-parser #:ps-tree #:ps-byte-index #:ps-lines
+   #:ps-scratch #:ps-read-buffer #:ps-band #:ps-band-lines #:ps-offset
+   #:call-with-input #:+read-chunk+ #:ps-hl-cache #:ps-hl-lines #:ps-hl-pending
+   #:ps-hl-stale #:ps-hl-window #:build-line-index #:line-of-byte #:byte-to-line-col
+   #:pos-to-byte #:byte-length #:char-byte-length #:ts-parser-new #:ts-parser-delete
+   #:ts-parser-set-language #:ts-parser-parse-string #:ts-tree-delete #:ts-tree-edit #:ts-tree-root-node
+   #:ts-tree-get-changed-ranges #:ts-node-type #:ts-node-is-null #:ts-node-parent #:ts-node-start-byte
+   #:ts-node-end-byte #:ts-node-named-nth #:ts-node-named-count #:ts-node-by-field-name #:ts-node-named-descendant-for-byte-range
+   #:parse-highlights #:walk-highlights #:parse-indent #:body-form-p #:language
+   #:make-language #:languagep #:lang-name #:lang-nodes #:lang-heads
+   #:lang-otherwise #:lang-indent-width #:lang-raw #:lang-grammar #:lang-constants
+   #:lang-infer #:lang-memo #:head-rule #:node-rule #:+roles+
+   #:delimiter-face #:lambda-list-keyword-p #:ts-type #:ts-type= #:ts-field
+   #:ts-named-nodes #:declare-language #:for #:grammar-of #:languages
+   #:for-readtable #:lang-node #:compute-highlights #:hl-dump #:hl-dump-file
+   #:infers #:parser #:parser-for #:parsers #:highlights
+   #:note #:forget #:forget-all #:state-of #:language-of
+   #:document-of #:band #:banded #:parsed #:reparsed
+   #:indent #:motion #:currentp #:running #:*runtime*))
 (in-package #:pine/text)
 
 (defvar *recent* nil)
@@ -18,91 +60,3 @@
   (:documentation "Documents, and what their modes make of them."))
 
 (system:offers 'text)
-
-(defun recent () *recent*)
-
-(defun %recently (name)
-  (setf *recent* (cons name (remove name *recent* :test #'equal)))
-  (when (> (length *recent*) +recent-kept+)
-    (setf *recent* (subseq *recent* 0 +recent-kept+)))
-  name)
-
-(defun %place (where)
-  "The node WHERE names: a node is itself, a path already in the tree is what stands
-there, and anything else is a place on the host."
-  (cond ((node:nodep where) where)
-        ((and (stringp where) (plusp (length where)) (tree:at nil where)))
-        (t (let* ((at (tree:at nil "file"))
-                  (names (tree:split-name (namestring where))))
-             (loop :while (and at (rest names))
-                   :do (setf at (node:resolve at (pop names))))
-             (and at names (mount:node-for at (first names)))))))
-
-(defun visit (document where)
-  "Open DOCUMENT onto WHERE: a file on the host, or any node in the tree. What it
-shows is whatever stands there, so /metric/frame reads like a file does."
-  (let ((n (%place where)))
-    (when n
-      (setf (doc:source document) n)
-      (%recently (doc:origin document))
-      (setf (node:contents document) (or (node:contents n) ""))
-      (let ((m (mode:mode-for (doc:origin document))))
-        (when m (setf (doc:mode-of document) m)))
-      (let ((had (doc:visited document)))
-        (if had (doc:goto document (first had) (second had))
-            (doc:goto document 0 0)))
-      (doc:restructure document)
-      (setf (doc:modified document) nil))
-    document))
-
-(defmethod doc:visiting ((document doc:document) where)
-  "Writing a document's source opens it onto what stands there. The document
-declares that somebody might know how; this is the somebody."
-  (visit document where))
-
-(defun save (document &optional where)
-  "Write what DOCUMENT holds back where it came from. Whatever stands there says
-what writing means: a file is written, a device is acted on."
-  (when where (setf (doc:source document) (%place where)))
-  (let ((n (doc:source document)))
-    (when n
-      (mode:save (doc:mode-of document) document)
-      (setf (node:contents n) (doc:text document))
-      (setf (doc:modified document) nil)
-      (doc:origin document))))
-
-(defun revert (document)
-  (let ((n (doc:source document)))
-    (when (and n (node:contents n))
-      (doc:leaving document)
-      (visit document n))))
-
-(defun %syntax ()
-  "Load tree-sitter and put the languages in the tree. A grammar that will not
-load is a fault like any other: the text still opens, uncoloured."
-  (let ((it (runtime:make-ts-runtime)))
-    (fault:attempt (lambda () (runtime:ensure-ts it)) "loading tree-sitter")
-    (when (runtime:ts-loaded-p it)
-      (setf parser:*runtime* it)
-      (syntax:lang-node (tree:root)))))
-
-(command:defcommand "documents" () (:describes "every document there is")
-  (mapcar #'node:name (doc:documents)))
-
-(command:defcommand "structure" (&optional name)
-    (:describes "what this document's mode makes of it")
-  (let ((d (if name (doc:named name) (doc:current))))
-    (when d (mapcar #'node:name (doc:regions d)))))
-
-(defmethod job:start ((s text))
-  (%syntax)
-  (node:attach (mode:mode-node) (tree:root))
-  (doc:root)
-  (let ((scratch (doc:make-document "scratch" :mode (make-instance 'mode:lisp))))
-    (setf (doc:current) scratch))
-  s)
-
-(defmethod job:stop ((s text))
-  (parser:forget-all)
-  (dolist (d (doc:documents)) (doc:kill (node:name d)))
-  s)

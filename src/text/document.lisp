@@ -1,20 +1,4 @@
-(defpackage #:pine/text/document
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:commit #:pine/fs/commit)
-                    (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
-                    (#:lines #:pine/text/lines) (#:mode #:pine/mode))
-  (:export #:document #:region #:make-document #:documents #:named #:kill
-           #:current #:root #:scratch #:asidep #:killing #:showing #:visiting
-           #:lines #:line #:line-count #:text #:point #:at-line #:at-col #:mark
-           #:mode-of #:source #:file-of #:origin #:tick #:past #:edit-of #:changed
-           #:modified #:setting #:settings #:visited #:leaving
-           #:goto #:move #:insert #:delete-back #:newline #:delete-region
-           #:mark-at #:put-mark #:drop-mark #:region-of #:indent-line #:indent-of
-           #:undo #:redo #:undoable #:redoable
-           #:span #:spans #:forget-spans #:overlay #:overlays #:forget-overlays
-           #:covers #:regions #:restructure #:fresh-structure))
-(in-package #:pine/text/document)
+(in-package #:pine/text)
 
 (defvar *current* nil)
 (defvar *places* (d:no-map))
@@ -23,7 +7,7 @@
 (defstruct (was (:constructor was (lines at col))) lines at col)
 
 (defclass document (node:node)
-  ((lines    :initform (lines:of "") :accessor lines)
+  ((lines    :initform (of "") :accessor lines)
    (at-line  :initform 0   :accessor at-line)
    (at-col   :initform 0   :accessor at-col)
    (mark     :initform nil :accessor mark)
@@ -64,9 +48,9 @@ its nodes are its sub-regions, and writing it replaces that stretch."))
 
 (defun root () (tree:ensure nil "text"))
 
-(defun line (doc n) (lines:line (lines doc) n))
-(defun line-count (doc) (lines:line-count (lines doc)))
-(defun text (doc) (lines:joined (lines doc)))
+(defmethod line ((doc document) n) (line (lines doc) n))
+(defmethod line-count ((doc document)) (line-count (lines doc)))
+(defun text (doc) (joined (lines doc)))
 (defun point (doc) (list (at-line doc) (at-col doc)))
 
 (defmethod node:contents ((doc document)) (text doc))
@@ -74,7 +58,7 @@ its nodes are its sub-regions, and writing it replaces that stretch."))
 (defmethod (setf node:contents) (value (doc document))
   (%remember doc)
   (setf (edit-of doc) nil)
-  (setf (lines doc) (lines:of (princ-to-string value)))
+  (setf (lines doc) (of (princ-to-string value)))
   (changed doc)
   value)
 
@@ -163,14 +147,14 @@ is text plus something of its own."
   value)
 
 (defun goto (doc at col)
-  (multiple-value-bind (at col) (lines:clamp (lines doc) at col)
+  (multiple-value-bind (at col) (clamp (lines doc) at col)
     (setf (at-line doc) at (at-col doc) col)
     (node:moved doc)
     (point doc)))
 
 (defun move (doc unit n)
   (multiple-value-bind (at col)
-      (lines:move-by unit (lines doc) (at-line doc) (at-col doc) n)
+      (move-by unit (lines doc) (at-line doc) (at-col doc) n)
     (goto doc at col)))
 
 (defun %remember (doc)
@@ -215,7 +199,7 @@ is text plus something of its own."
   (let ((had (lines doc))
         (at (at-line doc)))
     (multiple-value-bind (fresh line col)
-        (lines:insert had (at-line doc) (at-col doc) string)
+        (inserted had (at-line doc) (at-col doc) string)
       (%edited doc had at 1 (1+ (count #\Newline string)) (%bytes string))
       (setf (lines doc) fresh)
       (setf (at-line doc) line (at-col doc) col)
@@ -227,9 +211,9 @@ is text plus something of its own."
 (defun delete-back (doc &optional (n 1))
   (%remember doc)
   (multiple-value-bind (at col)
-      (lines:move-by :char (lines doc) (at-line doc) (at-col doc) (- n))
+      (move-by :char (lines doc) (at-line doc) (at-col doc) (- n))
     (multiple-value-bind (fresh line col taken)
-        (lines:delete (lines doc) at col (at-line doc) (at-col doc))
+        (cut (lines doc) at col (at-line doc) (at-col doc))
       (setf (lines doc) fresh)
       (setf (at-line doc) line (at-col doc) col)
       (changed doc)
@@ -239,7 +223,7 @@ is text plus something of its own."
   (%remember doc)
   (let ((had (lines doc)))
     (multiple-value-bind (fresh line col taken)
-        (lines:delete had from-line from-col to-line to-col)
+        (cut had from-line from-col to-line to-col)
       (%edited doc had from-line (1+ (- to-line from-line)) 1 (- (%bytes taken)))
       (setf (lines doc) fresh)
       (goto doc line col)
@@ -249,7 +233,7 @@ is text plus something of its own."
 (defun region-of (doc)
   (when (mark doc)
     (destructuring-bind (at col) (mark doc)
-      (lines:region (lines doc) at col (at-line doc) (at-col doc)))))
+      (region (lines doc) at col (at-line doc) (at-col doc)))))
 
 (defun span (doc line from to face)
   "Colour part of a line, for as long as somebody wants it there. FACE is a face
@@ -293,11 +277,11 @@ here, so the document is what was typed and nothing else."
   (setf (marks doc) (d:without (marks doc) name))
   name)
 
-(defun indent-of (doc at) (lines:indent (line doc at)))
+(defun indent-of (doc at) (leading (line doc at)))
 
 (defun indent-line (doc at target)
   (let* ((text (line doc at))
-         (had (lines:indent text))
+         (had (leading text))
          (body (subseq text had))
          (fresh (concatenate 'string (make-string target :initial-element #\Space)
                              body)))

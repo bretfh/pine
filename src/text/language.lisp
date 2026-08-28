@@ -1,14 +1,9 @@
-(defpackage #:pine/text/language
-  (:use #:cl)
-  (:local-nicknames (#:fault #:pine/run/fault)
-                    (#:doc #:pine/text/document))
-  (:export #:package-of #:readtable-of #:reading))
-(in-package #:pine/text/language)
+(in-package #:pine/text)
 
 (defun %named-after (document word)
   "The name written after the last WORD in this document. What is in force at the
 end of a file is what the last one says."
-  (let* ((text (doc:text document))
+  (let* ((text (text document))
          (at (search word text :from-end t :test #'char-equal)))
     (when at
       (let* ((from (position-if-not
@@ -30,7 +25,12 @@ the walk and the evaluator what a name in it means."
         (find-package :pine/user)
         (find-package :cl-user))))
 
-(defun readtable-of (document)
+(defgeneric readtable-of (of)
+  (:documentation "The readtable OF is written in: a document says so with its own
+(in-readtable), a language says so in its declaration.")
+  (:method (of) (declare (ignore of)) nil))
+
+(defmethod readtable-of ((document document))
   "The readtable this document is written in, from its own (in-readtable), or
 nothing where it is written in the standard one."
   (let ((said (%named-after document "in-readtable")))

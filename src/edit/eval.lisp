@@ -1,12 +1,12 @@
 (defpackage #:pine/edit/eval
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree)
                     (#:command #:pine/run/command) (#:job #:pine/run/job)
                     (#:image #:pine/run/image) (#:session #:pine/run/session)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
-                    (#:language #:pine/text/language)
+                    (#:mode #:pine/mode)
                     (#:render #:pine/edit/render) (#:window #:pine/edit/window)
                     (#:prompt #:pine/edit/prompt))
   (:export #:definition #:references #:arglist #:explains
@@ -22,11 +22,11 @@
 
 (defun delimiterp (ch) (find ch +delimiters+))
 
-(defun offset-of (document &optional (line (doc:at-line document))
-                                     (col (doc:at-col document)))
+(defun offset-of (document &optional (line (text:at-line document))
+                                     (col (text:at-col document)))
   (let ((at 0))
     (dotimes (i line)
-      (incf at (1+ (length (doc:line document i)))))
+      (incf at (1+ (length (text:line document i)))))
     (+ at col)))
 
 (defun line-col (text offset)
@@ -52,11 +52,11 @@
     from))
 
 (defun symbol-at (document &optional of)
-  (let* ((text (doc:text document))
+  (let* ((text (text:text document))
          (token (or of (token-at text (offset-of document)))))
     (when token
       (values (multiple-value-bind (*package* *readtable*)
-                  (language:reading document)
+                  (text:reading document)
                 (fault:or-nothing "a token that is not a form is just a token"
                   (read-from-string token)))
               token))))
@@ -117,16 +117,16 @@
 (defun %remember (document)
   (d:swap *went*
            (lambda (all)
-             (cons (list (node:name document) (doc:at-line document)
-                         (doc:at-col document))
+             (cons (list (node:name document) (text:at-line document)
+                         (text:at-col document))
                    all))))
 
 (defun visit (place)
   (destructuring-bind (file line col &optional kind) place
     (declare (ignore kind))
-    (%remember (doc:current))
+    (%remember (text:current))
     (command:run "find-file" (list file))
-    (doc:goto (doc:current) line col)
+    (text:goto (text:current) line col)
     (log:note "~a:~d" (file-namestring file) (1+ line))
     place))
 
@@ -154,8 +154,8 @@ has reached. Two relationships, one protocol."
   (or *evaluating*
       (setf *evaluating*
             (session:open-session :name (node:name document)
-                                  :package (language:package-of document)
-                                  :readtable (language:readtable-of document)))))
+                                  :package (text:package-of document)
+                                  :readtable (text:readtable-of document)))))
 
 (defun %there (document text)
   "Evaluate in the image the target names, and say what it said the way a session
@@ -163,7 +163,7 @@ here would."
   (let* ((where (target)) (i (image-named where)))
     (cond ((null i) (format nil "no image named ~a" where))
           (t (multiple-value-bind (*package* *readtable*)
-                 (language:reading document)
+                 (text:reading document)
                (multiple-value-bind (answered broke)
                    (image:evaluate i (read-from-string text))
                  (if broke
@@ -178,15 +178,15 @@ here would."
                      ((and e (session:fault e)) (format nil "~a" (session:fault e)))
                      (t (format nil "~{~s~^, ~}" (session:answered e))))))
     (log:note "~a" said)
-    (doc:forget-overlays document)
-    (doc:overlay document (line-col (doc:text document) at)
+    (text:forget-overlays document)
+    (text:overlay document (line-col (text:text document) at)
                     (format nil "=> ~a" said)
                     (if (and e (session:fault e)) :error :comment))
     (or e said)))
 
-(defun %of () (doc:current))
+(defun %of () (text:current))
 
-(defun %mode () (doc:mode-of (doc:current)))
+(defun %mode () (text:mode-of (text:current)))
 
 (command:defcommand "find-definition" ()
     (:describes "go to where what is at point is defined" :on '(code "M-."))
@@ -198,11 +198,11 @@ here would."
   (let ((back (went)))
     (when back
       (destructuring-bind (name line col) back
-        (let ((document (doc:named name)))
+        (let ((document (text:named name)))
           (when document
-            (setf (doc:current) document)
+            (setf (text:current) document)
             (window:show (window:focused) document)
-            (doc:goto document line col)))))))
+            (text:goto document line col)))))))
 
 (command:defcommand "find-references" ()
     (:describes "every place that mentions what is at point" :on '(code "M-?"))
@@ -246,7 +246,7 @@ here would."
 
 (command:defcommand "eval-last-expression" ()
     (:describes "evaluate the form before point" :on '(code "C-x C-e"))
-  (let* ((document (%of)) (text (doc:text document)))
+  (let* ((document (%of)) (text (text:text document)))
     (multiple-value-bind (from to) (form-before text (offset-of document))
       (if from
           (evaluate document (subseq text from to) to)
@@ -254,7 +254,7 @@ here would."
 
 (command:defcommand "eval-defun" ()
     (:describes "evaluate the definition point is in" :on '(code "C-M-x"))
-  (let* ((document (%of)) (text (doc:text document)))
+  (let* ((document (%of)) (text (text:text document)))
     (multiple-value-bind (from to) (form-around text (offset-of document))
       (if from
           (evaluate document (subseq text from to) to)
@@ -262,12 +262,12 @@ here would."
 
 (command:defcommand "load-file" ()
     (:describes "compile this document's file and load it" :on '(code "C-c C-l"))
-  (let* ((document (%of)) (file (doc:file-of document)))
+  (let* ((document (%of)) (file (text:file-of document)))
     (cond ((null file) (log:note "~a has no file" (node:name document)))
           (t (fault:attempt
               (lambda ()
                 (multiple-value-bind (*package* *readtable*)
-                    (language:reading document)
+                    (text:reading document)
                   (load (compile-file file))))
               (format nil "loading ~a" file))
              (log:note "loaded ~a" file)
@@ -296,10 +296,10 @@ here would."
 
 (command:defcommand "eval-document" ()
     (:describes "evaluate every form in this document" :on '(code "C-c C-k"))
-  (let* ((document (%of)) (text (doc:text document)) (n 0))
+  (let* ((document (%of)) (text (text:text document)) (n 0))
     (fault:attempt
      (lambda ()
-       (multiple-value-bind (*package* *readtable*) (language:reading document)
+       (multiple-value-bind (*package* *readtable*) (text:reading document)
          (let ((at 0))
            (loop (multiple-value-bind (form next)
                      (read-from-string text nil :eof :start at)

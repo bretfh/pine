@@ -1,6 +1,6 @@
 (defpackage #:pine/text/ts/lang/commonlisp
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine/text/ts/syntax))
+  (:local-nicknames (#:syntax #:pine/text))
   (:export #:commonlisp))
 (in-package #:pine/text/ts/lang/commonlisp)
 

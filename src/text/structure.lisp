@@ -1,10 +1,10 @@
-(in-package #:pine/text/document)
+(in-package #:pine/text)
 
 (defmethod node:contents ((r region))
   (let ((doc (%document r)))
     (when doc
       (destructuring-bind (from to) (covers r)
-        (lines:region (lines doc) (car from) (cdr from)
+        (region (lines doc) (car from) (cdr from)
                       (car to) (cdr to))))))
 
 (defmethod (setf node:contents) (value (r region))

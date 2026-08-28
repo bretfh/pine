@@ -1,4 +1,4 @@
-(in-package #:pine/text/ts/highlight)
+(in-package #:pine/text)
 
 (defun %viewport-bytes (src from-line to-line)
   "The byte range covering lines FROM-LINE to TO-LINE inclusive."
@@ -173,7 +173,7 @@ buffer's own line numbers.
 
 The source is PS's own lines and byte index, the ones its tree was parsed from,
 so a caller cannot hand this a text the tree does not describe. Cache identity
-is EQ on the lines: the seq is immutable, so an unchanged buffer is one
+is EQ on the  the seq is immutable, so an unchanged buffer is one
 comparison rather than a walk over the file.
 
 With FROM-LINE and TO-LINE, walks only the tree covering those lines. The

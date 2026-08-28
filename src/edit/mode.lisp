@@ -1,6 +1,7 @@
 (defpackage #:pine/edit/mode
   (:use #:cl)
-  (:local-nicknames (#:mode #:pine/mode) (#:doc #:pine/text/document))
+  (:local-nicknames (#:text #:pine/text)
+                    (#:mode #:pine/mode))
   (:export #:prompt #:listing #:debugger))
 (in-package #:pine/edit/mode)
 
@@ -26,11 +27,11 @@ numbered and typing one takes it."))
   "Typing where the document is set to overwrite takes what was there first. A
 setting rather than a mode laid over another: nothing about the text is different,
 only what typing does to it."
-  (when (doc:setting document :overwrite)
-    (let ((line (doc:at-line document)) (col (doc:at-col document)))
-      (when (< col (length (doc:line document line)))
-        (doc:delete-region document line col line
-                           (min (length (doc:line document line))
+  (when (text:setting document :overwrite)
+    (let ((line (text:at-line document)) (col (text:at-col document)))
+      (when (< col (length (text:line document line)))
+        (text:delete-region document line col line
+                           (min (length (text:line document line))
                                 (+ col (length string)))))
-      (doc:insert document string)
+      (text:insert document string)
       t)))

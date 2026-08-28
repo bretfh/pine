@@ -1,10 +1,10 @@
 (defpackage #:pine/edit/render
   (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:meter #:pine/run/meter)
                     (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
-                    (#:parser #:pine/text/ts/parser)
+                    (#:mode #:pine/mode)
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
                     (#:match #:pine/edit/matching))
   (:export #:shows #:frame #:window-tree #:document-tree #:modeline #:echo
@@ -40,17 +40,17 @@ Answers the text and the column each character landed in."
 
 (defun %document-of (win)
   (let ((it (window:shows win)))
-    (or (and (stringp it) (doc:named it))
-        (and (typep it 'doc:document) it)
-        (doc:current))))
+    (or (and (stringp it) (text:named it))
+        (and (typep it 'text:document) it)
+        (text:current))))
 
 (defun caret-col (document)
   "The column point is drawn in: where it lands once tabs are expanded."
   (multiple-value-bind (drawn where)
-      (drawn-line (doc:line document (doc:at-line document))
-                  (max 1 (or (doc:setting document :tab-width) 8)))
+      (drawn-line (text:line document (text:at-line document))
+                  (max 1 (or (text:setting document :tab-width) 8)))
     (declare (ignore drawn))
-    (drawn-col where (doc:at-col document))))
+    (drawn-col where (text:at-col document))))
 
 (defun %sideways (win)
   "Keep point in the window sideways too: a long line scrolls under it rather than
@@ -66,7 +66,7 @@ putting the caret where the text is not."
 
 (defun scroll-to-point (win)
   (let* ((document (%document-of win))
-         (line (doc:at-line document))
+         (line (text:at-line document))
          (from (window:scroll win))
          (height (max 1 (window:lines win))))
     (setf (window:scroll win)
@@ -75,7 +75,7 @@ putting the caret where the text is not."
                 (t from)))
     (%sideways win)))
 
-(defmethod parser:band ((document doc:document))
+(defmethod text:band ((document text:document))
   "The band of lines a window is showing of DOCUMENT, a screen either side, so
 paging lands on lines that were walked already."
   (let ((win (find document (window:windows) :key #'%document-of)))
@@ -85,14 +85,14 @@ paging lands on lines that were walked already."
         (cons (max 0 (- from height)) (+ from (* 2 height)))))))
 
 (defun %overlays (document line)
-  (remove line (doc:overlays document) :key #'first :test-not #'eql))
+  (remove line (text:overlays document) :key #'first :test-not #'eql))
 
 (defun %by-line (document)
   (let ((found (make-hash-table :test 'eql)))
-    (dolist (run (parser:highlights document))
+    (dolist (run (text:highlights document))
       (destructuring-bind (line from to face) run
         (push (list from to face) (gethash line found))))
-    (dolist (run (doc:spans document) found)
+    (dolist (run (text:spans document) found)
       (destructuring-bind (line from to face) run
         (push (list from to face) (gethash line found))))))
 
@@ -102,10 +102,10 @@ paging lands on lines that were walked already."
           :do (return face)))
 
 (defun %region (document)
-  (let ((mark (doc:mark document)))
+  (let ((mark (text:mark document)))
     (when mark
       (destructuring-bind (line col) mark
-        (let ((at-line (doc:at-line document)) (at-col (doc:at-col document)))
+        (let ((at-line (text:at-line document)) (at-col (text:at-col document)))
           (if (or (< line at-line) (and (= line at-line) (<= col at-col)))
               (list line col at-line at-col)
               (list at-line at-col line col)))))))
@@ -141,7 +141,7 @@ method somebody else writes, and nothing here has to know about it.")
                  :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod shows ((content string) win)
-  (let ((document (doc:named content)))
+  (let ((document (text:named content)))
     (if document (shows document win) (call-next-method))))
 
 (defmethod shows ((content ui:widget) win)
@@ -157,7 +157,7 @@ window beside a document."
       (ui:paint content g))
     (ui:cells (ui:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
-(defmethod shows ((document doc:document) win)
+(defmethod shows ((document text:document) win)
   (node:reading document)
   (let* ((from (window:scroll win))
          (left (window:sideways win))
@@ -166,11 +166,11 @@ window beside a document."
          (by-line (%by-line document))
          (g (ui:make-grid width height))
          (caret (%caretp win)))
-    (loop :with tab := (max 1 (or (doc:setting document :tab-width) 8))
-          :for line :from from :below (min (doc:line-count document) (+ from height))
+    (loop :with tab := (max 1 (or (text:setting document :tab-width) 8))
+          :for line :from from :below (min (text:line-count document) (+ from height))
           :for row :from 0
           :do (multiple-value-bind (drawn where)
-                  (drawn-line (doc:line document line) tab)
+                  (drawn-line (text:line document line) tab)
                 (loop :for col :from left :below (min (+ left width) (length drawn))
                       :do (ui:put g row (- col left) (char drawn col)
                                     (or (%face-at by-line line (%at-col where col))
@@ -189,29 +189,29 @@ window beside a document."
                  :class "editor-view" :expand 1 :font *font*
                  :caret (when caret
                           (cons (min (1- height)
-                                     (max 0 (- (doc:at-line document) from)))
+                                     (max 0 (- (text:at-line document) from)))
                                 (min (1- width)
                                      (max 0 (- (caret-col document) left))))))))
 
 (defun document-tree (win)
-  (shows (or (window:shows win) (doc:current)) win))
+  (shows (or (window:shows win) (text:current)) win))
 
 (defun modelinep (win)
   "Whether what this window holds has a modeline: a document says what line you are
 on, and a widget tree has nothing of the sort to say."
   (let ((it (window:shows win)))
-    (or (null it) (typep it 'doc:document)
-        (and (stringp it) (doc:named it)))))
+    (or (null it) (typep it 'text:document)
+        (and (stringp it) (text:named it)))))
 
 (defun modeline (win)
   (let* ((document (%document-of win))
          (width (max 1 (window:cols win)))
          (text (format nil " ~:[  ~;**~] ~a  ~a  L~d C~d"
-                       (doc:modified document)
+                       (text:modified document)
                        (node:name document)
-                       (mode:type (doc:mode-of document))
-                       (1+ (doc:at-line document))
-                       (doc:at-col document)))
+                       (mode:type (text:mode-of document))
+                       (1+ (text:at-line document))
+                       (text:at-col document)))
          (g (ui:make-grid width 1)))
     (loop :for col :from 0 :below width
           :do (ui:put g 0 col
@@ -272,7 +272,7 @@ on, and a widget tree has nothing of the sort to say."
                               (cons (if found (length found) 0)
                                     (min (1- width)
                                          (+ (length question)
-                                            (doc:at-col (prompt:answering)))))))))))
+                                            (text:at-col (prompt:answering)))))))))))
 
 (defun %frame (cols lines said)
   "The frame, and what it read: every window, the question standing and what was
@@ -315,12 +315,12 @@ moving means."
     (ui:by-row g)))
 
 (defun %without-a-parse (document line)
-  (or (mode:indent (doc:mode-of document) document line)
-      (and (plusp line) (doc:indent-of document (1- line)))
+  (or (mode:indent (text:mode-of document) document line)
+      (and (plusp line) (text:indent-of document (1- line)))
       0))
 
 (defun indenting (document from to then)
-  (let ((width (or (mode:setting (doc:mode-of document) :indent) 2)))
-    (or (parser:indent document from to :width width :then then)
+  (let ((width (or (mode:setting (text:mode-of document) :indent) 2)))
+    (or (text:indent document from to :width width :then then)
         (funcall then (loop :for line :from from :to to
                             :collect (cons line (%without-a-parse document line)))))))

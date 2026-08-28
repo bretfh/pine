@@ -2,7 +2,7 @@
             (:use #:cl)
             (:shadow #:describe)
             (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data)
+                              (#:d #:pine/data)
                               (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
                               (#:tree #:pine/fs/tree)
                               (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
@@ -277,8 +277,8 @@ somewhere else."
   (job:start (make-instance 'job:thread :name "quit-watchdog" :restarts nil
                             :thunk (lambda ()
                                      (sleep grace)
-                                     (sb-ext:exit :abort t :code 0))))
-  (job:start (make-instance 'job:thread :name "quit" :restarts nil
+                                     (job:start (make-instance 'job:thread :name "quit" :restarts nil
+                                                               (sb-ext:exit :abort t :code 0))))
                             :thunk (lambda ()
                                      (sleep 0.2)
                                      (fault:or-nothing

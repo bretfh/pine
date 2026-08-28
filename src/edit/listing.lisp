@@ -1,8 +1,8 @@
 (defpackage #:pine/edit/listing
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:command #:pine/run/command)
-                    (#:doc #:pine/text/document) (#:emode #:pine/edit/mode)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:command #:pine/run/command) (#:emode #:pine/edit/mode)
                     (#:log #:pine/run/log))
   (:export #:listing #:into #:listings #:acts #:activate #:row-at
            #:place #:step-row))
@@ -27,52 +27,52 @@ reading the line back out of the text."))
 
 (defun said (row) (if (consp row) (car row) (princ-to-string row)))
 
-(defun row-at (document &optional (line (doc:at-line document)))
+(defun row-at (document &optional (line (text:at-line document)))
   "The row point is on: what it says, and what it stands for."
   (let ((l (%of document)))
     (when l (nth line (rows l)))))
 
-(defun place (&optional (document (doc:current)))
+(defun place (&optional (document (text:current)))
   (let ((row (row-at document)))
     (and (consp row) (cdr row))))
 
 (defun %mark (document)
-  (setf (doc:setting document :selection) (place document))
+  (setf (text:setting document :selection) (place document))
   document)
 
 (defun into (name rows &optional acts)
   "Put ROWS in a document of its own and show it. With ACTS, RET on a row hands
 ACTS the place that row stands for."
-  (let ((document (or (doc:named name)
-                      (doc:make-document name :mode (make-instance 'emode:listing))))
+  (let ((document (or (text:named name)
+                      (text:make-document name :mode (make-instance 'emode:listing))))
         (rows (if (stringp rows)
                   (uiop:split-string rows :separator '(#\Newline))
                   rows)))
     (setf (node:contents document)
           (format nil "~{~a~^~%~}" (mapcar #'said rows)))
-    (doc:goto document 0 0)
-    (unless (typep (doc:mode-of document) 'emode:listing)
-      (setf (doc:mode-of document) (make-instance 'emode:listing)))
+    (text:goto document 0 0)
+    (unless (typep (text:mode-of document) 'emode:listing)
+      (setf (text:mode-of document) (make-instance 'emode:listing)))
     (d:keep! *listings* name (make-instance 'listing :rows rows :acts acts))
-    (setf (doc:current) document)
+    (setf (text:current) document)
     (%mark document)
     (node:name document)))
 
 (defun activate ()
-  (let* ((document (doc:current))
+  (let* ((document (text:current))
          (l (%of document)))
     (when (and l (acts l))
       (funcall (acts l) (place document)))))
 
-(defun step-row (delta &optional (document (doc:current)))
+(defun step-row (delta &optional (document (text:current)))
   "The row after this one, or before it, wrapping round the ends."
   (let* ((l (%of document))
          (n (length (and l (rows l)))))
     (when (plusp n)
-      (doc:goto document (mod (+ (doc:at-line document) delta) n) 0)
+      (text:goto document (mod (+ (text:at-line document) delta) n) 0)
       (%mark document)
       (log:note "~a" (said (row-at document)))
-      (doc:at-line document))))
+      (text:at-line document))))
 
 (command:defcommand "list-activate" ()
     (:describes "open what this row stands for" :on '(listing "RET"))

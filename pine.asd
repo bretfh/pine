@@ -58,7 +58,8 @@ the parse behind it"
                 :depends-on (#:pine)
                 :serial t
                 :pathname "src/text/"
-                :components ((:file "lines") (:file "document")
+                :components ((:file "system")
+                             (:file "lines") (:file "document")
                              (:file "structure")
                              (:file "lisp") (:file "language")
                              (:module "ts"
@@ -78,7 +79,7 @@ the parse behind it"
                                                             ((:file "commonlisp")
                                                              (:file "pine")
                                                              (:file "scheme")))))
-                             (:file "system")))
+                             (:file "visit")))
 
 (asdf:defsystem #:pine/host
                 :description "The machine's own devices, in the namespace"

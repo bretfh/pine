@@ -1,8 +1,8 @@
 (defpackage #:pine/edit/window
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
-                    (#:command #:pine/run/command)
-                    (#:doc #:pine/text/document))
+  (:local-nicknames (#:text #:pine/text)
+                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+                    (#:command #:pine/run/command))
   (:export #:window #:make-window #:windows #:named #:focused #:focus #:root
            #:shows #:scroll #:sideways #:cols #:lines #:runs #:weight #:parts
            #:splitp #:split #:close-window #:only #:seed #:show #:follow))
@@ -72,9 +72,9 @@ was split into."))
 
 (defun show (w it)
   "Put something in a  a document, the name of one, or a widget tree."
-  (let ((content (if (stringp it) (or (doc:named it) it) it)))
+  (let ((content (if (stringp it) (or (text:named it) it) it)))
     (setf (shows w) content)
-    (when (typep content 'doc:document) (setf (doc:current) content))
+    (when (typep content 'text:document) (setf (text:current) content))
     (node:stir w)
     w))
 
@@ -82,14 +82,14 @@ was split into."))
   "The focused window follows what became current, unless it is showing something
 else or the document keeps to itself."
   (let ((w (focused)))
-    (when (and w (typep (shows w) '(or null doc:document))
-               (not (doc:asidep document))
+    (when (and w (typep (shows w) '(or null text:document))
+               (not (text:asidep document))
                (not (eq document (shows w))))
       (setf (shows w) document)
       (node:stir w))
     w))
 
-(defmethod doc:showing :after ((document doc:document))
+(defmethod text:showing :after ((document text:document))
   "What became current is what the focused window shows. Said here, where the
 windows are, rather than by whoever sets the current document."
   (follow document))

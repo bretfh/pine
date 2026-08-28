@@ -1,9 +1,10 @@
 (defpackage #:pine/edit/help
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:command #:pine/run/command)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:node #:pine/fs/node) (#:command #:pine/run/command)
                     (#:job #:pine/run/job) (#:actors #:pine/run/actors)
                     (#:fault #:pine/run/fault) (#:log #:pine/run/log)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode)
                     (#:keys #:pine/edit/keys) (#:listing #:pine/edit/listing)
                     (#:prompt #:pine/edit/prompt))
   (:export #:+settings+))
@@ -17,9 +18,9 @@
     (:overwrite      . "whether typing writes over what is there")
     (:aside          . "whether a window follows this document")))
 
-(defun %of () (doc:current))
+(defun %of () (text:current))
 
-(defun %mode () (doc:mode-of (%of)))
+(defun %mode () (text:mode-of (%of)))
 
 (command:defcommand "describe-key" ()
     (:describes "what a chord runs" :on '(text "C-h k"))
@@ -80,7 +81,7 @@
            (cons ""
                  (loop :for (key . says) :in +settings+
                        :collect (format nil "~(~16a~) ~12a ~a" key
-                                        (or (doc:setting document key) "")
+                                        (or (text:setting document key) "")
                                         says)))))))
 
 (command:defcommand "set-local" (key value)
@@ -92,7 +93,7 @@
                  (intern (string-upcase (princ-to-string key)) :keyword))))
     (prompt:ask (format nil "~(~a~) here: " key)
                 :then (lambda (said)
-                        (setf (doc:setting (%of) key)
+                        (setf (text:setting (%of) key)
                               (let ((*package* (find-package :keyword)))
                                 (handler-case (read-from-string said)
                                   (error () said))))))
@@ -103,10 +104,10 @@
   (listing:into "*documents*"
                 (mapcar (lambda (d)
                           (cons (format nil "~a~30t~a" (node:name d)
-                                        (or (doc:file-of d) ""))
+                                        (or (text:file-of d) ""))
                                 d))
-                        (doc:documents))
-                (lambda (d) (when (node:nodep d) (setf (doc:current) d)))))
+                        (text:documents))
+                (lambda (d) (when (node:nodep d) (setf (text:current) d)))))
 
 (command:defcommand "list-jobs" ()
     (:describes "what this image is running" :on '(text "C-x j"))

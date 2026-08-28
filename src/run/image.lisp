@@ -86,7 +86,9 @@ an answer that may never come, so unattended the fault takes ABORT for it."
     (actors:blocking
      (format nil "~a fault" (job:name image))
      (lambda ()
-       (unless (fault:await f) (fault:take f "ABORT"))))
+       (unless (fault:await f)
+         (fault:or-nothing "the image it was standing in has gone"
+           (fault:take f "ABORT")))))
     f))
 
 (defun %argv (j)

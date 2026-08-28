@@ -1,18 +1,4 @@
-(defpackage #:pine/text/ts/parser
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:meter #:pine/run/meter) (#:job #:pine/run/job)
-                    (#:actors #:pine/run/actors)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
-                    (#:language #:pine/text/language)
-                    (#:runtime #:pine/text/ts/runtime)
-                    (#:syntax #:pine/text/ts/syntax)
-                    (#:hl #:pine/text/ts/highlight))
-  (:export #:parser #:parser-for #:parsers #:highlights #:note #:forget
-           #:forget-all #:state-of #:language-of #:document-of #:band #:banded
-           #:parsed #:reparsed #:indent #:motion #:currentp #:running
-           #:*runtime*))
-(in-package #:pine/text/ts/parser)
+(in-package #:pine/text)
 
 (defvar *parsers* (d:table))
 (defvar *runtime* nil)
@@ -86,28 +72,28 @@ the lines outside it are what they were."
 (defun %parse (p tick)
   (let* ((document (document-of p))
          (ps (state-of p))
-         (lines (doc:lines document))
-         (edit (doc:edit-of document))
+         (lines (lines document))
+         (edit (edit-of document))
          (shown (band document)))
-    (setf (runtime:ps-package ps) (language:package-of document))
-    (runtime:parse-lines! ps lines :edit (first edit) :from (second edit)
+    (setf (ps-package ps) (package-of document))
+    (parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport shown)
-    (setf (doc:edit-of document) nil)
+    (setf (edit-of document) nil)
     (let ((runs (if shown
-                    (hl:parse-highlights ps :from-line (car shown)
+                    (parse-highlights ps :from-line (car shown)
                                             :to-line (cdr shown))
-                    (hl:parse-highlights ps))))
+                    (parse-highlights ps))))
       (d:swap (slot-value p 'found)
                (lambda (had) (%merged (%kept had edit) runs shown))))
     (meter:counted :parse-lines (if shown (- (cdr shown) (car shown))
-                                   (doc:line-count document)))
+                                   (line-count document)))
     (setf (banded p) shown)
     (setf (parsed p) tick)
     (reparsed document)
     (%flat (found p))))
 
 (defun currentp (p)
-  (and (= (parsed p) (doc:tick (document-of p)))
+  (and (= (parsed p) (tick (document-of p)))
        (equal (banded p) (band (document-of p)))))
 
 (defun %current (p tick)
@@ -123,27 +109,27 @@ the lines outside it are what they were."
          (%current p tick)
          (funcall then
                   (loop :for line :from from :to to
-                        :for at := (hl:parse-indent (state-of p) line :width width)
+                        :for at := (parse-indent (state-of p) line :width width)
                         :when at :collect (cons line at)))))
       (:motion
        (destructuring-bind (tick kind at col then) more
          (%current p tick)
          (multiple-value-bind (line where)
-             (runtime:parse-motion (state-of p) kind at col)
+             (parse-motion (state-of p) kind at col)
            (when line (funcall then line where)))))
-      (:stop (runtime:free-parse-state (state-of p)))
+      (:stop (free-parse-state (state-of p)))
       (t (error "A parser has no handler for ~s." message)))))
 
 (defun %grammar (document)
   "Which language a document is parsed as: what it says it is written in, else what
 its mode says."
-  (or (syntax:for-readtable (language:readtable-of document))
-      (mode:setting (doc:mode-of document) :grammar)))
+  (or (for-readtable (readtable-of document))
+      (mode:setting (mode-of document) :grammar)))
 
 (defun %make (document language)
-  (multiple-value-bind (lib fn) (syntax:grammar-of language)
-    (let ((ps (and lib (runtime:make-parse-state *runtime* language lib fn
-                                                 :syntax (syntax:for language)))))
+  (multiple-value-bind (lib fn) (grammar-of language)
+    (let ((ps (and lib (make-parse-state *runtime* language lib fn
+                                                 :syntax (for language)))))
       (when ps
         (let ((p (make-instance 'parser :document document :language language
                                         :state ps :running nil)))
@@ -158,7 +144,7 @@ its mode says."
 
 (defun %dispose (p)
   (job:stop (running p))
-  (runtime:free-parse-state (state-of p))
+  (free-parse-state (state-of p))
   p)
 
 (defun parser-for (document)
@@ -176,7 +162,7 @@ the other is freed rather than left holding a foreign parser."
             (when mine
               (let ((kept (d:claim *parsers* (node:name document) mine)))
                 (cond ((eq kept mine)
-                       (job:tell (running mine) (list :parse (doc:tick document)))
+                       (job:tell (running mine) (list :parse (tick document)))
                        mine)
                       (t (%dispose mine) kept)))))))))
 
@@ -184,9 +170,9 @@ the other is freed rather than left holding a foreign parser."
   "Tell the parser it has fallen behind: the document moved, or what shows it is
 showing lines it has not been asked about."
   (let ((p (parser-for document)))
-    (when (and p (or (/= (parsed p) (doc:tick document))
+    (when (and p (or (/= (parsed p) (tick document))
                      (not (equal (banded p) (band document)))))
-      (job:tell (running p) (list :parse (doc:tick document))))
+      (job:tell (running p) (list :parse (tick document))))
     p))
 
 (defun highlights (document)
@@ -201,15 +187,15 @@ plain text."
   (let ((p (note document)))
     (when p
       (job:tell (running p)
-                (list :indent (doc:tick document) from to width then))
+                (list :indent (tick document) from to width then))
       p)))
 
 (defun motion (document kind then)
   (let ((p (note document)))
     (when p
       (job:tell (running p)
-                (list :motion (doc:tick document) kind
-                      (doc:at-line document) (doc:at-col document) then))
+                (list :motion (tick document) kind
+                      (at-line document) (at-col document) then))
       p)))
 
 (defun forget (document)
@@ -221,7 +207,7 @@ plain text."
       (d:drop! *parsers* name))
     p))
 
-(defmethod doc:killing :after ((document doc:document))
+(defmethod killing :after ((document document))
   "A document that goes takes its parse with it. Said here, where the parse is,
 rather than by whoever kills documents."
   (forget document))

@@ -1,9 +1,10 @@
 (defpackage #:pine/edit/keys
   (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:meter #:pine/run/meter)
                     (#:command #:pine/run/command)
-                    (#:mode #:pine/mode) (#:doc #:pine/text/document)
+                    (#:mode #:pine/mode)
                     (#:fault #:pine/run/fault))
   (:export #:dispatch #:bindings))
 (in-package #:pine/edit/keys)
@@ -11,7 +12,7 @@
 (defun bindings (m) (mode:bindings m))
 
 (defun %dispatch (document k)
-  (let ((m (doc:mode-of document)))
+  (let ((m (text:mode-of document)))
     (multiple-value-bind (said so-far ran) (mode:dispatch m document k
                                                           (ui:pending))
       (cond ((eq said :pending)
@@ -21,7 +22,7 @@
              (setf (ui:pending) nil)
              (setf (ui:last-said) "insert")
              (unless (mode:insert m document (cdr said))
-               (doc:insert document (cdr said)))
+               (text:insert document (cdr said)))
              :inserted)
             (t
              (setf (ui:pending) nil)
@@ -35,5 +36,5 @@
 and the chords its class inherits."
   (meter:timing (:key)
     (or (ui:reading k)
-        (let ((document (doc:current)))
+        (let ((document (text:current)))
           (and document (%dispatch document k))))))

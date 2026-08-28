@@ -1,9 +1,9 @@
 (defpackage #:pine/term
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node)
+  (:local-nicknames (#:text #:pine/text)
+                    (#:node #:pine/fs/node)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command)
-                    (#:doc #:pine/text/document)
                     (#:window #:pine/edit/window)
                     (#:terminal #:pine/term/terminal))
   (:export #:term #:current))
@@ -20,7 +20,7 @@ shows any other and a command acts on one the same way."))
 (system:offers 'term)
 
 (defun current ()
-  (let ((it (doc:current)))
+  (let ((it (text:current)))
     (and (typep it 'terminal:terminal) it)))
 
 (defun %fit (term win)
@@ -35,7 +35,7 @@ fits."
          (term (terminal:open-terminal name :runs runs
                                             :wide (if win (window:cols win) 80)
                                             :tall (if win (window:lines win) 24))))
-    (setf (doc:current) term)
+    (setf (text:current) term)
     (when win (window:show win term))
     (%fit term win)
     term))
@@ -56,7 +56,7 @@ fits."
     (when term
       (job:stop term)
       (job:forget (node:name term))
-      (doc:kill (node:name term))
+      (text:kill (node:name term))
       t)))
 
 (command:defcommand "terminals" () (:describes "every terminal there is")
@@ -70,5 +70,5 @@ fits."
   (dolist (each (terminal:terminals))
     (job:stop each)
     (job:forget (node:name each))
-    (doc:kill (node:name each)))
+    (text:kill (node:name each)))
   s)

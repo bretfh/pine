@@ -1,11 +1,4 @@
-(defpackage #:pine/text/lines
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
-  (:shadow #:delete #:search)
-  (:export #:of #:joined #:line #:line-count #:clamp #:insert #:delete #:region
-           #:move-by #:wordp #:indent #:search #:foldp
-           #:*word-characters*))
-(in-package #:pine/text/lines)
+(in-package #:pine/text)
 
 (defvar *word-characters* "-_*+/<>=?!%&")
 
@@ -17,9 +10,14 @@ did not touch and two readers never see one change underneath them."
 
 (defun joined (lines) (format nil "~{~a~^~%~}" (d:as :list lines)))
 
-(defun line-count (lines) (d:size lines))
+(defgeneric line-count (of)
+  (:documentation "How many lines OF has. A lines value answers for itself and a
+document answers for the lines it holds, because they are the same question.")
+  (:method (of) (d:size of)))
 
-(defun line (lines n) (d:lookup lines n ""))
+(defgeneric line (of n)
+  (:documentation "The Nth line of OF, or the empty string past the end.")
+  (:method (of n) (d:lookup of n "")))
 
 (defun clamp (lines at col)
   (let* ((n (max 0 (min at (max 0 (1- (d:size lines))))))
@@ -31,7 +29,7 @@ did not touch and two readers never see one change underneath them."
     (d:append (d:append (d:subseq lines 0 (min from n)) fresh)
               (d:subseq lines (min (max from to) n) n))))
 
-(defun insert (lines at col string)
+(defun inserted (lines at col string)
   (multiple-value-bind (at col) (clamp lines at col)
     (let* ((text (line lines at))
            (before (subseq text 0 col))
@@ -66,7 +64,7 @@ did not touch and two readers never see one change underneath them."
                   (d:as :list (d:subseq lines (1+ from-line) to-line))
                   (subseq (line lines to-line) 0 to-col))))))
 
-(defun delete (lines from-line from-col to-line to-col)
+(defun cut (lines from-line from-col to-line to-col)
   (multiple-value-bind (from-line from-col) (clamp lines from-line from-col)
     (multiple-value-bind (to-line to-col) (clamp lines to-line to-col)
       (when (or (> from-line to-line)
@@ -125,7 +123,7 @@ did not touch and two readers never see one change underneath them."
                  (clamp lines (1- (d:size lines)) most-positive-fixnum)
                  (values 0 0))))))
 
-(defun indent (text)
+(defun leading (text)
   (or (position-if-not (lambda (c) (member c '(#\Space #\Tab))) text)
       (length text)))
 
@@ -134,7 +132,7 @@ did not touch and two readers never see one change underneath them."
 ask for an exact one."
   (notany #'upper-case-p needle))
 
-(defun search (lines needle at col &key (forward t) (test nil test-p))
+(defun find-in (lines needle at col &key (forward t) (test nil test-p))
   (let ((test (if test-p test (if (foldp needle) #'char-equal #'char=))))
     (loop :with n := (d:size lines)
           :for i := at :then (if forward (1+ i) (1- i))

@@ -98,7 +98,7 @@ knew the document's package would be no use in it."
                                               seen)))))))
         (t
          (let ((seen nil))
-           (do-symbols (s (language:package-of document))
+           (do-symbols (s (text:package-of document))
              (pushnew (string-downcase (symbol-name s)) seen :test #'string=))
            (setf out (%matching prefix seen)))))
       (sort (remove-duplicates out :test #'string=) #'string<))))
@@ -122,12 +122,12 @@ knew the document's package would be no use in it."
               (t (format nil "~a is not defined" token)))))))
 
 (defun prefix-at (document)
-  (let* ((text (doc:text document))
+  (let* ((text (text:text document))
          (at (offset-of document))
          (from (token-start text at)))
     (subseq text from (min at (length text)))))
 
 (defun put-completion (document prefix choice)
-  (let ((line (doc:at-line document)) (col (doc:at-col document)))
-    (doc:delete-region document line (max 0 (- col (length prefix))) line col)
-    (doc:insert document choice)))
+  (let ((line (text:at-line document)) (col (text:at-col document)))
+    (text:delete-region document line (max 0 (- col (length prefix))) line col)
+    (text:insert document choice)))
