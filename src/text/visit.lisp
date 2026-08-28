@@ -8,16 +8,19 @@
     (setf *recent* (subseq *recent* 0 +recent-kept+)))
   name)
 
+(defun %on-the-host (where)
+  "The place on this machine's filesystem that WHERE names, whether or not a file
+is there yet: opening one that is not is a document on a place, not on a file."
+  (let ((at (tree:at "/file"))
+        (names (tree:split-name (namestring where))))
+    (loop :while (and at (rest names))
+          :do (setf at (node:resolve at (pop names))))
+    (and at names (mount:node-for at (first names)))))
+
 (defun %place (where)
-  "The node WHERE names: a node is itself, a path already in the tree is what stands
-there, and anything else is a place on the host."
-  (cond ((node:nodep where) where)
-        ((and (stringp where) (plusp (length where)) (tree:at nil where)))
-        (t (let* ((at (tree:at nil "file"))
-                  (names (tree:split-name (namestring where))))
-             (loop :while (and at (rest names))
-                   :do (setf at (node:resolve at (pop names))))
-             (and at names (mount:node-for at (first names)))))))
+  "The node WHERE names, or a place on the host where the tree has none. AT says
+what a node, a path and a name each mean, so there is nothing to ask here."
+  (or (tree:at where) (%on-the-host where)))
 
 (defun visit (document where)
   "Open DOCUMENT onto WHERE: a file on the host, or any node in the tree. What it
