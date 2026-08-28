@@ -5,7 +5,7 @@
   (:export
    #:*root* #:root #:make-root #:at #:ensure
    #:put #:erase #:walk #:listing #:paths
-   #:split-name #:change #:was #:revert #:builder
+   #:split-name #:change #:builder
    #:built))
 (in-package #:pine/fs/tree)
 
@@ -109,26 +109,6 @@ order nobody can check."
                (loop :for (n . value) :in placed
                      :do (setf (node:contents n) value))
                (%by-name placed))))))
-
-(defun was (place n)
-  (commit:was (node:full-name (ensure nil (alexandria:ensure-list place))) n))
-
-(defun revert (place &optional (n 0))
-  (let ((it (ensure nil (alexandria:ensure-list place))))
-    (setf (node:contents it) (commit:was (node:full-name it) n))))
-
-(defun diff (n)
-  (let ((then (commit:root-at n))
-        (now (commit:held))
-        (out (d:no-map)))
-    (when then
-      (d:do-map (place value now)
-        (unless (d:same value (d:lookup then place))
-          (setf out (d:with out place (list (d:lookup then place) value)))))
-      (d:do-map (place value then)
-        (unless (d:contains now place)
-          (setf out (d:with out place (list value nil))))))
-    out))
 
 (defun erase (where &rest pieces)
   (let* ((names (%names pieces))

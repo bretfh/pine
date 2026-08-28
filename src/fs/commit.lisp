@@ -2,15 +2,11 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data))
   (:export #:held #:held-at #:change #:forget #:clear
-           #:roots #:root-at #:was #:*kept*
            #:writing #:announce #:on-commit #:on-forget #:listeners
            #:forget-listeners))
 (in-package #:pine/fs/commit)
 
-(defparameter *kept* 200)
-
 (defvar *now* (d:no-map))
-(defvar *was* nil)
 (defvar *listening* (d:table))
 (defvar *forgetting* (d:table)
   "Who to tell that a path went, by name. A write and an erasure are two things
@@ -22,13 +18,6 @@ that happen to a place, so they are two lists and not one with a tag on it.")
 (defun held-at (place &optional default)
   "What stands at PLACE now. HELD is the whole of it; this is one place in it."
   (d:lookup (held) place default))
-
-(defun roots () *was*)
-
-(defun root-at (n) (nth n (roots)))
-
-(defun was (place n)
-  (let ((it (root-at n))) (and it (d:lookup it place))))
 
 (defun change (changes &key when)
   (labels ((refused (had)
@@ -43,14 +32,12 @@ that happen to a place, so they are two lists and not one with a tag on it.")
            (next (had)
              (let ((out had))
                (d:do-map (place value changes out)
-                 (setf out (d:with out place value)))))
-           (superseded (had) (d:swap *was* #'d:capped had *kept*)))
+                 (setf out (d:with out place value))))))
     (loop :for had := (held)
           :when (and when (refused had)) :return nil
           :do (let ((moved (moving had)))
                 (when (d:emptyp moved) (return moved))
                 (when (d:cas *now* had (next had))
-                  (superseded had)
                   (return moved))))))
 
 (defun forget (place)
@@ -72,7 +59,6 @@ told who that is."
 
 (defun clear ()
   (setf *now* (d:no-map))
-  (setf *was* nil)
   t)
 
 (defun listeners () (d:all *listening*))
