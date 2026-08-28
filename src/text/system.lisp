@@ -14,7 +14,7 @@
    #:root #:scratch #:asidep #:killing #:showing
    #:lines #:text #:point #:at-line #:at-col
    #:mark #:mode-of #:source #:file-of #:origin
-   #:tick #:past #:changed #:modified #:setting
+   #:tick #:past #:changed #:modified
    #:settings #:leaving #:goto #:move #:insert
    #:delete-back #:newline #:delete-region #:region-of #:indent-line
    #:indent-of #:undo #:redo #:span #:spans

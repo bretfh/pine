@@ -47,7 +47,7 @@ what writing means: a file is written, a device is acted on."
   (when where (setf (source document) (%place where)))
   (let ((n (source document)))
     (when n
-      (mode:save (mode-of document) document)
+      (mode:saving (mode-of document) document)
       (setf (node:contents n) (text document))
       (setf (modified document) nil)
       (origin document))))
@@ -87,3 +87,11 @@ load is a fault like any other: the text still opens, uncoloured."
   (forget-all)
   (dolist (d (documents)) (kill (node:name d)))
   s)
+
+(pine/word:lends
+ "document" "make-document" "documents" "current" "kill"
+ "lines" "line" "line-count" "point" "at-line" "at-col" "mark"
+ "goto" "move" "move-by" "motion" "insert" "newline" "delete-back"
+ "delete-region" "region-of" "undo" "redo" "mode-of" "leading"
+ "indent-line" "spans" "overlays" "forget-spans" "restructure" "regions"
+ "visit" "save" "revert")

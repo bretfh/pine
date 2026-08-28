@@ -30,7 +30,7 @@ reading the line back out of the text."))
     (and (consp row) (cdr row))))
 
 (defun %mark (document)
-  (setf (text:setting document :selection) (place document))
+  (setf (mode:setting document :selection) (place document))
   document)
 
 (defun into (name shown-rows &optional acts)

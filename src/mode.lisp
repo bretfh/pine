@@ -7,8 +7,8 @@
   (:shadow #:type #:structure)
   (:export
    #:mode #:text #:prose #:code #:lisp
-   #:pine #:scheme #:org #:press #:insert
-   #:indent #:complete #:save #:structure #:setting
+   #:pine #:scheme #:org #:press #:typing
+   #:indent #:complete #:saving #:structure #:setting
    #:claims #:mode-for #:bind #:binding #:bindings
    #:dispatch #:named #:modes #:prefixp #:type
    #:mode-node))
@@ -39,8 +39,10 @@ and seven generics reimplementing method combination."))
   (:documentation "What a key means here. Nothing by default, so the keymap has it.")
   (:method ((m mode) d k) (declare (ignore d k)) nil))
 
-(defgeneric insert (mode document string)
-  (:documentation "What typing means here.")
+(defgeneric typing (mode document string)
+  (:documentation "What typing means here, beside PRESS, which says what a key
+means. Not INSERT: putting text in a document is the document's, and a mode says
+what typing is before anything is put anywhere.")
   (:method ((m mode) d s) (declare (ignore d s)) nil))
 
 (defgeneric indent (mode document line)
@@ -51,8 +53,10 @@ and seven generics reimplementing method combination."))
   (:documentation "What PREFIX could be finished as.")
   (:method ((m mode) d prefix) (declare (ignore d prefix)) nil))
 
-(defgeneric save (mode document)
-  (:documentation "What saving means here.")
+(defgeneric saving (mode document)
+  (:documentation "What saving means here, beside PRESS and TYPING. Not SAVE:
+writing a document back where it came from is the document's, and a mode says what
+saving is before anything is written.")
   (:method ((m mode) d) (declare (ignore d)) nil))
 
 (defgeneric structure (mode document)
@@ -63,10 +67,17 @@ put in the namespace under the document, so a form or a heading is a place anyth
 can read, write and watch -- inside this image and outside it.")
   (:method ((m mode) d) (declare (ignore d)) nil))
 
-(defgeneric setting (mode key)
-  (:documentation "What this mode says about KEY. CALL-NEXT-METHOD is the fallback,
-so a mode that says nothing gets what its parent says.")
+(defgeneric setting (of key)
+  (:documentation "What OF says about KEY. A mode answers for every document it is
+for; a document answers for itself first and asks its mode after. One question,
+because that is what it is.
+
+CALL-NEXT-METHOD is the fallback, so a mode that says nothing gets what its parent
+says.")
   (:method ((m mode) key) (declare (ignore key)) nil))
+
+(defgeneric (setf setting) (value of key)
+  (:documentation "Say what OF holds for KEY."))
 
 (defgeneric claims (mode)
   (:documentation "The globs of paths and names this mode is for.")
@@ -250,5 +261,5 @@ whoever is putting it up, the way any other node is."
               :describes "every mode there is, and its chords"))
 
 (pine/word:lends "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
-                "press" "insert" "indent" "complete" "save" "structure" "setting"
+                "press" "typing" "indent" "complete" "saving" "structure" "setting"
                 "bind" "claims")

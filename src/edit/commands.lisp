@@ -330,14 +330,14 @@ by whoever asks for it."
 
 (command:defcommand "insert-tab" () (:describes "a tab's worth of spaces")
   (let* ((document (text:current))
-         (width (max 1 (or (text:setting document :tab-width) 8))))
+         (width (max 1 (or (mode:setting document :tab-width) 8))))
     (text:insert document (make-string width :initial-element #\Space))
     width))
 
 (command:defcommand "overwrite" ()
     (:describes "type over what is there" :on '(text "M-o"))
-  (let* ((document (text:current)) (on (not (text:setting document :overwrite))))
-    (setf (text:setting document :overwrite) on)
+  (let* ((document (text:current)) (on (not (mode:setting document :overwrite))))
+    (setf (mode:setting document :overwrite) on)
     (log:note "overwrite is ~:[off~;on~]" on)
     on))
 

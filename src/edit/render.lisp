@@ -35,7 +35,7 @@ Answers the text and the column each character landed in."
   "The column point is drawn in: where it lands once tabs are expanded."
   (multiple-value-bind (drawn where)
       (drawn-line (text:line document (text:at-line document))
-                  (max 1 (or (text:setting document :tab-width) 8)))
+                  (max 1 (or (mode:setting document :tab-width) 8)))
     (declare (ignore drawn))
     (drawn-col where (text:at-col document))))
 
@@ -153,7 +153,7 @@ window beside a document."
          (by-line (%by-line document))
          (g (ui:make-grid width height))
          (caret (%caretp win)))
-    (loop :with tab := (max 1 (or (text:setting document :tab-width) 8))
+    (loop :with tab := (max 1 (or (mode:setting document :tab-width) 8))
           :for line :from from :below (min (text:line-count document) (+ from height))
           :for row :from 0
           :do (multiple-value-bind (drawn where)

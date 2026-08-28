@@ -72,7 +72,7 @@
                                    (round (input:pointer-at-x at)))))
         (when thunk (screen:tell s thunk))))))
 
-(defmethod screen:typing ((s screen:screen) sh &rest event)
+(defmethod screen:keyboard-said ((s screen:screen) sh &rest event)
   (declare (ignore sh))
   (let ((k (screen:keys s)))
     (event-case event

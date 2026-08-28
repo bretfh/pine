@@ -12,7 +12,7 @@
             ((and (consp said) (eq :insert (car said)))
              (setf (ui:pending) nil)
              (setf (ui:last-said) "insert")
-             (unless (mode:insert m document (cdr said))
+             (unless (mode:typing m document (cdr said))
                (text:insert document (cdr said)))
              :inserted)
             (t

@@ -150,7 +150,7 @@ they do not take."))
 (defmethod mode:press ((m shell) (term terminal) key)
   (send term key))
 
-(defmethod mode:insert ((m shell) (term terminal) string)
+(defmethod mode:typing ((m shell) (term terminal) string)
   (send term string))
 
 (defun resize (term wide tall)

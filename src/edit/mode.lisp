@@ -18,11 +18,11 @@ numbered and typing one takes it."))
 (defmethod mode:setting ((m listing) key)
   (case key (:aside t) (t (call-next-method))))
 
-(defmethod mode:insert ((m mode:text) document string)
+(defmethod mode:typing ((m mode:text) document string)
   "Typing where the document is set to overwrite takes what was there first. A
 setting rather than a mode laid over another: nothing about the text is different,
 only what typing does to it."
-  (when (text:setting document :overwrite)
+  (when (mode:setting document :overwrite)
     (let ((line (text:at-line document)) (col (text:at-col document)))
       (when (< col (length (text:line document line)))
         (text:delete-region document line col line

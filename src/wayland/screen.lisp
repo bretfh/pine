@@ -13,7 +13,7 @@
   (:export
    #:screen #:wm-of #:availablep #:tell #:pump
    #:keys #:pointer #:up #:says #:pointing
-   #:typing #:typed #:chorded #:chords-wanted))
+   #:keyboard-said #:typed #:chorded #:chords-wanted))
 (in-package #:pine/wayland/screen)
 
 (defconstant +left+ #x110)
@@ -24,7 +24,7 @@ saying so, and a pane with nothing behind it is a window nothing can close.")
 (defgeneric pointing (s sh &rest event)
   (:documentation "What the pointer did. The screen holds the connection and says
 one arrived; what it was for is answered beside the other hands."))
-(defgeneric typing (s sh &rest event))
+(defgeneric keyboard-said (s sh &rest event))
 (defgeneric typed (s said))
 (defgeneric chorded (s said))
 (defgeneric chords-wanted (s))
@@ -265,7 +265,7 @@ compositor put it; what it draws is the new node's to say."
                                    :on-pointer (lambda (sh &rest e)
                                                  (apply #'pointing s sh e))
                                    :on-keyboard (lambda (sh &rest e)
-                                                  (apply #'typing s sh e))))
+                                                  (apply #'keyboard-said s sh e))))
     (setf (wm-of s) (wm:bind d :on-said (lambda (said) (%managing s said))
                                :on-render (lambda () (%rendering s))
                                :on-chord (lambda (said) (chorded s said))))

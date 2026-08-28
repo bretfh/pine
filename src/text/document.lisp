@@ -136,13 +136,13 @@ is text plus something of its own."
   *current*)
 
 (defun asidep (doc)
-  (and (typep doc 'document) (setting doc :aside) t))
+  (and (typep doc 'document) (mode:setting doc :aside) t))
 
-(defun setting (doc key)
+(defmethod mode:setting ((doc document) key)
   "What this document reads for KEY: its own, then its mode's."
   (or (d:lookup (settings doc) key) (mode:setting (mode-of doc) key)))
 
-(defun (setf setting) (value doc key)
+(defmethod (setf mode:setting) (value (doc document) key)
   (setf (settings doc) (d:with (settings doc) key value))
   value)
 

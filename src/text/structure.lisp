@@ -68,6 +68,3 @@ was never standing for."
 
 (defun regions (doc)
   (remove-if-not (lambda (n) (typep n 'region)) (node:nodes doc)))
-
-(pine/word:lends "document" "make-document" "documents" "restructure"
-                "regions" "spans" "overlays")

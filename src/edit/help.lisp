@@ -67,7 +67,7 @@
            (cons ""
                  (loop :for (key . says) :in +settings+
                        :collect (format nil "~(~16a~) ~12a ~a" key
-                                        (or (text:setting document key) "")
+                                        (or (mode:setting document key) "")
                                         says)))))))
 
 (command:defcommand "set-local" (key value)
@@ -79,7 +79,7 @@
                  (intern (string-upcase (princ-to-string key)) :keyword))))
     (ask (format nil "~(~a~) here: " key)
                 :then (lambda (said)
-                        (setf (text:setting (text:current) key)
+                        (setf (mode:setting (text:current) key)
                               (let ((*package* (find-package :keyword)))
                                 (handler-case (read-from-string said)
                                   (error () said))))))
