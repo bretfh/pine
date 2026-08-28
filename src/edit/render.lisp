@@ -8,7 +8,7 @@
                     (#:window #:pine/edit/window) (#:prompt #:pine/edit/prompt)
                     (#:match #:pine/edit/matching))
   (:export
-   #:shows #:frame #:modeline #:echo #:rows
+   #:drawn #:frame #:modeline #:echo #:rows
    #:indenting #:*cols* #:*lines* #:*font*))
 (in-package #:pine/edit/render)
 
@@ -129,8 +129,8 @@ paging lands on lines that were walked already."
 (defun %caretp (win)
   (and (eq win (window:focused)) (not (prompt:askingp))))
 
-(defgeneric shows (content win)
-  (:documentation "The cells a window shows of what it holds. A document, a widget
+(defgeneric drawn (content win)
+  (:documentation "The cells a window drawn of what it holds. A document, a widget
 tree and the name of a document are all things a window can hold; another kind is a
 method somebody else writes, and nothing here has to know about it.")
   (:method (content win)
@@ -139,11 +139,11 @@ method somebody else writes, and nothing here has to know about it.")
                                             (max 1 (window:lines win))))
                  :class "editor-view" :expand 1 :font *font*)))
 
-(defmethod shows ((content string) win)
+(defmethod drawn ((content string) win)
   (let ((document (text:named content)))
-    (if document (shows document win) (call-next-method))))
+    (if document (drawn document win) (call-next-method))))
 
-(defmethod shows ((content ui:widget) win)
+(defmethod drawn ((content ui:widget) win)
   "A widget tree draws to cells like a surface does, so a config can put one in a
 window beside a document."
   (let* ((cols (max 1 (window:cols win)))
@@ -156,7 +156,7 @@ window beside a document."
       (ui:paint content g))
     (ui:cells (ui:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
-(defmethod shows ((document text:document) win)
+(defmethod drawn ((document text:document) win)
   (node:reading document)
   (let* ((from (window:scroll win))
          (left (window:sideways win))
@@ -193,7 +193,7 @@ window beside a document."
                                      (max 0 (- (caret-col document) left))))))))
 
 (defun document-tree (win)
-  (shows (or (window:shows win) (text:current)) win))
+  (drawn (or (window:shows win) (text:current)) win))
 
 (defun modelinep (win)
   "Whether what this window holds has a modeline: a document says what line you are
@@ -242,7 +242,7 @@ on, and a widget tree has nothing of the sort to say."
         (g (ui:make-grid (max 1 width) (max 1 (length found)))))
     (loop :for each :in found
           :for row :from 0
-          :for text := (match:shows each width)
+          :for text := (match:as-row each width)
           :for face := (if (= (+ row from) chosen)
                            :completion-selected
                            :completion)

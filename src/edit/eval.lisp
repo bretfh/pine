@@ -183,13 +183,9 @@ here would."
                     (if (and e (session:fault e)) :error :comment))
     (or e said)))
 
-(defun %of () (text:current))
-
-(defun %mode () (text:mode-of (text:current)))
-
 (command:defcommand "find-definition" ()
     (:describes "go to where what is at point is defined" :on '(code "M-."))
-  (let ((found (definition (%mode) (%of))))
+  (let ((found (definition (text:mode-of (text:current)) (text:current))))
     (if found (visit (first found)) (log:note "no definition"))))
 
 (command:defcommand "go-back" ()
@@ -207,7 +203,7 @@ here would."
     (:describes "every place that mentions what is at point" :on '(code "M-?"))
   (flet ((says (p) (format nil "~a:~d" (file-namestring (first p))
                            (1+ (second p)))))
-    (let ((found (references (%mode) (%of))))
+    (let ((found (references (text:mode-of (text:current)) (text:current))))
       (cond ((null found) (log:note "no references"))
             ((null (rest found)) (visit (first found)))
             (t (prompt:ask "Reference: " :must-match t
@@ -223,10 +219,10 @@ here would."
 
 (command:defcommand "complete-symbol" ()
     (:describes "finish the name at point" :on '(code "M-TAB" "C-M-i"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (prefix (prefix-at document))
          (found (and (plusp (length prefix))
-                     (mode:complete (%mode) document prefix))))
+                     (mode:complete (text:mode-of (text:current)) document prefix))))
     (cond ((null found) (log:note "no completions"))
           ((null (rest found)) (put-completion document prefix (first found)))
           (t (prompt:ask "Complete: " :must-match t :candidates found
@@ -236,16 +232,16 @@ here would."
 
 (command:defcommand "arglist" ()
     (:describes "what the call at point takes" :on '(code "C-c C-a"))
-  (log:note "~a" (or (arglist (%mode) (%of))
+  (log:note "~a" (or (arglist (text:mode-of (text:current)) (text:current))
                      "nothing at point takes arguments")))
 
 (command:defcommand "describe-symbol" ()
     (:describes "what the name at point is" :on '(code "C-c C-d"))
-  (log:note "~a" (or (explains (%mode) (%of)) "")))
+  (log:note "~a" (or (explains (text:mode-of (text:current)) (text:current)) "")))
 
 (command:defcommand "eval-last-expression" ()
     (:describes "evaluate the form before point" :on '(code "C-x C-e"))
-  (let* ((document (%of)) (text (text:text document)))
+  (let* ((document (text:current)) (text (text:text document)))
     (multiple-value-bind (from to) (form-before text (offset-of document))
       (if from
           (evaluate document (subseq text from to) to)
@@ -253,7 +249,7 @@ here would."
 
 (command:defcommand "eval-defun" ()
     (:describes "evaluate the definition point is in" :on '(code "C-M-x"))
-  (let* ((document (%of)) (text (text:text document)))
+  (let* ((document (text:current)) (text (text:text document)))
     (multiple-value-bind (from to) (form-around text (offset-of document))
       (if from
           (evaluate document (subseq text from to) to)
@@ -261,7 +257,7 @@ here would."
 
 (command:defcommand "load-file" ()
     (:describes "compile this document's file and load it" :on '(code "C-c C-l"))
-  (let* ((document (%of)) (file (text:file-of document)))
+  (let* ((document (text:current)) (file (text:file-of document)))
     (cond ((null file) (log:note "~a has no file" (node:name document)))
           (t (fault:attempt
               (lambda ()
@@ -286,7 +282,7 @@ here would."
     (:describes "read a form and evaluate it"
      :asks '((:prompt "Eval: " :history :eval))
      :on '(text "M-:"))
-  (let* ((s (evaluating (%of)))
+  (let* ((s (evaluating (text:current)))
          (e (session:evaluate s (session:read s (princ-to-string form)))))
     (if (session:fault e)
         (log:note "~a" (session:fault e))
@@ -295,7 +291,7 @@ here would."
 
 (command:defcommand "eval-document" ()
     (:describes "evaluate every form in this document" :on '(code "C-c C-k"))
-  (let* ((document (%of)) (text (text:text document)) (n 0))
+  (let* ((document (text:current)) (text (text:text document)) (n 0))
     (fault:attempt
      (lambda ()
        (multiple-value-bind (*package* *readtable*) (text:reading document)

@@ -46,14 +46,10 @@ by whoever asks for it."
           ((eq held :minus) -1)
           (t held))))
 
-(defun %of () (text:current))
-
-(defun %lines (document) (text:lines document))
-
 (defun %case-word (by)
-  (let* ((document (%of)) (line (text:at-line document)) (col (text:at-col document)))
+  (let* ((document (text:current)) (line (text:at-line document)) (col (text:at-col document)))
     (multiple-value-bind (to-line to-col)
-        (text:move-by :word (%lines document) line col 1)
+        (text:move-by :word (text:lines document) line col 1)
       (when (= line to-line)
         (let ((word (text:delete-region document line col to-line to-col)))
           (text:insert document (funcall by word)))))))
@@ -73,22 +69,22 @@ by whoever asks for it."
 
 (command:defcommand "forward-sexp" ()
     (:describes "over the form after point" :on '(code "C-M-f"))
-  (%go (%of) :forward-sexp))
+  (%go (text:current) :forward-sexp))
 
 (command:defcommand "backward-sexp" ()
     (:describes "back over the form before point" :on '(code "C-M-b"))
-  (%go (%of) :backward-sexp))
+  (%go (text:current) :backward-sexp))
 
 (command:defcommand "beginning-of-defun" ()
     (:describes "to the top of this definition")
-  (%go (%of) :beginning-of-defun))
+  (%go (text:current) :beginning-of-defun))
 
 (command:defcommand "end-of-defun" () (:describes "to the end of this definition")
-  (%go (%of) :end-of-defun))
+  (%go (text:current) :end-of-defun))
 
 (command:defcommand "mark-sexp" ()
     (:describes "the region is the form after point")
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (text:motion document :forward-sexp
                    (lambda (line col)
                      (setf (text:mark document) (text:point document))
@@ -96,44 +92,44 @@ by whoever asks for it."
 
 (command:defcommand "forward-char" ()
     (:describes "point one character on" :on '(text "C-f" "Right"))
-  (text:move (%of) :char (times)))
+  (text:move (text:current) :char (times)))
 
 (command:defcommand "backward-char" ()
     (:describes "point one character back" :on '(text "C-b" "Left"))
-  (text:move (%of) :char (- (times))))
+  (text:move (text:current) :char (- (times))))
 
 (command:defcommand "forward-word" ()
     (:describes "point one word on" :on '(text "M-f"))
-  (text:move (%of) :word (times)))
+  (text:move (text:current) :word (times)))
 
 (command:defcommand "backward-word" ()
     (:describes "point one word back" :on '(text "M-b"))
-  (text:move (%of) :word (- (times))))
+  (text:move (text:current) :word (- (times))))
 
 (command:defcommand "next-line" ()
     (:describes "point one line down" :on '(text "C-n" "Down"))
-  (text:move (%of) :line (times)))
+  (text:move (text:current) :line (times)))
 
 (command:defcommand "previous-line" ()
     (:describes "point one line up" :on '(text "C-p" "Up"))
-  (text:move (%of) :line (- (times))))
+  (text:move (text:current) :line (- (times))))
 
 (command:defcommand "beginning-of-line" ()
     (:describes "point to column zero" :on '(text "C-a" "Home"))
-  (text:goto (%of) (text:at-line (%of)) 0))
+  (text:goto (text:current) (text:at-line (text:current)) 0))
 
 (command:defcommand "end-of-line" ()
     (:describes "point to the end of the line" :on '(text "C-e" "End"))
-  (text:goto (%of) (text:at-line (%of))
-            (length (text:line (%of) (text:at-line (%of))))))
+  (text:goto (text:current) (text:at-line (text:current))
+            (length (text:line (text:current) (text:at-line (text:current))))))
 
 (command:defcommand "beginning-of-document" ()
     (:describes "point to the first line" :on '(text "M-<"))
-  (text:goto (%of) 0 0))
+  (text:goto (text:current) 0 0))
 
 (command:defcommand "end-of-document" ()
     (:describes "point to the last line" :on '(text "M->"))
-  (text:move (%of) :text 1))
+  (text:move (text:current) :text 1))
 
 (command:defcommand "goto-line" (line)
     (:describes "point to a line by number"
@@ -142,7 +138,7 @@ by whoever asks for it."
   (let ((n (if (integerp line)
                line
                (parse-integer (princ-to-string line) :junk-allowed t))))
-    (when n (text:goto (%of) (max 0 (1- n)) 0))))
+    (when n (text:goto (text:current) (max 0 (1- n)) 0))))
 
 (command:defcommand "universal-argument" ()
     (:describes "the next command, four times" :on '(text "C-u"))
@@ -175,30 +171,30 @@ by whoever asks for it."
 
 (command:defcommand "newline" ()
     (:describes "break the line at point" :on '(text "RET"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (text:newline document)
     (%indent document (text:at-line document) (text:at-line document))
     (text:point document)))
 
 (command:defcommand "indent-line" ()
     (:describes "indent this line as the parse says" :on '(text "TAB"))
-  (%indent (%of) (text:at-line (%of)) (text:at-line (%of))))
+  (%indent (text:current) (text:at-line (text:current)) (text:at-line (text:current))))
 
 (command:defcommand "undo" ()
     (:describes "put back what the last edit changed" :on '(text "C-/"))
-  (text:undo (%of)))
+  (text:undo (text:current)))
 
 (command:defcommand "redo" ()
     (:describes "do again what undo put back" :on '(text "C-?"))
-  (text:redo (%of)))
+  (text:redo (text:current)))
 
 (command:defcommand "delete-backward-char" ()
     (:describes "take the character before point" :on '(text "DEL"))
-  (text:delete-back (%of)))
+  (text:delete-back (text:current)))
 
 (command:defcommand "delete-char" ()
     (:describes "take the character at point" :on '(text "Delete" "C-d"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (line (text:at-line document))
          (col (text:at-col document)))
     (if (< col (length (text:line document line)))
@@ -208,11 +204,11 @@ by whoever asks for it."
 
 (command:defcommand "set-mark" ()
     (:describes "put the mark at point" :on '(text "C-SPC"))
-  (setf (text:mark (%of)) (text:point (%of))))
+  (setf (text:mark (text:current)) (text:point (text:current))))
 
 (command:defcommand "kill-region" ()
     (:describes "take the region and keep it" :on '(text "C-w"))
-  (let* ((document (%of)) (taken (text:region-of document)))
+  (let* ((document (text:current)) (taken (text:region-of document)))
     (when taken
       (kill taken)
       (destructuring-bind (line col) (text:mark document)
@@ -223,14 +219,14 @@ by whoever asks for it."
 
 (command:defcommand "copy-region" ()
     (:describes "keep the region without taking it" :on '(text "M-w"))
-  (let* ((document (%of)) (taken (text:region-of document)))
+  (let* ((document (text:current)) (taken (text:region-of document)))
     (when taken (kill taken) (setf (text:mark document) nil))
     taken))
 
 (command:defcommand "yank" ()
     (:describes "put back what was killed" :on '(text "C-y"))
   (let ((held (yank)))
-    (when held (text:insert (%of) held))
+    (when held (text:insert (text:current) held))
     held))
 
 (command:defcommand "yank-pop" ()
@@ -238,12 +234,12 @@ by whoever asks for it."
   (let ((held (second *kill-ring*)))
     (when held
       (setf *kill-ring* (append (rest *kill-ring*) (list (first *kill-ring*))))
-      (text:insert (%of) (first *kill-ring*)))
+      (text:insert (text:current) (first *kill-ring*)))
     held))
 
 (command:defcommand "kill-line" ()
     (:describes "take the rest of the line and keep it" :on '(text "C-k"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (line (text:at-line document))
          (col (text:at-col document))
          (text (text:line document line)))
@@ -254,31 +250,31 @@ by whoever asks for it."
 
 (command:defcommand "kill-word" ()
     (:describes "take the word after point and keep it" :on '(text "M-d"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (line (text:at-line document))
          (col (text:at-col document)))
     (multiple-value-bind (to-line to-col)
-        (text:move-by :word (%lines document) line col 1)
+        (text:move-by :word (text:lines document) line col 1)
       (kill (text:delete-region document line col to-line to-col)))))
 
 (command:defcommand "backward-kill-word" ()
     (:describes "take the word before point and keep it" :on '(text "M-DEL"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (line (text:at-line document))
          (col (text:at-col document)))
     (multiple-value-bind (from-line from-col)
-        (text:move-by :word (%lines document) line col -1)
+        (text:move-by :word (text:lines document) line col -1)
       (kill (text:delete-region document from-line from-col line col)))))
 
 (command:defcommand "open-line" ()
     (:describes "a fresh line below, point where it is" :on '(text "C-o"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (text:newline document)
     (text:move document :char -1)))
 
 (command:defcommand "transpose-chars" ()
     (:describes "swap the two characters around point" :on '(text "C-t"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (line (text:at-line document))
          (col (text:at-col document))
          (text (text:line document line)))
@@ -289,20 +285,20 @@ by whoever asks for it."
 
 (command:defcommand "mark-whole-document" ()
     (:describes "the region is everything" :on '(text "C-x h"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (setf (text:mark document) (list 0 0))
     (text:move document :text 1)))
 
 (command:defcommand "exchange-point-and-mark" ()
     (:describes "point and mark swap places" :on '(text "C-x C-x"))
-  (let* ((document (%of)) (mark (text:mark document)) (at (text:point document)))
+  (let* ((document (text:current)) (mark (text:mark document)) (at (text:point document)))
     (when mark
       (setf (text:mark document) at)
       (text:goto document (first mark) (second mark)))))
 
 (command:defcommand "indent-region" ()
     (:describes "indent every line of the region" :on '(text "C-M-\\"))
-  (let* ((document (%of)) (span (text:mark document)))
+  (let* ((document (text:current)) (span (text:mark document)))
     (when span
       (%indent document
                (min (first span) (text:at-line document))
@@ -310,13 +306,13 @@ by whoever asks for it."
 
 (command:defcommand "format-document" ()
     (:describes "indent every line of it" :on '(code "C-c TAB"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (%indent document 0 (max 0 (1- (text:line-count document))))
     (text:line-count document)))
 
 (command:defcommand "comment-line" ()
     (:describes "comment this line, or uncomment it" :on '(text "M-;"))
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (line (text:at-line document))
          (text (text:line document line))
          (mark (or (mode:setting (text:mode-of document) :comment) ";;"))
@@ -345,14 +341,14 @@ by whoever asks for it."
   (%case-word #'string-capitalize))
 
 (command:defcommand "insert-tab" () (:describes "a tab's worth of spaces")
-  (let* ((document (%of))
+  (let* ((document (text:current))
          (width (max 1 (or (text:setting document :tab-width) 8))))
     (text:insert document (make-string width :initial-element #\Space))
     width))
 
 (command:defcommand "overwrite" ()
     (:describes "type over what is there" :on '(text "M-o"))
-  (let* ((document (%of)) (on (not (text:setting document :overwrite))))
+  (let* ((document (text:current)) (on (not (text:setting document :overwrite))))
     (setf (text:setting document :overwrite) on)
     (log:note "overwrite is ~:[off~;on~]" on)
     on))
@@ -366,19 +362,19 @@ by whoever asks for it."
 (command:defcommand "keyboard-quit" ()
     (:describes "drop the mark, the prompt and the pending chord"
      :on '(text "C-g" "Escape"))
-  (setf (text:mark (%of)) nil)
-  (text:forget-spans (%of))
+  (setf (text:mark (text:current)) nil)
+  (text:forget-spans (text:current))
   (if (prompt:askingp) (prompt:cancel) (log:note "quit")))
 
 (command:defcommand "recenter" ()
     (:describes "point to the middle of the window" :on '(text "C-l"))
   (let ((win (window:focused)))
     (setf (window:scroll win)
-          (max 0 (- (text:at-line (%of)) (floor (window:lines win) 2))))))
+          (max 0 (- (text:at-line (text:current)) (floor (window:lines win) 2))))))
 
 (command:defcommand "scroll-up" ()
     (:describes "a screenful on" :on '(text "C-v" "PageDown"))
-  (let* ((win (window:focused)) (document (%of))
+  (let* ((win (window:focused)) (document (text:current))
          (step (max 1 (- (window:lines win) 2))))
     (setf (window:scroll win)
           (min (max 0 (1- (text:line-count document)))
@@ -387,7 +383,7 @@ by whoever asks for it."
 
 (command:defcommand "scroll-down" ()
     (:describes "a screenful back" :on '(text "M-v" "PageUp"))
-  (let* ((win (window:focused)) (document (%of))
+  (let* ((win (window:focused)) (document (text:current))
          (step (max 1 (- (window:lines win) 2))))
     (setf (window:scroll win) (max 0 (- (window:scroll win) step)))
     (text:goto document (max 0 (- (text:at-line document) step))

@@ -110,7 +110,7 @@ the command runs again when they answer."
               :then (lambda (said) (when (equal "yes" said) (funcall thunk))))
   :asking)
 
-(defun %frame ()
+(defun %editor ()
   "The editor, laid out for whatever is showing it. The screen says how big it is by
 writing /surface/editor/size, and this follows that the way it follows anything
 else it read."
@@ -136,7 +136,7 @@ else it read."
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
     (window:seed scratch))
-  (ui:builds "editor" #'%frame :as 'ui:window :shown t)
+  (ui:builds "editor" #'%editor :as 'ui:window :shown t)
   s)
 
 (defmethod job:stop ((s edit))

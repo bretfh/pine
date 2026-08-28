@@ -9,7 +9,7 @@
   (:export
    #:prompt #:asking #:askingp #:ask #:answer
    #:cancel #:so-far #:asked #:question #:answering
-   #:then #:candidates #:chosen #:choose #:was
+   #:then #:candidates #:chosen #:step-choice #:was
    #:matching #:complete #:source #:sources #:*prompt*
    #:showing #:category #:given #:must-match #:history
    #:remember #:filep))
@@ -57,12 +57,12 @@
 
 (defun %chose-node () (%place "chose" (lambda () (node:make "chose"))))
 
-(defun %text ()
+(defun %typed ()
   (let ((d (text:named +document+)))
     (if d (node:contents d) "")))
 
 (defun %said-node ()
-  (%place "said" (lambda () (node:derive "said" #'%text))))
+  (%place "said" (lambda () (node:derive "said" #'%typed))))
 
 (defun %matching-node ()
   (%place "matching"
@@ -78,7 +78,7 @@
 
 (defun so-far ()
   "What has been typed into the prompt so far."
-  (if (tree:root) (node:contents (%said-node)) (%text)))
+  (if (tree:root) (node:contents (%said-node)) (%typed)))
 
 (defun asked ()
   (and (tree:root) (node:contents (%question-node))))
@@ -164,7 +164,7 @@ inside another one would otherwise leave the prompt as what every key edits."
   (%standing)
   *prompt*)
 
-(defun choose (delta)
+(defun step-choice (delta)
   (let* ((p *prompt*)
          (found (and p (matching p)))
          (n (length found)))
@@ -316,11 +316,11 @@ typed, so walking back to the end gives it back."
 
 (command:defcommand "next-candidate" ()
     (:describes "the next candidate" :on '(prompt "C-n" "Down"))
-  (choose 1))
+  (step-choice 1))
 
 (command:defcommand "previous-candidate" ()
     (:describes "the candidate before" :on '(prompt "C-p" "Up"))
-  (choose -1))
+  (step-choice -1))
 
 (command:defcommand "history-previous" ()
     (:describes "what was answered here before" :on '(prompt "M-p"))

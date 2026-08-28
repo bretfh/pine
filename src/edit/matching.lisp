@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:fault #:pine/run/fault))
   (:export
-   #:name-of #:annotation #:shows #:matches #:common-prefix
+   #:name-of #:annotation #:as-row #:matches #:common-prefix
    #:expanded #:split-path #:entries #:files))
 (in-package #:pine/edit/matching)
 
@@ -13,7 +13,7 @@
 (defun annotation (each)
   (if (consp each) (princ-to-string (rest each)) ""))
 
-(defun shows (each width)
+(defun as-row (each width)
   (let* ((name (name-of each))
          (note (annotation each))
          (gap (- width (length name) (length note))))

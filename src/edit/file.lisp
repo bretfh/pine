@@ -9,8 +9,6 @@
   (:export))
 (in-package #:pine/edit/file)
 
-(defun %of () (text:current))
-
 (command:defcommand "find-file" (path)
     (:describes "open a file in a document"
      :asks (list (list :prompt "Find file: " :category :file :history :files))
@@ -41,7 +39,7 @@
 (command:defcommand "save-document" ()
     (:describes "write the document back where it came from"
      :on '(text "C-x C-s"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (if (text:source document)
         (text:save document)
         (command:run "write-file"))))
@@ -50,7 +48,7 @@
     (:describes "write the document to a file you name"
      :asks (list (list :prompt "Write file: " :category :file :history :files))
      :on '(text "C-x C-w"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (text:save document (match:expanded (princ-to-string path)))
     (log:note "wrote ~a" (text:origin document))
     (text:origin document)))
@@ -59,7 +57,7 @@
     (:describes "the file again, as it is on disk"
      :asks '((:prompt "Revert from disk? " :candidates ("yes" "no")
               :must-match t)))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (cond ((not (equal "yes" (princ-to-string (or said "no")))) nil)
           ((text:source document)
            (and (text:revert document)
@@ -90,7 +88,7 @@
     (:describes "forget a document"
      :asks '((:prompt "Kill document: " :category :document :must-match t))
      :on '(text "C-x k"))
-  (let* ((name (princ-to-string (or name (node:name (%of)))))
+  (let* ((name (princ-to-string (or name (node:name (text:current)))))
          (gone (text:named name)))
     (when gone
       (text:forget name)

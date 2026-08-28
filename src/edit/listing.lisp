@@ -11,7 +11,7 @@
 (defvar *listings* (d:table))
 
 (defclass listing ()
-  ((rows :initarg :rows :accessor rows :initform nil)
+  ((shown-rows :initarg :shown-rows :accessor shown-rows :initform nil)
    (acts :initarg :acts :accessor acts :initform nil))
   (:documentation "Rows that stand for things. A row is a string, or (TEXT . PLACE)
 where PLACE is what that row is about, so a key acts on the thing rather than
@@ -19,18 +19,19 @@ reading the line back out of the text."))
 
 (defmethod print-object ((l listing) stream)
   (print-unreadable-object (l stream :type t)
-    (format stream "~d row~:p~:[~; you can act on~]" (length (rows l)) (acts l))))
+    (format stream "~d row~:p~:[~; you can act on~]" (length (shown-rows l)) (acts l))))
 
 (defun listings () (d:all *listings*))
 
-(defun %of (document) (d:lookup (d:all *listings*) (node:name document)))
+(defun %listing (document)
+  (d:lookup (d:all *listings*) (node:name document)))
 
 (defun said (row) (if (consp row) (car row) (princ-to-string row)))
 
 (defun row-at (document &optional (line (text:at-line document)))
   "The row point is on: what it says, and what it stands for."
-  (let ((l (%of document)))
-    (when l (nth line (rows l)))))
+  (let ((l (%listing document)))
+    (when l (nth line (shown-rows l)))))
 
 (defun place (&optional (document (text:current)))
   (let ((row (row-at document)))
@@ -40,34 +41,34 @@ reading the line back out of the text."))
   (setf (text:setting document :selection) (place document))
   document)
 
-(defun into (name rows &optional acts)
+(defun into (name shown-rows &optional acts)
   "Put ROWS in a document of its own and show it. With ACTS, RET on a row hands
 ACTS the place that row stands for."
   (let ((document (or (text:named name)
                       (text:make-document name :mode (make-instance 'emode:listing))))
-        (rows (if (stringp rows)
-                  (uiop:split-string rows :separator '(#\Newline))
-                  rows)))
+        (shown-rows (if (stringp shown-rows)
+                  (uiop:split-string shown-rows :separator '(#\Newline))
+                  shown-rows)))
     (setf (node:contents document)
-          (format nil "~{~a~^~%~}" (mapcar #'said rows)))
+          (format nil "~{~a~^~%~}" (mapcar #'said shown-rows)))
     (text:goto document 0 0)
     (unless (typep (text:mode-of document) 'emode:listing)
       (setf (text:mode-of document) (make-instance 'emode:listing)))
-    (d:keep! *listings* name (make-instance 'listing :rows rows :acts acts))
+    (d:keep! *listings* name (make-instance 'listing :shown-rows shown-rows :acts acts))
     (setf (text:current) document)
     (%mark document)
     (node:name document)))
 
 (defun activate ()
   (let* ((document (text:current))
-         (l (%of document)))
+         (l (%listing document)))
     (when (and l (acts l))
       (funcall (acts l) (place document)))))
 
 (defun step-row (delta &optional (document (text:current)))
   "The row after this one, or before it, wrapping round the ends."
-  (let* ((l (%of document))
-         (n (length (and l (rows l)))))
+  (let* ((l (%listing document))
+         (n (length (and l (shown-rows l)))))
     (when (plusp n)
       (text:goto document (mod (+ (text:at-line document) delta) n) 0)
       (%mark document)

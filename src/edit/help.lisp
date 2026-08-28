@@ -18,15 +18,11 @@
     (:overwrite      . "whether typing writes over what is there")
     (:aside          . "whether a window follows this document")))
 
-(defun %of () (text:current))
-
-(defun %mode () (text:mode-of (%of)))
-
 (command:defcommand "describe-key" ()
     (:describes "what a chord runs" :on '(text "C-h k"))
   (prompt:ask "Describe key: "
               :then (lambda (chord)
-                      (let ((c (mode:binding (%mode) chord)))
+                      (let ((c (mode:binding (text:mode-of (text:current)) chord)))
                         (log:note "~a: ~a" chord
                                   (if c
                                       (format nil "~a, ~a" (command:name c)
@@ -38,10 +34,10 @@
     (:describes "every chord in force here" :on '(text "C-h b"))
   (listing:into
    "*help*"
-   (cons (format nil "chords in force in ~a" (node:name (%of)))
+   (cons (format nil "chords in force in ~a" (node:name (text:current)))
          (cons ""
                (loop :for (chord . name)
-                       :in (sort (keys:bindings (%mode)) #'string< :key #'car)
+                       :in (sort (keys:bindings (text:mode-of (text:current))) #'string< :key #'car)
                      :collect (cons (format nil "~16a ~a" chord name)
                                     (command:named name)))))
    (lambda (c)
@@ -49,7 +45,7 @@
 
 (command:defcommand "describe-mode" ()
     (:describes "what this document's mode is" :on '(text "C-h m"))
-  (let ((m (%mode)))
+  (let ((m (text:mode-of (text:current))))
     (listing:into
      "*help*"
      (list (mode:type m)
@@ -68,13 +64,13 @@
   (let ((c (command:named name)))
     (when c
       (log:note "~a: ~a~@[  (~a)~]" (command:name c) (command:describes c)
-                (car (rassoc (command:name c) (keys:bindings (%mode))
+                (car (rassoc (command:name c) (keys:bindings (text:mode-of (text:current)))
                              :test #'equal)))
       (command:describes c))))
 
 (command:defcommand "describe-settings" ()
     (:describes "every setting, and what this document reads" :on '(text "C-h v"))
-  (let ((document (%of)))
+  (let ((document (text:current)))
     (listing:into
      "*help*"
      (cons (format nil "settings in ~a" (node:name document))
@@ -93,7 +89,7 @@
                  (intern (string-upcase (princ-to-string key)) :keyword))))
     (prompt:ask (format nil "~(~a~) here: " key)
                 :then (lambda (said)
-                        (setf (text:setting (%of) key)
+                        (setf (text:setting (text:current) key)
                               (let ((*package* (find-package :keyword)))
                                 (handler-case (read-from-string said)
                                   (error () said))))))
