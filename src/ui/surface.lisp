@@ -57,7 +57,7 @@ content is here.")
     (declare (ignore width height))
     (d:map :edges nil :wide 0 :tall 0 :keeps 0 :margin '(0 0 0 0))))
 
-(defclass surface (node:node)
+(defclass surface (node:derived)
   ((role  :initarg :role  :accessor role)
    (shown :initarg :shown :accessor shown)
    (size  :initarg :size  :accessor size :initform nil))
@@ -120,7 +120,7 @@ nothing more, which is exactly what it is in a test.")
 (defun builds (name reads &key (as 'panel) shown)
   (let* ((r (make-instance as))
          (s (make-instance 'surface :name (princ-to-string name) :reads reads
-                                    :cachedp t :role r
+                                    :role r
                                     :shown (if (eq shown :default) (not (asks r))
                                                shown)
                                     :describes "a widget tree, and where it goes")))

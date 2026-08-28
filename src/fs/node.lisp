@@ -2,7 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:commit #:pine/fs/commit))
   (:export
-   #:node #:nodep #:name #:over #:describes
+   #:node #:value #:derived #:live
+   #:nodep #:name #:over #:describes
    #:savedp #:livep #:storedp #:announces #:refreshes
    #:contents #:nodes #:resolve #:stir #:moved
    #:verb #:full-name #:root #:make #:derive
@@ -23,39 +24,71 @@
    (memo      :initform (d:table)  :reader memo)
    (readers   :initform (d:no-set) :reader readers)
    (named     :initform nil        :accessor named)
-   (reads     :initarg :reads   :accessor reads    :initform nil)
-   (writes    :initarg :writes  :accessor writes   :initform nil)
-   (names     :initarg :names   :reader  names-of  :initform nil)
-   (each      :initarg :each    :reader  each-of   :initform nil)
-   (listing   :initarg :nodes   :reader  nodes-of  :initform nil)
-   (announces :initarg :announces :reader announces :initform nil)
-   (refreshes :initarg :refreshes :reader refreshes :initform nil)
    (savedp    :initarg :savedp  :reader  savedp    :initform nil)
-   (cachedp   :initarg :cachedp :reader  cachedp   :initform nil)
-   (livep     :initarg :livep   :reader  livep     :initform nil)
-   (cached    :initform +unread+ :accessor cached)
-   (saw       :initform nil      :accessor saw))
-  (:documentation "A name, what it sits under, and what is under it.
+   (livep     :initarg :livep   :reader  livep     :initform nil))
+  (:documentation "A name, what it sits under, and what is under it. On its own it
+is a branch: it holds nothing, and what is under it is whatever was attached.
 
-One class, four closures and three flags, because that is all a node ever was.
+SAVEDP says what it holds outlives the image; LIVEP says the world behind it
+answers rather than a value kept here, which is what stops a snapshot walking into
+it and what makes a watcher ask rather than be told. Both are here rather than on
+one subclass because a store walks every node and a watcher may follow any of
+them.
 
-READS answers what it holds and WRITES says what writing it means; with neither,
-the value is kept in the commit store and SAVEDP says so. NAMES says what is
-under it and EACH makes one, and what EACH made is kept, so the same name is the
-same node every time; with NODES the children are nodes something else already
-keeps. With none of the three it is a leaf.
+What a node can be instead of a branch is three classes below, and they are three
+classes rather than three flags because they answer CONTENTS three different
+ways."))
 
-Three flags, because there are three questions and no two of them answer each
-other. SAVEDP: does what this holds outlive the image. CACHEDP: may the answer be
-remembered until something says it moved. LIVEP: does the world behind this
-answer, rather than a value kept here -- which is what says a snapshot has no
-business walking into it and what says a watcher has to ask rather than be
-told."))
+(defgeneric announces (node)
+  (:documentation "The lines whose output says the world behind this moved.")
+  (:method ((n node)) nil))
+
+(defgeneric refreshes (node)
+  (:documentation "How often to ask again, where nothing announces itself.")
+  (:method ((n node)) nil))
+
+(defclass value (node) ()
+  (:documentation "Holds one. Nothing works it out and nothing outside answers for
+it: it is written, and what it holds stands until it is written again."))
+
+(defclass derived (node)
+  ((reads  :initarg :reads   :accessor reads  :initform nil)
+   (writes :initarg :writes  :accessor writes :initform nil)
+   (cached :initform +unread+ :accessor cached)
+   (saw    :initform nil      :accessor saw))
+  (:documentation "Works its value out, and remembers it until something it read
+moves. What READS reads is recorded while it runs, so a write invalidates exactly
+what depended on it and nothing subscribes to anything.
+
+WRITES because working a value out and being able to write it are two questions:
+/dev/audio/volume is worked out from what wpctl says and writing it sets the
+volume. Without one, writing replaces what it works out with what you wrote."))
+
+(defclass live (node)
+  ((reads     :initarg :reads     :accessor reads     :initform nil)
+   (writes    :initarg :writes    :accessor writes    :initform nil)
+   (names     :initarg :names     :reader  names-of   :initform nil)
+   (each      :initarg :each      :reader  each-of    :initform nil)
+   (listing   :initarg :nodes     :reader  nodes-of   :initform nil)
+   (announces :initarg :announces :reader  announces  :initform nil)
+   (refreshes :initarg :refreshes :reader  refreshes  :initform nil)
+   (livep     :initform t))
+  (:documentation "Somewhere the world answers, through the closures it was given.
+Nothing is remembered, because the world moves without anybody writing it; that is
+what DERIVED, which does remember, is the other half of.
+
+READS answers what it holds and WRITES says what writing it means. NAMES says what
+is under it and EACH makes one, and what EACH made is kept, so the same name is
+the same node every time; with NODES the children are nodes something else already
+keeps.
+
+A device is one of these and each of its readings is a closure pair, which is why
+a device is a table of rows rather than a class per reading."))
 
 (defun storedp (n)
   "Whether this node's value is kept in the commit store, which is what a write
 of several at once can go through."
-  (and (savedp n) (null (reads n)) (null (writes n))))
+  (and (typep n 'value) (savedp n)))
 
 (defmethod print-object ((n node) stream)
   (print-unreadable-object (n stream :type t)
@@ -63,21 +96,20 @@ of several at once can go through."
 
 (defun nodep (x) (typep x 'node))
 
-(defun make (name &rest initargs &key (class 'node) (savedp t) &allow-other-keys)
+(defun make (name &rest initargs &key (class 'value) (savedp t) &allow-other-keys)
   "A node holding one value, kept where it will be found again."
   (apply #'make-instance class :name name :savedp savedp
          (alexandria:remove-from-plist initargs :class :savedp)))
 
 (defun derive (name reads &rest initargs)
   "A node that works its value out and remembers it until something it read moves."
-  (apply #'make-instance 'node :name name :reads reads :cachedp t initargs))
+  (apply #'make-instance 'derived :name name :reads reads initargs))
 
 (defun place (name &rest initargs)
   "Somewhere the world answers: how to read it, how to write it, and what is
 under it. Nothing is remembered, because the world moves without anybody writing
 it; that is what DERIVE, which does remember, is the other half of."
-  (apply #'make-instance 'node :name (princ-to-string name)
-         (append initargs (list :livep t))))
+  (apply #'make-instance 'live :name (princ-to-string name) initargs))
 
 (defun %named (n)
   (let ((names (loop :for at := n :then (over at)
@@ -123,11 +155,12 @@ the one that landed, which is what lets anything reading it be worked out again.
 
 The one place a class says what it contains. RESOLVE and LEAFP are written on this,
 so a class that answers here answers everywhere.")
-  (:method ((n node))
+  (:method ((n node)) (d:as :list (beneath n)))
+  (:method ((n live))
     (cond ((nodes-of n) (funcall (nodes-of n)))
           ((names-of n)
            (remove nil (mapcar (lambda (each) (%kid n each)) (%listed n))))
-          (t (d:as :list (beneath n))))))
+          (t (call-next-method)))))
 
 (defgeneric resolve (node name)
   (:documentation "What NODE has under NAME.
@@ -138,11 +171,14 @@ answers nothing: NAMES says what to list, which is not always the same question.
 Every shell line is a place whether or not one has been run, and /sh lists the
 ones that have.")
   (:method ((n node) name)
+    (find (princ-to-string name) (d:as :list (beneath n))
+          :key #'name :test #'equal))
+  (:method ((n live) name)
     (let ((name (princ-to-string name)))
       (cond ((nodes-of n)
              (find name (funcall (nodes-of n)) :key #'name :test #'equal))
             ((each-of n) (%kid n name))
-            (t (find name (d:as :list (beneath n)) :key #'name :test #'equal))))))
+            (t (call-next-method))))))
 
 (defun leafp (n) (null (nodes n)))
 
@@ -206,10 +242,12 @@ nothing that is listening.")
 (defgeneric stir (node)
   (:documentation "Say NODE moved. Whatever read it is worked out again.")
   (:method ((n node))
-    (when (cachedp n) (setf (cached n) +unread+))
     (d:do-each (each (readers n))
       (stir each))
-    n))
+    n)
+  (:method :before ((n derived))
+    "What it worked out is no longer what it would work out."
+    (setf (cached n) +unread+)))
 
 (defun %work-out (n)
   "Work N out, and record what it read while doing it. What it read is recorded
@@ -244,15 +282,18 @@ that keeps nothing is one nothing can ever stir again."
   (and (d:seqp v) (plusp (d:size v)) (keywordp (d:lookup v 0))))
 
 (defgeneric contents (node)
-  (:documentation "What NODE holds.")
-  (:method ((n node))
-    (cond ((cachedp n)
-           (let ((v (cached n)))
-             (if (eq v +unread+) (%work-out n) v)))
-          ((reads n) (funcall (reads n)))
+  (:documentation "What NODE holds. One method per kind, because there is one
+answer per kind: a branch holds nothing, a value holds what was written, a derived
+works it out and remembers, and a live one asks the world.")
+  (:method ((n node)) nil)
+  (:method ((n value)) (when (savedp n) (commit:held-at (full-name n))))
+  (:method ((n derived))
+    (let ((v (cached n)))
+      (if (eq v +unread+) (%work-out n) v)))
+  (:method ((n live))
+    (cond ((reads n) (funcall (reads n)))
           ((names-of n) (%listed n))
           ((nodes-of n) (mapcar #'name (funcall (nodes-of n))))
-          ((savedp n) (commit:held-at (full-name n)))
           (t nil))))
 
 (defun moved (n)
@@ -266,14 +307,25 @@ batch of writes to land is told. One word, because they are one event."
   (:documentation "Write NODE. A class says only what writing means; that it moved
 is not its to remember, because a class written outside pine would have to
 remember it too.")
-  (:method (value (n node))
-    (cond ((writes n) (funcall (writes n) value))
-          ((cachedp n)
-           (setf (reads n) (constantly value))
-           (setf (cached n) +unread+))
-          ((savedp n) (commit:change (d:map (full-name n) value)))
-          (t (error "~a holds nothing that can be written." (full-name n))))
-    value))
+  (:method (v (n node))
+    (declare (ignore v))
+    (error "~a holds nothing that can be written." (full-name n)))
+  (:method (v (n value))
+    (unless (savedp n)
+      (error "~a holds nothing that can be written." (full-name n)))
+    (commit:change (d:map (full-name n) v))
+    v)
+  (:method (v (n derived))
+    (if (writes n)
+        (funcall (writes n) v)
+        (progn (setf (reads n) (constantly v))
+               (setf (cached n) +unread+)))
+    v)
+  (:method (v (n live))
+    (unless (writes n)
+      (error "~a holds nothing that can be written." (full-name n)))
+    (funcall (writes n) v)
+    v))
 
 (defmethod contents :around ((n node))
   (reading n)
@@ -294,8 +346,8 @@ to read it and how to write it are two closures over the object."
   (loop :for (name slot) :on pairs :by #'cddr
         :collect (let ((slot slot))
                    (attach (make-instance
-                            'node :name (string-downcase (string name))
-                            :savedp t
+                            'live :name (string-downcase (string name))
+                            :savedp t :livep nil
                             :reads (lambda () (slot-value object slot))
                                   :writes (lambda (value)
                                             (setf (slot-value object slot) value)
