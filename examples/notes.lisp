@@ -1,7 +1,7 @@
 (defpackage #:notes
-  (:use #:pine/user)
-  (:shadow #:note)
-  (:export #:notes #:note #:entry #:journal #:sticky))
+            (:use #:pine/user)
+            (:shadow #:note)
+            (:export #:notes #:note #:entry #:journal #:sticky))
 (in-package #:notes)
 
 ;;; An app, written the way anything is written here: classes and methods in a
@@ -26,23 +26,23 @@ see one change underneath them.")
 
 (defmethod contents ((n journal)) (titles))
 (defmethod nodes ((n journal))
-  (loop :for title :in (titles)
-        :collect (child n title
-                        (lambda () (make-instance 'entry :name title :over n)))))
+           (loop :for title :in (titles)
+                 :collect (child n title
+                                 (lambda () (make-instance 'entry :name title :over n)))))
 
 (defmethod resolve ((n journal) title)
-  "Every title is a place, whether or not anything has been written there yet.
+           "Every title is a place, whether or not anything has been written there yet.
 Writing one is how an entry comes to exist."
-  (let ((title (princ-to-string title)))
-    (child n title (lambda () (make-instance 'entry :name title :over n)))))
+           (let ((title (princ-to-string title)))
+             (child n title (lambda () (make-instance 'entry :name title :over n)))))
 
-(defmethod contents ((n entry)) (pine/data:lookup *entries* (name n)))
+(defmethod contents ((n entry)) (lookup *entries* (name n)))
 (defmethod (setf contents) (said (n entry))
-  (setf *entries* (if said
-                      (with *entries* (name n) (princ-to-string said))
-                      (without *entries* (name n))))
-  (stir (over n))
-  said)
+           (setf *entries* (if said
+                               (with *entries* (name n) (princ-to-string said))
+                             (without *entries* (name n))))
+           (stir (over n))
+           said)
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of
 ;;; its own to say: what its text divides into.
@@ -57,34 +57,33 @@ Writing one is how an entry comes to exist."
 (defmethod claims ((m note)) '("*.note"))
 
 (defmethod setting ((m note) key)
-  (case key (:comment "#") (T (call-next-method))))
+           (case key (:comment "#") (T (call-next-method))))
 
 (defun %headingp (line)
   (and (plusp (length line)) (char= #\* (char line 0))))
 
 (defmethod structure ((m note) document)
-  "Every heading, and the lines under it. What comes back is put in the namespace
+           "Every heading, and the lines under it. What comes back is put in the namespace
 under the document, so /text/x.note/heading/Today is a place you can read, write
 and watch."
-  (let ((found NIL)
-        (n (pine/text/document:line-count document)))
-    (dotimes (at n)
-      (let ((line (pine/text/document:line document at)))
-        (when (%headingp line)
-          (push (list (string-trim " *" line) at) found))))
-    (flet ((ends (at)
-             (cons at (length (pine/text/document:line document at)))))
-      (let ((all (nreverse found)))
-        (when all
-          (list (list* "heading"
-                       (cons (second (first all)) 0)
-                       (ends (1- n))
-                       (loop :for ((title from) . more) :on all
-                             :for to := (if more
-                                            (1- (second (first more)))
-                                            (1- n))
-                             :collect (list title (cons from 0)
-                                            (ends (max from to)))))))))))
+           (let ((found NIL)
+                 (n (line-count document)))
+             (dotimes (at n)
+               (let ((said (line document at)))
+                 (when (%headingp said)
+                   (push (list (string-trim " *" said) at) found))))
+             (flet ((ends (at) (cons at (length (line document at)))))
+                   (let ((all (nreverse found)))
+                     (when all
+                       (list (list* "heading"
+                                    (cons (second (first all)) 0)
+                                    (ends (1- n))
+                                    (loop :for ((title from) . more) :on all
+                                          :for to := (if more
+                                                         (1- (second (first more)))
+                                                       (1- n))
+                                          :collect (list title (cons from 0)
+                                                         (ends (max from to)))))))))))
 
 ;;; A role, and a surface on it. One ANCHOR method puts a new kind of surface on
 ;;; screen; nothing showing it needs knowledge of it, because the role crosses the
@@ -94,8 +93,8 @@ and watch."
   (:documentation "A note stuck to the corner of the screen."))
 
 (defmethod anchor ((r sticky) width height)
-  (map :edges '(:top :right) :wide width :tall height :keeps 0
-       :margin '(16 16 0 0)))
+           (map :edges '(:top :right) :wide width :tall height :keeps 0
+                :margin '(16 16 0 0)))
 
 (defun %latest ()
   "The last thing written down, read through the namespace rather than out of the
@@ -114,30 +113,31 @@ corner of the screen showing the last one."))
 (offers 'notes)
 
 (defmethod start ((s notes))
-  (attach (make-instance 'journal :name "notes"
+           (attach (make-instance 'journal :name "notes"
                                   :describes "what has been written down")
-          (root))
-  (defcommand "note" (title said)
-    (:describes "write something down"
-     :asks '((:prompt "Note: ")))
-    (setf (pine/fs/node:contents (at NIL (format NIL "notes/~a" title)))
-          (or said ""))
-    title)
-  (defcommand "notes" () (:describes "everything written down")
-    (titles))
-  (defcommand "forget-note" (title) (:describes "take one back off")
-    (setf (pine/fs/node:contents (at NIL (format NIL "notes/~a" title))) NIL)
-    T)
-  (bind 'text "C-c n" "note")
-  (defsurface sticky (:as 'sticky)
-    (let ((latest (%latest)))
-      (column :class "sticky"
-              (label (or (first latest) "nothing written down"))
-              (label (or (second latest) "")))))
-  s)
+                   (root))
+           (defcommand "note" (title said)
+                       (:describes "write something down"
+                                   :asks '((:prompt "Note: ")))
+                       (setf (contents (at NIL (format NIL "notes/~a" title))) (or said ""))
+                       title)
+           (defcommand "notes" () (:describes "everything written down")
+                       (titles))
+           (defcommand "forget-note" (title) (:describes "take one back off")
+                       (setf (contents (at NIL (format NIL "notes/~a" title))) NIL)
+                       T)
+           (bind 'text "C-c n" "note")
+           (defsurface sticky (:as 'sticky)
+                       (let ((latest (%latest)))
+                         (column :class "sticky"
+                                 (label (or (first latest) "nothing written down"))
+                                 (label (or (second latest) "")))))
+           s)
+
+;;; Its commands go with it and nothing here says their names: a command knows
+;;; the package it was written in and the system knows which package is its.
 
 (defmethod stop ((s notes))
-  (dolist (name '("note" "notes" "forget-note")) (pine/run/command:forget name))
-  (erase NIL "surface/sticky")
-  (erase NIL "notes")
-  s)
+           (erase NIL "surface/sticky")
+           (erase NIL "notes")
+           s)

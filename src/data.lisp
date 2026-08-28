@@ -273,5 +273,5 @@ there afterwards, so the loser of a race gets the winner's object."
   (swap (table-of table) (constantly +no-map+))
   table)
 
-(pine/word:lends "map" "seq" "set" "with" "without" "keys" "vals" "pairs"
-                "size" "swap" "cas" "capped" "emptied")
+(pine/word:lends "map" "seq" "set" "lookup" "with" "without" "keys" "vals"
+                "pairs" "size" "swap" "cas" "capped" "emptied")
