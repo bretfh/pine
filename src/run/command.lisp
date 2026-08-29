@@ -1,6 +1,7 @@
 (defpackage #:pine/run/command
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
+  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:commit #:pine/fs/commit))
   (:export
    #:command #:defcommand #:named #:commands #:forget
    #:name #:describes #:asks #:on #:run
@@ -138,15 +139,25 @@ whoever wants them in an order sorts them there."
         (t x)))
 
 (defgeneric run (command &optional arguments)
+  (:documentation "Run COMMAND, and say once what it moved.
+
+One command is one piece of news, however many places it writes. Opening a file
+writes what the document holds, where point is and every region its mode makes
+of it; told one at a time, a store writes for each and a watcher is woken for
+each, and what they see in between is a document half opened.
+
+Re-entrant, so a command that runs another is still one piece of news: the
+inner one joins the batch the outer one opened.")
   (:method ((name string) &optional arguments)
     (let ((c (named name)))
       (unless c (error 'unknown-command :name name))
       (run c arguments)))
   (:method ((c command) &optional arguments)
-    (if (and (null arguments) (asks c))
-        (let ((asked (asking *at* c)))
-          (if (eq asked :asking) :asking (apply (action c) asked)))
-        (apply (action c) arguments))))
+    (commit:writing
+      (if (and (null arguments) (asks c))
+          (let ((asked (asking *at* c)))
+            (if (eq asked :asking) :asking (apply (action c) asked)))
+          (apply (action c) arguments)))))
 
 (defgeneric asking (where command)
   (:documentation "The words COMMAND needs, asked of whoever there is to ask.
