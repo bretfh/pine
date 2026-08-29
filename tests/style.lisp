@@ -37,9 +37,15 @@ bindings are four files generated from xml, and one package between them.")
 socket a separate process has not opened yet, so there is nothing here to be woken
 by. boot.lisp's are single delays on the way out, not a loop.")
 
-(defparameter +identity-tables+ '()
-  "Where a hash table is identity and not a registry. Nothing is, now: what a node
-crossed the wire as was written and never read.")
+(defparameter +identity-tables+ '("tree.lisp")
+  "Where a hash table is identity and not a registry.
+
+tree.lisp keeps what a name spells against the string itself, by EQ and weakly on
+the key. It is not a registry: nothing is looked up by what it says, an entry
+going is no loss because the name is simply cut again, and the whole point is the
+identity of the string a compiled call site hands over. A map in a box would be
+keyed by what the string says, which is the wrong question, and would hold every
+name ever built for the occasion for as long as the image runs.")
 
 (defun %module-root ()
   (merge-pathnames "src/" (asdf:system-source-directory :pine)))

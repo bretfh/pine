@@ -4,7 +4,7 @@
   (:export
    #:*root* #:*here* #:here #:root #:make-root #:at #:ensure
    #:put #:erase #:walk #:listing #:paths
-   #:split-name #:builder
+   #:split-name #:pieces #:builder
    #:built))
 (in-package #:pine/fs/tree)
 
@@ -21,6 +21,17 @@ in one and not leak into another.")
   "What each package puts on the tree, in the order the packages were loaded. They
 build separate branches and none of them reads another, so that order is the only
 one there is and nothing has to state it.")
+
+(defvar *spelled* (make-hash-table :test 'eq :weakness :key :synchronized t)
+  "What a name spells, kept against the string itself.
+
+Held by EQ and not by what the string says, because the point is the string a
+compiled call site hands over every time it runs: /dev/audio/volume in a file is
+one object, and cutting it into three again on every read is the only thing left
+that a read allocates. A name built for the occasion misses, and is cut the way it
+always was.
+
+Weak on the key, so a name built for the occasion is not remembered for ever.")
 
 (define-condition absent (error)
   ((where :initarg :where :reader where))
@@ -74,24 +85,37 @@ order nobody can check."
   (and at (or (node:resolve at name)
               (and makep (node:make-child at name)))))
 
-(defun %spelled (at text makep)
-  "Walk what TEXT spells, a piece at a time, where it lies.
+(defun %cut (text)
+  "The pieces TEXT spells, cut where it lies.
 
-SPLIT-NAME is the same walk with a stream and a list of fresh strings to show
-for it, and this is the one every read and every write goes through. What is
-left is one short string for each piece, because that is what a node is filed
-under; the stream, the list it was pushed onto, the list that was appended to
-another list, and the second pass over all of it are gone."
+SPLIT-NAME is the same walk with a stream to show for it. This keeps what it cut,
+so the next read of the same name cuts nothing."
   (declare (type string text) (optimize (speed 3) (safety 1)))
-  (let ((n (length text)) (i 0))
+  (let ((n (length text)) (i 0) (out nil))
     (loop
       (loop :while (and (< i n) (char= #\/ (char text i))) :do (incf i))
-      (when (>= i n) (return at))
+      (when (>= i n) (return (nreverse out)))
       (let ((j i))
         (loop :while (and (< j n) (not (char= #\/ (char text j)))) :do (incf j))
-        (setf at (%step at (subseq text i j) makep))
-        (when (null at) (return nil))
+        (push (subseq text i j) out)
         (setf i j)))))
+
+(defun pieces (text)
+  "What TEXT spells, cut once and kept against the string itself."
+  (or (gethash text *spelled*)
+      (setf (gethash text *spelled*) (%cut text))))
+
+(defun %spelled (at text makep)
+  "Walk what TEXT spells, a piece at a time.
+
+Every read and every write goes through here. The pieces are cut once for a given
+string and kept, so a name a compiled call site hands over walks without
+allocating anything at all -- which is the whole of what a namespace lookup has to
+cost where everything on the machine is a name."
+  (loop :for name :in (pieces text)
+        :do (setf at (%step at name makep))
+        :while at
+        :finally (return at)))
 
 (defun %walk (n pieces makep)
   (loop :with at := n
