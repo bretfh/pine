@@ -5,7 +5,7 @@
                     (#:job #:pine/run/job) (#:image #:pine/run/image)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:fault #:pine/run/fault) (#:said #:pine/said)
-                    (#:log #:pine/fs/log))
+                    (#:commit #:pine/fs/commit) (#:log #:pine/fs/log))
   (:export
    #:reach #:serve #:named #:received #:telling #:forget-watches #:watches))
 (in-package #:pine/run/peer)
@@ -267,13 +267,18 @@ in the debugger with everything else that broke.
 
 One table for every way in. What differs between a peer over sento and a shell on
 a socket is how the words arrive and how an event goes back, which is TELLING, and
-nothing else."
+nothing else.
+
+One line is one piece of news, however many places it moves. A line that writes
+four of them tells whoever is listening once, at the end, with all four -- so a
+store writes once and a watcher is woken once, and nothing is worked out from a
+half-done line."
   (block answering
     (handler-bind ((error (lambda (c)
                             (fault:report c "answering what was asked here")
                             (return-from answering
                               (list :no (princ-to-string c))))))
-      (%answer message))))
+      (commit:writing (%answer message)))))
 
 (defun %answer (message)
   (case (first message)

@@ -237,7 +237,7 @@ somewhere else."
       (fault:attempt
        (lambda ()
          (handler-bind ((sb-kernel:redefinition-with-defmethod #'muffle-warning))
-           (load file)))
+           (commit:writing (load file))))
        (format nil "reading ~a" file))
       (let ((broke (- (length (fault:faults)) before)))
         (when (plusp broke)
