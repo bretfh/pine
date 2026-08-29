@@ -7,7 +7,7 @@
                     (#:bt #:bordeaux-threads))
   (:export
    #:keeping #:forget-keeping #:where #:entries #:append #:replay #:compact
-   #:at-time #:written #:*where* #:settled))
+   #:at-time #:written #:wholep #:*where* #:settled))
 (in-package #:pine/kernel/log)
 
 (defvar *where* nil
@@ -47,13 +47,14 @@ handed over; it does not wait for a disk. What that costs is a window at the ver
 end -- entries handed over and not yet down -- and SETTLED is how somebody who
 cannot afford it waits."
   (when (and *where* entry)
-    (bt:with-lock-held (*pen*)
-      (with-open-file (out *where* :direction :output :external-format :utf-8
-                                   :if-exists :append :if-does-not-exist :create)
-        (let ((*print-readably* nil) (*print-circle* nil) (*print-pretty* nil))
-          (prin1 entry out)
-          (terpri out))
-        (finish-output out))))
+    (let ((line (let ((*print-readably* nil) (*print-circle* nil)
+                      (*print-pretty* nil))
+                  (format nil "~s~%" entry))))
+      (bt:with-lock-held (*pen*)
+        (with-open-file (out *where* :direction :output :external-format :utf-8
+                                     :if-exists :append :if-does-not-exist :create)
+          (write-string line out)
+          (finish-output out)))))
   entry)
 
 (defun %told (moved)
@@ -87,12 +88,26 @@ than a list of the steps between them."
   (setf (tell:on-move :log) nil *where* nil)
   nil)
 
+(defun wholep (entry)
+  "Whether an entry is one somebody finished writing."
+  (and (consp entry) (integerp (first entry)) (listp (second entry))
+       (null (cddr entry))
+       (every (lambda (row) (and (consp row) (stringp (car row))))
+              (second entry))))
+
 (defun entries (&optional (where *where*))
+  "Every whole entry in the log, and nothing else.
+
+A machine that stops does it somewhere, and where it stops may be halfway through
+a line. That line is not an entry -- nothing was ever told it -- so it is dropped
+rather than read, and the log ends at the last thing that really happened. This is
+the whole of why the tree comes back at a boundary and not partway into one."
   (when (and where (probe-file where))
     (with-open-file (in where :external-format :utf-8)
-      (loop :for form := (cl:read in nil :done)
+      (loop :for form := (handler-case (cl:read in nil :done)
+                           (error () :done))
             :until (eq form :done)
-            :collect form))))
+            :when (wholep form) :collect form))))
 
 (defun written (&optional (where *where*))
   "What the log says stands, as a name-to-value map. The tree is a fold over the
