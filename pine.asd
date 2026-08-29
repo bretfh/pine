@@ -9,11 +9,11 @@
                 :description "The namespace: what a node is, where it stands, what
 it says and what outlives the image"
                 :depends-on (#:pine/value #:alexandria #:named-readtables #:sqlite
-                             #:uiop)
+                             #:bordeaux-threads #:uiop)
                 :serial t
                 :pathname "src/fs/"
                 :components ((:file "commit")
-                             (:file "node") (:file "place")
+                             (:file "node") (:file "graph") (:file "place")
                              (:file "tree") (:file "path")
                              (:file "reader") (:file "mount")
                              (:file "log") (:file "store")))

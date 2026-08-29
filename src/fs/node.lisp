@@ -8,11 +8,23 @@
    #:moved #:verb #:full-name #:make #:derive
    #:place #:attach #:detach #:child #:memo
    #:slots #:make-child #:erase-child #:reads #:writes
-   #:depend #:undepend #:reading))
+   #:depend #:undepend #:reading #:version #:mark #:standsp #:stalep
+   #:work-out #:freshp #:cached #:saw))
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)
-(defvar *stirring* nil)
+(defvar *walking* nil
+  "The walk going on, where one is. One number threaded through a walk, so a ring
+is stepped once; the stamp it leaves is shared, so two threads walking at the same
+time stop on each other's work rather than each doing all of it.")
+(defvar *epoch* 0)
+(defvar *writes* 0
+  "How many times anything anywhere has been written.
+
+Raised before a write does anything else, so it is never behind. Nothing decides
+anything by it on its own: it is what says whether an answer found to stand a
+moment ago is still worth trusting without looking again, and the looking again is
+what is being saved.")
 (defparameter +unread+ '#:unread)
 
 (defclass node ()
@@ -23,9 +35,17 @@
    (by-name   :initform (d:no-map) :reader by-name)
    (memo      :initform (d:table)  :reader memo)
    (readers   :initform (d:no-set) :reader readers)
+   (saw       :initform nil        :accessor saw)
+   (version   :initform 0          :accessor version)
+   (stamp     :initform 0          :accessor stamp)
+   (checked   :initform -1         :accessor checked)
    (named     :initform nil        :accessor named))
   (:documentation "A name, what it sits under, and what is under it. On its own it
 is a branch: it holds nothing, and what is under it is whatever was attached.
+
+READERS is who is worked out from this one and SAW is what this one was worked
+out from -- the same edges, kept at both ends, because a write walks one way and
+a node being taken off the tree has to let go the other.
 
 BENEATH is what is under it in the order it was attached, and BY-NAME is the same
 nodes under the names they answer to. Two, because the two questions are different
@@ -75,8 +95,9 @@ landed in words."))
 (defclass derived (node)
   ((reads  :initarg :reads   :accessor reads  :initform nil)
    (writes :initarg :writes  :accessor writes :initform nil)
-   (cached :initform +unread+ :accessor cached)
-   (saw    :initform nil      :accessor saw))
+   (cached  :initform +unread+ :accessor cached)
+   (claim   :initform nil :accessor claim)
+   (waiting :initform nil :accessor waiting))
   (:documentation "Works its value out, and remembers it until something it read
 moves. What READS reads is recorded while it runs, so a write invalidates exactly
 what depended on it and nothing subscribes to anything.
@@ -208,12 +229,20 @@ reached and never listed.")
     n))
 
 (defgeneric detach (node name)
+  (:documentation "Take NAME off NODE, and stop it reading anything.
+
+What it read has to be given up here. A node taken off the tree and left in the
+reader sets of what it read is worked out for ever after, every time any of that
+moves, and holds all of it for as long as the image runs. A surface that was
+erased goes on being worked out from /dev/cpu.")
   (:method ((n node) name)
     (let ((gone (resolve n name)))
       (when gone
         (d:swap (slot-value n 'beneath) (lambda (all) (d:remove gone all)))
         (d:swap (slot-value n 'by-name)
                 (lambda (all) (d:without all (%said (name gone)))))
+        (dolist (on (saw gone)) (undepend gone on))
+        (setf (saw gone) nil)
         (setf (over gone) nil)
         (%renamed gone))
       gone)))
@@ -241,10 +270,6 @@ what is left behind in the memo is that second one with nothing over it."
         (d:drop! (memo n) (princ-to-string name))
         (or it gone)))))
 
-(defun reading (n)
-  (when *reading* (pushnew n (cdr *reading*)))
-  n)
-
 (defgeneric depend (node on)
   (:documentation "Say N read ON, so moving ON works N out again.")
   (:method ((n node) (on node))
@@ -256,45 +281,6 @@ what is left behind in the memo is that second one with nothing over it."
   (:method ((n node) (on node))
     (d:swap (slot-value on 'readers) (lambda (all) (d:without all n)))
     n))
-
-(defgeneric stir (node)
-  (:documentation "Say NODE moved. Whatever read it is worked out again.
-
-A node already being stirred is not stirred again: two that read each other are a
-ring, and without this walking it is the last thing the thread does.")
-  (:method ((n node))
-    (unless (member n *stirring*)
-      (let ((*stirring* (cons n *stirring*)))
-        (d:do-each (each (readers n))
-          (stir each))))
-    n)
-  (:method :before ((n derived))
-    "What it worked out is no longer what it would work out."
-    (setf (cached n) +unread+)))
-
-(defun %work-out (n)
-  "Work N out, and record what it read while doing it. What it read is recorded
-whether or not it finished: a node that threw has still read what it read, and one
-that keeps nothing is one nothing can ever stir again.
-
-What it read last time and does not read now it stops reading. Without that a
-node that once looked somewhere is worked out for ever after whenever that place
-moves, and the thing it no longer reads holds it for as long as the image runs."
-  (let ((reading (cons :reading nil)))
-    (unwind-protect
-         (let* ((*reading* reading)
-                (v (funcall (reads n))))
-           (setf (cached n) v)
-           v)
-      (let ((had (saw n))
-            (now (cdr reading)))
-        (dolist (on had)
-          (unless (member on now) (undepend n on)))
-        (setf (saw n) now)
-        (dolist (on now)
-          (unless (eq on n) (depend n on)))))))
-
-(defun stalep (n) (eq (cached n) +unread+))
 
 (defgeneric verb (node name arguments)
   (:documentation "What writing (:toggle) and its like means.")
@@ -324,17 +310,7 @@ storing one is storing something else."
 answer per kind: a branch holds nothing, a value holds what was written, a derived
 works it out and remembers, and a live one asks the world.")
   (:method ((n node)) nil)
-  (:method ((n value)) (held n))
-  (:method ((n derived))
-    (let ((v (cached n)))
-      (if (eq v +unread+) (%work-out n) v))))
-
-(defun moved (n)
-  "Say N moved: what read it is worked out again, and whoever is waiting for a
-batch of writes to land is told. One word, because they are one event."
-  (stir n)
-  (commit:announce n)
-  n)
+  (:method ((n value)) (held n)))
 
 (defgeneric (setf contents) (value node)
   (:documentation "Write NODE. A class says only what writing means; that it moved
@@ -344,13 +320,7 @@ remember it too.")
     (declare (ignore v))
     (error "~a holds nothing that can be written." (full-name n)))
   (:method (v (n value))
-    (setf (held n) v))
-  (:method (v (n derived))
-    (if (writes n)
-        (funcall (writes n) v)
-        (progn (setf (reads n) (constantly v))
-               (setf (cached n) +unread+)))
-    v))
+    (setf (held n) v)))
 
 (defmethod contents ((n slot))
   (slot-value (object-of n) (slot-of n)))
@@ -363,19 +333,11 @@ object is what this hangs under, which has already been said."
     (when (and (nodep o) (not (eq o (into-of n)))) (stir o)))
   v)
 
-(defmethod contents :around ((n node))
-  (reading n)
-  (call-next-method))
-
 (defmethod (setf contents) :around (value (n node))
   (cond ((%verbp value)
          (verb n (d:lookup value 0) (d:as :list (d:rest value))))
         ((%quotedp value) (call-next-method (d:rest value) n))
         (t (call-next-method))))
-
-(defmethod (setf contents) :after (value (n node))
-  (declare (ignore value))
-  (moved n))
 
 (defun slots (object into &rest pairs)
   "One node per slot of OBJECT, under INTO."
