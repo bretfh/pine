@@ -14,6 +14,9 @@ OR, which reads a written NIL as an absence."
     (multiple-value-bind (value state) (pine::read "/nobody-wrote-this")
       (is (null value))
       (is (eq :absent state) "and nothing stands here at all"))
+    (tree:ensure "/branch/under")
+    (is (eq :branch (nth-value 1 (pine::read "/branch")))
+        "a branch holds nothing by being one")
     (is (pine::standsp "/held"))
     (is (not (pine::standsp "/nobody-wrote-this")))))
 

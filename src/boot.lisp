@@ -43,18 +43,14 @@ a place a name can be measured from, so it reaches neither a config nor the wire
   (apply #'tree:at where names))
 
 (defun read (where &key (else nil elsep))
-  "What stands at WHERE, and whether anything does.
-
-Answers the value and one of :HELD or :ABSENT. A place nobody has written and a
-place somebody wrote NIL to are different questions, and NIL is only the answer to
-the second: without the second value the two cannot be told apart, and every caller
-has to guess. ELSE is what to say instead of nothing, so a reader that has an
-answer of its own does not spell it as an OR."
+  "What stands at WHERE, and which kind of nothing it is when it is nothing:
+:HELD, :ABSENT, or :BRANCH. ELSE is what to answer instead of nothing."
   (let ((n (tree:at where)))
     (if (null n)
         (values (if elsep else nil) :absent)
         (let ((value (node:contents n)))
-          (values (if (and (null value) elsep) else value) :held)))))
+          (values (if (and (null value) elsep) else value)
+                  (node:holding n))))))
 
 (defun standsp (where)
   "Whether anything stands at WHERE."

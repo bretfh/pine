@@ -4,7 +4,7 @@
   (:export
    #:node #:derived #:live #:nodep #:name
    #:parent #:describes #:savedp #:livep #:announces
-   #:refreshes #:contents #:nodes #:resolve #:stir
+   #:refreshes #:contents #:holding #:nodes #:resolve #:stir
    #:moved #:verb #:full-name #:make #:derive
    #:answers #:lists #:attach #:detach #:child #:memo
    #:slots #:make-child #:erase-child #:reads #:writes
@@ -311,6 +311,14 @@ answer per kind: a branch holds nothing, a value holds what was written, a deriv
 works it out and remembers, and a live one asks the world.")
   (:method ((n node)) nil)
   (:method ((n value)) (held n)))
+
+(defgeneric holding (node)
+  (:documentation "Whether NODE holds anything at all: :HELD or :BRANCH.")
+  (:method ((n node)) :branch)
+  (:method ((n value)) :held)
+  (:method ((n derived)) :held)
+  (:method ((n live)) :held)
+  (:method ((n slot)) :held))
 
 (defgeneric (setf contents) (value node)
   (:documentation "Write NODE. A class says only what writing means; that it moved
