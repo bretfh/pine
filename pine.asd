@@ -3,7 +3,17 @@
                 :depends-on (#:fset)
                 :serial t
                 :pathname "src/"
-                :components ((:file "word") (:file "data")))
+                :components ((:file "word") (:file "data") (:file "said")))
+
+(asdf:defsystem #:pine/kernel
+                :description "The namespace: what a place is, what stands under
+one, what is worked out from one, and who is told when one moves"
+                :depends-on (#:pine/value #:bordeaux-threads)
+                :serial t
+                :pathname "src/kernel/"
+                :components ((:file "name") (:file "tell") (:file "place")
+                             (:file "graph") (:file "tree") (:file "watch")
+                             (:file "call")))
 
 (asdf:defsystem #:pine/place
                 :description "The namespace: what a node is, where it stands, what
@@ -13,7 +23,8 @@ it says and what outlives the image"
                 :serial t
                 :pathname "src/fs/"
                 :components ((:file "commit")
-                             (:file "node") (:file "tree") (:file "path")
+                             (:file "node") (:file "place")
+                             (:file "tree") (:file "path")
                              (:file "reader") (:file "mount")
                              (:file "log") (:file "store")))
 
@@ -49,11 +60,14 @@ they are declared on"
                 :author "Bret Horne"
                 :license "GPL"
                 :version "0.0.1"
-                :depends-on (#:pine/ui #:com.inuoe.jzon)
+                :depends-on (#:pine/ui #:com.inuoe.jzon #:sb-bsd-sockets)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
                 :serial t
                 :pathname "src/"
-                :components ((:file "mode") (:file "boot") (:file "cli")))
+                :components ((:file "mode")
+                             (:file "serve/json") (:file "serve/wire")
+                             (:file "serve/socket")
+                             (:file "boot") (:file "cli")))
 
 (asdf:defsystem #:pine/text
                 :description "Documents, the structure their modes give them, and
@@ -177,12 +191,23 @@ dispatches on"
                              #:pine/desk #:pine/term #:pine/paint
                              #:pine/wayland))
 
+(asdf:defsystem #:pine/kernel/test
+                :depends-on (#:pine/kernel #:fiveam #:bordeaux-threads)
+                :serial t
+                :pathname "tests/"
+                :components ((:file "kernel"))
+                :perform (asdf:test-op
+                          (o c)
+                          (unless (uiop:symbol-call :fiveam :run! :pine/kernel)
+                            (error "the kernel does not hold"))))
+
 (asdf:defsystem #:pine/test
                 :depends-on (#:pine/all #:fiveam)
                 :serial t
                 :pathname "tests/"
                 :components ((:file "suite") (:file "data") (:file "fs")
-                             (:file "run") (:file "ui") (:file "text")
+                             (:file "run") (:file "serve")
+                             (:file "ui") (:file "text")
                              (:file "host") (:file "edit") (:file "term")
                              (:file "wm") (:file "config") (:file "app") (:file "draw")
                              (:file "style"))
