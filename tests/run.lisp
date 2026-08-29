@@ -426,3 +426,28 @@ the rest of its life."
              (is (< (job:tries j) 3)
                  "and forgets what it tried before"))
         (job:forget "never")))))
+
+(test a-watcher-that-is-slow-does-not-hold-up-the-write
+  "A watcher is told on a worker. One that shells out must not hold up the write,
+nor everything else the walk has still to reach, nor whoever was waiting on it."
+  (with-tree
+    (booted)
+    (let ((n (tree:ensure nil "probe-slow"))
+          (let-go (bordeaux-threads:make-semaphore))
+          (told nil))
+      (setf (node:contents n) "before")
+      (let ((w (watch:watch n (lambda (of said)
+                                (declare (ignore of said))
+                                (bordeaux-threads:wait-on-semaphore let-go
+                                                                   :timeout 10)
+                                (setf told t)))))
+        (unwind-protect
+             (let ((at (get-internal-real-time)))
+               (setf (node:contents n) "after")
+               (is (< (- (get-internal-real-time) at)
+                      internal-time-units-per-second)
+                   "the write does not wait to be told about")
+               (is (null told) "and the telling has not finished")
+               (bordeaux-threads:signal-semaphore let-go)
+               (is (until (lambda () told)) "but it lands afterwards"))
+          (watch:unwatch w))))))

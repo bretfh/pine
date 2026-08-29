@@ -103,7 +103,9 @@ a system you load."
               :outputs '((:name "eDP-1" :position (0 0) :size (800 600)
                           :area (0 0 800 600)))
               :focused 7))
-  (is (equal '((7 0 0 800 600)) (node:contents (tree:at nil "wm/placement")))))
+  (is (until (lambda ()
+               (equal '((7 0 0 800 600))
+                      (node:contents (tree:at nil "wm/placement")))))))
 
 (test dropping-the-window-manager-takes-its-paths-with-it
   (%tiled)
@@ -141,8 +143,9 @@ different class in between, so what places the windows has to come with it."
   (is (tree:at nil "wm/layout")
       "and it is bound again to the wm that replaced the first")
   (setf (node:contents (tree:at nil "wm/said")) +said+)
-  (is (equal '((1 0 0 640 720) (2 640 0 640 360) (3 640 360 640 360))
-             (node:contents (tree:at nil "wm/placement")))
+  (is (until (lambda ()
+               (equal '((1 0 0 640 720) (2 640 0 640 360) (3 640 360 640 360))
+                      (node:contents (tree:at nil "wm/placement")))))
       "so what it was told still reaches the placement"))
 
 (test what-pine-wants-of-the-compositor-is-taken-once
