@@ -1,5 +1,27 @@
 (in-package #:pine/edit)
 
+(defun %same-file-p (origin path)
+  "Whether two names stand for one file. Compared as the disk resolves them, so a
+link and what it points at are not two documents."
+  (and origin
+       (or (equal origin path)
+           (let ((a (probe-file origin)) (b (probe-file path)))
+             (and a b (equal (namestring a) (namestring b)))))))
+
+(defun %document-name (path)
+  "What to call a document opened on PATH: the file's own name, unless another
+document is already open on a different file with the same one, which takes
+NAME<2>. Two files called system.lisp are two documents; opening one of them
+twice is still one."
+  (let ((base (or (fault:or-nothing "a node's path is not a file name"
+                    (file-namestring (pathname path)))
+                  path)))
+    (loop :for i :from 1
+          :for name := (if (= i 1) base (format nil "~a<~d>" base i))
+          :for had := (text:named name)
+          :when (or (null had) (%same-file-p (text:origin had) path))
+            :do (return name))))
+
 (command:defcommand "find-file" (path)
     (:describes "open a file in a document"
      :asks (list (list :prompt "Find  " :category :file :history :files))
@@ -7,9 +29,7 @@
   (let ((path (expanded (princ-to-string path))))
     (if (uiop:directory-exists-p path)
         (log:note "~a is a directory" path)
-        (let* ((name (or (fault:or-nothing "a node's path is not a file name"
-                           (file-namestring (pathname path)))
-                         path))
+        (let* ((name (%document-name path))
                (document (or (text:named name) (text:make-document name))))
           (text:visit document path)
           (setf (text:current) document)

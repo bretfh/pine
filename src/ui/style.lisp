@@ -139,7 +139,9 @@ edited to carry something new."
   (let* ((open (position #\( s)) (close (position #\) s))
          (parts (uiop:split-string (subseq s (1+ open) close) :separator '(#\,))))
     (when (>= (length parts) n)
-      (flet ((num (i) (read-from-string (string-trim " " (nth i parts)))))
+      (flet ((num (i)
+               (let ((*read-eval* nil))
+                 (read-from-string (string-trim " " (nth i parts))))))
         (list (num 0) (num 1) (num 2) (if (= n 4) (float (num 3)) 1.0))))))
 
 (defun %color (s)

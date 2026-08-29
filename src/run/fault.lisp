@@ -4,7 +4,7 @@
                     (#:log #:pine/fs/log))
   (:export
    #:fault #:borrowed #:take #:resume #:faulted
-   #:faults #:standing #:attempt #:or-nothing #:report
+   #:faults #:standing #:attempt #:or-nothing #:report #:id #:defer
    #:borrow #:await #:changed #:wait-until #:forget-faults
    #:with-debugger #:condition-of #:label #:backtrace-of #:offers
    #:taken #:where #:token #:standingp #:*waiting*
@@ -13,6 +13,11 @@
 
 (defvar *kept* 50)
 (defvar *faults* nil)
+(defvar *counter* 0)
+(defparameter +leaving+ '("EXIT")
+  "Restarts that end the image rather than the work. A fault asks what to do about
+what broke, and /fault is written to answer it; taking the whole image down is not
+one of the answers, so it is not one of the ones offered.")
 (defvar *debugging* nil)
 (defvar *noticing* (bordeaux-threads:make-lock "pine-faults"))
 (defvar *noticed* (bordeaux-threads:make-condition-variable))
@@ -36,7 +41,8 @@ a reason is the only evidence of that."
   `(handler-case (progn ,@body) (error () nil)))
 
 (defclass fault ()
-  ((condition-of :initarg :condition :reader condition-of)
+  ((id        :initform (d:swap *counter* #'1+) :reader id)
+   (condition-of :initarg :condition :reader condition-of)
    (label     :initarg :label     :reader label     :initform nil)
    (backtrace-of :initarg :backtrace :reader backtrace-of :initform "")
    (offers    :initarg :offers    :reader offers    :initform nil)
@@ -77,8 +83,16 @@ is its own name for it, so taking a restart here is one act in both."))
     (with-output-to-string (s) (sb-debug:print-backtrace :stream s :count 25))))
 
 (defun %offers (condition)
+  "The restarts this fault is standing in, less the ones that end the image.
+
+ABORT stays: on the thread a piece of work runs on it abandons that work, which is
+a real answer and the one another pine is given when it asks for one."
   (mapcar (lambda (r) (princ-to-string (restart-name r)))
-          (remove nil (compute-restarts condition) :key #'restart-name)))
+          (remove-if (lambda (r)
+                       (let ((it (restart-name r)))
+                         (or (null it)
+                             (member (princ-to-string it) +leaving+ :test #'equal))))
+                     (compute-restarts condition))))
 
 (defgeneric faulted (fault)
   (:documentation "Say a fault happened, to whoever can do something about it.
@@ -179,12 +193,18 @@ waiting out the whole timeout on a fault somebody already dealt with."
 (defun attempt (thunk &optional label)
   "Run THUNK; a fault is kept, with its restarts, and the thunk unwinds.
 
-With the debugger on, the thread stops where it faulted and waits: what is offered
-is what is still there, because nothing has unwound yet."
+The fault is noted before anything unwinds, because a restart is only there while
+the frame that established it is: reported after the unwind, what is left to offer
+is the toplevel's, and taking one of those is leaving rather than going on.
+
+With the debugger on, the thread stops where it faulted and waits."
   (if *debugging*
       (%standing thunk label)
-      (handler-case (funcall thunk)
-        (error (c) (report c label) nil))))
+      (block attempting
+        (handler-bind ((error (lambda (c)
+                                (report c label)
+                                (return-from attempting nil))))
+          (funcall thunk)))))
 
 (defun %standing (thunk label)
   (block attempting
@@ -212,8 +232,12 @@ is what is still there, because nothing has unwound yet."
   `(let ((*debugging* t)) ,@body))
 
 (defun %at (name)
+  "The fault this path names. By its own number and not by where it sits in the
+ring: a fault that arrives while somebody is reading one moves every other one
+along, and the restart they then write would be taken on whatever had slid into
+the place they were looking at."
   (let ((i (parse-integer (princ-to-string name) :junk-allowed t)))
-    (when (and i (not (minusp i))) (nth i (faults)))))
+    (when i (find i (faults) :key #'id))))
 
 (defun %fault (name)
   "One fault, at a place. Writing a restart's name takes it: the thread is still
@@ -227,7 +251,7 @@ the debugger."
                           (node:place field
                                       :reads (lambda ()
                                                (let ((f (%at name)))
-                                                 (and f (offers f)))))))
+                                                 (when f (defer f) (offers f)))))))
                 :reads (lambda ()
                          (let ((f (%at name)))
                            (and f (princ-to-string (condition-of f)))))
@@ -238,13 +262,15 @@ the debugger."
 (defun %attach (root)
   (node:attach
    (node:place "fault"
-               :names (lambda ()
-                        (loop :for i :from 0 :below (length (faults)) :collect i))
+               :names (lambda () (mapcar #'id (faults)))
                :each #'%fault
                :reads (lambda () (length (faults)))
                :describes "what has broken, and what it stands in")
    root))
 
 (pine/word:lends "attempt")
+
+(setf pine/fs/commit:*broke*
+      (lambda (c) (report c "telling what is listening that a place moved")))
 
 (pine/fs/tree:builder #'%attach)

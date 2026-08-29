@@ -106,12 +106,16 @@ what does not.")
   "Take off the last name in what WHERE and PIECES spell between them.
 
 WHERE names a place the way AT does, so the name that goes may be the end of it:
-(erase \"/a/b\") and (erase nil \"a\" \"b\") take off the same node. Only a node
-stands for a place and nothing else, so only a node is walked from."
+(erase \"/a/b\") and (erase nil \"a\" \"b\") take off the same node. A name
+beginning with / is measured from the root, the way a read of one is, and one
+that does not from where you stand."
   (let* ((fromp (node:nodep where))
+         (from (cond (fromp where)
+                     ((and (stringp where) (%rootedp where)) *root*)
+                     (t (here))))
          (names (%names (if (or fromp (null where)) pieces (cons where pieces))))
          (gone (car (last names)))
-         (holder (and gone (apply #'at (and fromp where) (butlast names)))))
+         (holder (and gone (%walk from (butlast names) nil))))
     (when holder (node:erase-child holder gone))))
 
 (defun walk (n function &key (depth -1) (into (complement #'node:livep)))
@@ -126,7 +130,10 @@ stands for a place and nothing else, so only a node is walked from."
   (mapcar #'node:name (node:nodes n)))
 
 (defun paths (n)
-  "Every path below N, N's own first."
+  "Every path below N that this image keeps, N's own first.
+
+Not into a live one. What is under a mounted directory or a device belongs to the
+world rather than to pine, and walking it here would be walking the disk."
   (let (acc)
     (walk n (lambda (each) (push (node:full-name each) acc)))
     (nreverse acc)))

@@ -115,3 +115,99 @@ left is nothing. Four threads pushing while one takes lose nothing between them.
     (mapc #'bordeaux-threads:join-thread threads)
     (setf taken (append (d:emptied (car cell)) taken))
     (is (= 1000 (length taken)) "nothing was pushed that did not come back")))
+
+(test a-lookup-says-whether-anything-was-there
+  "A collection may hold NIL, and holding it is not holding nothing. Without the
+second answer a slider that has been dragged to nothing reads as one nobody has
+touched."
+  (is (equal '(nil t) (multiple-value-list (d:lookup (d:map :k nil) :k :none))))
+  (is (equal '(:none nil) (multiple-value-list (d:lookup (d:map :k nil) :z :none))))
+  (is (equal '(nil t) (multiple-value-list (d:lookup (list 1 nil 3) 1 :none))))
+  (is (equal '(:none nil) (multiple-value-list (d:lookup (list 1 2) 9 :none))))
+  (is (equal '(nil t) (multiple-value-list (d:lookup (list :a 1 :b nil) :b :none))))
+  (is (equal '(:none nil)
+             (multiple-value-list (d:lookup (list :a :b :c 1) :b :none)))
+      "a key in a value's place is not a key"))
+
+(test a-table-claims-a-nil-once
+  "Whether something is there is asked of the table, not of what it holds: a key
+claimed with NIL is claimed, and the next to ask must be told so."
+  (let ((tb (d:table)))
+    (is (null (d:claim tb "k" nil)))
+    (is (= 1 (d:size (d:all tb))))
+    (is (null (d:claim tb "k" :loser)) "the winner's nothing, not the loser's value")))
+
+(test with-takes-its-shape-from-what-is-being-built
+  "Not from the value. Given a value it builds a map whether the value is NIL or
+not; a map built a piece at a time must not turn into a seq at the first nothing."
+  (is (d:mapp (d:with nil "k" nil)))
+  (is (null (d:lookup (d:with nil "k" nil) "k" :none)))
+  (is (d:seqp (d:with nil "k")))
+  (signals error (d:with (list 1 2) 0 :x)))
+
+(test contains-means-one-thing
+  "What a map holds is its values, the way a seq holds its elements. Whether it
+has a key is what LOOKUP answers second."
+  (is (d:contains (d:map :k :v) :v))
+  (is (not (d:contains (d:map :k :v) :k)))
+  (is (d:contains (d:seq :a :b) :b))
+  (is (d:contains (list :a :b) :b))
+  (is (d:contains (d:map :k (d:seq 1 2)) (d:seq 1 2)) "by value, not by identity"))
+
+(test merged-says-so-rather-than-dropping-one
+  (is (equal '((:a . 2) (:b . 3))
+             (d:as :list (d:merged (d:map :a 1) (d:map :a 2 :b 3)))))
+  (is (equal '((:a . 1)) (d:as :list (d:merged (d:map :a 1) nil))))
+  (signals error (d:merged (d:seq 1) (d:seq 2))))
+
+(test the-reading-vocabulary-is-total-over-one-domain
+  "LOOKUP and SIZE took a list and KEYS and VALS did not, so half of it answered
+about a list and half signalled that no method applied."
+  (dolist (thunk (list (lambda () (d:lookup (list 10 20) 1))
+                       (lambda () (d:size (list 10 20)))
+                       (lambda () (d:keys (list 10 20)))
+                       (lambda () (d:vals (list 10 20)))
+                       (lambda () (d:contains (list 10 20) 20))
+                       (lambda () (d:keys (make-hash-table)))
+                       (lambda () (d:vals (make-hash-table)))))
+    (finishes (funcall thunk))))
+
+(defvar *given* nil
+  "What a walk is handed, where the point is what it does at run time. Held in a
+special so the shape is not one the compiler can work out and warn about: a walk
+over the wrong thing is a question answered when it runs.")
+
+(test the-three-walks-agree-about-nothing-and-about-nonsense
+  (let ((*given* nil))
+    (finishes (d:do-map (k v *given*) (declare (ignorable k v))))
+    (finishes (d:do-pairs (k v *given*) (declare (ignorable k v)))))
+  (let ((*given* (d:seq 1)))
+    (signals error (d:do-map (k v *given*) (declare (ignorable k v)))))
+  (let ((*given* 42))
+    (signals error (d:do-pairs (k v *given*) (declare (ignorable k v)))))
+  (let ((*given* (make-hash-table))
+        (seen nil))
+    (setf (gethash :a *given*) 1)
+    (d:do-each (v *given*) (push v seen))
+    (is (equal '(1) seen) "a hash table is something to walk here too")))
+
+(test same-asks-about-the-value
+  "EQUAL on two maps asks whether they are the same object, which for anything
+built here is a question about the last edit."
+  (is (d:same (d:map :a 1) (d:map :a 1)))
+  (is (not (equal (d:map :a 1) (d:map :a 1))))
+  (is (not (d:same (d:map :a 1) (d:map :a 2)))))
+
+(test a-table-is-updated-in-one-act
+  "A LOOKUP and a KEEP! with a gap between them are two, and whoever writes in the
+gap is lost."
+  (booted)
+  (let ((tb (d:table))
+        (threads nil))
+    (dotimes (i 8)
+      (push (bordeaux-threads:make-thread
+             (lambda () (dotimes (n 50)
+                          (d:update! tb "n" (lambda (had) (1+ (or had 0)))))))
+            threads))
+    (mapc #'bordeaux-threads:join-thread threads)
+    (is (= 400 (d:lookup (d:all tb) "n")))))

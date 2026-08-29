@@ -277,3 +277,126 @@ minutes ago."
              10)
           "it came back when the fault was taken, not when the wait ran out")))
   (fault:forget-faults))
+
+(test a-fault-keeps-the-restarts-that-were-offered
+  "Reported after the unwind, the restarts a fault stood in are gone and what is
+left is the toplevel's own. Reported from a handler-bind, they are still there."
+  (fault:forget-faults)
+  (fault:attempt (lambda ()
+                   (restart-case (error "deliberate")
+                     (use-the-other-one () :nope)
+                     (give-up () :nope)))
+                 "probe")
+  (let ((offers (fault:offers (first (fault:faults)))))
+    (is (member "USE-THE-OTHER-ONE" offers :test #'equal)
+        "the ones it was standing in: ~s" offers)
+    (is (not (member "EXIT" offers :test #'equal))
+        "and not the one that ends the image")))
+
+(test a-fault-keeps-its-own-number
+  "/fault/N is written to take a restart. Numbered by where it sits in the ring,
+a fault arriving in between moves every other one along and the restart is taken
+on whatever slid into the place that was being read."
+  (fault:forget-faults)
+  (fault:attempt (lambda () (error "first")) "first")
+  (let ((id (fault:id (first (fault:faults)))))
+    (fault:attempt (lambda () (error "second")) "second")
+    (fault:attempt (lambda () (error "third")) "third")
+    (is (search "first" (princ-to-string
+                         (fault:condition-of (pine/run/fault::%at id))))
+        "it still names the one it named")))
+
+(test a-thread-that-will-not-stop-is-not-called-stopped
+  "Asked and not gone, it is still running whatever pine has written down, and
+calling it stopped leaves it holding what it holds with nothing naming it."
+  (booted)
+  (let* ((running t)
+         (j (make-instance 'job:thread :name "test-stubborn" :restarts nil
+                           :thunk (lambda () (loop :while running
+                                                   :do (sleep 0.02))))))
+    (unwind-protect
+         (progn
+           (job:start j)
+           (until (lambda () (job:alivep j)))
+           (job:stop j)
+           (is (eq :stopping (job:state j)) "it says what is true")
+           (is (not (null (job:took j))) "and still knows what to look at")
+           (setf running nil)
+           (until (lambda () (not (job:alivep j))))
+           (job:stop j)
+           (is (eq :stopped (job:state j)) "and once it goes, it went"))
+      (setf running nil)
+      (job:forget "test-stubborn"))))
+
+(test asking-a-job-nothing-answers-to-answers-nothing
+  "TELL had a method for it and ASK did not, so one was quiet and the other
+signalled that no method applied."
+  (is (null (job:ask "no-such-job" :hi)))
+  (is (null (job:tell "no-such-job" :hi))))
+
+(test a-reader-error-at-a-repl-does-not-end-the-session
+  "The reader is outside what EVALUATE catches, so an unbalanced paren unwound out
+of INTERACT and, in a shell, took the image with it."
+  (let* ((in (make-string-input-stream ")(+ 1 2)"))
+         (out (make-string-output-stream))
+         (s (session:open-session :name "test-reader" :input in :output out)))
+    (unwind-protect
+         (progn (finishes (session:interact s))
+                (is (search "3" (get-output-stream-string out))
+                    "and it went on to read the form after it"))
+      (session:close s))))
+
+(test a-fault-at-a-repl-reaches-the-fault-system
+  "It was kept on the evaluation and nowhere else, so the debugger buffer could
+not show what somebody had just typed."
+  (let* ((in (make-string-input-stream "(error \"repl-fault\")"))
+         (out (make-string-output-stream))
+         (s (session:open-session :name "test-repl-fault" :input in :output out))
+         (before (length (fault:faults))))
+    (unwind-protect
+         (progn (session:interact s)
+                (is (= 1 (- (length (fault:faults)) before))
+                    "it is one of the faults")
+                (is (search "repl-fault"
+                            (princ-to-string
+                             (fault:condition-of (first (fault:faults)))))))
+      (session:close s))))
+
+(test a-watcher-on-a-collection-does-not-fire-on-every-read
+  "EQUAL asks whether two maps are the same object. Two structurally equal ones
+are not, so a bar reading a map was pushed at every tick."
+  (with-tree
+    (let* ((fires 0)
+           (n (node:attach (node:place "coll" :reads (lambda () (d:map :a 1)))
+                           (tree:root)))
+           (w (watch:watch n (lambda (of said) (declare (ignore of said))
+                               (incf fires))
+                           :poll t)))
+      (unwind-protect
+           (progn (pine/run/watch::fire w)
+                  (pine/run/watch::fire w)
+                  (is (zerop fires) "nothing moved, so nothing was said"))
+        (watch:unwatch w))))
+  (with-tree
+    (let* ((fires 0)
+           (which (list (d:map :a 1)))
+           (n (node:attach (node:place "coll" :reads (lambda () (first which)))
+                           (tree:root)))
+           (w (watch:watch n (lambda (of said) (declare (ignore of said))
+                               (incf fires))
+                           :poll t)))
+      (unwind-protect
+           (progn (pine/run/watch::fire w)
+                  (setf which (list (d:map :a 2)))
+                  (pine/run/watch::fire w)
+                  (is (= 1 fires) "and when it moves it is said once"))
+        (watch:unwatch w)))))
+
+(test the-shell-remembers-a-line-for-a-breath-and-not-for-ever
+  "The table is keyed by the line, so a bar that asks about a window held an
+answer for every window there had ever been."
+  (dotimes (i 400) (sh:sh "echo bounded-~d" i))
+  (is (<= (d:size (d:all pine/host/shell::*asked*))
+          (+ pine/host/shell::*asked-kept* 2))
+      "~d stand, and the cap is ~d"
+      (d:size (d:all pine/host/shell::*asked*)) pine/host/shell::*asked-kept*))

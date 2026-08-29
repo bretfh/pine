@@ -5,7 +5,7 @@
   (:export
    #:boot #:leave #:actors #:runningp #:remoting
    #:dispatcher-for #:*host* #:*port* #:repeat #:cancel
-   #:ticks #:blocking))
+   #:ticks #:blocking #:joined))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)
@@ -14,11 +14,12 @@
 (defvar *host* "127.0.0.1")
 (defvar *port* 17000)
 (defparameter *soonest* 0.05)
-(defvar *workers*
-  (max 2 (1- (or (fault:or-nothing "a machine that will not say how many cores"
-                  (parse-integer (uiop:run-program '("nproc")
-                                                   :output '(:string :stripped t))))
-                 4))))
+(defvar *workers* nil
+  "How many workers the shared pool has, or nothing to ask the machine at boot.
+
+Asked then and not while this file loads, because a saved image is built on one
+machine and run on another: read at load, the number the binary carries is the
+number of cores the machine that built it had.")
 (defvar *pools* (d:table)
   "The dispatchers this image will have, by name. A system that wants work of its
 own kept off everybody else's asks for one before boot; sento fixes them when the
@@ -40,9 +41,19 @@ own runs on the shared pool until the next start rather than refusing to run."
       name
       :shared))
 
+(defun workers ()
+  "How many workers to run the shared pool with, asked of this machine."
+  (or *workers*
+      (setf *workers*
+            (max 2 (1- (or (fault:or-nothing "a machine that will not say how many cores"
+                             (parse-integer
+                              (uiop:run-program '("nproc")
+                                                :output '(:string :stripped t))))
+                           4))))))
+
 (defun %config ()
   (list :dispatchers
-        (list* :shared (list :workers *workers* :strategy :random)
+        (list* :shared (list :workers (workers) :strategy :random)
                (loop :for (name . workers) :in (d:pairs (pools))
                      :append (list name (list :workers workers
                                               :strategy :random))))
@@ -123,6 +134,11 @@ what was there."
   "A thread, for something that blocks: a pty read, a child's stdout, a frontend's
 own loop. Everything else is an actor or a tick."
   (bordeaux-threads:make-thread thunk :name (format nil "pine ~a" name)))
+
+(defun joined (thread)
+  "Wait for one of those to finish. What is read on another thread has to be read
+to the end before whoever started it goes, or the last of it is lost."
+  (when thread (bordeaux-threads:join-thread thread)))
 
 (defun %named (name)
   (find name (ticks) :key #'princ-to-string :test #'equal))

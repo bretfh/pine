@@ -117,3 +117,55 @@ wrong stretch, so writing it replaces something it was never standing for."
   (let ((doc (text:current)))
     (setf (node:contents doc) (format nil "(defun a () 1)~%(defun b () 2)"))
     (is (equal '("defun") (command:run "structure")))))
+
+(test two-regions-with-one-name-are-two-places
+  "A region is kept under the name its mode gave it, so two functions of one name,
+or two headings of one text, were one node covering the last of them -- and writing
+it replaced text it was never standing for."
+  (with-tree
+    (let ((doc (text:make-document "test-regions")))
+      (setf (node:contents doc) "one
+two
+three
+four")
+      (pine/text::%build doc '(("dup" (0 . 0) (0 . 3))
+                               ("dup" (2 . 0) (2 . 5))
+                               ("other" (1 . 0) (1 . 3))))
+      (let ((names (sort (mapcar #'node:name
+                                 (remove-if-not
+                                  (lambda (n) (typep n 'pine/text::region))
+                                  (d:as :list (pine/fs/node::beneath doc))))
+                         #'string<)))
+        (is (equal '("dup" "dup<2>" "other") names))))))
+
+(test a-region-that-is-still-there-is-the-node-it-was
+  "Built again, a region keeps its identity, so a watcher on one goes on watching."
+  (with-tree
+    (let ((doc (text:make-document "test-region-identity")))
+      (setf (node:contents doc) "one two three")
+      (pine/text::%build doc '(("only" (0 . 0) (0 . 3))))
+      (let ((first-time (d:lookup (d:all (node:memo doc)) "only")))
+        (pine/text::%build doc '(("only" (0 . 4) (0 . 7))))
+        (let ((now (d:lookup (d:all (node:memo doc)) "only")))
+          (is (eq first-time now) "the same node")
+          (is (equal '((0 . 4) (0 . 7)) (pine/text::covers now))
+              "standing over where it stands now"))))))
+
+(test word-motion-crosses-a-line-the-way-character-motion-does
+  "Stepping a word stayed on the line it started on, so M-f at the end of one and
+M-b at the start of one were motions that did nothing however often they were asked
+for."
+  (let ((lines (text:of "alpha beta
+gamma delta")))
+    (is (equal '(1 0) (multiple-value-list (text:move-by :char lines 0 10 1))))
+    (is (equal '(1 5) (multiple-value-list (text:move-by :word lines 0 10 1)))
+        "forward off the end of a line lands in the next word")
+    (is (equal '(0 10) (multiple-value-list (text:move-by :char lines 1 0 -1))))
+    (is (equal '(0 6) (multiple-value-list (text:move-by :word lines 1 0 -1)))
+        "and back off the front lands in the last word above")))
+
+(test word-motion-still-walks-a-line-a-word-at-a-time
+  (let ((lines (text:of "alpha beta gamma")))
+    (is (equal '(0 5) (multiple-value-list (text:move-by :word lines 0 0 1))))
+    (is (equal '(0 10) (multiple-value-list (text:move-by :word lines 0 0 2))))
+    (is (equal '(0 6) (multiple-value-list (text:move-by :word lines 0 10 -1))))))

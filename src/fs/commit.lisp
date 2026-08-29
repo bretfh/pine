@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data))
   (:export
    #:forget #:writing #:announce #:on-commit #:on-forget
-   #:forget-listeners))
+   #:forget-listeners #:*broke*))
 (in-package #:pine/fs/commit)
 
 (defvar *listening* (d:table))
@@ -11,13 +11,22 @@
   "Who to tell that a path went, by name. A write and an erasure are two things
 that happen to a place, so they are two lists and not one with a tag on it.")
 (defvar *moving* nil)
+(defvar *broke* nil
+  "What to do about a listener that would not run. Filled in by whatever keeps
+faults, because this layer loads before there is one.")
+
+(defun %tell (tells said)
+  "Tell one listener, and let it break on its own. A write is not wrong because
+somebody listening to it is, and the listeners after it are still owed the news."
+  (handler-case (funcall tells said)
+    (error (c) (when *broke* (funcall *broke* c)) nil)))
 
 (defun forget (place)
   "Say PLACE and everything under it went. A value goes with the node that held it,
 so there is nothing to take out here; what is left is telling whoever keeps a copy
 of the tree, which is why nothing lower down has to know who that is."
   (dolist (tells (d:vals (d:all *forgetting*)) place)
-    (funcall tells place)))
+    (%tell tells place)))
 
 (defun listeners () (d:all *listening*))
 
@@ -41,7 +50,7 @@ of the tree, which is why nothing lower down has to know who that is."
   (when moved
     (let ((moved (remove-duplicates (reverse moved))))
       (loop :for tells :in (d:vals (listeners))
-            :do (funcall tells moved)
+            :do (%tell tells moved)
             :finally (return moved)))))
 
 (defun announce (n)

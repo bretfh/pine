@@ -2,8 +2,8 @@
 
 (def-suite* :pine/style :in :pine)
 
-(defparameter +modules+ '("fs" "run" "ui" "text" "text/ts" "text/ts/lang" "host"
-                          "edit" "term" "wm" "desk" "paint" "wayland")
+(defparameter +modules+ '("fs" "run" "serve" "ui" "text" "text/ts" "text/ts/lang"
+                          "host" "edit" "term" "wm" "desk" "paint" "wayland")
   "Every directory of pine's own source. What is not here is not pine's: the
 wayland protocol bindings are generated from the compositor's own xml, and vt is a
 terminal emulator that depends on cffi and nothing of pine's.
@@ -391,11 +391,13 @@ nothing has happened, and a timeout that counts turns rather than seconds."
       (%naming "(sleep " :except +waits-on-a-clock+)))
 
 (defparameter +layers+
-  '(("pine/value" ("word.lisp" "data.lisp")     ("pine/word" "pine/data"))
+  '(("pine/value" ("word.lisp" "data.lisp" "said.lisp")
+     ("pine/word" "pine/data" "pine/said"))
     ("pine/place" ("fs/")                       ("pine/fs"))
     ("pine/run"   ("run/")                      ("pine/run"))
     ("pine/ui"    ("ui/")                       ("pine/ui"))
-    ("pine"       ("mode.lisp" "boot.lisp" "cli.lisp") ("pine/mode" "pine")))
+    ("pine"       ("mode.lisp" "boot.lisp" "serve/" "cli.lisp")
+     ("pine/mode" "pine" "pine/serve")))
   "The layers pine is built out of, lowest first: which files are in each, and
 which packages belong to it. Each is an asdf system that loads on its own, and
 each names only what is under it.
@@ -444,3 +446,16 @@ of its own -- it was the bottom half of one program."
                                wrong :test #'equal)))
                   (setf at (+ found 7)))))))))
     (is (null wrong) "~{~%  ~a~}" (reverse wrong))))
+
+(test concurrency-is-named-only-where-it-is-hidden
+  "Sento is what runs, and it is behind pine/run: a job, a tick and an actor are
+what everything above says instead. A client naming it is a client that had to be
+a lisp image with the same library loaded, which is the whole of why nothing but
+a lisp could drive pine."
+  (let ((leaked (loop :for file :in (%files)
+                      :for where := (namestring file)
+                      :when (and (find-if (lambda (line) (search "sento" line))
+                                          (%lines file))
+                                 (not (search "/run/" where)))
+                        :collect (file-namestring file))))
+    (is (null leaked) "~{~%  ~a names sento~}" leaked)))

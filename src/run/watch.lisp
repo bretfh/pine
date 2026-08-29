@@ -27,7 +27,7 @@ has to be asked is asked on one sweep, however many there are."))
 (defun fire (w)
   (let ((now (fault:attempt (lambda () (node:contents (watches w)))
                             (format nil "reading ~a" (node:full-name (watches w))))))
-    (when (or (not (only w)) (not (equal now (was w))))
+    (when (or (not (only w)) (not (d:same now (was w))))
       (setf (was w) now)
       (fault:attempt (lambda () (funcall (tells w) (watches w) now))
                      (format nil "telling a watcher of ~a"

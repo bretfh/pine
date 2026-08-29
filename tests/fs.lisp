@@ -194,3 +194,125 @@ anybody can ask about would be a name anybody can grow it by."
       (node:attach p (tree:root))
       (is (equal "/empty" (node:full-name p))
           "so renaming what is under it has something to rename"))))
+
+(test erase-measures-an-absolute-name-from-the-root
+  "AT does, and ERASE names a place the way AT does. Measured from where the
+session stands, pine rm /a/b takes off whatever is at a/b under it instead."
+  (with-tree
+    (pine::write "/a/b" :at-root)
+    (tree:ensure "/elsewhere")
+    (let ((tree:*here* (tree:at "/elsewhere")))
+      (pine::write "a/b" :under-elsewhere)
+      (tree:erase "/a/b")
+      (is (null (tree:at "/a/b")) "the one that was named")
+      (is (not (null (tree:at "/elsewhere/a/b"))) "and not the one underfoot"))))
+
+(test erase-still-measures-a-relative-name-from-here
+  (with-tree
+    (tree:ensure "/elsewhere")
+    (let ((tree:*here* (tree:at "/elsewhere")))
+      (pine::write "a/b" :under-elsewhere)
+      (tree:erase "a/b")
+      (is (null (tree:at "/elsewhere/a/b"))))))
+
+(test a-write-under-a-worked-out-place-says-so
+  "A place that works its children out has none to make. Attached anyway it would
+sit where NODES and RESOLVE never look, and the write would be taken and not be
+there to read."
+  (with-tree
+    (let ((p (node:place "p" :names (constantly nil)
+                             :each (lambda (name) (declare (ignore name)) nil))))
+      (node:attach p (tree:root))
+      (signals error (pine::write "/p/thing" :hello)))))
+
+(test a-plain-branch-still-takes-a-write
+  (with-tree
+    (pine::write "/plain/deep/thing" :hello)
+    (is (eq :hello (pine::read "/plain/deep/thing")))))
+
+(test a-seq-that-begins-with-a-keyword-can-still-be-stored
+  "A seq headed by a keyword is what writing a verb looks like, so storing one
+stored the verb's argument instead. :QUOTED says this one is a value."
+  (with-tree
+    (pine::write "/data" nil)
+    (setf (node:contents (tree:at "/data")) (d:seq :quoted :alpha :beta))
+    (let ((back (node:contents (tree:at "/data"))))
+      (is (d:seqp back))
+      (is (equal '(:alpha :beta) (d:as :list back)))))
+  (with-tree
+    (pine::write "/flag" nil)
+    (setf (node:contents (tree:at "/flag")) (d:seq :toggle))
+    (is (eq t (node:contents (tree:at "/flag"))) "and a verb is still a verb")))
+
+(test the-store-tells-its-own-words-from-somebody-elses
+  "A map is written (:map ...), so a list that begins with :map came back a map it
+never was."
+  (dolist (each (list (list :map :a 1) (list :seq 1 2) (list :set 1)
+                      (list :quoted 1) (list 1 (list :seq 2))))
+    (let ((text (pine/fs/store::written each)))
+      (is (equal each (pine/fs/store::read-back text))
+          "~s came back as ~s" each (pine/fs/store::read-back text))))
+  (dolist (each (list (d:map :a 1) (d:seq 1 2) (d:set 1 2) (d:map :a (d:seq 1 2))))
+    (is (d:same each (pine/fs/store::read-back (pine/fs/store::written each)))
+        "and a real one still round-trips")))
+
+(test a-listener-that-breaks-does-not-break-the-write
+  (with-tree
+    (let ((heard nil))
+      (pine::write "/x" 1)
+      (setf (commit:on-commit :aaa-bad)
+            (lambda (m) (declare (ignore m)) (error "listener broke")))
+      (setf (commit:on-commit :zzz-good)
+            (lambda (m) (declare (ignore m)) (setf heard t)))
+      (unwind-protect
+           (progn (finishes (setf (node:contents (tree:at "/x")) 2))
+                  (is (= 2 (node:contents (tree:at "/x"))) "the value landed")
+                  (is (not (null heard))
+                      "and the other listener was still told"))
+        (setf (commit:on-commit :aaa-bad) nil)
+        (setf (commit:on-commit :zzz-good) nil)))))
+
+(test a-derived-node-stops-reading-what-it-stopped-reading
+  "SAW is recorded so this can be asked. Without it a node that once looked
+somewhere is worked out for ever after whenever that place moves."
+  (with-tree
+    (let* ((a (node:attach (node:make "a") (tree:root)))
+           (b (node:attach (node:make "b") (tree:root)))
+           (which (list a))
+           (dv (node:attach (node:derive "d" (lambda ()
+                                               (node:contents (first which))))
+                            (tree:root))))
+      (setf (node:contents a) 1)
+      (setf (node:contents b) 2)
+      (node:contents dv)
+      (setf which (list b))
+      (node:stir dv)
+      (node:contents dv)
+      (is (zerop (d:size (pine/fs/node::readers a))) "a is no longer read")
+      (is (= 1 (d:size (pine/fs/node::readers b))))
+      (setf (node:contents a) 99)
+      (is (not (pine/fs/node::stalep dv)) "and moving it does not stir d")
+      (setf (node:contents b) 99)
+      (is (pine/fs/node::stalep dv) "while moving what it does read still does"))))
+
+(test two-nodes-that-read-each-other-do-not-run-the-stack-out
+  (with-tree
+    (let ((x (node:attach (node:make "x") (tree:root)))
+          (y (node:attach (node:make "y") (tree:root))))
+      (node:depend x y)
+      (node:depend y x)
+      (finishes (node:stir x)))))
+
+(test erasing-a-worked-out-child-leaves-nothing-behind
+  "The memo is let go after the detach, not before: dropped first, the detach asks
+for the child again and what is left is that second one with nothing over it."
+  (with-tree
+    (let ((p (node:place "p" :names (constantly (list "kid"))
+                             :each (lambda (n) (node:place n)))))
+      (node:attach p (tree:root))
+      (let ((before (node:resolve p "kid")))
+        (node:erase-child p "kid")
+        (let ((after (node:resolve p "kid")))
+          (is (not (eq before after)) "what comes back is a fresh one")
+          (is (eq p (node:over after)) "standing where it should")
+          (is (equal "/p/kid" (node:full-name after))))))))

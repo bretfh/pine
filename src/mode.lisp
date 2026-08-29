@@ -17,6 +17,10 @@
   "Chords, by mode class name. A mode's own keymap; what a chord means comes from
 the class precedence list, so a mode inherits its parent's bindings the way it
 inherits its parent's methods.")
+(defvar *carried* (d:table)
+  "What the commands themselves carry, by mode class name, and the turn of the
+command table it was read off. A keystroke asks for this once per class in the
+precedence list, and the commands do not move between two keystrokes.")
 
 (defclass mode () ()
   (:documentation "How a document is understood. The chain is class inheritance:
@@ -122,12 +126,21 @@ says.")
 (defun modes ()
   "Every mode class there is, most particular first. A class somebody defined and
 has not made an instance of yet is finalized here: it is a mode whether or not
-anything has asked for one."
+anything has asked for one.
+
+A class two modes both lead to is here once, and two of one depth are ordered by
+name, so which mode claims a path is the answer twice running and the same answer
+in another image. The order the classes were defined in is not one pine is given."
   (labels ((under (class)
              (c2mop:ensure-finalized class)
-             (cons class (mapcan #'under (c2mop:class-direct-subclasses class)))))
-    (sort (remove (find-class 'mode) (under (find-class 'mode)))
-          #'> :key (lambda (c) (length (c2mop:class-precedence-list c))))))
+             (cons class (mapcan #'under (c2mop:class-direct-subclasses class))))
+           (depth (c) (length (c2mop:class-precedence-list c))))
+    (sort (remove-duplicates (remove (find-class 'mode) (under (find-class 'mode))))
+          (lambda (a b)
+            (let ((da (depth a)) (db (depth b)))
+              (if (= da db)
+                  (string< (symbol-name (class-name a)) (symbol-name (class-name b)))
+                  (> da db)))))))
 
 (defun %class (name)
   "The mode class this name stands for, whichever package it was written in."
@@ -146,47 +159,72 @@ anything has asked for one."
     (some (lambda (p) (or (glob p leaf) (glob p full))) (claims m))))
 
 (defun mode-for (path)
-  "The mode for a place: the most particular class that claims it."
+  "The mode for a place: the most particular class that claims it.
+
+What a class claims is asked of the class, through the prototype the metaobject
+protocol already keeps, so answering the question costs nothing and only the mode
+that won is made."
   (loop :for class :in (modes)
-        :for m := (fault:or-nothing "a mode class may take initargs nobody gave"
-                     (make-instance (class-name class)))
-        :when (and m (claims m) (claimsp m path)) :do (return m)))
+        :for it := (c2mop:class-prototype class)
+        :when (and (claims it) (claimsp it path))
+          :do (return (fault:or-nothing "a mode class may take initargs nobody gave"
+                        (make-instance (class-name class))))))
+
+(defun %named-as (class)
+  "The one name a mode's chords are kept under, spelled the way the mode is.
+
+TEXT written in one package and TEXT written in another are one mode here, which
+is what the class lookup already says. Spelling it means a chord bound before its
+class is loaded is under the same name when the class arrives, rather than under a
+string nothing ever reads again."
+  (string-downcase (if (symbolp class) (symbol-name class) (princ-to-string class))))
+
+(defun %walked (class)
+  (let ((out (d:no-map)))
+    (dolist (c (command:commands) out)
+      (let ((on (command:on c)))
+        (when (and on (string-equal class (string (first on))))
+          (dolist (chord (rest on))
+            (setf out (d:with out chord (command:name c)))))))))
 
 (defun %carried (class)
   "The chords the commands themselves carry for this mode class. A command says
 what chord means it; nothing tells this file, and a chord goes when the command
-that named it does."
-  (let ((wanted (symbol-name class))
-        (out (d:no-map)))
-    (dolist (c (command:commands) out)
-      (let ((on (command:on c)))
-        (when (and on (string-equal wanted (string (first on))))
-          (dolist (chord (rest on))
-            (setf out (d:with out chord (command:name c)))))))))
+that named it does.
+
+Kept until the commands turn over, because this is asked once per class in the
+precedence list for every key that arrives."
+  (let ((had (d:lookup (d:all *carried*) class))
+        (now (command:turned)))
+    (if (and had (eql (car had) now))
+        (cdr had)
+        (let ((made (%walked class)))
+          (d:keep! *carried* class (cons now made))
+          made))))
 
 (defun keys (class)
   "Every chord in force for a mode class: what its commands carry, and what
 somebody bound by hand on top of that."
-  (d:merged (%carried class) (or (d:lookup (d:all *keys*) class) (d:no-map))))
+  (let ((class (%named-as class)))
+    (d:merged (%carried class)
+              (or (d:lookup (d:all *keys*) class) (d:no-map)))))
 
 (defun bind (class chord command)
-  "Bind a chord in a mode. A config binds one the way pine does.
-
-The mode is named rather than identified: TEXT written in one package and TEXT
-written in another are two symbols and one class, and a keymap that told them apart
-would be two keymaps nobody asked for."
-  (let* ((found (%class class))
-         (class (if found (class-name found) class)))
-    (d:keep! *keys* class
-             (d:with (or (d:lookup (d:all *keys*) class) (d:no-map)) chord command))
+  "Bind a chord in a mode. A config binds one the way pine does."
+  (let ((class (%named-as class)))
+    (d:update! *keys* class
+               (lambda (had) (d:with (or had (d:no-map)) chord command)))
     chord))
 
 (defun binding (m chord)
   "What CHORD runs for this mode: its own keymap, then up the class precedence list,
-so a mode inherits bindings exactly as it inherits methods."
+so a mode inherits bindings exactly as it inherits methods.
+
+A chord bound to a command that has since gone is not unbound: it answers the name
+it was bound to, so whoever asked can say so rather than take the key for text."
   (loop :for class :in (c2mop:class-precedence-list (class-of m))
         :for found := (d:lookup (keys (class-name class)) chord)
-        :when found :do (return (command:named found))))
+        :when found :do (return (values (command:named found) found))))
 
 (defun bindings (m)
   "Every chord in force for a mode: its own, and its parents', nearest first."
@@ -200,19 +238,25 @@ so a mode inherits bindings exactly as it inherits methods."
 SUBJECT is what the mode is understanding -- a document, or nothing where the mode
 is a compositor's and there is no document in it at all. PENDING is the chord
 already accumulated, so two keyboards, or a window manager and an editor, keep
-their own place in a chord and cannot take each other's."
-  (let* ((so-far (append pending (list k)))
-         (chord (ui:spelled so-far))
-         (found (binding m chord)))
-    (cond ((press m subject k) (values :taken nil))
-          (found (values (fault:attempt (lambda () (command:run found))
-                                        (command:name found))
-                         nil
-                         (command:name found)))
-          ((prefixp m chord) (values :pending so-far))
-          ((and (null pending) (ui:typed k))
-           (values (cons :insert (ui:typed k)) nil))
-          (t (values :unbound nil)))))
+their own place in a chord and cannot take each other's.
+
+PRESS is asked first and the keymap only after, because a mode that takes the key
+itself has no use for the chord this would otherwise spell out for every keystroke
+whether anything wanted it or not."
+  (if (press m subject k)
+      (values :taken nil)
+      (let* ((so-far (append pending (list k)))
+             (chord (ui:spelled so-far)))
+        (multiple-value-bind (found named) (binding m chord)
+          (cond (found (values (fault:attempt (lambda () (command:run found))
+                                              (command:name found))
+                               nil
+                               (command:name found)))
+                (named (values :unbound nil named))
+                ((prefixp m chord) (values :pending so-far))
+                ((and (null pending) (ui:typed k))
+                 (values (cons :insert (ui:typed k)) nil))
+                (t (values :unbound nil)))))))
 
 (defun prefixp (m chord)
   "Whether CHORD is the beginning of something longer bound in this mode."

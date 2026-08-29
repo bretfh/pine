@@ -1,0 +1,346 @@
+#+TITLE: a conversation is a document and an actor
+#+AUTHOR: Bret Horne
+#+OPTIONS: toc:2 num:t
+
+* What is already here
+
+Read before writing any of this: every file under =src/=, =vt/=, =tests/=,
+=bench/=, =examples/=, the asd, the Makefile and the manifest.
+
+Pine already answers a model's questions. =src/run/peer.lisp= serves
+=:ping :evaluate :watch :take :contents :write :verb :nodes= to anything that
+asks over sento, and =src/cli.lisp= is a client of exactly that. What is missing
+is a wire a model's runtime speaks and a description of the tree in the shape a
+model reads. Not a protocol.
+
+Three things in the tree are the whole of what this needs, and all three are
+already written:
+
+| =node:verb=      | =(setf contents)= on a verb form routes there. =job= uses it for =(:start)= |
+| =path:match=     | =*=, =**= and =?binding= over a path                                        |
+| =pine:describe=  | name, class, describes, what is under it, saved, live                       |
+
+And one shape, used twice already, that this is the third use of:
+
+: terminal   is a document and a thread at once   src/term/terminal.lisp
+: peer       is an image and a mount at once      src/run/peer.lisp
+: chat       is a document and an actor at once
+
+* The one idea
+
+A conversation is a =document= and an =actor= at once.
+
+A terminal is a document because a program's screen is text a window shows and a
+command acts on, and a thread because a pty read blocks. A conversation is a
+document for the same reason -- the transcript is text a window shows -- and an
+actor because messages have to be taken in order and a second =send= arriving
+mid-turn must queue rather than interleave.
+
+Everything follows from that and none of it is new code:
+
+- =(setf node:contents chat)= is sending, the way writing a terminal is typing.
+  =src/term/terminal.lisp= line 166 is the method to copy.
+- A =mode= says what a key means in it, the way =pine/term/mode:shell= hands
+  every key to the pty. RET sends; the rest is a =prose= document.
+- =window:show= draws it. The editor needs no knowledge of it.
+- =doc:spans= colours the transcript: the same four numbers a parse says, a
+  search says and a terminal's =ls --color= says. A tool call awaiting approval
+  is a span.
+- =doc:overlay= puts what a tool answered after a line without it being in the
+  text, which is what =eval-last-expression= already does.
+- The document is under =/text/chat=, so =pine read /text/chat= is the
+  transcript and =pine write /text/chat "..."= is a message, from the cli, from
+  the editor, or from another machine.
+
+* The tools
+
+Eight, and a projection. Nothing about files, because =/file= is the filesystem
+mounted and =/sh/<line>= is a line run.
+
+#+begin_src
+  read      WHERE                what a node holds        pine:read-at
+  write     WHERE VALUE          write it, making it      pine:write-at
+  ls        WHERE                names directly under     tree:listing
+  describe  WHERE                what stands there        pine:describe
+  tree      WHERE                every path below         tree:paths
+  match     PATTERN              /text/**/defun/?name     path:matching
+  commands                       every command there is   command:commands
+  run       NAME ARGUMENT...     run one                  command:run
+#+end_src
+
+Every one of them is a function that already exists. The tool file is a table,
+not an implementation.
+
+=eval= is a ninth and is the whole machine. Denied under every mode including
+=:auto=; a config says otherwise or it never runs.
+
+** Every command is a tool
+
+=/cmd= is already a self-describing registry: =command:commands= answers every
+command, =command:describes= says what it is for, and a config extends it with
+=defcommand=. Projected one tool per command, a config that writes
+
+: (defcommand "note" (title said) (:describes "write something down") ...)
+
+has extended the model's tool surface with no server, no schema file and no
+restart. Qwen code cannot have this; it has to discover tools by running a
+command that prints JSON.
+
+It needs one change under =src/run/=. A =command= knows its =name=, its
+=describes= and its =asks= -- and =asks= is a prompt spec for a person
+(=(:prompt "Note: " :as :string)=), not an argument list. Either =command= grows
+an =:argues= list naming and typing them, or the projection offers a single
+string array and lets =command:word= coerce. The first is four lines in
+=pine/run/command= and one keyword in =defcommand=.
+
+* Permissions are path patterns
+
+Qwen needs per-tool permission logic because its tools are heterogeneous. Pine's
+are not: every one of them names a place. So a rule is a path, which
+=pine/fs/path= already parses and matches.
+
+#+begin_src lisp
+  (allow /text/**)
+  (ask   /file/**)
+  (ask   /sh/**)
+  (deny  /system/**)
+  (deny  /proc/**)
+#+end_src
+
+Four modes are four default rule sets, at =/text/chat/mode=:
+
+| =:plan= | the write verbs are not in the tool list at all     |
+| =:ask=  | every write and every run asks                      |
+| =:edit= | writes under the allowed patterns go, the rest asks |
+| =:auto= | everything but =eval=                               |
+
+Plan mode withholding the tools rather than refusing the calls is the stronger
+form: a model that cannot see a tool does not spend a turn being told no.
+
+* Approval is a write
+
+A call is a node. =node:verb= is the generic and =job= already uses it for
+=(:start)=, =(:stop)=, =(:restart)=:
+
+: pine write /text/chat/call/3 '(:approve)'
+: pine write /text/chat/call/3 '(:reject)'
+: pine write /text/chat/call/3 '(:always)'
+
+Two paths reach it and both already exist. From the cli, =cli:%verb= sees a cons
+whose head is a keyword and sends =(:verb WHERE . REST)=, which =peer:%place=
+turns into =node:verb=. In this image, =(setf contents)= checks =%verbp=, which
+wants an fset seq: =(setf (node:contents call) (d:seq :approve))=, the way
+=tests/run.lisp= stops a job.
+
+So there is no confirmation bus, no outcome enum crossing three layers, and no
+promise parked on a UI thread the way =jinzo/acp.clj= has to park one. A button
+in a surface, a chord in the editor, the cli and another machine are one act.
+
+* A tool call that breaks is a fault
+
+Every call goes through =fault:attempt= with the call's path as its label. Two
+things follow, the second of them new:
+
+- The model is handed the condition's text as the tool's answer and carries on.
+- With =fault:*debugging*= on, the thread stands where it broke holding its
+  restarts, =/fault/0/offers= says what they are, and writing a name to
+  =/fault/0= takes one. Offering that list to the model -- this broke, and these
+  are the ways on -- is the Lisp Machine debugger with a model in the chair. A
+  fault standing in a child image is =borrowed= and offers the same list.
+
+Not needed for the first version. It is the reason to build the first version
+this way.
+
+* The places
+
+#+begin_src
+  /text/chat                  the transcript; writing it sends
+  /text/chat/mode             :plan :ask :edit :auto
+  /text/chat/model            which model
+  /text/chat/state            :idle :thinking :calling :awaiting
+  /text/chat/usage            what it has cost
+  /text/chat/prompt           what the model was told about this pine, derived
+  /text/chat/tools            what it may call under this mode, derived
+  /text/chat/turn/7           one turn: :user or :model, and its text
+  /text/chat/call/3           a call: name, arguments, state
+  /text/chat/call/3/said      what it answered
+  /text/chat/cancel           write here to stop this turn
+#+end_src
+
+=doc:make-document= already puts a document under =/text= and =node:slots= hangs
+its slots as places, which is how a terminal's =wide= and =tall= are readable.
+The turns and calls are children through =node:child=, memoised, because
+=tests/style.lisp= enforces that and because a node built fresh per call is one
+nothing can watch.
+
+=/text/chat/prompt= is =derived=: it walks the tree for what pine is, what
+systems are loaded, what is two deep under =/=, and the command table. So the
+model's picture of this pine is worked out again the moment a system loads or a
+command is defined, for the same reason a bar showing the volume is. Nobody
+writes that prompt down and nobody keeps it in step.
+
+* Running it
+
+** The turn
+
+One =job:actor=, =:dispatcher :pinned=, because a fault it stands in would take
+a shared worker with it -- =peer:serve= and =pine/text/ts/parser= both do this
+for the same reason. One =actors:blocking= thread under it and only that one,
+because reading a streaming response is the thing that blocks.
+
+=job:ask= from inside a receive signals =blocking-ask=. The turn loop therefore
+never waits for anything: it tells, and takes the reply as a message. That is
+not a style note, it is the shape of the loop.
+
+Cancel is a box the reader looks at between chunks, the way =job:stoppingp= is
+looked at between lines of a child's output.
+
+Writes during one turn go inside =commit:writing=, so what listens is told once
+rather than once per chunk. The frame is pushed on a tick, not on every
+invalidation.
+
+** Talking to a model
+
+A model is a class with one generic:
+
+: (defgeneric stream-turn (model messages tools tells))
+
+Under it: =openai= -- which is =llama-server= on this machine, and
+=~/models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf= is the development target and needs no
+key -- =anthropic=, and =scripted=, which answers a list of events written in a
+test. The suite drives the whole loop with =scripted= and touches no network,
+the way =tests/app.lisp= drives the example app and =tests/wm.lisp= drives a
+compositor that is not there.
+
+For the wire, first: =curl -N= as a =job:program=. =job:start= on a program
+already reads its stdout line by line on a blocking thread and pushes each line
+into =said=; a program pine starts dies with pine. Later, and only when it earns
+it: =usocket=, =pure-tls=, =jzon= and =ironclad= are all in the manifest
+already, so a native client adds no dependency. Keep them apart behind
+=stream-turn=.
+
+** Being the server
+
+=./pine mcp= is a verb in =src/cli.lisp=. It reads JSON-RPC off standard input
+and writes it to standard output, and every method turns into a message
+=peer:%received= already takes:
+
+| =initialize=          | who pine is                                       |
+| =tools/list=          | the eight, plus one per command, under the rules  |
+| =tools/call=          | =(:contents ...)=, =(:write ...)=, =(:nodes ...)= |
+| =resources/list=      | the tree                                          |
+| =resources/read=      | =(:contents ...)=                                 |
+| =resources/subscribe= | =(:watch ...)= and the notification it sends      |
+
+With a daemon up it is a client of it over sento, so it is a translation and not
+a second server; with none it starts a pine of its own, the way =./pine shell=
+does. That is the whole integration for anything that spawns a stdio server:
+
+: { "mcpServers": { "pine": { "command": "pine", "args": ["mcp"] } } }
+
+ACP comes after. Pine as an ACP agent would let jinzo and Zed drive it; pine as
+an ACP client would let the editor host an external CLI the way
+=jinzo/agent.clj= does. Both land on the same document, so neither changes
+anything above the transport.
+
+* What the suite will demand
+
+=tests/style.lisp= is not advice. It reads the source and fails:
+
+1. =+modules+= is a literal list of directories. A new =src/agent/= that is not
+   added there is a directory the style tests silently skip.
+2. =nothing-in-the-substrate-names-what-is-loaded-on-it= walks =fs run ui= for a
+   literal list of system names. Add =pine/agent= to it, so the substrate can
+   never grow a favourite.
+3. No =;= outside a string, anywhere under =src/=. Docstrings only.
+4. Every =defvar=, =defparameter=, =defconstant= in one block above the first
+   definition.
+5. Nothing over 400 lines.
+6. No =named-readtables:in-readtable=: the path literals are for a config, not
+   for pine's own source.
+7. No =fset:= and no =sento.atomic=; no =make-hash-table= in a =defvar=; no
+   =make-thread=; no =actor-context:actor-of=.
+8. A =defmethod node:nodes= or =node:resolve= that makes instances must go
+   through =node:child=.
+9. Package is path, =in-package= on the line under the =defpackage= form, one
+   nickname one package.
+
+And =tests/app.lisp='s last test is the one to copy: nothing under =src/= may
+name the new system, and the test that proves it.
+
+* What the contract with SYSTEM demands
+
+=system:use= does =(asdf:load-system "pine/<name>")= and then looks in
+=*offered*=. So:
+
+- the asdf system is named exactly =pine/agent=,
+- some file in it calls =(system:offers 'agent)= as it loads,
+- the class is =(defclass agent (system:system) ())=,
+- =job:start= puts everything there and =job:stop= takes all of it back off --
+  commands forgotten, documents killed, nodes erased -- because
+  =dropping-it-takes-everything-it-put-there-with-it= is the test.
+
+Words a config may say go in =pine:+user-surface+= in =src/boot.lisp=. That list
+is what =pine/user= is rebuilt from every time a system loads.
+
+* Where the code goes
+
+#+begin_src
+  src/serve/jsonrpc.lisp   framing and dispatch over two streams
+  src/serve/schema.lisp    a node and a command, as json schema
+  src/serve/mcp.lisp       the method table
+  src/serve/system.lisp    the system, and the cli verb
+
+  src/agent/rule.lisp      path patterns: allow, ask, deny, and the four modes
+  src/agent/tool.lisp      a tool: name, describes, schema, kind, and CALL
+  src/agent/verbs.lisp     the eight, and the projection of /cmd
+  src/agent/model.lisp     STREAM-TURN and the classes under it
+  src/agent/wire.lisp      messages and calls to and from a provider's json
+  src/agent/chat.lisp      the document, the turns, the calls as places
+  src/agent/mode.lisp      what a key means in a conversation
+  src/agent/turn.lisp      the loop
+  src/agent/system.lisp    the system, its commands and its chords
+
+  tests/serve.lisp
+  tests/agent.lisp
+#+end_src
+
+Two asdf systems, =pine/serve= and =pine/agent=, the second depending on the
+first for the schema and on =pine/text= for the document.
+
+* What has to be settled first
+
+1. *A command has no argument schema.* The projection of =/cmd= is the best
+   thing here and it stays thin until =pine/run/command= can say what a command
+   takes.
+
+2. *The styleguide is stale about names.* It says the actor endpoint is
+   =pine/run/agent= and that =agent= means =pine/net/agent=; neither exists.
+   The tree says =pine/run/job=, =pine/run/actors=, =pine/ui/widget=,
+   =pine/host/shell=, =pine/text/document=, =pine/text/ts/parser=. It also names
+   =pine/run/timer:every-seconds=, =pine/run/task:spawn= and
+   =pine/provider/out:sh=, which are =actors:repeat=, =actors:blocking= and
+   =sh:sh=. If =agent= is to mean this, the styleguide says so first.
+
+3. *The store fills in nodes that already stand.* =store:restore= only writes
+   into a node that is there and =savedp=, and the daemon restores after the
+   config. A system loaded later does not get its values back. If a conversation
+   is to survive a restart, either the turns are =value= nodes made at =start=
+   before the restore, or =pine/agent= is loaded from the config and the order
+   is stated.
+
+4. *=eval= is the machine.* Denied under every mode. A config that wants it says
+   so and nothing else turns it on.
+
+5. *curl or a native client.* Recommend a =job:program= now, native later,
+   behind =stream-turn=.
+
+* Two things found while reading that are not about this
+
+- =bench/workload.lisp= calls =parser:wait= five times. =pine/text/ts/parser=
+  neither defines nor exports it. =make bench= cannot run.
+- The tree is mid-move to a guix channel: =guix/*.scm= to
+  =guix/pine/packages/=, the tree-sitter-pine grammar vendored at =grammar/pine=,
+  the wayland xml at =protocol/=, and the four =wl-include= forms now read
+  =asdf:system-relative-pathname= instead of =GUIX_ENVIRONMENT=. Whatever this
+  adds should land after that settles.

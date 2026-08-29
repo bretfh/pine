@@ -1,6 +1,6 @@
 (defpackage #:pine/data
   (:use #:cl)
-  (:shadow #:map #:set #:remove #:subseq #:rest #:sort #:append)
+  (:shadow #:map #:set #:remove #:subseq #:rest #:append)
   (:export
    #:map #:seq #:set #:mapp #:seqp
    #:setp #:collectionp #:lookup #:with #:without
@@ -9,7 +9,7 @@
    #:rest #:append #:subseq #:remove #:no-map
    #:no-seq #:no-set #:capped #:swap #:cas
    #:emptied #:table #:all #:keep! #:drop!
-   #:claim #:clear!))
+   #:claim #:clear! #:update! #:same #:emptyp))
 (in-package #:pine/data)
 
 (defvar +no-map+ (fset:empty-map))
@@ -36,45 +36,68 @@
 (defun collectionp (x) (or (mapp x) (seqp x) (setp x)))
 
 (defgeneric lookup (collection key &optional default)
-  (:documentation "What COLLECTION holds at KEY, or DEFAULT where it holds nothing.
+  (:documentation "What COLLECTION holds at KEY, or DEFAULT where it holds nothing,
+and whether anything was there.
+
+Two values, because a collection may hold NIL and holding it is not the same as
+holding nothing. Whoever only wants the value reads the first and never knows.
 
 Not AT: a node is at a path and a value is looked up in a collection, and reading
 (d:at (d:all *commands*) name) beside (tree:at nil \"wm\") meant knowing which was
 which before you could read either.")
   (:method ((c fset:map) key &optional default)
     (multiple-value-bind (value foundp) (fset:lookup c key)
-      (if foundp value default)))
+      (if foundp (values value t) (values default nil))))
   (:method ((c fset:seq) key &optional default)
     (if (and (integerp key) (>= key 0) (< key (fset:size c)))
-        (fset:@ c key)
-        default))
+        (values (fset:@ c key) t)
+        (values default nil)))
   (:method ((c fset:set) key &optional default)
-    (if (fset:contains? c key) key default))
+    (if (fset:contains? c key) (values key t) (values default nil)))
   (:method ((c null) key &optional default)
     (declare (ignore key))
-    default)
+    (values default nil))
   (:method ((c hash-table) key &optional default)
-    (gethash key c default))
+    (multiple-value-bind (value foundp) (gethash key c default)
+      (values value foundp)))
   (:method ((c cons) key &optional default)
-    (if (integerp key) (or (nth key c) default) (getf c key default))))
+    (if (integerp key)
+        (let ((tail (and (>= key 0) (nthcdr key c))))
+          (if tail (values (car tail) t) (values default nil)))
+        (let ((tail (loop :for rest :on c :by #'cddr
+                          :when (eql (car rest) key) :do (return rest))))
+          (if tail (values (second tail) t) (values default nil))))))
 
 (defgeneric with (collection key &optional value)
+  (:documentation "COLLECTION with VALUE at KEY, or with KEY in it where that is
+what the kind means. What comes back is the same kind that went in.
+
+The building half of this vocabulary is the fset kinds and nothing, because
+building one a piece at a time and sharing what did not move is what they are for.
+A list says so rather than being copied behind your back.")
   (:method ((c fset:map) key &optional value) (fset:with c key value))
   (:method ((c fset:seq) key &optional value)
     (if (integerp key) (fset:with c key value) (fset:with-last c key)))
   (:method ((c fset:set) key &optional value)
     (declare (ignore value))
     (fset:with c key))
-  (:method ((c null) key &optional value)
-    (if value (fset:with +no-map+ key value) (fset:with-last +no-seq+ key))))
-
-
+  (:method ((c null) key &optional (value nil valuep))
+    "Nothing is the empty one of whichever kind is being built: given a value it is
+a map, and given only a key it is a seq. Asked of what was handed over, not of
+whether the value happens to be NIL."
+    (if valuep (fset:with +no-map+ key value) (fset:with-last +no-seq+ key)))
+  (:method ((c cons) key &optional value)
+    (declare (ignore key value))
+    (error "~s is a list; WITH builds the kinds that share what they keep." c)))
 
 (defgeneric without (collection key)
   (:method ((c fset:map) key) (fset:less c key))
   (:method ((c fset:seq) key) (fset:less c key))
   (:method ((c fset:set) key) (fset:less c key))
-  (:method ((c null) key) (declare (ignore key)) nil))
+  (:method ((c null) key) (declare (ignore key)) nil)
+  (:method ((c cons) key)
+    (declare (ignore key))
+    (error "~s is a list; WITHOUT builds the kinds that share what they keep." c)))
 
 (defgeneric size (collection)
   (:method ((c fset:collection)) (fset:size c))
@@ -86,34 +109,58 @@ which before you could read either.")
 (defun emptyp (collection) (zerop (size collection)))
 
 (defgeneric contains (collection value)
+  (:documentation "Whether VALUE is one of the things COLLECTION holds.
+
+What a map holds is its values, the way a seq holds its elements. Whether a map has
+a key is LOOKUP's second answer, which is a different question and is asked with a
+different word.")
   (:method ((c fset:set) value) (fset:contains? c value))
   (:method ((c fset:seq) value) (and (fset:position value c) t))
-  (:method ((c fset:map) value) (nth-value 1 (fset:lookup c value)))
-  (:method ((c null) value) (declare (ignore value)) nil))
+  (:method ((c fset:map) value)
+    (block found
+      (fset:do-map (k v c) (declare (ignore k))
+        (when (fset:equal? v value) (return-from found t)))))
+  (:method ((c null) value) (declare (ignore value)) nil)
+  (:method ((c cons) value) (and (cl:member value c :test #'fset:equal?) t))
+  (:method ((c hash-table) value)
+    (block found
+      (maphash (lambda (k v) (declare (ignore k))
+                 (when (fset:equal? v value) (return-from found t)))
+               c))))
 
 (defgeneric keys (collection)
   (:method ((c fset:map)) (fset:convert 'list (fset:domain c)))
   (:method ((c fset:set)) (fset:convert 'list c))
   (:method ((c fset:seq)) (loop :for i :below (fset:size c) :collect i))
-  (:method ((c null)) nil))
+  (:method ((c null)) nil)
+  (:method ((c cons)) (loop :for i :below (length c) :collect i))
+  (:method ((c hash-table))
+    (loop :for k :being :the :hash-keys :of c :collect k)))
 
 (defgeneric vals (collection)
   (:method ((c fset:map)) (fset:convert 'list (fset:range c)))
   (:method ((c fset:seq)) (fset:convert 'list c))
   (:method ((c fset:set)) (fset:convert 'list c))
-  (:method ((c null)) nil))
+  (:method ((c null)) nil)
+  (:method ((c cons)) (copy-list c))
+  (:method ((c hash-table))
+    (loop :for v :being :the :hash-values :of c :collect v)))
 
 (defun pairs (collection)
   (loop :for key :in (keys collection) :collect (cons key (lookup collection key))))
 
 (defmacro do-map ((key value collection &optional result) &body body)
+  "Every pair in a map. Nothing is the empty map and walks none of them; anything
+that is not a map at all says so, the way the other two walks here do."
   (let ((c (gensym)) (k (gensym)) (v (gensym)))
     `(let ((,c ,collection))
-       (when (mapp ,c)
-         (fset:do-map (,k ,v ,c)
-           (let ((,key ,k) (,value ,v))
-             (declare (ignorable ,key ,value))
-             ,@body)))
+       (cond ((mapp ,c)
+              (fset:do-map (,k ,v ,c)
+                (let ((,key ,k) (,value ,v))
+                  (declare (ignorable ,key ,value))
+                  ,@body)))
+             ((null ,c))
+             (t (error "~s is not a map to walk." ,c)))
        ,result)))
 
 (defmacro do-pairs ((key value collection &optional result) &body body)
@@ -136,7 +183,8 @@ which before you could read either.")
                             (declare (ignorable ,key ,value))
                             ,@body))
                         ,result)
-             (t ,result)))))
+             ((null ,c) ,result)
+             (t (error "~s is not something to walk in pairs." ,c))))))
 
 (defmacro do-each ((value collection &optional result) &body body)
   "Every value in a collection: a map's values, a seq's elements, a set's members,
@@ -154,6 +202,8 @@ about what the walk binds and not about a variable of the same name further out.
                ((seqp ,c) (fset:do-seq (,v ,c) ,(each)))
                ((setp ,c) (fset:do-set (,v ,c) ,(each)))
                ((listp ,c) (dolist (,v ,c) ,(each)))
+               ((hash-table-p ,c)
+                (maphash (lambda (,k ,v) (declare (ignorable ,k)) ,(each)) ,c))
                (t (error "~s is not something to walk." ,c)))
          ,result))))
 
@@ -165,24 +215,37 @@ about what the walk binds and not about a variable of the same name further out.
   (:method ((kind (eql :map)) collection) (fset:convert 'fset:map collection))
   (:method ((kind (eql :vector)) collection) (fset:convert 'vector collection)))
 
-(defun same (a b) (fset:equal? a b))
+(defun same (a b)
+  "Whether A and B are the same value. Two maps holding the same things are the
+same map: EQUAL asks whether they are the same object, which for anything built
+here is a question about the last edit rather than about the value."
+  (fset:equal? a b))
 
 (defun merged (&rest collections)
-  (reduce (lambda (a b) (if (and (mapp a) (mapp b)) (fset:map-union a b) (or b a)))
+  "Every map laid over the ones before it, the later winning where both say.
+
+Maps, and nothing standing for the empty one. Two seqs have no one answer here,
+and quietly keeping the second is worse than saying there is none."
+  (reduce (lambda (a b)
+            (cond ((null b) a)
+                  ((and (mapp a) (mapp b)) (fset:map-union a b))
+                  (t (error "~s and ~s are not both maps." a b))))
           collections :initial-value +no-map+))
 
 (defun rest (c) (fset:subseq c 1))
 (defun append (a b) (fset:concat a b))
 (defun subseq (c from &optional to) (fset:subseq c from (or to (size c))))
-(defun sort (c predicate &key key) (fset:sort c predicate :key key))
 (defun remove (item c) (fset:remove item c))
 
 (defun capped (list value n)
   "LIST with VALUE in front of it, no longer than N: the newest N of something
 there is no point keeping all of. Takes what it is given first, so it is what
-SWAP! is handed rather than something wrapped in a lambda."
+SWAP is handed rather than something wrapped in a lambda.
+
+Walks as far as the cap and no further: what is past it is dropped rather than
+counted, so a ring that is already full costs its length and not twice it."
   (let ((next (cons value list)))
-    (if (> (length next) n) (cl:subseq next 0 n) next)))
+    (if (nthcdr n next) (cl:subseq next 0 n) next)))
 
 (defmacro swap (place function &rest arguments &environment env)
   "Replace what PLACE holds with FUNCTION of it, and answer that.
@@ -261,12 +324,29 @@ place somebody else owns."
   (swap (table-of table) (lambda (m) (fset:less m key)))
   nil)
 
-(defun claim (table key value)
-  "Put VALUE at KEY unless something is there already, and answer whatever is
-there afterwards, so the loser of a race gets the winner's object."
+(defun update! (table key function &rest arguments)
+  "Replace what TABLE holds at KEY with FUNCTION of it, and answer that.
+
+One act. A LOOKUP and a KEEP! with a gap between them are two, and whoever writes
+in the gap is lost; FUNCTION runs again if somebody got there first, so it must be
+pure the way SWAP's is."
   (fset:lookup (swap (table-of table)
                      (lambda (m)
-                       (if (fset:lookup m key) m (fset:with m key value))))
+                       (fset:with m key
+                                  (apply function (fset:lookup m key) arguments))))
+               key))
+
+(defun claim (table key value)
+  "Put VALUE at KEY unless something is there already, and answer whatever is
+there afterwards, so the loser of a race gets the winner's object.
+
+Whether something is there is asked of the map and not of what it holds: a key
+somebody claimed with NIL is claimed, and the next to ask must not take it."
+  (fset:lookup (swap (table-of table)
+                     (lambda (m)
+                       (if (nth-value 1 (fset:lookup m key))
+                           m
+                           (fset:with m key value))))
                key))
 
 (defun clear! (table)

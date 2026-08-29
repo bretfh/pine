@@ -19,6 +19,10 @@
 three times in this one.")
 (defparameter *kept* 100)
 (defparameter *lines-kept* 20)
+(defparameter *asked-kept* 256
+  "How many answers stand at once. One is good for a breath and after that is only
+taking up room, and the table is keyed by the line: without a cap a bar that asks
+about a window holds an answer for every window there has ever been.")
 
 (defparameter *out*
   '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
@@ -52,15 +56,26 @@ closes that end and the stream goes with it.")
     (declare (ignore err code))
     out))
 
+(defun %breathed () (* *breath* internal-time-units-per-second))
+
+(defun %forget-stale (now)
+  "Let go of the answers whose breath has passed. Done when the table has grown
+rather than on every ask, so a line that is asked about every frame costs a lookup
+and nothing else."
+  (let ((old (%breathed)))
+    (d:do-map (line had (d:all *asked*))
+      (when (> (- now (cdr had)) old) (d:drop! *asked* line)))))
+
 (defun asked (line)
   "What a line says, remembered for a breath, so a panel reading three things out of
 one command runs it once and a bar built twice in a frame does not fork twice."
   (let ((now (get-internal-real-time))
         (had (d:lookup (d:all *asked*) line)))
-    (cond ((and had (< (- now (cdr had))
-                       (* *breath* internal-time-units-per-second)))
+    (cond ((and had (< (- now (cdr had)) (%breathed)))
            (car had))
-          (t (meter:counted :sh-fork)
+          (t (when (> (d:size (d:all *asked*)) *asked-kept*)
+               (%forget-stale now))
+             (meter:counted :sh-fork)
              (let ((said (%output line)))
                (d:keep! *asked* line (cons said now))
                said)))))

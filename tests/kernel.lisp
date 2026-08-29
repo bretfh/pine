@@ -4,6 +4,7 @@
                     (:name :pine/kernel/name) (:place :pine/kernel/place)
                     (:graph :pine/kernel/graph) (:tell :pine/kernel/tell)
                     (:tree :pine/kernel/tree) (:watch :pine/kernel/watch)
+                    (:pool :pine/kernel/pool) (:log :pine/kernel/log)
                     (:k :pine/kernel/call)))
 (in-package :pine/test/kernel)
 
@@ -256,3 +257,116 @@
       (is (equal '("a" "b" "c") (k:ls "/sinks")))
       (is (eq (tree:reach "/sinks/a") (tree:reach "/sinks/a"))
           "and hands out the same place every time, so a watch on one keeps"))))
+
+(defmacro with-log ((where) &body body)
+  "A log of its own for one test, taken away afterwards."
+  `(let ((,where (format nil "/tmp/pine-kernel-log-~d.log" (random 100000000))))
+     (unwind-protect (progn (log:keeping ,where) ,@body)
+       (log:forget-keeping)
+       (ignore-errors (delete-file ,where)))))
+
+(test what-outlives-the-image-is-written-down-and-comes-back
+  (with-tree
+    (with-log (where)
+      (k:write "/dev/name" "laptop")
+      (k:write "/n" 41)
+      (k:swap "/n" #'1+)
+      (log:settled)
+      (setf tree:*root* (tree:make-root))
+      (is (not (k:standsp "/n")) "a fresh image stands empty")
+      (log:replay where)
+      (is (eql 42 (k:read "/n")))
+      (is (equal "laptop" (k:read "/dev/name"))
+          "and the tree is the fold over what was said"))))
+
+(test what-is-worked-out-is-not-written-down
+  (with-tree
+    (with-log (where)
+      (k:write "/n" 2)
+      (k:make "/twice" :derived (lambda () (* 2 (k:read "/n"))))
+      (k:read "/twice")
+      (k:write "/n" 3)
+      (k:read "/twice")
+      (log:settled)
+      (let ((names (loop :for entry :in (log:entries where)
+                         :append (mapcar #'car (second entry)))))
+        (is (not (member "/twice" names :test #'equal))
+            "it is worked out again from what it read, and that is written")
+        (is (member "/n" names :test #'equal))))))
+
+(test a-group-of-writes-is-one-line-in-the-log
+  (with-tree
+    (with-log (where)
+      (k:together (k:write "/a" 1) (k:write "/b" 2) (k:write "/c" 3))
+      (log:settled)
+      (let ((entries (log:entries where)))
+        (is (eql 1 (length entries))
+            "one telling is one entry, so the log is a list of states that stood")
+        (is (eql 3 (length (second (first entries)))))))))
+
+(test the-log-says-what-stood-at-a-time
+  (with-tree
+    (with-log (where)
+      (k:write "/n" 1)
+      (log:settled)
+      (let ((then (get-universal-time)))
+        (sleep 1.1)
+        (k:write "/n" 2)
+        (log:settled)
+        (is (eql 2 (k:read "/n")))
+        (is (eql 1 (d:lookup (log:at-time then where) "/n"))
+            "and what stood then is still what stood then")))))
+
+(test compacting-says-the-same-thing-in-fewer-lines
+  (with-tree
+    (with-log (where)
+      (dotimes (i 50) (k:write "/n" i))
+      (k:write "/other" :kept)
+      (log:settled)
+      (is (< 1 (length (log:entries where))))
+      (log:compact where)
+      (is (eql 1 (length (log:entries where))))
+      (setf tree:*root* (tree:make-root))
+      (log:replay where)
+      (is (eql 49 (k:read "/n")) "and the fold is unchanged")
+      (is (eq :kept (k:read "/other"))))))
+
+(test the-pool-works-them-all-out-and-gets-them-all-right
+  (with-tree
+    (unwind-protect
+         (progn
+           (pool:start :hands 8)
+           (k:write "/seed" 1)
+           (let ((places (loop :for i :below 200
+                               :collect (let ((i i))
+                                          (k:make (format nil "/each/~d" i) :derived
+                                                  (lambda () (+ i (k:read "/seed"))))))))
+             (graph:all-worked places)
+             (is (every #'graph:freshp places))
+             (is (equal (loop :for i :below 200 :collect (+ i 1))
+                        (loop :for i :below 200
+                              :collect (k:read (format nil "/each/~d" i)))))
+             (k:write "/seed" 100)
+             (graph:all-worked places)
+             (is (equal (loop :for i :below 200 :collect (+ i 100))
+                        (loop :for i :below 200
+                              :collect (k:read (format nil "/each/~d" i))))
+                 "two hundred places on eight hands, and every one of them its own")))
+      (pool:stop))))
+
+(test a-watcher-that-will-not-hurry-does-not-hold-up-a-write
+  (with-tree
+    (unwind-protect
+         (progn
+           (pool:start :hands 4)
+           (watch:attend)
+           (k:write "/n" 0)
+           (k:watch "/n" (lambda (p now) (declare (ignore p now)) (sleep 0.2)))
+           (let ((at (get-internal-real-time)))
+             (k:write "/n" 1)
+             (let ((took (/ (- (get-internal-real-time) at)
+                            (float internal-time-units-per-second))))
+               (is (< took 0.1)
+                   "the write took ~,3f s, so it waited for the watcher" took))))
+      (pool:stop)
+      (sleep 0.3))))

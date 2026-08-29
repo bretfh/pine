@@ -102,7 +102,8 @@ stands in comes back here with the restarts it is still offering."
 (command:defcommand "rm" (where) (:describes "take a node off")
                     (and (tree:erase where) t))
 
-(command:defcommand "tree" (&optional where) (:describes "every node under one")
+(command:defcommand "tree" (&optional where)
+                    (:describes "every node under one that pine keeps")
   (tree:paths (tree:at where)))
 
 (command:defcommand "live" ()
@@ -197,6 +198,8 @@ stands in comes back here with the restarts it is still offering."
   (tree:root))
 
 (defun stop ()
+  (fault:or-nothing "there may be no socket to close"
+    (pine/serve/socket:close-socket))
   (commit:forget-listeners)
   (dolist (s (session:sessions)) (session:close s))
   (dolist (j (system:systems)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
@@ -273,9 +276,12 @@ root to measure a relative name from."
                     (config (config-file)))
   "A pine other images talk to. The store is opened after the config: a surface a
 config declares takes the name it is declared under, so a panel restored before the
-config would be the value node the surface then replaced."
+config would be the value node the surface then replaced.
+
+Peers are answered last of all. What crosses that way is a read, a write and work
+to do in this image, and opening it before the config has been read is answering
+for a pine the person running it has not finished describing."
   (start :remoting remoting)
-  (peer:serve)
   (command:defcommand "quit" () (:describes "stop this pine")
                       (quit))
   (command:defcommand "reload" () (:describes "read the config again")
@@ -286,6 +292,9 @@ config would be the value node the surface then replaced."
     (store:open-store store)
     (log:note "~d node~:p came back" (store:restore store:*store*))
     (store:keeping))
+  (peer:serve)
+  (fault:attempt (lambda () (pine/serve/socket:open-socket))
+                 "answering on a socket")
   (fault:attempt (lambda () (opening :display)) "opening the display")
   (log:note "~a: remoting ~a, ~d command~:p, ~d running"
             (node:contents (tree:at nil "name"))

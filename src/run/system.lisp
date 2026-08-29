@@ -43,7 +43,11 @@ its as much as the ones its file defined."
 
 (defmethod job:stop :after ((s system))
   "What a system defined goes when it does. Nothing keeps a list of names: a command
-knows the package it was written in, and the system knows which package is its."
+knows the package it was written in, and the system knows which package is its.
+
+Its commands and not its words: a command that has stood down is one nothing will
+run, while a word still names the class it named, because a system that is stopped
+is still a system that is loaded."
   (let ((prefix (owns (job:name s)))) (when prefix (command:withdraw prefix))))
 
 (defun offered () (d:keys (d:all *offered*)))

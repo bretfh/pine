@@ -5,10 +5,14 @@
    #:command #:defcommand #:named #:commands #:forget
    #:name #:describes #:asks #:on #:run
    #:word #:claim #:offer #:withdraw #:sorted
-   #:unknown-command #:asking #:*at*))
+   #:unknown-command #:asking #:turned #:*at*))
 (in-package #:pine/run/command)
 
 (defvar *commands* (d:table))
+(defvar *turned* 0
+  "How many times what stands here has changed. Whoever works something out from
+the commands keeps this beside it and works it out again when it moves; without
+it a keymap has to be built from every command on every keystroke.")
 (defvar *defined* (d:table)
   "Every command there is, by the package it was written in. A command is defined
 where its code is; whether it stands is whether its system is running.")
@@ -70,11 +74,20 @@ not before. Whatever was already defined stands down until it starts."
 (defun %claimedp (said)
   (some (lambda (prefix) (%underp prefix said)) *claimed*))
 
+(defun turned ()
+  "Which turn what stands is on. Answered before the commands are read and
+compared after, so a keymap kept from a turn that has passed is built again."
+  *turned*)
+
+(defun %turned () (d:swap *turned* #'1+))
+
 (defun offer (prefix)
-  (dolist (c (defined prefix) prefix) (d:keep! *commands* (name c) c)))
+  (dolist (c (defined prefix) (progn (%turned) prefix))
+    (d:keep! *commands* (name c) c)))
 
 (defun withdraw (prefix)
-  (dolist (c (defined prefix) prefix) (d:drop! *commands* (name c))))
+  (dolist (c (defined prefix) (progn (%turned) prefix))
+    (d:drop! *commands* (name c))))
 
 (defun command (name action &key (describes "") asks on (from (%home)))
   "A binding beside the command it names is one thing to read and one thing to
@@ -87,13 +100,15 @@ caller's rather than the system's."
   (let* ((home from)
          (c (make-instance 'command :name name :action action :from home
                                     :describes describes :asks asks :on on)))
-    (d:keep! *defined* home
-             (d:with (or (d:lookup (d:all *defined*) home) (d:no-map)) name c))
+    (d:update! *defined* home
+               (lambda (had) (d:with (or had (d:no-map)) name c)))
     (unless (%claimedp home) (d:keep! *commands* name c))
+    (%turned)
     c))
 
 (defun forget (name)
   (d:drop! *commands* name)
+  (%turned)
   name)
 
 (defun named (name)

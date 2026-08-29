@@ -317,3 +317,91 @@ prompt. A command that asks a question has to be able to take the answer."
   (is (null (system:named "edit")))
   (is (null (tree:at nil "surface/editor")))
   (setf *editing* nil))
+
+(test two-files-with-one-name-are-two-documents
+  "A document was named by the file's own name and any document already at that
+name was reused, so opening src/ui/system.lisp after src/wm/system.lisp pointed
+the first one at the second file and the first was gone."
+  (let ((a #p"/tmp/pine-test-a/") (b #p"/tmp/pine-test-b/"))
+    (ensure-directories-exist a)
+    (ensure-directories-exist b)
+    (with-open-file (s (merge-pathnames "system.lisp" a)
+                       :direction :output :if-exists :supersede)
+      (write-string "(this is A)" s))
+    (with-open-file (s (merge-pathnames "system.lisp" b)
+                       :direction :output :if-exists :supersede)
+      (write-string "(this is B)" s))
+    (with-tree
+      (tree:built (tree:root))
+      (mount:mount #p"/" (tree:root) "file")
+      (pine/text::root)
+      (let* ((path-a (namestring (merge-pathnames "system.lisp" a)))
+             (path-b (namestring (merge-pathnames "system.lisp" b)))
+             (name-a (pine/edit::%document-name path-a))
+             (doc-a (text:make-document name-a)))
+        (text:visit doc-a path-a)
+        (let* ((name-b (pine/edit::%document-name path-b))
+               (doc-b (or (text:named name-b) (text:make-document name-b))))
+          (text:visit doc-b path-b)
+          (is (not (eq doc-a doc-b)) "they are two")
+          (is (equal "(this is A)" (node:contents doc-a)) "and the first still is")
+          (is (equal "(this is B)" (node:contents doc-b)))
+          (is (equal name-a (pine/edit::%document-name path-a))
+              "while opening the same file again is still one"))))))
+
+(test a-chord-bound-before-its-mode-loads-is-there-when-it-arrives
+  "Bound by the name as written and read by the class's own name, the two never
+met and the binding was never found again."
+  (mode:bind "text" "C-q test-a" "pwd")
+  (is (equal "pwd" (d:lookup (mode::keys 'pine/mode:text) "C-q test-a")))
+  (is (equal "pwd" (d:lookup (mode::keys "text") "C-q test-a"))
+      "named either way, it is one keymap")
+  (is (every #'stringp (d:keys (d:all mode::*keys*)))
+      "and they are all kept under one kind of name"))
+
+(test a-chord-whose-command-has-gone-does-not-type-itself
+  "BINDING answered NIL for a chord bound to a command that had been withdrawn,
+which DISPATCH could not tell from unbound, so dropping a system turned its chords
+into text."
+  (let ((m (make-instance 'pine/mode:text)))
+    (mode:bind "text" "C-M-F9" "no-such-command-at-all")
+    (multiple-value-bind (said so-far named)
+        (mode:dispatch m nil (first (ui:chord "C-M-F9")) nil)
+      (declare (ignore so-far))
+      (is (eq :unbound said) "it is not taken")
+      (is (equal "no-such-command-at-all" named) "and it says what it wanted"))))
+
+(test an-unbound-printable-key-still-types-itself
+  (let ((m (make-instance 'pine/mode:text)))
+    (let ((said (mode:dispatch m nil (first (ui:chord "q")) nil)))
+      (is (equal '(:insert . "q") said)))))
+
+(test every-mode-is-offered-once-and-in-one-order
+  "MODES walked the subclasses and sorted by how deep each was, so a class two
+modes both led to was there twice and two of one depth came back in whatever order
+the metaobject protocol happened to give."
+  (eval '(defclass test-diamond-mode (pine/mode:pine pine/mode:org) ()))
+  (let ((a (mapcar #'class-name (mode::modes)))
+        (b (mapcar #'class-name (mode::modes))))
+    (is (equal a b) "twice running, the same order")
+    (is (= 1 (count 'test-diamond-mode a)) "and each of them once")
+    (is (= (length (mode::%names))
+           (length (remove-duplicates (mode::%names) :test #'equal))))))
+
+(test a-keymap-is-not-built-from-every-command-on-every-keystroke
+  "COMMANDS is asked once per class in the precedence list by BINDING and again by
+PREFIXP, so a key cost a list of every command that stands, several times over."
+  (let ((m (make-instance 'pine/mode:pine)))
+    (mode:binding m "C-f")
+    (let ((before (sb-ext:get-bytes-consed)))
+      (dotimes (i 100) (mode:binding m "C-f"))
+      (let ((each (round (- (sb-ext:get-bytes-consed) before) 100)))
+        (is (< each 8000) "~d bytes a look, which was twenty-two thousand" each)))))
+
+(test a-keymap-follows-the-commands-that-turn-over
+  (let ((m (make-instance 'pine/mode:text)))
+    (is (null (mode:binding m "C-q test-fresh")))
+    (command:command "test-fresh" (lambda () :ran) :on '(text "C-q test-fresh"))
+    (is (not (null (mode:binding m "C-q test-fresh")))
+        "what was kept is worked out again when the commands move")
+    (command:forget "test-fresh")))

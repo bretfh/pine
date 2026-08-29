@@ -7,7 +7,7 @@
    #:job #:thread #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
    #:named #:supervise #:sweep #:attend #:emit
-   #:stoppingp #:forget #:name #:state #:tries
+   #:stoppingp #:stoppedp #:forget #:name #:state #:tries #:kind #:kinds
    #:took #:thunk #:stopping #:argv #:ref))
 (in-package #:pine/run/job)
 
@@ -24,6 +24,7 @@ however well it runs afterwards.")
 thread blocked on a stream reads to the end of what it has and then looks, so the
 wait is for that look and not for a clock.")
 (defvar *jobs* (d:table))
+(defvar *kinds* (d:table))
 (defvar *supervised* nil)
 (defvar *under* nil)
 
@@ -72,6 +73,10 @@ a tick and takes no thread at all."))
   (node:attach (node:place "said" :reads (lambda () (said j))
                                   :describes "the last lines it said")
                j)
+  (node:attach (node:place "tell"
+                           :writes (lambda (value) (tell j value))
+                           :describes "write here to give it something")
+               j)
   (d:keep! *jobs* (name j) j))
 
 (defun jobs () (d:vals (d:all *jobs*)))
@@ -117,10 +122,29 @@ a tick and takes no thread at all."))
   (:method ((j job))
     (error "~a says nothing about how it starts." (node:full-name j))))
 
+(defgeneric stoppedp (job)
+  (:documentation "Whether asking it to stop worked.
+
+Asked of the kind, because only some kinds can say. An actor is gone when the
+context has let it go, and what it was is no longer worth reading; a thread is a
+thread, and one that never looks between reads is still running whatever pine has
+written down about it.")
+  (:method ((j job)) t)
+  (:method ((j thread))
+    (let ((it (took j)))
+      (not (and (typep it 'bordeaux-threads:thread)
+                (bordeaux-threads:thread-alive-p it))))))
+
 (defgeneric stop (job)
   (:documentation "Let it go.")
   (:method :before ((j job)) (setf (state j) :stopping))
-  (:method :after ((j job)) (setf (state j) :stopped (took j) nil))
+  (:method :after ((j job))
+    "Stopped where it really stopped. One that was asked and did not go is still
+running, and calling it stopped leaves it holding what it holds with nothing left
+in the tree that names it."
+    (if (stoppedp j)
+        (setf (state j) :stopped (took j) nil)
+        (setf (state j) :stopping)))
   (:method ((j job))
     (error "~a says nothing about how it stops." (node:full-name j))))
 
@@ -184,8 +208,22 @@ macro, so BOUNDP answers about the macro name and is false anywhere."
   (and sento.actor:*self* t))
 
 (defgeneric tell (to message)
+  (:documentation "Give something to a job. What that means is the kind's: an
+actor takes a message, and a program is written to.")
   (:method ((j actor) message)
     (when (took j) (sento.actor:tell (took j) message))
+    message)
+  (:method ((j program) message)
+    "A line on its standard input. A program you cannot write to is half a job:
+its output is already a place, and this is the other side of it."
+    (let ((it (took j)))
+      (when it
+        (let ((in (uiop:process-info-input it)))
+          (when in
+            (fault:attempt (lambda ()
+                             (write-line (princ-to-string message) in)
+                             (force-output in))
+                           (name j))))))
     message)
   (:method ((it null) message) (declare (ignore message)) nil)
   (:method ((name string) message) (tell (named name) message)))
@@ -194,6 +232,9 @@ macro, so BOUNDP answers about the macro name and is false anywhere."
   (:method ((j actor) message &key (timeout *asking*))
     (when (%in-receive-p) (error 'blocking-ask :of (name j)))
     (sento.actor:ask-s (took j) message :time-out timeout))
+  (:method ((it null) message &key timeout)
+    (declare (ignore message timeout))
+    nil)
   (:method ((name string) message &key timeout)
     (ask (named name) message :timeout timeout)))
 
@@ -203,6 +244,7 @@ macro, so BOUNDP answers about the macro name and is false anywhere."
 
 (defmethod start ((j program))
   (let ((it (uiop:launch-program (argv j)
+                                 :input :stream
                                  :output :stream :error-output :output
                                  :environment (env j))))
     (setf (took j) it)
@@ -250,8 +292,52 @@ again."
 and the restart are all written down and none of them ever happens."
   (actors:repeat every #'sweep :as :proc :what "starting again what died"))
 
+(defun kind (name maker)
+  "Say that NAME is a kind of job somebody can ask for, and how one is made from
+what they said. Registered where the class is, so this file names no kind it does
+not define and a kind loaded later is askable without this one being edited."
+  (d:keep! *kinds* (intern (string-upcase (princ-to-string name)) :keyword) maker)
+  name)
+
+(defun kinds () (sort (mapcar #'princ-to-string (d:keys (d:all *kinds*))) #'string<))
+
+(defun %started (said)
+  "Start what SAID asks for, and answer where it stands.
+
+A kind that can be asked for is one that can be described: a program is its argv,
+an image is the systems it loads. A thread and an actor are a lisp function, and
+no value carries one, so they are not registered and asking for one says so.
+
+The name is given rather than minted, because whoever asked has to find it again
+and two of them asking at once must not race for it. What is started is watched,
+so it is under /proc where it was asked for; whether it is started again when it
+dies is RESTARTS, which is a different question and off unless it is asked for."
+  (let* ((name (and (getf said :name) (princ-to-string (getf said :name))))
+         (want (getf said :kind))
+         (want (and want (intern (string-upcase (princ-to-string want)) :keyword)))
+         (maker (d:lookup (d:all *kinds*) want)))
+    (unless name (error "a job is started under a name; none was given."))
+    (when (named name) (error "~a is already running." name))
+    (unless maker
+      (error "~(~a~) is not a kind that can be asked for. There is ~{~a~^, ~}: a ~
+              thread and an actor are a function, and a value cannot carry one."
+             want (kinds)))
+    (let ((j (funcall maker name said)))
+      (supervise j)
+      (start j)
+      (node:full-name j))))
+
+(kind :program
+      (lambda (name said)
+        (make-instance 'program :name name
+                                :restarts (getf said :restarts)
+                                :env (getf said :env)
+                                :argv (mapcar #'princ-to-string
+                                              (getf said :argv)))))
+
 (defun %attach (root)
   (setf *under* (node:attach (node:place "proc" :nodes #'supervised
+                                         :writes #'%started
                                          :describes "what this pine is running")
                              root))
   (dolist (j (supervised) *under*) (setf (node:over j) *under*)))

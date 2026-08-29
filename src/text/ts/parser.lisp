@@ -137,7 +137,8 @@ its mode says."
                 (job:start
                  (make-instance 'job:actor
                                 :name (format nil "parse-~a-~d"
-                                              (node:name document) (incf *counter*))
+                                              (node:name document)
+                                              (d:swap *counter* #'1+))
                                 :dispatcher :pinned
                                 :receive (lambda (message) (%receive p message)))))
           p)))))

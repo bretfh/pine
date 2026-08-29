@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:commit #:pine/fs/commit) (#:tree #:pine/fs/tree)
-                    (#:log #:pine/fs/log))
+                    (#:said #:pine/said) (#:log #:pine/fs/log))
   (:export
    #:open-store #:close-store #:snapshot #:restore #:stale
    #:keeping #:*store*))
@@ -41,47 +41,18 @@ everything else pine says is said."
   (when (eq s *store*) (setf *store* nil))
   s)
 
-(defun storablep (value)
-  (typecase value
-    ((or null number string character keyword) t)
-    (symbol t)
-    (cons (and (storablep (car value)) (storablep (cdr value))))
-    ((and vector (not string)) (every #'storablep value))
-    (t (and (d:collectionp value)
-            (every #'storablep (d:as :list (d:keys value)))
-            (every #'storablep (d:as :list (d:vals value)))))))
-
-(defun said (value)
-  "VALUE as something that reads back. A map, a seq and a set are written as what
-they are, because prin1 cannot say them and read cannot take them."
-  (cond ((d:mapp value)
-         (list* :map (loop :for (k . v) :in (d:pairs value)
-                           :append (list (said k) (said v)))))
-        ((d:setp value) (list* :set (mapcar #'said (d:as :list value))))
-        ((d:seqp value) (list* :seq (mapcar #'said (d:as :list value))))
-        ((consp value) (cons (said (car value)) (said (cdr value))))
-        (t value)))
-
-(defun took (form)
-  (cond ((and (consp form) (eq :map (car form)))
-         (loop :with m := (d:no-map)
-               :for (k v) :on (rest form) :by #'cddr
-               :do (setf m (d:with m (took k) (took v)))
-               :finally (return m)))
-        ((and (consp form) (eq :seq (car form)))
-         (d:as :seq (mapcar #'took (rest form))))
-        ((and (consp form) (eq :set (car form)))
-         (d:as :set (mapcar #'took (rest form))))
-        ((consp form) (cons (took (car form)) (took (cdr form))))
-        (t form)))
+(defun storablep (value) (said:sayablep value))
 
 (defun written (value)
+  "What goes in the file: the shape SAID gives a value, printed. The printing is
+the store's; the shape is not, because a value leaving this image for a socket
+takes the same one."
   (let ((*print-readably* nil) (*print-circle* nil))
-    (prin1-to-string (said value))))
+    (prin1-to-string (said:said value))))
 
 (defun read-back (text)
   (let ((*read-eval* nil))
-    (handler-case (values (took (read-from-string text)) t)
+    (handler-case (values (said:took (read-from-string text)) t)
       (error (c)
         (%trouble (format nil "a value in the store will not read back: ~a" c))
         (values nil nil)))))

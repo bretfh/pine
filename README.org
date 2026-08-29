@@ -2,11 +2,6 @@
 
 Pine Is Not Emacs.
 
-An operating system on top of a host: one namespace, everything in it a =node=,
-and one protocol over that. What runs, what is stored, what is painted and what
-another machine can reach are the same few generics on a class hierarchy you
-subclass.
-
 [[file:doc/architecture.org][doc/architecture.org]] is what it is and how it is
 put together.
 
@@ -17,7 +12,7 @@ system:
 
 : node                     a name, where it sits, what is under it
 : |- value                 holds one
-: |- derived               works one out, and follows whatever it read
+: |- derived               works one out, and recomputes when its inputs change
 : |  \- surface            works out a widget tree; a role says where it goes
 : |- mount                 a namespace from somewhere else, grafted in
 : |  |- directory          a directory on this machine
@@ -35,53 +30,28 @@ A =peer= is an =image= and a =mount= at once: another pine you can evaluate in
 and a namespace you can graft. That is why a read of =/host/laptop/dev/audio=
 and a read of =/dev/audio= are the same act.
 
-* Running it
+* The protocol
 
-Linux and wayland. Guix is what pine develops against:
+Four verbs, and nothing takes more than these. A node answers them by its class,
+so the same call reaches a document, a running job, a device or another machine:
 
-: git clone https://github.com/bretfh/pine
-: cd pine
-: make bin        # one binary: the daemon and the cli
-: ./pine start    # reads ~/.config/pine/init.lisp and starts what it declares
-: ./pine status
-
-Without guix, on a linux without it or on a mac (untested), =FOREIGN=1= builds
-against ocicl and your own package manager. =make foreign= says what is
-missing and how to get it:
-
-: make foreign                    # what is missing, and how to get it
-: make foreign-deps FOREIGN=1     # the lisp systems, through ocicl
-: make foreign-wayflan FOREIGN=1  # one patch wayflan needs
-: make foreign-libs FOREIGN=1     # the tree-sitter grammars and the pty shim
-: make bin FOREIGN=1
-
-What it needs either way: sbcl, cairo, tree-sitter, sqlite, libffi,
-libxkbcommon, a C compiler, pkg-config, graphviz for the diagrams, and a
-wayland compositor.
-
-* Talking to it
-
-The tree is the interface, from Lisp or from a terminal:
-
-: ./pine read /dev/audio/volume
-: ./pine read /dev/audio/sinks       # every sink; write one its name
-: ./pine read /dev/net/wifi          # what is in the air; write one an ssid
-: ./pine read /dev/clip/text         # the desktop's clipboard; write one to copy
-: ./pine read /proc                  # what pine is running
-: ./pine write /proc/screen '(:restart)'   # and a verb it takes
-: ./pine write /surface/sound/shown t
+: ./pine read  /dev/audio/volume
+: ./pine write /dev/net/wifi "cafe-guest"
 : ./pine watch /dev/media/title
+: ./pine ls    /proc
+
 : ./pine eval '(+ 1 2)'
-: ./pine run list-documents
-: ./pine write /key "C-x C-f"
+: ./pine run  list-documents
 
-=./pine= with no verb says what else it takes: =ls=, =use=, =drop=, =systems=,
-=jobs=, =reload=, =restart=.
+=./pine= with no verb lists the rest, which are all conveniences over those:
+=use=, =drop=, =systems=, =jobs=, =reload=, =start=, =stop=, =restart=,
+=status=, =shell=.
 
-* What it loads
+* What is on it
 
-Nothing above the substrate is privileged. Each of these is a system: a class
-you start and stop, at =/system/<name>=.
+Nothing above the substrate is privileged. Each of these is a system, a class you
+start and stop at =/system/<name>=, and each is written in the same language a
+config is written in. They are what I have put on pine, not what pine is:
 
 : ./pine use text     # documents, modes, and the parse behind them
 : ./pine use host     # the machine's own devices, at /dev
@@ -90,41 +60,27 @@ you start and stop, at =/system/<name>=.
 : ./pine use desk     # a bar, and the panels it opens
 : ./pine use wm       # the compositor, in the namespace
 
-Taking one away takes its surfaces and its commands with it:
+Dropping one takes its surfaces and its commands with it, and the paths it added
+stop resolving:
 
 : ./pine drop desk
 
-* The windows
-
-Pine talks to the compositor it is under, and on one that asks for a window
-manager it is the window manager. Both are the same protocol, because from the
-namespace they are the same thing:
+The =wm= system is the sharpest case of a system claiming a domain. Pine talks to
+whatever compositor it is under, and on one that asks for a window manager it is
+the window manager, over the same paths either way:
 
 : ./pine read  /wm/windows
-: ./pine read  /wm/windows/3
 : ./pine write /wm/focused 3
-: ./pine write /wm/close t
 : ./pine write /wm/layout wide      # where pine is the one laying them out
-: ./pine read  /wm/placement        # and where each one goes
+: ./pine read  /wm/placement        # and where each window ended up
 
-A layout is a class with one =arrange= method, so a config writes its own the way
-it writes a mode or a role.
-
-Where pine is the window manager it says so about the layer shell too, so the
-same bar maps the same way it does under a compositor that manages itself, and
-the area the layout is given is what is left after that bar took its strip:
-
-: make screen                    # a compositor that manages its own windows
-: make screen COMPOSITOR=river   # one that asks pine to
+A layout is a class with one =arrange= method, so a config writes its own.
 
 * Making it yours
 
-=pine/user= is the language: Common Lisp and pine's whole protocol in one
-package, so a package that uses it and nothing else can say everything the editor
-can say. =~/.config/pine/init.lisp= is read in it, and so is anything else you
-write. [[file:examples/init.lisp][examples/init.lisp]] is a config you can copy.
-"make shot CONFIG=<file>" draws what one declares as PNGs, with no display and no
-compositor, so you can look at yours before you run it:
+=pine/user= is the language: common lisp and pine's whole protocol in one
+package, so a package that uses it and nothing else can say everything the
+systems above can say. =~/.config/pine/init.lisp= is read in it.
 
 #+begin_src lisp
   (defpackage #:notes (:use #:pine/user))
@@ -151,9 +107,12 @@ compositor, so you can look at yours before you run it:
          (label (read "/dev/clock/minute"))))
 #+end_src
 
-The editor, the desktop, the window manager and the machine's own devices are
-written exactly this way, and name nothing your package cannot name.
+You can see what a config draws before you run it. =make shot= renders the frame
+and every surface as PNGs, with no display and no compositor:
 
+: make shot CONFIG=~/.config/pine/init.lisp
+
+[[file:examples/init.lisp][examples/init.lisp]] is a config to copy.
 [[file:examples/notes.lisp][examples/notes.lisp]] is a whole app written that
 way: a kind of node at =/notes=, a mode that divides its text into headings, a
 role and a surface of its own, its own commands and a chord for one. The suite
@@ -167,18 +126,35 @@ it:
 : ./pine write /surface/sticky/shown t
 : ./pine drop notes                    # and everything it put there goes
 
+* Running it
+
+Linux and wayland. Guix is what pine develops against:
+
+: git clone https://github.com/bretfh/pine
+: cd pine
+: make bin        # one binary: the daemon and the cli
+: ./pine start    # reads ~/.config/pine/init.lisp and starts what it declares
+: ./pine status
+
+Without guix, on a linux without it or on a mac (untested), =FOREIGN=1= builds
+against ocicl and your own package manager. =make foreign= says what is missing
+and how to get it:
+
+: make foreign                    # what is missing, and how to get it
+: make foreign-deps FOREIGN=1     # the lisp systems, through ocicl
+: make foreign-wayflan FOREIGN=1  # one patch wayflan needs
+: make foreign-libs FOREIGN=1     # the tree-sitter grammars and the pty shim
+: make bin FOREIGN=1
+
 * Hacking on it
 
 : make check       # load everything, warning free
 : make test        # the suite
+: make repl        # a repl with pine loaded
 : make shot        # the frame and the surfaces as png, headless
-: make shot CONFIG=~/.config/pine/init.lisp   # what your own config draws
 : make screen      # pine on a headless compositor, and a shot of what it drew
 : make screen COMPOSITOR=river         # with pine as the window manager too
 : make docs        # doc/*.dot -> the png and svg beside them
 : make bench WORK=typing SIZE=20000   # a workload, through the real paths
 : ./pine run metrics                  # what the daemon you are using is doing
 : ./pine shell     # a repl in this terminal, no daemon
-
-[[file:STYLEGUIDE.md][STYLEGUIDE.md]] is how the code is written and what the
-tests enforce.

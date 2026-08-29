@@ -1,6 +1,7 @@
 (defpackage #:pine/term
   (:use #:cl)
   (:local-nicknames (#:edit #:pine/edit)
+                    (#:d #:pine/data)
                     (#:text #:pine/text)
                     (#:node #:pine/fs/node)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
@@ -31,7 +32,8 @@ fits."
     (terminal:resize term (max 1 (edit:across win)) (max 1 (edit:down win)))))
 
 (defun %open (&key runs name)
-  (let* ((name (or name (format nil "*shell*~[~:;-~:*~d~]" (incf *counter*))))
+  (let* ((name (or name (format nil "*shell*~[~:;-~:*~d~]"
+                                 (d:swap *counter* #'1+))))
          (win (edit:focused))
          (term (terminal:open-terminal name :runs runs
                                             :wide (if win (edit:across win) 80)

@@ -157,3 +157,33 @@ language, the language is not one."
     (is (null named) "~{~%  ~a~}" named)
     (is (search "/dev/audio/volume" said) "it says what it reads by path")
     (is (null (search "local-nicknames" said)))))
+
+(test a-word-on-the-command-line-is-all-of-it-or-none-of-it
+  "READ-FROM-STRING answers with the first form and how far it got. Without the
+second, pine write /x '1 2' read 1 and wrote it, losing the rest without saying so."
+  (is (equal "1 2" (pine/cli::%value "1 2")))
+  (is (equal "(a b) junk" (pine/cli::%value "(a b) junk")))
+  (is (equal ":k junk" (pine/cli::%value ":k junk")))
+  (is (= 42 (pine/cli::%value "42")) "one whole form is still that form")
+  (is (eq :k (pine/cli::%value ":k")))
+  (is (eq t (pine/cli::%value "t")))
+  (is (equal "wide" (pine/cli::%value "wide")) "and a bare word is a word"))
+
+(test nothing-answering-is-told-apart-from-not-answering
+  "A timeout against a daemon that is up and busy read as no daemon at all, which
+is the one thing a command line must not get wrong."
+  (let ((nowhere "/tmp/pine-nobody-is-here.sock"))
+    (ignore-errors (delete-file nowhere))
+    (is (null (pine/cli::listeningp nowhere))
+        "nothing is answering there")
+    (is (null (pine/cli::%connect nowhere))
+        "and asking for a connection answers nothing rather than breaking")))
+
+(test a-client-names-no-actor-system
+  "What a client of pine needs is what any language has: a socket and a line of
+text. Naming the concurrency library here is what made every client a lisp."
+  (let ((source (uiop:read-file-string
+                 (merge-pathnames "src/cli.lisp"
+                                  (asdf:system-source-directory :pine)))))
+    (is (null (search "sento" source))
+        "cli.lisp names sento, so a client still has to be one")))

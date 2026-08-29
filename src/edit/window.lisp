@@ -34,7 +34,7 @@ was split into."))
 
 (defun make-window (&key shows (into (root)) name)
   (let ((w (make-instance 'window
-                          :name (or name (format nil "~d" (incf *counter*)))
+                          :name (or name (format nil "~d" (d:swap *counter* #'1+)))
                           :shows shows
                           :describes "what one window is showing")))
     (node:attach w into)

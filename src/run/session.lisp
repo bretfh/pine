@@ -97,22 +97,31 @@ nobody has fbound is still something to do."
     (t nil)))
 
 (defmethod evaluate ((s session) form)
+  "What one form did. What it broke on is kept on the evaluation and told to
+whatever keeps faults, so a form that broke at a repl is in the debugger with
+everything else that broke rather than only on the stream that read it.
+
+Told from inside, before anything unwinds, because the restarts a fault is
+standing in are only there while it is still standing in them."
   (multiple-value-bind (c given) (%command-for form)
     (let* ((said (make-string-output-stream))
            (*standard-output* said))
       (multiple-value-bind (answered fault)
           (handler-case
-              (values (multiple-value-list
-                       (let ((*package* (package-of s))
-                             (*readtable* (or (readtable-of s) *readtable*))
-                             (*session* s)
-                             (tree:*here* (in s))
-                             (command:*at* s))
-                         (if c
-                             (command:run c (and given
-                                                 (mapcar #'command:word given)))
-                             (eval form))))
-                      nil)
+              (handler-bind
+                  ((error (lambda (broke)
+                            (pine/run/fault:report broke (name s)))))
+                (values (multiple-value-list
+                         (let ((*package* (package-of s))
+                               (*readtable* (or (readtable-of s) *readtable*))
+                               (*session* s)
+                               (tree:*here* (in s))
+                               (command:*at* s))
+                           (if c
+                               (command:run c (and given
+                                                   (mapcar #'command:word given)))
+                               (eval form))))
+                        nil))
             (error (broke) (values nil broke)))
         (make-instance 'evaluation :form form :answered answered :fault fault
                                    :said (get-output-stream-string said))))))
@@ -131,12 +140,21 @@ nobody has fbound is still something to do."
       e)))
 
 (defgeneric interact (session)
+  (:documentation "Read forms and answer them until there are no more.
+
+What the reader makes of a line is caught here the way what the evaluator makes of
+a form is caught below: an unbalanced paren is a thing to say, not a reason for the
+session to end and take the image with it.")
   (:method ((s session))
     (loop :while (openp s)
           :do (format (output s) "~&~a" *prompt*)
               (force-output (output s))
-              (let ((form (read s)))
-                (if (eq form :eof)
-                    (close s)
-                    (print s (evaluate s form)))))
+              (multiple-value-bind (form broke)
+                  (handler-case (values (read s) nil)
+                    (end-of-file () (values :eof nil))
+                    (error (c) (values nil c)))
+                (cond (broke (format (output s) "~&; ~a~%" broke)
+                             (force-output (output s)))
+                      ((eq form :eof) (close s))
+                      (t (print s (evaluate s form))))))
     s))

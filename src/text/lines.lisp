@@ -96,21 +96,30 @@ document answers for the lines it holds, because they are the same question.")
   (values at col))
 
 (defun %step-word (lines at col n)
-  (loop :repeat (abs n)
-        :do (let ((text (line lines at)))
-              (if (plusp n)
-                  (progn
-                    (loop :while (and (< col (length text))
-                                      (not (wordp (char text col))))
-                          :do (incf col))
-                    (loop :while (and (< col (length text))
-                                      (wordp (char text col)))
-                          :do (incf col)))
-                  (progn
-                    (loop :while (and (plusp col) (not (wordp (char text (1- col)))))
-                          :do (decf col))
-                    (loop :while (and (plusp col) (wordp (char text (1- col))))
-                          :do (decf col))))))
+  "A word at a time, across lines the way a character at a time is.
+
+At the end of a line there is no word left to step over, so a step that stayed on
+the line it started on was a motion that did nothing, however many times it was
+asked for."
+  (flet ((onward ()
+           (loop :for text := (line lines at)
+                 :while (and (>= col (length text)) (< at (1- (d:size lines))))
+                 :do (incf at) (setf col 0))
+           (let ((text (line lines at)))
+             (loop :while (and (< col (length text)) (not (wordp (char text col))))
+                   :do (incf col))
+             (loop :while (and (< col (length text)) (wordp (char text col)))
+                   :do (incf col))))
+         (back ()
+           (loop :while (and (zerop col) (plusp at))
+                 :do (decf at) (setf col (length (line lines at))))
+           (let ((text (line lines at)))
+             (loop :while (and (plusp col) (not (wordp (char text (1- col)))))
+                   :do (decf col))
+             (loop :while (and (plusp col) (wordp (char text (1- col))))
+                   :do (decf col)))))
+    (loop :repeat (abs n)
+          :do (if (plusp n) (onward) (back))))
   (values at col))
 
 (defun move-by (unit lines at col n)

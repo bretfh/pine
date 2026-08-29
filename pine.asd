@@ -8,12 +8,12 @@
 (asdf:defsystem #:pine/kernel
                 :description "The namespace: what a place is, what stands under
 one, what is worked out from one, and who is told when one moves"
-                :depends-on (#:pine/value #:bordeaux-threads)
+                :depends-on (#:pine/value #:bordeaux-threads #:uiop)
                 :serial t
                 :pathname "src/kernel/"
                 :components ((:file "name") (:file "tell") (:file "place")
                              (:file "graph") (:file "tree") (:file "watch")
-                             (:file "call")))
+                             (:file "pool") (:file "log") (:file "call")))
 
 (asdf:defsystem #:pine/place
                 :description "The namespace: what a node is, where it stands, what

@@ -12,6 +12,7 @@
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)
+(defvar *stirring* nil)
 (defparameter +unread+ '#:unread)
 
 (defclass node ()
@@ -84,26 +85,8 @@ directory, a compositor and a region of a document are all this: each answers
 CONTENTS from whatever stands behind it, and saying so is the whole of what they
 have in common.
 
-PLACE below is the one that answers through closures rather than through a method
-of its own."))
-
-(defclass place (live)
-  ((reads     :initarg :reads     :accessor reads     :initform nil)
-   (writes    :initarg :writes    :accessor writes    :initform nil)
-   (names     :initarg :names     :reader  names-of   :initform nil)
-   (each      :initarg :each      :reader  each-of    :initform nil)
-   (listing   :initarg :nodes     :reader  nodes-of   :initform nil)
-   (announces :initarg :announces :reader  announces  :initform nil)
-   (refreshes :initarg :refreshes :reader  refreshes  :initform nil))
-  (:documentation "Somewhere the world answers, through the closures it was given.
-
-READS answers what it holds and WRITES says what writing it means. NAMES says what
-is under it and EACH makes one, and what EACH made is kept, so the same name is
-the same node every time; with NODES the children are nodes something else already
-keeps.
-
-A device is one of these and each of its readings is a closure pair, which is why
-a device is a table of rows rather than a class per reading."))
+PLACE, in the file beside this one, is the one that answers through closures
+rather than through a method of its own."))
 
 (defclass slot (node)
   ((object-of :initarg :object :reader object-of)
@@ -134,12 +117,6 @@ the class saying so, not a flag anybody has to remember to pass."
 (defun derive (name reads &rest initargs)
   "A node that works its value out and remembers it until something it read moves."
   (apply #'make-instance 'derived :name name :reads reads initargs))
-
-(defun place (name &rest initargs)
-  "Somewhere the world answers: how to read it, how to write it, and what is
-under it. Nothing is remembered, because the world moves without anybody writing
-it; that is what DERIVE, which does remember, is the other half of."
-  (apply #'make-instance 'place :name (princ-to-string name) initargs))
 
 (defun %named (n)
   (let ((names (loop :for at := n :then (over at)
@@ -176,26 +153,12 @@ entry that says so and that every walk of the children then has to step over."
         (let ((made (funcall builder)))
           (when made (d:claim (memo n) name made))))))
 
-(defun %kid (n name)
-  (child n name
-         (lambda ()
-           (let ((it (funcall (each-of n) name)))
-             (when it (setf (over it) n))
-             it))))
-
-(defun %listed (n) (mapcar #'princ-to-string (funcall (names-of n))))
-
 (defgeneric nodes (node)
   (:documentation "What is under NODE, in order.
 
 The one place a class says what it contains. RESOLVE and LEAFP are written on this,
 so a class that answers here answers everywhere.")
-  (:method ((n node)) (d:as :list (beneath n)))
-  (:method ((n place))
-    (cond ((nodes-of n) (funcall (nodes-of n)))
-          ((names-of n)
-           (remove nil (mapcar (lambda (each) (%kid n each)) (%listed n))))
-          (t (call-next-method)))))
+  (:method ((n node)) (d:as :list (beneath n))))
 
 (defgeneric resolve (node name)
   (:documentation "What NODE has under NAME.
@@ -207,13 +170,7 @@ Every shell line is a place whether or not one has been run, and /sh lists the
 ones that have.")
   (:method ((n node) name)
     (find (princ-to-string name) (d:as :list (beneath n))
-          :key #'name :test #'equal))
-  (:method ((n place) name)
-    (let ((name (princ-to-string name)))
-      (cond ((nodes-of n)
-             (find name (funcall (nodes-of n)) :key #'name :test #'equal))
-            ((each-of n) (%kid n name))
-            (t (call-next-method))))))
+          :key #'name :test #'equal)))
 
 (defun leafp (n) (null (nodes n)))
 
@@ -252,11 +209,14 @@ Saying the path went is COMMIT:FORGET's, not this one's: a store keeping a copy
 of the tree hears an erasure the same way it hears a write, and this layer names
 nothing that is listening.")
   (:method ((n node) name)
+    "What was kept is let go after it is detached, not before. Dropped first, the
+detach asks for it again, a worked-out child is built again to be taken off, and
+what is left behind in the memo is that second one with nothing over it."
     (let ((gone (resolve n name)))
-      (when gone
-        (commit:forget (full-name gone)))
-      (d:drop! (memo n) (princ-to-string name))
-      (detach n name))))
+      (when gone (commit:forget (full-name gone)))
+      (let ((it (detach n name)))
+        (d:drop! (memo n) (princ-to-string name))
+        (or it gone)))))
 
 (defun reading (n)
   (when *reading* (pushnew n (cdr *reading*)))
@@ -275,10 +235,15 @@ nothing that is listening.")
     n))
 
 (defgeneric stir (node)
-  (:documentation "Say NODE moved. Whatever read it is worked out again.")
+  (:documentation "Say NODE moved. Whatever read it is worked out again.
+
+A node already being stirred is not stirred again: two that read each other are a
+ring, and without this walking it is the last thing the thread does.")
   (:method ((n node))
-    (d:do-each (each (readers n))
-      (stir each))
+    (unless (member n *stirring*)
+      (let ((*stirring* (cons n *stirring*)))
+        (d:do-each (each (readers n))
+          (stir each))))
     n)
   (:method :before ((n derived))
     "What it worked out is no longer what it would work out."
@@ -287,16 +252,24 @@ nothing that is listening.")
 (defun %work-out (n)
   "Work N out, and record what it read while doing it. What it read is recorded
 whether or not it finished: a node that threw has still read what it read, and one
-that keeps nothing is one nothing can ever stir again."
+that keeps nothing is one nothing can ever stir again.
+
+What it read last time and does not read now it stops reading. Without that a
+node that once looked somewhere is worked out for ever after whenever that place
+moves, and the thing it no longer reads holds it for as long as the image runs."
   (let ((reading (cons :reading nil)))
     (unwind-protect
          (let* ((*reading* reading)
                 (v (funcall (reads n))))
            (setf (cached n) v)
            v)
-      (setf (saw n) (cdr reading))
-      (dolist (on (cdr reading))
-        (unless (eq on n) (depend n on))))))
+      (let ((had (saw n))
+            (now (cdr reading)))
+        (dolist (on had)
+          (unless (member on now) (undepend n on)))
+        (setf (saw n) now)
+        (dolist (on now)
+          (unless (eq on n) (depend n on)))))))
 
 (defun stalep (n) (eq (cached n) +unread+))
 
@@ -314,7 +287,14 @@ that keeps nothing is one nothing can ever stir again."
               (t       (cl:first arguments)))))))
 
 (defun %verbp (v)
-  (and (d:seqp v) (plusp (d:size v)) (keywordp (d:lookup v 0))))
+  (and (d:seqp v) (plusp (d:size v)) (keywordp (d:lookup v 0))
+       (not (eq :quoted (d:lookup v 0)))))
+
+(defun %quotedp (v)
+  "Whether V is a seq somebody meant as a value rather than as something to do.
+Without this a seq beginning with a keyword can only ever be an instruction, and
+storing one is storing something else."
+  (and (d:seqp v) (plusp (d:size v)) (eq :quoted (d:lookup v 0))))
 
 (defgeneric contents (node)
   (:documentation "What NODE holds. One method per kind, because there is one
@@ -324,12 +304,7 @@ works it out and remembers, and a live one asks the world.")
   (:method ((n value)) (held n))
   (:method ((n derived))
     (let ((v (cached n)))
-      (if (eq v +unread+) (%work-out n) v)))
-  (:method ((n place))
-    (cond ((reads n) (funcall (reads n)))
-          ((names-of n) (%listed n))
-          ((nodes-of n) (mapcar #'name (funcall (nodes-of n))))
-          (t nil))))
+      (if (eq v +unread+) (%work-out n) v))))
 
 (defun moved (n)
   "Say N moved: what read it is worked out again, and whoever is waiting for a
@@ -352,11 +327,6 @@ remember it too.")
         (funcall (writes n) v)
         (progn (setf (reads n) (constantly v))
                (setf (cached n) +unread+)))
-    v)
-  (:method (v (n place))
-    (unless (writes n)
-      (error "~a holds nothing that can be written." (full-name n)))
-    (funcall (writes n) v)
     v))
 
 (defmethod contents ((n slot))
@@ -375,9 +345,10 @@ object is what this hangs under, which has already been said."
   (call-next-method))
 
 (defmethod (setf contents) :around (value (n node))
-  (if (%verbp value)
-      (verb n (d:lookup value 0) (d:as :list (d:rest value)))
-      (call-next-method)))
+  (cond ((%verbp value)
+         (verb n (d:lookup value 0) (d:as :list (d:rest value))))
+        ((%quotedp value) (call-next-method (d:rest value) n))
+        (t (call-next-method))))
 
 (defmethod (setf contents) :after (value (n node))
   (declare (ignore value))
