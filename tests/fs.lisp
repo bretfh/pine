@@ -174,7 +174,7 @@ say so."
           "a value three deep is reached: ~a" (reverse seen)))
     (is (not (node:livep (tree:at "/deep/down" "here")))
         "a value kept here is not live")
-    (is (node:livep (node:place "somewhere"))
+    (is (node:livep (node:answers "somewhere"))
         "and a place, which the world answers for, is")))
 
 (test a-snapshot-writes-what-the-walk-reached
@@ -250,7 +250,7 @@ name it never had, and answering nothing while nothing went."
 nothing. The memo a walk of the children reads would have a hole in it, and a name
 anybody can ask about would be a name anybody can grow it by."
   (with-tree
-    (let ((p (node:place "empty" :names (lambda () nil)
+    (let ((p (node:lists "empty" :names (lambda () nil)
                                  :each (lambda (name) (declare (ignore name)) nil))))
       (node:attach p (tree:root))
       (is (null (node:resolve p "nobody")))
@@ -291,7 +291,7 @@ that flowed into another call used to read whatever the session stood on."
 sit where NODES and RESOLVE never look, and the write would be taken and not be
 there to read."
   (with-tree
-    (let ((p (node:place "p" :names (constantly nil)
+    (let ((p (node:lists "p" :names (constantly nil)
                              :each (lambda (name) (declare (ignore name)) nil))))
       (node:attach p (tree:root))
       (signals error (pine::write "/p/thing" :hello)))))
@@ -378,8 +378,8 @@ somewhere is worked out for ever after whenever that place moves."
   "The memo is let go after the detach, not before: dropped first, the detach asks
 for the child again and what is left is that second one with nothing over it."
   (with-tree
-    (let ((p (node:place "p" :names (constantly (list "kid"))
-                             :each (lambda (n) (node:place n)))))
+    (let ((p (node:lists "p" :names (constantly (list "kid"))
+                             :each (lambda (n) (node:answers n)))))
       (node:attach p (tree:root))
       (let ((before (node:resolve p "kid")))
         (node:erase-child p "kid")

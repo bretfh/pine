@@ -157,7 +157,7 @@ disagree about what leaving it out meant."
                     :parent s
                     :describes "where the role says this goes")
                    s))
-    (node:attach (node:place "click"
+    (node:attach (node:answers "click"
                              :writes #'act
                              :describes "what another pine says was clicked")
                  s)

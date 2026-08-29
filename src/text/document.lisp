@@ -140,7 +140,7 @@ is text plus something of its own."
                     (alexandria:remove-from-plist initargs :class))))
     (node:attach doc (root))
     (node:slots doc doc "at-line" 'at-line "at-col" 'at-col "tick" 'tick)
-    (node:attach (node:place "source"
+    (node:attach (node:answers "source"
                              :reads (lambda () (origin doc))
                              :writes (lambda (value)
                                        (visiting doc (princ-to-string value)))

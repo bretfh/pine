@@ -18,11 +18,16 @@ keeps.
 A device is one of these and each of its readings is a closure pair, which is why
 a device is a table of rows rather than a class per reading."))
 
-(defun place (name &rest initargs)
-  "Somewhere the world answers: how to read it, how to write it, and what is
-under it. Nothing is remembered, because the world moves without anybody writing
-it; that is what DERIVE, which does remember, is the other half of."
+(defun answers (name &rest initargs &key reads writes &allow-other-keys)
+  "A leaf the world answers. Nothing is remembered; DERIVE is the half that does."
+  (declare (ignore reads writes))
   (apply #'make-instance 'place :name (princ-to-string name) initargs))
+
+(defun lists (name &rest initargs &key names each nodes &allow-other-keys)
+  "A branch the world fills. NAMES with EACH, or NODES something else keeps."
+  (declare (ignore names each nodes))
+  (apply #'make-instance 'place :name (princ-to-string name) initargs))
+
 
 (defun %kid (n name)
   (child n name

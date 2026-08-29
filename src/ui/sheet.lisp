@@ -107,7 +107,7 @@ where a frontend puts what the daemon sent into its own tree."
 (defun %theme (n name)
   (node:child n name
               (lambda ()
-                (node:place name :parent n
+                (node:answers name :parent n
                             :reads (lambda ()
                                      (let ((it (theme name)))
                                        (list :palette (palette it)
@@ -146,7 +146,7 @@ a path nobody named should not grow the keyword package."
 (defun %face (name)
   (let ((key (%face-key name)))
     (when (and key (in-force key))
-      (node:place name
+      (node:lists name
                   :reads (lambda ()
                            (let ((f (in-force (%face-key name))))
                              (when f
@@ -159,7 +159,7 @@ a path nobody named should not grow the keyword package."
                  (make-instance 'themes-node :name "theme"
                                 :describes "every theme there is, and which is on")
                  root)))
-    (node:attach (node:place "faces" :names #'%face-names :each #'%face
+    (node:attach (node:lists "faces" :names #'%face-names :each #'%face
                              :describes "every face in force")
                  root)
     (tree:ensure root "face")

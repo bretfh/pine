@@ -60,7 +60,7 @@ is still a system that is loaded."
     (and (typep j 'system) j)))
 
 (defun %attach (root)
-  (setf *under* (node:attach (node:place "system" :nodes #'systems
+  (setf *under* (node:attach (node:lists "system" :nodes #'systems
                                          :describes "what pine has loaded")
                              root))
   (dolist (s (systems) *under*) (setf (node:parent s) *under*)))

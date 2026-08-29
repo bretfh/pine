@@ -186,9 +186,10 @@ it makes may share a name across two packages -- `pine/ui/build:ring` makes a
 
 ## The surface language
 
-`/a/b` and `{...}` are sugar for a config, for a person at the prompt and for
-`pine eval`. All three read them, so a spelling a config teaches is one that
-works where somebody types it.
+`/a/b` is the sugar, and the whole of it. A config, the prompt and `pine eval`
+all read it, so a spelling a config teaches is one that works where somebody
+types it. `{...}`, `[...]` and `#{...}` were three more with no use anywhere;
+a map is `(map ...)`, which reads in any file.
 
 The substrate does not read in its own sugar: `src/data.lisp`, `src/said.lisp`
 and `src/fs/` may not declare the readtable, because a namespace that needs the

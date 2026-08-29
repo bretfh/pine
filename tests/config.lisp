@@ -70,17 +70,17 @@ readtable, and a fault in it is a fault like any other rather than a crash."
         (*package* (find-package '#:pine/user)))
     (read-from-string text)))
 
-(test the-sugar-reads-what-it-looks-like
-  "A path is scanned to the next stop, and the closing delimiters were not stops:
-a path against one took it into the name and read to end of file. Only a trailing
-space before the brace read at all, which is not a syntax anybody can hold."
+(test a-path-is-the-whole-of-the-syntax
+  "One reader macro. The map and the seq and the set were three more, spelled
+{...} [...] and #{...}, with no use anywhere in the tree -- and they cost a stop
+list a path had to know about, a style rule, a style test and a clause in the
+guide. A map is (map ...), which reads everywhere."
   (is (equal '(pine/fs/path:path "/dev/audio/volume")
              (%reads "/dev/audio/volume")))
-  (is (equal '(pine/data:map :v (pine/fs/path:path "/dev/audio/volume"))
-             (%reads "{:v /dev/audio/volume}"))
-      "a path inside a map, with no magic trailing space")
-  (is (equal '(pine/data:map :a (pine/fs/path:path "/a") :b (pine/fs/path:path "/b"))
-             (%reads "{:a /a :b /b}"))))
+  (is (equal '(pine/data:map :v (pine/fs/path:path "/a"))
+             (%reads "(map :v /a)"))
+      "a path against a closing paren, where a path always ended")
+  (is (equal '(pine/data:map :a 1) (%reads "(map :a 1)"))))
 
 (test division-is-writable-where-the-sugar-is-on
   "A bare / answered #'/ , so (/ 1 2) read as ((function /) 1 2), whose head is

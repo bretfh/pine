@@ -13,7 +13,7 @@
   (:import-from #:pine/fs/mount #:mount)
   (:import-from #:pine/fs/node
    #:announces #:attach #:child #:contents #:derive #:describes #:detach
-   #:full-name #:livep #:name #:node #:nodep #:nodes #:parent #:place
+   #:full-name #:livep #:name #:node #:nodep #:nodes #:parent #:answers #:lists
    #:refreshes #:resolve #:savedp #:slots #:stir #:verb)
   (:import-from #:pine/fs/path #:leaf #:path)
   (:import-from #:pine/fs/tree #:ensure #:erase #:listing #:root)

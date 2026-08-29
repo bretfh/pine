@@ -294,18 +294,18 @@ mode is a class anybody can write and most of them are not written here."
 
 (defun %mode (name)
   (when (%class name)
-    (node:place name
+    (node:lists name
                 :names (constantly '("keys"))
                 :each (lambda (field)
                         (when (equal field "keys")
-                          (node:place field
+                          (node:answers field
                                       :reads (lambda () (%chords name)))))
                 :reads (lambda () (%said name)))))
 
 (defun mode-node ()
   "Every mode there is, and its chords, as a place. Made here and attached by
 whoever is putting it up, the way any other node is."
-  (node:place "mode"
+  (node:lists "mode"
               :names #'%names
               :each #'%mode
               :describes "every mode there is, and its chords"))

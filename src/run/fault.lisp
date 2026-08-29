@@ -248,7 +248,7 @@ the debugger."
                 :names (constantly '("offers"))
                 :each (lambda (field)
                         (when (equal field "offers")
-                          (node:place field
+                          (node:answers field
                                       :reads (lambda ()
                                                (let ((f (%at name)))
                                                  (when f (defer f) (offers f)))))))

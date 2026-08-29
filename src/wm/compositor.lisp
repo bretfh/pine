@@ -166,7 +166,7 @@ rest is what the compositor says, and says alone."
                 :names (constantly +output-fields+)
                 :each (lambda (field)
                         (when (member field +output-fields+ :test #'equal)
-                          (node:place field
+                          (node:answers field
                                       :reads (lambda ()
                                                (%field (%output-said c name)
                                                        field)))))

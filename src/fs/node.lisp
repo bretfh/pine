@@ -6,7 +6,7 @@
    #:parent #:describes #:savedp #:livep #:announces
    #:refreshes #:contents #:nodes #:resolve #:stir
    #:moved #:verb #:full-name #:make #:derive
-   #:place #:answers #:lists #:attach #:detach #:child #:memo
+   #:answers #:lists #:attach #:detach #:child #:memo
    #:slots #:make-child #:erase-child #:reads #:writes
    #:depend #:undepend #:reading #:version #:mark #:standsp #:stalep
    #:work-out #:freshp #:cached #:saw #:*broke* #:*waiting-on* #:*waited*))
