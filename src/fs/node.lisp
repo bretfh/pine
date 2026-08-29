@@ -20,11 +20,20 @@
    (over      :initarg :over      :accessor over      :initform nil)
    (describes :initarg :describes :accessor describes :initform nil)
    (beneath   :initform (d:no-seq) :reader beneath)
+   (by-name   :initform (d:no-map) :reader by-name)
    (memo      :initform (d:table)  :reader memo)
    (readers   :initform (d:no-set) :reader readers)
    (named     :initform nil        :accessor named))
   (:documentation "A name, what it sits under, and what is under it. On its own it
 is a branch: it holds nothing, and what is under it is whatever was attached.
+
+BENEATH is what is under it in the order it was attached, and BY-NAME is the same
+nodes under the names they answer to. Two, because the two questions are different
+and only one of them is asked often: what is under this is asked when somebody
+lists it, and which one is called that is asked for every piece of every name
+anybody ever says. Kept only in order, the second is a walk of the whole list --
+and a copy of it, because a seq has to be made a list to be walked -- for every
+piece of every path.
 
 SAVEDP says what it holds outlives the image; LIVEP says the world behind it
 answers rather than a value kept here, which is what stops a snapshot walking into
@@ -160,30 +169,42 @@ The one place a class says what it contains. RESOLVE and LEAFP are written on th
 so a class that answers here answers everywhere.")
   (:method ((n node)) (d:as :list (beneath n))))
 
+(declaim (inline %said))
+(defun %said (name)
+  "NAME as the string it answers to, without copying one that already is.
+PRINC-TO-STRING of a string is a fresh string, and this is on the path every
+name-walk takes."
+  (if (stringp name) name (princ-to-string name)))
+
 (defgeneric resolve (node name)
   (:documentation "What NODE has under NAME.
 
-Derived from NODES where the children are attached, so the two cannot disagree.
-Where they are worked out, EACH answers what is there and nothing where it
-answers nothing: NAMES says what to list, which is not always the same question.
-Every shell line is a place whether or not one has been run, and /sh lists the
-ones that have.")
+Answered from BY-NAME, which holds the same nodes ATTACH put in BENEATH, so the
+two cannot disagree. Where they are worked out, EACH answers what is there and
+nothing where it answers nothing: NAMES says what to list, which is not always
+the same question. Every shell line is a place whether or not one has been run,
+and /sh lists the ones that have.")
   (:method ((n node) name)
-    (find (princ-to-string name) (d:as :list (beneath n))
-          :key #'name :test #'equal)))
+    (d:lookup (by-name n) (%said name))))
 
 (defun leafp (n) (null (nodes n)))
 
 (defgeneric attach (node into)
-  (:documentation "Put NODE under INTO, replacing whatever stood at its name.")
+  (:documentation "Put NODE under INTO, replacing whatever stood at its name.
+
+Both go together: the order it was attached in, and the name it answers to. A
+node put in one and not the other is one that lists and cannot be reached, or is
+reached and never listed.")
   (:method ((n node) (into node))
     (setf (over n) into)
     (%renamed n)
-    (d:swap (slot-value into 'beneath)
-             (lambda (all)
-               (d:with (d:as :seq (cl:remove (name n) (d:as :list all)
-                                             :key #'name :test #'equal))
-                       n)))
+    (let ((said (%said (name n))))
+      (d:swap (slot-value into 'beneath)
+              (lambda (all)
+                (d:with (d:as :seq (cl:remove said (d:as :list all)
+                                              :key #'name :test #'equal))
+                        n)))
+      (d:swap (slot-value into 'by-name) (lambda (all) (d:with all said n))))
     n))
 
 (defgeneric detach (node name)
@@ -191,6 +212,8 @@ ones that have.")
     (let ((gone (resolve n name)))
       (when gone
         (d:swap (slot-value n 'beneath) (lambda (all) (d:remove gone all)))
+        (d:swap (slot-value n 'by-name)
+                (lambda (all) (d:without all (%said (name gone)))))
         (setf (over gone) nil)
         (%renamed gone))
       gone)))

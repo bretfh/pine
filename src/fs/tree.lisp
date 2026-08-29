@@ -70,11 +70,37 @@ order nobody can check."
 (defun %rootedp (text)
   (and (plusp (length text)) (char= #\/ (char text 0))))
 
+(defun %step (at name makep)
+  (and at (or (node:resolve at name)
+              (and makep (node:make-child at name)))))
+
+(defun %spelled (at text makep)
+  "Walk what TEXT spells, a piece at a time, where it lies.
+
+SPLIT-NAME is the same walk with a stream and a list of fresh strings to show
+for it, and this is the one every read and every write goes through. What is
+left is one short string for each piece, because that is what a node is filed
+under; the stream, the list it was pushed onto, the list that was appended to
+another list, and the second pass over all of it are gone."
+  (declare (type string text) (optimize (speed 3) (safety 1)))
+  (let ((n (length text)) (i 0))
+    (loop
+      (loop :while (and (< i n) (char= #\/ (char text i))) :do (incf i))
+      (when (>= i n) (return at))
+      (let ((j i))
+        (loop :while (and (< j n) (not (char= #\/ (char text j)))) :do (incf j))
+        (setf at (%step at (subseq text i j) makep))
+        (when (null at) (return nil))
+        (setf i j)))))
+
 (defun %walk (n pieces makep)
   (loop :with at := n
-        :for name :in (%names pieces)
-        :do (setf at (and at (or (node:resolve at name)
-                                 (and makep (node:make-child at name)))))
+        :for p :in pieces
+        :do (setf at (typecase p
+                       (string (%spelled at p makep))
+                       (symbol (%step at (string-downcase (symbol-name p)) makep))
+                       (t (%step at (princ-to-string p) makep))))
+            (when (null at) (return nil))
         :finally (return at)))
 
 (defgeneric at (where &rest names)
@@ -83,19 +109,35 @@ order nobody can check."
 One question with one answer per kind of thing you can name a place with: a node
 is itself, nothing is where you are, a string beginning with / is from the root
 and one that does not is from where you are, and a path is what it spells.")
-  (:method ((where node:node) &rest names) (%walk where names nil))
-  (:method ((where null) &rest names) (%walk (here) names nil))
+  (:method ((where node:node) &rest names)
+    (declare (dynamic-extent names))
+    (%walk where names nil))
+  (:method ((where null) &rest names)
+    (declare (dynamic-extent names))
+    (%walk (here) names nil))
   (:method ((where string) &rest names)
-    (%walk (if (%rootedp where) *root* (here)) (cons where names) nil)))
+    (declare (dynamic-extent names))
+    (let ((from (if (%rootedp where) *root* (here))))
+      (if names
+          (%walk (%spelled from where nil) names nil)
+          (%spelled from where nil)))))
 
 (defgeneric ensure (where &rest names)
   (:documentation "The same, making what is not there. That is the whole of the
 difference between a read and a write: a read finds what stands and a write makes
 what does not.")
-  (:method ((where node:node) &rest names) (%walk where names t))
-  (:method ((where null) &rest names) (%walk (here) names t))
+  (:method ((where node:node) &rest names)
+    (declare (dynamic-extent names))
+    (%walk where names t))
+  (:method ((where null) &rest names)
+    (declare (dynamic-extent names))
+    (%walk (here) names t))
   (:method ((where string) &rest names)
-    (%walk (if (%rootedp where) *root* (here)) (cons where names) t)))
+    (declare (dynamic-extent names))
+    (let ((from (if (%rootedp where) *root* (here))))
+      (if names
+          (%walk (%spelled from where t) names t)
+          (%spelled from where t)))))
 
 (defun put (where pieces value)
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))
