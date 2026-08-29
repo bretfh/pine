@@ -1,13 +1,13 @@
 (defpackage #:pine/text/ts/lang/scheme
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine/text))
+  (:local-nicknames (#:text #:pine/text))
   (:export #:scheme))
 (in-package #:pine/text/ts/lang/scheme)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
 (defun scheme ()
-  (syntax:language
+  (text:language
    {:grammar {:lib "libtree-sitter-scheme" :fn "tree_sitter_scheme"}
     :indent {:width 2}
     :doc "Scheme"
@@ -52,4 +52,4 @@
    (/head/guard     {:face :keyword :rest :body})
    (/head/syntax-rules {:face :keyword :rest :body})))
 
-(syntax:declare-language :scheme (scheme))
+(text:declare-language :scheme (scheme))

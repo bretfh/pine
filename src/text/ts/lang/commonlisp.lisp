@@ -1,13 +1,13 @@
 (defpackage #:pine/text/ts/lang/commonlisp
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine/text))
+  (:local-nicknames (#:text #:pine/text))
   (:export #:commonlisp))
 (in-package #:pine/text/ts/lang/commonlisp)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
 (defun commonlisp ()
-  (syntax:language
+  (text:language
    {:grammar {:lib "libtree-sitter-commonlisp" :fn "tree_sitter_commonlisp"}
     :indent {:width 2}
     :doc "Common Lisp"
@@ -106,4 +106,4 @@
    (/head/otherwise        {:face :keyword})
    (/head/t                {:face :keyword})))
 
-(syntax:declare-language :commonlisp (commonlisp))
+(text:declare-language :commonlisp (commonlisp))

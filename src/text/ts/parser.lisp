@@ -124,7 +124,7 @@ the lines outside it are what they were."
   "Which language a document is parsed as: what it says it is written in, else what
 its mode says."
   (or (for-readtable (readtable-of document))
-      (mode:setting (mode-of document) :grammar)))
+      (mode:says (mode-of document) :grammar nil)))
 
 (defun %make (document language)
   (multiple-value-bind (lib fn) (grammar-of language)

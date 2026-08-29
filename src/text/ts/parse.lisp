@@ -12,16 +12,16 @@
 (defun %grammars (runtime) (grammars runtime))
 
 (defun %note-loaded (runtime language entry)
-  (pl:swap (slot-value runtime 'grammars)
+  (d:swap (slot-value runtime 'grammars)
            (lambda (state)
-             (pl:with state :loaded
-                      (pl:with (pl:lookup state :loaded) language entry)))))
+             (d:with state :loaded
+                      (d:with (d:lookup state :loaded) language entry)))))
 
 (defun %note-missing (runtime language)
-  (pl:swap (slot-value runtime 'grammars)
+  (d:swap (slot-value runtime 'grammars)
            (lambda (state)
-             (pl:with state :missing
-                      (pl:with (pl:lookup state :missing) language)))))
+             (d:with state :missing
+                      (d:with (d:lookup state :missing) language)))))
 
 (defun ensure-language (runtime language library fn-name)
   "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
@@ -31,17 +31,17 @@ itself is one thread at a time, because the loader's table is one table.
 The library and the C function come from the language's own declaration, which is
 why they are handed in: what grammars exist is something written rather than a
 list compiled in here."
-  (or (pl:lookup (pl:lookup (%grammars runtime) :loaded) language)
+  (or (d:lookup (d:lookup (%grammars runtime) :loaded) language)
       (bordeaux-threads:with-recursive-lock-held ((loading runtime))
         (unless (libs-loaded runtime) (ensure-ts runtime))
         (when (libs-loaded runtime)
           (let ((state (%grammars runtime)))
-            (or (pl:lookup (pl:lookup state :loaded) language)
-                (unless (pl:contains (pl:lookup state :missing) language)
+            (or (d:lookup (d:lookup state :loaded) language)
+                (unless (d:contains (d:lookup state :missing) language)
                   (let ((entry (load-language-entry language library fn-name)))
                     (cond
                       (entry (%note-loaded runtime language entry)
-                             (pl:lookup (pl:lookup (%grammars runtime) :loaded)
+                             (d:lookup (d:lookup (%grammars runtime) :loaded)
                                     language))
                       (t (%note-missing runtime language)
                          (pine/run/fault:report

@@ -286,12 +286,10 @@ ends in the word is not one, and neither is a file called pine.something."
     (is (null loose) "~{~%  ~a puts something between defpackage and in-package~}"
         (reverse loose))))
 
-(test a-nickname-names-one-package
-  "A nickname is vocabulary. It has to mean the same thing in every file, or
-reading one means checking its header first."
-  (let ((seen (make-hash-table :test 'equal))
-        (clashes nil))
-    (dolist (file (%files))
+(defun %nicknames ()
+  "Every (NICKNAME . PACKAGE) pair any file declares."
+  (let (out)
+    (dolist (file (%files) (nreverse out))
       (dolist (line (%lines file))
         (let ((at 0))
           (loop
@@ -300,21 +298,45 @@ reading one means checking its header first."
               (let* ((rest (subseq line (+ open 3)))
                      (space (position #\Space rest))
                      (name (and space (subseq rest 0 space)))
-                     (tail (and space (subseq rest (1+ space))))
-                     (of (and tail (search "#:pine" tail))))
-                (when (and name of)
-                  (let* ((from (+ of 2))
-                         (to (or (position-if (lambda (c) (member c '(#\Space #\))))
-                                              tail :start from)
+                     (tail (and space (string-left-trim " "
+                                                        (subseq rest (1+ space))))))
+                (when (and name tail (> (length tail) 2)
+                           (string= "#:" tail :end2 2))
+                  (let* ((to (or (position-if (lambda (c)
+                                                (member c '(#\Space #\))))
+                                              tail :start 2)
                                  (length tail)))
-                         (package (subseq tail from to))
-                         (had (gethash name seen)))
-                    (cond ((null had) (setf (gethash name seen) package))
-                          ((not (equal had package))
-                           (pushnew (format nil "~a is ~a and ~a" name had package)
-                                    clashes :test #'equal)))))
-                (setf at (+ open 3))))))))
-    (is (null clashes) "~{~%  ~a~}" (reverse clashes))))
+                         (package (subseq tail 2 to)))
+                    (when (and (>= (length package) 4)
+                               (string= "pine" package :end2 4))
+                      (push (cons name package) out)))))
+              (setf at (+ open 3)))))))))
+
+(defun %two-ways (of by)
+  "What is named twice: OF of each pair against BY of it."
+  (let ((seen (make-hash-table :test 'equal))
+        (clashes nil))
+    (dolist (pair (%nicknames) (reverse clashes))
+      (let* ((one (funcall of pair))
+             (other (funcall by pair))
+             (had (gethash one seen)))
+        (cond ((null had) (setf (gethash one seen) other))
+              ((not (equal had other))
+               (pushnew (format nil "~a is ~a and ~a" one had other)
+                        clashes :test #'equal)))))))
+
+(test a-nickname-names-one-package
+  "A nickname is vocabulary. It has to mean the same thing in every file, or
+reading one means checking its header first."
+  (let ((clashes (%two-ways #'car #'cdr)))
+    (is (null clashes) "~{~%  ~a~}" clashes)))
+
+(test a-package-answers-to-one-nickname
+  "And the other way round. Two names for one package is two vocabularies for
+one thing: a file that says both reads as though it used two, and a rename that
+stopped half way is what leaves it that way."
+  (let ((clashes (%two-ways #'cdr #'car)))
+    (is (null clashes) "~{~%  ~a~}" clashes)))
 
 (test nothing-in-the-substrate-names-what-is-loaded-on-it
   "The editor, the desktop, the window manager and the machine's own devices are
@@ -398,7 +420,7 @@ nothing has happened, and a timeout that counts turns rather than seconds."
 
 (defparameter +layers+
   '(("pine/value" ("word.lisp" "data.lisp" "said.lisp")
-     ("pine/word" "pine/data" "pine/said"))
+     ("pine/data" "pine/said"))
     ("pine/place" ("fs/")                       ("pine/fs"))
     ("pine/run"   ("run/")                      ("pine/run"))
     ("pine/ui"    ("ui/")                       ("pine/ui"))

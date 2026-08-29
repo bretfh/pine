@@ -1,13 +1,13 @@
 (defpackage #:pine/text/ts/lang/pine
   (:use #:cl)
-  (:local-nicknames (#:syntax #:pine/text))
+  (:local-nicknames (#:text #:pine/text))
   (:export #:pine))
 (in-package #:pine/text/ts/lang/pine)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
 (defun pine ()
-  (syntax:language
+  (text:language
    {:grammar {:lib "libtree-sitter-pine" :fn "tree_sitter_pine"}
     :indent {:width 2}
     :readtable 'pine/fs/reader:syntax
@@ -20,4 +20,4 @@
    (/node/unquote_lit
     {:fields {"marker" :escape "close" :escape} :rest :form})))
 
-(syntax:declare-language :pine (pine) :parent :commonlisp)
+(text:declare-language :pine (pine) :parent :commonlisp)

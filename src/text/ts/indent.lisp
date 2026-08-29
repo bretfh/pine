@@ -15,7 +15,7 @@ that happens to start with a bracket.")
         (and (< (ts-node-start-byte node) hi)
              (> (ts-node-end-byte node) (ctx-lo-byte ctx))))))
 
-(defun %at (rule key) (and rule (pl:lookup rule key)))
+(defun %at (rule key) (and rule (d:lookup rule key)))
 
 (defun %head-name (head ctx)
   "The symbol naming what a form is, downcased, or NIL when its head is not one."
@@ -51,7 +51,7 @@ is an element like any other."
          (%emit-head head rule ctx)
          (loop :for element :in (rest elements)
                :for i :from 1
-               :do (%role (or (and shape (pl:lookup shape i)) rest) element
+               :do (%role (or (and shape (d:lookup shape i)) rest) element
                           (%deeper ctx :depth (ctx-depth ctx) :index i
                                        :head (or named :function-name)))))))))
 
@@ -78,7 +78,7 @@ is an element like any other."
              (loop :for element :in (ts-named-nodes node)
                    :for i :from 0
                    :unless (member (ts-node-start-byte element) covered)
-                     :do (%role (or (and shape (pl:lookup shape i)) rest) element
+                     :do (%role (or (and shape (d:lookup shape i)) rest) element
                                 (%deeper ctx :depth (ctx-depth ctx)
                                              :index i)))))))))
 
@@ -86,8 +86,8 @@ is an element like any other."
   "Walk RULE's named fields, answering where each began so the rest skips them."
   (let ((fields (%at rule :fields))
         (covered nil))
-    (when (pl:mapp fields)
-      (pl:do-map (name role fields)
+    (when (d:mapp fields)
+      (d:do-map (name role fields)
 
         (let ((it (ts-field node (string-downcase (string name)))))
           (when it
@@ -98,9 +98,9 @@ is an element like any other."
 (defun %walk-quote (node ctx spec)
   "A quote paints its marker and walks what it quotes. :INTO says whether the
 inside is quoted, which a comma inside a backquote is not."
-  (let* ((value (ts-field node (or (pl:lookup spec :value) "value")))
-         (as (pl:lookup spec :as))
-         (into (pl:lookup spec :into)))
+  (let* ((value (ts-field node (or (d:lookup spec :value) "value")))
+         (as (d:lookup spec :as))
+         (into (d:lookup spec :into)))
     (if (null value)
         (dolist (e (ts-named-nodes node))
           (%walk e (%deeper ctx :depth (ctx-depth ctx) :quoted into)))
@@ -140,11 +140,11 @@ what follows as a body is a rule that indents it as one."
   (and head-name (stringp head-name) (languagep syntax)
        (let ((rule (head-rule syntax head-name package)))
          (and rule
-              (or (eq :body (pl:lookup rule :rest))
-                  (let ((shape (pl:lookup rule :shape))
+              (or (eq :body (d:lookup rule :rest))
+                  (let ((shape (d:lookup rule :shape))
                         (found nil))
-                    (when (pl:mapp shape)
-                      (pl:do-pairs (i role shape)
+                    (when (d:mapp shape)
+                      (d:do-pairs (i role shape)
                         (when (eq :body role) (setf found t))))
                     found))
               t))))
@@ -265,7 +265,7 @@ by four does, rather than by the two that used to be written here."
                               (name (%form-head-name form src))
                               (rule (and lang name
                                          (head-rule lang name (ps-package ps))))
-                              (distinguished (and rule (pl:lookup rule :indent))))
+                              (distinguished (and rule (d:lookup rule :indent))))
                          (cond
 
                            ((%headless-p form) (%align-first form open-col src))
