@@ -98,7 +98,7 @@ needs no lisp on the other end."
     (sb-posix:chmod path #o600)
     (setf *listening* (list socket path))
     (let ((j (make-instance 'job:thread :name "serve" :on-fault :leave
-                            :thunk (%accepting socket))))
+                            :runs (%accepting socket))))
       (job:supervise j)
       (job:start j)
       (log:note "answering on ~a" path)

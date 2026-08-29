@@ -254,7 +254,7 @@ on, and a widget tree has nothing of the sort to say."
                          (append (%candidate-rows found from width) rows)
                          rows)
                      :class "echo" :font *font*
-                     :parent (if found (length found) 0)
+                     :over (if found (length found) 0)
                      :caret (when p
                               (cons (if found (length found) 0)
                                     (min (1- width)

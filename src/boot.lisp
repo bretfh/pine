@@ -326,11 +326,11 @@ RUN/SYSTEM:SPEAKS, so what a config can name follows what is loaded."
 
 (defun quit (&optional (grace 5))
   (job:start (make-instance 'job:thread :name "quit-watchdog" :on-fault :leave
-                            :thunk (lambda ()
+                            :runs (lambda ()
                                      (sleep grace)
                                      (sb-ext:exit :abort t :code 0))))
   (job:start (make-instance 'job:thread :name "quit" :on-fault :leave
-                            :thunk (lambda ()
+                            :runs (lambda ()
                                      (sleep 0.2)
                                      (fault:or-nothing
                                       "leaving anyway"

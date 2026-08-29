@@ -43,7 +43,7 @@
               (round (input:pointer-at-x at))))))
 
 (defun press (s)
-  (let ((found (parent s)))
+  (let ((found (over s)))
     (if (typep found 'ui:slider)
         (progn (setf (input:pointer-drag (screen:pointer s)) found) (drag s))
         (click s))))

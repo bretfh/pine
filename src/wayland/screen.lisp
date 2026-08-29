@@ -296,7 +296,7 @@ compositor put it; what it draws is the new node's to say."
   s)
 
 (defmethod job:start :before ((s screen))
-  (setf (job:thunk s)
+  (setf (job:runs s)
         (lambda ()
           (unwind-protect (progn (%attend s) (%loop s))
             (%shut s)))))

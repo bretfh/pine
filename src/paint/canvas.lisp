@@ -205,7 +205,7 @@ one place a canvas paints what a grid worked out."
   (multiple-value-bind (x y) (%rect widget)
     (multiple-value-bind (cw ch) (ui:text-size m "M" (%size m widget))
       (with-canvas (m)
-        (let ((up (or (ui:parent widget) 0)))
+        (let ((up (or (ui:over widget) 0)))
           (loop :for row :in (ui:rows-of widget)
                 :for line :from (- up)
                 :for top := (+ y (* line ch))

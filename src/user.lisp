@@ -24,7 +24,8 @@
   (:import-from #:pine/run/command #:command #:commands #:defcommand #:run)
   (:import-from #:pine/run/fault #:attempt)
   (:import-from #:pine/run/job
-   #:actor #:alivep #:ask #:job #:program #:start #:stop #:tell #:thread)
+   #:actor #:alivep #:ask #:job #:program #:start #:stop #:tell #:thread
+   #:tick)
   (:import-from #:pine/run/system #:offers #:system)
   (:import-from #:pine/run/watch #:unwatch)
   (:import-from #:pine/ui

@@ -100,9 +100,9 @@ A name in place of a node is made and put under /dev first:
     (dolist (make (list #'device:clock))
       (attend (node:attach (funcall make) (tree:ensure root "dev"))))
     (job:supervise
-     (job:start (make-instance 'job:thread :name "clock" :seconds 1
+     (job:start (make-instance 'job:tick :name "clock" :every 1
                                            :on-fault :leave
-                                           :thunk #'device:tick)))
+                                           :runs #'device:tick)))
     root)
   s)
 

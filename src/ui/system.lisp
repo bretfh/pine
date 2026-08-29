@@ -13,7 +13,7 @@
    #:grad #:font #:pad #:chosen #:top
    #:left #:width #:height #:content #:changed
    #:upright #:value #:thickness #:fraction #:rows-of
-   #:by-row #:caret #:parent #:path #:year
+   #:by-row #:caret #:over #:path #:year
    #:month #:day #:bg #:with-faces #:in-force
    #:unhex #:color #:metric #:resolve #:properties
    #:put-rules #:css-glass #:css-mono #:css-rad #:medium

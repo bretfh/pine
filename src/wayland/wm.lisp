@@ -121,7 +121,7 @@ compositor says so: a window laid out over the bar is a window laid out wrong."
   (case stack
     (:bottom (river-node-v1.place-bottom (node-of it)))
     ((nil :top) (river-node-v1.place-top (node-of it)))
-    (t (let ((parent (%by-id w stack)))
+    (t (let ((over (%by-id w stack)))
          (if (and over (node-of over))
              (river-node-v1.place-above (node-of it) (node-of over))
              (river-node-v1.place-top (node-of it))))))

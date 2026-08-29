@@ -152,7 +152,7 @@ what a crash costs is everything since the image came up."
          (with-tree
            (let ((s (store:open-store file))
                  (thing (make-instance 'job:thread :name "held" :on-fault :leave
-                                                   :thunk (lambda () nil))))
+                                                   :runs (lambda () nil))))
              (store:keeping s)
              (node:attach thing (tree:root))
              (node:slots thing thing "state" 'job:state)

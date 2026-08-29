@@ -7,8 +7,8 @@
   (with-tree
     (tree:built)
     (let* ((n (cons 0 nil))
-           (j (make-instance 'job:thread :name "ticker" :seconds 0.05
-                                         :thunk (lambda () (d:swap (car n) #'1+)))))
+           (j (make-instance 'job:tick :name "ticker" :every 0.05
+                                         :runs (lambda () (d:swap (car n) #'1+)))))
       (unwind-protect
            (progn
              (job:supervise j)
@@ -28,8 +28,8 @@ supervised thing pine has is running and unreadable."
   (booted)
   (let ((was (tree:root)))
     (unwind-protect
-         (let ((j (make-instance 'job:thread :name "probe" :seconds 0.05
-                                             :thunk (lambda () nil))))
+         (let ((j (make-instance 'job:tick :name "probe" :every 0.05
+                                             :runs (lambda () nil))))
            (pine:start)
            (is (not (null (tree:at "/proc"))))
            (unwind-protect
@@ -49,7 +49,7 @@ returned without being asked to is failed, and the next sweep starts it."
     (tree:built)
     (let* ((runs (cons 0 nil))
            (j (make-instance 'job:thread :name "flaky" :on-fault :restart
-                                         :thunk (lambda ()
+                                         :runs (lambda ()
                                                   (d:swap (car runs) #'1+)))))
       (unwind-protect
            (progn
@@ -70,7 +70,7 @@ returned without being asked to is failed, and the next sweep starts it."
     (let ((j nil))
       (setf j (make-instance 'job:thread
                              :name "quiet" :on-fault :restart
-                             :thunk (lambda ()
+                             :runs (lambda ()
                                       (loop :until (job:stoppingp j)
                                             :do (sleep 0.01)))))
       (unwind-protect
@@ -312,7 +312,7 @@ calling it stopped leaves it holding what it holds with nothing naming it."
   (booted)
   (let* ((running t)
          (j (make-instance 'job:thread :name "test-stubborn" :on-fault :leave
-                           :thunk (lambda () (loop :while running
+                           :runs (lambda () (loop :while running
                                                    :do (sleep 0.02))))))
     (unwind-protect
          (progn
@@ -406,7 +406,7 @@ answer for every window there had ever been."
 the rest of its life."
   (with-tree
     (let ((j (make-instance 'job:thread :name "never"
-                                        :thunk (lambda () (error "never runs")))))
+                                        :runs (lambda () (error "never runs")))))
       (job:supervise j)
       (unwind-protect
            (let ((pine/run/job::*tries* 3)

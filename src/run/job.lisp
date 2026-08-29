@@ -4,11 +4,11 @@
                     (#:actors #:pine/run/actors) (#:fault #:pine/run/fault))
   (:import-from #:pine/fs/node #:name)
   (:export
-   #:job #:thread #:actor #:program #:start
+   #:job #:thread #:tick #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
    #:named #:supervise #:sweep #:attend #:emit
    #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:kind #:kinds
-   #:took #:thunk #:stopping #:argv #:ref))
+   #:took #:runs #:stopping #:argv #:ref))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)
@@ -52,15 +52,17 @@ handed, or TELL and take the reply as a message." (of c)))))
    (since     :initform nil      :accessor since)
    (fault     :initform nil      :accessor fault)
    (said      :initform nil :reader said))
-  (:documentation "Something that runs. Its state, its tries and what it last said
-are nodes under it, so what is running is read the way everything else is."))
+  (:documentation "Something that runs; its state and tries are nodes under it."))
 
 (defclass thread (job)
-  ((thunk    :initarg :thunk   :accessor thunk)
-   (seconds  :initarg :seconds :accessor seconds :initform nil)
+  ((runs     :initarg :runs   :accessor runs)
    (stopping :initform nil :accessor stopping))
-  (:documentation "Blocks on something, or repeats on the wheel. With SECONDS it is
-a tick and takes no thread at all."))
+  (:documentation "Blocks on something, in a thread of its own."))
+
+(defclass tick (job)
+  ((runs    :initarg :runs  :accessor runs)
+   (seconds :initarg :every :accessor seconds))
+  (:documentation "Repeats on the wheel, taking no thread."))
 
 (defclass actor (job)
   ((receive    :initarg :receive    :accessor receive)
@@ -183,30 +185,34 @@ be interrupted, so what can look between reads has to."
 
 (defmethod alivep ((j thread))
   (let ((it (took j)))
-    (cond ((seconds j) (and (member (name j) (actors:ticks) :test #'equal) t))
-          ((typep it 'bordeaux-threads:thread) (bordeaux-threads:thread-alive-p it))
-          (t nil))))
+    (and (typep it 'bordeaux-threads:thread) (bordeaux-threads:thread-alive-p it))))
+
+(defmethod alivep ((j tick))
+  (and (member (name j) (actors:ticks) :test #'equal) t))
 
 (defmethod start ((j thread))
   (setf (stopping j) nil)
   (setf (took j)
-        (if (seconds j)
-            (actors:repeat (seconds j) (thunk j) :as (name j) :what (name j))
-            (actors:blocking
-             (name j)
-             (lambda ()
-               (unwind-protect (fault:attempt (thunk j) (name j))
-                 (setf (state j)
-                       (if (stopping j) :stopped :failed)))))))
+        (actors:blocking
+         (name j)
+         (lambda ()
+           (unwind-protect (fault:attempt (runs j) (name j))
+             (setf (state j) (if (stopping j) :stopped :failed))))))
+  j)
+
+(defmethod start ((j tick))
+  (setf (took j) (actors:repeat (seconds j) (runs j) :as (name j) :what (name j)))
   j)
 
 (defmethod stop ((j thread))
+  (setf (stopping j) t)
   (let ((it (took j)))
-    (cond ((seconds j) (when it (actors:cancel it)))
-          (t (setf (stopping j) t)
-             (when (typep it 'bordeaux-threads:thread)
-               (sb-thread:join-thread it :timeout *stopping* :default nil)))))
+    (when (typep it 'bordeaux-threads:thread)
+      (sb-thread:join-thread it :timeout *stopping* :default nil)))
   j)
+
+(defmethod stop ((j tick))
+  (let ((it (took j))) (when it (actors:cancel it))) j)
 
 (defmethod alivep ((j actor)) (and (took j) t))
 
@@ -332,14 +338,10 @@ not define and a kind loaded later is askable without this one being edited."
 (defun %started (said)
   "Start what SAID asks for, and answer where it stands.
 
-A kind that can be asked for is one that can be described: a program is its argv,
-an image is the systems it loads. A thread and an actor are a lisp function, and
-no value carries one, so they are not registered and asking for one says so.
-
-The name is given rather than minted, because whoever asked has to find it again
-and two of them asking at once must not race for it. What is started is watched,
-so it is under /proc where it was asked for; whether it is started again when it
-dies is RESTARTS, which is a different question and off unless it is asked for."
+A kind that can be asked for is one a value can describe: a program is its argv,
+an image the systems it loads. A thread and an actor are a function, which no
+value carries, so asking for one says so. The name is given and not minted:
+whoever asked has to find it again, and two asking at once must not race."
   (let* ((name (and (getf said :name) (princ-to-string (getf said :name))))
          (want (getf said :kind))
          (want (and want (intern (string-upcase (princ-to-string want)) :keyword)))

@@ -218,7 +218,7 @@ screen; writing it is typing at the program."
       (unless fd (error "no pty for ~a" runs))
       (setf (fd-of term) fd (pid-of term) pid))
     (setf (vt:term-input-fn vt) (lambda (said) (send term said))
-          (job:thunk term) (%reading term))
+          (job:runs term) (%reading term))
     (node:slots term term "wide" 'wide "tall" 'tall)
     (job:supervise term)
     (job:start term)
