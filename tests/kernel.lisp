@@ -370,3 +370,81 @@
                    "the write took ~,3f s, so it waited for the watcher" took))))
       (pool:stop)
       (sleep 0.3))))
+
+(test what-is-added-up-was-true-all-at-once
+  "The one that took the longest to make true.
+
+A place that reads many others reads them one after another. If something moved
+partway through, what it added up is part one state and part another -- and its
+own mark has not moved either, because the walk that would move it has not got
+there yet. So it looks whole and is not. What makes it exact is that every value
+carries the list of what it read and which version each of those was, and that
+list is looked at again before the answer is handed back."
+  (with-tree
+    (let ((width 8) (layers 3) (stop nil) (torn 0) (reads 0))
+      (k:write "/n" 0)
+      (let ((below (loop :for i :below width
+                         :collect (let ((name (format nil "/l0/~d" i)))
+                                    (k:make name :derived (lambda () (k:read "/n")))
+                                    name))))
+        (loop :for layer :from 1 :below layers
+              :do (setf below
+                        (loop :for i :below width
+                              :collect (let ((a (nth (mod (* 2 i) (length below))
+                                                     below))
+                                             (b (nth (mod (1+ (* 2 i)) (length below))
+                                                     below))
+                                             (name (format nil "/l~d/~d" layer i)))
+                                         (k:make name :derived
+                                                 (lambda () (+ (k:read a) (k:read b))))
+                                         name))))
+        (let ((top below))
+          (k:make "/all" :derived
+                  (lambda () (loop :for each :in top :sum (k:read each))))))
+      (k:write "/n" 1)
+      (let ((factor (k:read "/all")))
+        (let ((writers (loop :repeat 2
+                             :collect (bt:make-thread
+                                       (lambda ()
+                                         (loop :until stop
+                                               :do (k:write "/n" (1+ (random 1000)))))))))
+          (loop :repeat 20000
+                :do (incf reads)
+                    (unless (zerop (mod (k:read "/all") factor)) (incf torn)))
+          (setf stop t)
+          (mapc #'bt:join-thread writers))
+        (is (eql 0 torn)
+            "~d of ~d answers were added up from a state that never stood"
+            torn reads)))))
+
+(test a-reading-that-still-stands-is-a-reading-that-was-right
+  "The version moves before the value as well as after, so there is a version in
+the middle of every write that names the old value and then the new one. Nothing
+rests on that one: a write always moves the version again after the value, so a
+reading taken in the middle never survives being checked.
+
+Which is the thing worth asserting -- not that a version never names two values,
+but that a reading which still stands at the end was a true one."
+  (with-tree
+    (let ((stop nil) (kept nil) (wrong 0))
+      (k:write "/n" 0)
+      (let ((w (bt:make-thread (lambda ()
+                                 (loop :until stop
+                                       :do (k:write "/n" (1+ (random 1000))))))))
+        (let ((p (tree:reach "/n")))
+          (loop :repeat 60000
+                :do (let ((reading (cons :reading nil)))
+                      (let ((v (let ((place:*reading* reading))
+                                 (place:held p))))
+                        (push (cons (cdr (first (cdr reading))) v) kept)))))
+        (setf stop t)
+        (bt:join-thread w))
+      (let* ((p (tree:reach "/n"))
+             (now (place:version p))
+             (value (place:holds p)))
+        (dolist (each kept)
+          (when (and (eql (car each) now) (not (eql (cdr each) value)))
+            (incf wrong)))
+        (is (eql 0 wrong)
+            "~d readings still stood at version ~d and were wrong about it"
+            wrong now)))))
