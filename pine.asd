@@ -57,7 +57,7 @@ they are declared on"
                 :components ((:file "mode")
                              (:file "serve/json") (:file "serve/wire")
                              (:file "serve/socket")
-                             (:file "boot") (:file "user") (:file "cli")))
+                             (:file "boot") (:file "verbs") (:file "user") (:file "cli")))
 
 (asdf:defsystem #:pine/text
                 :description "Documents, the structure their modes give them, and

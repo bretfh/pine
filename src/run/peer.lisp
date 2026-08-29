@@ -106,7 +106,7 @@ than unwinding, so what comes back carries the restarts it is still offering."
   "A place in another pine's namespace: four closures over which pine and which
 path. A read is a read and a write is a write, and what is under it is what that
 pine says is under it."
-  (node:place name
+  (node:lists name
               :describes (uri p)
               :reads  (lambda () (said:took (%crossed p where (list :contents))))
               :writes (lambda (value)

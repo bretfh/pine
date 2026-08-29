@@ -105,19 +105,19 @@ be. Until something places it there is nothing to say."
 what pine wants done about it. Nothing under src/ writes the placement: a window
 manager is a system that does, and the answer is total -- a window it does not name
 is hidden. What is wanted is taken once, so nothing is done twice."
-  (let ((all (list (node:place "said"
+  (let ((all (list (node:answers "said"
                                :reads (lambda () (told c))
                                :writes (lambda (value)
                                          (setf (said c) value)
                                          (node:stir c))
                                :describes "what the compositor handed over")
-                   (node:place "placement"
+                   (node:answers "placement"
                                :reads (lambda () (where c))
                                :writes (lambda (value)
                                          (setf (where c) (d:as :list value))
                                          (node:stir c))
                                :describes "where each window goes")
-                   (node:place "wants"
+                   (node:answers "wants"
                                :reads (lambda () (take c))
                                :writes (lambda (value) (asked c value))
                                :describes "what pine wants done about it"))))

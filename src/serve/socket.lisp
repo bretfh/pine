@@ -120,7 +120,7 @@ needs no lisp on the other end."
 (defun serve-node ()
   "Where this pine answers, as a place. Somebody who has the tree by another way
 can read where to reach it by this one."
-  (node:place "serve"
+  (node:answers "serve"
               :reads #'listening
               :describes "the socket this pine answers on"))
 

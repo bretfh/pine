@@ -244,7 +244,7 @@ the place they were looking at."
 standing there, here or in another image, so this is the same act as taking one in
 the debugger."
   (when (%at name)
-    (node:place name
+    (node:lists name
                 :names (constantly '("offers"))
                 :each (lambda (field)
                         (when (equal field "offers")
@@ -261,7 +261,7 @@ the debugger."
 
 (defun %attach (root)
   (node:attach
-   (node:place "fault"
+   (node:lists "fault"
                :names (lambda () (mapcar #'id (faults)))
                :each #'%fault
                :reads (lambda () (length (faults)))

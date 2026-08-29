@@ -105,8 +105,8 @@ suffix off our hands; the paths below are spelled out, so they cannot.")
                 :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
                 :initform (d:map :loaded (d:no-map) :missing (d:no-set))))
-  (:documentation "The grammars this image has loaded: {:loaded {LANGUAGE ENTRY}
-:missing #{LANGUAGE}}. A hit is a slot read."))
+  (:documentation "The grammars this image has loaded: (map :loaded (map LANGUAGE ENTRY)
+ :missing (set LANGUAGE)). A hit is a slot read."))
 
 (defclass ts-entry ()
   ((parser       :initarg :parser       :accessor entry-parser)

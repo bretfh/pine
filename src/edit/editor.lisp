@@ -9,7 +9,7 @@ edge, and whatever else is reading it hears the same way."
 (defun %key ()
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
 another pine all press keys the same way."
-  (node:place "key"
+  (node:answers "key"
               :reads (lambda () (ui:spelled (ui:pending)))
               :writes (lambda (value)
                         (commit:writing

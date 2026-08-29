@@ -154,7 +154,7 @@ Nothing is written through while this runs: the store is where these came from."
           :collect path))
 
 (defun %attach (root)
-  (node:attach (node:place "store"
+  (node:attach (node:answers "store"
                            :reads (lambda ()
                                     (let ((s *store*))
                                       (and s (princ-to-string (file-of s)))))

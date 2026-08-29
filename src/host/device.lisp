@@ -43,7 +43,7 @@ That is what a node taking a write function is for: /dev/audio was four classes
 and twelve methods, and it is this list now."
   (let ((self (list nil)))
     (setf (first self)
-          (node:place name
+          (node:lists name
                       :announces announces :refreshes refreshes
                       :describes describes
                       :reads (lambda () (%named-rows readings))

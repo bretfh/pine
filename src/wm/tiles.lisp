@@ -117,7 +117,7 @@ commands away, and pine places nothing again."))
 
 (defun %layout ()
   "Which layout is in force, by name: pine write /wm/layout wide."
-  (place "layout"
+  (answers "layout"
               :reads (lambda ()
                        (let ((s (%system)))
                          (when s

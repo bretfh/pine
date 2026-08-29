@@ -167,7 +167,7 @@ to the end before whoever started it goes, or the last of it is lost."
 
 (defun %tick (name)
   (when (%named name)
-    (node:place name
+    (node:answers name
                 :reads (lambda () (and (%named name) t))
                 :writes (lambda (value)
                           (let ((had (%named name)))
@@ -175,7 +175,7 @@ to the end before whoever started it goes, or the last of it is lost."
 
 (defun %attach (root)
   (node:attach
-   (node:place "tick"
+   (node:lists "tick"
                :names #'ticks
                :each #'%tick
                :reads (lambda () (mapcar #'princ-to-string (ticks)))

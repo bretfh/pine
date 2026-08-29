@@ -138,7 +138,7 @@ placement is written in these, so what goes in comes back out unchanged.")
 it off the screen or puts it back and writing FOCUSED gives it the keyboard; the
 rest is what the compositor says, and says alone."
   (when (member name +window-fields+ :test #'equal)
-    (node:place name
+    (node:answers name
                 :reads (lambda () (%field (%window-said c id) name))
                 :writes (lambda (value)
                           (cond ((equal name "hidden")
@@ -148,21 +148,21 @@ rest is what the compositor says, and says alone."
 
 (defun %window (c id)
   (when (%named (windows c) "id" id)
-    (node:place id
+    (node:lists id
                 :names (constantly +window-fields+)
                 :each (lambda (name) (%window-field c id name))
                 :reads (lambda () (%window-said c id))
                 :writes (lambda (value) (when value (focus c id))))))
 
 (defun %windows (c)
-  (node:place "windows"
+  (node:lists "windows"
               :names (lambda () (ids c))
               :each (lambda (id) (%window c id))
               :describes "every window there is"))
 
 (defun %output (c name)
   (when (%output-said c name)
-    (node:place name
+    (node:lists name
                 :names (constantly +output-fields+)
                 :each (lambda (field)
                         (when (member field +output-fields+ :test #'equal)
@@ -173,14 +173,14 @@ rest is what the compositor says, and says alone."
                 :reads (lambda () (%output-said c name)))))
 
 (defun %outputs (c)
-  (node:place "outputs"
+  (node:lists "outputs"
               :names (lambda () (mapcar (lambda (o) (getf o :name)) (outputs c)))
               :each (lambda (name) (%output c name))
               :describes "every screen, and what is left after the bars"))
 
 (defun %workspace (c idx)
   (when (%named (workspaces c) "idx" idx)
-    (node:place idx
+    (node:answers idx
                 :reads (lambda ()
                          (let ((w (%named (workspaces c) "idx" idx)))
                            (when w
@@ -190,20 +190,20 @@ rest is what the compositor says, and says alone."
                 :writes (lambda (value) (when value (act c "workspace" idx))))))
 
 (defun %workspaces (c)
-  (node:place "workspaces"
+  (node:lists "workspaces"
               :names (lambda () (mapcar (lambda (w) (gethash "idx" w))
                                         (workspaces c)))
               :each (lambda (idx) (%workspace c idx))
               :describes "how this compositor groups them, where it does"))
 
 (defun %focused (c)
-  (node:place "focused"
+  (node:answers "focused"
               :reads (lambda () (focused c))
               :writes (lambda (value) (when value (focus c value)))
               :describes "which window has the keyboard"))
 
 (defun %verb (c name)
-  (node:place name
+  (node:answers name
               :reads (constantly name)
               :writes (lambda (value)
                         (declare (ignore value))

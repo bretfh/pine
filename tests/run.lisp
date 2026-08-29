@@ -367,7 +367,7 @@ not show what somebody had just typed."
 are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
-           (n (node:attach (node:place "coll" :reads (lambda () (d:map :a 1)))
+           (n (node:attach (node:answers "coll" :reads (lambda () (d:map :a 1)))
                            (tree:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -380,7 +380,7 @@ are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
            (which (list (d:map :a 1)))
-           (n (node:attach (node:place "coll" :reads (lambda () (first which)))
+           (n (node:attach (node:answers "coll" :reads (lambda () (first which)))
                            (tree:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))

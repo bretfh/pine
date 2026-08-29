@@ -78,10 +78,10 @@ a tick and takes no thread at all."))
 
 (defmethod initialize-instance :after ((j job) &key)
   (node:slots j j "state" 'state "tries" 'tries)
-  (node:attach (node:place "said" :reads (lambda () (said j))
+  (node:attach (node:answers "said" :reads (lambda () (said j))
                                   :describes "the last lines it said")
                j)
-  (node:attach (node:place "tell"
+  (node:attach (node:answers "tell"
                            :writes (lambda (value) (tell j value))
                            :describes "write here to give it something")
                j)
@@ -364,7 +364,7 @@ dies is RESTARTS, which is a different question and off unless it is asked for."
                                               (getf said :argv)))))
 
 (defun %attach (root)
-  (setf *under* (node:attach (node:place "proc" :nodes #'supervised
+  (setf *under* (node:attach (node:lists "proc" :nodes #'supervised
                                          :writes #'%started
                                          :describes "what this pine is running")
                              root))

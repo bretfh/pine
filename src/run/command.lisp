@@ -173,11 +173,11 @@ command runs with what it was given.")
   "What the command at this path is for, as it stands now: one redefined at the
 repl is the same path saying something else."
   (when (named name)
-    (node:place name :reads (lambda ()
+    (node:answers name :reads (lambda ()
                               (let ((c (named name))) (and c (describes c)))))))
 
 (defun %attach (root)
-  (node:attach (node:place "cmd"
+  (node:attach (node:lists "cmd"
                            :names (lambda () (mapcar #'name (sorted)))
                            :each #'%command
                            :describes "every command there is")

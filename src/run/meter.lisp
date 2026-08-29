@@ -151,7 +151,7 @@ answer this, which is what lets one be laid beside the other."
 
 (defun %instrument (name)
   (when (%named name)
-    (node:place name
+    (node:lists name
                 :names (constantly +fields+)
                 :each (lambda (field)
                         (when (member field +fields+ :test #'equal)
@@ -165,7 +165,7 @@ answer this, which is what lets one be laid beside the other."
 
 (defun %attach (root)
   (node:attach
-   (node:place "metric"
+   (node:lists "metric"
                :names (lambda ()
                         (mapcar (lambda (each)
                                   (string-downcase (princ-to-string each)))

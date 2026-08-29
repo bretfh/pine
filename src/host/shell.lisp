@@ -194,7 +194,7 @@ lists what has run and answers for what has not."
 
 (defun sh-node ()
   "Every shell line that has been run, and what it said."
-  (setf *sh* (node:place "sh" :names #'ran :each #'%line :reads #'ran
+  (setf *sh* (node:lists "sh" :names #'ran :each #'%line :reads #'ran
                          :describes "running something, and what it said")))
 
 (defun forget-all ()

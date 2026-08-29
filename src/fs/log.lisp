@@ -29,7 +29,7 @@ say itself, because nothing else can see *SAID* move.")
 (defun forget () (setf *said* nil))
 
 (defun %attach (root)
-  (setf *node* (node:attach (node:place "log"
+  (setf *node* (node:attach (node:answers "log"
                                         :reads #'said
                                         :writes (lambda (value)
                                                   (unless value (forget)))
