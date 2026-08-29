@@ -4,8 +4,8 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:boot #:leave #:actors #:runningp #:remoting
-   #:dispatcher-for #:*host* #:*port* #:repeat #:cancel
-   #:ticks #:blocking #:joined))
+   #:dispatcher-for #:*host* #:*port* #:repeat #:cancel #:pool #:pools
+   #:later #:ticks #:blocking #:joined))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)
@@ -81,6 +81,21 @@ no thread that sleeps in a loop."
     (setf *actors* sys
           *wheel* (sento.actor-system:scheduler sys))
     sys))
+
+(defun later (name thunk)
+  "Hand THUNK to the dispatcher called NAME and do not wait for it.
+
+One message to a worker, not a task: a task is an actor made and stopped again,
+which is the right shape for something a person asked for once and the wrong shape
+for what every write hands over."
+  (let ((sys *actors*))
+    (if sys
+        (let ((to (or (getf (sento.actor-system:dispatchers sys) name)
+                      (getf (sento.actor-system:dispatchers sys) :shared))))
+          (sento.dispatcher:dispatch-async
+           to (list (lambda () (fault:attempt thunk (format nil "~a work" name)))))
+          t)
+        (progn (funcall thunk) t))))
 
 (defun remoting ()
   "The port other pines reach this one on, or nothing. One question, one name."

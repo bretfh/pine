@@ -103,6 +103,14 @@ it with it."
     path))
 
 (defun kept (moved)
+  "Write down what moved, on the thread that moved it.
+
+Measured at a hundred and thirty-six microseconds a write, almost all of it
+sqlite, and it stays here: a slot is kept the moment it is written or what a crash
+costs is everything since the image came up. Handing it to a dispatcher would buy
+back that time and sell that promise, which is not a trade to make quietly.
+
+What buys the time without selling anything is an append instead of a transaction."
   (let ((s *store*))
     (when s
       (sqlite:with-transaction (db s)
