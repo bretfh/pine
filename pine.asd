@@ -5,24 +5,6 @@
                 :pathname "src/"
                 :components ((:file "word") (:file "data") (:file "said")))
 
-(asdf:defsystem #:pine/kernel
-                :description "The namespace: what a place is, what stands under
-one, what is worked out from one, and who is told when one moves"
-                :depends-on (#:pine/value #:bordeaux-threads #:uiop)
-                :serial t
-                :pathname "src/kernel/"
-                :components ((:file "name") (:file "tell") (:file "place")
-                             (:file "graph") (:file "tree") (:file "watch")
-                             (:file "log") (:file "call")))
-
-(asdf:defsystem #:pine/run/dispatch
-                :description "The dispatchers this image runs on, lent to the
-kernel: what spreads work over the cores and what carries the news"
-                :depends-on (#:pine/kernel #:sento #:bordeaux-threads)
-                :serial t
-                :pathname "src/run/"
-                :components ((:file "dispatch")))
-
 (asdf:defsystem #:pine/place
                 :description "The namespace: what a node is, where it stands, what
 it says and what outlives the image"
@@ -175,7 +157,7 @@ dispatches on"
                                                    (:file "river-layer-shell")))
                              (:file "pump") (:file "display") (:file "shell")
                              (:file "pane") (:file "input") (:file "chords")
-                             (:file "wm") (:file "screen") (:file "dispatch")))
+                             (:file "wm") (:file "screen") (:file "hands")))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"
@@ -198,17 +180,6 @@ dispatches on"
                 :depends-on (#:pine/edit #:pine/host #:pine/wm #:pine/tiles
                              #:pine/desk #:pine/term #:pine/paint
                              #:pine/wayland))
-
-(asdf:defsystem #:pine/kernel/test
-                :depends-on (#:pine/kernel #:pine/run/dispatch #:fiveam
-                             #:bordeaux-threads #:sento)
-                :serial t
-                :pathname "tests/"
-                :components ((:file "kernel"))
-                :perform (asdf:test-op
-                          (o c)
-                          (unless (uiop:symbol-call :fiveam :run! :pine/kernel)
-                            (error "the kernel does not hold"))))
 
 (asdf:defsystem #:pine/test
                 :depends-on (#:pine/all #:fiveam)
