@@ -86,10 +86,11 @@ screen is a picture until pine is restarted."
                                    (setf (car said) v)
                                    (ui:label v)))
                                :as 'ui:panel :shown t)))
-        (is (null (ignore-errors (node:contents s))))
+        (is (null (node:contents s))
+            "it answers nothing rather than unwinding into the frame")
         (setf (car broken) nil)
         (setf (node:contents n) "second")
-        (ignore-errors (node:contents s))
+        (node:contents s)
         (is (equal "second" (car said)))))))
 
 (test refresh-draws-everything-again

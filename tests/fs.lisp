@@ -316,3 +316,66 @@ for the child again and what is left is that second one with nothing over it."
           (is (not (eq before after)) "what comes back is a fresh one")
           (is (eq p (node:over after)) "standing where it should")
           (is (equal "/p/kid" (node:full-name after))))))))
+
+(test a-working-out-that-throws-does-not-unwind-into-whoever-read
+  "One surface breaking must not blank the frame. The fault is kept, the node
+answers nothing, and what stands beside it is still worked out."
+  (with-tree
+    (fault:forget-faults)
+    (let ((n (tree:ensure nil "probe-src"))
+          (broken (node:derive "broken" (lambda () (error "on purpose")))))
+      (setf (node:contents n) "still here")
+      (node:attach broken (tree:root))
+      (let ((beside (node:derive "beside" (lambda () (node:contents n)))))
+        (node:attach beside (tree:root))
+        (is (null (node:contents broken))
+            "it answers nothing rather than unwinding into the reader")
+        (is (equal "still here" (node:contents beside))
+            "and what is beside it still answers")
+        (is (find-if (lambda (f)
+                       (search "on purpose"
+                               (princ-to-string (fault:condition-of f))))
+                     (fault:faults))
+            "the fault is kept rather than swallowed")))))
+
+(test a-node-that-threw-is-asked-again
+  "It puts nothing down, so it is stale. What threw once because the world was
+not ready answers the next time somebody asks, with nothing having stirred it."
+  (with-tree
+    (let ((broken (cons t nil))
+          (runs 0))
+      (let ((n (node:derive "probe"
+                            (lambda ()
+                              (incf runs)
+                              (when (car broken) (error "not yet"))
+                              :ready))))
+        (node:attach n (tree:root))
+        (is (null (node:contents n)))
+        (is (= 1 runs))
+        (setf (car broken) nil)
+        (is (eq :ready (node:contents n)) "asked again")
+        (is (= 2 runs) "and only once more")))))
+
+(test nobody-waits-for-ever-on-somebody-elses-working-out
+  "A READS is somebody else's code and it talks to the world. One that never
+answers holds the claim while it runs, and without a deadline every reader of
+that node waits behind it for the life of the image."
+  (with-tree
+    (let ((started (bordeaux-threads:make-semaphore))
+          (go-on (bordeaux-threads:make-semaphore)))
+      (let ((wedged (node:derive
+                     "wedged"
+                     (lambda ()
+                       (bordeaux-threads:signal-semaphore started)
+                       (bordeaux-threads:wait-on-semaphore go-on :timeout 30)
+                       :answered))))
+        (node:attach wedged (tree:root))
+        (let ((holder (actors:blocking "wedged"
+                                       (lambda () (node:contents wedged)))))
+          (is (bordeaux-threads:wait-on-semaphore started :timeout 5)
+              "the other thread has the claim")
+          (let ((node:*waited* 1/10) (node:*waiting-on* 1))
+            (is (null (node:contents wedged))
+                "we give up rather than wait behind it"))
+          (bordeaux-threads:signal-semaphore go-on)
+          (actors:joined holder))))))

@@ -5,6 +5,18 @@
 deadline -- the answer is looked at on waking -- only how long a wake-up that went
 missing can go unnoticed.")
 
+(defvar *waiting-on* 30
+  "Seconds to wait for whoever holds a node's working-out before giving up on
+them.
+
+A READS is somebody else's code and it talks to the world: it shells out, it
+reads a device, it asks another pine over a socket. One that never answers must
+not take every reader of that node with it for the life of the image.")
+
+(defvar *broke* nil
+  "What to do about a working-out that threw. Filled in by whatever keeps faults,
+because this layer loads before there is one.")
+
 (defstruct (worked (:constructor worked (value from at)) (:copier nil)
                    (:predicate workedp))
   "A worked-out value, what it was worked out from, and which version it is.
@@ -133,6 +145,16 @@ the thing it no longer reads holds it for as long as the image runs."
     (setf (saw n) now)
     (dolist (on now) (unless (eq on n) (depend n on)))))
 
+(defun %broke (n condition)
+  "Say that working N out threw, to whoever keeps faults.
+
+Told from inside the handler, before anything unwinds, because the restarts a
+fault is standing in are only there while it is still standing in them. A hook
+and not a call: this layer loads before there is anything that keeps faults, the
+same reason COMMIT:*BROKE* is one."
+  (when *broke* (funcall *broke* condition (full-name n)))
+  nil)
+
 (defun %mine (n)
   "Work it out, holding the claim. Answers the value, whether it stands, and which
 version it is.
@@ -149,22 +171,48 @@ from this one is left alone when this one works out to what it said before. That
 what stops a write at the bottom of a deep graph from redrawing the whole of it.
 
 What it read is recorded whether or not it finished: a node that threw has still
-read what it read, and one that keeps nothing is one nothing can ever stir again."
+read what it read, and one that keeps nothing is one nothing can ever stir again.
+
+One that threw puts nothing down, and says so with :BROKE rather than with the
+NIL that means try again. Not because the fault is uninteresting but because NIL
+is not what this node holds: written here it would leave the node standing on an
+answer nobody worked out, given up only when something it read moves -- which,
+for one that threw before it read anything, is never. Left stale, the next read
+asks again, which is what a device whose command failed once needs."
   (let ((reading (cons :reading nil))
         (from nil))
     (unwind-protect
-         (let ((v (let ((*reading* reading)) (funcall (reads n)))))
-           (setf from (cdr reading))
-           (cond ((whole from)
-                  (let* ((had (cached n))
-                         (same (and (workedp had)
-                                    (d:same v (worked-value had))))
-                         (at (if same (worked-at had) (1+ (mark n)))))
-                    (setf (cached n) (worked v from at)
-                          (checked n) -1)
-                    (values v t at)))
-                 (t (values v nil nil))))
+         (block mine
+           (handler-bind ((error (lambda (c)
+                                   (%broke n c)
+                                   (return-from mine (values nil :broke nil)))))
+             (let ((v (let ((*reading* reading)) (funcall (reads n)))))
+               (setf from (cdr reading))
+               (cond ((whole from)
+                      (let* ((had (cached n))
+                             (same (and (workedp had)
+                                        (d:same v (worked-value had))))
+                             (at (if same (worked-at had) (1+ (mark n)))))
+                        (setf (cached n) (worked v from at)
+                              (checked n) -1)
+                        (values v t at)))
+                     (t (values v nil nil))))))
       (%edges n (or from (cdr reading))))))
+
+(defun %held (n)
+  "What N last worked out to, whether or not that still stands.
+
+What a reader is handed when the working-out cannot be had at all. It is older
+than they asked for, and it is nearer what this node means than nothing is."
+  (let ((h (cached n)))
+    (when (workedp h) (worked-value h))))
+
+(defun %gave-up (n)
+  (%broke n (make-condition
+             'simple-error
+             :format-control "~a could not be worked out within ~d second~:p"
+             :format-arguments (list (full-name n) *waiting-on*)))
+  (values (%held n) (mark n)))
 
 (defun work-out (n)
   "What it works out to, working it out if what it holds no longer stands.
@@ -181,18 +229,26 @@ worked out again. Nothing is held still to arrange this: the writing goes on and
 reading tries again.
 
 The claim is the thread that took it, so a node worked out from itself is one this
-thread already holds, and says so instead of waiting for itself for ever."
-  (let ((me (bordeaux-threads:current-thread)))
+thread already holds, and says so instead of waiting for itself for ever.
+
+Nobody waits for ever on somebody else either. A READS that never answers holds
+the claim for as long as it runs, and without a deadline every reader of that
+node waits behind it for the life of the image. What comes back then is what the
+node last worked out to, and the fault says why it is old."
+  (let ((me (bordeaux-threads:current-thread))
+        (due (+ (get-universal-time) *waiting-on*)))
     (loop
       (let ((h (%standing n)))
         (when h (return (values (worked-value h) (worked-at h)))))
       (when (eq (claim n) me)
         (error "~a is worked out from itself." (full-name n)))
+      (when (> (get-universal-time) due) (return (%gave-up n)))
       (if (and (null (claim n))
                (d:cas (slot-value n 'claim) nil me))
           (multiple-value-bind (v stands at)
               (unwind-protect (%mine n) (%done n))
-            (when stands (return (values v at))))
+            (cond ((eq stands :broke) (return (values (%held n) (mark n))))
+                  (stands (return (values v at)))))
           (%wait n)))))
 
 (defun stalep (n) (not (freshp n)))

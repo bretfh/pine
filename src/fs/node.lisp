@@ -9,7 +9,7 @@
    #:place #:attach #:detach #:child #:memo
    #:slots #:make-child #:erase-child #:reads #:writes
    #:depend #:undepend #:reading #:version #:mark #:standsp #:stalep
-   #:work-out #:freshp #:cached #:saw))
+   #:work-out #:freshp #:cached #:saw #:*broke* #:*waiting-on* #:*waited*))
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)

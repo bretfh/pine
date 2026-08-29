@@ -273,4 +273,7 @@ the debugger."
 (setf pine/fs/commit:*broke*
       (lambda (c) (report c "telling what is listening that a place moved")))
 
+(setf pine/fs/node:*broke*
+      (lambda (c where) (report c (format nil "working out ~a" where))))
+
 (pine/fs/tree:builder #'%attach)
