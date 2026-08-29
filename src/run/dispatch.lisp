@@ -1,10 +1,10 @@
-(defpackage #:pine/run/hands
+(defpackage #:pine/run/dispatch
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:graph #:pine/kernel/graph)
                     (#:watch #:pine/kernel/watch) (#:log #:pine/kernel/log))
   (:export
-   #:take-up #:let-go #:hands #:*work* #:*tell*))
-(in-package #:pine/run/hands)
+   #:attend #:leave #:workers #:*work* #:*tell*))
+(in-package #:pine/run/dispatch)
 
 (defvar *work* :work
   "Which dispatcher works places out. Its own, and not the shared one.
@@ -26,7 +26,7 @@ the thread that wrote and may be given a pool of its own.")
 
 (defvar *system* nil)
 
-(defun hands ()
+(defun workers ()
   "How many workers the dispatcher that works places out has."
   (let ((sys *system*))
     (when sys
@@ -51,7 +51,7 @@ right shape for something a person asked for once and the wrong shape for the
 sixty places one write reached."
   (let ((to (%dispatcher sys *work*))
         (left (list (length thunks)))
-        (lock (bordeaux-threads:make-lock "pine/hands"))
+        (lock (bordeaux-threads:make-lock "pine/working"))
         (news (bordeaux-threads:make-condition-variable)))
     (dolist (each thunks)
       (let ((each each))
@@ -75,19 +75,20 @@ handed over, not when everybody who wanted it has done something about it."
         (sento.dispatcher:dispatch-async
          to (list (lambda () (ignore-errors (funcall each)))))))))
 
-(defun take-up (sys)
-  "Give the kernel this image's hands.
+(defun attend (sys)
+  "Give the kernel this image's dispatchers.
 
-The kernel keeps none of its own and names no actor system: it asks for work to
-be spread and for news to be carried, and this is the one place that knows what
-either of those means here."
+The kernel keeps no threads and names no actor system. It asks for work to be
+spread and for news to be carried; this is the one place that knows what either
+of those means here, and the only file on this side of the line that says the
+word sento."
   (setf *system* sys
         graph:*fan-out* (lambda (thunks) (%fan-out sys thunks))
         watch:*dispatch* (lambda (thunks) (%later sys thunks))
         log:*later* (lambda (thunk) (%later sys (list thunk))))
   sys)
 
-(defun let-go ()
+(defun leave ()
   (setf *system* nil
         graph:*fan-out* nil
         watch:*dispatch* nil

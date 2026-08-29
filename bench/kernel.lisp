@@ -4,7 +4,7 @@
 (defpackage #:pine/bench/kernel
   (:use #:cl)
   (:local-nicknames (#:place #:pine/kernel/place) (#:graph #:pine/kernel/graph)
-                    (#:tree #:pine/kernel/tree) (#:hands #:pine/run/hands)
+                    (#:tree #:pine/kernel/tree) (#:dispatch #:pine/run/dispatch)
                     (#:k #:pine/kernel/call)))
 (in-package #:pine/bench/kernel)
 
@@ -63,10 +63,10 @@ pool doing nothing faster than one thread doing nothing.")
                            :work (list :workers *workers*
                                        :strategy (if (equal "rr" (uiop:getenv "STRAT"))
                                                      :round-robin :random)))))))
-    (hands:take-up sys)
-    (format t "~&sento, a dispatcher of its own, ~d workers~%" (hands:hands))
+    (dispatch:attend sys)
+    (format t "~&a dispatcher of its own, ~d workers~%" (dispatch:workers))
     (let ((many (run "the dispatcher" places)))
-      (hands:let-go)
+      (dispatch:leave)
       (ignore-errors (sento.actor-context:shutdown sys :wait t))
       (format t "~&~%scaled ~,2fx on ~d workers~%" (/ alone many) *workers*)
       (let ((seen (mapcar #'place:held places)))

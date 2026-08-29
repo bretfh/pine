@@ -23,7 +23,7 @@ half-written line is impossible.")
 
 (defvar *later* nil
   "How to put an entry down without waiting for the disk. Filled in by whatever
-keeps the image's hands; until it is, the writing thread writes it.")
+keeps the image's dispatchers; until it is, the writing thread writes it.")
 
 (defun where () *where*)
 

@@ -15,13 +15,13 @@ one, what is worked out from one, and who is told when one moves"
                              (:file "graph") (:file "tree") (:file "watch")
                              (:file "log") (:file "call")))
 
-(asdf:defsystem #:pine/kernel/hands
-                :description "The image's hands, lent to the kernel: what spreads
-work over the cores and what carries the news"
+(asdf:defsystem #:pine/run/dispatch
+                :description "The dispatchers this image runs on, lent to the
+kernel: what spreads work over the cores and what carries the news"
                 :depends-on (#:pine/kernel #:sento #:bordeaux-threads)
                 :serial t
                 :pathname "src/run/"
-                :components ((:file "hands")))
+                :components ((:file "dispatch")))
 
 (asdf:defsystem #:pine/place
                 :description "The namespace: what a node is, where it stands, what
@@ -175,7 +175,7 @@ dispatches on"
                                                    (:file "river-layer-shell")))
                              (:file "pump") (:file "display") (:file "shell")
                              (:file "pane") (:file "input") (:file "chords")
-                             (:file "wm") (:file "screen") (:file "hands")))
+                             (:file "wm") (:file "screen") (:file "dispatch")))
 
 (asdf:defsystem #:pine/vt
                 :description "Native terminal emulator"
@@ -200,7 +200,7 @@ dispatches on"
                              #:pine/wayland))
 
 (asdf:defsystem #:pine/kernel/test
-                :depends-on (#:pine/kernel #:pine/kernel/hands #:fiveam
+                :depends-on (#:pine/kernel #:pine/run/dispatch #:fiveam
                              #:bordeaux-threads #:sento)
                 :serial t
                 :pathname "tests/"

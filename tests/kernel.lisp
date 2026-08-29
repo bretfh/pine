@@ -4,7 +4,7 @@
                     (:name :pine/kernel/name) (:place :pine/kernel/place)
                     (:graph :pine/kernel/graph) (:tell :pine/kernel/tell)
                     (:tree :pine/kernel/tree) (:watch :pine/kernel/watch)
-                    (:hands :pine/run/hands) (:log :pine/kernel/log)
+                    (:dispatch :pine/run/dispatch) (:log :pine/kernel/log)
                     (:k :pine/kernel/call)))
 (in-package :pine/test/kernel)
 
@@ -23,17 +23,19 @@
        (tell:forget-all)
        (watch:forget-all))))
 
-(defmacro with-hands ((&key (workers 8)) &body body)
-  "One actor system for one test, and the kernel given its hands.
+(defmacro with-dispatchers ((&key (workers 8)) &body body)
+  "One actor system for one test, and the kernel lent its dispatchers.
 
-The kernel keeps no threads. What spreads work over the cores is the image's
-shared dispatcher, which is the same one messages go through, and this is how a
-test lends it one."
+The kernel keeps no threads. What spreads work over the cores is a dispatcher of
+the image's, asked for round-robin because that is what measures faster for work
+as against messages."
   `(let ((sys (sento.actor-system:make-actor-system
                (list :dispatchers
-                     (list :shared (list :workers ,workers :strategy :random))))))
-     (unwind-protect (progn (hands:take-up sys) ,@body)
-       (hands:let-go)
+                     (list :shared (list :workers 2 :strategy :random)
+                           :work (list :workers ,workers
+                                       :strategy :round-robin))))))
+     (unwind-protect (progn (dispatch:attend sys) ,@body)
+       (dispatch:leave)
        (ignore-errors (sento.actor-context:shutdown sys :wait t)))))
 
 (defun spun (n thunk)
@@ -346,7 +348,7 @@ test lends it one."
 
 (test the-cores-work-them-all-out-and-get-them-all-right
   (with-tree
-    (with-hands (:workers 8)
+    (with-dispatchers (:workers 8)
       (progn
            (k:write "/seed" 1)
            (let ((places (loop :for i :below 200
@@ -363,11 +365,11 @@ test lends it one."
              (is (equal (loop :for i :below 200 :collect (+ i 100))
                         (loop :for i :below 200
                               :collect (k:read (format nil "/each/~d" i))))
-                 "two hundred places on eight hands, and every one of them its own"))))))
+                 "two hundred places on eight workers, and every one its own"))))))
 
 (test a-watcher-that-will-not-hurry-does-not-hold-up-a-write
   (with-tree
-    (with-hands (:workers 4)
+    (with-dispatchers (:workers 4)
       (progn
            (watch:attend)
            (k:write "/n" 0)

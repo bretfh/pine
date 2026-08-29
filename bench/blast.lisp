@@ -6,7 +6,7 @@
   (:local-nicknames (#:d #:pine/data) (#:place #:pine/kernel/place)
                     (#:graph #:pine/kernel/graph) (#:tell #:pine/kernel/tell)
                     (#:tree #:pine/kernel/tree) (#:watch #:pine/kernel/watch)
-                    (#:hands #:pine/run/hands) (#:log #:pine/kernel/log)
+                    (#:dispatch #:pine/run/dispatch) (#:log #:pine/kernel/log)
                     (#:k #:pine/kernel/call) (#:bt #:bordeaux-threads)))
 (in-package #:pine/bench/blast)
 
@@ -172,8 +172,8 @@ erased and left behind shows up here as a reader that stands nowhere."
                                                    '("nproc")
                                                    :output '(:string :stripped t)))))
                                       :strategy :round-robin))))))
-    (hands:take-up sys)
-    (format t "~&~d workers working places out~%~%" (hands:hands)))
+    (dispatch:attend sys)
+    (format t "~&~d workers working places out~%~%" (dispatch:workers)))
   (log:keeping "/tmp/pine-blast.log")
   (watching)
   (grouper)
@@ -220,7 +220,7 @@ erased and left behind shows up here as a reader that stands nowhere."
         (format t "~&~30@a ~a~%" "log folds to what stands:"
                 (let ((said (d:lookup (log:written) "/n")))
                   (if (eql said n) "yes" (format nil "NO ~a wanted ~a" said n))))
-        (hands:let-go)
+        (dispatch:leave)
         (log:forget-keeping)
         (ignore-errors (delete-file "/tmp/pine-blast.log"))
         (if (and (null broke) (eql all (* *factor* n)) (zerop loose)
