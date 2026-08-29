@@ -3,11 +3,10 @@
   (:shadow #:append)
   (:local-nicknames (#:d #:pine/data) (#:said #:pine/said)
                     (#:place #:pine/kernel/place) (#:tell #:pine/kernel/tell)
-                    (#:tree #:pine/kernel/tree) (#:pool #:pine/kernel/pool)
-                    (#:bt #:bordeaux-threads))
+                    (#:tree #:pine/kernel/tree) (#:bt #:bordeaux-threads))
   (:export
    #:keeping #:forget-keeping #:where #:entries #:append #:replay #:compact
-   #:at-time #:written #:wholep #:*where* #:settled))
+   #:at-time #:written #:wholep #:*where* #:*later* #:settled))
 (in-package #:pine/kernel/log)
 
 (defvar *where* nil
@@ -21,6 +20,10 @@ half-written line is impossible.")
   "Entries handed over and not yet on the disk.")
 
 (defvar *broke* nil)
+
+(defvar *later* nil
+  "How to put an entry down without waiting for the disk. Filled in by whatever
+keeps the image's hands; until it is, the writing thread writes it.")
 
 (defun where () *where*)
 
@@ -64,7 +67,7 @@ cannot afford it waits."
       (flet ((down ()
                (let ((mine (d:emptied *owed*)))
                  (dolist (each (reverse mine)) (append each)))))
-        (if pool:*pool* (pool:later (list #'down)) (down)))))
+        (if *later* (funcall *later* #'down) (down)))))
   moved)
 
 (defun settled (&key (seconds 2))

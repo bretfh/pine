@@ -8,7 +8,7 @@
    #:name-of #:under #:full-name #:beneath #:kids #:resolve #:attach #:detach
    #:held #:read #:works #:puts #:asks #:names-of #:each-of #:reached #:runs
    #:took #:state #:holds #:written #:stamp #:claim #:waiting #:saw #:readers
-   #:depend #:undepend #:read-at #:source #:mark #:*reading* #:livep #:keptp #:describes
+   #:depend #:undepend #:read-at #:source #:mark #:said-string #:*reading* #:livep #:keptp #:describes
    #:worked #:worked-value #:worked-from #:worked-at #:workedp #:+stale+ #:version
    #:dirty #:checked #:stale #:moved-on #:moving #:moved #:told-about #:make-place
    #:kinds #:*epoch* #:*writes* #:*settling* #:settled #:quietly))
@@ -134,6 +134,13 @@ another pine on another machine are the same thing here, which is why a read of
   (:documentation "Something running. Written to, to be told something."))
 
 (defun placep (x) (typep x 'place))
+
+(declaim (inline said-string))
+(defun said-string (said)
+  "SAID as the string a beneath map is keyed by, without copying one that already
+is. PRINC-TO-STRING of a string is a fresh string, and this is on the path every
+read takes, so that copy is one per piece of every name anybody ever says."
+  (if (stringp said) said (princ-to-string said)))
 
 (defun kinds () '(:value :derived :world :listing :mount :job))
 
@@ -317,9 +324,9 @@ lets it happen on whatever thread and however many at once."
 
 (defgeneric resolve (place said)
   (:documentation "The one place under PLACE called SAID, or nothing.")
-  (:method ((p place) said) (d:lookup (beneath p) (princ-to-string said)))
+  (:method ((p place) said) (d:lookup (beneath p) (said-string said)))
   (:method ((p listing) said)
-    (let ((said (princ-to-string said)))
+    (let ((said (said-string said)))
       (or (d:lookup (beneath p) said)
           (when (member said (mapcar #'princ-to-string (funcall (names-of p)))
                         :test #'equal)

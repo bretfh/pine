@@ -4,7 +4,7 @@
                     (:name :pine/kernel/name) (:place :pine/kernel/place)
                     (:graph :pine/kernel/graph) (:tell :pine/kernel/tell)
                     (:tree :pine/kernel/tree) (:watch :pine/kernel/watch)
-                    (:pool :pine/kernel/pool) (:log :pine/kernel/log)
+                    (:hands :pine/run/hands) (:log :pine/kernel/log)
                     (:k :pine/kernel/call)))
 (in-package :pine/test/kernel)
 
@@ -22,6 +22,19 @@
        (setf tree:*root* was)
        (tell:forget-all)
        (watch:forget-all))))
+
+(defmacro with-hands ((&key (workers 8)) &body body)
+  "One actor system for one test, and the kernel given its hands.
+
+The kernel keeps no threads. What spreads work over the cores is the image's
+shared dispatcher, which is the same one messages go through, and this is how a
+test lends it one."
+  `(let ((sys (sento.actor-system:make-actor-system
+               (list :dispatchers
+                     (list :shared (list :workers ,workers :strategy :random))))))
+     (unwind-protect (progn (hands:take-up sys) ,@body)
+       (hands:let-go)
+       (ignore-errors (sento.actor-context:shutdown sys :wait t)))))
 
 (defun spun (n thunk)
   "N threads doing the same thing, all of them finished before this answers."
@@ -331,11 +344,10 @@
       (is (eql 49 (k:read "/n")) "and the fold is unchanged")
       (is (eq :kept (k:read "/other"))))))
 
-(test the-pool-works-them-all-out-and-gets-them-all-right
+(test the-cores-work-them-all-out-and-get-them-all-right
   (with-tree
-    (unwind-protect
-         (progn
-           (pool:start :hands 8)
+    (with-hands (:workers 8)
+      (progn
            (k:write "/seed" 1)
            (let ((places (loop :for i :below 200
                                :collect (let ((i i))
@@ -351,14 +363,12 @@
              (is (equal (loop :for i :below 200 :collect (+ i 100))
                         (loop :for i :below 200
                               :collect (k:read (format nil "/each/~d" i))))
-                 "two hundred places on eight hands, and every one of them its own")))
-      (pool:stop))))
+                 "two hundred places on eight hands, and every one of them its own"))))))
 
 (test a-watcher-that-will-not-hurry-does-not-hold-up-a-write
   (with-tree
-    (unwind-protect
-         (progn
-           (pool:start :hands 4)
+    (with-hands (:workers 4)
+      (progn
            (watch:attend)
            (k:write "/n" 0)
            (k:watch "/n" (lambda (p now) (declare (ignore p now)) (sleep 0.2)))
@@ -367,9 +377,8 @@
              (let ((took (/ (- (get-internal-real-time) at)
                             (float internal-time-units-per-second))))
                (is (< took 0.1)
-                   "the write took ~,3f s, so it waited for the watcher" took))))
-      (pool:stop)
-      (sleep 0.3))))
+                   "the write took ~,3f s, so it waited for the watcher" took)))))
+    (sleep 0.3)))
 
 (test what-is-added-up-was-true-all-at-once
   "The one that took the longest to make true.

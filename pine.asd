@@ -13,7 +13,15 @@ one, what is worked out from one, and who is told when one moves"
                 :pathname "src/kernel/"
                 :components ((:file "name") (:file "tell") (:file "place")
                              (:file "graph") (:file "tree") (:file "watch")
-                             (:file "pool") (:file "log") (:file "call")))
+                             (:file "log") (:file "call")))
+
+(asdf:defsystem #:pine/kernel/hands
+                :description "The image's hands, lent to the kernel: what spreads
+work over the cores and what carries the news"
+                :depends-on (#:pine/kernel #:sento #:bordeaux-threads)
+                :serial t
+                :pathname "src/run/"
+                :components ((:file "hands")))
 
 (asdf:defsystem #:pine/place
                 :description "The namespace: what a node is, where it stands, what
@@ -192,7 +200,8 @@ dispatches on"
                              #:pine/wayland))
 
 (asdf:defsystem #:pine/kernel/test
-                :depends-on (#:pine/kernel #:fiveam #:bordeaux-threads)
+                :depends-on (#:pine/kernel #:pine/kernel/hands #:fiveam
+                             #:bordeaux-threads #:sento)
                 :serial t
                 :pathname "tests/"
                 :components ((:file "kernel"))

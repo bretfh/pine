@@ -38,17 +38,40 @@ something stands, and there is nowhere else to measure that from.")
   (:method ((said cons)) (apply #'name:parse said))
   (:method (said) (name:parse (princ-to-string said))))
 
+(defun %walked (text)
+  "Walk a written name without making anything out of it.
+
+The hot path of the whole kernel: everything anybody does begins by saying where.
+Making a name here -- pieces, a class for each kind of piece, a list of them --
+would be a handful of objects for every read of every place, which is most of what
+a read would cost and all of what it would leave behind for the collector. So this
+walks the string where it lies and allocates one short string for each piece,
+because that is what the beneath map is keyed by."
+  (declare (type string text) (optimize (speed 3) (safety 1)))
+  (let ((at (root)) (n (length text)) (i 0))
+    (loop
+      (loop :while (and (< i n) (char= #\/ (char text i))) :do (incf i))
+      (when (>= i n) (return at))
+      (let ((j i))
+        (loop :while (and (< j n) (not (char= #\/ (char text j)))) :do (incf j))
+        (setf at (place:resolve at (subseq text i j)))
+        (when (null at) (return nil))
+        (setf i j)))))
+
 (defun reach (said)
   "The place SAID names, or nothing where nothing stands there.
 
-A place is itself: handed one, this is what hands it back, so everything above
-can take either and none of it has to ask which it got."
-  (if (place:placep said)
-      said
-      (loop :with at := (root)
-            :for piece :in (name:spelled (said-as said))
-            :do (setf at (and at (place:resolve at piece)))
-            :finally (return at))))
+A place is itself: handed one, this is what hands it back, so everything above can
+take either and none of it has to ask which it got."
+  (typecase said
+    (place:place said)
+    (string (%walked said))
+    (null (root))
+    (name:name (loop :with at := (root)
+                     :for piece :in (name:spelled said)
+                     :do (setf at (and at (place:resolve at piece)))
+                     :finally (return at)))
+    (t (%walked (princ-to-string said)))))
 
 (defun standsp (said) (and (reach said) t))
 

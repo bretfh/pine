@@ -1,0 +1,87 @@
+(require :asdf)
+(require :sb-sprof)
+(asdf:load-system :pine/kernel)
+
+(defpackage #:pine/bench/profile
+  (:use #:cl)
+  (:local-nicknames (#:d #:pine/data) (#:place #:pine/kernel/place)
+                    (#:graph #:pine/kernel/graph) (#:tell #:pine/kernel/tell)
+                    (#:tree #:pine/kernel/tree) (#:watch #:pine/kernel/watch)
+                    (#:k #:pine/kernel/call)))
+(in-package #:pine/bench/profile)
+
+(defvar *what* (or (uiop:getenv "WHAT") "read"))
+(defvar *runs* (or (ignore-errors (parse-integer (uiop:getenv "RUNS"))) 2000000))
+
+(defun fresh ()
+  (setf tree:*root* (tree:make-root))
+  (tell:forget-all)
+  (watch:forget-all))
+
+(defun cost (label n thunk)
+  (sb-ext:gc :full t)
+  (let ((before (sb-ext:get-bytes-consed))
+        (at (get-internal-real-time)))
+    (dotimes (i n) (funcall thunk))
+    (let ((secs (/ (- (get-internal-real-time) at)
+                   (float internal-time-units-per-second)))
+          (bytes (- (sb-ext:get-bytes-consed) before)))
+      (format t "~&~40@a ~8,0f ns ~8,0f bytes each~%"
+              label (/ (* secs 1e9) n) (/ bytes n))
+      (force-output))))
+
+(defun chain (n)
+  (k:write "/n" 1)
+  (let ((below "/n"))
+    (dotimes (i n)
+      (let ((it below) (name (format nil "/deep/~d" i)))
+        (k:make name :derived (lambda () (1+ (k:read it))))
+        (setf below name)))
+    below))
+
+(defun subject ()
+  (cond ((equal *what* "read")
+         (fresh)
+         (k:write "/dev/audio/volume" 50)
+         (values "read a place that holds a value"
+                 (lambda () (k:read "/dev/audio/volume"))))
+        ((equal *what* "reach")
+         (fresh)
+         (k:write "/dev/audio/volume" 50)
+         (values "reach a name three deep"
+                 (lambda () (tree:reach "/dev/audio/volume"))))
+        ((equal *what* "derived")
+         (fresh)
+         (k:write "/n" 1)
+         (k:make "/twice" :derived (lambda () (* 2 (k:read "/n"))))
+         (k:read "/twice")
+         (values "read a worked-out place, nothing moved"
+                 (lambda () (k:read "/twice"))))
+        ((equal *what* "write")
+         (fresh)
+         (k:write "/x" 1)
+         (values "write a place" (lambda () (k:write "/x" 42))))
+        ((equal *what* "chain")
+         (fresh)
+         (let ((last (chain 32)))
+           (k:read last)
+           (values "write the bottom, read the top of 32"
+                   (lambda () (k:write "/n" (random 100)) (k:read last)))))
+        (t (error "no such subject: ~a" *what*))))
+
+(defun main ()
+  (multiple-value-bind (label thunk) (subject)
+    (format t "~&~%~a, ~:d times~%~%" label *runs*)
+    (dotimes (i 3) (funcall thunk))
+    (cost label *runs* thunk)
+    (format t "~&~%where the time goes~%")
+    (sb-sprof:with-profiling (:max-samples 40000 :mode :cpu :report :flat
+                              :show-progress nil)
+      (dotimes (i *runs*) (funcall thunk)))
+    (format t "~&~%where the consing goes~%")
+    (sb-sprof:with-profiling (:max-samples 40000 :mode :alloc :report :flat
+                              :show-progress nil)
+      (dotimes (i (min *runs* 200000)) (funcall thunk)))))
+
+(main)
+(sb-ext:exit)
