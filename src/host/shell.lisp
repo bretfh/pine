@@ -173,7 +173,7 @@ runs."
   (when *sh*
     (let ((n (node:child *sh* (format nil "stream:~a" line)
                          (lambda ()
-                           (make-instance 'stream-node :name line :over *sh*
+                           (make-instance 'stream-node :name line :parent *sh*
                                                        :line line)))))
       (d:keep! *streams* line n)
       (hear n))))

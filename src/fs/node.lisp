@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:commit #:pine/fs/commit))
   (:export
    #:node #:derived #:live #:nodep #:name
-   #:over #:describes #:savedp #:livep #:announces
+   #:parent #:describes #:savedp #:livep #:announces
    #:refreshes #:contents #:nodes #:resolve #:stir
    #:moved #:verb #:full-name #:make #:derive
    #:place #:attach #:detach #:child #:memo
@@ -29,7 +29,7 @@ what is being saved.")
 
 (defclass node ()
   ((name      :initarg :name      :reader name)
-   (over      :initarg :over      :accessor over      :initform nil)
+   (parent      :initarg :parent      :accessor parent      :initform nil)
    (describes :initarg :describes :accessor describes :initform nil)
    (beneath   :initform (d:no-seq) :reader beneath)
    (by-name   :initform (d:no-map) :reader by-name)
@@ -149,7 +149,7 @@ the class saying so, not a flag anybody has to remember to pass."
   (apply #'make-instance 'derived :name name :reads reads initargs))
 
 (defun %named (n)
-  (let ((names (loop :for at := n :then (over at)
+  (let ((names (loop :for at := n :then (parent at)
                      :while at
                      :when (name at) :collect (name at))))
     (if names (format nil "/~{~a~^/~}" (reverse names)) "/")))
@@ -165,8 +165,8 @@ the class saying so, not a flag anybody has to remember to pass."
   n)
 
 (defun root (n)
-  (loop :for at := n :then (over at)
-        :while (over at)
+  (loop :for at := n :then (parent at)
+        :while (parent at)
         :finally (return at)))
 
 (defun children (n) (d:vals (d:all (memo n))))
@@ -217,7 +217,7 @@ Both go together: the order it was attached in, and the name it answers to. A
 node put in one and not the other is one that lists and cannot be reached, or is
 reached and never listed.")
   (:method ((n node) (into node))
-    (setf (over n) into)
+    (setf (parent n) into)
     (%renamed n)
     (let ((said (%said (name n))))
       (d:swap (slot-value into 'beneath)
@@ -243,7 +243,7 @@ erased goes on being worked out from /dev/cpu.")
                 (lambda (all) (d:without all (%said (name gone)))))
         (dolist (on (saw gone)) (undepend gone on))
         (setf (saw gone) nil)
-        (setf (over gone) nil)
+        (setf (parent gone) nil)
         (%renamed gone))
       gone)))
 
@@ -347,7 +347,3 @@ object is what this hangs under, which has already been said."
                                         :object object :slot slot :into into)
                          into)))
 
-(pine/word:lends "node" "contents" "nodes" "resolve" "stir" "name" "over"
-                "full-name" "attach" "detach" "child" "derive" "describes"
-                "nodep" "savedp" "livep" "announces" "refreshes" "slots" "verb"
-                "place")

@@ -19,13 +19,13 @@
   value)
 
 (defun %document (r)
-  (loop :for at := r :then (node:over at)
+  (loop :for at := r :then (node:parent at)
         :while at
         :when (typep at 'document) :do (return at)))
 
 (defun %region (under name covers)
   (let ((r (node:child under name
-                       (lambda () (make-instance 'region :name name :over under
+                       (lambda () (make-instance 'region :name name :parent under
                                                          :covers covers)))))
     (setf (covers r) covers)
     r))

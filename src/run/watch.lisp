@@ -15,7 +15,7 @@ not hold up the rest, few enough that a hundred of them cannot take the machine.
 (defclass watcher (node:node)
   ((watches :initarg :watches :reader watches)
    (tells   :initarg :tells   :reader tells)
-   (only    :initarg :only :reader only :initform t)
+   (when-told :initarg :tells-when :reader tells-when :initform :on-change)
    (was     :initform '#:unread :accessor was)
    (polling :initarg :poll :reader polling :initform nil)
    (telling :initform nil :accessor telling)
@@ -36,7 +36,7 @@ would race on WAS: told twice for one move, and told the older value last."))
 (defun fire (w)
   (let ((now (fault:attempt (lambda () (node:contents (watches w)))
                             (format nil "reading ~a" (node:full-name (watches w))))))
-    (when (or (not (only w)) (not (d:same now (was w))))
+    (when (or (eq :always (tells-when w)) (not (d:same now (was w))))
       (setf (was w) now)
       (fault:attempt (lambda () (funcall (tells w) (watches w) now))
                      (format nil "telling a watcher of ~a"
@@ -83,8 +83,10 @@ too and the tick is not what waits for it."
 (defun attend (&key (every *every*))
   (actors:repeat every #'sweep :as :watch :what "reading the live nodes"))
 
-(defun watch (n tells &key (every *every*) name (only t) (poll (node:livep n)))
-  (let ((w (make-instance 'watcher :watches n :tells tells :only only :poll poll
+(defun watch (n tells &key (every *every*) name (tells-when :on-change)
+                       (poll (node:livep n)))
+  (let ((w (make-instance 'watcher :watches n :tells tells :tells-when tells-when
+                                   :poll poll
                                    :name (or name (node:full-name n)))))
     (node:depend w n)
     (d:swap *watchers* (lambda (all) (cons w all)))
@@ -107,6 +109,5 @@ too and the tick is not what waits for it."
 (defun watching (n)
   (remove n (watchers) :key #'watches :test-not #'eq))
 
-(pine/word:lends "watch" "unwatch")
 
 (actors:pool :watch *workers*)

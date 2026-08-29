@@ -5,7 +5,7 @@
                     (#:fault #:pine/run/fault) (#:job #:pine/run/job)
                     (#:meter #:pine/run/meter) (#:mode #:pine/mode)
                     (#:mount #:pine/fs/mount) (#:node #:pine/fs/node)
-                    (#:path #:pine/fs/path) (#:pl #:pine/data)
+                    (#:path #:pine/fs/path)
                     (#:system #:pine/run/system) (#:tree #:pine/fs/tree))
   (:export
    #:of #:line #:line-count #:inserted #:region

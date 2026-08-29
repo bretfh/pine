@@ -145,10 +145,13 @@ that centres the glyph."
   (multiple-value-bind (props parts) (%split args)
     (apply #'make-instance 'center :parts (list (first parts)) props)))
 
-(defun centerbox (&key upright class hint expand start center end)
+(defun centerbox (&key (upright :yes) class hint expand start center end)
   "Three slots pinned start, middle and end. The middle floats in the slack; the
-ends stay anchored, so an oversize start never pushes the end off the surface."
-  (make-instance 'centerbox :upright (if (null upright) t upright)
+ends stay anchored, so an oversize start never pushes the end off the surface.
+
+UPRIGHT is :YES or :NO. It was a boolean whose NIL was read as unset and turned
+back into true, so the one thing it could not be asked for was the other way up."
+  (make-instance 'centerbox :upright (ecase upright (:yes t) (:no nil))
                               :class class :hint hint :expand (or expand 0)
                               :start start :middle center :end end))
 
@@ -240,7 +243,3 @@ that has already been handed out."
                                      (funcall builder item i)))
            props)))
 
-(pine/word:lends "column" "row" "label" "icon" "button" "box" "center"
-                "scroll" "gap" "rule" "slider" "grid" "stack" "field" "rows"
-                "choice" "calendar" "image" "centerbox" "ring" "cells" "here"
-                "acting")

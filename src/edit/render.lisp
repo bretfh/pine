@@ -35,7 +35,7 @@ Answers the text and the column each character landed in."
   "The column point is drawn in: where it lands once tabs are expanded."
   (multiple-value-bind (drawn where)
       (drawn-line (text:line document (text:at-line document))
-                  (max 1 (or (mode:setting document :tab-width) 8)))
+                  (max 1 (mode:says document :tab-width 8)))
     (declare (ignore drawn))
     (drawn-col where (text:at-col document))))
 
@@ -153,7 +153,7 @@ window beside a document."
          (by-line (%by-line document))
          (g (ui:make-grid width height))
          (caret (%caretp win)))
-    (loop :with tab := (max 1 (or (mode:setting document :tab-width) 8))
+    (loop :with tab := (max 1 (mode:says document :tab-width 8))
           :for line :from from :below (min (text:line-count document) (+ from height))
           :for row :from 0
           :do (multiple-value-bind (drawn where)
@@ -254,7 +254,7 @@ on, and a widget tree has nothing of the sort to say."
                          (append (%candidate-rows found from width) rows)
                          rows)
                      :class "echo" :font *font*
-                     :over (if found (length found) 0)
+                     :parent (if found (length found) 0)
                      :caret (when p
                               (cons (if found (length found) 0)
                                     (min (1- width)
@@ -266,8 +266,8 @@ on, and a widget tree has nothing of the sort to say."
 last said. A surface follows what it read, so this is where the editor says what
 moving means."
   (node:reading (root))
-  (node:reading (tree:ensure nil "prompt"))
-  (node:reading (tree:ensure nil "log"))
+  (node:reading (tree:ensure "/prompt"))
+  (node:reading (tree:ensure "/log"))
   (let* ((wins (windows))
          (weight (reduce #'+ wins :key #'weight :initial-value 0))
          (room (max 2 (1- lines))))
@@ -307,9 +307,8 @@ moving means."
       0))
 
 (defun indenting (document from to then)
-  (let ((width (or (mode:setting (text:mode-of document) :indent) 2)))
+  (let ((width (mode:says (text:mode-of document) :indent 2)))
     (or (text:indent document from to :width width :then then)
         (funcall then (loop :for line :from from :to to
                             :collect (cons line (%without-a-parse document line)))))))
 
-(pine/word:lends "indenting")

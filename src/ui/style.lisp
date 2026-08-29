@@ -68,7 +68,7 @@ order they were written in."
                          :collect (list segments props (specificity segments) at))))))
 
 (defun forget-rules ()
-  (let ((n (and (pine/fs/tree:root) (pine/fs/tree:at nil "memo" "rules"))))
+  (let ((n (and (pine/fs/tree:root) (pine/fs/tree:at "/memo/rules"))))
     (when n (pine/fs/node:stir n)))
   nil)
 

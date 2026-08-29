@@ -28,7 +28,7 @@ it; that is what DERIVE, which does remember, is the other half of."
   (child n name
          (lambda ()
            (let ((it (funcall (each-of n) name)))
-             (when it (setf (over it) n))
+             (when it (setf (parent it) n))
              it))))
 
 (defun %listed (n) (mapcar #'princ-to-string (funcall (names-of n))))

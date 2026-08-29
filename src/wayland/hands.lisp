@@ -43,7 +43,7 @@
               (round (input:pointer-at-x at))))))
 
 (defun press (s)
-  (let ((found (over s)))
+  (let ((found (parent s)))
     (if (typep found 'ui:slider)
         (progn (setf (input:pointer-drag (screen:pointer s)) found) (drag s))
         (click s))))
@@ -97,7 +97,7 @@
 
 (defmethod screen:typed ((s screen:screen) said)
   (screen:tell s (lambda ()
-            (let ((n (tree:at nil "key")))
+            (let ((n (tree:at "/key")))
               (if n
                   (setf (node:contents n) said)
                   (log:note "nothing at /key"))))))
@@ -109,7 +109,7 @@ to /wm/key, which is what says what it means; if that leaves the window manager
 part way through a chord, the next key has to come here too."
   (screen:tell s
         (lambda ()
-          (let ((n (tree:at nil "wm" "key")))
+          (let ((n (tree:at "/wm/key")))
             (cond ((null n) (log:note "nothing at /wm/key"))
                   ((null said) (setf (node:contents n) ""))
                   (t (setf (node:contents n) said)

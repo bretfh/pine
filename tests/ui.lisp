@@ -7,10 +7,10 @@
 knows the roles by name."))
 
 (defmethod ui:anchor ((r ticker) width height)
-  (d:map :edges '(:bottom :right) :wide width :tall height :keeps 0
+  (d:map :edges '(:bottom :right) :wide width :tall height :reserve 0
          :margin '(4 4 4 4)))
 
-(defmethod ui:asks ((r ticker)) nil)
+(defmethod ui:shows ((r ticker)) :always)
 
 (defun drawn (tree cols &optional (lines 4))
   (ui:with-pass
@@ -82,7 +82,7 @@ both, so they have to be the same three numbers."
 
 (test a-control-takes-the-place-it-edits
   (with-tree
-    (let ((volume (tree:ensure nil "dev" "audio" "volume")))
+    (let ((volume (tree:ensure "/dev/audio" "volume")))
       (setf (node:contents volume) 40)
       (let ((s (ui:slider volume :low 0 :high 100)))
         (is (= 40 (ui:value s)))
@@ -107,13 +107,13 @@ both, so they have to be the same three numbers."
 
 (test a-surface-carries-its-role-and-follows-what-it-read
   (with-tree
-    (let ((where (tree:ensure nil "probe")))
+    (let ((where (tree:ensure "/probe")))
       (setf (node:contents where) "one")
       (let ((s (ui:builds "ticker"
                                (lambda () (ui:label (node:contents where)))
-                               :as 'ticker :shown :default)))
+                               :as 'ticker :starts :as-the-role-says)))
         (is (typep (ui:role s) 'ticker))
-        (is (ui:shown s) "a role that is not asked for is up already")
+        (is (ui:shown s) "a role that shows :always is up already")
         (let ((placed (ui:anchor (ui:role s) 100 20)))
           (is (equal '(:bottom :right) (d:lookup placed :edges)))
           (is (equal '(4 4 4 4) (d:lookup placed :margin))))
@@ -122,7 +122,7 @@ both, so they have to be the same three numbers."
         (is (equal "two" (ui:content (node:contents s)))
             "it follows what it read, with nothing subscribing")
         (is (eq s (ui:named "ticker")))
-        (setf (node:contents (tree:at nil "surface" "ticker" "shown")) nil)
+        (setf (node:contents (tree:at "/surface/ticker" "shown")) nil)
         (is (null (ui:shown s)))))))
 
 (test nothing-in-the-source-names-that-role

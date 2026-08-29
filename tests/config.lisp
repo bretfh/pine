@@ -60,6 +60,40 @@ readtable, and a fault in it is a fault like any other rather than a crash."
 (test a-surface-a-config-declared-crosses-the-wire
   (editing)
   (pine:load-config (%example))
-  (let ((form (node:contents (tree:at nil "surface/ticker/wire"))))
+  (let ((form (node:contents (tree:at "/surface/ticker/wire"))))
     (is (not (null form)))
     (is (typep (pine/ui:from-wire form) 'ui:row))))
+
+(defun %reads (text)
+  "TEXT read the way a config is read."
+  (let ((*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax))
+        (*package* (find-package '#:pine/user)))
+    (read-from-string text)))
+
+(test the-sugar-reads-what-it-looks-like
+  "A path is scanned to the next stop, and the closing delimiters were not stops:
+a path against one took it into the name and read to end of file. Only a trailing
+space before the brace read at all, which is not a syntax anybody can hold."
+  (is (equal '(pine/fs/path:path "/dev/audio/volume")
+             (%reads "/dev/audio/volume")))
+  (is (equal '(pine/data:map :v (pine/fs/path:path "/dev/audio/volume"))
+             (%reads "{:v /dev/audio/volume}"))
+      "a path inside a map, with no magic trailing space")
+  (is (equal '(pine/data:map :a (pine/fs/path:path "/a") :b (pine/fs/path:path "/b"))
+             (%reads "{:a /a :b /b}"))))
+
+(test division-is-writable-where-the-sugar-is-on
+  "A bare / answered #'/ , so (/ 1 2) read as ((function /) 1 2), whose head is
+neither a symbol nor a lambda. Division was unwritable in a config and in every
+file that declares the readtable, which is why pine's own layouts multiply."
+  (is (equal '(/ 1 2) (%reads "(/ 1 2)")))
+  (is (eql 1/2 (eval (%reads "(/ 1 2)")))))
+
+(test the-prompt-reads-what-a-config-reads
+  "What a config teaches has to work where a person types it. The console had the
+language and not the syntax, so /dev/audio/volume was an error at the prompt."
+  (let ((s (pine:console)))
+    (unwind-protect
+         (is (eq (named-readtables:find-readtable 'pine/fs/reader:syntax)
+                 (pine/run/session::readtable-of s)))
+      (pine/run/session:close s))))

@@ -99,6 +99,9 @@ rather than a second way to walk the tree."
 (defmethod tree:ensure ((p path) &rest names)
   (apply #'tree:ensure (tree:root) (append (%spelled p) names)))
 
+(defmethod tree:erase ((p path) &rest pieces)
+  (apply #'tree:erase (tree:root) (append (%spelled p) pieces)))
+
 (defun matching (pattern &optional (where (tree:root)))
   (let ((found nil))
     (tree:walk where
@@ -107,4 +110,3 @@ rather than a second way to walk the tree."
                    (push each found))))
     (nreverse found)))
 
-(pine/word:lends "leaf" "path")

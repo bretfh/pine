@@ -51,7 +51,7 @@ its nodes are its sub-regions, and writing it replaces that stretch."))
   (print-unreadable-object (doc stream :type t)
     (format stream "~a ~d:~d" (node:name doc) (at-line doc) (at-col doc))))
 
-(defun root () (tree:ensure nil "text"))
+(defun root () (tree:ensure "/text"))
 
 (defmethod line ((doc document) n) (line (lines doc) n))
 (defmethod line-count ((doc document)) (line-count (lines doc)))
@@ -176,11 +176,16 @@ is text plus something of its own."
   *current*)
 
 (defun asidep (doc)
-  (and (typep doc 'document) (mode:setting doc :aside) t))
+  (and (typep doc 'document) (mode:says doc :aside nil) t))
 
 (defmethod mode:setting ((doc document) key)
-  "What this document reads for KEY: its own, then its mode's."
-  (or (d:lookup (settings doc) key) (mode:setting (mode-of doc) key)))
+  "What this document reads for KEY: its own, then its mode's.
+
+Whether it has one of its own is D:LOOKUP's second value, not whether the first is
+NIL. Turning a setting off writes NIL, and asking the mode about that was asking
+about a key the document had answered."
+  (multiple-value-bind (said saidp) (d:lookup (settings doc) key)
+    (if saidp said (mode:setting (mode-of doc) key))))
 
 (defmethod (setf mode:setting) (value (doc document) key)
   (setf (settings doc) (d:with (settings doc) key value))

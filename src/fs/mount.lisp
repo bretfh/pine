@@ -78,7 +78,7 @@ another machine. The method differs; nothing above it does."))
   (node:child n name
               (lambda ()
                 (make-instance (if (pathname-name path) 'file 'directory)
-                               :name name :over n :truename path))))
+                               :name name :parent n :truename path))))
 
 (defmethod node:nodes ((n directory))
   (let ((seen (make-hash-table :test 'equal)))
@@ -128,4 +128,3 @@ file that does not exist is: a buffer on a place, not on a file."
   (or (node:resolve n name)
       (%node-for n (merge-pathnames (%bare name) (truename-of n)) (%bare name))))
 
-(pine/word:lends "mount")

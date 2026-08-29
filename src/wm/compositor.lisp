@@ -212,7 +212,7 @@ rest is what the compositor says, and says alone."
 (defmethod initialize-instance :after ((c compositor) &key)
   (let ((all (list* (%outputs c) (%workspaces c) (%windows c) (%focused c)
                     (mapcar (lambda (name) (%verb c name)) (verbs c)))))
-    (dolist (each all) (setf (node:over each) c))
+    (dolist (each all) (setf (node:parent each) c))
     (setf (places c) all)))
 
 (defmethod node:nodes ((c compositor))
@@ -230,4 +230,3 @@ manager attaches its own places under /wm and they are found like any other."
         :windows (length (windows c))
         :focused (focused c)))
 
-(pine/word:lends "outputs" "ids")

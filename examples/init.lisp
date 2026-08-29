@@ -33,7 +33,7 @@
 (defmethod setting ((m notes) key)
   (case key (:tab-width 2) (t (call-next-method))))
 
-(defmethod claims ((m notes)) '("*.org"))
+(defmethod handles ((m notes)) '("*.org"))
 
 (defcommand "hello" () (:describes "a command this config added")
   "hello from the config")
@@ -68,20 +68,20 @@
 
 ;; A role is a class too, and it is the whole of what a kind of surface means:
 ;; one ANCHOR method puts a new one on screen and nothing showing it needs knowledge
-;; of it, because the role crosses the wire with the surface. ASKS says whether it
-;; waits to be asked for. A panel does; this does not.
+;; of it, because the role crosses the wire with the surface. SHOWS says when one
+;; comes up: :when-asked, which is what a panel says, or :always, which is this.
 
 (defclass ticker (overlay) ())
 
-(defmethod asks ((r ticker)) nil)
+(defmethod shows ((r ticker)) :always)
 
 (defmethod anchor ((r ticker) width height)
-  (map :edges '(:bottom :right) :wide width :tall height :keeps 0
+  (map :edges '(:bottom :right) :wide width :tall height :reserve 0
        :margin '(0 12 12 0)))
 
 (defsurface ticker (:as 'ticker)
   (row :class "ticker"
-       (label (or (read /dev/media/title) "nothing playing"))))
+       (label (read /dev/media/title :else "nothing playing"))))
 
 ;; A reading can answer a list. /dev/audio/sinks is every sink there is, and
 ;; writing one of their names makes it the default. A row per thing is MAPCAR.
@@ -98,12 +98,12 @@
   (column :class "panel" :align :stretch
           (label "Sound" :class "panel-title")
           (row :align :center :spacing 12
-               (button :class "mute" :click /dev/audio/muted
+               (button :class "mute" :click (lambda () (toggle /dev/audio/muted))
                        (label (if (read /dev/audio/muted) "muted" "on")))
                (slider /dev/audio/volume :class "level" :low 0 :high 100 :expand 1)
-               (label (format nil "~d%" (or (read /dev/audio/volume) 0))))
+               (label (format nil "~d%" (read /dev/audio/volume :else 0))))
           (apply #'column :align :stretch :spacing 2
-                 (mapcar #'sink-row (or (read /dev/audio/sinks) (list))))))
+                 (mapcar #'sink-row (read /dev/audio/sinks :else (list))))))
 
 ;; A selector names classes, not elements. Pine draws widgets, and a widget has no
 ;; parts to reach into: a rule naming one matches nothing, and pine drops it. It

@@ -10,7 +10,7 @@
 (defvar *count* nil)
 
 (defun %clip ()
-  (at nil "dev" "clip" "text"))
+  (at "/dev/clip" "text"))
 
 (defun kill (string)
   (let ((n (%clip)))
@@ -308,7 +308,7 @@ by whoever asks for it."
   (let* ((document (current))
          (line (at-line document))
          (text (line document line))
-         (mark (or (setting (mode-of document) :comment) ";;"))
+         (mark (says (mode-of document) :comment ";;"))
          (from (leading text))
          (body (subseq text from)))
     (goto document line 0)
@@ -335,13 +335,13 @@ by whoever asks for it."
 
 (defcommand "insert-tab" () (:describes "a tab's worth of spaces")
   (let* ((document (current))
-         (width (max 1 (or (setting document :tab-width) 8))))
+         (width (max 1 (says document :tab-width 8))))
     (insert document (make-string width :initial-element #\Space))
     width))
 
 (defcommand "overwrite" ()
     (:describes "type over what is there" :on '(text "M-o"))
-  (let* ((document (current)) (on (not (setting document :overwrite))))
+  (let* ((document (current)) (on (not (says document :overwrite nil))))
     (setf (setting document :overwrite) on)
     (note "overwrite is ~:[off~;on~]" on)
     on))

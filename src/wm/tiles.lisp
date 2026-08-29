@@ -170,14 +170,13 @@ of being the window manager here."
                            (lambda (of value)
                              (declare (ignore of value))
                              (attempt (lambda () (%placed s)) "tiles"))
-                           :only nil :poll nil :name "tiles<-wm/said")))))
+                           :tells-when :always :poll nil :name "tiles<-wm/said")))))
     (%placed s))
   s)
 
 (defmethod stop ((s tiles))
   (dolist (w (watching s)) (attempt (lambda () (unwatch w)) "letting a watch go"))
   (setf (watching s) nil)
-  (erase nil "wm" "layout")
+  (erase "/wm/layout")
   s)
 
-(pine/word:lends "layout" "arrange" "tall" "wide" "full" "stacked")

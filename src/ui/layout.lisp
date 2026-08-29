@@ -153,12 +153,12 @@ arrange, never from the space available -- answering that here would eat the axi
   (declare (ignore aw ah))
   (let* ((all (rows-of w))
          (cols (reduce #'max all :initial-value 1 :key (lambda (r) (length (car r)))))
-         (n (max 1 (- (length all) (or (over w) 0)))))
+         (n (max 1 (- (length all) (or (parent w) 0)))))
     (multiple-value-bind (cw ch) (text-size m "M" (%font w))
       (values (* cols cw) (* n ch)))))
 
 (defmethod paint ((w cells) (m grid))
-  (let ((up (or (over w) 0)))
+  (let ((up (or (parent w) 0)))
     (loop :for row :in (rows-of w)
           :for line :from (- (top w) up)
           :do (blit m line (left w) (car row) (cdr row)))))
@@ -370,4 +370,3 @@ weeks a month can fall across."
           (arrange part m (+ x (floor (- width cw) 2))
                    (+ y (floor (- height ch) 2)) cw ch))))))
 
-(pine/word:lends "measure" "paint")

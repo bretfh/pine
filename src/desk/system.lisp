@@ -10,11 +10,11 @@
 
 Nothing here is privileged, and nothing here is written in a language a config is
 not. It names no package of pine's: what it reads and writes, it says by path, and
-what it draws, it says in the words pine lends."))
+what it draws, it says in the words pine offers."))
 
 (offers 'desk)
 
-(defun %at (name) (at nil (format nil "surface/~a/shown" name)))
+(defun %at (name) (at (format nil "/surface/~a/shown" name)))
 
 (defun %shown (name)
   (let ((n (%at name))) (and n (contents n))))
@@ -57,7 +57,7 @@ what it draws, it says in the words pine lends."))
                        (button :class "clock-button"
                                :click (lambda () (%toggle "calendar"))
                                (%clock)))))
-          :as 'bar :shown t))
+          :as 'bar :starts :up))
 
 (defun %sound-panel ()
   (builds "sound"
@@ -65,7 +65,7 @@ what it draws, it says in the words pine lends."))
             (column :class "panel sound-panel"
                     (label "sound")
                     (slider /dev/audio/volume)
-                    (button :class "mute" :click /dev/audio/muted
+                    (button :class "mute" :click (lambda () (toggle /dev/audio/muted))
                             (label "mute"))))
           :as 'panel))
 
@@ -91,9 +91,9 @@ what it draws, it says in the words pine lends."))
   (builds "calendar"
           (lambda ()
             (column :class "panel calendar-panel"
-                    (calendar :year (or (read /dev/clock/year) 2000)
-                              :month (or (read /dev/clock/month) 1)
-                              :day (or (read /dev/clock/day) 1))))
+                    (calendar :year (read /dev/clock/year :else 2000)
+                              :month (read /dev/clock/month :else 1)
+                              :day (read /dev/clock/day :else 1))))
           :as 'panel))
 
 (defcommand "show-surface" (name) (:describes "put a surface up")
@@ -113,11 +113,11 @@ what it draws, it says in the words pine lends."))
                        (and (shown each) t))))
 
 (defcommand "surface" (said) (:describes "what one surface is")
-  (let ((s (at nil (format nil "surface/~a" said))))
+  (let ((s (at (format nil "/surface/~a" said))))
     (when s
       (list :role (string-downcase (class-name (class-of (role s))))
             :shown (and (shown s) t)
-            :size (read (at s "size"))))))
+            :size (read (format nil "/surface/~a/size" said))))))
 
 (defmethod start ((s desk))
   (%bar)
@@ -129,5 +129,5 @@ what it draws, it says in the words pine lends."))
 
 (defmethod stop ((s desk))
   (dolist (each '("bar" "sound" "power" "calendar"))
-    (erase nil (format nil "surface/~a" each)))
+    (erase (format nil "/surface/~a" each)))
   s)

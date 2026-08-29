@@ -12,10 +12,10 @@
                                      (list "muted" (lambda () nil))))))
       (node:attach dev (tree:root))
       (is (equal '("volume" "muted") (node:contents dev)))
-      (is (= 40 (node:contents (tree:at nil "probe/volume"))))
-      (setf (node:contents (tree:at nil "probe/volume")) 55)
+      (is (= 40 (node:contents (tree:at "/probe/volume"))))
+      (setf (node:contents (tree:at "/probe/volume")) 55)
       (is (= 55 (first held)))
-      (is (eq (tree:at nil "probe/volume") (tree:at nil "probe/volume"))
+      (is (eq (tree:at "/probe/volume") (tree:at "/probe/volume"))
           "the same child every time"))))
 
 (test a-device-says-what-it-wants-watched
@@ -42,15 +42,15 @@
   (booted)
   (with-tree
     (node:attach (sh:sh-node) (tree:root))
-    (is (equal "hello" (node:contents (tree:at nil "sh/echo hello"))))))
+    (is (equal "hello" (node:contents (tree:at "/sh/echo hello"))))))
 
 (test the-clock-is-the-time-as-paths
   (with-tree
     (let ((clock (device:clock)))
       (node:attach clock (tree:root))
       (device:tick)
-      (is (integerp (node:contents (tree:at nil "clock/year"))))
-      (is (stringp (node:contents (tree:at nil "clock/hour")))))))
+      (is (integerp (node:contents (tree:at "/clock/year"))))
+      (is (stringp (node:contents (tree:at "/clock/hour")))))))
 
 (test the-environment-reads-and-writes-through
   (with-tree
@@ -71,11 +71,11 @@ the first time, which is a clock that never ticks."
                                                         (lambda ()
                                                           (d:swap (car n) #'1+)))))
                              (tree:root))))
-      (is (eql 1 (node:contents (tree:at nil "probe/count"))))
-      (is (eql 1 (node:contents (tree:at nil "probe/count")))
+      (is (eql 1 (node:contents (tree:at "/probe/count"))))
+      (is (eql 1 (node:contents (tree:at "/probe/count")))
           "and it is remembered until something says otherwise")
       (node:stir dev)
-      (is (eql 2 (node:contents (tree:at nil "probe/count")))
+      (is (eql 2 (node:contents (tree:at "/probe/count")))
           "the device moved, so the reading is read again"))))
 
 (test the-desktop-clipboard-is-a-place

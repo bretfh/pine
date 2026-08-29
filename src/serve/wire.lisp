@@ -55,8 +55,11 @@ and events together and whoever asked has to be able to tell which is which."
            ((eq kind :evaluate)
             (let ((form (gethash "form" it)))
               (if (stringp form)
-                  (list :evaluate (let ((*read-eval* nil))
-                                    (read-from-string form)))
+                  (list :evaluate
+                        (let ((*read-eval* nil)
+                              (*readtable* (named-readtables:find-readtable
+                                            'pine/fs/reader:syntax)))
+                          (read-from-string form)))
                   (list :no "eval is given a form, as a string"))))
            ((null path) (list :no (format nil "~a names a place" doing)))
            ((eq kind :write)

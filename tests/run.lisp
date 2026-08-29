@@ -15,7 +15,7 @@
              (job:start j)
              (is (job:alivep j))
              (is (until (lambda () (> (car n) 2))))
-             (is (eq j (tree:at nil "proc" "ticker")))
+             (is (eq j (tree:at "/proc/ticker")))
              (is (eq :running (node:contents j)))
              (setf (node:contents j) (d:seq :stop))
              (is (eq :stopped (node:contents j))))
@@ -31,11 +31,11 @@ supervised thing pine has is running and unreadable."
          (let ((j (make-instance 'job:thread :name "probe" :seconds 0.05
                                              :thunk (lambda () nil))))
            (pine:start)
-           (is (not (null (tree:at nil "proc"))))
+           (is (not (null (tree:at "/proc"))))
            (unwind-protect
                 (progn (job:supervise j)
                        (job:start j)
-                       (is (eq j (tree:at nil "proc" "probe")))
+                       (is (eq j (tree:at "/proc/probe")))
                        (is (eq :running (pine:read "/proc/probe"))))
              (ignore-errors (job:stop j))
              (job:forget "probe")))
@@ -48,7 +48,7 @@ returned without being asked to is failed, and the next sweep starts it."
   (with-tree
     (tree:built)
     (let* ((runs (cons 0 nil))
-           (j (make-instance 'job:thread :name "flaky" :restarts t
+           (j (make-instance 'job:thread :name "flaky" :on-fault :restart
                                          :thunk (lambda ()
                                                   (d:swap (car runs) #'1+)))))
       (unwind-protect
@@ -69,7 +69,7 @@ returned without being asked to is failed, and the next sweep starts it."
     (tree:built)
     (let ((j nil))
       (setf j (make-instance 'job:thread
-                             :name "quiet" :restarts t
+                             :name "quiet" :on-fault :restart
                              :thunk (lambda ()
                                       (loop :until (job:stoppingp j)
                                             :do (sleep 0.01)))))
@@ -88,7 +88,7 @@ returned without being asked to is failed, and the next sweep starts it."
   (booted)
   (let* ((said (cons nil nil))
          (j (make-instance 'job:actor
-                           :name "orderly" :restarts nil
+                           :name "orderly" :on-fault :leave
                            :receive (lambda (m)
                                       (d:swap (car said) (lambda (all) (cons m all)))))))
     (unwind-protect
@@ -125,7 +125,7 @@ returned without being asked to is failed, and the next sweep starts it."
 (test a-fault-in-another-image-comes-back-with-its-restarts
   (booted)
   (fault:forget-faults)
-  (let ((c (make-instance 'image:child :name "kid" :restarts nil :systems nil)))
+  (let ((c (make-instance 'image:child :name "kid" :on-fault :leave :systems nil)))
     (unwind-protect
          (progn
            (job:start c)
@@ -203,7 +203,7 @@ image's one down and puts a listening one in its place."
          (actors:leave)
          (actors:boot :remoting 0)
          (with-tree
-           (tree:put nil '("dev" "audio" "volume") 41)
+           (tree:put "/dev/audio/volume" nil 41)
            (peer:serve)
            (let ((p (peer:reach "self" :port (actors:remoting))))
              (unwind-protect
@@ -211,13 +211,13 @@ image's one down and puts a listening one in its place."
                     (is (job:alivep p))
                     (mount:mount p (tree:root) "host")
                     (is (equal 41 (node:contents
-                                   (tree:at nil "host/dev/audio/volume"))))
-                    (setf (node:contents (tree:at nil "host/dev/audio/volume"))
+                                   (tree:at "/host/dev/audio/volume"))))
+                    (setf (node:contents (tree:at "/host/dev/audio/volume"))
                           77)
                     (is (equal 77 (node:contents
-                                   (tree:at nil "dev/audio/volume"))))
+                                   (tree:at "/dev/audio/volume"))))
                     (is (equal '("audio")
-                               (tree:listing (tree:at nil "host/dev"))))
+                               (tree:listing (tree:at "/host/dev"))))
                     (is (equal '(4) (image:evaluate p '(+ 2 2))))
                     (fault:forget-faults)
                     (multiple-value-bind (answered broke offers)
@@ -311,7 +311,7 @@ on whatever slid into the place that was being read."
 calling it stopped leaves it holding what it holds with nothing naming it."
   (booted)
   (let* ((running t)
-         (j (make-instance 'job:thread :name "test-stubborn" :restarts nil
+         (j (make-instance 'job:thread :name "test-stubborn" :on-fault :leave
                            :thunk (lambda () (loop :while running
                                                    :do (sleep 0.02))))))
     (unwind-protect
@@ -432,7 +432,7 @@ the rest of its life."
 nor everything else the walk has still to reach, nor whoever was waiting on it."
   (with-tree
     (booted)
-    (let ((n (tree:ensure nil "probe-slow"))
+    (let ((n (tree:ensure "/probe-slow"))
           (let-go (bordeaux-threads:make-semaphore))
           (told nil))
       (setf (node:contents n) "before")

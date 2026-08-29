@@ -108,7 +108,7 @@ wrong stretch, so writing it replaces something it was never standing for."
     (is (equal "(defun a () 1)"
                (node:contents (tree:at doc "defun/a"))))
     (text:goto doc 0 0)
-    (setf (node:contents (tree:at nil "key")) "C-e")
+    (setf (node:contents (tree:at "/key")) "C-e")
     (setf (node:contents (tree:at doc "defun/b")) "(defun b () 99)")
     (is (equal (format nil "(defun a () 1)~%(defun b () 99)") (text:text doc)))))
 

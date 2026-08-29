@@ -14,10 +14,10 @@
   "A pine that is the window manager, told what a compositor has. Everything about
 it is a value, so nothing here needs a compositor."
   (editing)
-  (setf (node:contents (tree:ensure nil "wm-manage")) t)
+  (setf (node:contents (tree:ensure "/wm-manages")) :pine)
   (unless (system:named "wm") (pine:use :wm))
   (let ((c (pine/wm:current)))
-    (setf (node:contents (tree:at nil "wm/said")) +said+)
+    (setf (node:contents (tree:at "/wm/said")) +said+)
     c))
 
 (defun %tiled ()
@@ -25,7 +25,7 @@ it is a value, so nothing here needs a compositor."
   (let ((c (%managed)))
     (when (system:named "tiles") (pine:drop :tiles))
     (pine:use :tiles)
-    (setf (node:contents (tree:at nil "wm/said")) +said+)
+    (setf (node:contents (tree:at "/wm/said")) +said+)
     c))
 
 (test pine-being-the-compositor-is-a-subclass-not-a-second-protocol
@@ -39,29 +39,29 @@ it is a value, so nothing here needs a compositor."
 
 (test a-window-is-a-place-under-the-compositor
   (%managed)
-  (is (equal "browser" (getf (node:contents (tree:at nil "wm/windows/2")) :title)))
-  (is (getf (node:contents (tree:at nil "wm/windows/2")) :focused))
-  (is (equal '("1" "2" "3") (node:contents (tree:at nil "wm/windows")))))
+  (is (equal "browser" (getf (node:contents (tree:at "/wm/windows/2")) :title)))
+  (is (getf (node:contents (tree:at "/wm/windows/2")) :focused))
+  (is (equal '("1" "2" "3") (node:contents (tree:at "/wm/windows")))))
 
 (test what-a-window-says-about-itself-is-a-path-each
   (%managed)
-  (is (equal "browser" (node:contents (tree:at nil "wm/windows/2/title"))))
-  (is (equal "chrome" (node:contents (tree:at nil "wm/windows/2/app"))))
-  (is (node:contents (tree:at nil "wm/windows/2/focused")))
-  (is (null (node:contents (tree:at nil "wm/windows/1/focused")))))
+  (is (equal "browser" (node:contents (tree:at "/wm/windows/2/title"))))
+  (is (equal "chrome" (node:contents (tree:at "/wm/windows/2/app"))))
+  (is (node:contents (tree:at "/wm/windows/2/focused")))
+  (is (null (node:contents (tree:at "/wm/windows/1/focused")))))
 
 (test an-output-is-a-place-and-says-what-the-bars-left
   (%managed)
-  (is (equal '("eDP-1") (node:contents (tree:at nil "wm/outputs"))))
-  (is (equal '(1280 720) (node:contents (tree:at nil "wm/outputs/eDP-1/size"))))
-  (is (equal '(0 0) (node:contents (tree:at nil "wm/outputs/eDP-1/position"))))
-  (is (equal '(0 0 1280 720) (node:contents (tree:at nil "wm/outputs/eDP-1/area"))))
-  (setf (node:contents (tree:at nil "wm/said"))
+  (is (equal '("eDP-1") (node:contents (tree:at "/wm/outputs"))))
+  (is (equal '(1280 720) (node:contents (tree:at "/wm/outputs/eDP-1/size"))))
+  (is (equal '(0 0) (node:contents (tree:at "/wm/outputs/eDP-1/position"))))
+  (is (equal '(0 0 1280 720) (node:contents (tree:at "/wm/outputs/eDP-1/area"))))
+  (setf (node:contents (tree:at "/wm/said"))
         (list :windows nil
               :outputs '((:name "eDP-1" :position (0 0) :size (1280 720)
                           :area (64 0 1216 720)))
               :focused nil))
-  (is (equal '(64 0 1216 720) (node:contents (tree:at nil "wm/outputs/eDP-1/area")))
+  (is (equal '(64 0 1216 720) (node:contents (tree:at "/wm/outputs/eDP-1/area")))
       "what is left after the furniture took its strip"))
 
 (test core-places-nothing-until-something-says-where
@@ -69,49 +69,49 @@ it is a value, so nothing here needs a compositor."
 a system you load."
   (%managed)
   (when (system:named "tiles") (pine:drop :tiles))
-  (is (null (node:contents (tree:at nil "wm/placement"))))
-  (is (null (tree:at nil "wm/layout"))
+  (is (null (node:contents (tree:at "/wm/placement"))))
+  (is (null (tree:at "/wm/layout"))
       "and there is no layout in core to speak of"))
 
 (test a-window-manager-is-something-that-writes-the-placement
   (%managed)
   (when (system:named "tiles") (pine:drop :tiles))
-  (setf (node:contents (tree:at nil "wm/placement"))
+  (setf (node:contents (tree:at "/wm/placement"))
         '((1 0 0 640 720) (2 640 0 640 720)))
   (is (equal '((1 0 0 640 720) (2 640 0 640 720))
-             (node:contents (tree:at nil "wm/placement"))))
+             (node:contents (tree:at "/wm/placement"))))
   (is (equal '(0 0 640 720) (compositor:rect (pine/wm:current) "1"))
       "and where a window is is what was last placed for it"))
 
 (test tiles-is-one-of-them-and-writes-it-from-what-it-was-told
   (%tiled)
-  (is (equal "tall" (node:contents (tree:at nil "wm/layout"))))
+  (is (equal "tall" (node:contents (tree:at "/wm/layout"))))
   (is (equal '((1 0 0 640 720) (2 640 0 640 360) (3 640 360 640 360))
-             (node:contents (tree:at nil "wm/placement"))))
-  (setf (node:contents (tree:at nil "wm/layout")) "wide")
+             (node:contents (tree:at "/wm/placement"))))
+  (setf (node:contents (tree:at "/wm/layout")) "wide")
   (is (equal '((1 0 0 1280 360) (2 0 360 640 360) (3 640 360 640 360))
-             (node:contents (tree:at nil "wm/placement")))
+             (node:contents (tree:at "/wm/placement")))
       "writing the layout works the placement out again")
-  (setf (node:contents (tree:at nil "wm/layout")) "full")
+  (setf (node:contents (tree:at "/wm/layout")) "full")
   (is (equal '((1 0 0 1280 720))
-             (node:contents (tree:at nil "wm/placement")))))
+             (node:contents (tree:at "/wm/placement")))))
 
 (test what-the-compositor-said-is-what-the-placement-follows
   (%tiled)
-  (setf (node:contents (tree:at nil "wm/said"))
+  (setf (node:contents (tree:at "/wm/said"))
         (list :windows '((:id 7 :title "only" :app "one"))
               :outputs '((:name "eDP-1" :position (0 0) :size (800 600)
                           :area (0 0 800 600)))
               :focused 7))
   (is (until (lambda ()
                (equal '((7 0 0 800 600))
-                      (node:contents (tree:at nil "wm/placement")))))))
+                      (node:contents (tree:at "/wm/placement")))))))
 
 (test dropping-the-window-manager-takes-its-paths-with-it
   (%tiled)
-  (is (tree:at nil "wm/layout"))
+  (is (tree:at "/wm/layout"))
   (pine:drop :tiles)
-  (is (null (tree:at nil "wm/layout")))
+  (is (null (tree:at "/wm/layout")))
   (is (null (command:named "wm-layout"))))
 
 (test a-layout-is-a-class-so-a-config-can-write-one
@@ -132,76 +132,76 @@ different class in between, so what places the windows has to come with it."
   (editing)
   (when (system:named "tiles") (pine:drop :tiles))
   (when (system:named "wm") (pine:drop :wm))
-  (setf (node:contents (tree:ensure nil "wm-places")) "tiles")
-  (setf (node:contents (tree:ensure nil "wm-manage")) nil)
+  (setf (node:contents (tree:ensure "/wm-places")) "tiles")
+  (setf (node:contents (tree:ensure "/wm-manages")) :compositor)
   (pine:use :wm)
   (is (system:named "tiles") "the config's answer is used when the wm comes up")
-  (setf (node:contents (tree:ensure nil "wm-manage")) t)
+  (setf (node:contents (tree:ensure "/wm-manages")) :pine)
   (pine:drop :wm)
   (pine:use :wm)
   (is (typep (pine/wm:current) 'pine/wm/managed:managed))
-  (is (tree:at nil "wm/layout")
+  (is (tree:at "/wm/layout")
       "and it is bound again to the wm that replaced the first")
-  (setf (node:contents (tree:at nil "wm/said")) +said+)
+  (setf (node:contents (tree:at "/wm/said")) +said+)
   (is (until (lambda ()
                (equal '((1 0 0 640 720) (2 640 0 640 360) (3 640 360 640 360))
-                      (node:contents (tree:at nil "wm/placement")))))
+                      (node:contents (tree:at "/wm/placement")))))
       "so what it was told still reaches the placement"))
 
 (test what-pine-wants-of-the-compositor-is-taken-once
   (%managed)
   (command:run "wm-focus-next")
   (command:run "wm-close-window")
-  (let ((wants (node:contents (tree:at nil "wm/wants"))))
+  (let ((wants (node:contents (tree:at "/wm/wants"))))
     (is (= 2 (length wants)))
     (is (eq :close (first (second wants)))))
-  (is (null (node:contents (tree:at nil "wm/wants")))
+  (is (null (node:contents (tree:at "/wm/wants")))
       "and the next one to look finds nothing"))
 
 (test a-verb-is-a-place
   (%managed)
-  (setf (node:contents (tree:at nil "wm/close")) t)
-  (is (equal '((:close)) (node:contents (tree:at nil "wm/wants")))))
+  (setf (node:contents (tree:at "/wm/close")) t)
+  (is (equal '((:close)) (node:contents (tree:at "/wm/wants")))))
 
 (test taking-a-window-off-the-screen-is-writing-that-it-is-off
   (%managed)
-  (node:contents (tree:at nil "wm/wants"))
-  (setf (node:contents (tree:at nil "wm/windows/2/hidden")) t)
-  (is (equal '((:hide "2")) (node:contents (tree:at nil "wm/wants"))))
-  (setf (node:contents (tree:at nil "wm/windows/2/hidden")) nil)
-  (is (equal '((:show "2")) (node:contents (tree:at nil "wm/wants")))))
+  (node:contents (tree:at "/wm/wants"))
+  (setf (node:contents (tree:at "/wm/windows/2/hidden")) t)
+  (is (equal '((:hide "2")) (node:contents (tree:at "/wm/wants"))))
+  (setf (node:contents (tree:at "/wm/windows/2/hidden")) nil)
+  (is (equal '((:show "2")) (node:contents (tree:at "/wm/wants")))))
 
 (test the-keyboard-goes-where-the-focused-place-says
   (%managed)
-  (node:contents (tree:at nil "wm/wants"))
-  (setf (node:contents (tree:at nil "wm/focused")) "3")
-  (is (equal '((:focus "3")) (node:contents (tree:at nil "wm/wants")))))
+  (node:contents (tree:at "/wm/wants"))
+  (setf (node:contents (tree:at "/wm/focused")) "3")
+  (is (equal '((:focus "3")) (node:contents (tree:at "/wm/wants")))))
 
 (test the-window-manager-has-chords-of-its-own
   "A chord the compositor took was not typed at anything: there is no document in
 it, and the mode that answers is the window manager's."
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
-  (node:contents (tree:at nil "wm/wants"))
-  (setf (node:contents (tree:at nil "wm/key")) "s-q")
-  (is (null (node:contents (tree:at nil "wm/wants")))
+  (node:contents (tree:at "/wm/wants"))
+  (setf (node:contents (tree:at "/wm/key")) "s-q")
+  (is (null (node:contents (tree:at "/wm/wants")))
       "a chord nothing bound does nothing")
-  (setf (node:contents (tree:at nil "wm/key")) "s-c")
-  (is (equal '((:close)) (node:contents (tree:at nil "wm/wants")))
+  (setf (node:contents (tree:at "/wm/key")) "s-c")
+  (is (equal '((:close)) (node:contents (tree:at "/wm/wants")))
       "and one that is bound runs its command"))
 
 (test a-chord-of-the-window-managers-is-not-the-editors
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-x s-r" "wm-outputs")
   (setf (ui:pending) (ui:chord "C-x"))
-  (setf (node:contents (tree:at nil "wm/key")) "s-x")
-  (is (equal "s-x" (node:contents (tree:at nil "wm/key")))
+  (setf (node:contents (tree:at "/wm/key")) "s-x")
+  (is (equal "s-x" (node:contents (tree:at "/wm/key")))
       "the window manager is half way through its own chord")
   (is (equal "C-x" (ui:spelled (ui:pending)))
       "and the editor is still half way through the one somebody was typing")
   (setf (ui:pending) nil)
-  (setf (node:contents (tree:at nil "wm/key")) "s-r")
-  (is (equal "" (node:contents (tree:at nil "wm/key")))
+  (setf (node:contents (tree:at "/wm/key")) "s-r")
+  (is (equal "" (node:contents (tree:at "/wm/key")))
       "finishing it clears what was standing"))
 
 (test what-the-compositor-has-to-be-asked-for-is-what-is-bound
@@ -225,9 +225,9 @@ manager; what it reads is a path."
 
 (test picking-one-gives-it-the-keyboard
   (%managed)
-  (node:contents (tree:at nil "wm/wants"))
+  (node:contents (tree:at "/wm/wants"))
   (command:run "switch-to-window" (list "3 notes"))
-  (is (equal '((:focus "3")) (node:contents (tree:at nil "wm/wants")))))
+  (is (equal '((:focus "3")) (node:contents (tree:at "/wm/wants")))))
 
 (test a-chord-is-spelled-for-the-compositor-the-way-it-spells-one
   "What pine calls s-Return xkb calls Return with mod4. The protocol spells a
@@ -252,16 +252,16 @@ bitfield as the list of what is set, not a number."
 write, and most of them are not written beside the root one."
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
-  (unless (tree:at nil "mode") (node:attach (mode:mode-node) (tree:root)))
+  (unless (tree:at "/mode") (node:attach (mode:mode-node) (tree:root)))
   (is (typep (mode:named "wm") 'pine/wm/keys:wm)
       "a mode is found by name whichever package it was written in")
-  (is (member "wm" (node:contents (tree:at nil "mode")) :test #'equal))
-  (let ((n (tree:at nil "mode/wm/keys")))
+  (is (member "wm" (node:contents (tree:at "/mode")) :test #'equal))
+  (let ((n (tree:at "/mode/wm/keys")))
     (is (not (null n)) "the keymap is a place")
     (is (equal "wm-close-window" (cdr (assoc "s-c" (node:contents n)
                                              :test #'equal)))
         "as plain pairs, because a keymap crosses a wire like anything else"))
-  (let ((n (tree:at nil "mode/prompt/keys")))
+  (let ((n (tree:at "/mode/prompt/keys")))
     (is (not (null n)))
     (is (assoc "RET" (node:contents n) :test #'equal)
         "and the editor's own modes, which were never readable here either")))

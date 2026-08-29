@@ -110,7 +110,7 @@ something -- OF is what."))
 (defclass cells (widget)
   ((rows    :initarg :rows    :accessor rows-of :initform nil)
    (caret   :initarg :caret   :accessor caret   :initform nil)
-   (over    :initarg :over    :accessor over    :initform nil)
+   (parent    :initarg :parent    :accessor parent    :initform nil)
    (opacity :initarg :opacity :accessor opacity :initform 1.0))
   (:documentation "A leaf holding rows that are already laid out, each (text .
 runs). Measure and arrange are one step and paint blits them. CARET is (row . col)
@@ -151,4 +151,3 @@ it, which is what floats a completion list over the buffer."))
   (unless (numberp (low w))   (setf (low w) 0))
   (unless (numberp (high w))  (setf (high w) 100)))
 
-(pine/word:lends "widget" "parts")

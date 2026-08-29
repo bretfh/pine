@@ -30,7 +30,7 @@ was split into."))
   (show w value)
   value)
 
-(defun root () (tree:ensure nil "window"))
+(defun root () (tree:ensure "/window"))
 
 (defun make-window (&key shows (into (root)) name)
   (let ((w (make-instance 'window
@@ -95,7 +95,7 @@ windows are, rather than by whoever sets the current document."
     (values a b)))
 
 (defun close-window (w &optional (of (root)))
-  (let ((up (node:over w)))
+  (let ((up (node:parent w)))
     (when (and up (typep up 'window))
       (node:detach up (node:name w))
       (let ((left (parts up)))
@@ -160,5 +160,3 @@ windows are, rather than by whoever sets the current document."
     (:describes "every window the same size" :on '(text "C-x +"))
   (dolist (win (windows) t) (setf (weight win) 1)))
 
-(pine/word:lends "windows" "focused" "focus" "split" "close-window" "only"
-                "seed" "follow" "scrolled" "sideways" "across" "down")

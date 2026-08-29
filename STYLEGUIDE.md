@@ -15,11 +15,16 @@ over `alexandria:curry`.
 
 ## Data
 
-`pine/data` is the vocabulary for maps, seqs and sets: `at`, `with`, `without`,
-`size`, `keys`, `vals`, `do-map`, `do-seq`, `as`. It is written over fset, and
-`src/data.lisp` is the only file that names `fset:` or `sento.atomic:`. It says
-what a value is and where one is kept: `box` / `held` / `swap!` / `cas` /
-`put!`, and `table` for a registry, which is a map in a box with `all` /
+`pine/data` is the vocabulary for maps, seqs and sets: `lookup`, `with`,
+`without`, `size`, `keys`, `vals`, `do-map`, `do-pairs`, `as`. `lookup` and not
+`at`: a node is *at* a path and a value is *looked up* in a collection, and one
+word for both meant knowing which you had before you could read either. It
+answers two values, because a collection may hold NIL and holding it is not the
+same as holding nothing.
+
+It is written over fset, and `src/data.lisp` is the only file that names `fset:`
+or `sento.atomic:`. It says what a value is and where one is kept: `swap` / `cas`
+/ `emptied`, and `table` for a registry, which is a map in a box with `all` /
 `keep!` / `drop!` / `claim`. A hash table is for an identity map keyed by
 objects, or for scratch one call owns; anything two threads read is a table.
 Tests enforce both.
@@ -76,9 +81,11 @@ where it recurses, written in the caller. What a package makes visible should
 be what somebody else calls.
 
 A file may only name packages that load before it. When two files need each
-other, the layering is wrong: one of them takes a hook (`pine/ts/parser:*on-parse*`,
-`pine/edit/buffer:*on-current*`, `pine/ui/build:*asking*`) and the other fills
-it in.
+other, the layering is wrong: the one below declares a generic with a default
+that does nothing, and the one above hangs a method on it — `pine/ui:confirming`,
+`pine/run/command:asking`, `pine:opening`, `pine/text:visiting`. A generic and
+not a variable, because a method says which case it answers for and a hook that
+is set twice keeps whoever set it last.
 
 ## Nodes
 
@@ -179,9 +186,15 @@ it makes may share a name across two packages -- `pine/ui/build:ring` makes a
 
 ## The surface language
 
-`/a/b`, `{...}`, `[...]` are sugar for a config and for a person at the REPL,
-not for pine's own source. Only `src/path/`, the language declarations under
-`src/ts/lang/` and a config may declare the readtable; a test enforces it.
+`/a/b` and `{...}` are sugar for a config, for a person at the prompt and for
+`pine eval`. All three read them, so a spelling a config teaches is one that
+works where somebody types it.
+
+The substrate does not read in its own sugar: `src/data.lisp`, `src/said.lisp`
+and `src/fs/` may not declare the readtable, because a namespace that needs the
+syntax to say what a node is has the two the wrong way round. Everything above
+that may, and the language declarations under `src/text/ts/lang/` do. A test
+enforces it.
 
 ## Size
 

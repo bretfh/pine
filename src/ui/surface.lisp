@@ -18,12 +18,18 @@ because the role crosses the wire with the surface it is on."))
 (defclass window (role) ())
 (defclass tile (role) ())
 
-(defgeneric asks (role)
-  (:documentation "Whether a surface of this role waits to be asked for. Furniture
-is up as soon as it is declared; a panel is not.")
-  (:method ((r role)) nil)
-  (:method ((r panel)) t)
-  (:method ((r overlay)) t))
+(defgeneric shows (role)
+  (:documentation "When a surface of this role comes up: :ALWAYS as soon as it is
+declared, or :WHEN-ASKED and not before. Furniture is the first; a panel is the
+second.
+
+Two words rather than a yes and a no, because the no was the one that put a
+surface on the screen -- a config saying its role does not wait to be asked was
+writing NIL, and reading that method afterwards told you nothing about which way
+round it went.")
+  (:method ((r role)) :always)
+  (:method ((r panel)) :when-asked)
+  (:method ((r overlay)) :when-asked))
 
 (defgeneric anchor (role width height)
   (:documentation "Where a surface of this role sits and how big, given what it
@@ -33,29 +39,29 @@ what strip it keeps for itself, and its margin.
 The words are wayland's because that is what the placement is; nothing about the
 content is here.")
   (:method ((r role) width height)
-    (d:map :edges '(:top :left) :wide width :tall height :keeps 0
+    (d:map :edges '(:top :left) :wide width :tall height :reserve 0
            :margin '(0 0 0 0)))
   (:method ((r bar) width height)
     (declare (ignore height))
-    (d:map :edges '(:top :left :bottom) :wide width :tall 0 :keeps width
+    (d:map :edges '(:top :left :bottom) :wide width :tall 0 :reserve width
            :margin '(0 0 0 0)))
   (:method ((r background) width height)
     (declare (ignore width height))
-    (d:map :edges '(:top :left :bottom :right) :wide 0 :tall 0 :keeps 0
+    (d:map :edges '(:top :left :bottom :right) :wide 0 :tall 0 :reserve 0
            :margin '(0 0 0 0)))
   (:method ((r overlay) width height)
-    (d:map :edges '(:top :right) :wide width :tall height :keeps 0
+    (d:map :edges '(:top :right) :wide width :tall height :reserve 0
            :margin '(8 8 0 0)))
   (:method ((r panel) width height)
-    (d:map :edges '(:top :left) :wide width :tall height :keeps 0
+    (d:map :edges '(:top :left) :wide width :tall height :reserve 0
            :margin '(8 0 0 8)))
   (:method ((r window) width height)
     "A window of its own: the compositor sizes it, so nothing is anchored."
     (declare (ignore width height))
-    (d:map :edges nil :wide 0 :tall 0 :keeps 0 :margin '(0 0 0 0)))
+    (d:map :edges nil :wide 0 :tall 0 :reserve 0 :margin '(0 0 0 0)))
   (:method ((r tile) width height)
     (declare (ignore width height))
-    (d:map :edges nil :wide 0 :tall 0 :keeps 0 :margin '(0 0 0 0))))
+    (d:map :edges nil :wide 0 :tall 0 :reserve 0 :margin '(0 0 0 0))))
 
 (defclass surface (node:derived)
   ((role  :initarg :role  :accessor role)
@@ -71,7 +77,7 @@ what the surface builds follows it like anything else it read."))
     (format stream "~a ~(~a~)~:[~; shown~]" (node:name s)
             (class-name (class-of (role s))) (shown s))))
 
-(defun root () (tree:ensure nil "surface"))
+(defun root () (tree:ensure "/surface"))
 
 (defun surfaces ()
   (remove-if-not (lambda (n) (typep n 'surface)) (node:nodes (root))))
@@ -117,22 +123,28 @@ one up; with nothing painting, a declared surface is a node in the tree and
 nothing more, which is exactly what it is in a test.")
   (:method (surface) (declare (ignore surface)) nil))
 
-(defun builds (name reads &key (as 'panel) shown)
+(defun builds (name reads &key (as 'panel) (starts :as-the-role-says))
+  "STARTS is :UP, :DOWN, or :AS-THE-ROLE-SAYS -- which asks the role's SHOWS. It is
+three words because it is three answers: DEFSURFACE and a direct call used to
+disagree about what leaving it out meant."
   (let* ((r (make-instance as))
          (s (make-instance 'surface :name (princ-to-string name) :reads reads
                                     :role r
-                                    :shown (if (eq shown :default) (not (asks r))
-                                               shown)
+                                    :shown (ecase starts
+                                             (:up t)
+                                             (:down nil)
+                                             (:as-the-role-says
+                                              (eq :always (shows r))))
                                     :describes "a widget tree, and where it goes")))
     (node:attach s (root))
     (let ((size (second (node:slots s s "shown" 'shown "size" 'size))))
       (node:attach (node:derive
                     "role"
                     (lambda () (string-downcase (class-name (class-of (role s)))))
-                    :over s
+                    :parent s
                     :describes "which kind of surface this is")
                    s)
-      (node:attach (node:derive "wire" (lambda () (%wire s)) :over s
+      (node:attach (node:derive "wire" (lambda () (%wire s)) :parent s
                                 :describes "the tree, as it crosses to another pine")
                    s)
       (node:attach (node:derive
@@ -142,7 +154,7 @@ nothing more, which is exactly what it is in a test.")
                         (%plainly (anchor (role s)
                                           (or (getf said :wide) 0)
                                           (or (getf said :tall) 0)))))
-                    :over s
+                    :parent s
                     :describes "where the role says this goes")
                    s))
     (node:attach (node:place "click"
@@ -155,8 +167,5 @@ nothing more, which is exactly what it is in a test.")
 (defmacro defsurface (name options &body body)
   "Declare a surface. OPTIONS is :as and a role class."
   `(builds ,(string-downcase (string name)) (lambda () ,@body)
-           ,@options :shown :default))
+           ,@options :starts :as-the-role-says))
 
-(pine/word:lends "surface" "defsurface" "builds" "role" "anchor" "asks"
-                "shown" "surfaces" "bar" "panel" "overlay" "background" "window"
-                "tile")

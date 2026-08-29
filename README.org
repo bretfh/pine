@@ -40,6 +40,27 @@ so the same call reaches a document, a running job, a device or another machine:
 : ./pine watch /dev/media/title
 : ./pine ls    /proc
 
+The same four words in lisp, taking the same kind of argument, so what a config
+says and what you type are one language:
+
+#+begin_src lisp
+  (read  /dev/audio/volume :else 0)   ; the value, and :held or :absent
+  (write /dev/net/wifi "cafe-guest")
+  (watch /dev/media/title (lambda (place said) ...))
+  (ls    "/proc")
+#+end_src
+
+A read answers two things: what stands there, and whether anything does. A place
+nobody has written and a place somebody wrote =NIL= to are different questions,
+and =NIL= is the answer to only the second.
+
+Writing is not only storing. These are writes too, spelled the same way from the
+shell and from lisp:
+
+: ./pine toggle  /dev/audio/muted
+: ./pine include /tags urgent
+: ./pine exclude /tags urgent
+
 : ./pine eval '(+ 1 2)'
 : ./pine run  list-documents
 
@@ -82,6 +103,11 @@ A layout is a class with one =arrange= method, so a config writes its own.
 package, so a package that uses it and nothing else can say everything the
 systems above can say. =~/.config/pine/init.lisp= is read in it.
 
+It is a =defpackage=, in =src/user.lisp=, and a system loaded later puts its own
+vocabulary there as it loads. So the words are symbols the compiler resolved,
+and a word misspelled is a build that fails rather than one that quietly is not
+in the language.
+
 #+begin_src lisp
   (defpackage #:notes (:use #:pine/user))
   (in-package #:notes)
@@ -96,8 +122,9 @@ systems above can say. =~/.config/pine/init.lisp= is read in it.
   (defclass diary (derived) ())                   ; a kind of node
   (defmethod contents ((n diary)) ...)
 
-  (defclass ticker (role) ())                     ; a kind of surface
-  (defmethod anchor ((r ticker) w h) ...)
+  (defclass ticker (overlay) ())                  ; a kind of surface
+  (defmethod anchor ((r ticker) w h) ...)         ; where it goes
+  (defmethod shows ((r ticker)) :always)          ; :always or :when-asked
 
   (defclass column-of-two (layout) ())            ; a way to lay windows out
   (defmethod arrange ((l column-of-two) windows area) ...)
@@ -123,7 +150,7 @@ it:
 : ./pine run note today "it works"
 : ./pine read /notes
 : ./pine read /notes/today
-: ./pine write /surface/sticky/shown t
+: ./pine toggle /surface/sticky/shown
 : ./pine drop notes                    # and everything it put there goes
 
 * Running it

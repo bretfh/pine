@@ -157,4 +157,3 @@ keeps where it landed and C-g goes back."
                           n)))
     :asking))
 
-(pine/word:lends "banner")

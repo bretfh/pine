@@ -32,7 +32,7 @@ to say it again."
     (let ((name (string name)))
       (node:derive name
                    (lambda () (node:reading n) (funcall reads))
-                   :over n :writes writes))))
+                   :parent n :writes writes))))
 
 (defun device (name readings &key announces refreshes describes)
   "Something the machine has. Its readings are rows -- a name, how to read it, and
@@ -338,4 +338,3 @@ moment: sampling per read gives the second one no ticks to divide by."
 
 
 
-(pine/word:lends "device")

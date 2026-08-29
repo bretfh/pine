@@ -211,7 +211,7 @@ screen; writing it is typing at the program."
                                   :class 'terminal
                                   :mode (make-instance 'shell)
                                   :vt vt :runs runs :wide wide :tall tall
-                                  :restarts nil
+                                  :on-fault :leave
                                   :describes runs)))
     (multiple-value-bind (fd pid) (vt:spawn-pty-process runs :rows tall
                                                              :cols wide)
@@ -225,4 +225,3 @@ screen; writing it is typing at the program."
     (%shown term)
     term))
 
-(pine/word:lends "open-terminal")

@@ -31,7 +31,7 @@
   (or (text:named +document+)
       (text:make-document +document+ :mode (make-instance 'prompt))))
 
-(defun %under () (tree:ensure nil "prompt"))
+(defun %under () (tree:ensure "/prompt"))
 
 (defun %place (name builder)
   (let ((under (%under)))
@@ -195,7 +195,7 @@ starting over."
 
 (defun %history-node (name)
   (when (and name (tree:root))
-    (tree:ensure nil "prompt" "history" (string-downcase (string name)))))
+    (tree:ensure "/prompt/history" (string-downcase (string name)))))
 
 (defun history-of (name)
   (let ((n (%history-node name)))
@@ -315,4 +315,3 @@ typed, so walking back to the end gives it back."
     (:describes "the answer after that one" :on '(prompt "M-n"))
   (walk-history -1))
 
-(pine/word:lends "askingp" "cancel" "so-far" "asked")

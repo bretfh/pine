@@ -36,6 +36,5 @@ say itself, because nothing else can see *SAID* move.")
                                         :describes "what pine said")
                             root)))
 
-(pine/word:lends "note")
 
 (pine/fs/tree:builder #'%attach)

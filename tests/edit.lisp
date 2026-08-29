@@ -29,7 +29,7 @@ images, and there is one."
     (is (eq scratch (text:current)))
     (is (typep (text:mode-of scratch) 'mode:lisp))
     (is (eq scratch (edit:shows (edit:focused))))
-    (is (tree:at nil "system/edit") "and it is a job you can see")))
+    (is (tree:at "/system/edit") "and it is a job you can see")))
 
 (test typing-lands-in-the-document-and-in-the-frame
   (editing)
@@ -42,11 +42,11 @@ images, and there is one."
 (test a-chord-written-to-key-is-a-chord-typed
   (editing)
   (pine/edit:type-text "hello")
-  (setf (node:contents (tree:at nil "key")) "C-a")
+  (setf (node:contents (tree:at "/key")) "C-a")
   (is (zerop (text:at-col (text:current))))
-  (setf (node:contents (tree:at nil "key")) "C-e")
+  (setf (node:contents (tree:at "/key")) "C-e")
   (is (= 5 (text:at-col (text:current))))
-  (setf (node:contents (tree:at nil "key")) "C-a C-k")
+  (setf (node:contents (tree:at "/key")) "C-a C-k")
   (is (equal "" (text:text (text:current))))
   (command:run "yank")
   (is (equal "hello" (text:text (text:current)))))
@@ -55,7 +55,7 @@ images, and there is one."
   "Type at pine the way a keyboard does: one write to /key each. Nothing about the
 editor is reached around, so what this proves is what a keyboard would get."
   (dolist (c chords chords)
-    (setf (node:contents (tree:at nil "key")) c)))
+    (setf (node:contents (tree:at "/key")) c)))
 
 (test space-is-a-key-like-any-other
   "Every name a keyboard hands over has to be one pine can spell. A space arriving
@@ -312,10 +312,10 @@ prompt. A command that asks a question has to be able to take the answer."
 
 (test a-system-stops-and-takes-its-surface-with-it
   (editing)
-  (is (tree:at nil "surface/editor"))
+  (is (tree:at "/surface/editor"))
   (pine:drop :edit)
   (is (null (system:named "edit")))
-  (is (null (tree:at nil "surface/editor")))
+  (is (null (tree:at "/surface/editor")))
   (setf *editing* nil))
 
 (test two-files-with-one-name-are-two-documents

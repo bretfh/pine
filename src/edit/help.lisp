@@ -45,7 +45,7 @@
                            (remove-if-not
                             (lambda (c) (subtypep (class-name c) 'mode:mode))
                             (c2mop:class-precedence-list (class-of m)))))
-           (format nil "claims    ~a" (mode:claims m))))))
+           (format nil "handles   ~a" (mode:handles m))))))
 
 (command:defcommand "describe-command" (name)
     (:describes "what a command is for, and what it is bound to"
@@ -67,7 +67,7 @@
            (cons ""
                  (loop :for (key . says) :in +settings+
                        :collect (format nil "~(~16a~) ~12a ~a" key
-                                        (or (mode:setting document key) "")
+                                        (mode:says document key "")
                                         says)))))))
 
 (command:defcommand "set-local" (key value)

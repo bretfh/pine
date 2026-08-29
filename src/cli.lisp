@@ -13,6 +13,10 @@
   write WHERE VALUE     write a node
   ls [WHERE]            what is under a node
   watch WHERE           say so whenever it moves, until interrupted
+  toggle WHERE          flip what a node holds
+  include WHERE VALUE   put one into the set a node holds
+  exclude WHERE VALUE   take one out of it
+  blend WHERE MAP       merge into the map a node holds
   eval FORM             evaluate a form in the daemon
   run NAME [ARG...]     run one of the daemon's commands
   use NAME              load a system there and start it
@@ -91,13 +95,22 @@ answer to this, so it is passed over: the id says which line is ours."
 
 (defun runningp () (and (ask (list :ping)) t))
 
-(defun %read-whole (text)
+(defun %read-whole (text &key syntax)
   "TEXT as one form, or nothing if it is not one. What is read has to account for
 all of it: reading only the front of `1 2' and writing 1 is losing half of what
-somebody typed without saying so."
+somebody typed without saying so.
+
+SYNTAX reads it the way a config is read, so pine eval takes the spelling a config
+taught. A value is read without it: /a/b as a value is the name of a place, and a
+path object is not what crosses the wire."
   (handler-case
       (multiple-value-bind (said at)
-          (let ((*read-eval* nil)) (read-from-string text))
+          (let ((*read-eval* nil)
+                (*readtable* (if syntax
+                                 (named-readtables:find-readtable
+                                  'pine/fs/reader:syntax)
+                                 *readtable*)))
+            (read-from-string text))
         (if (< at (length (string-right-trim '(#\Space #\Tab #\Newline) text)))
             (values nil nil)
             (values said t)))
@@ -290,11 +303,21 @@ with a backtrace where it owed a sentence."
                           (list* :verb (first rest) value)
                           (list :write (first rest) value)))))))
       ((equal verb "ls") (%say (ask (list :nodes (or (first rest) "/")))))
+      ((equal verb "toggle")
+       (when (%wants verb rest 1 "WHERE")
+         (%say (ask (list :verb (first rest) :toggle)))))
+      ((member verb '("include" "exclude" "blend") :test #'equal)
+       (when (%wants verb rest 2 "WHERE VALUE")
+         (%say (ask (list :verb (first rest)
+                          (cond ((equal verb "include") :conj)
+                                ((equal verb "exclude") :disj)
+                                (t :merge))
+                          (%value (second rest)))))))
       ((equal verb "watch")
        (when (%wants verb rest 1 "WHERE") (%watch (first rest))))
       ((equal verb "eval")
        (when (%wants verb rest 1 "FORM")
-         (multiple-value-bind (form wholep) (%read-whole (first rest))
+         (multiple-value-bind (form wholep) (%read-whole (first rest) :syntax t)
            (if wholep
                (%evaluate form)
                (format t "pine: ~s is not one form to evaluate~%" (first rest))))))
@@ -322,4 +345,3 @@ with a backtrace where it owed a sentence."
       (t (format t "pine: no verb ~a~%~a~%" verb *usage*)))
     (finish-output)))
 
-(pine/word:user)

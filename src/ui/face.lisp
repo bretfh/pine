@@ -43,7 +43,7 @@ that asks per cell spends most of its time asking where to look.")
 
 (defun active ()
   "The theme in force here: /theme/active, which is a value like any other."
-  (or (let ((n (and (tree:root) (tree:at nil "theme" "active"))))
+  (or (let ((n (and (tree:root) (tree:at "/theme/active"))))
         (and n (node:contents n)))
       +theme+))
 
@@ -95,7 +95,7 @@ names.")
 (defun %resolve ()
   "The active theme's faces with whatever was written at /face/?name on top."
   (let ((out (make-hash-table :test 'eq))
-        (written (and (tree:root) (tree:at nil "face"))))
+        (written (and (tree:root) (tree:at "/face"))))
     (maphash (lambda (k v) (setf (gethash k out) v)) (faces (theme (active))))
     (when written
       (dolist (each (node:nodes written))
@@ -204,4 +204,3 @@ hex; this is how a canvas reads one."
     (:ring-temp      :fg yellow)
     (:ring-track     :fg bg-active))))
 
-(pine/word:lends "color" "metric")

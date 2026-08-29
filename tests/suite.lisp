@@ -3,7 +3,7 @@
   (:local-nicknames (:edit :pine/edit)
                     (:text :pine/text)
                     (:ui :pine/ui)
-                    (:d :pine/data) (:word :pine/word)
+                    (:d :pine/data)
                     (:node :pine/fs/node) (:tree :pine/fs/tree)
                     (:mount :pine/fs/mount) (:store :pine/fs/store)
                     (:path :pine/fs/path) (:commit :pine/fs/commit)

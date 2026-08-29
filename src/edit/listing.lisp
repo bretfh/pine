@@ -87,4 +87,3 @@ ACTS the place that row stands for."
                          (t it)))
     it))
 
-(pine/word:lends "into" "acts")

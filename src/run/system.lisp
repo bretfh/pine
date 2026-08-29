@@ -63,7 +63,7 @@ is still a system that is loaded."
   (setf *under* (node:attach (node:place "system" :nodes #'systems
                                          :describes "what pine has loaded")
                              root))
-  (dolist (s (systems) *under*) (setf (node:over s) *under*)))
+  (dolist (s (systems) *under*) (setf (node:parent s) *under*)))
 
 (defun use (name)
   "Load a system and start it. /system/<name> is a node afterwards, so
@@ -72,13 +72,12 @@ pine write /system/desk '(:stop)' takes it away again."
     (or (named name)
         (progn
           (unless (d:lookup (d:all *offered*) name)
-            (asdf:load-system (format nil "pine/~a" name))
-            (pine/word:user))
+            (asdf:load-system (format nil "pine/~a" name)))
           (let ((class (d:lookup (d:all *offered*) name)))
             (unless class
               (error "~a loaded but offered no system class." name))
-            (let ((s (make-instance class :name name :restarts nil)))
-              (when *under* (setf (node:over s) *under*))
+            (let ((s (make-instance class :name name :on-fault :leave)))
+              (when *under* (setf (node:parent s) *under*))
               (job:supervise s)
               (job:start s)
               (log:note "~a is up" name)
@@ -93,6 +92,5 @@ pine write /system/desk '(:stop)' takes it away again."
       (log:note "~a is down" (job:name s)))
     s))
 
-(pine/word:lends "system" "offers")
 
 (pine/fs/tree:builder #'%attach)

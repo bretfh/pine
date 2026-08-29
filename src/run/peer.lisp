@@ -69,7 +69,7 @@ can graft. One class because it is one thing, and that is why a read of
 (defun reach (name &key host port (actor "tree"))
   "Get to another pine. What comes back is a job you can start and stop and a
 namespace you can mount."
-  (let ((p (make-instance 'peer :name name :restarts nil
+  (let ((p (make-instance 'peer :name name :on-fault :leave
                                 :uri (%uri (or host actors:*host*) port actor)
                                 :describes (%uri (or host actors:*host*) port
                                                  actor))))
@@ -132,7 +132,7 @@ read, and a write is a write."
 job: stopping it is how you stop listening."
   (let* ((name (or name (format nil "watch-~d" (d:swap *counter* #'1+))))
          (j (make-instance 'job:actor
-                           :name name :restarts nil :dispatcher :pinned
+                           :name name :on-fault :leave :dispatcher :pinned
                            :describes (format nil "~a of ~a" where (job:name p))
                            :receive (lambda (message)
                                       (when (eq :moved (first message))
@@ -296,7 +296,7 @@ half-done line."
   "Answer another pine's questions about this one: reads and writes of places, and
 work to do in this image. Pinned, because a fault it stands in would otherwise take
 a shared worker with it."
-  (let ((j (make-instance 'job:actor :name name :restarts nil
+  (let ((j (make-instance 'job:actor :name name :on-fault :leave
                                      :dispatcher :pinned
                                      :describes "what another pine may ask here"
                                      :receive #'received)))

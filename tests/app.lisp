@@ -20,17 +20,17 @@ own readtable. It is nothing but a file somebody wrote."
 (test an-app-is-a-system-like-any-other
   (is (not (null (app))))
   (is (typep (app) 'system:system))
-  (is (not (null (tree:at nil "system/notes"))))
+  (is (not (null (tree:at "/system/notes"))))
   (is (member "notes" (mapcar #'job:name (system:systems)) :test #'equal)))
 
 (test its-own-kind-of-node-is-a-place
   (app)
   (command:run "note" '("today" "it works"))
-  (is (equal '("today") (node:contents (tree:at nil "notes"))))
-  (is (equal "it works" (node:contents (tree:at nil "notes/today"))))
-  (setf (node:contents (tree:at nil "notes/today")) "written from a path")
-  (is (equal "written from a path" (node:contents (tree:at nil "notes/today"))))
-  (is (eq (tree:at nil "notes/today") (tree:at nil "notes/today"))
+  (is (equal '("today") (node:contents (tree:at "/notes"))))
+  (is (equal "it works" (node:contents (tree:at "/notes/today"))))
+  (setf (node:contents (tree:at "/notes/today")) "written from a path")
+  (is (equal "written from a path" (node:contents (tree:at "/notes/today"))))
+  (is (eq (tree:at "/notes/today") (tree:at "/notes/today"))
       "the same node every time, so something can watch it"))
 
 (test a-place-of-its-own-can-be-watched-like-anything-else
@@ -38,13 +38,13 @@ own readtable. It is nothing but a file somebody wrote."
   (app)
   (command:run "note" '("watched" "before"))
   (let ((heard (cons nil nil)))
-    (let ((w (watch:watch (tree:at nil "notes/watched")
+    (let ((w (watch:watch (tree:at "/notes/watched")
                           (lambda (of said)
                             (declare (ignore of))
                             (setf (car heard) said)))))
       (unwind-protect
            (progn
-             (setf (node:contents (tree:at nil "notes/watched")) "after")
+             (setf (node:contents (tree:at "/notes/watched")) "after")
              (is (until (lambda () (equal "after" (car heard))))))
         (watch:unwatch w)))))
 
@@ -82,12 +82,12 @@ own readtable. It is nothing but a file somebody wrote."
 (test its-surface-follows-what-it-read-and-crosses-the-wire
   (app)
   (command:run "note" '("zzz" "the last one written"))
-  (let ((form (node:contents (tree:at nil "surface/sticky/wire"))))
+  (let ((form (node:contents (tree:at "/surface/sticky/wire"))))
     (is (search "zzz" (princ-to-string form)))
     (is (typep (pine/ui:from-wire form) 'ui:column)))
   (command:run "note" '("zzzz" "later still"))
   (is (search "zzzz" (princ-to-string
-                      (node:contents (tree:at nil "surface/sticky/wire"))))
+                      (node:contents (tree:at "/surface/sticky/wire"))))
       "a write to its own node works its surface out again"))
 
 (test its-own-chord-runs-its-own-command
@@ -101,10 +101,10 @@ own readtable. It is nothing but a file somebody wrote."
   (pine:drop :notes)
   (setf *app* t)
   (is (null (system:named "notes")))
-  (is (null (tree:at nil "notes")))
+  (is (null (tree:at "/notes")))
   (is (null (ui:named "sticky")))
   (is (null (command:named "note")))
-  (is (null (tree:at nil "system/notes"))))
+  (is (null (tree:at "/system/notes"))))
 
 (test nothing-pine-ships-names-this-app
   "The claim is that an app is the editor's equal. This is the proof: the editor
@@ -120,25 +120,39 @@ is under src/, this is not, and src/ has never heard of it."
                          :collect (file-namestring f))))
     (is (null named) "~{~%  ~a names it~}" named)))
 
-(test the-language-is-what-every-package-lent-it
-  "PINE/USER is not a list kept somewhere else. A word is offered in the file that
-defines it, so a word renamed or taken away takes its offer with it, instead of a
-list going on naming it and FIND-SYMBOL dropping it in silence."
-  (multiple-value-bind (p clashes) (word:user)
-    (is (null clashes) "two packages claimed one word:~{~%  ~a~}" clashes)
-    (let ((gone (loop :for (home said) :in (word:lent)
-                      :for package := (find-package home)
-                      :unless (and package
-                                   (eq :external
-                                       (nth-value 1 (find-symbol said package))))
-                        :collect (format nil "~a lends ~a, which it has not got"
-                                         home said))))
-      (is (null gone) "~{~%  ~a~}" gone))
-    (is (< (length (word:lent)) 200)
-        "~d words: a language, not a grab bag" (length (word:lent)))
-    (dolist (said '("SWAP" "CAS" "READ" "WRITE" "NODE" "DEFCOMMAND" "DEFSURFACE"))
+(test the-language-is-a-package-and-not-a-registry
+  "PINE/USER is a DEFPACKAGE, so its words are symbols the compiler resolved when
+the file was built. A name misspelled there is a build that fails, where a name
+misspelled in a list of strings was a word that quietly was not in the language.
+
+What a system loaded later brings is its own vocabulary, a package that uses
+nothing and imports what it offers, put here by SPEAKS as it loads."
+  (let ((p (find-package '#:pine/user)))
+    (is (not (null p)) "the language is a package that exists")
+    (dolist (said '("SWAP" "CAS" "READ" "WRITE" "NODE" "DEFCOMMAND" "DEFSURFACE"
+                    "NIL" "T" "LAMBDA" "DEFUN"))
       (is (eq :external (nth-value 1 (find-symbol said p)))
-          "~a is something a user program can say" said))))
+          "~a is something a user program can say" said))
+    (dolist (said '("DOCUMENT" "WINDOWS" "ATTEND" "ARRANGE"))
+      (is (eq :external (nth-value 1 (find-symbol said p)))
+          "~a came with the system that offers it" said))
+    (let ((words (let ((n 0)) (do-external-symbols (s p) (declare (ignore s)) (incf n)) n))
+          (cl (let ((n 0)) (do-external-symbols (s :cl) (declare (ignore s)) (incf n)) n)))
+      (is (< (- words cl) 220)
+          "~d words of pine's own: a language, not a grab bag" (- words cl)))))
+
+(test two-vocabularies-cannot-claim-one-word
+  "USE-PACKAGE says so, naming both symbols, at the point of conflict. The list of
+sentences that used to be collected instead was a second value nobody read."
+  (let ((p (find-package '#:pine/user)))
+    (make-package '#:pine/test/clash :use nil)
+    (unwind-protect
+         (progn
+           (export (list (intern "LABEL" '#:pine/test/clash)) '#:pine/test/clash)
+           (signals package-error (use-package '#:pine/test/clash p)))
+      (delete-package '#:pine/test/clash))
+    (is (eq (find-symbol "READ" p) (find-symbol "READ" '#:pine))
+        "READ is shadowed on purpose, so it is pine's and never in question")))
 
 (test a-system-pine-ships-is-written-the-way-one-you-write-is
   "PINE/DESK uses PINE/USER and nothing else, says what it reads and writes by

@@ -47,7 +47,7 @@ connection is a thing you block on."))
 (defun availablep () (and (uiop:getenv "WAYLAND_DISPLAY") t))
 
 (defun %at (name &rest under)
-  (apply #'tree:at nil "surface" name under))
+  (apply #'tree:at "/surface" name under))
 
 (defun tell (s thunk)
   "Do something that is not drawing, off the thread holding the connection."
@@ -144,7 +144,7 @@ name, and the old one is something nothing writes."
       (let ((on-tree (watch:watch it (lambda (of said)
                                        (declare (ignore of said))
                                        (moved s name))
-                                  :only nil :poll nil
+                                  :tells-when :always :poll nil
                                   :name (format nil "screen<-~a" name)))
             (shown (%at name "shown")))
         (d:keep! (watching s) name
@@ -189,11 +189,11 @@ name, and the old one is something nothing writes."
 it: river kills a manager that waits."
   (tell s
         (lambda ()
-          (let ((where (tree:at nil "wm" "said")))
+          (let ((where (tree:at "/wm/said")))
             (when where (setf (node:contents where) said)))
-          (let ((wants (let ((n (tree:at nil "wm" "wants")))
+          (let ((wants (let ((n (tree:at "/wm/wants")))
                          (and n (node:contents n))))
-                (layout (let ((n (tree:at nil "wm" "placement")))
+                (layout (let ((n (tree:at "/wm/placement")))
                           (and n (node:contents n)))))
             (pump:hand (pump s)
                        (lambda ()
@@ -214,7 +214,7 @@ it: river kills a manager that waits."
   (when (and (pane:chromep p) (pane:dirty p)) (wm:wake (wm-of s))))
 
 (defun %names ()
-  (let ((n (tree:at nil "surface")))
+  (let ((n (tree:at "/surface")))
     (and n (mapcar #'node:name (node:nodes n)))))
 
 (defun %managing-windows (s)
@@ -223,7 +223,7 @@ A wm already up is the wrong one, so it goes first."
   (when (wm-of s)
     (fault:attempt
      (lambda ()
-       (setf (node:contents (tree:ensure nil "wm-manage")) t)
+       (setf (node:contents (tree:ensure "/wm-manages")) :pine)
        (when (system:named "wm") (system:drop "wm"))
        (system:use "wm")
        (chords-wanted s))
@@ -274,7 +274,7 @@ compositor put it; what it draws is the new node's to say."
     (setf (says s)
           (job:start (make-instance 'job:actor
                                     :name (format nil "~a-work" (node:name s))
-                                    :restarts nil :dispatcher :pinned
+                                    :on-fault :leave :dispatcher :pinned
                                     :receive (lambda (thunk)
                                                (fault:attempt thunk "the screen")))))
     (%take-up s)
@@ -303,7 +303,7 @@ compositor put it; what it draws is the new node's to say."
 
 (defun open-screen (&key (name "screen"))
   "Paint this pine's surfaces: what is declared and shown is on screen."
-  (let ((s (make-instance 'screen :name name :restarts t)))
+  (let ((s (make-instance 'screen :name name :on-fault :restart)))
     (job:supervise s)
     (job:start s)
     s))

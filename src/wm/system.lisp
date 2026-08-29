@@ -17,27 +17,31 @@ it. Which compositor it is is one class under COMPOSITOR."))
 
 (system:offers 'wm)
 
-(defun current () (tree:at nil "wm"))
+(defun current () (tree:at "/wm"))
 
 (defun terminal ()
-  (or (node:contents (tree:ensure nil "wm-terminal")) *terminal*))
+  (or (node:contents (tree:ensure "/wm-terminal")) *terminal*))
 
 (defun places ()
   "The name of the system that says where the windows go, or nothing. Core does
 not know what is behind the name: it is a system, and it is used the way any of
 them is. A config writes it because /wm cannot exist until the compositor has
 handed the windows over, which is after the config was read."
-  (node:contents (tree:ensure nil "wm-places")))
+  (node:contents (tree:ensure "/wm-places")))
 
 (defun %under ()
   "Which compositor this session is under, as a class. Pine managing one and pine
 talking to one are the same protocol with two subclasses under it, and this is
 where a third is added.
 
-Whether pine is the window manager is written at /wm-manage rather than held here:
-the screen finds a compositor asking for a manager before this system exists, and
-a path is what it can reach that a package it cannot name is not."
-  (cond ((node:contents (tree:ensure nil "wm-manage"))
+Who manages the windows is written at /wm-manages rather than held here: the screen
+finds a compositor asking for a manager before this system exists, and a path is
+what it can reach that a package it cannot name is not.
+
+:PINE or :COMPOSITOR, and not a yes and a no. ENSURE makes the node to read it, so
+a place written NIL and a place nobody has written are the same node holding the
+same thing, and the answer to which one it was decided who lays out the screen."
+  (cond ((eq :pine (node:contents (tree:ensure "/wm-manages")))
          'managed:managed)
         ((uiop:getenv "NIRI_SOCKET") 'niri:niri)
         ((sh:has "niri") 'niri:niri)))
@@ -122,5 +126,5 @@ windows, and what it takes")
 what this erases."
   (let ((places (places)))
     (when (and places (system:named places)) (system:drop places)))
-  (tree:erase nil "wm")
+  (tree:erase "/wm")
   s)

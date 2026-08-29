@@ -91,10 +91,3 @@ load is a fault like any other: the text still opens, uncoloured."
   (dolist (d (documents)) (kill (node:name d)))
   s)
 
-(pine/word:lends
- "document" "make-document" "documents" "current"
- "lines" "line" "line-count" "point" "at-line" "at-col" "mark"
- "goto" "move" "move-by" "motion" "insert" "newline" "delete-back"
- "delete-region" "region-of" "undo" "redo" "mode-of" "leading"
- "indent-line" "spans" "overlays" "forget-spans" "restructure" "regions"
- "visit" "save" "revert")

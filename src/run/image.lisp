@@ -65,7 +65,7 @@ and a form written then would be swallowed as the answer."))
 (job:kind :image
           (lambda (name said)
             (make-instance 'child :name name
-                                  :restarts (getf said :restarts)
+                                  :on-fault (getf said :on-fault)
                                   :systems (or (getf said :systems) '(:pine)))))
 
 (defgeneric evaluate (image form &key timeout)

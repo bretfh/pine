@@ -2,9 +2,73 @@
 
 (def-suite* :pine/fs :in :pine)
 
+(test a-place-nobody-wrote-and-a-place-holding-nothing-are-different-questions
+  "NIL is the answer to only one of them. READ says which, because a caller that
+cannot tell them apart has to guess, and every one of them guessed the same way:
+OR, which reads a written NIL as an absence."
+  (with-tree
+    (pine::write "/held" nil)
+    (multiple-value-bind (value state) (pine::read "/held")
+      (is (null value))
+      (is (eq :held state) "somebody wrote NIL here, and that is what it holds"))
+    (multiple-value-bind (value state) (pine::read "/nobody-wrote-this")
+      (is (null value))
+      (is (eq :absent state) "and nothing stands here at all"))
+    (is (pine::standsp "/held"))
+    (is (not (pine::standsp "/nobody-wrote-this")))))
+
+(test else-answers-for-both-kinds-of-nothing
+  "What a reader has to say instead is said once, where it is read, rather than as
+an OR at every call site."
+  (with-tree
+    (pine::write "/held" nil)
+    (is (eql 0 (pine::read "/held" :else 0)))
+    (is (eql 0 (pine::read "/nobody-wrote-this" :else 0)))
+    (pine::write "/held" 50)
+    (is (eql 50 (pine::read "/held" :else 0)) "and stands aside for a real one")
+    (is (eq :held (nth-value 1 (pine::read "/held" :else 0)))
+        "ELSE says what to answer, not what was found")))
+
+(test a-verb-is-a-word-in-lisp-and-not-only-on-the-shell
+  "NODE:VERB could be reached only by writing a seq whose head is a keyword, which
+pine write spelled and lisp had no way to say. So a config's mute button, which is
+a click that writes T, could mute and never unmute."
+  (with-tree
+    (pine::write "/muted" nil)
+    (pine::toggle "/muted")
+    (is (eq t (pine::read "/muted")))
+    (pine::toggle "/muted")
+    (is (null (pine::read "/muted")) "and back again, which is what a button wants")
+    (pine::include "/tags" "urgent")
+    (pine::include "/tags" "later")
+    (is (= 2 (d:size (pine::read "/tags"))))
+    (pine::exclude "/tags" "later")
+    (is (= 1 (d:size (pine::read "/tags"))))
+    (pine::blend "/theme" (d:map :accent "red"))
+    (pine::blend "/theme" (d:map :bg "black"))
+    (is (equal "red" (d:lookup (pine::read "/theme") :accent))
+        "a merge keeps what was already there")))
+
+(test every-verb-names-a-place-the-same-way
+  "WATCH took a node where the other three took a name, so the one verb a config
+could not say was the one that follows something. LS was a command and not a word
+at all."
+  (with-tree
+    (pine::write "/dev/audio/volume" 40)
+    (is (equal '("audio") (pine::ls "/dev")))
+    (is (null (pine::ls "/nobody-wrote-this")) "and nothing where nothing stands")
+    (let ((w (pine::watch "/dev/audio/volume"
+                          (lambda (n said) (declare (ignore n said))))))
+      (is (eq (tree:at "/dev/audio/volume") (pine/run/watch::watches w))
+          "a name reaches the same node the other three verbs reach")
+      (watch:unwatch w))
+    (signals tree:absent
+      (pine::watch "/nobody-wrote-this"
+                   (lambda (n said) (declare (ignore n said)))))))
+
 (test a-derived-node-follows-what-it-read
   (with-tree
-    (let ((w (tree:ensure nil "window" "width"))
+    (let ((w (tree:ensure "/window/width"))
           (runs 0))
       (setf (node:contents w) 80)
       (let ((line (node:derive "line"
@@ -33,19 +97,19 @@
 
 (test a-node-knows-where-it-is
   (with-tree
-    (setf (node:contents (tree:ensure nil "window" "width")) 80)
-    (is (equal "/window/width" (node:full-name (tree:at nil "window/width"))))
+    (setf (node:contents (tree:ensure "/window/width")) 80)
+    (is (equal "/window/width" (node:full-name (tree:at "/window/width"))))
     (is (member "window" (tree:listing (tree:root)) :test #'equal))
-    (is (null (tree:at nil "window/nothing")))))
+    (is (null (tree:at "/window/nothing")))))
 
 (test a-path-is-a-place
   "A path is one more thing AT and ENSURE take, not a second way to walk the tree."
   (with-tree
-    (setf (node:contents (tree:ensure nil "dev" "audio" "volume")) 40)
+    (setf (node:contents (tree:ensure "/dev/audio" "volume")) 40)
     (let ((p (path:path "/dev/audio/volume")))
       (is (= 40 (node:contents (tree:at p))))
       (setf (node:contents (tree:ensure p)) 55)
-      (is (= 55 (node:contents (tree:at nil "dev/audio/volume"))))
+      (is (= 55 (node:contents (tree:at "/dev/audio/volume"))))
       (is (equal "volume" (path:leaf p))))))
 
 (defun %paths (s like)
@@ -63,16 +127,16 @@ it stood for is what knew how to read it."
            (with-tree
              (let ((s (store:open-store file)))
                (store:keeping s)
-               (tree:put nil '("kept" "note") "across")
-               (tree:put nil '("gone" "away") "orphan")
+               (tree:put "/kept/note" nil "across")
+               (tree:put "/gone/away" nil "orphan")
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (tree:ensure nil "kept" "note")
+               (tree:ensure "/kept/note")
                (is (eql 1 (store:restore s))
                    "one node stood there to be filled in")
-               (is (equal "across" (node:contents (tree:at nil "kept/note"))))
-               (is (null (tree:at nil "gone/away"))
+               (is (equal "across" (node:contents (tree:at "/kept/note"))))
+               (is (null (tree:at "/gone/away"))
                    "and nothing was conjured where nothing stands")
                (is (equal '("/gone/away") (store:stale s))
                    "which the store can say")
@@ -87,12 +151,12 @@ what a crash costs is everything since the image came up."
     (unwind-protect
          (with-tree
            (let ((s (store:open-store file))
-                 (thing (make-instance 'job:thread :name "held" :restarts nil
+                 (thing (make-instance 'job:thread :name "held" :on-fault :leave
                                                    :thunk (lambda () nil))))
              (store:keeping s)
              (node:attach thing (tree:root))
              (node:slots thing thing "state" 'job:state)
-             (setf (node:contents (tree:at nil "held/state")) :awake)
+             (setf (node:contents (tree:at "/held/state")) :awake)
              (is (equal '(("/held/state")) (%paths s "/held%"))
                  "written through, before any shutdown")
              (store:close-store s)))
@@ -103,12 +167,12 @@ what a crash costs is everything since the image came up."
 a walk that stopped at the root would take all of them with it and none would
 say so."
   (with-tree
-    (tree:put nil '("deep" "down" "here") "value")
+    (tree:put "/deep/down/here" nil "value")
     (let ((seen nil))
       (tree:walk (tree:root) (lambda (n) (push (node:full-name n) seen)))
       (is (member "/deep/down/here" seen :test #'equal)
           "a value three deep is reached: ~a" (reverse seen)))
-    (is (not (node:livep (tree:at nil "deep" "down" "here")))
+    (is (not (node:livep (tree:at "/deep/down" "here")))
         "a value kept here is not live")
     (is (node:livep (node:place "somewhere"))
         "and a place, which the world answers for, is")))
@@ -119,7 +183,7 @@ say so."
     (unwind-protect
          (with-tree
            (let ((s (store:open-store file)))
-             (tree:put nil '("walked" "into" "it") "kept")
+             (tree:put "/walked/into/it" nil "kept")
              (is (plusp (store:snapshot s)) "the snapshot found something")
              (is (equal '(("/walked/into/it")) (%paths s "/walked%")))
              (store:close-store s)))
@@ -134,9 +198,9 @@ its nodes off the tree, and that is not a reason to forget what they held."
          (with-tree
            (let ((s (store:open-store file)))
              (store:keeping s)
-             (tree:put nil '("going" "away") "kept")
+             (tree:put "/going/away" nil "kept")
              (setf (commit:on-forget :store) nil)
-             (tree:erase nil "going")
+             (tree:erase "/going")
              (store:snapshot s)
              (is (equal '(("/going/away")) (%paths s "/going%"))
                  "still there after a snapshot with it off the tree")
@@ -154,8 +218,8 @@ its nodes off the tree, and that is not a reason to forget what they held."
                (write-string "from the disk" o))
              (mount:mount where (tree:root) "file")
              (is (equal "from the disk"
-                        (node:contents (tree:at nil "file/hello.txt"))))
-             (setf (node:contents (tree:at nil "file/hello.txt")) "written back")
+                        (node:contents (tree:at "/file/hello.txt"))))
+             (setf (node:contents (tree:at "/file/hello.txt")) "written back")
              (is (equal "written back"
                         (uiop:read-file-string
                          (merge-pathnames "hello.txt" where)))))
@@ -164,22 +228,22 @@ its nodes off the tree, and that is not a reason to forget what they held."
 
 (test erasing-takes-a-node-off
   (with-tree
-    (tree:put nil '("a" "b") 1)
-    (is (tree:at nil "a/b"))
-    (tree:erase nil "a/b")
-    (is (null (tree:at nil "a/b")))))
+    (tree:put "/a/b" nil 1)
+    (is (tree:at "/a/b"))
+    (tree:erase "/a/b")
+    (is (null (tree:at "/a/b")))))
 
 (test a-place-to-erase-is-named-the-way-every-other-place-is
   "WHERE names a place the way AT does, so the name that goes may be the end of it.
 Reading it as a node to walk from left the RM command taking a path apart from a
 name it never had, and answering nothing while nothing went."
   (with-tree
-    (tree:put nil '("a" "b") 1)
+    (tree:put "/a/b" nil 1)
     (tree:erase "/a/b")
-    (is (null (tree:at nil "a/b")) "one string, spelling the whole path")
-    (tree:put nil '("a" "b") 1)
+    (is (null (tree:at "/a/b")) "one string, spelling the whole path")
+    (tree:put "/a/b" nil 1)
     (is (command:run "rm" '("/a/b")))
-    (is (null (tree:at nil "a/b")) "which is what RM hands it")))
+    (is (null (tree:at "/a/b")) "which is what RM hands it")))
 
 (test a-name-nothing-answers-for-is-not-kept
   "A child made once is made once; a child that was never made is not remembered as
@@ -195,25 +259,32 @@ anybody can ask about would be a name anybody can grow it by."
       (is (equal "/empty" (node:full-name p))
           "so renaming what is under it has something to rename"))))
 
-(test erase-measures-an-absolute-name-from-the-root
-  "AT does, and ERASE names a place the way AT does. Measured from where the
-session stands, pine rm /a/b takes off whatever is at a/b under it instead."
+(test a-name-means-the-same-place-wherever-it-is-said
+  "There is nowhere to stand, so there is nothing for a name to be measured from.
+A name is what it spells, in a config, at a prompt and on the wire alike."
   (with-tree
     (pine::write "/a/b" :at-root)
     (tree:ensure "/elsewhere")
-    (let ((tree:*here* (tree:at "/elsewhere")))
-      (pine::write "a/b" :under-elsewhere)
-      (tree:erase "/a/b")
-      (is (null (tree:at "/a/b")) "the one that was named")
-      (is (not (null (tree:at "/elsewhere/a/b"))) "and not the one underfoot"))))
+    (is (eq :at-root (pine::read "a/b")) "with a leading / or without")
+    (tree:erase "/a/b")
+    (is (null (tree:at "/a/b")))))
 
-(test erase-still-measures-a-relative-name-from-here
+(test nothing-is-not-a-place
+  "It is what a place answers when there is none, so it cannot also be one. A miss
+that flowed into another call used to read whatever the session stood on."
   (with-tree
-    (tree:ensure "/elsewhere")
-    (let ((tree:*here* (tree:at "/elsewhere")))
-      (pine::write "a/b" :under-elsewhere)
-      (tree:erase "a/b")
-      (is (null (tree:at "/elsewhere/a/b"))))))
+    (signals tree:not-a-place (tree:at nil))
+    (signals tree:not-a-place (tree:at nil "a" "b"))
+    (signals tree:not-a-place (tree:ensure nil "a"))
+    (signals tree:not-a-place (tree:erase nil "a"))
+    (signals tree:not-a-place (pine::read (tree:at "/nobody-wrote-this")))))
+
+(test erase-takes-a-path-as-readily-as-a-name
+  "ERASE names a place the way AT does, so every kind of place AT takes it takes."
+  (with-tree
+    (pine::write "/a/b" :hello)
+    (tree:erase (pine/fs/path:path "/a/b"))
+    (is (null (tree:at "/a/b")))))
 
 (test a-write-under-a-worked-out-place-says-so
   "A place that works its children out has none to make. Attached anyway it would
@@ -314,7 +385,7 @@ for the child again and what is left is that second one with nothing over it."
         (node:erase-child p "kid")
         (let ((after (node:resolve p "kid")))
           (is (not (eq before after)) "what comes back is a fresh one")
-          (is (eq p (node:over after)) "standing where it should")
+          (is (eq p (node:parent after)) "standing where it should")
           (is (equal "/p/kid" (node:full-name after))))))))
 
 (test a-working-out-that-throws-does-not-unwind-into-whoever-read
@@ -322,7 +393,7 @@ for the child again and what is left is that second one with nothing over it."
 answers nothing, and what stands beside it is still worked out."
   (with-tree
     (fault:forget-faults)
-    (let ((n (tree:ensure nil "probe-src"))
+    (let ((n (tree:ensure "/probe-src"))
           (broken (node:derive "broken" (lambda () (error "on purpose")))))
       (setf (node:contents n) "still here")
       (node:attach broken (tree:root))

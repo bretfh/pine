@@ -46,7 +46,7 @@ another pine all press keys the same way."
                    (declare (ignore typed))
                    "What the compositor says there is. Read through the namespace:
 the editor has never heard of a window manager, and does not have to."
-                   (let ((n (tree:at nil "wm" "windows")))
+                   (let ((n (tree:at "/wm/windows")))
                      (when n
                        (loop :for id :in (node:contents n)
                              :for each := (tree:at n (princ-to-string id))
@@ -104,7 +104,7 @@ else it read."
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
     (seed scratch))
-  (ui:builds "editor" #'%editor :as 'ui:window :shown t)
+  (ui:builds "editor" #'%editor :as 'ui:window :starts :up)
   s)
 
 (defmethod job:stop ((s edit))
@@ -112,6 +112,6 @@ else it read."
   (ui:take-next nil)
   (took-all)
   (text:forget-all)
-  (dolist (win (windows)) (node:detach (node:over win) (node:name win)))
-  (tree:erase nil "surface/editor")
+  (dolist (win (windows)) (node:detach (node:parent win) (node:name win)))
+  (tree:erase "/surface/editor")
   s)

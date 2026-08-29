@@ -14,12 +14,13 @@
                               (#:command #:pine/run/command)
                               (#:image #:pine/run/image)
                               (#:peer #:pine/run/peer) (#:system #:pine/run/system)
-                              (#:session #:pine/run/session)
-                              (#:word #:pine/word))
+                              (#:session #:pine/run/session))
             (:export
    #:start #:stop #:main #:daemon #:quit
    #:use #:drop #:reach #:spawn #:style
-   #:at #:read #:write #:load-config #:user-package
+   #:at #:read #:write #:watch #:ls #:standsp
+   #:toggle #:include #:exclude #:blend
+   #:speaks #:load-config #:user-package
    #:console #:opening))
 (in-package #:pine)
 
@@ -31,22 +32,78 @@ image built without one has nothing to unset and nothing to check -- there is
 simply no method, which is the truth about that image.")
             (:method (what) (declare (ignore what)) nil))
 
-(defun here () (tree:here))
+(defun %cursor ()
+  "Where a command given no place looks: the node a session was moved to by CD, or
+the root. A default for an argument nobody supplied, and nothing more -- it is not
+a place a name can be measured from, so it reaches neither a config nor the wire."
+  (or (and session:*session* (session:in session:*session*)) (tree:root)))
 
 (defun at (where &rest names)
   "The node WHERE names, and NAMES on from there."
   (apply #'tree:at where names))
 
-(defun read (where &optional default)
-  "What stands at WHERE, or DEFAULT where nothing does."
-  (let* ((n (tree:at where))
-         (value (and n (node:contents n))))
-    (if (null value) default value)))
+(defun read (where &key (else nil elsep))
+  "What stands at WHERE, and whether anything does.
+
+Answers the value and one of :HELD or :ABSENT. A place nobody has written and a
+place somebody wrote NIL to are different questions, and NIL is only the answer to
+the second: without the second value the two cannot be told apart, and every caller
+has to guess. ELSE is what to say instead of nothing, so a reader that has an
+answer of its own does not spell it as an OR."
+  (let ((n (tree:at where)))
+    (if (null n)
+        (values (if elsep else nil) :absent)
+        (let ((value (node:contents n)))
+          (values (if (and (null value) elsep) else value) :held)))))
+
+(defun standsp (where)
+  "Whether anything stands at WHERE."
+  (and (tree:at where) t))
 
 (defun write (where value)
   "Put VALUE at WHERE, making the place if nothing has been put there yet: a read
 finds what is there and a write makes what is not."
   (setf (node:contents (tree:ensure where)) value))
+
+(defun ls (where)
+  "The names directly under WHERE, and none where nothing stands.
+
+The fourth verb. It was a command and not a word, so a session could say it and a
+config could not."
+  (let ((n (tree:at where)))
+    (if n (tree:listing n) (list))))
+
+(defun watch (where tells &rest options)
+  "Say TELLS whenever what stands at WHERE moves. It is given the node and what it
+now holds.
+
+WHERE names a place the way the other three verbs do. Watching one nothing stands
+at is a mistake rather than a silence: the watcher would be told about a node the
+world is going to replace."
+  (let ((n (tree:at where)))
+    (unless n (error 'tree:absent :where where))
+    (apply #'watch:watch n tells options)))
+
+(defun toggle (where)
+  "Flip what stands at WHERE.
+
+A write, like the three below it: the four of them are what NODE:VERB has always
+done, said in words rather than by writing a seq that begins with a keyword. That
+spelling worked from the shell and not from lisp, which is why the mute button in
+a config could mute and never unmute."
+  (node:verb (tree:ensure where) :toggle nil))
+
+(defun include (where value)
+  "Put VALUE into the set at WHERE."
+  (node:verb (tree:ensure where) :conj (list value)))
+
+(defun exclude (where value)
+  "Take VALUE out of the set at WHERE."
+  (node:verb (tree:ensure where) :disj (list value)))
+
+(defun blend (where map)
+  "Merge MAP into the map at WHERE."
+  (node:verb (tree:ensure where) :merge (list map)))
 
 (defun describe (where)
   (let ((n (tree:at where)))
@@ -57,6 +114,28 @@ finds what is there and a write makes what is not."
             :under (tree:listing n)
             :saved (node:savedp n)
             :live (node:livep n)))))
+
+(defun speaks (name)
+  "Put every word the vocabulary NAME holds into the language.
+
+A vocabulary is a package that uses nothing and imports what it offers, so what it
+holds is exactly what it offers and the compiler checked every name in it. A system
+says this as it loads, which is what makes the words it brings sayable in a config
+that was already read.
+
+USE-PACKAGE is the whole mechanism. Two vocabularies claiming one word is a
+PACKAGE-ERROR naming both symbols, where it happens, rather than a sentence
+collected in a list nobody reads."
+  (let ((p (find-package name))
+        (into (find-package '#:pine/user))
+        (all nil))
+    (unless p (error "~a is not a vocabulary this image has." name))
+    (do-symbols (s p) (pushnew s all))
+    (cl:export all p)
+    (when into
+      (use-package p into)
+      (cl:export all into))
+    p))
 
 (defun use (name) (system:use name))
 (defun drop (name) (system:drop name))
@@ -77,10 +156,10 @@ stands in comes back here with the restarts it is still offering."
     j))
 
 (command:defcommand "pwd" () (:describes "where this session is")
-                    (node:full-name (here)))
+                    (node:full-name (%cursor)))
 
 (command:defcommand "ls" (&optional where) (:describes "what is under a node")
-                    (let ((n (tree:at where)))
+                    (let ((n (if where (tree:at where) (%cursor))))
                       (if n (tree:listing n) (list))))
 
 (command:defcommand "cd" (&optional where) (:describes "go to a node")
@@ -104,7 +183,9 @@ stands in comes back here with the restarts it is still offering."
 
 (command:defcommand "tree" (&optional where)
                     (:describes "every node under one that pine keeps")
-  (tree:paths (tree:at where)))
+  (let ((n (if where (tree:at where) (%cursor))))
+    (unless n (error 'tree:absent :where where))
+    (tree:paths n)))
 
 (command:defcommand "live" ()
                     (:describes "what answers from the world, not the store")
@@ -219,13 +300,11 @@ stands in comes back here with the restarts it is still offering."
   (merge-pathnames "pine/tree.db" (uiop:xdg-data-home)))
 
 (defun user-package ()
-  "Where somebody writes their own, built from what every package lent.
+  "Where somebody writes their own: PINE/USER, declared in src/user.lisp.
 
-Nothing here says what is in it. A word is offered in the file that defines it,
-so a system loaded later brings its own words and a word that is renamed or goes
-takes its offer with it, rather than being dropped in silence by a list kept
-somewhere else."
-  (word:user))
+A system loaded later puts its own vocabulary here as it loads, through
+RUN/SYSTEM:SPEAKS, so what a config can name follows what is loaded."
+  (find-package '#:pine/user))
 
 (defun load-config (&optional (file (config-file)))
   (user-package)
@@ -246,11 +325,11 @@ somewhere else."
         (zerop broke)))))
 
 (defun quit (&optional (grace 5))
-  (job:start (make-instance 'job:thread :name "quit-watchdog" :restarts nil
+  (job:start (make-instance 'job:thread :name "quit-watchdog" :on-fault :leave
                             :thunk (lambda ()
                                      (sleep grace)
                                      (sb-ext:exit :abort t :code 0))))
-  (job:start (make-instance 'job:thread :name "quit" :restarts nil
+  (job:start (make-instance 'job:thread :name "quit" :on-fault :leave
                             :thunk (lambda ()
                                      (sleep 0.2)
                                      (fault:or-nothing
@@ -260,10 +339,16 @@ somewhere else."
   t)
 
 (defun console ()
-  "The session a pine in this terminal reads its forms in: the language, and the
-root to measure a relative name from."
+  "The session a pine in this terminal reads its forms in: the language, the
+syntax a config is read in, and where CD has moved to.
+
+The readtable and not only the package, so /dev/audio/volume means at the prompt
+what it means in the file. Without it a config taught you a spelling the prompt
+answered with an error."
   (session:open-session :name "console" :in (tree:root)
-                        :package (user-package)))
+                        :package (user-package)
+                        :readtable (named-readtables:find-readtable
+                                    'pine/fs/reader:syntax)))
 
 (defun main (&key (store (store-file)))
   "A pine in this terminal, with no daemon: the namespace, and a repl on it."
@@ -297,10 +382,9 @@ for a pine the person running it has not finished describing."
                  "answering on a socket")
   (fault:attempt (lambda () (opening :display)) "opening the display")
   (log:note "~a: remoting ~a, ~d command~:p, ~d running"
-            (node:contents (tree:at nil "name"))
+            (node:contents (tree:at "/name"))
             (actors:remoting)
             (length (command:commands))
             (length (job:jobs)))
   (tree:root))
 
-(pine/word:lends "use" "drop" "reach" "spawn" "style" "at" "read" "write")

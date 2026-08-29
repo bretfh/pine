@@ -123,7 +123,7 @@ has reached. Two relationships, one protocol."
 (defun image-named (name)
   (find (princ-to-string name) (images) :key #'job:name :test #'equal))
 
-(defun %at (name) (tree:ensure nil "eval" name))
+(defun %at (name) (tree:ensure "/eval" name))
 
 (defun target () (and (tree:root) (node:contents (%at "target"))))
 

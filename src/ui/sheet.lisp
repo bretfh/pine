@@ -41,7 +41,7 @@ compound, a string the selector as written.")
 
 (defun styles ()
   "What is written at /style, as (SELECTOR PROPS), by selector."
-  (let ((at (and (tree:root) (tree:at nil "style")))
+  (let ((at (and (tree:root) (tree:at "/style")))
         (acc nil))
     (when at
       (dolist (each (node:nodes at))
@@ -51,11 +51,13 @@ compound, a string the selector as written.")
     (sort acc #'string< :key #'first)))
 
 (defun put-rules (pairs)
-  "Put (SELECTOR PROPS) pairs at /style/?selector, replacing what stood there. A
-config does not call this: a config writes the path. This is the far end of
-BROADCAST, where a frontend puts what the daemon sent into its own tree."
+  "Put (SELECTOR PROPS) pairs at /style/?selector, replacing what stood there.
+
+What PINE:STYLE calls, so a config saying one rule and a frontend taking a whole
+sheet off the wire arrive the same way. This is also the far end of BROADCAST,
+where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (setf (node:contents (tree:ensure nil "style" (%path-segment (first each))))
+    (setf (node:contents (tree:ensure "/style" (%path-segment (first each))))
           (second each)))
   (refresh)
   (styles))
@@ -105,14 +107,14 @@ BROADCAST, where a frontend puts what the daemon sent into its own tree."
 (defun %theme (n name)
   (node:child n name
               (lambda ()
-                (node:place name :over n
+                (node:place name :parent n
                             :reads (lambda ()
                                      (let ((it (theme name)))
                                        (list :palette (palette it)
                                              :metrics (metrics it))))))))
 
 (defun %active (n)
-  (node:child n "active" (lambda () (node:make "active" :over n))))
+  (node:child n "active" (lambda () (node:make "active" :parent n))))
 
 (defmethod node:nodes ((n themes-node))
   (cons (%active n)
@@ -168,6 +170,5 @@ a path nobody named should not grow the keyword package."
     (refresh)
     root))
 
-(pine/word:lends "css-glass" "css-rad" "css-mono")
 
 (pine/fs/tree:builder #'%attach)

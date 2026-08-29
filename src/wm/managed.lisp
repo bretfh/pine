@@ -121,7 +121,7 @@ is hidden. What is wanted is taken once, so nothing is done twice."
                                :reads (lambda () (take c))
                                :writes (lambda (value) (asked c value))
                                :describes "what pine wants done about it"))))
-    (dolist (each all) (setf (node:over each) c))
+    (dolist (each all) (setf (node:parent each) c))
     (setf (kids c) all)))
 
 (defmethod node:nodes ((c managed))

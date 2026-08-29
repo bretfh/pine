@@ -57,7 +57,7 @@ A name in place of a node is made and put under /dev first:
                                              (declare (ignore of said))
                                              (fault:attempt (lambda () (node:stir n))
                                                             (node:name n)))
-                                           :only nil :poll nil
+                                           :tells-when :always :poll nil
                                            :name (format nil "~a<-~a"
                                                          (node:name n) line)))))
                                     (node:announces n))))
@@ -101,7 +101,7 @@ A name in place of a node is made and put under /dev first:
       (attend (node:attach (funcall make) (tree:ensure root "dev"))))
     (job:supervise
      (job:start (make-instance 'job:thread :name "clock" :seconds 1
-                                           :restarts nil
+                                           :on-fault :leave
                                            :thunk #'device:tick)))
     root)
   s)
@@ -110,4 +110,3 @@ A name in place of a node is made and put under /dev first:
   (leave)
   s)
 
-(pine/word:lends "attend")

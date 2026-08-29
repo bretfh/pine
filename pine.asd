@@ -3,7 +3,7 @@
                 :depends-on (#:fset)
                 :serial t
                 :pathname "src/"
-                :components ((:file "word") (:file "data") (:file "said")))
+                :components ((:file "data") (:file "said")))
 
 (asdf:defsystem #:pine/place
                 :description "The namespace: what a node is, where it stands, what
@@ -57,7 +57,7 @@ they are declared on"
                 :components ((:file "mode")
                              (:file "serve/json") (:file "serve/wire")
                              (:file "serve/socket")
-                             (:file "boot") (:file "cli")))
+                             (:file "boot") (:file "user") (:file "cli")))
 
 (asdf:defsystem #:pine/text
                 :description "Documents, the structure their modes give them, and
@@ -65,7 +65,7 @@ the parse behind it"
                 :depends-on (#:pine)
                 :serial t
                 :pathname "src/text/"
-                :components ((:file "system")
+                :components ((:file "system") (:file "words")
                              (:file "lines") (:file "document")
                              (:file "structure")
                              (:file "lisp") (:file "language")
@@ -93,14 +93,14 @@ the parse behind it"
                 :depends-on (#:pine)
                 :serial t
                 :pathname "src/host/"
-                :components ((:file "shell") (:file "device") (:file "system")))
+                :components ((:file "shell") (:file "device") (:file "system") (:file "words")))
 
 (asdf:defsystem #:pine/edit
                 :description "Windows onto documents, and the chords that act on them"
                 :depends-on (#:pine/text)
                 :serial t
                 :pathname "src/edit/"
-                :components ((:file "system")
+                :components ((:file "system") (:file "words")
                              (:file "mode") (:file "window") (:file "matching")
                              (:file "prompt") (:file "keys") (:file "render")
                              (:file "listing") (:file "isearch") (:file "commands")
@@ -112,7 +112,7 @@ the parse behind it"
                 :depends-on (#:pine/edit #:pine/vt)
                 :serial t
                 :pathname "src/term/"
-                :components ((:file "terminal") (:file "system")))
+                :components ((:file "terminal") (:file "system") (:file "words")))
 
 (asdf:defsystem #:pine/wm
                 :description "The compositor, in the namespace"
@@ -120,14 +120,14 @@ the parse behind it"
                 :serial t
                 :pathname "src/wm/"
                 :components ((:file "compositor") (:file "keys")
-                             (:file "managed") (:file "niri") (:file "system")))
+                             (:file "managed") (:file "niri") (:file "system") (:file "words")))
 
 (asdf:defsystem #:pine/tiles
                 :description "One window manager: where the windows go"
                 :depends-on (#:pine/wm)
                 :serial t
                 :pathname "src/wm/"
-                :components ((:file "tiles")))
+                :components ((:file "tiles") (:file "tiles-words")))
 
 (asdf:defsystem #:pine/desk
                 :description "A bar along the top, and the panels it opens"

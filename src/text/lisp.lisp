@@ -122,4 +122,4 @@ inside a call, one past the opener. Top level is column zero."
     (if (null open)
         0
         (destructuring-bind (col head) open
-          (+ col (if (bodyp head) (or (mode:setting m :indent) 2) 1))))))
+          (+ col (if (bodyp head) (mode:says m :indent 2) 1))))))

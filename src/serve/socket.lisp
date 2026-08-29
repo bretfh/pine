@@ -97,7 +97,7 @@ needs no lisp on the other end."
     (sb-bsd-sockets:socket-listen socket +backlog+)
     (sb-posix:chmod path #o600)
     (setf *listening* (list socket path))
-    (let ((j (make-instance 'job:thread :name "serve" :restarts nil
+    (let ((j (make-instance 'job:thread :name "serve" :on-fault :leave
                             :thunk (%accepting socket))))
       (job:supervise j)
       (job:start j)

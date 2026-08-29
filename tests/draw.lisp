@@ -77,7 +77,7 @@ screen is a picture until pine is restarted."
   (with-tree
     (let* ((said (cons nil nil))
            (broken (cons t nil))
-           (n (tree:ensure nil "probe-src")))
+           (n (tree:ensure "/probe-src")))
       (setf (node:contents n) "first")
       (let ((s (ui:builds "probe-surface"
                                (lambda ()
@@ -85,7 +85,7 @@ screen is a picture until pine is restarted."
                                    (when (car broken) (error "on purpose"))
                                    (setf (car said) v)
                                    (ui:label v)))
-                               :as 'ui:panel :shown t)))
+                               :as 'ui:panel :starts :up)))
         (is (null (node:contents s))
             "it answers nothing rather than unwinding into the frame")
         (setf (car broken) nil)

@@ -2,20 +2,16 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node))
   (:export
-   #:*root* #:*here* #:here #:root #:make-root #:at #:ensure
+   #:*root* #:root #:make-root #:at #:ensure
    #:put #:erase #:walk #:listing #:paths
    #:split-name #:pieces #:builder
+   #:absent #:not-a-place #:where #:given
    #:built))
 (in-package #:pine/fs/tree)
 
 (defvar *root* nil
   "The namespace this image is. One per image: a second one is another pine, and it
 is reached by mounting it rather than by holding two here.")
-
-(defvar *here* nil
-  "Where a name with no leading / is measured from. Nothing is the root; a session
-binds it to wherever it stands, which is what makes a relative name mean something
-in one and not leak into another.")
 
 (defvar *builders* nil
   "What each package puts on the tree, in the order the packages were loaded. They
@@ -36,6 +32,14 @@ Weak on the key, so a name built for the occasion is not remembered for ever.")
 (define-condition absent (error)
   ((where :initarg :where :reader where))
   (:report (lambda (c s) (format s "nothing at ~a" (where c)))))
+
+(define-condition not-a-place (error)
+  ((given :initarg :given :reader given))
+  (:report
+   (lambda (c s)
+     (format s "~s is not a place. A place is a name, a path or a node; nothing ~
+is what a place answers when there is none, so it cannot also be one."
+             (given c)))))
 
 (defun make-root ()
   "The namespace this image is. A branch: it holds nothing itself, and what a
@@ -75,11 +79,6 @@ order nobody can check."
                   (string (split-name p))
                   (symbol (list (string-downcase (symbol-name p))))
                   (t (list (princ-to-string p))))))
-
-(defun here () (or *here* *root*))
-
-(defun %rootedp (text)
-  (and (plusp (length text)) (char= #\/ (char text 0))))
 
 (defun %step (at name makep)
   (and at (or (node:resolve at name)
@@ -128,23 +127,24 @@ cost where everything on the machine is a name."
         :finally (return at)))
 
 (defgeneric at (where &rest names)
-  (:documentation "The node WHERE names, and NAMES on from there.
+  (:documentation "The node WHERE names, and NAMES on from there, or nothing where
+none stands.
 
 One question with one answer per kind of thing you can name a place with: a node
-is itself, nothing is where you are, a string beginning with / is from the root
-and one that does not is from where you are, and a path is what it spells.")
+is itself, a name is from the root, and a path is what it spells. Nothing is not
+one of them -- it is what this answers when there is nothing there, and a value
+that means absence cannot also mean somewhere.")
   (:method ((where node:node) &rest names)
     (declare (dynamic-extent names))
     (%walk where names nil))
   (:method ((where null) &rest names)
-    (declare (dynamic-extent names))
-    (%walk (here) names nil))
+    (declare (ignore names))
+    (error 'not-a-place :given where))
   (:method ((where string) &rest names)
     (declare (dynamic-extent names))
-    (let ((from (if (%rootedp where) *root* (here))))
-      (if names
-          (%walk (%spelled from where nil) names nil)
-          (%spelled from where nil)))))
+    (if names
+        (%walk (%spelled *root* where nil) names nil)
+        (%spelled *root* where nil))))
 
 (defgeneric ensure (where &rest names)
   (:documentation "The same, making what is not there. That is the whole of the
@@ -154,35 +154,36 @@ what does not.")
     (declare (dynamic-extent names))
     (%walk where names t))
   (:method ((where null) &rest names)
-    (declare (dynamic-extent names))
-    (%walk (here) names t))
+    (declare (ignore names))
+    (error 'not-a-place :given where))
   (:method ((where string) &rest names)
     (declare (dynamic-extent names))
-    (let ((from (if (%rootedp where) *root* (here))))
-      (if names
-          (%walk (%spelled from where t) names t)
-          (%spelled from where t)))))
+    (if names
+        (%walk (%spelled *root* where t) names t)
+        (%spelled *root* where t))))
 
 (defun put (where pieces value)
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))
     (setf (node:contents n) value)
     n))
 
-(defun erase (where &rest pieces)
-  "Take off the last name in what WHERE and PIECES spell between them.
-
-WHERE names a place the way AT does, so the name that goes may be the end of it:
-(erase \"/a/b\") and (erase nil \"a\" \"b\") take off the same node. A name
-beginning with / is measured from the root, the way a read of one is, and one
-that does not from where you stand."
-  (let* ((fromp (node:nodep where))
-         (from (cond (fromp where)
-                     ((and (stringp where) (%rootedp where)) *root*)
-                     (t (here))))
-         (names (%names (if (or fromp (null where)) pieces (cons where pieces))))
-         (gone (car (last names)))
+(defun %erase (from names)
+  (let* ((gone (car (last names)))
          (holder (and gone (%walk from (butlast names) nil))))
     (when holder (node:erase-child holder gone))))
+
+(defgeneric erase (where &rest pieces)
+  (:documentation "Take off the last name in what WHERE and PIECES spell between
+them.
+
+WHERE names a place the way AT does, so the name that goes may be the end of it:
+(erase \"/a/b\") and (erase \"/a\" \"b\") take off the same node.")
+  (:method ((where node:node) &rest pieces) (%erase where (%names pieces)))
+  (:method ((where string) &rest pieces)
+    (%erase *root* (%names (cons where pieces))))
+  (:method ((where null) &rest pieces)
+    (declare (ignore pieces))
+    (error 'not-a-place :given where)))
 
 (defun walk (n function &key (depth -1) (into (complement #'node:livep)))
   (funcall function n)
@@ -204,4 +205,3 @@ world rather than to pine, and walking it here would be walking the disk."
     (walk n (lambda (each) (push (node:full-name each) acc)))
     (nreverse acc)))
 
-(pine/word:lends "ensure" "erase" "listing" "root")

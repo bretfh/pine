@@ -13,7 +13,7 @@
    #:grad #:font #:pad #:chosen #:top
    #:left #:width #:height #:content #:changed
    #:upright #:value #:thickness #:fraction #:rows-of
-   #:by-row #:caret #:over #:path #:year
+   #:by-row #:caret #:parent #:path #:year
    #:month #:day #:bg #:with-faces #:in-force
    #:unhex #:color #:metric #:resolve #:properties
    #:put-rules #:css-glass #:css-mono #:css-rad #:medium
@@ -24,7 +24,7 @@
    #:button #:image #:rows #:acting #:here
    #:confirming #:surface #:defsurface #:surfaces #:named
    #:builds #:role #:anchor #:shown
-   #:asks #:size #:bar #:panel #:overlay
+   #:shows #:size #:bar #:panel #:overlay
    #:background #:window #:tile #:declared #:make-key
    #:parse #:chord #:spelled #:key= #:selfp
    #:typed #:sym #:ctrl #:meta #:shift

@@ -43,7 +43,7 @@ Two values, because a collection may hold NIL and holding it is not the same as
 holding nothing. Whoever only wants the value reads the first and never knows.
 
 Not AT: a node is at a path and a value is looked up in a collection, and reading
-(d:at (d:all *commands*) name) beside (tree:at nil \"wm\") meant knowing which was
+(d:at (d:all *commands*) name) beside (tree:at \"/wm\") meant knowing which was
 which before you could read either.")
   (:method ((c fset:map) key &optional default)
     (multiple-value-bind (value foundp) (fset:lookup c key)
@@ -353,5 +353,3 @@ somebody claimed with NIL is claimed, and the next to ask must not take it."
   (swap (table-of table) (constantly +no-map+))
   table)
 
-(pine/word:lends "map" "seq" "set" "lookup" "with" "without" "keys" "vals"
-                "pairs" "size" "swap" "cas" "capped" "emptied")

@@ -8,8 +8,8 @@
   (:export
    #:mode #:text #:prose #:code #:lisp
    #:pine #:scheme #:org #:press #:typing
-   #:indent #:complete #:saving #:structure #:setting
-   #:claims #:mode-for #:bind #:binding #:bindings
+   #:indent #:complete #:saving #:structure #:setting #:says
+   #:handles #:mode-for #:bind #:binding #:bindings
    #:dispatch #:named #:modes #:type #:mode-node))
 (in-package #:pine/mode)
 
@@ -76,13 +76,20 @@ for; a document answers for itself first and asks its mode after. One question,
 because that is what it is.
 
 CALL-NEXT-METHOD is the fallback, so a mode that says nothing gets what its parent
-says.")
-  (:method ((m mode) key) (declare (ignore key)) nil))
+says. Saying nothing is :DEFAULT and not NIL, because NIL is an answer a setting
+can have: with the two spelled the same, turning one off wrote NIL and reading it
+back said nobody had ever set it.")
+  (:method ((m mode) key) (declare (ignore key)) :default))
+
+(defun says (of key else)
+  "What OF says about KEY, or ELSE where it says nothing."
+  (let ((said (setting of key)))
+    (if (eq said :default) else said)))
 
 (defgeneric (setf setting) (value of key)
   (:documentation "Say what OF holds for KEY."))
 
-(defgeneric claims (mode)
+(defgeneric handles (mode)
   (:documentation "The globs of paths and names this mode is for.")
   (:method ((m mode)) nil))
 
@@ -108,9 +115,9 @@ says.")
 (defmethod setting ((m org) key)
   (case key (:comment "#") (t (call-next-method))))
 
-(defmethod claims ((m lisp)) '("*.lisp" "*.asd" "*.cl"))
-(defmethod claims ((m scheme)) '("*.scm" "*.ss"))
-(defmethod claims ((m org)) '("*.org"))
+(defmethod handles ((m lisp)) '("*.lisp" "*.asd" "*.cl"))
+(defmethod handles ((m scheme)) '("*.scm" "*.ss"))
+(defmethod handles ((m org)) '("*.org"))
 
 (defun glob (pattern text)
   (labels ((walk (p n)
@@ -156,7 +163,7 @@ in another image. The order the classes were defined in is not one pine is given
 (defun claimsp (m path)
   (let ((leaf (file-namestring (pathname path)))
         (full (namestring (pathname path))))
-    (some (lambda (p) (or (glob p leaf) (glob p full))) (claims m))))
+    (some (lambda (p) (or (glob p leaf) (glob p full))) (handles m))))
 
 (defun mode-for (path)
   "The mode for a place: the most particular class that claims it.
@@ -166,7 +173,7 @@ protocol already keeps, so answering the question costs nothing and only the mod
 that won is made."
   (loop :for class :in (modes)
         :for it := (c2mop:class-prototype class)
-        :when (and (claims it) (claimsp it path))
+        :when (and (handles it) (claimsp it path))
           :do (return (fault:or-nothing "a mode class may take initargs nobody gave"
                         (make-instance (class-name class))))))
 
@@ -273,7 +280,7 @@ whether anything wanted it or not."
 
 (defun %said (name)
   (let ((m (named name)))
-    (when m (list :type (type m) :claims (claims m)))))
+    (when m (list :type (type m) :handles (handles m)))))
 
 (defun %chords (name)
   "What a mode is bound to, as it stands. A chord a config added is here without
@@ -303,6 +310,3 @@ whoever is putting it up, the way any other node is."
               :each #'%mode
               :describes "every mode there is, and its chords"))
 
-(pine/word:lends "mode" "text" "prose" "code" "lisp" "pine" "scheme" "org"
-                "press" "typing" "indent" "complete" "saving" "structure" "setting"
-                "bind" "claims")

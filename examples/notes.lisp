@@ -28,20 +28,20 @@ see one change underneath them.")
 (defmethod nodes ((n journal))
            (loop :for title :in (titles)
                  :collect (child n title
-                                 (lambda () (make-instance 'entry :name title :over n)))))
+                                 (lambda () (make-instance 'entry :name title :parent n)))))
 
 (defmethod resolve ((n journal) title)
            "Every title is a place, whether or not anything has been written there yet.
 Writing one is how an entry comes to exist."
            (let ((title (princ-to-string title)))
-             (child n title (lambda () (make-instance 'entry :name title :over n)))))
+             (child n title (lambda () (make-instance 'entry :name title :parent n)))))
 
 (defmethod contents ((n entry)) (lookup *entries* (name n)))
 (defmethod (setf contents) (said (n entry))
            (setf *entries* (if said
                                (with *entries* (name n) (princ-to-string said))
                              (without *entries* (name n))))
-           (stir (over n))
+           (stir (parent n))
            said)
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of
@@ -54,7 +54,7 @@ Writing one is how an entry comes to exist."
 (defclass note (prose) ()
   (:documentation "A note: lines, and the headings that divide them."))
 
-(defmethod claims ((m note)) '("*.note"))
+(defmethod handles ((m note)) '("*.note"))
 
 (defmethod setting ((m note) key)
            (case key (:comment "#") (T (call-next-method))))
@@ -93,14 +93,14 @@ and watch."
   (:documentation "A note stuck to the corner of the screen."))
 
 (defmethod anchor ((r sticky) width height)
-           (map :edges '(:top :right) :wide width :tall height :keeps 0
+           (map :edges '(:top :right) :wide width :tall height :reserve 0
                 :margin '(16 16 0 0)))
 
 (defun %latest ()
   "The last thing written down, read through the namespace rather than out of the
 variable behind it. That is what makes the surface follow it: what a surface reads
 is what it is worked out again for, and a place is what it can read."
-  (let ((title (first (last (read "/notes")))))
+  (let ((title (first (last (read "/notes" :else (list))))))
     (when title (list title (read (format NIL "/notes/~a" title))))))
 
 ;;; The system. It starts and stops like anything else that runs, which is what

@@ -46,7 +46,7 @@ handed, or TELL and take the reply as a message." (of c)))))
 (defclass job (node:live)
   ((state     :initform :stopped :accessor state)
    (tries     :initform 0        :accessor tries)
-   (restartsp :initarg :restarts :accessor restartsp :initform t)
+   (on-fault :initarg :on-fault :accessor on-fault :initform :restart)
    (took      :initform nil      :accessor took)
    (exit-of   :initform nil      :accessor exit-of)
    (since     :initform nil      :accessor since)
@@ -303,7 +303,7 @@ again."
   (d:swap *supervised*
            (lambda (all)
              (append (remove (name j) all :key #'name :test #'equal) (list j))))
-  (when *under* (setf (node:over j) *under*))
+  (when *under* (setf (node:parent j) *under*))
   j)
 
 (defun forget (name)
@@ -358,7 +358,7 @@ dies is RESTARTS, which is a different question and off unless it is asked for."
 (kind :program
       (lambda (name said)
         (make-instance 'program :name name
-                                :restarts (getf said :restarts)
+                                :on-fault (getf said :on-fault)
                                 :env (getf said :env)
                                 :argv (mapcar #'princ-to-string
                                               (getf said :argv)))))
@@ -368,7 +368,7 @@ dies is RESTARTS, which is a different question and off unless it is asked for."
                                          :writes #'%started
                                          :describes "what this pine is running")
                              root))
-  (dolist (j (supervised) *under*) (setf (node:over j) *under*)))
+  (dolist (j (supervised) *under*) (setf (node:parent j) *under*)))
 
 (defun due (j now)
   "Whether enough has passed since the last try to make another. Without this a
@@ -384,7 +384,7 @@ run long enough to have earned it, and give up on what will not run at all."
     (dolist (j (supervised) t)
       (cond ((alivep j) (settle j))
             ((heldp j))
-            ((and (restartsp j)
+            ((and (eq :restart (on-fault j))
                   (member (state j) '(:running :failed))
                   (due j now))
              (if (>= (tries j) *tries*)
@@ -394,7 +394,5 @@ run long enough to have earned it, and give up on what will not run at all."
                    (handler-case (start j)
                      (error (e) (setf (fault j) e (state j) :failed))))))))))
 
-(pine/word:lends "job" "thread" "actor" "program" "start" "stop" "alivep"
-                "tell" "ask")
 
 (pine/fs/tree:builder #'%attach)

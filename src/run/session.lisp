@@ -1,8 +1,7 @@
 (defpackage #:pine/run/session
   (:use #:cl)
   (:shadow #:read #:print #:close)
-  (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command)
-                    (#:tree #:pine/fs/tree))
+  (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command))
   (:export
    #:open-session #:sessions #:close #:in #:read
    #:evaluate #:interact #:answered #:fault #:*session*))
@@ -115,7 +114,6 @@ standing in are only there while it is still standing in them."
                          (let ((*package* (package-of s))
                                (*readtable* (or (readtable-of s) *readtable*))
                                (*session* s)
-                               (tree:*here* (in s))
                                (command:*at* s))
                            (if c
                                (command:run c (and given

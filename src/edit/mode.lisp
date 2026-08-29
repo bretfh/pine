@@ -22,7 +22,7 @@ numbered and typing one takes it."))
   "Typing where the document is set to overwrite takes what was there first. A
 setting rather than a mode laid over another: nothing about the text is different,
 only what typing does to it."
-  (when (mode:setting document :overwrite)
+  (when (mode:says document :overwrite nil)
     (let ((line (text:at-line document)) (col (text:at-col document)))
       (when (< col (length (text:line document line)))
         (text:delete-region document line col line

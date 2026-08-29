@@ -43,4 +43,3 @@ keyboard, a test and another pine all press the same way."
               :writes #'dispatch
               :describes "write a chord here to press it"))
 
-(pine/word:lends "wm")
