@@ -7,7 +7,7 @@
    #:job #:thread #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
    #:named #:supervise #:sweep #:attend #:emit
-   #:stoppingp #:stoppedp #:forget #:name #:state #:tries #:kind #:kinds
+   #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:kind #:kinds
    #:took #:thunk #:stopping #:argv #:ref))
 (in-package #:pine/run/job)
 
@@ -27,6 +27,14 @@ wait is for that look and not for a clock.")
 (defvar *kinds* (d:table))
 (defvar *supervised* nil)
 (defvar *under* nil)
+(defvar *tries* 8
+  "How many times a job is started again before it is held.
+
+A job that dies as fast as it starts is not one more try away from working. The
+backoff already spaces the tries out; this is what says to stop, so a crash loop
+is something you can read at /proc rather than something the image does for the
+rest of its life. Surviving *SETTLED* seconds forgets the tries, so this counts
+a run of failures and not a long life with bad days in it.")
 
 (define-condition blocking-ask (error)
   ((of :initarg :of :reader of))
@@ -86,12 +94,15 @@ a tick and takes no thread at all."))
 (defmethod node:contents ((j job)) (state j))
 
 (defmethod node:verb ((j job) name arguments)
+  "Starting one that was given up on forgets what it tried before: a person
+asking for it by name is saying to try again."
   (declare (ignore arguments))
-  (case name
-    (:start   (start j) (state j))
-    (:stop    (stop j) (state j))
-    (:restart (stop j) (start j) (state j))
-    (t (error "~a takes :start, :stop or :restart." (node:full-name j)))))
+  (flet ((afresh () (setf (tries j) 0)))
+    (case name
+      (:start   (afresh) (start j) (state j))
+      (:stop    (stop j) (state j))
+      (:restart (stop j) (afresh) (start j) (state j))
+      (t (error "~a takes :start, :stop or :restart." (node:full-name j))))))
 
 (defun emit (j line)
   (d:swap (slot-value j 'said) #'d:capped line *out-kept*)
@@ -106,6 +117,23 @@ a tick and takes no thread at all."))
     (when (and at (plusp (tries j))
                (>= (- (get-universal-time) at) *settled*))
       (setf (tries j) 0)))
+  j)
+
+(defun heldp (j)
+  "Whether this job has been given up on. Not stopped: nobody asked it to go, and
+nothing will start it again until somebody says so."
+  (eq :held (state j)))
+
+(defun %hold (j)
+  "Stop trying, and say why where the job stands.
+
+Written down rather than logged, because the question a person asks is about
+this job and /proc/<name> is where they ask it."
+  (setf (state j) :held
+        (fault j) (make-condition
+                   'simple-error
+                   :format-control "gave up after ~d tr~:@p, none lasting ~d second~:p"
+                   :format-arguments (list (tries j) *settled*)))
   j)
 
 (defgeneric alivep (job)
@@ -350,17 +378,21 @@ runs, and the backoff is a number nobody reads."
     (or (null last) (>= now (+ last (backoff j))))))
 
 (defun sweep ()
-  "One pass: start again what died and is owed a try, and forget the tries of what
-has run long enough to have earned it."
+  "One pass: start again what died and is owed a try, forget the tries of what has
+run long enough to have earned it, and give up on what will not run at all."
   (let ((now (get-universal-time)))
     (dolist (j (supervised) t)
       (cond ((alivep j) (settle j))
+            ((heldp j))
             ((and (restartsp j)
                   (member (state j) '(:running :failed))
                   (due j now))
-             (setf (state j) :failed (since j) now)
-             (handler-case (start j)
-               (error (e) (setf (fault j) e (state j) :failed))))))))
+             (if (>= (tries j) *tries*)
+                 (%hold j)
+                 (progn
+                   (setf (state j) :failed (since j) now)
+                   (handler-case (start j)
+                     (error (e) (setf (fault j) e (state j) :failed))))))))))
 
 (pine/word:lends "job" "thread" "actor" "program" "start" "stop" "alivep"
                 "tell" "ask")

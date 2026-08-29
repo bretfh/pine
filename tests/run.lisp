@@ -400,3 +400,29 @@ answer for every window there had ever been."
           (+ pine/host/shell::*asked-kept* 2))
       "~d stand, and the cap is ~d"
       (d:size (d:all pine/host/shell::*asked*)) pine/host/shell::*asked-kept*))
+
+(test a-job-that-will-not-run-is-held-rather-than-spun
+  "A crash loop is something to read at /proc, not something the image does for
+the rest of its life."
+  (with-tree
+    (let ((j (make-instance 'job:thread :name "never"
+                                        :thunk (lambda () (error "never runs")))))
+      (job:supervise j)
+      (unwind-protect
+           (let ((pine/run/job::*tries* 3)
+                 (pine/run/job::*backoff-cap* 0))
+             (setf (job:state j) :failed
+                   (job:tries j) 3
+                   (pine/run/job::since j) nil)
+             (job:sweep)
+             (is (job:heldp j) "given up on rather than started again")
+             (is (search "gave up" (princ-to-string (pine/run/job::fault j)))
+                 "and where it stands says why")
+             (job:sweep)
+             (is (job:heldp j) "and a later pass leaves it alone")
+             (node:verb j :start nil)
+             (is (not (job:heldp j))
+                 "asking for it by name takes it out of being held")
+             (is (< (job:tries j) 3)
+                 "and forgets what it tried before"))
+        (job:forget "never")))))
