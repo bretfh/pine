@@ -16,6 +16,7 @@
    (file-of  :initarg :file   :reader file-of :initform nil)
    (tick     :initform 0   :accessor tick)
    (structured :initform nil :accessor structured)
+   (declared :initform nil :accessor declared)
    (done     :initform nil :accessor done)
    (undone   :initform nil :accessor undone)
    (marks    :initform (d:no-map) :accessor marks)
@@ -29,6 +30,11 @@
 An emacs buffer is characters with a flat property list laid over them. This is a
 document: what its mode makes of the text is in the namespace under it, as regions
 with identity, so a form or a heading is a place anything can read and write.
+
+STRUCTURED and DECLARED are both what was worked out of the text and the TICK it
+was worked out at. What the text says about itself -- what it divides into, what
+package and readtable it is written in -- can only become something else when the
+text does, and TICK is the text saying it did.
 
 SPANS and OVERLAYS are what is laid over the text without being in it: a colour
 on part of a line, and something shown after one. A search that has just landed
@@ -64,9 +70,44 @@ its nodes are its sub-regions, and writing it replaces that stretch."))
 (defun %bytes (text)
   (length (sb-ext:string-to-octets (or text "") :external-format :utf-8)))
 
-(defun changed (doc)
+(defun %kept-declaration (doc at old new)
+  "Keep what the document says it is written in, where an edit cannot have changed
+it.
+
+Each answer sits on one line, and it was the last line that said so. An edit above
+it cannot take that place, however many lines it adds -- it only moves it. An edit
+below it can take that place only by putting the word there, and that is the lines
+of the edit to read and nothing else. An edit on the line itself is the one case
+that costs a fresh answer.
+
+A fresh answer is a walk of the whole document, and typing moves TICK on every
+key. Without this that walk is on every keystroke, which measured at twenty
+milliseconds of a twenty-one millisecond frame."
+  (let ((had (declared doc)))
+    (when had
+      (setf (car had) (tick doc))
+      (setf (cdr had)
+            (loop :for (key value line word) :in (rest had)
+                  :for kept
+                    := (cond ((and (<= at line) (< line (+ at old))) nil)
+                             ((>= line (+ at old))
+                              (list key value (+ line (- new old)) word))
+                             ((loop :for n :from at
+                                      :below (min (+ at new) (line-count doc))
+                                    :thereis (search word (line doc n)
+                                                     :test #'char-equal))
+                              nil)
+                             (t (list key value line word)))
+                  :when kept :collect kept)))))
+
+(defun changed (doc &optional at old new)
+  "Say the text moved. AT, OLD and NEW say where and by how much, where the caller
+knows; without them everything worked out of the text is given up."
   (setf (modified doc) t)
   (incf (tick doc))
+  (if (and at old new)
+      (%kept-declaration doc at old new)
+      (setf (declared doc) nil))
   (node:moved doc)
   doc)
 
@@ -202,7 +243,7 @@ is text plus something of its own."
       (%edited doc had at 1 (1+ (count #\Newline string)) (%bytes string))
       (setf (lines doc) fresh)
       (setf (at-line doc) line (at-col doc) col)
-      (changed doc)
+      (changed doc at 1 (1+ (count #\Newline string)))
       (point doc))))
 
 (defun newline (doc) (insert doc (string #\Newline)))
@@ -226,7 +267,7 @@ is text plus something of its own."
       (%edited doc had from-line (1+ (- to-line from-line)) 1 (- (%bytes taken)))
       (setf (lines doc) fresh)
       (goto doc line col)
-      (changed doc)
+      (changed doc from-line (1+ (- to-line from-line)) 1)
       taken)))
 
 (defun region-of (doc)
@@ -291,7 +332,7 @@ here, so the document is what was typed and nothing else."
         (setf (lines doc) (d:with was at fresh)))
       (when (= at (at-line doc))
         (setf (at-col doc) (max 0 (+ (at-col doc) (- target had)))))
-      (changed doc))
+      (changed doc at 1 1))
     target))
 
 (defun origin (doc)
