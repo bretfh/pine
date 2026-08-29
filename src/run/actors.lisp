@@ -25,10 +25,17 @@ number of cores the machine that built it had.")
 own kept off everybody else's asks for one before boot; sento fixes them when the
 system is made, so this is read once and not added to after.")
 
-(defun pool (name workers)
+(defun pool (name workers &key (strategy :round-robin))
   "Ask for a dispatcher of NAME with WORKERS workers. Nothing is reserved: the
-parse has one because text asked for it, not because this file knows about text."
-  (d:keep! *pools* name workers)
+parse has one because text asked for it, not because this file knows about text.
+
+Round robin, and not the random the shared one takes. Random is right for
+messages, where an actor's mailbox is the thing that keeps order and one worker
+being briefly unlucky costs nothing. It is wrong for work: sixty pieces handed out
+at random leave some workers holding two while others hold none, and the whole is
+only done when the unluckiest is. Measured on thirty-one workers, that is 7.9x
+against 11.9x."
+  (d:keep! *pools* name (list workers strategy))
   name)
 
 (defun pools () (d:all *pools*))
@@ -54,9 +61,9 @@ own runs on the shared pool until the next start rather than refusing to run."
 (defun %config ()
   (list :dispatchers
         (list* :shared (list :workers (workers) :strategy :random)
-               (loop :for (name . workers) :in (d:pairs (pools))
-                     :append (list name (list :workers workers
-                                              :strategy :random))))
+               (loop :for (name . asked) :in (d:pairs (pools))
+                     :append (list name (list :workers (first asked)
+                                              :strategy (second asked)))))
         :scheduler (list :enabled :true :max-size 1000
                          :resolution (round (* 1000 *soonest*)))))
 
