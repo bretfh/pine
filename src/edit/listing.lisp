@@ -51,6 +51,15 @@ it the place that row stands for."
     (%mark document)
     (node:name document)))
 
+(defmethod text:killing :before ((document text:document))
+  "A killed document takes its rows with it. Kept, they are rows standing for things
+in a document nothing can reach, held for as long as the image runs.
+
+:BEFORE and not :AFTER because the parse already takes itself off in an :AFTER on
+this same class, and a second method of the same qualifier and specializers is not
+another method -- it is the same one, written again."
+  (d:drop! *listings* (node:name document)))
+
 (defun activate ()
   (let* ((document (text:current))
          (l (%listing document)))

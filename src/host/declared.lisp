@@ -1,7 +1,7 @@
 (defpackage #:pine/host/declared
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:sh #:pine/host/shell))
+                    (#:sh #:pine/host/shell) (#:system #:pine/run/system))
   (:export
    #:defdevice #:defbacking #:made #:device #:unanswered #:answering #:named
    #:needs-of #:backings-of)
@@ -65,7 +65,16 @@ where there is no battery instead of a battery at zero."))
                                            :announces announces
                                            :refreshes refreshes)))
           (d:keep! *declared* (%said title) it)
+          (system:owned (list :device (%said title)))
           it))))
+
+(defun forget-device (title)
+  "Take a declaration back off. A device a system declared goes when the system does;
+the ones pine ships are declared as their file loads, when nothing owns anything."
+  (d:drop! *declared* (%said title))
+  title)
+
+(system:undoes :device #'forget-device)
 
 (defun declare-backing (title needs makes)
   "Add a way of answering the device TITLE. Declared later is tried later, so the

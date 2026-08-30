@@ -6,7 +6,7 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:system #:offers #:use #:drop #:systems
-   #:named #:offered #:puts #:owned #:*owner* #:*unbind*))
+   #:named #:offered #:puts #:owned #:undoes #:*owner* #:*undoes*))
 (in-package #:pine/run/system)
 
 (defvar *offered* (d:table)
@@ -36,10 +36,15 @@ Bound around START and STOP rather than passed, because what puts a node up is t
 app's own code and threading an owner through it would be asking every app to say
 twice what package it is written in.")
 
-(defvar *unbind* nil
-  "How to take a chord back off. Filled in by the layer that knows what a mode is,
-because this one loads before there is one -- the same reason NODE:*ELSEWHERE* is a
-variable.")
+(defvar *undoes* (d:table)
+  "How to take back each kind of thing a system can put up, by the keyword that
+names that kind. Filled in by whatever knows what the kind is, because this layer
+loads before any of them -- the same reason NODE:*ELSEWHERE* is a variable.
+
+One table and not one variable per kind. A system can put up a chord, a style
+property, a theme, a way of answering a prompt, a device declaration and a surface,
+and every one of those lives in a layer this one cannot name; a variable each would
+mean editing this file to add a sixth.")
 
 (defclass system (job:job) ()
   (:documentation "A package pine loaded. It starts and stops like anything else
@@ -59,9 +64,15 @@ once, where the system is defined."
 (defun owns (name)
   (d:lookup (d:all *owns*) (string-downcase (princ-to-string name))))
 
+(defun undoes (kind taking)
+  "Say how to take back what OWNED was told as KIND. Said by the layer that knows
+what that kind is, in the file that puts one up."
+  (d:keep! *undoes* kind taking)
+  kind)
+
 (defun owned (what &optional (home *owner*))
-  "Say the system that is starting put WHAT up. A string is a path to erase; a
-(:chord CLASS CHORD) is a binding to take off.
+  "Say the system that is starting put WHAT up. A string is a path to erase; a list
+is (KIND . ARGUMENTS), handed back to whatever said how to take that kind back.
 
 Called by whatever does the putting -- MAKE-SURFACE, BIND -- so an app declares a
 thing once and the undoing is not its to write."
@@ -85,9 +96,10 @@ that has gone."
     (etypecase what
       (string (fault:or-nothing "a path a system put up may have gone already"
                 (tree:erase what)))
-      (cons (when *unbind*
-              (fault:or-nothing "a chord's mode class may have gone with its system"
-                (funcall *unbind* (second what) (third what)))))))
+      (cons (let ((taking (d:lookup (d:all *undoes*) (first what))))
+              (when taking
+                (fault:or-nothing "what a system put up may have gone already"
+                  (apply taking (rest what))))))))
   (d:drop! *put* home))
 
 (defmethod job:start :around ((s system))

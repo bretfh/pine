@@ -143,6 +143,56 @@ that uses PINE/USER and nothing else can make."
   (is (null (ui:named "board")) "its surface")
   (is (null (command:named "branch")) "and its commands"))
 
+(test everything-a-system-puts-up-is-taken-back
+  "Six kinds of thing a system can contribute and one mechanism that takes all six
+back. A surface, a chord and a node already went; a style key, a theme, a way of
+answering a prompt and a device declaration were left standing, so dropping a system
+half worked and nothing said which half."
+  (with-tree
+    (let ((home "pine/test/probe"))
+      (let ((system:*owner* home))
+        (pine/ui::property :probe-key
+                           (lambda (props) (declare (ignore props)) nil))
+        (pine/ui::register (make-instance 'pine/ui::theme :name :probe-theme))
+        (pine/edit::source :probe-category
+                           (lambda (&rest ignored) (declare (ignore ignored)) nil))
+        (declared:defdevice %probe-owned :describes "declared while a system started")
+        (mode:bind 'text "C-c C-probe" "help")
+        (ui:make-surface "probe-surface" (lambda () (ui:label "hi")) :as 'ui:panel))
+
+      (is (member :probe-key (ui:properties)) "the style key is there")
+      (is (member :probe-theme (pine/ui::themes)) "the theme is there")
+      (is (member :probe-category (pine/edit::sources)) "the prompt source is there")
+      (is (not (null (declared:named "%probe-owned"))) "the declaration is there")
+      (is (not (null (ui:named "probe-surface"))) "the surface is there")
+      (is (not (null (mode:binding (make-instance 'mode:text) "C-c C-probe")))
+          "the chord is there")
+
+      (pine/run/system::%take-down home)
+
+      (is (not (member :probe-key (ui:properties))) "and the style key goes")
+      (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
+      (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
+      (is (null (declared:named "%probe-owned")) "and the declaration goes")
+      (is (null (ui:named "probe-surface")) "and the surface goes")
+      (is (null (mode:binding (make-instance 'mode:text) "C-c C-probe"))
+          "and the chord goes"))))
+
+(test a-surface-that-has-gone-leaves-no-closure-behind
+  "What a widget meant crosses the wire as an id and stays behind it in *ACTS*.
+Erasing the node was not the whole of taking a surface off: a click on an id of a
+surface that has gone still ran what it used to mean."
+  (with-tree
+    (let ((home "pine/test/probe-acts"))
+      (let ((system:*owner* home))
+        (ui:make-surface "probe-acts" (lambda () (ui:label "hi")) :as 'ui:panel))
+      (node:contents (tree:at "/surface/probe-acts/wire"))
+      (flet ((held () (remove-if-not
+                       (lambda (id) (eql 0 (search "probe-acts/" id)))
+                       (d:keys (d:all pine/ui::*acts*)))))
+        (pine/run/system::%take-down home)
+        (is (null (held)) "its closures go with it")))))
+
 (test nothing-pine-ships-names-this-app
   "The claim is that an app is the editor's equal. This is the proof: the editor
 is under src/, this is not, and src/ has never heard of it."

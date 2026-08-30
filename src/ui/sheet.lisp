@@ -57,8 +57,9 @@ What PINE:STYLE calls, so a config saying one rule and a frontend taking a whole
 sheet off the wire arrive the same way. This is also the far end of BROADCAST,
 where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (setf (node:contents (tree:ensure "/style" (%path-segment (first each))))
-          (second each)))
+    (let ((n (tree:ensure "/style" (%path-segment (first each)))))
+      (setf (node:contents n) (second each))
+      (system:owned (node:full-name n))))
   (refresh)
   (styles))
 

@@ -70,7 +70,16 @@
 
 (defun source (category function)
   (d:keep! *sources* category function)
+  (system:owned (list :source category))
   category)
+
+(defun forget-source (category)
+  "Take a way of answering a prompt back off. A category whose system has gone is a
+question nothing can answer, and leaving it there is a prompt that offers nothing."
+  (d:drop! *sources* category)
+  category)
+
+(system:undoes :source #'forget-source)
 
 (defun sources () (d:keys (d:all *sources*)))
 

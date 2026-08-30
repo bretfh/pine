@@ -10,7 +10,7 @@
   (:export
    #:of #:line #:line-count #:inserted #:region
    #:move-by #:leading #:find-in #:document #:make-document
-   #:documents #:named #:kill #:current
+   #:documents #:named #:kill #:killing #:current
    #:scratch #:asidep #:showing #:lines #:text
    #:point #:at-line #:at-col #:mark #:mode-of
    #:source #:file-of #:origin #:modified #:goto

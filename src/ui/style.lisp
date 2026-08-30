@@ -11,7 +11,15 @@ that matched. Adding a property is one entry here, not an edit to RESOLVE.")
 (defun property (key parser)
   "Say that a style may hold KEY, worked out by PARSER from the matched props."
   (d:keep! *properties* key parser)
+  (system:owned (list :style key))
   key)
+
+(defun forget-property (key)
+  "Take a style key back off. What a system taught a style to hold goes when it does."
+  (d:drop! *properties* key)
+  key)
+
+(system:undoes :style #'forget-property)
 
 (defun properties () (d:keys (d:all *properties*)))
 

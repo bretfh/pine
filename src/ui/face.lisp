@@ -32,7 +32,17 @@ that asks per cell spends most of its time asking where to look.")
     (symbol (intern (symbol-name name) :keyword))
     (string (intern (string-upcase name) :keyword))))
 
-(defun register (theme) (d:keep! *themes* (name theme) theme))
+(defun register (theme)
+  (d:keep! *themes* (name theme) theme)
+  (system:owned (list :theme (name theme)))
+  theme)
+
+(defun forget-theme (name)
+  "Take a theme back off. One a system brought goes when the system does."
+  (d:drop! *themes* name)
+  name)
+
+(system:undoes :theme #'forget-theme)
 
 (defun themes ()
   (sort (d:keys (d:all *themes*)) #'string< :key #'symbol-name))

@@ -261,7 +261,7 @@ can drop and a machine you set up."
                (lambda (had) (if had (d:without had chord) (d:no-map))))
     chord))
 
-(setf system:*unbind* #'unbind)
+(system:undoes :chord #'unbind)
 
 (defun binding (m chord)
   "What CHORD runs for this mode: its own keymap, then up the class precedence list,

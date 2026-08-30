@@ -188,9 +188,25 @@ disagree about what leaving it out meant."
                              :writes #'act
                              :describes "what another pine says was clicked")
                  s)
-    (system:owned (node:full-name s))
+    (system:owned (list :surface (node:name s)))
     (declared s)
     s))
+
+(defun forget-surface (name)
+  "Take a surface off, and let go the closures its widgets crossed as.
+
+Erasing the node is not the whole of it. What a widget meant stays in *ACTS* under
+the id it crossed as, so a surface that has gone leaves closures nothing can reach
+and a click on one of its old ids still runs what it used to mean."
+  (let ((under (concatenate 'string (princ-to-string name) "/")))
+    (dolist (id (d:keys (d:all *acts*)))
+      (when (and (> (length id) (length under))
+                 (string= under id :end2 (length under)))
+        (d:drop! *acts* id))))
+  (tree:erase (format nil "/surface/~a" name))
+  name)
+
+(system:undoes :surface #'forget-surface)
 
 (defmacro defsurface (name options &body body)
   "Declare a surface. OPTIONS is :as and a role class."
