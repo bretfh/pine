@@ -1,7 +1,7 @@
 (defpackage #:notes
-            (:use #:pine/user)
-            (:shadow #:note)
-            (:export #:notes #:note #:journal #:sticky))
+  (:use #:pine/user)
+  (:shadow #:note)
+  (:export #:notes #:note #:journal #:sticky))
 (in-package #:notes)
 
 ;;; An app, written the way anything is written here: classes and methods in a
@@ -43,33 +43,33 @@ directory says the same thing the same way."
 (defmethod handles ((m note)) '("*.note"))
 
 (defmethod setting ((m note) key)
-           (case key (:comment "#") (T (call-next-method))))
+  (case key (:comment "#") (T (call-next-method))))
 
 (defun %headingp (line)
   (and (plusp (length line)) (char= #\* (char line 0))))
 
 (defmethod structure ((m note) document)
-           "Every heading, and the lines under it, as spans. What comes back is put
+  "Every heading, and the lines under it, as spans. What comes back is put
 in the namespace under the document, so /text/x.note/heading/Today is a place you
 can read, write and watch."
-           (let ((found NIL)
-                 (n (line-count document)))
-             (dotimes (at n)
-               (let ((said (line document at)))
-                 (when (%headingp said)
-                   (push (list (string-trim " *" said) at) found))))
-             (flet ((ends (at) (cons at (length (line document at)))))
-                   (let ((all (nreverse found)))
-                     (when all
-                       (list (covering "heading"
-                                       (cons (second (first all)) 0)
-                                       (ends (1- n))
-                                       (loop :for ((title from) . more) :on all
-                                             :for to := (if more
-                                                            (1- (second (first more)))
-                                                          (1- n))
-                                             :collect (covering title (cons from 0)
-                                                                (ends (max from to)))))))))))
+  (let ((found NIL)
+        (n (line-count document)))
+    (dotimes (at n)
+      (let ((said (line document at)))
+        (when (%headingp said)
+          (push (list (string-trim " *" said) at) found))))
+    (flet ((ends (at) (cons at (length (line document at)))))
+      (let ((all (nreverse found)))
+        (when all
+          (list (covering "heading"
+                          (cons (second (first all)) 0)
+                          (ends (1- n))
+                          (loop :for ((title from) . more) :on all
+                                :for to := (if more
+                                               (1- (second (first more)))
+                                               (1- n))
+                                :collect (covering title (cons from 0)
+                                                   (ends (max from to)))))))))))
 
 ;;; A role, and a surface on it. One ANCHOR method puts a new kind of surface on
 ;;; screen; nothing showing it needs knowledge of it, because the role crosses the
@@ -79,8 +79,8 @@ can read, write and watch."
   (:documentation "A note stuck to the corner of the screen."))
 
 (defmethod anchor ((r sticky) width height)
-           (placing :edges '(:top :right) :wide width :tall height
-                    :margin (inset :top 16 :right 16)))
+  (placing :edges '(:top :right) :wide width :tall height
+           :margin (inset :top 16 :right 16)))
 
 (defun %latest ()
   "The last thing written down, read through the namespace rather than out of the
@@ -100,22 +100,22 @@ corner of the screen showing the last one."))
 (offers 'notes)
 
 (defmethod start ((s notes))
-           (puts (make-instance 'journal :name "notes"
+  (puts (make-instance 'journal :name "notes"
                                 :describes "what has been written down"))
-           (defcommand "note" (title said)
-                       (:describes "write something down"
-                                   :asks '((:prompt "Note: ")))
-                       (write (format NIL "/notes/~a" title) (or said ""))
-                       title)
-           (defcommand "notes" () (:describes "everything written down")
-                       (read "/notes" :else (list)))
-           (defcommand "forget-note" (title) (:describes "take one back off")
-                       (erase (format NIL "/notes/~a" title))
-                       T)
-           (bind 'text "C-c n" "note")
-           (defsurface sticky (:as 'sticky)
-                       (let ((latest (%latest)))
-                         (column :class "sticky"
-                                 (label (or (first latest) "nothing written down"))
-                                 (label (or (second latest) "")))))
-           s)
+  (defcommand "note" (title said)
+    (:describes "write something down"
+     :asks '((:prompt "Note: ")))
+    (write (format NIL "/notes/~a" title) (or said ""))
+    title)
+  (defcommand "notes" () (:describes "everything written down")
+    (read "/notes" :else (list)))
+  (defcommand "forget-note" (title) (:describes "take one back off")
+    (erase (format NIL "/notes/~a" title))
+    T)
+  (bind 'text "C-c n" "note")
+  (defsurface sticky (:as 'sticky)
+    (let ((latest (%latest)))
+      (column :class "sticky"
+              (label (or (first latest) "nothing written down"))
+              (label (or (second latest) "")))))
+  s)

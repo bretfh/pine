@@ -4,20 +4,12 @@
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell) (#:declared #:pine/host/declared))
   (:export
-   #:readings #:clip #:clock #:media #:net
-   #:power #:screen #:tick #:sys #:env))
+   #:readings #:clock #:media #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
 (defvar *now* 0)
 (defvar *sampled* nil)
 (defvar *busy* nil)
-
-(defparameter +power-verbs+
-  '(("lock" . "loginctl lock-session")
-    ("suspend" . "systemctl suspend")
-    ("reboot" . "systemctl reboot")
-    ("poweroff" . "systemctl poweroff")
-    ("logout" . "loginctl terminate-session $XDG_SESSION_ID")))
 
 (defun %named-rows (readings)
   (mapcar (lambda (r) (string (first r))) readings))
@@ -79,6 +71,15 @@ and twelve methods, and it is this list now."
 
 (defun %clamped (v) (max 0 (min 100 v)))
 
+(defun %runs (line)
+  "A write that runs LINE whatever was written to it. That is what a verb under a
+device is: /dev/power/suspend is not a value somebody sets, it is a thing to do."
+  (lambda (said) (declare (ignore said)) (sh:sh "~a" line) t))
+
+(defun %hands (line)
+  "A write that hands what was written to LINE, which takes it as its one field."
+  (lambda (said) (sh:sh line said) t))
+
 (defun %default-sink ()
   (getf (find-if (lambda (each) (getf each :default)) (%sinks)) :name))
 
@@ -88,69 +89,91 @@ else there is to play through"
   :announces '("pactl subscribe"))
 
 (declared:defbacking audio (:needs "wpctl")
-  (volume :reads (%volume)
-          :writes (sh:sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ ~d%" (%clamped it)))
-  (muted  :reads (%mutedp)
-          :writes (sh:sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))
-  (sinks  :reads (%sinks)
-          :writes (progn (sh:sh "wpctl set-default ~a" it) t))
-  (sink   :reads (%default-sink)
-          :writes (progn (sh:sh "wpctl set-default ~a" it) t)))
+  (volume :reads  (%volume)
+          :writes (lambda (said)
+                    (sh:sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ ~d%"
+                           (%clamped said))))
+  (muted  :reads  (%mutedp)
+          :writes (%runs "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))
+  (sinks  :reads  (%sinks)  :writes (%hands "wpctl set-default ~a"))
+  (sink   :reads  (%default-sink) :writes (%hands "wpctl set-default ~a")))
 
 (declared:defbacking audio (:needs "pamixer")
-  (volume :reads (sh:number-in (sh:sh "pamixer --get-volume"))
-          :writes (sh:sh "pamixer --set-volume ~d" (%clamped it)))
-  (muted  :reads (and (search "true" (sh:sh "pamixer --get-mute")) t)
-          :writes (sh:sh "pamixer --toggle-mute")))
+  (volume :reads  (sh:number-in (sh:sh "pamixer --get-volume"))
+          :writes (lambda (said)
+                    (sh:sh "pamixer --set-volume ~d" (%clamped said))))
+  (muted  :reads  (and (search "true" (sh:sh "pamixer --get-mute")) t)
+          :writes (%runs "pamixer --toggle-mute")))
 
-(defun screen ()
-  (flet ((where () (first (directory "/sys/class/backlight/*/")))
-         (level ()
-           (let ((at (first (directory "/sys/class/backlight/*/"))))
-             (when at
-               (let ((now (sh:number-in (sh:sh "cat ~abrightness 2>/dev/null"
-                                            (namestring at))))
-                     (most (sh:number-in (sh:sh "cat ~amax_brightness 2>/dev/null"
-                                             (namestring at)))))
-                 (when (and now most (plusp most)) (round (* 100 now) most)))))))
-    (readings "screen"
-            (list (list "brightness" #'level
-                        (lambda (v)
-                          (when (where)
-                            (sh:sh "brightnessctl --class=backlight set ~d%"
-                                   (max 1 (min 100 v)))))))
-            :refreshes 5
-            :describes "the backlight, as a percentage")))
+(defun %backlight () (first (directory "/sys/class/backlight/*/")))
 
-(defun power ()
-  (flet ((supply ()
-           (or (first (directory "/sys/class/power_supply/BAT*/"))
-               (first (remove-if-not
-                       (lambda (each) (probe-file (merge-pathnames "capacity" each)))
-                       (directory "/sys/class/power_supply/*/"))))))
-    (labels ((battery () (let ((at (supply)))
-                           (when at (sh:number-in (sh:sh "cat ~acapacity 2>/dev/null"
-                                                      (namestring at))))))
-             (state () (let ((at (supply)))
-                         (when at
-                           (let ((said (sh:sh "cat ~astatus 2>/dev/null"
-                                              (namestring at))))
-                             (cond ((search "Charging" said) :charging)
-                                   ((search "Discharging" said) :discharging)
-                                   ((search "Full" said) :full)
-                                   ((search "Not charging" said) :idle)
-                                   ((plusp (length said)) :unknown)))))))
-      (readings "power"
-              (append (list (list "battery" #'battery)
-                            (list "state" #'state)
-                            (list "charging" (lambda () (eq :charging (state)))))
-                      (loop :for (name . line) :in +power-verbs+
-                            :collect (list name (constantly name)
-                                           (let ((line line))
-                                             (lambda (v) (declare (ignore v))
-                                               (sh:sh "~a" line) t)))))
-              :refreshes 10
-              :describes "the battery, and lock suspend reboot poweroff logout"))))
+(defun %brightness ()
+  (let ((at (%backlight)))
+    (when at
+      (let ((now (sh:number-in (sh:sh "cat ~abrightness 2>/dev/null"
+                                      (namestring at))))
+            (most (sh:number-in (sh:sh "cat ~amax_brightness 2>/dev/null"
+                                       (namestring at)))))
+        (when (and now most (plusp most)) (round (* 100 now) most))))))
+
+(declared:defdevice screen
+  :describes "the backlight, as a percentage"
+  :refreshes 5)
+
+(declared:defbacking screen (:needs "brightnessctl")
+  (brightness :reads  (%brightness)
+              :writes (lambda (said)
+                        (when (%backlight)
+                          (sh:sh "brightnessctl --class=backlight set ~d%"
+                                 (max 1 (%clamped said)))))))
+
+(declared:defbacking screen (:needs "light")
+  (brightness :reads  (%brightness)
+              :writes (lambda (said)
+                        (sh:sh "light -S ~d" (max 1 (%clamped said))))))
+
+(declared:defbacking screen ()
+  (brightness :reads (%brightness)))
+
+(defun %supply ()
+  (or (first (directory "/sys/class/power_supply/BAT*/"))
+      (first (remove-if-not
+              (lambda (each) (probe-file (merge-pathnames "capacity" each)))
+              (directory "/sys/class/power_supply/*/")))))
+
+(defun %battery ()
+  (let ((at (%supply)))
+    (when at (sh:number-in (sh:sh "cat ~acapacity 2>/dev/null" (namestring at))))))
+
+(defun %charge ()
+  (let ((at (%supply)))
+    (when at
+      (let ((said (sh:sh "cat ~astatus 2>/dev/null" (namestring at))))
+        (cond ((search "Charging" said) :charging)
+              ((search "Discharging" said) :discharging)
+              ((search "Full" said) :full)
+              ((search "Not charging" said) :idle)
+              ((plusp (length said)) :unknown))))))
+
+(declared:defdevice power
+  :describes "the battery, and lock suspend reboot poweroff logout"
+  :refreshes 10)
+
+(declared:defbacking power (:needs ("systemctl" "loginctl"))
+  (battery  :reads (%battery))
+  (state    :reads (%charge))
+  (charging :reads (eq :charging (%charge)))
+  (lock     :reads "lock"     :writes (%runs "loginctl lock-session"))
+  (suspend  :reads "suspend"  :writes (%runs "systemctl suspend"))
+  (reboot   :reads "reboot"   :writes (%runs "systemctl reboot"))
+  (poweroff :reads "poweroff" :writes (%runs "systemctl poweroff"))
+  (logout   :reads "logout"
+            :writes (%runs "loginctl terminate-session $XDG_SESSION_ID")))
+
+(declared:defbacking power ()
+  (battery  :reads (%battery))
+  (state    :reads (%charge))
+  (charging :reads (eq :charging (%charge))))
 
 (defun %wifi ()
   "What is in the air, strongest first: what it is called, how strong, whether it
@@ -166,37 +189,50 @@ wants a password and whether it is the one we are on."
                       :in-use (equal "*" (first parts)))
                 found))))))
 
-(defun clip ()
-  "What the desktop is holding, as a place. Reading it is what anything else on
-this machine copied; writing it is copying."
-  (readings "clip"
-          (list (list "text"
-                      (lambda ()
-                        (let ((said (sh:sh "wl-paste --no-newline 2>/dev/null")))
-                          (when (plusp (length said)) said)))
-                      (lambda (v)
-                        (sh:feed "wl-copy" (princ-to-string v))
-                        t)))
-          :announces '("wl-paste --watch echo")
-          :describes "the desktop's clipboard"))
+(defun %said-or-nothing (said)
+  (when (plusp (length said)) said))
 
-(defun net ()
-  (flet ((connection ()
-           (let ((line (sh:firstp (sh:sh "nmcli -t -f NAME connection show --active"))))
-             (when (and line (plusp (length line))) line)))
-         (online () (and (search "connected" (sh:sh "nmcli -t -f STATE general")) t)))
-    (readings "net"
-            (list (list "connection" #'connection)
-                  (list "online" #'online)
-                  (list "wifi" #'%wifi
-                        (lambda (v)
-                          "An ssid connects to it. :rescan looks again."
-                          (if (eq :rescan v)
-                              (sh:sh "nmcli device wifi rescan")
-                              (sh:sh "nmcli device wifi connect ~s" v))
-                          t)))
-            :announces '("nmcli monitor")
-            :describes "what is connected, and what else is in the air")))
+(declared:defdevice clip
+  :describes "the desktop's clipboard")
+
+(defun %copies (line)
+  "A write that gives what was written to LINE on its standard input."
+  (lambda (said) (sh:feed line (princ-to-string said)) t))
+
+(declared:defbacking clip (:needs "wl-paste" :announces '("wl-paste --watch echo"))
+  (text :reads  (%said-or-nothing (sh:sh "wl-paste --no-newline 2>/dev/null"))
+        :writes (%copies "wl-copy")))
+
+(declared:defbacking clip (:needs "xclip" :refreshes 2)
+  (text :reads  (%said-or-nothing
+                 (sh:sh "xclip -o -selection clipboard 2>/dev/null"))
+        :writes (%copies "xclip -i -selection clipboard")))
+
+(defun %route-device ()
+  "The interface the default route goes out of."
+  (let* ((said (sh:sh "ip -o route get 1.1.1.1 2>/dev/null"))
+         (at (search " dev " said)))
+    (when at (first (sh:words (subseq said (+ at 5)))))))
+
+(declared:defdevice net
+  :describes "what is connected, and what else is in the air")
+
+(declared:defbacking net (:needs "nmcli" :announces '("nmcli monitor"))
+  (connection :reads (%said-or-nothing
+                      (or (sh:firstp (sh:sh "nmcli -t -f NAME connection show --active"))
+                          "")))
+  (online :reads (and (search "connected" (sh:sh "nmcli -t -f STATE general")) t))
+  (wifi :reads  (%wifi)
+        :writes (lambda (said)
+                  "An ssid connects to it. :rescan looks again."
+                  (if (eq :rescan said)
+                      (sh:sh "nmcli device wifi rescan")
+                      (sh:sh "nmcli device wifi connect ~s" said))
+                  t)))
+
+(declared:defbacking net (:needs "ip" :refreshes 10)
+  (connection :reads (%route-device))
+  (online :reads (plusp (length (sh:sh "ip -o route show default 2>/dev/null")))))
 
 (defun %seconds (said)
   (let ((n (sh:number-in said)))

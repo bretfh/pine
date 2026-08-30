@@ -80,11 +80,71 @@ the first time, which is a clock that never ticks."
 
 (test the-desktop-clipboard-is-a-place
   "Copying is a write and pasting is a read. Without it an editor is an island:
-nothing copied anywhere else can come in, and nothing killed here can go out."
+nothing copied anywhere else can come in, and nothing killed here can go out.
+
+Which program does the copying is the machine's business: the reading stands either
+way, and says :ABSENT where this machine has no way to answer it."
   (with-tree
-    (let ((dev (node:attach (device:clip) (tree:root))))
+    (let ((dev (node:attach (declared:made "clip") (tree:root))))
       (is (equal '("text") (node:contents dev)))
       (let ((text (node:resolve dev "text")))
         (is (not (null text)) "the row is a place under it")
-        (is (not (null (node:reads text))) "it reads")
-        (is (not (null (node:writes text))) "and it is written")))))
+        (if (declared:standing (declared:named "clip"))
+            (progn
+              (is (not (null (node:reads text))) "it reads")
+              (is (not (null (node:writes text))) "and it is written"))
+            (is (eq :absent (node:holding text))
+                "and where nothing here can answer it, it says so"))))))
+
+(test a-device-nothing-on-this-machine-can-answer-still-stands
+  "A path that does not resolve is a surface that breaks. One that resolves and says
+:ABSENT is a surface that shows a dash. NIL cannot be the answer to both, which is
+why READ has always had three."
+  (with-tree
+    (declared:defdevice %probe-thermostat :describes "nothing here can answer this")
+    (declared:defbacking %probe-thermostat (:needs "no-such-program-anywhere")
+      (target :reads (sh:sh "no-such-program-anywhere get") :writes (sh:sh "x"))
+      (mode   :reads (sh:sh "no-such-program-anywhere mode")))
+    (let ((dev (node:attach (declared:made "%probe-thermostat")
+                            (tree:ensure (tree:root) "dev"))))
+      (is (null (declared:standing (declared:named "%probe-thermostat")))
+          "no backing this machine can use")
+      (is (equal '("target" "mode") (node:contents dev))
+          "and it still says what it would answer")
+      (is (not (null (tree:at "/dev/%probe-thermostat/target")))
+          "the path resolves")
+      (is (eq :absent (nth-value 1 (pine:read "/dev/%probe-thermostat/target")))
+          "and reading it says :ABSENT, not NIL"))))
+
+(test a-write-to-a-declared-reading-reaches-the-backing
+  "The write is a function the row was given, not a form with the value bound behind
+your back. A name a macro binds is a symbol in the macro's own package and the row is
+read in the caller's, so the two are spelled the same and are not the same variable --
+which every device write got wrong, silently, because nothing here wrote to one."
+  (with-tree
+    (let ((heard :nothing))
+      (declared:defdevice %probe-lamp :describes "a lamp to write to")
+      (declared:defbacking %probe-lamp ()
+        (level :reads 0 :writes (lambda (said) (setf heard said) t)))
+      (node:attach (declared:made "%probe-lamp") (tree:ensure (tree:root) "dev"))
+      (pine:write "/dev/%probe-lamp/level" 42)
+      (is (eql 42 heard) "what was written reached the backing"))))
+
+(test a-backing-that-answers-some-readings-leaves-the-rest-absent
+  "Two ways of asking one machine need not answer the same questions. The one that
+knows less does not take the others away, or a surface written against the fuller
+backing would break on a machine with the thinner one."
+  (with-tree
+    (declared:defdevice %probe-radio :describes "two ways, one thinner")
+    (declared:defbacking %probe-radio (:needs "no-such-fat-program")
+      (station :reads "fat") (signal :reads "fat") (preset :reads "fat"))
+    (declared:defbacking %probe-radio ()
+      (station :reads "thin"))
+    (let ((dev (node:attach (declared:made "%probe-radio")
+                            (tree:ensure (tree:root) "dev"))))
+      (is (equal '("station" "signal" "preset") (node:contents dev))
+          "every reading either backing declares")
+      (is (equal "thin" (pine:read "/dev/%probe-radio/station"))
+          "the backing that stands answers what it knows")
+      (is (eq :absent (nth-value 1 (pine:read "/dev/%probe-radio/signal")))
+          "and what it does not know stands and says so"))))
