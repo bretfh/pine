@@ -76,8 +76,8 @@
 (defmethod shows ((r ticker)) :always)
 
 (defmethod anchor ((r ticker) width height)
-  (map :edges '(:bottom :right) :wide width :tall height :reserve 0
-       :margin '(0 12 12 0)))
+  (placing :edges '(:bottom :right) :wide width :tall height
+           :margin (inset :right 12 :bottom 12)))
 
 (defsurface ticker (:as 'ticker)
   (row :class "ticker"

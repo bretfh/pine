@@ -2,9 +2,9 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
-                    (#:sh #:pine/host/shell))
+                    (#:sh #:pine/host/shell) (#:declared #:pine/host/declared))
   (:export
-   #:readings #:audio #:clip #:clock #:media #:net
+   #:readings #:clip #:clock #:media #:net
    #:power #:screen #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
@@ -70,27 +70,38 @@ and twelve methods, and it is this list now."
                            :default (and defaultp t)
                            :id (sh:number-in line)))))
 
-(defun audio ()
-  (flet ((level () (let ((n (sh:number-in (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@"))))
-                     (when n (round (* 100 n)))))
-         (muted () (and (search "MUTED" (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@")) t)))
-    (readings "audio"
-            (list (list "volume" #'level
-                        (lambda (v) (sh:sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ ~d%"
-                                           (max 0 (min 100 v)))))
-                  (list "muted" #'muted
-                        (lambda (v) (declare (ignore v))
-                          (sh:sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")))
-                  (list "sinks" #'%sinks
-                        (lambda (v) (sh:sh "wpctl set-default ~a" v) t))
-                  (list "sink" (lambda ()
-                                 (let ((it (find-if (lambda (each) (getf each :default))
-                                                    (%sinks))))
-                                   (getf it :name)))
-                        (lambda (v) (sh:sh "wpctl set-default ~a" v) t)))
-            :announces '("pactl subscribe")
-            :describes "the default sink: how loud, whether it is muted, and what
-else there is to play through")))
+(defun %volume ()
+  (let ((n (sh:number-in (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@"))))
+    (when n (round (* 100 n)))))
+
+(defun %mutedp ()
+  (and (search "MUTED" (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@")) t))
+
+(defun %clamped (v) (max 0 (min 100 v)))
+
+(defun %default-sink ()
+  (getf (find-if (lambda (each) (getf each :default)) (%sinks)) :name))
+
+(declared:defdevice audio
+  :describes "the default sink: how loud, whether it is muted, and what
+else there is to play through"
+  :announces '("pactl subscribe"))
+
+(declared:defbacking audio (:needs "wpctl")
+  (volume :reads (%volume)
+          :writes (sh:sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ ~d%" (%clamped it)))
+  (muted  :reads (%mutedp)
+          :writes (sh:sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))
+  (sinks  :reads (%sinks)
+          :writes (progn (sh:sh "wpctl set-default ~a" it) t))
+  (sink   :reads (%default-sink)
+          :writes (progn (sh:sh "wpctl set-default ~a" it) t)))
+
+(declared:defbacking audio (:needs "pamixer")
+  (volume :reads (sh:number-in (sh:sh "pamixer --get-volume"))
+          :writes (sh:sh "pamixer --set-volume ~d" (%clamped it)))
+  (muted  :reads (and (search "true" (sh:sh "pamixer --get-mute")) t)
+          :writes (sh:sh "pamixer --toggle-mute")))
 
 (defun screen ()
   (flet ((where () (first (directory "/sys/class/backlight/*/")))

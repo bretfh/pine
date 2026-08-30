@@ -31,22 +31,21 @@
     r))
 
 (defun %build (under said)
-  "Put what the mode said into the namespace under UNDER, keeping the node that was
-already at each name so anything watching one keeps watching it.
+  "Put the spans the mode said into the namespace under UNDER, keeping the node that
+was already at each name so anything watching one keeps watching it.
 
-Two regions a mode gives one name are two places, and the second takes NAME<2>.
-One node standing for both would cover only the last of them, and writing it would
+Two spans a mode gives one name are two places, and the second takes NAME<2>. One
+node standing for both would cover only the last of them, and writing it would
 replace text it was never standing for."
   (let ((seen (d:no-map)))
     (dolist (each said)
-      (destructuring-bind (name from to &rest children) each
-        (let* ((base (princ-to-string name))
-               (had (or (d:lookup seen base) 0))
-               (name (if (plusp had) (format nil "~a<~d>" base (1+ had)) base)))
-          (setf seen (d:with seen base (1+ had)))
-          (let ((r (%region under name (list from to))))
-            (node:attach r under)
-            (when children (%build r children))))))))
+      (let* ((base (mode:name-of each))
+             (had (or (d:lookup seen base) 0))
+             (name (if (plusp had) (format nil "~a<~d>" base (1+ had)) base)))
+        (setf seen (d:with seen base (1+ had)))
+        (let ((r (%region under name (list (mode:from-of each) (mode:to-of each)))))
+          (node:attach r under)
+          (when (mode:inside-of each) (%build r (mode:inside-of each))))))))
 
 (defun restructure (doc)
   "Ask the mode what this text divides into, and put it in the namespace. Regions

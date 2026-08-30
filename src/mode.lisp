@@ -3,13 +3,14 @@
   (:local-nicknames (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:command #:pine/run/command)
-                    (#:fault #:pine/run/fault))
+                    (#:fault #:pine/run/fault) (#:system #:pine/run/system))
   (:shadow #:type #:structure)
   (:export
    #:mode #:text #:prose #:code #:lisp
    #:pine #:scheme #:org #:press #:typing
    #:indent #:complete #:saving #:structure #:setting #:says
-   #:handles #:mode-for #:bind #:binding #:bindings
+   #:span #:covering #:name-of #:from-of #:to-of #:inside-of
+   #:handles #:mode-for #:bind #:unbind #:binding #:bindings
    #:dispatch #:named #:modes #:type #:mode-node))
 (in-package #:pine/mode)
 
@@ -62,12 +63,33 @@ writing a document back where it came from is the document's, and a mode says wh
 saving is before anything is written.")
   (:method ((m mode) d) (declare (ignore d)) nil))
 
-(defgeneric structure (mode document)
-  (:documentation "The regions this text divides into, as a tree.
+(defclass span ()
+  ((name   :initarg :name   :reader name-of)
+   (from   :initarg :from   :reader from-of)
+   (to     :initarg :to     :reader to-of)
+   (inside :initarg :inside :reader inside-of :initform nil))
+  (:documentation "One stretch a mode says its text divides into: what to call it,
+where it starts and ends as (LINE . COLUMN), and the spans inside it.
 
-Each is (NAME START END . CHILDREN) in the document's own lines. What comes back is
-put in the namespace under the document, so a form or a heading is a place anything
-can read, write and watch -- inside this image and outside it.")
+Said and not kept. A span is what a mode answers; the node standing for it is
+RESTRUCTURE's, and that node outlives an edit so a watcher on one goes on watching.
+Answering nodes instead would make a mode mint a new one on every keystroke and
+every watcher would be watching something nothing else can reach.
+
+A class because it was (NAME START END . CHILDREN), and a mode that put its three
+in another order made regions covering text they were never standing for -- with
+nothing to catch it, because every one of those shapes is a list."))
+
+(defun covering (name from to &optional inside)
+  "A span. FROM and TO are (LINE . COLUMN) in the document's own lines."
+  (make-instance 'span :name (princ-to-string name) :from from :to to
+                       :inside inside))
+
+(defgeneric structure (mode document)
+  (:documentation "The spans this text divides into, as a tree of SPAN.
+
+What comes back is put in the namespace under the document, so a form or a heading
+is a place anything can read, write and watch -- inside this image and outside it.")
   (:method ((m mode) d) (declare (ignore d)) nil))
 
 (defgeneric setting (of key)
@@ -217,11 +239,25 @@ somebody bound by hand on top of that."
               (or (d:lookup (d:all *keys*) class) (d:no-map)))))
 
 (defun bind (class chord command)
-  "Bind a chord in a mode. A config binds one the way pine does."
+  "Bind a chord in a mode. A config binds one the way pine does.
+
+A chord bound while a system starts is that system's, and goes when it does. One a
+config binds is nobody's and stands, which is the difference between a system you
+can drop and a machine you set up."
   (let ((class (%named-as class)))
     (d:update! *keys* class
                (lambda (had) (d:with (or had (d:no-map)) chord command)))
+    (system:owned (list :chord class chord))
     chord))
+
+(defun unbind (class chord)
+  "Take a chord off a mode."
+  (let ((class (%named-as class)))
+    (d:update! *keys* class
+               (lambda (had) (if had (d:without had chord) (d:no-map))))
+    chord))
+
+(setf system:*unbind* #'unbind)
 
 (defun binding (m chord)
   "What CHORD runs for this mode: its own keymap, then up the class precedence list,

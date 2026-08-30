@@ -78,14 +78,15 @@ covers."
           (setf by-head
                 (d:with by-head head
                         (append had
-                                (list (list name (cons from 0)
-                                            (cons to (length (line document to)))))))))))
+                                (list (mode:covering
+                                       name (cons from 0)
+                                       (cons to (length (line document to)))))))))))
     (let (out)
       (d:do-map (head kids by-head (nreverse out))
-        (push (list* head
-                     (second (first kids))
-                     (third (car (cl:last kids)))
-                     kids)
+        (push (mode:covering head
+                             (mode:from-of (first kids))
+                             (mode:to-of (car (cl:last kids)))
+                             kids)
               out)))))
 
 (defun %opens (document at)

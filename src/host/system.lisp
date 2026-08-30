@@ -5,9 +5,11 @@
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
-                    (#:sh #:pine/host/shell) (#:dev #:pine/host/device))
+                    (#:sh #:pine/host/shell) (#:dev #:pine/host/device)
+                    (#:declared #:pine/host/declared))
+  (:import-from #:pine/host/declared #:defdevice #:defbacking)
   (:export
-   #:device))
+   #:device #:defdevice #:defbacking))
 (in-package #:pine/host)
 
 (defvar *attending* nil)
@@ -24,14 +26,18 @@ the substrate names either."))
 (system:offers 'host)
 
 (defun %make (name &rest arguments)
-  "The device NAME names, made. What builds one is a function DEVICE exports under
-that name and that answers a node; a name it keeps to itself is not a device, and
-neither is one that answers something else, however well either reads."
-  (multiple-value-bind (make status)
-      (find-symbol (string-upcase (princ-to-string name)) :pine/host/device)
-    (when (and (eq :external status) (fboundp make))
-      (let ((it (apply make arguments)))
-        (when (node:nodep it) it)))))
+  "The device NAME names, made.
+
+A declared one first: that is the kind a config or a system of your own can add,
+and the kind that says which of several ways of asking this machine actually works
+here. Then a function DEVICE exports under that name and that answers a node, which
+is what the devices written before there were declarations are."
+  (or (declared:made name)
+      (multiple-value-bind (make status)
+          (find-symbol (string-upcase (princ-to-string name)) :pine/host/device)
+        (when (and (eq :external status) (fboundp make))
+          (let ((it (apply make arguments)))
+            (when (node:nodep it) it))))))
 
 (defun device (what &rest arguments)
   "Start what WHAT declared: the streams whose lines say the world behind it moved,
@@ -45,6 +51,7 @@ A name in place of a node is made and put under /dev first:
                (let ((it (apply #'%make what arguments)))
                  (when it
                    (node:attach it (tree:ensure (tree:root) "dev")))))))
+    (when (node:nodep n) (system:owned (node:full-name n)))
     (%attend n)))
 
 (defun %attend (n)

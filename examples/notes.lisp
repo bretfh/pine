@@ -1,48 +1,34 @@
 (defpackage #:notes
             (:use #:pine/user)
             (:shadow #:note)
-            (:export #:notes #:note #:entry #:journal #:sticky))
+            (:export #:notes #:note #:journal #:sticky))
 (in-package #:notes)
 
 ;;; An app, written the way anything is written here: classes and methods in a
 ;;; package of its own. Nothing under src/ names this file, and this file names
 ;;; nothing private. It is the editor's equal, and that is the whole point.
 
-(defvar *entries* (map)
-  "What has been written down, by title. A value, so two threads reading it never
-see one change underneath them.")
-
 ;;; A kind of node. Its children are the entries, so an entry is a place: read it
 ;;; for what it says, write it to say something else, and anything watching one
 ;;; hears about it -- from this image or from another machine.
 
-(defclass entry (node) ()
-  (:documentation "One thing written down, at a place."))
-
 (defclass journal (node) ()
-  (:documentation "Everything written down. /notes is one of these."))
+  (:documentation "Everything written down. /notes is one of these.
 
-(defun titles () (sort (keys *entries*) #'string<))
+There is no map of entries here. An entry is a node under this one, which is a
+place, is saved, and is watched, and keeping the text in a variable beside the tree
+would be keeping it twice -- one of them the copy that persists and one of them the
+copy anything else can reach."))
 
-(defmethod contents ((n journal)) (titles))
-(defmethod nodes ((n journal))
-           (loop :for title :in (titles)
-                 :collect (child n title
-                                 (lambda () (make-instance 'entry :name title :parent n)))))
+(defmethod contents ((n journal)) (sort (listing n) #'string<))
 
-(defmethod resolve ((n journal) title)
-           "Every title is a place, whether or not anything has been written there yet.
-Writing one is how an entry comes to exist."
-           (let ((title (princ-to-string title)))
-             (child n title (lambda () (make-instance 'entry :name title :parent n)))))
+(defmethod make-child ((n journal) name)
+  "What is under it is what it says, so putting one there moves it. A mounted
+directory says the same thing the same way."
+  (let ((made (call-next-method))) (moved n) made))
 
-(defmethod contents ((n entry)) (lookup *entries* (name n)))
-(defmethod (setf contents) (said (n entry))
-           (setf *entries* (if said
-                               (with *entries* (name n) (princ-to-string said))
-                             (without *entries* (name n))))
-           (moved (parent n))
-           said)
+(defmethod erase-child ((n journal) name)
+  (let ((gone (call-next-method))) (moved n) gone))
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of
 ;;; its own to say: what its text divides into.
@@ -63,9 +49,9 @@ Writing one is how an entry comes to exist."
   (and (plusp (length line)) (char= #\* (char line 0))))
 
 (defmethod structure ((m note) document)
-           "Every heading, and the lines under it. What comes back is put in the namespace
-under the document, so /text/x.note/heading/Today is a place you can read, write
-and watch."
+           "Every heading, and the lines under it, as spans. What comes back is put
+in the namespace under the document, so /text/x.note/heading/Today is a place you
+can read, write and watch."
            (let ((found NIL)
                  (n (line-count document)))
              (dotimes (at n)
@@ -75,15 +61,15 @@ and watch."
              (flet ((ends (at) (cons at (length (line document at)))))
                    (let ((all (nreverse found)))
                      (when all
-                       (list (list* "heading"
-                                    (cons (second (first all)) 0)
-                                    (ends (1- n))
-                                    (loop :for ((title from) . more) :on all
-                                          :for to := (if more
-                                                         (1- (second (first more)))
-                                                       (1- n))
-                                          :collect (list title (cons from 0)
-                                                         (ends (max from to)))))))))))
+                       (list (covering "heading"
+                                       (cons (second (first all)) 0)
+                                       (ends (1- n))
+                                       (loop :for ((title from) . more) :on all
+                                             :for to := (if more
+                                                            (1- (second (first more)))
+                                                          (1- n))
+                                             :collect (covering title (cons from 0)
+                                                                (ends (max from to)))))))))))
 
 ;;; A role, and a surface on it. One ANCHOR method puts a new kind of surface on
 ;;; screen; nothing showing it needs knowledge of it, because the role crosses the
@@ -93,18 +79,19 @@ and watch."
   (:documentation "A note stuck to the corner of the screen."))
 
 (defmethod anchor ((r sticky) width height)
-           (map :edges '(:top :right) :wide width :tall height :reserve 0
-                :margin '(16 16 0 0)))
+           (placing :edges '(:top :right) :wide width :tall height
+                    :margin (inset :top 16 :right 16)))
 
 (defun %latest ()
   "The last thing written down, read through the namespace rather than out of the
-variable behind it. That is what makes the surface follow it: what a surface reads
-is what it is worked out again for, and a place is what it can read."
+node behind it. That is what makes the surface follow it: what a surface reads is
+what it is worked out again for, and a place is what it can read."
   (let ((title (first (last (read "/notes" :else (list))))))
-    (when title (list title (read (format NIL "/notes/~a" title))))))
+    (when title (list title (read (format NIL "/notes/~a" title) :else "")))))
 
-;;; The system. It starts and stops like anything else that runs, which is what
-;;; puts it at /system/notes and lets you take it away again.
+;;; The system. It starts like anything else that runs, which is what puts it at
+;;; /system/notes. What it puts up while it starts is its, so there is no STOP:
+;;; the place, the surface and the chord all go when it does.
 
 (defclass notes (system) ()
   (:documentation "Notes: a place to write things down, and a note stuck to the
@@ -113,18 +100,17 @@ corner of the screen showing the last one."))
 (offers 'notes)
 
 (defmethod start ((s notes))
-           (attach (make-instance 'journal :name "notes"
-                                  :describes "what has been written down")
-                   (root))
+           (puts (make-instance 'journal :name "notes"
+                                :describes "what has been written down"))
            (defcommand "note" (title said)
                        (:describes "write something down"
                                    :asks '((:prompt "Note: ")))
-                       (setf (contents (at (format NIL "/notes/~a" title))) (or said ""))
+                       (write (format NIL "/notes/~a" title) (or said ""))
                        title)
            (defcommand "notes" () (:describes "everything written down")
-                       (titles))
+                       (read "/notes" :else (list)))
            (defcommand "forget-note" (title) (:describes "take one back off")
-                       (setf (contents (at (format NIL "/notes/~a" title))) NIL)
+                       (erase (format NIL "/notes/~a" title))
                        T)
            (bind 'text "C-c n" "note")
            (defsurface sticky (:as 'sticky)
@@ -132,12 +118,4 @@ corner of the screen showing the last one."))
                          (column :class "sticky"
                                  (label (or (first latest) "nothing written down"))
                                  (label (or (second latest) "")))))
-           s)
-
-;;; Its commands go with it and nothing here says their names: a command knows
-;;; the package it was written in and the system knows which package is its.
-
-(defmethod stop ((s notes))
-           (erase "/surface/sticky")
-           (erase "/notes")
            s)

@@ -7,8 +7,8 @@
 knows the roles by name."))
 
 (defmethod ui:anchor ((r ticker) width height)
-  (d:map :edges '(:bottom :right) :wide width :tall height :reserve 0
-         :margin '(4 4 4 4)))
+  (ui:placing :edges '(:bottom :right) :wide width :tall height
+              :margin '(4 4 4 4)))
 
 (defmethod ui:shows ((r ticker)) :always)
 
@@ -115,8 +115,8 @@ both, so they have to be the same three numbers."
         (is (typep (ui:role s) 'ticker))
         (is (ui:shown s) "a role that shows :always is up already")
         (let ((placed (ui:anchor (ui:role s) 100 20)))
-          (is (equal '(:bottom :right) (d:lookup placed :edges)))
-          (is (equal '(4 4 4 4) (d:lookup placed :margin))))
+          (is (equal '(:bottom :right) (ui:edges-of placed)))
+          (is (equal '(4 4 4 4) (ui:margin-of placed))))
         (is (equal "one" (ui:content (node:contents s))))
         (setf (node:contents where) "two")
         (is (equal "two" (ui:content (node:contents s)))

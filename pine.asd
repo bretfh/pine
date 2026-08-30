@@ -93,7 +93,8 @@ the parse behind it"
                 :depends-on (#:pine)
                 :serial t
                 :pathname "src/host/"
-                :components ((:file "shell") (:file "device") (:file "system") (:file "words")))
+                :components ((:file "shell") (:file "declared") (:file "device")
+                             (:file "system") (:file "words")))
 
 (asdf:defsystem #:pine/edit
                 :description "Windows onto documents, and the chords that act on them"

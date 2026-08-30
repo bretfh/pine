@@ -31,37 +31,63 @@ round it went.")
   (:method ((r panel)) :when-asked)
   (:method ((r overlay)) :when-asked))
 
+(defclass placing ()
+  ((edges   :initarg :edges   :reader edges-of   :initform nil)
+   (wide    :initarg :wide    :reader wide-of    :initform 0)
+   (tall    :initarg :tall    :reader tall-of    :initform 0)
+   (reserve :initarg :reserve :reader reserve-of :initform 0)
+   (margin  :initarg :margin  :reader margin-of  :initform '(0 0 0 0)))
+  (:documentation "Where a surface sits and how big: which edges it is anchored to,
+how wide and how tall, what strip it keeps for itself, and its margin.
+
+A class and not a map, because it is what ANCHOR answers and every kind of surface
+answers it. A map made a misspelled key a surface that quietly sat at the origin;
+a slot that does not exist is a build that fails. What crosses the wire is still a
+plist -- the far side may be another image -- and %PLAINLY is where it becomes one.
+
+The words are wayland's because that is what the placement is; nothing about the
+content is here."))
+
+(defmethod print-object ((p placing) stream)
+  (print-unreadable-object (p stream :type t)
+    (format stream "~{~(~a~)~^ ~} ~dx~d" (edges-of p) (wide-of p) (tall-of p))))
+
+(defun placing (&key edges (wide 0) (tall 0) (reserve 0) (margin '(0 0 0 0)))
+  (make-instance 'placing :edges edges :wide wide :tall tall
+                          :reserve reserve :margin margin))
+
+(defun inset (&key (top 0) (right 0) (bottom 0) (left 0))
+  "A margin, in the order wayland reads one. Not MARGIN: that is the widget slot,
+and a surface's margin is not a widget's."
+  (list top right bottom left))
+
 (defgeneric anchor (role width height)
   (:documentation "Where a surface of this role sits and how big, given what it
-measured to. Answers a map: which edges it is anchored to, how wide and how tall,
-what strip it keeps for itself, and its margin.
+measured to. Answers a PLACING.
 
 The words are wayland's because that is what the placement is; nothing about the
 content is here.")
   (:method ((r role) width height)
-    (d:map :edges '(:top :left) :wide width :tall height :reserve 0
-           :margin '(0 0 0 0)))
+    (placing :edges '(:top :left) :wide width :tall height))
   (:method ((r bar) width height)
     (declare (ignore height))
-    (d:map :edges '(:top :left :bottom) :wide width :tall 0 :reserve width
-           :margin '(0 0 0 0)))
+    (placing :edges '(:top :left :bottom) :wide width :tall 0 :reserve width))
   (:method ((r background) width height)
     (declare (ignore width height))
-    (d:map :edges '(:top :left :bottom :right) :wide 0 :tall 0 :reserve 0
-           :margin '(0 0 0 0)))
+    (placing :edges '(:top :left :bottom :right)))
   (:method ((r overlay) width height)
-    (d:map :edges '(:top :right) :wide width :tall height :reserve 0
-           :margin '(8 8 0 0)))
+    (placing :edges '(:top :right) :wide width :tall height
+             :margin (inset :top 8 :right 8)))
   (:method ((r panel) width height)
-    (d:map :edges '(:top :left) :wide width :tall height :reserve 0
-           :margin '(8 0 0 8)))
+    (placing :edges '(:top :left) :wide width :tall height
+             :margin (inset :top 8 :left 8)))
   (:method ((r window) width height)
     "A window of its own: the compositor sizes it, so nothing is anchored."
     (declare (ignore width height))
-    (d:map :edges nil :wide 0 :tall 0 :reserve 0 :margin '(0 0 0 0)))
+    (placing))
   (:method ((r tile) width height)
     (declare (ignore width height))
-    (d:map :edges nil :wide 0 :tall 0 :reserve 0 :margin '(0 0 0 0))))
+    (placing)))
 
 (defclass surface (node:derived)
   ((role  :initarg :role  :accessor role)
@@ -89,9 +115,10 @@ what the surface builds follows it like anything else it read."))
 (defun %id (name at) (format nil "~a/~d" name at))
 
 (defun %plainly (said)
-  "A map as a plist. What crosses a wire is plain lisp data: the far side may
+  "A PLACING as a plist. What crosses a wire is plain lisp data: the far side may
 be another image, and what it reads has to be something a reader can read."
-  (loop :for (key . value) :in (d:pairs said) :append (list key value)))
+  (list :edges (edges-of said) :wide (wide-of said) :tall (tall-of said)
+        :reserve (reserve-of said) :margin (margin-of said)))
 
 (defun act (said)
   "Do what the widget that crossed as this id meant, with whatever the far side
@@ -161,6 +188,7 @@ disagree about what leaving it out meant."
                              :writes #'act
                              :describes "what another pine says was clicked")
                  s)
+    (system:owned (node:full-name s))
     (declared s)
     s))
 

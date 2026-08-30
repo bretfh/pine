@@ -13,26 +13,28 @@
   (:import-from #:pine/fs/mount #:mount)
   (:import-from #:pine/fs/node
    #:announces #:attach #:child #:contents #:derive #:describes #:detach
-   #:full-name #:livep #:name #:node #:nodep #:nodes #:parent #:answers #:lists
+   #:erase-child #:full-name #:livep #:make #:make-child #:name #:node #:nodep #:nodes
+   #:parent #:answers #:lists
    #:refreshes #:resolve #:savedp #:slots #:moved #:verb)
   (:import-from #:pine/fs/path #:leaf #:path)
   (:import-from #:pine/fs/tree #:ensure #:erase #:listing #:root)
   (:import-from #:pine/mode
-   #:bind #:handles #:code #:complete #:indent #:lisp #:mode #:org #:pine
-   #:press #:prose #:saving #:says #:scheme #:setting #:text
+   #:bind #:handles #:code #:complete #:covering #:indent #:lisp #:mode
+   #:org #:pine #:press #:prose #:saving #:says #:scheme #:setting #:text
    #:typing)
   (:import-from #:pine/run/command #:command #:commands #:defcommand #:run)
   (:import-from #:pine/run/fault #:attempt)
   (:import-from #:pine/run/job
    #:actor #:alivep #:ask #:job #:program #:start #:stop #:tell #:thread
    #:tick)
-  (:import-from #:pine/run/system #:offers #:system)
+  (:import-from #:pine/run/system #:offers #:puts #:system)
   (:import-from #:pine/run/watch #:unwatch)
   (:import-from #:pine/ui
    #:acting #:anchor #:background #:bar #:box #:make-surface #:button #:calendar
    #:cells #:center #:centerbox #:choice #:color #:column #:css-glass
    #:css-mono #:css-rad #:defsurface #:field #:gap #:grid #:here #:icon
-   #:image #:label #:measure #:metric #:overlay #:paint #:panel #:parts
+   #:image #:inset #:label #:measure #:metric #:overlay #:paint
+   #:panel #:parts #:placing
    #:ring #:role #:row #:rows #:rule #:scroll #:shown #:shows #:slider
    #:stack #:surface #:surfaces #:tile #:widget #:window)
   (:documentation "The language somebody writes their own pine in.

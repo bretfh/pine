@@ -75,8 +75,8 @@ own readtable. It is nothing but a file somebody wrote."
   (let* ((s (ui:named "sticky"))
          (where (ui:anchor (ui:role s) 40 20)))
     (is (not (null s)))
-    (is (equal '(:top :right) (d:lookup where :edges)))
-    (is (equal '(16 16 0 0) (d:lookup where :margin)))
+    (is (equal '(:top :right) (ui:edges-of where)))
+    (is (equal '(16 16 0 0) (ui:margin-of where)))
     (is (null (ui:shown s)) "and it waits to be asked for")))
 
 (test its-surface-follows-what-it-read-and-crosses-the-wire

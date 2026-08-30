@@ -128,9 +128,9 @@ it replaced text it was never standing for."
 two
 three
 four")
-      (pine/text::%build doc '(("dup" (0 . 0) (0 . 3))
-                               ("dup" (2 . 0) (2 . 5))
-                               ("other" (1 . 0) (1 . 3))))
+      (pine/text::%build doc (list (mode:covering "dup" '(0 . 0) '(0 . 3))
+                                   (mode:covering "dup" '(2 . 0) '(2 . 5))
+                                   (mode:covering "other" '(1 . 0) '(1 . 3))))
       (let ((names (sort (mapcar #'node:name
                                  (remove-if-not
                                   (lambda (n) (typep n 'pine/text::region))
@@ -143,9 +143,9 @@ four")
   (with-tree
     (let ((doc (text:make-document "test-region-identity")))
       (setf (node:contents doc) "one two three")
-      (pine/text::%build doc '(("only" (0 . 0) (0 . 3))))
+      (pine/text::%build doc (list (mode:covering "only" '(0 . 0) '(0 . 3))))
       (let ((first-time (d:lookup (d:all (node:memo doc)) "only")))
-        (pine/text::%build doc '(("only" (0 . 4) (0 . 7))))
+        (pine/text::%build doc (list (mode:covering "only" '(0 . 4) '(0 . 7))))
         (let ((now (d:lookup (d:all (node:memo doc)) "only")))
           (is (eq first-time now) "the same node")
           (is (equal '((0 . 4) (0 . 7)) (pine/text::covers now))
