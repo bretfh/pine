@@ -3,48 +3,17 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell) (#:declared #:pine/host/declared))
-  (:export
-   #:readings #:clock #:media #:tick #:sys #:env))
+  (:documentation "The devices pine ships, every one of them a declaration.
+
+Nothing here is a function anybody calls to get a device. What this file holds is
+what a config or a system of your own holds: DEFDEVICE for what the machine may
+have, and DEFBACKING for each way of asking this machine about it.")
+  (:export #:tick))
 (in-package #:pine/host/device)
 
-(defvar *now* 0)
+(defvar *now* (get-universal-time))
 (defvar *sampled* nil)
 (defvar *busy* nil)
-
-(defun %named-rows (readings)
-  (mapcar (lambda (r) (string (first r))) readings))
-
-(defun %reading (n row)
-  "One row of a device, as a node that works its value out.
-
-It reads the device on the way, which is what makes moving the device move it:
-the reading is a reader of the device, so the graph says so and nothing here has
-to say it again."
-  (destructuring-bind (name reads &optional writes) row
-    (let ((name (string name)))
-      (node:derive name
-                   (lambda () (node:reading n) (funcall reads))
-                   :parent n :writes writes))))
-
-(defun readings (name rows &key announces refreshes describes)
-  "Something the machine has. Its readings are rows -- a name, how to read it, and
-how to write it -- not a class each, and not a class at all: a device is a place
-whose children are worked out from that list.
-
-That is what a node taking a write function is for: /dev/audio was four classes
-and twelve methods, and it is this list now."
-  (let ((self (list nil)))
-    (setf (first self)
-          (node:lists name
-                      :announces announces :refreshes refreshes
-                      :describes describes
-                      :reads (lambda () (%named-rows rows))
-                      :names (lambda () (%named-rows rows))
-                      :each (lambda (want)
-                              (let ((row (find (princ-to-string want) rows
-                                               :key (lambda (r) (string (first r)))
-                                               :test #'equal)))
-                                (when row (%reading (first self) row))))))))
 
 (defun %sinks ()
   "Every sink wireplumber lists, and which one is the default."
@@ -238,35 +207,38 @@ wants a password and whether it is the one we are on."
   (let ((n (sh:number-in said)))
     (when n (round n))))
 
-(defun media (&key player)
-  (flet ((ask (what) (sh:sh "playerctl~@[ -p ~a~] ~a 2>/dev/null" player what)))
-    (labels ((meta (key) (let ((said (ask (format nil "metadata ~a" key))))
-                           (when (plusp (length said)) said))))
-      (readings "media"
-              (append
-               (list (list "status" (lambda ()
-                                      (let ((said (ask "status")))
-                                        (cond ((search "Playing" said) :playing)
-                                              ((search "Paused" said) :paused)
-                                              ((plusp (length said)) :stopped)))))
-                     (list "title" (lambda () (meta "xesam:title")))
-                     (list "artist" (lambda () (meta "xesam:artist")))
-                     (list "album" (lambda () (meta "xesam:album")))
-                     (list "art" (lambda () (meta "mpris:artUrl")))
-                     (list "position" (lambda () (sh:number-in (ask "position"))))
-                     (list "length" (lambda ()
-                                      (let ((said (meta "mpris:length")))
-                                        (when said
-                                          (let ((n (sh:number-in said)))
-                                            (when n (round n 1000000))))))))
-               (loop :for verb :in '("play" "pause" "next" "previous" "stop")
-                     :collect (list verb (constantly verb)
-                                    (let ((verb verb))
-                                      (lambda (v) (declare (ignore v))
-                                        (ask verb) t)))))
-              :announces (list (format nil "playerctl~@[ -p ~a~] --follow status"
-                                       player))
-              :describes "what is playing, through mpris"))))
+(defun %player (player what)
+  (sh:sh "playerctl~@[ -p ~a~] ~a 2>/dev/null" player what))
+
+(defun %meta (player key)
+  (%said-or-nothing (%player player (format nil "metadata ~a" key))))
+
+(defun %tells (player verb)
+  "A write that tells the player to do VERB, whatever was written to it."
+  (lambda (said) (declare (ignore said)) (%player player verb) t))
+
+(declared:defdevice media :describes "what is playing, through mpris")
+
+(declared:defbacking media
+    (:needs "playerctl" :takes (player)
+     :announces (list (format nil "playerctl~@[ -p ~a~] --follow status" player)))
+  (status   :reads (let ((said (%player player "status")))
+                     (cond ((search "Playing" said) :playing)
+                           ((search "Paused" said) :paused)
+                           ((plusp (length said)) :stopped))))
+  (title    :reads (%meta player "xesam:title"))
+  (artist   :reads (%meta player "xesam:artist"))
+  (album    :reads (%meta player "xesam:album"))
+  (art      :reads (%meta player "mpris:artUrl"))
+  (position :reads (sh:number-in (%player player "position")))
+  (length   :reads (let ((said (%meta player "mpris:length")))
+                     (when said
+                       (let ((n (sh:number-in said))) (when n (round n 1000000))))))
+  (play     :reads "play"     :writes (%tells player "play"))
+  (pause    :reads "pause"    :writes (%tells player "pause"))
+  (next     :reads "next"     :writes (%tells player "next"))
+  (previous :reads "previous" :writes (%tells player "previous"))
+  (stop     :reads "stop"     :writes (%tells player "stop")))
 
 (defun %part (name at)
   (multiple-value-bind (second minute hour day month year weekday)
@@ -279,15 +251,16 @@ wants a password and whether it is the one we are on."
           ((equal name "year") year)
           ((equal name "weekday") weekday))))
 
-(defun clock ()
-  (setf *now* (get-universal-time))
-  (readings "clock"
-          (loop :for name :in '("second" "minute" "hour" "day" "month" "year"
-                                "weekday")
-                :collect (list name (let ((name name))
-                                      (lambda () (%part name *now*)))))
-          :refreshes 1
-          :describes "the time, as paths"))
+(declared:defdevice clock :describes "the time, as paths" :refreshes 1)
+
+(declared:defbacking clock ()
+  (second  :reads (%part "second" *now*))
+  (minute  :reads (%part "minute" *now*))
+  (hour    :reads (%part "hour" *now*))
+  (day     :reads (%part "day" *now*))
+  (month   :reads (%part "month" *now*))
+  (year    :reads (%part "year" *now*))
+  (weekday :reads (%part "weekday" *now*)))
 
 (defun tick ()
   (setf *now* (get-universal-time)))
@@ -346,42 +319,51 @@ moment: sampling per read gives the second one no ticks to divide by."
          (pct (find-if (lambda (word) (find #\% word)) (sh:words said))))
     (or (and pct (sh:number-in pct)) 0)))
 
-(defun sys ()
-  (readings "sys"
-          (list (list "cpu" #'%cpu)
-                (list "ram" #'%ram)
-                (list "disk" #'%disk)
-                (list "temp" #'%temp)
-                (list "uptime" (lambda () (round (or (sh:number-in (%file "/proc/uptime")) 0))))
-                (list "load" (lambda ()
-                               (mapcar (lambda (w)
-                                         (or (fault:or-nothing
-                                                 "a field that is not a number"
-                                               (read-from-string w))
-                                             0))
-                                       (subseq (uiop:split-string
-                                                (string-trim '(#\Newline)
-                                                             (or (%file "/proc/loadavg") ""))
-                                                :separator '(#\Space))
-                                               0 3))))
-                (list "user" (lambda () (uiop:getenv "USER")))
-                (list "host" (lambda () (uiop:hostname))))
-          :refreshes 3
-          :describes "the machine: cpu, ram, temperature, uptime, load"))
+(defun %uptime ()
+  (round (or (sh:number-in (%file "/proc/uptime")) 0)))
 
-(defun env ()
-  (readings "env"
-          (loop :for entry :in (sb-ext:posix-environ)
-                :for name := (subseq entry 0 (position #\= entry))
-                :collect (list name
-                               (let ((name name)) (lambda () (uiop:getenv name)))
-                               (let ((name name))
-                                 (lambda (v)
-                                   (if (null v)
-                                       (sb-posix:unsetenv name)
-                                       (sb-posix:setenv name (princ-to-string v) 1))
-                                   v))))
-          :describes "the environment this image was started in"))
+(defun %load ()
+  (mapcar (lambda (w)
+            (or (fault:or-nothing "a field that is not a number"
+                  (read-from-string w))
+                0))
+          (subseq (uiop:split-string
+                   (string-trim '(#\Newline) (or (%file "/proc/loadavg") ""))
+                   :separator '(#\Space))
+                  0 3)))
+
+(declared:defdevice sys
+  :describes "the machine: cpu, ram, temperature, uptime, load"
+  :refreshes 3)
+
+(declared:defbacking sys ()
+  (cpu    :reads (%cpu))
+  (ram    :reads (%ram))
+  (disk   :reads (%disk))
+  (temp   :reads (%temp))
+  (uptime :reads (%uptime))
+  (load   :reads (%load))
+  (user   :reads (uiop:getenv "USER"))
+  (host   :reads (uiop:hostname)))
+
+(defun %environment-rows ()
+  "One row per variable in the environment. Not known until you ask, which is what a
+backing's :ROWS is for: the machine says what is there and the rows follow."
+  (loop :for entry :in (sb-ext:posix-environ)
+        :for name := (subseq entry 0 (position #\= entry))
+        :collect (list name
+                       (let ((name name)) (lambda () (uiop:getenv name)))
+                       (let ((name name))
+                         (lambda (said)
+                           (if (null said)
+                               (sb-posix:unsetenv name)
+                               (sb-posix:setenv name (princ-to-string said) 1))
+                           said)))))
+
+(declared:defdevice env
+  :describes "the environment this image was started in")
+
+(declared:defbacking env (:rows (%environment-rows)))
 
 
 

@@ -4,24 +4,26 @@
 
 (test a-device-is-rows-and-not-a-class-each
   (with-tree
-    (let* ((held (list 40))
-           (dev (device:readings "probe"
-                               (list (list "volume"
-                                           (lambda () (first held))
-                                           (lambda (v) (setf (first held) v)))
-                                     (list "muted" (lambda () nil))))))
-      (node:attach dev (tree:root))
-      (is (equal '("volume" "muted") (node:contents dev)))
-      (is (= 40 (node:contents (tree:at "/probe/volume"))))
-      (setf (node:contents (tree:at "/probe/volume")) 55)
-      (is (= 55 (first held)))
-      (is (eq (tree:at "/probe/volume") (tree:at "/probe/volume"))
-          "the same child every time"))))
+    (let ((held (list 40)))
+      (declared:defdevice %probe-volume :describes "rows, not a class each")
+      (declared:defbacking %probe-volume ()
+        (volume :reads (first held) :writes (lambda (v) (setf (first held) v)))
+        (muted  :reads nil))
+      (let ((dev (node:attach (declared:made "%probe-volume") (tree:root))))
+        (is (equal '("volume" "muted") (node:contents dev)))
+        (is (= 40 (node:contents (tree:at "/%probe-volume/volume"))))
+        (setf (node:contents (tree:at "/%probe-volume/volume")) 55)
+        (is (= 55 (first held)))
+        (is (eq (tree:at "/%probe-volume/volume")
+                (tree:at "/%probe-volume/volume"))
+            "the same child every time")))))
 
 (test a-device-says-what-it-wants-watched
   (with-tree
-    (let ((dev (device:readings "probe" (list (list "one" (constantly 1)))
-                              :announces '("some stream") :refreshes 5)))
+    (declared:defdevice %probe-watched :describes "what it wants watched")
+    (declared:defbacking %probe-watched (:announces '("some stream") :refreshes 5)
+      (one :reads 1))
+    (let ((dev (declared:made "%probe-watched")))
       (is (equal '("some stream") (node:announces dev)))
       (is (eql 5 (node:refreshes dev))))))
 
@@ -46,7 +48,7 @@
 
 (test the-clock-is-the-time-as-paths
   (with-tree
-    (let ((clock (device:clock)))
+    (let ((clock (declared:made "clock")))
       (node:attach clock (tree:root))
       (device:tick)
       (is (integerp (node:contents (tree:at "/clock/year"))))
@@ -54,7 +56,7 @@
 
 (test the-environment-reads-and-writes-through
   (with-tree
-    (let ((env (device:env)))
+    (let ((env (declared:made "env")))
       (node:attach env (tree:root))
       (let ((n (node:resolve env "PATH")))
         (is (not (null n)))
@@ -65,18 +67,17 @@
 Stirring one without the other leaves every reading frozen at whatever it answered
 the first time, which is a clock that never ticks."
   (with-tree
-    (let* ((n (cons 0 nil))
-           (dev (node:attach (device:readings "probe"
-                                            (list (list "count"
-                                                        (lambda ()
-                                                          (d:swap (car n) #'1+)))))
-                             (tree:root))))
-      (is (eql 1 (node:contents (tree:at "/probe/count"))))
-      (is (eql 1 (node:contents (tree:at "/probe/count")))
-          "and it is remembered until something says otherwise")
-      (node:moved dev)
-      (is (eql 2 (node:contents (tree:at "/probe/count")))
-          "the device moved, so the reading is read again"))))
+    (let ((n (cons 0 nil)))
+      (declared:defdevice %probe-count :describes "counts every time it is read")
+      (declared:defbacking %probe-count ()
+        (count :reads (d:swap (car n) #'1+)))
+      (let ((dev (node:attach (declared:made "%probe-count") (tree:root))))
+        (is (eql 1 (node:contents (tree:at "/%probe-count/count"))))
+        (is (eql 1 (node:contents (tree:at "/%probe-count/count")))
+            "and it is remembered until something says otherwise")
+        (node:moved dev)
+        (is (eql 2 (node:contents (tree:at "/%probe-count/count")))
+            "the device moved, so the reading is read again")))))
 
 (test the-desktop-clipboard-is-a-place
   "Copying is a write and pasting is a read. Without it an editor is an island:

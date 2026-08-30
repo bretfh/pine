@@ -26,18 +26,12 @@ the substrate names either."))
 (system:offers 'host)
 
 (defun %make (name &rest arguments)
-  "The device NAME names, made.
+  "The device NAME names, made with ARGUMENTS.
 
-A declared one first: that is the kind a config or a system of your own can add,
-and the kind that says which of several ways of asking this machine actually works
-here. Then a function DEVICE exports under that name and that answers a node, which
-is what the devices written before there were declarations are."
-  (or (declared:made name)
-      (multiple-value-bind (make status)
-          (find-symbol (string-upcase (princ-to-string name)) :pine/host/device)
-        (when (and (eq :external status) (fboundp make))
-          (let ((it (apply make arguments)))
-            (when (node:nodep it) it))))))
+Every device is a declaration. There is no second way of getting one, so a device a
+config declared and a device pine ships are made by the same call -- which is the
+whole of what makes /dev something you can add to."
+  (apply #'declared:made name arguments))
 
 (defun device (what &rest arguments)
   "Start what WHAT declared: the streams whose lines say the world behind it moved,
@@ -84,11 +78,10 @@ A name in place of a node is made and put under /dev first:
 (defmethod job:start ((s host))
   (let ((root (tree:root)))
     (node:attach (sh:sh-node) root)
-    (device (node:attach (dev:env) root))
-    (device (node:attach (dev:sys) root))
+    (device (node:attach (declared:made "env") root))
+    (device (node:attach (declared:made "sys") root))
     (mount:mount #p"/" root "file")
-    (dolist (make (list #'dev:clock))
-      (device (node:attach (funcall make) (tree:ensure root "dev"))))
+    (device "clock")
     (job:supervise
      (job:start (make-instance 'job:tick :name "clock" :every 1
                                            :on-fault :leave
