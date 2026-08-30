@@ -11,14 +11,14 @@
 
 ;; What the machine has, in the tree. A device is rows -- a name, how to read it
 ;; and how to write it -- so /dev/audio/volume is read and written like anything.
-;; ATTEND puts one under /dev and follows it.
+;; DEVICE puts one under /dev and follows it.
 
-(attend "audio")
-(attend "screen")
-(attend "power")
-(attend "net")
-(attend "media" :player "emms")
-(attend "clip")
+(device "audio")
+(device "screen")
+(device "power")
+(device "net")
+(device "media" :player "emms")
+(device "clip")
 
 ;; A write makes the node if nothing has put one there yet.
 

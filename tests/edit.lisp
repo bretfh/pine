@@ -365,9 +365,9 @@ which DISPATCH could not tell from unbound, so dropping a system turned its chor
 into text."
   (let ((m (make-instance 'pine/mode:text)))
     (mode:bind "text" "C-M-F9" "no-such-command-at-all")
-    (multiple-value-bind (said so-far named)
+    (multiple-value-bind (said typed named)
         (mode:dispatch m nil (first (ui:chord "C-M-F9")) nil)
-      (declare (ignore so-far))
+      (declare (ignore typed))
       (is (eq :unbound said) "it is not taken")
       (is (equal "no-such-command-at-all" named) "and it says what it wanted"))))
 

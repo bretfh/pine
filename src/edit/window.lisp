@@ -67,7 +67,7 @@ was split into."))
   (let ((content (if (stringp it) (or (text:named it) it) it)))
     (setf (shows w) content)
     (when (typep content 'text:document) (setf (text:current) content))
-    (node:stir w)
+    (node:moved w)
     w))
 
 (defun follow (document)
@@ -78,7 +78,7 @@ else or the document keeps to itself."
                (not (text:asidep document))
                (not (eq document (shows w))))
       (setf (shows w) document)
-      (node:stir w))
+      (node:moved w))
     w))
 
 (defmethod text:showing :after ((document text:document))

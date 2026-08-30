@@ -109,7 +109,7 @@ both, so they have to be the same three numbers."
   (with-tree
     (let ((where (tree:ensure "/probe")))
       (setf (node:contents where) "one")
-      (let ((s (ui:builds "ticker"
+      (let ((s (ui:make-surface "ticker"
                                (lambda () (ui:label (node:contents where)))
                                :as 'ticker :starts :as-the-role-says)))
         (is (typep (ui:role s) 'ticker))

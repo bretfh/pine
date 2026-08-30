@@ -95,7 +95,7 @@ program's cursor: what you are looking at is where it is writing."
     (setf (text:spans term) spans))
   (text:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
   (setf (text:modified term) nil)
-  (node:stir term)
+  (node:moved term)
   term)
 
 (defun %escape (term k)

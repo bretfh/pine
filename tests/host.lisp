@@ -5,7 +5,7 @@
 (test a-device-is-rows-and-not-a-class-each
   (with-tree
     (let* ((held (list 40))
-           (dev (device:device "probe"
+           (dev (device:readings "probe"
                                (list (list "volume"
                                            (lambda () (first held))
                                            (lambda (v) (setf (first held) v)))
@@ -20,7 +20,7 @@
 
 (test a-device-says-what-it-wants-watched
   (with-tree
-    (let ((dev (device:device "probe" (list (list "one" (constantly 1)))
+    (let ((dev (device:readings "probe" (list (list "one" (constantly 1)))
                               :announces '("some stream") :refreshes 5)))
       (is (equal '("some stream") (node:announces dev)))
       (is (eql 5 (node:refreshes dev))))))
@@ -66,7 +66,7 @@ Stirring one without the other leaves every reading frozen at whatever it answer
 the first time, which is a clock that never ticks."
   (with-tree
     (let* ((n (cons 0 nil))
-           (dev (node:attach (device:device "probe"
+           (dev (node:attach (device:readings "probe"
                                             (list (list "count"
                                                         (lambda ()
                                                           (d:swap (car n) #'1+)))))
@@ -74,7 +74,7 @@ the first time, which is a clock that never ticks."
       (is (eql 1 (node:contents (tree:at "/probe/count"))))
       (is (eql 1 (node:contents (tree:at "/probe/count")))
           "and it is remembered until something says otherwise")
-      (node:stir dev)
+      (node:moved dev)
       (is (eql 2 (node:contents (tree:at "/probe/count")))
           "the device moved, so the reading is read again"))))
 

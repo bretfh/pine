@@ -4,10 +4,10 @@
 
 (defun %dispatch (document k)
   (let ((m (text:mode-of document)))
-    (multiple-value-bind (said so-far ran) (mode:dispatch m document k
+    (multiple-value-bind (said typed ran) (mode:dispatch m document k
                                                           (ui:pending))
       (cond ((eq said :pending)
-             (setf (ui:pending) so-far)
+             (setf (ui:pending) typed)
              :pending)
             ((and (consp said) (eq :insert (car said)))
              (setf (ui:pending) nil)

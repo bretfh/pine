@@ -106,7 +106,7 @@ directory of ten thousand is what a mount cannot afford."
         (let ((stream (open path :direction :output :if-exists nil
                                  :if-does-not-exist :create)))
           (when stream (close stream))))
-    (node:stir n)
+    (node:moved n)
     (%node-for n (probe-file path) (%bare name))))
 
 (defmethod node:erase-child ((n directory) name)
@@ -118,7 +118,7 @@ cannot cost a tree nobody looked at."
           (delete-file path)
           (uiop:delete-empty-directory path))
       (d:drop! (node:memo n) (%bare name))
-      (node:stir n))
+      (node:moved n))
     path))
 
 (defun node-for (n name)

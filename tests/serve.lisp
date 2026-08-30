@@ -74,7 +74,7 @@ nothing with a dropped connection and something with a sentence."
   (with-tree
     (is (eq :no (first (pine/run/peer::received (list :contents "/nowhere")))))
     (tree:built (tree:root))
-    (ui:builds "test-surface" (lambda () (ui:label "hi")) :as 'ui:panel)
+    (ui:make-surface "test-surface" (lambda () (ui:label "hi")) :as 'ui:panel)
     (let ((said (pine/run/peer::received (list :contents "/surface/test-surface"))))
       (is (eq :no (first said)) "a widget has no spelling")
       (is (search "test-surface" (second said)) "and the answer names the place"))

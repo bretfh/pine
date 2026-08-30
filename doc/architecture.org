@@ -74,7 +74,7 @@ step with the machine. =/dev/clip/text= is the desktop's clipboard the same way:
 reading it is what anything else copied, writing it is copying.
 
 A device is told the world behind it moved -- by a stream it named, or on its
-interval -- and telling it means telling its rows. A device stirred without them
+interval -- and telling it means telling its rows. A device moved without them
 is a clock that reads the hour once and never again.
 
 Storage is not a layer. =savedp= is a property of a class; writes go through as
@@ -235,7 +235,7 @@ tree, so a surface reads a node and a click writes one. See
 =examples/init.lisp=, which the suite loads so it stays a config you can copy.
 
 : (use :host)                            load a system and start it
-: (attend "media" :player "emms")        put a device under /dev and follow it
+: (device "media" :player "emms")        put a device under /dev and follow it
 : (write /wm-terminal "alacritty")       a place nothing has made yet is made
 : (defclass ticker (overlay) ())         a kind of surface
 : (defsurface ticker (:as 'ticker) ...)  one, declared

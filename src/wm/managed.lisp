@@ -109,13 +109,13 @@ is hidden. What is wanted is taken once, so nothing is done twice."
                                :reads (lambda () (told c))
                                :writes (lambda (value)
                                          (setf (said c) value)
-                                         (node:stir c))
+                                         (node:moved c))
                                :describes "what the compositor handed over")
                    (node:answers "placement"
                                :reads (lambda () (where c))
                                :writes (lambda (value)
                                          (setf (where c) (d:as :list value))
-                                         (node:stir c))
+                                         (node:moved c))
                                :describes "where each window goes")
                    (node:answers "wants"
                                :reads (lambda () (take c))

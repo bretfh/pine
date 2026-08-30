@@ -123,7 +123,7 @@ one up; with nothing painting, a declared surface is a node in the tree and
 nothing more, which is exactly what it is in a test.")
   (:method (surface) (declare (ignore surface)) nil))
 
-(defun builds (name reads &key (as 'panel) (starts :as-the-role-says))
+(defun make-surface (name reads &key (as 'panel) (starts :as-the-role-says))
   "STARTS is :UP, :DOWN, or :AS-THE-ROLE-SAYS -- which asks the role's SHOWS. It is
 three words because it is three answers: DEFSURFACE and a direct call used to
 disagree about what leaving it out meant."
@@ -166,6 +166,6 @@ disagree about what leaving it out meant."
 
 (defmacro defsurface (name options &body body)
   "Declare a surface. OPTIONS is :as and a role class."
-  `(builds ,(string-downcase (string name)) (lambda () ,@body)
+  `(make-surface ,(string-downcase (string name)) (lambda () ,@body)
            ,@options :starts :as-the-role-says))
 

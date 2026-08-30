@@ -79,7 +79,7 @@ screen is a picture until pine is restarted."
            (broken (cons t nil))
            (n (tree:ensure "/probe-src")))
       (setf (node:contents n) "first")
-      (let ((s (ui:builds "probe-surface"
+      (let ((s (ui:make-surface "probe-surface"
                                (lambda ()
                                  (let ((v (node:contents n)))
                                    (when (car broken) (error "on purpose"))

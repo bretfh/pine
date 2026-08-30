@@ -7,10 +7,6 @@
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
-(defvar *layout* nil
-  "The layout in force. A config puts its own class here and that is the whole of
-changing how windows are laid out.")
-
 (defclass layout ()
   ((share :initarg :share :accessor share :initform 1/2)
    (gaps  :initarg :gaps  :accessor gaps  :initform 0))

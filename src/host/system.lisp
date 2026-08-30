@@ -5,9 +5,9 @@
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
-                    (#:sh #:pine/host/shell) (#:device #:pine/host/device))
+                    (#:sh #:pine/host/shell) (#:dev #:pine/host/device))
   (:export
-   #:attend))
+   #:device))
 (in-package #:pine/host)
 
 (defvar *attending* nil)
@@ -33,13 +33,13 @@ neither is one that answers something else, however well either reads."
       (let ((it (apply make arguments)))
         (when (node:nodep it) it)))))
 
-(defun attend (what &rest arguments)
+(defun device (what &rest arguments)
   "Start what WHAT declared: the streams whose lines say the world behind it moved,
 and its interval where it has no stream to speak for it.
 
 A name in place of a node is made and put under /dev first:
 
-  (attend \"media\" :player \"emms\")"
+  (device \"media\" :player \"emms\")"
   (let ((n (if (node:nodep what)
                what
                (let ((it (apply #'%make what arguments)))
@@ -66,9 +66,9 @@ A name in place of a node is made and put under /dev first:
 (command:defcommand "devices" () (:describes "what the machine has")
   (tree:listing (tree:at (tree:root) "dev")))
 
-(command:defcommand "attend" (name &rest arguments)
+(command:defcommand "device" (name &rest arguments)
     (:describes "put a device in the tree")
-  (let ((it (apply #'attend name arguments)))
+  (let ((it (apply #'device name arguments)))
     (and it (node:full-name it))))
 
 (command:defcommand "sh" (line) (:describes "run something")
@@ -77,15 +77,15 @@ A name in place of a node is made and put under /dev first:
 (defmethod job:start ((s host))
   (let ((root (tree:root)))
     (node:attach (sh:sh-node) root)
-    (attend (node:attach (device:env) root))
-    (attend (node:attach (device:sys) root))
+    (device (node:attach (dev:env) root))
+    (device (node:attach (dev:sys) root))
     (mount:mount #p"/" root "file")
-    (dolist (make (list #'device:clock))
-      (attend (node:attach (funcall make) (tree:ensure root "dev"))))
+    (dolist (make (list #'dev:clock))
+      (device (node:attach (funcall make) (tree:ensure root "dev"))))
     (job:supervise
      (job:start (make-instance 'job:tick :name "clock" :every 1
                                            :on-fault :leave
-                                           :runs #'device:tick)))
+                                           :runs #'dev:tick)))
     root)
   s)
 

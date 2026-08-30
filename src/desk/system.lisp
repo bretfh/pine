@@ -47,7 +47,7 @@ what it draws, it says in the words pine offers."))
           (row (label /dev/power/battery) (label "%"))))
 
 (defun %bar ()
-  (builds "bar"
+  (make-surface "bar"
           (lambda ()
             (centerbox
              :class "bar"
@@ -60,7 +60,7 @@ what it draws, it says in the words pine offers."))
           :as 'bar :starts :up))
 
 (defun %sound-panel ()
-  (builds "sound"
+  (make-surface "sound"
           (lambda ()
             (column :class "panel sound-panel"
                     (label "sound")
@@ -70,7 +70,7 @@ what it draws, it says in the words pine offers."))
           :as 'panel))
 
 (defun %power-panel ()
-  (builds "power"
+  (make-surface "power"
           (lambda ()
             (column :class "panel power-panel"
                     (label "power")
@@ -88,7 +88,7 @@ what it draws, it says in the words pine offers."))
           :as 'panel))
 
 (defun %calendar ()
-  (builds "calendar"
+  (make-surface "calendar"
           (lambda ()
             (column :class "panel calendar-panel"
                     (calendar :year (read /dev/clock/year :else 2000)

@@ -65,7 +65,7 @@ there as one object and reading that object is how the pair is got whole."
   (let ((h (and (typep n 'derived) (cached n))))
     (if (workedp h) (worked-at h) (version n))))
 
-(defun standsp (n at)
+(defun currentp (n at)
   "Whether N is still what it was when somebody read it at version AT.
 
 Not asked of a mark a walk set on it. A walk takes time, so a node can have
@@ -77,7 +77,7 @@ out stands only if everything *it* read still stands, all the way down."
 
 (defun whole (from)
   "Whether everything a working-out read is still what it was when it read it."
-  (loop :for (each . at) :in from :always (standsp each at)))
+  (loop :for (each . at) :in from :always (currentp each at)))
 
 (defun soundp (n)
   "Whether what N holds still stands.
@@ -171,7 +171,7 @@ from this one is left alone when this one works out to what it said before. That
 what stops a write at the bottom of a deep graph from redrawing the whole of it.
 
 What it read is recorded whether or not it finished: a node that threw has still
-read what it read, and one that keeps nothing is one nothing can ever stir again.
+read what it read, and one that keeps nothing is one nothing can ever move again.
 
 One that threw puts nothing down, and says so with :BROKE rather than with the
 NIL that means try again. Not because the fault is uninteresting but because NIL
@@ -275,7 +275,7 @@ constant did -- to eleven surfaces and every read-only reading of a device."
   "Say the working-out running on this thread read N."
   (%noted n (mark n) n))
 
-(defgeneric stir (node)
+(defgeneric moved (node)
   (:documentation "Say NODE moved. Whatever read it is worked out again.
 
 A node already reached by this walk is not reached again: two that read each other
@@ -287,7 +287,7 @@ once -- a list bound on one thread does not.")
     (let ((epoch (or *walking* (d:swap *epoch* #'1+))))
       (when (%seen n epoch)
         (let ((*walking* epoch))
-          (d:do-each (each (readers n)) (stir each)))))
+          (d:do-each (each (readers n)) (moved each)))))
     n)
   (:method :before ((n derived))
     "What it worked out is no longer what it would work out.
@@ -299,10 +299,10 @@ what a walk cannot: a walk takes time, and during one a node can have moved and
 not been reached yet."
     (setf (cached n) +unread+)))
 
-(defun moved (n)
+(defun announced (n)
   "Say N moved: what read it is worked out again, and whoever is waiting for a
 batch of writes to land is told. One word, because they are one event."
-  (stir n)
+  (moved n)
   (commit:announce n)
   n)
 
@@ -326,4 +326,4 @@ the version it is as one object."
 
 (defmethod (setf contents) :after (value (n node))
   (declare (ignore value))
-  (moved n))
+  (announced n))

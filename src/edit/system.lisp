@@ -15,7 +15,7 @@
    #:follow #:name-of #:annotation #:matches #:askingp
    #:ask #:cancel #:so-far #:asked #:candidates
    #:chosen #:matching #:filep #:dispatch #:rows
-   #:indenting #:*cols* #:*lines* #:into #:acts
+   #:indenting #:*cols* #:*lines* #:show-listing #:on-enter
    #:place #:searching #:start #:step-search #:took
    #:banner #:arglist #:type-text))
 (in-package #:pine/edit)

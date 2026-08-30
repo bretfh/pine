@@ -41,7 +41,7 @@ Writing one is how an entry comes to exist."
            (setf *entries* (if said
                                (with *entries* (name n) (princ-to-string said))
                              (without *entries* (name n))))
-           (stir (parent n))
+           (moved (parent n))
            said)
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of

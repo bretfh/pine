@@ -19,7 +19,7 @@ say itself, because nothing else can see *SAID* move.")
     (when *to*
       (format *to* "~&~a~%" line)
       (force-output *to*))
-    (when *node* (node:stir *node*))
+    (when *node* (node:moved *node*))
     line))
 
 (defun said () *said*)

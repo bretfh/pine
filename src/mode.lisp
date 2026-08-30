@@ -252,15 +252,15 @@ itself has no use for the chord this would otherwise spell out for every keystro
 whether anything wanted it or not."
   (if (press m subject k)
       (values :taken nil)
-      (let* ((so-far (append pending (list k)))
-             (chord (ui:spelled so-far)))
+      (let* ((typed (append pending (list k)))
+             (chord (ui:spelled typed)))
         (multiple-value-bind (found named) (binding m chord)
           (cond (found (values (fault:attempt (lambda () (command:run found))
                                               (command:name found))
                                nil
                                (command:name found)))
                 (named (values :unbound nil named))
-                ((prefixp m chord) (values :pending so-far))
+                ((prefixp m chord) (values :pending typed))
                 ((and (null pending) (ui:typed k))
                  (values (cons :insert (ui:typed k)) nil))
                 (t (values :unbound nil)))))))

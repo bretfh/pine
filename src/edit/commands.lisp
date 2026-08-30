@@ -349,7 +349,7 @@ by whoever asks for it."
 (defcommand "refresh" () (:describes "draw everything again")
   (let ((n 0))
     (dolist (each (surfaces) n)
-      (attempt (lambda () (stir each)) (name each))
+      (attempt (lambda () (moved each)) (name each))
       (incf n))))
 
 (defcommand "keyboard-quit" ()

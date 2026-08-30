@@ -64,7 +64,7 @@ walks away from."
     (unless (again w) (return w))
     (unless (d:cas (slot-value w 'telling) nil t) (return w))))
 
-(defmethod node:stir ((w watcher))
+(defmethod node:moved ((w watcher))
   "Say the place moved. Told on a worker and not here: this runs inside the walk
 a write does, and a watcher that shells out would hold up the write, everything
 else that walk has still to reach, and whoever was waiting on the write."
@@ -82,7 +82,7 @@ are told by whatever is behind them instead.
 
 Through the same door as a write, so a slow one is one telling at a time here
 too and the tick is not what waits for it."
-  (dolist (w (polled) t) (node:stir w)))
+  (dolist (w (polled) t) (node:moved w)))
 
 (defun attend (&key (every *every*))
   (actors:repeat every #'sweep :as :watch :what "reading the live nodes"))
@@ -122,14 +122,14 @@ that has a way of hearing says so where it is written.")
                            :collect (watch s (lambda (of said)
                                                (declare (ignore of said))
                                                (fault:attempt
-                                                (lambda () (node:stir n))
+                                                (lambda () (node:moved n))
                                                 (node:name n)))
                                            :tells-when :always :poll nil
                                            :name (format nil "~a<-~a"
                                                          (node:name n) line)))))
           (ticking (let ((seconds (node:refreshes n)))
                      (when seconds
-                       (actors:repeat seconds (lambda () (node:stir n))
+                       (actors:repeat seconds (lambda () (node:moved n))
                                       :as (list :following (node:full-name n))
                                       :what (node:name n))))))
       (list heard ticking))))

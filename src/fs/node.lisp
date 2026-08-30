@@ -5,13 +5,13 @@
    #:node #:derived #:live #:value #:slot #:place
    #:contents #:nodes #:resolve #:holding #:verb
    #:make-child #:erase-child #:savedp #:livep
-   #:announces #:refreshes #:stir)
+   #:announces #:refreshes #:moved)
   (:export
    #:nodep #:name #:parent #:describes #:full-name #:memo
    #:make #:derive #:answers #:lists #:child #:slots
-   #:attach #:detach #:moved #:reads #:writes)
+   #:attach #:detach #:announced #:reads #:writes)
   (:export
-   #:depend #:undepend #:reading #:version #:mark #:standsp #:stalep
+   #:depend #:undepend #:reading #:version #:mark #:currentp #:stalep
    #:work-out #:freshp #:cached #:saw #:in-of
    #:*broke* #:*elsewhere* #:*waiting-on* #:*waited*)
   (:documentation "What is addressable, and what answering for one means.
@@ -376,7 +376,7 @@ remember it too.")
 object is what this hangs under, which has already been said."
   (setf (slot-value (object-of n) (slot-of n)) v)
   (let ((o (object-of n)))
-    (when (and (nodep o) (not (eq o (into-of n)))) (stir o)))
+    (when (and (nodep o) (not (eq o (into-of n)))) (moved o)))
   v)
 
 (defmethod (setf contents) :around (value (n node))

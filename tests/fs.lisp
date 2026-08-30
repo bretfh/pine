@@ -401,7 +401,7 @@ somewhere is worked out for ever after whenever that place moves."
       (setf (node:contents b) 2)
       (node:contents dv)
       (setf which (list b))
-      (node:stir dv)
+      (node:moved dv)
       (node:contents dv)
       (is (zerop (d:size (pine/fs/node::readers a))) "a is no longer read")
       (is (= 1 (d:size (pine/fs/node::readers b))))
@@ -416,7 +416,7 @@ somewhere is worked out for ever after whenever that place moves."
           (y (node:attach (node:make "y") (tree:root))))
       (node:depend x y)
       (node:depend y x)
-      (finishes (node:stir x)))))
+      (finishes (node:moved x)))))
 
 (test erasing-a-worked-out-child-leaves-nothing-behind
   "The memo is let go after the detach, not before: dropped first, the detach asks

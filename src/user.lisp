@@ -14,7 +14,7 @@
   (:import-from #:pine/fs/node
    #:announces #:attach #:child #:contents #:derive #:describes #:detach
    #:full-name #:livep #:name #:node #:nodep #:nodes #:parent #:answers #:lists
-   #:refreshes #:resolve #:savedp #:slots #:stir #:verb)
+   #:refreshes #:resolve #:savedp #:slots #:moved #:verb)
   (:import-from #:pine/fs/path #:leaf #:path)
   (:import-from #:pine/fs/tree #:ensure #:erase #:listing #:root)
   (:import-from #:pine/mode
@@ -29,7 +29,7 @@
   (:import-from #:pine/run/system #:offers #:system)
   (:import-from #:pine/run/watch #:unwatch)
   (:import-from #:pine/ui
-   #:acting #:anchor #:background #:bar #:box #:builds #:button #:calendar
+   #:acting #:anchor #:background #:bar #:box #:make-surface #:button #:calendar
    #:cells #:center #:centerbox #:choice #:color #:column #:css-glass
    #:css-mono #:css-rad #:defsurface #:field #:gap #:grid #:here #:icon
    #:image #:label #:measure #:metric #:overlay #:paint #:panel #:parts

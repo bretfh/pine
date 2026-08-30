@@ -87,7 +87,7 @@
 
 (command:defcommand "list-documents" ()
     (:describes "every document there is" :on '(text "C-x C-b"))
-  (into "*documents*"
+  (show-listing "*documents*"
                 (mapcar (lambda (d)
                           (cons (format nil "~a~30t~a" (node:name d)
                                         (or (text:file-of d) ""))

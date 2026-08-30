@@ -4,7 +4,7 @@
   "A parse that has landed says the document moved. Its text did not, but what is
 laid over it did, and the frame read this document -- so saying so here is the
 edge, and whatever else is reading it hears the same way."
-  (node:stir document))
+  (node:moved document))
 
 (defun %key ()
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
@@ -104,7 +104,7 @@ else it read."
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
     (seed scratch))
-  (ui:builds "editor" #'%editor :as 'ui:window :starts :up)
+  (ui:make-surface "editor" #'%editor :as 'ui:window :starts :up)
   s)
 
 (defmethod job:stop ((s edit))

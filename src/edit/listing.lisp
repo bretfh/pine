@@ -4,14 +4,14 @@
 
 (defclass listed ()
   ((shown-rows :initarg :shown-rows :accessor shown-rows :initform nil)
-   (acts :initarg :acts :accessor acts :initform nil))
+   (on-enter :initarg :on-enter :accessor on-enter :initform nil))
   (:documentation "Rows that stand for things. A row is a string, or (TEXT . PLACE)
 where PLACE is what that row is about, so a key acts on the thing rather than
 reading the line back out of the text."))
 
 (defmethod print-object ((l listed) stream)
   (print-unreadable-object (l stream :type t)
-    (format stream "~d row~:p~:[~; you can act on~]" (length (shown-rows l)) (acts l))))
+    (format stream "~d row~:p~:[~; you can act on~]" (length (shown-rows l)) (on-enter l))))
 
 (defun listings () (d:all *listings*))
 
@@ -33,9 +33,9 @@ reading the line back out of the text."))
   (setf (mode:setting document :selection) (place document))
   document)
 
-(defun into (name shown-rows &optional acts)
-  "Put ROWS in a document of its own and show it. With ACTS, RET on a row hands
-ACTS the place that row stands for."
+(defun show-listing (name shown-rows &optional on-enter)
+  "Put ROWS in a document of its own and show it. With ON-ENTER, RET on a row hands
+it the place that row stands for."
   (let ((document (or (text:named name)
                       (text:make-document name :mode (make-instance 'listing))))
         (shown-rows (if (stringp shown-rows)
@@ -46,7 +46,7 @@ ACTS the place that row stands for."
     (text:goto document 0 0)
     (unless (typep (text:mode-of document) 'listing)
       (setf (text:mode-of document) (make-instance 'listing)))
-    (d:keep! *listings* name (make-instance 'listed :shown-rows shown-rows :acts acts))
+    (d:keep! *listings* name (make-instance 'listed :shown-rows shown-rows :on-enter on-enter))
     (setf (text:current) document)
     (%mark document)
     (node:name document)))
@@ -54,8 +54,8 @@ ACTS the place that row stands for."
 (defun activate ()
   (let* ((document (text:current))
          (l (%listing document)))
-    (when (and l (acts l))
-      (funcall (acts l) (place document)))))
+    (when (and l (on-enter l))
+      (funcall (on-enter l) (place document)))))
 
 (defun step-row (delta &optional (document (text:current)))
   "The row after this one, or before it, wrapping round the ends."

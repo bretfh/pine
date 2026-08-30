@@ -69,7 +69,7 @@ order they were written in."
 
 (defun forget-rules ()
   (let ((n (and (pine/fs/tree:root) (pine/fs/tree:at "/memo/rules"))))
-    (when n (pine/fs/node:stir n)))
+    (when n (pine/fs/node:moved n)))
   nil)
 
 (defun %fits (segment classes hover)

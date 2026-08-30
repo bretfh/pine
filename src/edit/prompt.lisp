@@ -122,7 +122,7 @@ what it read, and a slot nobody reads is a thing nothing can follow."
   (when (tree:root)
     (setf (node:contents (%question-node)) (and p (question p)))
     (setf (node:contents (%chose-node)) 0)
-    (node:stir (%said-node))
+    (node:moved (%said-node))
     (%under)))
 
 (defun %where-from (had)
@@ -211,7 +211,7 @@ starting over."
 
 (defun walk-history (by &optional (p *prompt*))
   "Step through what was answered here before. The first step remembers what was
-typed, so walking back to the end gives it back."
+so-far, so walking back to the end gives it back."
   (when (and p (history p))
     (let ((all (or (walking p) (setf (walking p) (history-of (history p))))))
       (when all
@@ -238,15 +238,15 @@ typed, so walking back to the end gives it back."
 
 (defun descendsp (p)
   (and (filep p)
-       (let ((typed (expanded (so-far))))
-         (and (plusp (length typed))
-              (uiop:directory-exists-p typed)
-              (not (eql #\/ (char typed (1- (length typed)))))))))
+       (let ((so-far (expanded (so-far))))
+         (and (plusp (length so-far))
+              (uiop:directory-exists-p so-far)
+              (not (eql #\/ (char so-far (1- (length so-far)))))))))
 
 (defun descend (&optional (p *prompt*))
   (declare (ignore p))
-  (let ((typed (expanded (so-far))))
-    (%put (concatenate 'string (string-right-trim "/" typed) "/"))))
+  (let ((so-far (expanded (so-far))))
+    (%put (concatenate 'string (string-right-trim "/" so-far) "/"))))
 
 (defun %answered (p)
   (let ((said (if (filep p) (expanded (so-far)) (so-far))))
@@ -286,7 +286,7 @@ typed, so walking back to the end gives it back."
   :asking)
 
 (command:defcommand "answer" ()
-    (:describes "accept what is typed at the prompt" :on '(prompt "RET"))
+    (:describes "accept what is so-far at the prompt" :on '(prompt "RET"))
   (if (descendsp (asking))
       (descend)
       (answer)))

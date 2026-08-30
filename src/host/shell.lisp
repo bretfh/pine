@@ -152,7 +152,7 @@ machine something, and telling it twice is twice."
                               (stream-error () nil))
                :while said
                :do (d:swap (slot-value n 'said) #'d:capped said *lines-kept*)
-                   (node:stir n))))))
+                   (node:moved n))))))
   n)
 
 (defun quiet (n)

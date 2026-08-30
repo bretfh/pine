@@ -4,7 +4,7 @@
                     (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell))
   (:export
-   #:device #:audio #:clip #:clock #:media #:net
+   #:readings #:audio #:clip #:clock #:media #:net
    #:power #:screen #:tick #:sys #:env))
 (in-package #:pine/host/device)
 
@@ -34,7 +34,7 @@ to say it again."
                    (lambda () (node:reading n) (funcall reads))
                    :parent n :writes writes))))
 
-(defun device (name readings &key announces refreshes describes)
+(defun readings (name rows &key announces refreshes describes)
   "Something the machine has. Its readings are rows -- a name, how to read it, and
 how to write it -- not a class each, and not a class at all: a device is a place
 whose children are worked out from that list.
@@ -46,10 +46,10 @@ and twelve methods, and it is this list now."
           (node:lists name
                       :announces announces :refreshes refreshes
                       :describes describes
-                      :reads (lambda () (%named-rows readings))
-                      :names (lambda () (%named-rows readings))
+                      :reads (lambda () (%named-rows rows))
+                      :names (lambda () (%named-rows rows))
                       :each (lambda (want)
-                              (let ((row (find (princ-to-string want) readings
+                              (let ((row (find (princ-to-string want) rows
                                                :key (lambda (r) (string (first r)))
                                                :test #'equal)))
                                 (when row (%reading (first self) row))))))))
@@ -74,7 +74,7 @@ and twelve methods, and it is this list now."
   (flet ((level () (let ((n (sh:number-in (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@"))))
                      (when n (round (* 100 n)))))
          (muted () (and (search "MUTED" (sh:sh "wpctl get-volume @DEFAULT_AUDIO_SINK@")) t)))
-    (device "audio"
+    (readings "audio"
             (list (list "volume" #'level
                         (lambda (v) (sh:sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ ~d%"
                                            (max 0 (min 100 v)))))
@@ -102,7 +102,7 @@ else there is to play through")))
                      (most (sh:number-in (sh:sh "cat ~amax_brightness 2>/dev/null"
                                              (namestring at)))))
                  (when (and now most (plusp most)) (round (* 100 now) most)))))))
-    (device "screen"
+    (readings "screen"
             (list (list "brightness" #'level
                         (lambda (v)
                           (when (where)
@@ -129,7 +129,7 @@ else there is to play through")))
                                    ((search "Full" said) :full)
                                    ((search "Not charging" said) :idle)
                                    ((plusp (length said)) :unknown)))))))
-      (device "power"
+      (readings "power"
               (append (list (list "battery" #'battery)
                             (list "state" #'state)
                             (list "charging" (lambda () (eq :charging (state)))))
@@ -158,7 +158,7 @@ wants a password and whether it is the one we are on."
 (defun clip ()
   "What the desktop is holding, as a place. Reading it is what anything else on
 this machine copied; writing it is copying."
-  (device "clip"
+  (readings "clip"
           (list (list "text"
                       (lambda ()
                         (let ((said (sh:sh "wl-paste --no-newline 2>/dev/null")))
@@ -174,7 +174,7 @@ this machine copied; writing it is copying."
            (let ((line (sh:firstp (sh:sh "nmcli -t -f NAME connection show --active"))))
              (when (and line (plusp (length line))) line)))
          (online () (and (search "connected" (sh:sh "nmcli -t -f STATE general")) t)))
-    (device "net"
+    (readings "net"
             (list (list "connection" #'connection)
                   (list "online" #'online)
                   (list "wifi" #'%wifi
@@ -195,7 +195,7 @@ this machine copied; writing it is copying."
   (flet ((ask (what) (sh:sh "playerctl~@[ -p ~a~] ~a 2>/dev/null" player what)))
     (labels ((meta (key) (let ((said (ask (format nil "metadata ~a" key))))
                            (when (plusp (length said)) said))))
-      (device "media"
+      (readings "media"
               (append
                (list (list "status" (lambda ()
                                       (let ((said (ask "status")))
@@ -234,7 +234,7 @@ this machine copied; writing it is copying."
 
 (defun clock ()
   (setf *now* (get-universal-time))
-  (device "clock"
+  (readings "clock"
           (loop :for name :in '("second" "minute" "hour" "day" "month" "year"
                                 "weekday")
                 :collect (list name (let ((name name))
@@ -300,7 +300,7 @@ moment: sampling per read gives the second one no ticks to divide by."
     (or (and pct (sh:number-in pct)) 0)))
 
 (defun sys ()
-  (device "sys"
+  (readings "sys"
           (list (list "cpu" #'%cpu)
                 (list "ram" #'%ram)
                 (list "disk" #'%disk)
@@ -323,7 +323,7 @@ moment: sampling per read gives the second one no ticks to divide by."
           :describes "the machine: cpu, ram, temperature, uptime, load"))
 
 (defun env ()
-  (device "env"
+  (readings "env"
           (loop :for entry :in (sb-ext:posix-environ)
                 :for name := (subseq entry 0 (position #\= entry))
                 :collect (list name

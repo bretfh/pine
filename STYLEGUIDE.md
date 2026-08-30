@@ -95,12 +95,13 @@ beside the tree.
 
 What a class answers is the first export list in `pine/fs/node`, and nothing
 else: `contents`, `(setf contents)`, `nodes`, `resolve`, `verb`, `announces`,
-`refreshes`, `savedp`, `livep`, `holding`, `make-child`, `erase-child`, `stir`.
+`refreshes`, `savedp`, `livep`, `holding`, `make-child`, `erase-child`, `moved`,
+and `watch` in `pine/run/watch`, which is how a class says how it is followed.
 Most classes answer two or three of them.
 
 The second list is what pine does with a node and what makes one — `attach`,
 `derive`, `child`, `slots` — called, never answered. The third is the graph:
-`depend`, `mark`, `standsp`, `work-out`. A class that answers one of those is
+`depend`, `mark`, `currentp`, `work-out`. A class that answers one of those is
 deciding what read what, which is the one thing outside `src/fs/` may not
 decide; a test enforces it.
 
@@ -109,7 +110,7 @@ A provider's children must be the same objects each time: build them through
 on, so nothing reading it can ever be recomputed.
 
 A provider says when the world behind it moved: `announces` names the shell
-lines whose output stirs it, `every-seconds` the interval for the ones with no
+lines whose output moves it, `refreshes` the interval for the ones with no
 stream. Nothing polls a provider that has a stream.
 
 A write says so too. A provider that turns `(setf contents)` into an action on

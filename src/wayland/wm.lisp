@@ -9,10 +9,6 @@
    #:eat-next #:manager))
 (in-package #:pine/wayland/wm)
 
-(defvar *borders* 2
-  "How thick a border is drawn round a window, in pixels. The colours come from
-the theme, over the wire, like everything else about how it looks.")
-
 (defparameter +all-edges+ '(:top :bottom :left :right)
   "Every edge, as the protocol spells a bitfield: a list of what is set.")
 

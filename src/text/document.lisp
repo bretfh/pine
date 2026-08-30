@@ -108,7 +108,7 @@ knows; without them everything worked out of the text is given up."
   (if (and at old new)
       (%kept-declaration doc at old new)
       (setf (declared doc) nil))
-  (node:moved doc)
+  (node:announced doc)
   doc)
 
 (defun %edited (doc had at old new bytes)
@@ -194,7 +194,7 @@ about a key the document had answered."
 (defun goto (doc at col)
   (multiple-value-bind (at col) (clamp (lines doc) at col)
     (setf (at-line doc) at (at-col doc) col)
-    (node:moved doc)
+    (node:announced doc)
     (point doc)))
 
 (defun move (doc unit n)
@@ -285,15 +285,15 @@ about a key the document had answered."
 name or the numbers themselves: (FG BG ATTR), where a colour is (R G B) or
 nothing for whatever the theme says."
   (push (list line from to face) (spans doc))
-  (node:stir doc)
+  (node:moved doc)
   doc)
 
 (defun (setf spans) (runs doc)
   "All of them at once. A terminal works out every run of colour on its screen
-whenever the program writes, and saying so a line at a time would stir the
+whenever the program writes, and saying so a line at a time would move the
 document a hundred times for one keystroke."
   (setf (slot-value doc 'spans) runs)
-  (node:stir doc)
+  (node:moved doc)
   runs)
 
 (defun forget-spans (doc)
@@ -304,12 +304,12 @@ document a hundred times for one keystroke."
   "Text shown after a line without being in it. What an evaluation answers is put
 here, so the document is what was typed and nothing else."
   (push (list line text face) (overlays doc))
-  (node:stir doc)
+  (node:moved doc)
   doc)
 
 (defun forget-overlays (doc)
   (setf (overlays doc) nil)
-  (node:stir doc)
+  (node:moved doc)
   doc)
 
 (defun mark-at (doc name) (d:lookup (marks doc) name))
@@ -354,5 +354,5 @@ here, so the document is what was typed and nothing else."
   (setf (slot-value doc 'source) n
         (slot-value doc 'file-of) (and (typep n 'mount:file)
                                        (namestring (mount:truename-of n))))
-  (node:stir doc)
+  (node:moved doc)
   n)

@@ -133,7 +133,7 @@ nothing and imports what it offers, put here by SPEAKS as it loads."
                     "NIL" "T" "LAMBDA" "DEFUN"))
       (is (eq :external (nth-value 1 (find-symbol said p)))
           "~a is something a user program can say" said))
-    (dolist (said '("DOCUMENT" "WINDOWS" "ATTEND" "ARRANGE"))
+    (dolist (said '("DOCUMENT" "WINDOWS" "DEVICE" "ARRANGE"))
       (is (eq :external (nth-value 1 (find-symbol said p)))
           "~a came with the system that offers it" said))
     (let ((words (let ((n 0)) (do-external-symbols (s p) (declare (ignore s)) (incf n)) n))
