@@ -120,10 +120,39 @@ a system you load."
                                (string-downcase (symbol-name (class-name each))))
                              (pine/wm/tiles:layouts))
               :test #'equal))
-  (let ((l (make-instance 'pine/wm/tiles:tall :share 1/4 :gaps 4)))
-    (is (equal '((1 4 4 312 712))
-               (subseq (pine/wm/tiles:arrange l '(1 2) '(0 0 1280 720)) 0 1))
+  (let* ((l (make-instance 'pine/wm/tiles:tall :share 1/4 :gaps 4))
+         (one (first (pine/wm/tiles:arrange
+                      l '(1 2) (pine/wm/tiles:area :wide 1280 :tall 720)))))
+    (is (typep one 'pine/wm/tiles:placed) "a layout answers PLACED, not a list")
+    (is (equal '(1 4 4 312 712)
+               (list (pine/wm/tiles:id-of one) (pine/wm/tiles:x-of one)
+                     (pine/wm/tiles:y-of one) (pine/wm/tiles:wide-of one)
+                     (pine/wm/tiles:tall-of one)))
         "the share and the gaps are what the layout was made with")))
+
+(defclass %clipped (pine/wm/tiles:layout) ()
+  (:documentation "A layout written outside the substrate that clips and stacks."))
+
+(defmethod pine/wm/tiles:arrange ((l %clipped) windows (a pine/wm/tiles:area))
+  (declare (ignore a))
+  (loop :for id :in windows
+        :collect (pine/wm/tiles:placed id :x 0 :y 0 :wide 100 :tall 100
+                                          :clip '(0 0 50 50) :stack :bottom)))
+
+(test a-layout-can-clip-and-stack-and-it-reaches-what-shows-a-window
+  "What shows a window has always been told how to clip one and where to put it in
+the stack: %SHOWN takes both. A layout could not say either, because what ARRANGE
+answered was a list of five and the two keywords APPLY-LAYOUT destructures after it
+were never written. Nothing caught it, because every shape of that list is a list."
+  (%tiled)
+  (let* ((out (pine/wm/tiles:arrange (make-instance '%clipped) '(7)
+                                     (pine/wm/tiles:area :wide 800 :tall 600)))
+         (plain (pine/wm/tiles::%plainly (first out))))
+    (is (equal '(7 0 0 100 100 :clip (0 0 50 50) :stack :bottom) plain))
+    (destructuring-bind (id x y wide tall &key clip stack) plain
+      (declare (ignore id x y wide tall))
+      (is (equal '(0 0 50 50) clip) "exactly what APPLY-LAYOUT reads")
+      (is (eq :bottom stack)))))
 
 (test the-compositor-taking-the-windows-over-binds-the-places-again
   "A config names what places the windows before /wm can exist, and a compositor

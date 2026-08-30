@@ -2,7 +2,9 @@
   (:use #:pine/user)
   (:export
    #:layout #:tall #:wide #:full #:stacked
-   #:arrange #:named #:layouts))
+   #:arrange #:named #:layouts
+   #:area #:placed #:id-of #:x-of #:y-of #:wide-of #:tall-of
+   #:clip-of #:stack-of))
 (in-package #:pine/wm/tiles)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
@@ -39,61 +41,99 @@ of these."))
                      :test #'equal)))
     (when found (make-instance (class-name found)))))
 
-(defun %rect (l x y width height)
-  "One window's rect, with the layout's gaps taken out of it."
+(defclass area ()
+  ((x    :initarg :x    :reader x-of    :initform 0)
+   (y    :initarg :y    :reader y-of    :initform 0)
+   (wide :initarg :wide :reader wide-of :initform 0)
+   (tall :initarg :tall :reader tall-of :initform 0))
+  (:documentation "The room a layout is given: where it starts and how big it is.
+What the compositor left after the bars took their strip."))
+
+(defclass placed ()
+  ((id    :initarg :id    :reader id-of)
+   (x     :initarg :x     :reader x-of    :initform 0)
+   (y     :initarg :y     :reader y-of    :initform 0)
+   (wide  :initarg :wide  :reader wide-of :initform 0)
+   (tall  :initarg :tall  :reader tall-of :initform 0)
+   (clip  :initarg :clip  :reader clip-of  :initform nil)
+   (stack :initarg :stack :reader stack-of :initform nil))
+  (:documentation "One window, placed. CLIP is (X Y WIDE TALL) of it to show, and
+STACK is :TOP, :BOTTOM or the id of a window to sit above.
+
+Those two are why this is a class. It was a list of five, and what shows a window
+has always read a list of five and two keywords after it -- so a layout could not
+say either, and the clipping and stacking a compositor was already told how to do
+could never be asked for. Nothing said so, because every shape of that list is a
+list."))
+
+(defmethod print-object ((p placed) stream)
+  (print-unreadable-object (p stream :type t)
+    (format stream "~a ~d,~d ~dx~d" (id-of p) (x-of p) (y-of p)
+            (wide-of p) (tall-of p))))
+
+(defun area (&key (x 0) (y 0) (wide 0) (tall 0))
+  (make-instance 'area :x x :y y :wide wide :tall tall))
+
+(defun placed (id &key (x 0) (y 0) (wide 0) (tall 0) clip stack)
+  (make-instance 'placed :id id :x x :y y :wide wide :tall tall
+                         :clip clip :stack stack))
+
+(defun %at (l id x y wide tall)
+  "One window placed, with the layout's gaps taken out of it."
   (let ((g (gaps l)))
-    (list (+ x g) (+ y g) (max 1 (- width (* 2 g))) (max 1 (- height (* 2 g))))))
+    (placed id :x (+ x g) :y (+ y g)
+               :wide (max 1 (- wide (* 2 g)))
+               :tall (max 1 (- tall (* 2 g))))))
 
 (defgeneric arrange (layout windows area)
-  (:documentation "Where each window goes: a list of (ID X Y WIDTH HEIGHT), one
-per window, in the order they were given. AREA is (X Y WIDTH HEIGHT).")
-  (:method ((l layout) windows area)
-    (destructuring-bind (x y width height) area
-      (loop :for id :in windows :collect (cons id (%rect l x y width height))))))
-
-(defmethod arrange ((l stacked) windows area)
-  (destructuring-bind (x y width height) area
-    (loop :for id :in windows :collect (cons id (%rect l x y width height)))))
-
-(defmethod arrange ((l full) windows area)
-  (destructuring-bind (x y width height) area
+  (:documentation "Where each window goes: a PLACED per window, in the order they
+were given. AREA is the room there is.")
+  (:method ((l layout) windows (a area))
     (loop :for id :in windows
-          :for first := t :then nil
-          :when first :collect (cons id (%rect l x y width height)))))
+          :collect (%at l id (x-of a) (y-of a) (wide-of a) (tall-of a)))))
 
-(defmethod arrange ((l tall) windows area)
-  (destructuring-bind (x y width height) area
-    (let ((n (length windows)))
-      (cond ((zerop n) nil)
-            ((= n 1) (list (cons (first windows) (%rect l x y width height))))
-            (t (let* ((main (max 1 (round (* width (share l)))))
-                      (rest (max 1 (- width main)))
-                      (each (max 1 (floor height (1- n)))))
-                 (cons (cons (first windows) (%rect l x y main height))
-                       (loop :for id :in (cdr windows)
-                             :for i :from 0
-                             :collect (cons id (%rect l (+ x main) (+ y (* i each))
-                                                      rest
-                                                      (if (= i (- n 2))
-                                                          (- height (* i each))
-                                                          each)))))))))))
+(defmethod arrange ((l stacked) windows (a area))
+  (loop :for id :in windows
+        :collect (%at l id (x-of a) (y-of a) (wide-of a) (tall-of a))))
 
-(defmethod arrange ((l wide) windows area)
-  (destructuring-bind (x y width height) area
-    (let ((n (length windows)))
-      (cond ((zerop n) nil)
-            ((= n 1) (list (cons (first windows) (%rect l x y width height))))
-            (t (let* ((main (max 1 (round (* height (share l)))))
-                      (rest (max 1 (- height main)))
-                      (each (max 1 (floor width (1- n)))))
-                 (cons (cons (first windows) (%rect l x y width main))
-                       (loop :for id :in (cdr windows)
-                             :for i :from 0
-                             :collect (cons id (%rect l (+ x (* i each)) (+ y main)
-                                                      (if (= i (- n 2))
-                                                          (- width (* i each))
-                                                          each)
-                                                      rest))))))))))
+(defmethod arrange ((l full) windows (a area))
+  (loop :for id :in windows
+        :for first := t :then nil
+        :when first
+          :collect (%at l id (x-of a) (y-of a) (wide-of a) (tall-of a))))
+
+(defmethod arrange ((l tall) windows (a area))
+  (let ((n (length windows))
+        (x (x-of a)) (y (y-of a)) (wide (wide-of a)) (tall (tall-of a)))
+    (cond ((zerop n) nil)
+          ((= n 1) (list (%at l (first windows) x y wide tall)))
+          (t (let* ((main (max 1 (round (* wide (share l)))))
+                    (rest (max 1 (- wide main)))
+                    (each (max 1 (floor tall (1- n)))))
+               (cons (%at l (first windows) x y main tall)
+                     (loop :for id :in (cdr windows)
+                           :for i :from 0
+                           :collect (%at l id (+ x main) (+ y (* i each)) rest
+                                         (if (= i (- n 2))
+                                             (- tall (* i each))
+                                             each)))))))))
+
+(defmethod arrange ((l wide) windows (a area))
+  (let ((n (length windows))
+        (x (x-of a)) (y (y-of a)) (wide (wide-of a)) (tall (tall-of a)))
+    (cond ((zerop n) nil)
+          ((= n 1) (list (%at l (first windows) x y wide tall)))
+          (t (let* ((main (max 1 (round (* tall (share l)))))
+                    (rest (max 1 (- tall main)))
+                    (each (max 1 (floor wide (1- n)))))
+               (cons (%at l (first windows) x y wide main)
+                     (loop :for id :in (cdr windows)
+                           :for i :from 0
+                           :collect (%at l id (+ x (* i each)) (+ y main)
+                                         (if (= i (- n 2))
+                                             (- wide (* i each))
+                                             each)
+                                         rest))))))))
 
 (defclass tiles (system)
   ((layout-of :initarg :layout :accessor layout-of
@@ -127,13 +167,23 @@ commands away, and pine places nothing again."))
               :describes "which layout is in force"))
 
 (defun %area (s)
+  (declare (ignore s))
   (let ((c (at /wm)))
-    (or (getf (first (outputs c)) :area)
-        (progn s (list 0 0 1920 1080)))))
+    (destructuring-bind (&optional (x 0) (y 0) (wide 1920) (tall 1080))
+        (or (getf (first (outputs c)) :area) (list))
+      (area :x x :y y :wide wide :tall tall))))
 
 (defun %ids (s)
   (declare (ignore s))
   (ids (at /wm)))
+
+(defun %plainly (p)
+  "One PLACED as plain data. Whatever shows a window may be another pine, so what
+crosses is a list and a couple of keywords -- said here, at the edge, and not by
+ARRANGE, which answers to whoever wrote the layout."
+  (append (list (id-of p) (x-of p) (y-of p) (wide-of p) (tall-of p))
+          (when (clip-of p) (list :clip (clip-of p)))
+          (when (stack-of p) (list :stack (stack-of p)))))
 
 (defun %placed (s)
   "Work out where the windows go and say so. Writing /wm/placement is the whole
@@ -141,9 +191,7 @@ of being the window manager here."
   (let ((n (at /wm/placement)))
     (when n
       (setf (contents n)
-            (loop :for (id x y wide tall) :in (arrange (layout-of s) (%ids s)
-                                                       (%area s))
-                  :collect (list id x y wide tall))))))
+            (mapcar #'%plainly (arrange (layout-of s) (%ids s) (%area s)))))))
 
 (defcommand "wm-layout" (&optional name)
     (:describes "how windows are laid out")
