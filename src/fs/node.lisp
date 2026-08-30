@@ -2,14 +2,32 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:commit #:pine/fs/commit))
   (:export
-   #:node #:derived #:live #:nodep #:name
-   #:parent #:describes #:savedp #:livep #:announces
-   #:refreshes #:contents #:holding #:nodes #:resolve #:stir
-   #:moved #:verb #:full-name #:make #:derive
-   #:answers #:lists #:attach #:detach #:child #:memo
-   #:slots #:make-child #:erase-child #:reads #:writes
+   #:node #:derived #:live #:value #:slot #:place
+   #:contents #:nodes #:resolve #:holding #:verb
+   #:make-child #:erase-child #:savedp #:livep
+   #:announces #:refreshes #:stir)
+  (:export
+   #:nodep #:name #:parent #:describes #:full-name #:memo
+   #:make #:derive #:answers #:lists #:child #:slots
+   #:attach #:detach #:moved #:reads #:writes)
+  (:export
    #:depend #:undepend #:reading #:version #:mark #:standsp #:stalep
-   #:work-out #:freshp #:cached #:saw #:*broke* #:*waiting-on* #:*waited*))
+   #:work-out #:freshp #:cached #:saw #:*broke* #:*waiting-on* #:*waited*)
+  (:documentation "What is addressable, and what answering for one means.
+
+Three lists, and which one a name is in is the whole of what somebody writing a
+node class has to know.
+
+The first is the protocol: what a class answers. Everything under src/ that is not
+a node itself specialises only these, which is the evidence that the line is here
+and not somewhere else.
+
+The second is what pine does with a node and what makes one: called, never
+specialised.
+
+The third is the graph -- what read what, at which version, and what is worked out
+again when something moves. It is in src/fs/graph.lisp, it is pine's own, and a
+class that answers one of these is a class fighting the substrate."))
 (in-package #:pine/fs/node)
 
 (defvar *reading* nil)
@@ -313,12 +331,14 @@ works it out and remembers, and a live one asks the world.")
   (:method ((n value)) (held n)))
 
 (defgeneric holding (node)
-  (:documentation "Whether NODE holds anything at all: :HELD or :BRANCH.")
-  (:method ((n node)) :branch)
-  (:method ((n value)) :held)
-  (:method ((n derived)) :held)
-  (:method ((n live)) :held)
-  (:method ((n slot)) :held))
+  (:documentation "Which kind of nothing this holds when it holds nothing: :BRANCH
+where it is a name with things under it, :HELD where NIL is what it holds.
+
+A live one is never asked what is under it. What a device has beneath it belongs to
+the world, and walking it to label a read would be shelling out to answer a question
+about the answer.")
+  (:method ((n node)) (if (and (null (contents n)) (nodes n)) :branch :held))
+  (:method ((n live)) :held))
 
 (defgeneric (setf contents) (value node)
   (:documentation "Write NODE. A class says only what writing means; that it moved

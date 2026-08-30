@@ -89,10 +89,20 @@ is set twice keeps whoever set it last.
 
 ## Nodes
 
-Everything addressable is a `pine/fs/node` subclass answering the same six
-generics: `contents`, `(setf contents)`, `nodes`, `resolve`, `describe`,
-`leafp`. A buffer, a surface, a window, a provider's reading and a command are
-all nodes. There is no registry beside the tree.
+Everything addressable is a `pine/fs/node` subclass. A buffer, a surface, a
+window, a device's reading and a command are all nodes. There is no registry
+beside the tree.
+
+What a class answers is the first export list in `pine/fs/node`, and nothing
+else: `contents`, `(setf contents)`, `nodes`, `resolve`, `verb`, `announces`,
+`refreshes`, `savedp`, `livep`, `holding`, `make-child`, `erase-child`, `stir`.
+Most classes answer two or three of them.
+
+The second list is what pine does with a node and what makes one — `attach`,
+`derive`, `child`, `slots` — called, never answered. The third is the graph:
+`depend`, `mark`, `standsp`, `work-out`. A class that answers one of those is
+deciding what read what, which is the one thing outside `src/fs/` may not
+decide; a test enforces it.
 
 A provider's children must be the same objects each time: build them through
 `node:child`, which memoizes. A node built fresh per call cannot be depended

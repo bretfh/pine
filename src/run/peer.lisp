@@ -102,11 +102,20 @@ than unwinding, so what comes back carries the restarts it is still offering."
 (defun %under (where name)
   (format nil "~a/~a" (string-right-trim "/" where) name))
 
+(defclass remote (node:place)
+  ((peer  :initarg :peer  :reader peer-of)
+   (where :initarg :where :reader where-of))
+  (:documentation "A place in another pine's namespace. A class rather than a plain
+one, so watching it is a method: what it answers is asking that pine to say when it
+moves, which is what makes a read, a write and a watch of /host/laptop/dev/audio all
+the same three acts they are here."))
+
 (defun remote (p where name)
   "A place in another pine's namespace: four closures over which pine and which
 path. A read is a read and a write is a write, and what is under it is what that
 pine says is under it."
   (node:lists name
+              :class 'remote :peer p :where where
               :describes (uri p)
               :reads  (lambda () (said:took (%crossed p where (list :contents))))
               :writes (lambda (value)
@@ -117,6 +126,15 @@ pine says is under it."
                           (when (member child (%crossed p where (list :nodes))
                                         :test #'equal)
                             (remote p (%under where child) child))))))
+
+(defmethod watch:watch ((n remote) tells &key every name tells-when poll)
+  "Watching a place in another pine is asking that pine to say when it moves. The
+near side and the far side were two paths; this is the near one, and it is the verb
+rather than something beside it."
+  (declare (ignore every tells-when poll))
+  (listen-to (peer-of n) (where-of n)
+             (lambda (where said) (declare (ignore where)) (funcall tells n said))
+             :name name))
 
 (defmethod mount:mount ((what peer) into name)
   "Graft another pine's namespace here. From now on a read of a path under it is a

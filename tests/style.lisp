@@ -487,3 +487,29 @@ a lisp could drive pine."
                                  (not (search "/run/" where)))
                         :collect (file-namestring file))))
     (is (null leaked) "~{~%  ~a names sento~}" leaked)))
+
+(defparameter +the-graph+
+  '("depend" "undepend" "reading" "mark" "standsp" "stalep" "work-out" "freshp"
+    "cached" "saw" "attach" "detach")
+  "What is pine's own about a node: the edges of the graph, the versions a reading
+is checked against, and the tree surgery. Called, never answered.")
+
+(test a-node-class-answers-the-protocol-and-not-the-graph
+  "Three lists in PINE/FS/NODE, and which one a name is in is the whole of what
+somebody writing a node class has to know. A class that answers a graph generic is
+a class fighting the substrate: it would be deciding what read what, which is the
+one thing nothing outside src/fs/ may decide.
+
+The protocol is what is left, and it is small: CONTENTS, NODES, RESOLVE, VERB,
+ANNOUNCES, REFRESHES, SAVEDP, LIVEP, HOLDING, MAKE-CHILD, ERASE-CHILD, STIR."
+  (let ((wrong nil))
+    (dolist (file (%files))
+      (let ((where (namestring file)))
+        (unless (search "/fs/" where)
+          (dolist (line (%lines file))
+            (dolist (name +the-graph+)
+              (when (search (format nil "(defmethod node:~a " name) line)
+                (pushnew (format nil "~a answers node:~a"
+                                 (file-namestring file) name)
+                         wrong :test #'equal)))))))
+    (is (null wrong) "~{~%  ~a~}" wrong)))

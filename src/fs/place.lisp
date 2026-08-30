@@ -18,15 +18,22 @@ keeps.
 A device is one of these and each of its readings is a closure pair, which is why
 a device is a table of rows rather than a class per reading."))
 
-(defun answers (name &rest initargs &key reads writes &allow-other-keys)
-  "A leaf the world answers. Nothing is remembered; DERIVE is the half that does."
-  (declare (ignore reads writes))
-  (apply #'make-instance 'place :name (princ-to-string name) initargs))
+(defun answers (name &rest initargs &key reads writes (class 'place)
+                &allow-other-keys)
+  "A leaf the world answers. Nothing is remembered; DERIVE is the half that does.
 
-(defun lists (name &rest initargs &key names each nodes &allow-other-keys)
+CLASS where the place has something of its own to answer -- a place in another pine
+says how it is watched -- and PLACE where it has not."
+  (declare (ignore reads writes))
+  (apply #'make-instance class :name (princ-to-string name)
+         (alexandria:remove-from-plist initargs :class)))
+
+(defun lists (name &rest initargs &key names each nodes (class 'place)
+              &allow-other-keys)
   "A branch the world fills. NAMES with EACH, or NODES something else keeps."
   (declare (ignore names each nodes))
-  (apply #'make-instance 'place :name (princ-to-string name) initargs))
+  (apply #'make-instance class :name (princ-to-string name)
+         (alexandria:remove-from-plist initargs :class)))
 
 
 (defun %kid (n name)

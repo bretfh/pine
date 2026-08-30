@@ -13,27 +13,23 @@ a place a name can be measured from, so it reaches neither a config nor the wire
 (defun read (where &key (else nil elsep))
   "What stands at WHERE, and which of three things that is.
 
-:HELD is a value, and NIL is one of them. :ABSENT is nothing standing there at
-all. :BRANCH is a name with things under it and nothing of its own, which is what
-/dev is. All three answered NIL and nothing said which, so every caller guessed,
-and every one of them guessed the same way: OR, which reads a written NIL as an
-absence.
+:HELD is a value, and NIL is one of them. :ABSENT is nothing standing there at all.
+:BRANCH is a name with things under it and nothing of its own, which is what /dev is.
+All three answered NIL and nothing said which, so every caller guessed, and every one
+of them guessed the same way: OR, which reads a written NIL as an absence.
 
-ELSE is what to say instead of nothing, said once where it is read rather than as
-an OR at every call site. It does not change the second answer: what to say and
-what was found are two questions.
+Which it is is the node's own answer, not a walk of what is under it: a live one
+holds what the world says and is never asked what it has beneath.
 
-A live node is not asked what is under it. What a device has beneath it belongs to
-the world, and walking it to label a read would be shelling out to answer a
-question about the answer."
+ELSE is what to say instead of nothing, said once where it is read rather than as an
+OR at every call site. It does not change the second answer: what to say and what was
+found are two questions."
   (let ((n (tree:at where)))
     (if (null n)
         (values (if elsep else nil) :absent)
         (let ((value (node:contents n)))
           (values (if (and (null value) elsep) else value)
-                  (cond (value :held)
-                        ((and (not (node:livep n)) (node:nodes n)) :branch)
-                        (t :held)))))))
+                  (node:holding n))))))
 
 (defun standsp (where)
   "Whether anything stands at WHERE."

@@ -69,6 +69,25 @@ at all."
       (pine::watch "/nobody-wrote-this"
                    (lambda (n said) (declare (ignore n said)))))))
 
+(test watching-is-a-method-so-a-kind-can-say-how-it-is-followed
+  "Three of the four verbs dispatched on the class and this one did not, so every
+kind of node that could push had to build its own way round it: a device wired its
+ANNOUNCES by hand somewhere else, and a place in another pine had a second path that
+never met this one."
+  (with-tree
+    (let ((told nil))
+      (defclass %loud (node:node) ((heard :initform nil :accessor heard)))
+      (defmethod watch:watch ((n %loud) tells &key &allow-other-keys)
+        (setf (heard n) tells)
+        n)
+      (let ((n (node:attach (make-instance '%loud :name "loud") (tree:root))))
+        (is (eq n (pine::watch "/loud" (lambda (of said)
+                                         (declare (ignore of))
+                                         (push said told))))
+            "the class answered, and what came back is its to let go of")
+        (funcall (heard n) n :moved)
+        (is (equal '(:moved) told) "and telling goes where the class put it")))))
+
 (test a-derived-node-follows-what-it-read
   (with-tree
     (let ((w (tree:ensure "/window/width"))

@@ -12,6 +12,8 @@
 
 (defvar *attending* nil)
 
+(setf watch:*streaming* #'sh:streaming)
+
 (defclass host (system:system) ()
   (:documentation "The machine, in the namespace: its devices, its filesystem, its
 environment and what it will run.
@@ -47,36 +49,17 @@ A name in place of a node is made and put under /dev first:
 
 (defun %attend (n)
   (when (node:nodep n)
-    (let ((watching (remove nil
-                            (mapcar (lambda (line)
-                                      (let ((s (sh:streaming line)))
-                                        (when s
-                                          (watch:watch
-                                           s
-                                           (lambda (of said)
-                                             (declare (ignore of said))
-                                             (fault:attempt (lambda () (node:stir n))
-                                                            (node:name n)))
-                                           :tells-when :always :poll nil
-                                           :name (format nil "~a<-~a"
-                                                         (node:name n) line)))))
-                                    (node:announces n))))
-          (ticking (let ((seconds (node:refreshes n)))
-                     (when seconds
-                       (actors:repeat seconds (lambda () (node:stir n))
-                                      :as (list :host (node:full-name n))
-                                      :what (node:name n))))))
-      (d:swap *attending* (lambda (all) (cons (list n watching ticking) all)))))
+    (let ((held (watch:following n)))
+      (d:swap *attending* (lambda (all) (cons (list n held) all)))))
   n)
 
 (defun attending () (mapcar #'first *attending*))
 
 (defun leave ()
   (dolist (each *attending*)
-    (destructuring-bind (n watching ticking) each
+    (destructuring-bind (n held) each
       (declare (ignore n))
-      (mapc #'watch:unwatch watching)
-      (when ticking (actors:cancel ticking))))
+      (watch:let-go held)))
   (setf *attending* nil)
   (sh:forget-all))
 

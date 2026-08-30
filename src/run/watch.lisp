@@ -3,10 +3,14 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:actors #:pine/run/actors) (#:fault #:pine/run/fault))
   (:export
-   #:watch #:unwatch #:forget-all))
+   #:watch #:unwatch #:forget-all #:following #:let-go #:*streaming*))
 (in-package #:pine/run/watch)
 
 (defvar *watchers* nil)
+(defvar *streaming* nil
+  "How to turn a line whose output says the world moved into a place that moves
+when it does. Filled in by whatever knows what a shell is, because this layer loads
+before there is one -- the same reason NODE:*BROKE* is one.")
 (defparameter *every* 1)
 (defparameter *workers* 4
   "Workers on the pool a watcher is told on. Enough that one that shells out does
@@ -83,17 +87,59 @@ too and the tick is not what waits for it."
 (defun attend (&key (every *every*))
   (actors:repeat every #'sweep :as :watch :what "reading the live nodes"))
 
-(defun watch (n tells &key (every *every*) name (tells-when :on-change)
-                       (poll (node:livep n)))
-  (let ((w (make-instance 'watcher :watches n :tells tells :tells-when tells-when
-                                   :poll poll
-                                   :name (or name (node:full-name n)))))
-    (node:depend w n)
-    (d:swap *watchers* (lambda (all) (cons w all)))
-    (setf (was w) (fault:or-nothing "nothing may stand there yet"
-                    (node:contents n)))
-    (when (and poll (actors:runningp)) (attend :every every))
-    w))
+(defgeneric watch (n tells &key every name tells-when poll)
+  (:documentation "Say TELLS whenever N moves, and answer something to let go of.
+
+A class answers this. The default is the one every node gets: depend a watcher on
+it, so the walk a write does reaches it. A place somewhere else answers by asking
+wherever it is to say so, which is why this dispatches at all -- three of the four
+verbs were methods and this one was a function, so every kind of node that could
+push had to build its own way round it.")
+  (:method ((n node:node) tells &key (every *every*) name (tells-when :on-change)
+                                    (poll (node:livep n)))
+    (let ((w (make-instance 'watcher :watches n :tells tells :tells-when tells-when
+                                     :poll poll
+                                     :name (or name (node:full-name n)))))
+      (node:depend w n)
+      (d:swap *watchers* (lambda (all) (cons w all)))
+      (setf (was w) (fault:or-nothing "nothing may stand there yet"
+                      (node:contents n)))
+      (when (and poll (actors:runningp)) (attend :every every))
+      w)))
+
+(defgeneric following (n)
+  (:documentation "Make N hear the world behind it, and answer what to let go of.
+
+The other half of watching, and the one a device answers: ANNOUNCES names the lines
+whose output says something moved and REFRESHES how often to ask where nothing
+announces itself. Read here rather than by whoever attaches a device, so a class
+that has a way of hearing says so where it is written.")
+  (:method ((n node:node))
+    (let ((heard (when *streaming*
+                   (loop :for line :in (node:announces n)
+                         :for s := (funcall *streaming* line)
+                         :when s
+                           :collect (watch s (lambda (of said)
+                                               (declare (ignore of said))
+                                               (fault:attempt
+                                                (lambda () (node:stir n))
+                                                (node:name n)))
+                                           :tells-when :always :poll nil
+                                           :name (format nil "~a<-~a"
+                                                         (node:name n) line)))))
+          (ticking (let ((seconds (node:refreshes n)))
+                     (when seconds
+                       (actors:repeat seconds (lambda () (node:stir n))
+                                      :as (list :following (node:full-name n))
+                                      :what (node:name n))))))
+      (list heard ticking))))
+
+(defun let-go (held)
+  "Let go of what FOLLOWING answered."
+  (destructuring-bind (heard ticking) held
+    (mapc #'unwatch heard)
+    (when ticking (actors:cancel ticking)))
+  t)
 
 (defun unwatch (w)
   (node:undepend w (watches w))
