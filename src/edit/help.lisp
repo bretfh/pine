@@ -22,7 +22,7 @@
 
 (command:defcommand "describe-bindings" ()
     (:describes "every chord in force here" :on '(text "C-h b"))
-  (into
+  (show-listing
    "*help*"
    (cons (format nil "chords in force in ~a" (node:name (text:current)))
          (cons ""
@@ -36,7 +36,7 @@
 (command:defcommand "describe-mode" ()
     (:describes "what this document's mode is" :on '(text "C-h m"))
   (let ((m (text:mode-of (text:current))))
-    (into
+    (show-listing
      "*help*"
      (list (mode:type m)
            ""
@@ -61,7 +61,7 @@
 (command:defcommand "describe-settings" ()
     (:describes "every setting, and what this document reads" :on '(text "C-h v"))
   (let ((document (text:current)))
-    (into
+    (show-listing
      "*help*"
      (cons (format nil "settings in ~a" (node:name document))
            (cons ""
@@ -97,7 +97,7 @@
 
 (command:defcommand "list-jobs" ()
     (:describes "what this image is running" :on '(text "C-x j"))
-  (into
+  (show-listing
    "*jobs*"
    (append
     (list (format nil "~16a ~10a ~a" "what" "state" "name") "")
@@ -112,7 +112,7 @@
 
 (command:defcommand "list-faults" ()
     (:describes "what has broken, and what stands")
-  (into
+  (show-listing
    "*faults*"
    (loop :for f :in (fault:faults)
          :collect (cons (format nil "~10a ~a"
