@@ -225,12 +225,15 @@ binds and a click all reach the same place.
 The rows are built here rather than at measure, so nothing is written into a tree
 that has already been handed out."
   (let* ((over-paths (path:pathp items))
-         (all (if over-paths
-                  (let ((n (tree:at items)))
-                    (and n (mapcar (lambda (each)
-                                     (path:path (node:full-name each)))
-                                   (node:nodes n))))
-                  items)))
+         (all (cond ((path:patternp items)
+                     (mapcar (lambda (each) (path:path (node:full-name each)))
+                             (path:matching items)))
+                    (over-paths
+                     (let ((n (tree:at items)))
+                       (and n (mapcar (lambda (each)
+                                        (path:path (node:full-name each)))
+                                      (node:nodes n)))))
+                    (t items))))
     (apply #'make-instance 'column
            :parts (loop :for item :in all
                         :for i :from 0

@@ -61,13 +61,17 @@ takes the same one."
   "Write down what stands now. Belt and braces over the write-through, so nothing
 is taken out here: a node that really went was taken out as it went, and a system
 that has just been stopped has taken its nodes off the tree without meaning that
-what they held is to be forgotten."
+what they held is to be forgotten.
+
+A branch is not written and a leaf holding NIL is, which is HOLDING's answer and not
+a test on the value. Asking whether the value was NIL did both jobs at once, so a
+node written NIL survived a live write and went at the next clean shutdown."
   (let ((n 0))
     (sqlite:with-transaction (db s)
       (tree:walk root
                  (lambda (each)
                    (when (and (node:savedp each)
-                              (node:contents each)
+                              (eq :held (node:holding each))
                               (storablep (node:contents each)))
                      (sqlite:execute-non-query
                       (db s)

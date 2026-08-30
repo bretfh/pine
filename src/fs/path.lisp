@@ -2,7 +2,7 @@
   (:use #:cl)
   (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
   (:export
-   #:path #:pathp #:whole #:leaf))
+   #:path #:pathp #:whole #:leaf #:patternp #:matching))
 (in-package #:pine/fs/path)
 
 (defclass segment ()
@@ -21,6 +21,11 @@
     (write-string (whole p) stream)))
 
 (defun pathp (x) (typep x 'path))
+
+(defun patternp (p)
+  "Whether this path names one place or a shape of them: * is any one name, ** is
+any run of them, and ?name is one that is captured."
+  (and (pathp p) (some (lambda (s) (not (typep s 'literal))) (segments p))))
 
 (defgeneric kind (segment)
   (:method ((s literal)) :literal)

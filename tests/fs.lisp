@@ -165,6 +165,28 @@ it stood for is what knew how to read it."
                (store:close-store s))))
       (ignore-errors (delete-file file)))))
 
+(test a-node-written-nil-is-kept-the-same-way-by-both-paths
+  "The write-through persisted one and the snapshot skipped it, so a node written
+NIL survived a live write and went at the next clean shutdown. SAVEDP and STORABLEP
+are the whole test; whether the value happens to be NIL is not a third question."
+  (let ((file (merge-pathnames "pine-nil-store.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (progn
+           (with-tree
+             (let ((s (store:open-store file)))
+               (pine::write "/held" nil)
+               (is (plusp (store:snapshot s)) "the snapshot wrote it")
+               (store:close-store s)))
+           (with-tree
+             (let ((s (store:open-store file)))
+               (tree:ensure "/held")
+               (store:restore s)
+               (is (eq :held (nth-value 1 (pine::read "/held")))
+                   "and it came back as a place holding NIL, not as one absent")
+               (store:close-store s))))
+      (ignore-errors (delete-file file)))))
+
 (test a-slot-is-kept-the-moment-it-is-written
   "A slot says it is saved. Writing one has to reach the store as it happens, or
 what a crash costs is everything since the image came up."

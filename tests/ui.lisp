@@ -150,3 +150,19 @@ both, so they have to be the same three numbers."
     (is (typep back 'ui:column))
     (is (equal "bar" (ui:css-class back)))
     (is (equal "hi" (ui:content (first (ui:parts back)))))))
+
+(test rows-over-a-pattern-are-what-it-matches
+  "ROWS said it was a column over a pattern whose matches are the rows, and it
+listed one node's children. The matcher was written and nothing called it."
+  (with-tree
+    (pine::write "/dev/audio/volume" 40)
+    (pine::write "/dev/screen/volume" 70)
+    (pine::write "/dev/audio/muted" nil)
+    (let ((found (mapcar #'pine/fs/path:whole
+                         (mapcar (lambda (n) (pine/fs/path:path
+                                              (node:full-name n)))
+                                 (path:matching (path:path "/dev/*/volume"))))))
+      (is (equal '("/dev/audio/volume" "/dev/screen/volume") (sort found #'string<))
+          "one name each, and not what is beside them"))
+    (is (path:patternp (path:path "/dev/*/volume")))
+    (is (not (path:patternp (path:path "/dev/audio/volume"))))))
