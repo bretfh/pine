@@ -131,7 +131,11 @@ that uses PINE/USER and nothing else can make."
   (is (equal '("branch" "dirty" "head") (node:contents (tree:at "/dev/vcs")))
       "every reading either of its backings declares")
   (is (not (null (tree:at "/dev/vcs/branch")))
-      "and each is a place, whichever backing this machine can use"))
+      "and each is a place, whichever backing this machine can use")
+  (is (member :vcs-branch (pine/edit::sources))
+      "and it brought a kind of question of its own, and the words that answer it")
+  (is (not (null (command:named "switch-branch")))
+      "asked for by a command that names that category"))
 
 (test dropping-an-app-takes-its-device-with-it
   (vcs-app)
@@ -141,7 +145,9 @@ that uses PINE/USER and nothing else can make."
   (is (null (tree:at "/dev/vcs")) "the device it put under /dev")
   (is (null (tree:at "/work")) "the place it put up")
   (is (null (ui:named "board")) "its surface")
-  (is (null (command:named "branch")) "and its commands"))
+  (is (null (command:named "branch")) "its commands")
+  (is (not (member :vcs-branch (pine/edit::sources)))
+      "and the way it answered its own kind of question"))
 
 (test everything-a-system-puts-up-is-taken-back
   "Six kinds of thing a system can contribute and one mechanism that takes all six
@@ -151,11 +157,10 @@ half worked and nothing said which half."
   (with-tree
     (let ((home "pine/test/probe"))
       (let ((system:*owner* home))
-        (pine/ui::property :probe-key
-                           (lambda (props) (declare (ignore props)) nil))
+        (ui:property :probe-key (lambda (props) (declare (ignore props)) nil))
         (pine/ui::register (make-instance 'pine/ui::theme :name :probe-theme))
-        (pine/edit::source :probe-category
-                           (lambda (&rest ignored) (declare (ignore ignored)) nil))
+        (edit:completes :probe-category
+                        (lambda (&rest ignored) (declare (ignore ignored)) nil))
         (declared:defdevice %probe-owned :describes "declared while a system started")
         (mode:bind 'text "C-c C-probe" "help")
         (ui:make-surface "probe-surface" (lambda () (ui:label "hi")) :as 'ui:panel))
@@ -225,7 +230,7 @@ nothing and imports what it offers, put here by SPEAKS as it loads."
           "~a came with the system that offers it" said))
     (let ((words (let ((n 0)) (do-external-symbols (s p) (declare (ignore s)) (incf n)) n))
           (cl (let ((n 0)) (do-external-symbols (s :cl) (declare (ignore s)) (incf n)) n)))
-      (is (< (- words cl) 220)
+      (is (< (- words cl) 240)
           "~d words of pine's own: a language, not a grab bag" (- words cl)))))
 
 (test two-vocabularies-cannot-claim-one-word

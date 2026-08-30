@@ -18,30 +18,30 @@ another pine all press keys the same way."
               :describes "write a chord here to type it"))
 
 (defun %sources ()
-  (source :command
+  (completes :command
                  (lambda (typed)
                    (declare (ignore typed))
                    (mapcar (lambda (c) (cons (command:name c)
                                              (command:describes c)))
                            (command:commands))))
-  (source :document
+  (completes :document
                  (lambda (typed)
                    (declare (ignore typed))
                    (mapcar (lambda (d) (cons (node:name d)
                                              (or (text:file-of d) "")))
                            (text:documents))))
-  (source :mode
+  (completes :mode
                  (lambda (typed)
                    (declare (ignore typed))
                    (mapcar (lambda (c) (string-downcase (symbol-name (class-name c))))
                            (mode:modes))))
-  (source :setting
+  (completes :setting
                  (lambda (typed)
                    (declare (ignore typed))
                    (mapcar (lambda (each)
                              (cons (string-downcase (string (car each))) (cdr each)))
                            +settings+)))
-  (source :window
+  (completes :window
                  (lambda (typed)
                    (declare (ignore typed))
                    "What the compositor says there is. Read through the namespace:
@@ -54,7 +54,7 @@ the editor has never heard of a window manager, and does not have to."
                              :collect (cons (format nil "~a ~a" id
                                                     (or (getf said :title) ""))
                                             (or (getf said :app) "")))))))
-  (source :file #'files))
+  (completes :file #'files))
 
 (defun %asking (c)
   (let* ((spec (first (command:asks c)))

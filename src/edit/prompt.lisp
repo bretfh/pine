@@ -68,18 +68,21 @@
 (defun asked ()
   (and (tree:root) (node:contents (%question-node))))
 
-(defun source (category function)
+(defun completes (category function)
+  "Say how to answer a prompt asking for CATEGORY. A command asks for one by name --
+:asks '((:prompt \"Note: \" :category :note-title)) -- and this is what offers the
+words, so a system brings its own kind of question and its own answers to it."
   (d:keep! *sources* category function)
-  (system:owned (list :source category))
+  (system:owned (list :completes category))
   category)
 
-(defun forget-source (category)
+(defun forget-completes (category)
   "Take a way of answering a prompt back off. A category whose system has gone is a
 question nothing can answer, and leaving it there is a prompt that offers nothing."
   (d:drop! *sources* category)
   category)
 
-(system:undoes :source #'forget-source)
+(system:undoes :completes #'forget-completes)
 
 (defun sources () (d:keys (d:all *sources*)))
 

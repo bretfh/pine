@@ -14,7 +14,7 @@
    #:split #:close-window #:only #:seed #:show
    #:follow #:name-of #:annotation #:matches #:askingp
    #:ask #:cancel #:so-far #:asked #:candidates
-   #:chosen #:matching #:filep #:dispatch #:rows
+   #:chosen #:matching #:filep #:dispatch #:rows #:completes
    #:indenting #:*cols* #:*lines* #:show-listing #:on-enter
    #:place #:searching #:start #:step-search #:took
    #:banner #:arglist #:type-text))

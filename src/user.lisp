@@ -34,7 +34,7 @@
    #:cells #:center #:centerbox #:choice #:color #:column #:css-glass
    #:css-mono #:css-rad #:defsurface #:field #:gap #:grid #:here #:icon
    #:image #:inset #:label #:measure #:metric #:overlay #:paint
-   #:panel #:parts #:placing
+   #:panel #:parts #:placing #:property
    #:ring #:role #:row #:rows #:rule #:scroll #:shown #:shows #:slider
    #:stack #:surface #:surfaces #:tile #:widget #:window)
   (:documentation "The language somebody writes their own pine in.

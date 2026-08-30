@@ -20,6 +20,16 @@ a document's lines in one package and splitting text in another, and pine will n
 let one word be both."
   (if (plusp (length said)) (1+ (count #\Newline said)) 0))
 
+(defun %split (said)
+  "What a program printed, a line at a time."
+  (let ((out NIL) (from 0))
+    (dotimes (at (length said))
+      (when (char= #\Newline (char said at))
+        (when (> at from) (push (subseq said from at) out))
+        (setf from (1+ at))))
+    (when (> (length said) from) (push (subseq said from) out))
+    (nreverse out)))
+
 ;;; The device. What it is, said once; how this machine answers it, said once per
 ;;; way of answering. The first backing whose programs are all on the path wins,
 ;;; and where none of them is there every reading says :ABSENT rather than NIL --
@@ -74,6 +84,22 @@ in the corner saying where it is and what is uncommitted."))
   (defcommand "branch" () (:describes "what branch the checkout is on")
     (read "/dev/vcs/branch"))
   (bind 'text "C-c v" "branch")
+
+  ;; A kind of question of its own, and the words that answer it. Nothing pine
+  ;; ships knows what a branch is; COMPLETES is how a package says what its own
+  ;; category offers, so the prompt narrows over branches the way it does over
+  ;; commands.
+  (completes :vcs-branch
+             (lambda (text)
+               (declare (ignore text))
+               (%split (sh "git -C ~a for-each-ref --format=%(refname:short) refs/heads 2>/dev/null"
+                           (%at)))))
+
+  (defcommand "switch-branch" (name)
+    (:describes "check another branch out"
+     :asks '((:prompt "Branch: " :category :vcs-branch :must-match T)))
+    (write "/dev/vcs/branch" (princ-to-string name))
+    (read "/dev/vcs/branch"))
   (defsurface board (:as 'board)
     (column :class "board"
             (label (read "/dev/vcs/branch" :else "no checkout"))
