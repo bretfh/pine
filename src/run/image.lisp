@@ -1,6 +1,6 @@
 (defpackage #:pine/run/image
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:job #:pine/run/job)
+  (:local-nicknames (#:d #:pine/data) (#:job #:pine/run/job) (#:node #:pine/fs/node)
                     (#:fault #:pine/run/fault) (#:actors #:pine/run/actors))
   (:export
    #:image #:child #:evaluate #:borrowing))
@@ -197,3 +197,17 @@ fault, so this waits on the fault rather than looking at a flag over and over."
                 (let ((line (%hear j fault:*waiting*)))
                   (when line (answered line))))
       (setf (held j) nil))))
+
+
+(setf node:*elsewhere*
+      (lambda (where form)
+        "Work a node out in another image. A fault there is already standing here
+with its restarts, because EVALUATE borrowed it; this signals so the node keeps what
+it last worked out to rather than being written an answer nobody worked out."
+        (let ((i (if (typep where 'image) where (job:named (princ-to-string where)))))
+          (unless (typep i 'image)
+            (error "~a is not an image to work anything out in." where))
+          (multiple-value-bind (answered broke) (evaluate i form)
+            (if broke
+                (error "~a: ~a" (job:name i) broke)
+                (first answered))))))

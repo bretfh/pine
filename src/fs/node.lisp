@@ -12,7 +12,8 @@
    #:attach #:detach #:moved #:reads #:writes)
   (:export
    #:depend #:undepend #:reading #:version #:mark #:standsp #:stalep
-   #:work-out #:freshp #:cached #:saw #:*broke* #:*waiting-on* #:*waited*)
+   #:work-out #:freshp #:cached #:saw #:in-of
+   #:*broke* #:*elsewhere* #:*waiting-on* #:*waited*)
   (:documentation "What is addressable, and what answering for one means.
 
 Three lists, and which one a name is in is the whole of what somebody writing a
@@ -44,6 +45,10 @@ anything by it on its own: it is what says whether an answer found to stand a
 moment ago is still worth trusting without looking again, and the looking again is
 what is being saved.")
 (defparameter +unread+ '#:unread)
+(defvar *elsewhere* nil
+  "How to work a node out in another image, given where and the form. Filled in by
+whatever knows what an image is, because this layer loads before there is one --
+the same reason *BROKE* is one.")
 
 (defclass node ()
   ((name      :initarg :name      :reader name)
@@ -113,6 +118,7 @@ landed in words."))
 (defclass derived (node)
   ((reads  :initarg :reads   :accessor reads  :initform nil)
    (writes :initarg :writes  :accessor writes :initform nil)
+   (in     :initarg :in      :reader  in-of   :initform nil)
    (cached  :initform +unread+ :accessor cached)
    (claim   :initform nil :accessor claim)
    (waiting :initform nil :accessor waiting))
@@ -122,7 +128,13 @@ what depended on it and nothing subscribes to anything.
 
 WRITES because working a value out and being able to write it are two questions:
 /dev/audio/volume is worked out from what wpctl says and writing it sets the
-volume. Without one, writing replaces what it works out with what you wrote."))
+volume. Without one, writing replaces what it works out with what you wrote.
+
+IN is where the working-out happens, where it does not happen here. READS is then a
+form rather than a closure, because a form is a value and a closure is not, and it
+is evaluated in that image. What it read there is that image's business: a node
+worked out somewhere else records no edges here, so it is stirred by being told and
+not by a walk."))
 
 (defclass live (node) ()
   (:documentation "The world behind this answers, rather than a value kept here.
@@ -163,7 +175,13 @@ the class saying so, not a flag anybody has to remember to pass."
          (alexandria:remove-from-plist initargs :class)))
 
 (defun derive (name reads &rest initargs)
-  "A node that works its value out and remembers it until something it read moves."
+  "A node that works its value out and remembers it until something it read moves.
+
+:IN <image> works it out there instead of here, and READS is then a form. That is
+the boundary: a READS is somebody else's code and it talks to the world, and one
+that will not stop takes the image it runs in with it. Everything else here --
+the claim, the deadline, the fault that comes home with its restarts -- protects
+the other readers of a node. This is what protects the image."
   (apply #'make-instance 'derived :name name :reads reads initargs))
 
 (defun %named (n)

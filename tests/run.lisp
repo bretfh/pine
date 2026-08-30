@@ -451,3 +451,25 @@ nor everything else the walk has still to reach, nor whoever was waiting on it."
                (bordeaux-threads:signal-semaphore let-go)
                (is (until (lambda () told)) "but it lands afterwards"))
           (watch:unwatch w))))))
+
+(test a-working-out-can-happen-in-another-image
+  "The boundary Genera did not have. A READS is somebody else's code and it talks to
+the world; one that will not stop takes the image it runs in with it. Everything
+around the working-out protects the other readers of a node -- the claim, the
+deadline, the fault that comes home with its restarts. This is what protects the
+image, and it is DERIVE :IN."
+  (booted)
+  (with-tree
+    (let ((kid (make-instance 'image:child :name "elsewhere" :on-fault :leave
+                                           :systems nil)))
+      (job:supervise kid)
+      (job:start kid)
+      (unwind-protect
+           (let ((n (node:derive "sum" '(+ 20 22) :in kid)))
+             (node:attach n (tree:root))
+             (is (eql 42 (node:contents n))
+                 "worked out over there, and what came back is a value")
+             (is (null (node:saw n))
+                 "and it read nothing here, because what it read is that image's"))
+        (job:stop kid)
+        (job:forget "elsewhere")))))
