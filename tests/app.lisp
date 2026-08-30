@@ -106,6 +106,43 @@ own readtable. It is nothing but a file somebody wrote."
   (is (null (command:named "note")))
   (is (null (tree:at "/system/notes"))))
 
+(defvar *vcs* nil)
+
+(defun vcs-app ()
+  "The other example: an app that brings a device of its own. Loaded the way a
+daemon loads one, so a file nothing compiles is still a file the suite reads."
+  (editing)
+  (unless *vcs*
+    (let ((*package* (pine:user-package))
+          (*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax)))
+      (load (merge-pathnames "examples/vcs.lisp"
+                             (asdf:system-source-directory :pine))))
+    (setf *vcs* t))
+  (unless (system:named "vcs") (pine:use :vcs))
+  (system:named "vcs"))
+
+(test an-app-can-bring-a-device-of-its-own
+  "A device used to be a function PINE/HOST/DEVICE exported, so /dev was a closed
+list and nothing anybody wrote could add to it. A declaration is a thing a package
+that uses PINE/USER and nothing else can make."
+  (vcs-app)
+  (is (not (null (declared:named "vcs"))) "the app declared one")
+  (is (not (null (tree:at "/dev/vcs"))) "and it stands in the namespace")
+  (is (equal '("branch" "dirty" "head") (node:contents (tree:at "/dev/vcs")))
+      "every reading either of its backings declares")
+  (is (not (null (tree:at "/dev/vcs/branch")))
+      "and each is a place, whichever backing this machine can use"))
+
+(test dropping-an-app-takes-its-device-with-it
+  (vcs-app)
+  (pine:drop :vcs)
+  (setf *vcs* t)
+  (is (null (system:named "vcs")))
+  (is (null (tree:at "/dev/vcs")) "the device it put under /dev")
+  (is (null (tree:at "/work")) "the place it put up")
+  (is (null (ui:named "board")) "its surface")
+  (is (null (command:named "branch")) "and its commands"))
+
 (test nothing-pine-ships-names-this-app
   "The claim is that an app is the editor's equal. This is the proof: the editor
 is under src/, this is not, and src/ has never heard of it."

@@ -18,7 +18,7 @@
   "How many lines a program printed. LINES is not a word the language has: it means
 a document's lines in one package and splitting text in another, and pine will not
 let one word be both."
-  (if (plusp (length said)) (1+ (count #\N ewline said)) 0))
+  (if (plusp (length said)) (1+ (count #\Newline said)) 0))
 
 ;;; The device. What it is, said once; how this machine answers it, said once per
 ;;; way of answering. The first backing whose programs are all on the path wins,
