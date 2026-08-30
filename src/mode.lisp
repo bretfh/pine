@@ -9,7 +9,7 @@
    #:mode #:text #:prose #:code #:lisp
    #:pine #:scheme #:org #:press #:typing
    #:indent #:complete #:saving #:structure #:setting #:says
-   #:span #:covering #:name-of #:from-of #:to-of #:inside-of
+   #:covering #:name-of #:from-of #:to-of #:inside-of
    #:handles #:mode-for #:bind #:unbind #:binding #:bindings
    #:dispatch #:named #:modes #:type #:mode-node))
 (in-package #:pine/mode)
@@ -63,15 +63,19 @@ writing a document back where it came from is the document's, and a mode says wh
 saving is before anything is written.")
   (:method ((m mode) d) (declare (ignore d)) nil))
 
-(defclass span ()
+(defclass covering ()
   ((name   :initarg :name   :reader name-of)
    (from   :initarg :from   :reader from-of)
    (to     :initarg :to     :reader to-of)
    (inside :initarg :inside :reader inside-of :initform nil))
   (:documentation "One stretch a mode says its text divides into: what to call it,
-where it starts and ends as (LINE . COLUMN), and the spans inside it.
+where it starts and ends as (LINE . COLUMN), and the coverings inside it.
 
-Said and not kept. A span is what a mode answers; the node standing for it is
+Not SPAN: PINE/TEXT:SPAN is (LINE FROM TO FACE), the few numbers a run of cells is
+painted with. This is a structural claim about the text and not a colour, and one
+word cannot be both.
+
+Said and not kept. A COVERING is what a mode answers; the node standing for it is
 RESTRUCTURE's, and that node outlives an edit so a watcher on one goes on watching.
 Answering nodes instead would make a mode mint a new one on every keystroke and
 every watcher would be watching something nothing else can reach.
@@ -81,12 +85,12 @@ in another order made regions covering text they were never standing for -- with
 nothing to catch it, because every one of those shapes is a list."))
 
 (defun covering (name from to &optional inside)
-  "A span. FROM and TO are (LINE . COLUMN) in the document's own lines."
-  (make-instance 'span :name (princ-to-string name) :from from :to to
-                       :inside inside))
+  "One. FROM and TO are (LINE . COLUMN) in the document's own lines."
+  (make-instance 'covering :name (princ-to-string name) :from from :to to
+                           :inside inside))
 
 (defgeneric structure (mode document)
-  (:documentation "The spans this text divides into, as a tree of SPAN.
+  (:documentation "What this text divides into, as a tree of COVERING.
 
 What comes back is put in the namespace under the document, so a form or a heading
 is a place anything can read, write and watch -- inside this image and outside it.")

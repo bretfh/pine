@@ -89,7 +89,7 @@ way, and says :ABSENT where this machine has no way to answer it."
       (is (equal '("text") (node:contents dev)))
       (let ((text (node:resolve dev "text")))
         (is (not (null text)) "the row is a place under it")
-        (if (declared:standing (declared:named "clip"))
+        (if (declared:answering (declared:named "clip"))
             (progn
               (is (not (null (node:reads text))) "it reads")
               (is (not (null (node:writes text))) "and it is written"))
@@ -107,7 +107,7 @@ why READ has always had three."
       (mode   :reads (sh:sh "no-such-program-anywhere mode")))
     (let ((dev (node:attach (declared:made "%probe-thermostat")
                             (tree:ensure (tree:root) "dev"))))
-      (is (null (declared:standing (declared:named "%probe-thermostat")))
+      (is (null (declared:answering (declared:named "%probe-thermostat")))
           "no backing this machine can use")
       (is (equal '("target" "mode") (node:contents dev))
           "and it still says what it would answer")

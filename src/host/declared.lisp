@@ -3,7 +3,7 @@
   (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:sh #:pine/host/shell))
   (:export
-   #:defdevice #:defbacking #:made #:declared #:absent #:standing #:named
+   #:defdevice #:defbacking #:made #:device #:unanswered #:answering #:named
    #:needs-of #:backings-of)
   (:documentation "Declaring a device, and binding it to whatever the host has.
 
@@ -23,7 +23,7 @@ somewhere, and is not the word for a volume of zero."))
   "Every device declared, by name. A device is a declaration and not a function, so
 a config can add one and a system can bring its own.")
 
-(defclass declared ()
+(defclass device ()
   ((title     :initarg :title     :reader title-of)
    (describes :initarg :describes :reader describes-of :initform nil)
    (announces :initarg :announces :reader announces-of :initform nil)
@@ -44,21 +44,21 @@ whatever this way of asking uses: a clipboard read through wl-paste is told by
 wl-paste --watch, and one read through xclip is not told at all. Where a backing says
 nothing the device's own answer stands."))
 
-(defclass absent (node:place) ()
+(defclass unanswered (node:place) ()
   (:documentation "A reading nothing on this machine can answer.
 
 It stands, so the path resolves and a surface reading it is not a surface that
 breaks. It holds nothing, and says :ABSENT rather than NIL, so a bar can show a dash
 where there is no battery instead of a battery at zero."))
 
-(defmethod node:holding ((n absent)) :absent)
+(defmethod node:holding ((n unanswered)) :absent)
 
 (defun %said (name) (string-downcase (princ-to-string name)))
 
 (defun declare-device (title &key describes announces refreshes)
   (let ((had (d:lookup (d:all *declared*) (%said title))))
     (or had
-        (let ((it (make-instance 'declared :title (%said title)
+        (let ((it (make-instance 'device :title (%said title)
                                            :describes describes
                                            :announces announces
                                            :refreshes refreshes)))
@@ -112,7 +112,7 @@ the device declared does not take it away: it stands and says :ABSENT."
   "The device declared under TITLE, or nothing."
   (d:lookup (d:all *declared*) (%said title)))
 
-(defun standing (it)
+(defun answering (it)
   "The first backing this machine can answer with, or nothing."
   (find-if (lambda (b) (every #'sh:has (needs-of b))) (backings-of it)))
 
@@ -129,9 +129,9 @@ not this machine is the one that can answer it."
                  (lambda () (node:reading n) (funcall reads))
                  :parent n :writes writes)))
 
-(defun %answering (it b)
-  "The device, standing, answering ROWS and saying :ABSENT to every other reading it
-was declared to have.
+(defun %made (it b)
+  "The device, standing, answering what backing B knows and saying :ABSENT to every
+other reading it was declared to have.
 
 Every declared reading stands whether or not the backing that won answers it. A
 backing that knows the connection but cannot list what is in the air leaves
@@ -153,10 +153,10 @@ so a surface reading it is the same surface on either machine."
                                 (cond (row (%reading (first self) row))
                                       ((member (%said want) words :test #'equal)
                                        (node:answers (%said want)
-                                                     :class 'absent)))))))))
+                                                     :class 'unanswered)))))))))
 
 (defun made (name)
   "The node for a declared device, bound to whatever this machine has. Nothing where
 no such device was declared -- which is what lets the caller fall back."
   (let ((it (named name)))
-    (when it (%answering it (standing it)))))
+    (when it (%made it (answering it)))))
