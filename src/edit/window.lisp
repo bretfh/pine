@@ -95,6 +95,13 @@ windows are, rather than by whoever sets the current document."
     (values a b)))
 
 (defun close-window (w &optional (of (root)))
+  "Close W, and let what is left take its place.
+
+What the one left over holds comes up with it, and so does what is under it. Only
+the flag saying it was split came up before, so closing the sibling of a split
+left a window claiming to run in a column with nothing in it -- and everything
+that had been in that column was still hanging off the one just taken away, where
+nothing could reach it."
   (let ((up (node:parent w)))
     (when (and up (typep up 'window))
       (node:detach up (node:name w))
@@ -103,6 +110,9 @@ windows are, rather than by whoever sets the current document."
           (let ((only (first left)))
             (setf (shows up) (shows only)
                   (runs up) (runs only))
+            (dolist (each (parts only))
+              (node:detach only (node:name each))
+              (node:attach each up))
             (node:detach up (node:name only)))))
       (focus (or (first (windows of)) up) of))
     w))
@@ -146,17 +156,25 @@ windows are, rather than by whoever sets the current document."
     (focus (nth (mod (1+ at) (length all)) all))
     (node:name (focused))))
 
+(defun %weighed (win to)
+  "Give WIN this much of the room, and say it moved. What lays the windows out is
+worked out from what it read, and how big this one is is one of the things it
+read: set without a word, the room changed and nothing drew it again."
+  (setf (weight win) to)
+  (node:moved win)
+  to)
+
 (command:defcommand "enlarge-window" ()
     (:describes "give this window more of the room" :on '(text "C-x ^"))
   (let ((win (focused)))
-    (setf (weight win) (min 16 (1+ (weight win))))))
+    (%weighed win (min 16 (1+ (weight win))))))
 
 (command:defcommand "shrink-window" ()
     (:describes "give this window less of the room" :on '(text "C-x -"))
   (let ((win (focused)))
-    (setf (weight win) (max 1 (1- (weight win))))))
+    (%weighed win (max 1 (1- (weight win))))))
 
 (command:defcommand "balance-windows" ()
     (:describes "every window the same size" :on '(text "C-x +"))
-  (dolist (win (windows) t) (setf (weight win) 1)))
+  (dolist (win (windows) t) (%weighed win 1)))
 

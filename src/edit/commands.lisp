@@ -363,7 +363,8 @@ by whoever asks for it."
     (:describes "point to the middle of the window" :on '(text "C-l"))
   (let ((win (focused)))
     (setf (scrolled win)
-          (max 0 (- (at-line (current)) (floor (down win) 2))))))
+          (max 0 (- (at-line (current)) (floor (down win) 2))))
+    (moved win)))
 
 (defcommand "scroll-up" ()
     (:describes "a screenful on" :on '(text "C-v" "PageDown"))

@@ -405,3 +405,72 @@ PREFIXP, so a key cost a list of every command that stands, several times over."
     (is (not (null (mode:binding m "C-q test-fresh")))
         "what was kept is worked out again when the commands move")
     (command:forget "test-fresh")))
+
+(test closing-a-window-beside-a-split-keeps-what-was-in-it
+  "What is left over comes up in place of what went, and so does what is under it.
+Only the flag saying it had been split came up, so the one left claiming to run in
+a column had nothing in it, and everything that had been in that column was still
+hanging off the window just taken away."
+  (editing)
+  (edit:only (edit:focused))
+  (let ((top (edit:focused)))
+    (edit:split top :below)
+    (let ((lower (second (edit:windows))))
+      (edit:split lower :beside)
+      (is (= 3 (length (edit:windows))) "one above, two beside each other below")
+      (edit:close-window (first (edit:windows)))
+      (is (= 2 (length (edit:windows)))
+          "closing the one above leaves the two that were below it")))
+  (edit:only (edit:focused)))
+
+(test a-space-typed-into-a-search-is-a-space
+  "SPC is a key called SPC and what it puts in is a space. Taking the first letter
+of the name searched for an S."
+  (let ((doc (editing)))
+    (setf (node:contents doc) "alpha beta gamma")
+    (text:goto doc 0 0)
+    (command:run "isearch-forward")
+    (edit:dispatch (ui:parse "a"))
+    (edit:dispatch (ui:parse "SPC"))
+    (edit:dispatch (ui:parse "b"))
+    (is (equal "a b" (pine/edit::needle (edit:searching)))
+        "what the keys type is what is being looked for")
+    (is (search "a b" (edit:banner)) "and what it says it is looking for")
+    (edit:took (edit:searching))))
+
+(test each-document-is-evaluated-in-what-it-says-it-is-written-in
+  "One session for the image took whichever document asked first and kept its
+package for ever, so M-: in a second file read its names in the first file's."
+  (editing)
+  (let ((a (text:make-document "%probe-a"))
+        (b (text:make-document "%probe-b")))
+    (unwind-protect
+         (progn
+           (setf (node:contents a) "(in-package #:pine/user)")
+           (setf (node:contents b) "(in-package #:cl-user)")
+           (is (eq (find-package :pine/user)
+                   (session:package-of (pine/edit::evaluating a))))
+           (is (eq (find-package :cl-user)
+                   (session:package-of (pine/edit::evaluating b)))
+               "and the second is read in its own, not the first's")
+           (is (eq (find-package :pine/user)
+                   (session:package-of (pine/edit::evaluating a)))
+               "and asking again does not take the other's"))
+      (text:kill "%probe-a")
+      (text:kill "%probe-b"))))
+
+(test a-path-typed-at-the-prompt-reaches-the-command
+  "The reader makes a form out of /a/b. Handed over as the form rather than the
+place it spells, (cat /dev/audio/volume) broke at the prompt while
+(read /dev/audio/volume) answered -- which is the one thing the four verbs are
+supposed not to do."
+  (editing)
+  (with-tree
+    (pine::write "/probe/here" 42)
+    (let ((s (pine:console)))
+      (unwind-protect
+           (let ((e (session:evaluate s (session:read s "(cat /probe/here)"))))
+             (is (null (session:fault e)) "~a" (session:fault e))
+             (is (equal '(42) (session:answered e))
+                 "the command was given the place, not the form for it"))
+        (session:close s)))))
