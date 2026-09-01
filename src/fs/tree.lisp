@@ -163,8 +163,13 @@ what does not.")
         (%spelled *root* where t))))
 
 (defun put (where pieces value)
+  "Put VALUE at the place WHERE and PIECES spell, making it if nothing is there.
+
+A value and not an instruction. A seq beginning with a keyword is what a shell
+says to VERB with, so writing one as a value needs the escape saying so -- without
+it, putting [:urgent] at /tags ran :URGENT as a verb and stored what it answered."
   (let ((n (apply #'ensure where (alexandria:ensure-list pieces))))
-    (setf (node:contents n) value)
+    (setf (node:contents n) (node:as-value value))
     n))
 
 (defun %erase (from names)

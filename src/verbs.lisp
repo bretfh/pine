@@ -37,8 +37,12 @@ found are two questions."
 
 (defun write (where value)
   "Put VALUE at WHERE, making the place if nothing has been put there yet: a read
-finds what is there and a write makes what is not."
-  (setf (node:contents (tree:ensure where)) value))
+finds what is there and a write makes what is not.
+
+A value, whatever it looks like. TOGGLE and the three below it are the words for
+telling a place to do something; this one is for putting something there, so a seq
+beginning with a keyword goes down as the seq it is."
+  (setf (node:contents (tree:ensure where)) (node:as-value value)))
 
 (defun ls (where)
   "The names directly under WHERE, and none where nothing stands.

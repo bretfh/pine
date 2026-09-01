@@ -160,10 +160,15 @@ is text plus something of its own."
       (make-document "scratch" :mode (make-instance 'mode:lisp))))
 
 (defun kill (name)
+  "Take a document off, and say the paths under it went.
+
+ERASE-CHILD and not DETACH: a document keeps where point is and how many times it
+has been edited as nodes of its own, and those outlive the image. Taken off
+without a word, every document ever opened left its rows in the store for ever."
   (let ((doc (named name)))
     (when doc
       (killing doc)
-      (node:detach (root) (node:name doc))
+      (node:erase-child (root) (node:name doc))
       (when (eq doc *current*) (setf *current* (or (first (documents)) (scratch)))))
     doc))
 
@@ -254,15 +259,22 @@ about a key the document had answered."
 (defun newline (doc) (insert doc (string #\Newline)))
 
 (defun delete-back (doc &optional (n 1))
+  "Take back N characters, and say where.
+
+Said without a span, everything worked out of the text was given up -- including
+what the text says it is written in, which is a walk of the whole document.
+Backspace paid for that walk on every key, which is the walk %KEPT-DECLARATION is
+written to avoid."
   (%remember doc)
-  (multiple-value-bind (at col)
-      (move-by :char (lines doc) (at-line doc) (at-col doc) (- n))
-    (multiple-value-bind (fresh line col taken)
-        (cut (lines doc) at col (at-line doc) (at-col doc))
-      (setf (lines doc) fresh)
-      (setf (at-line doc) line (at-col doc) col)
-      (changed doc)
-      taken)))
+  (let ((to (at-line doc)))
+    (multiple-value-bind (at col)
+        (move-by :char (lines doc) (at-line doc) (at-col doc) (- n))
+      (multiple-value-bind (fresh line col taken)
+          (cut (lines doc) at col (at-line doc) (at-col doc))
+        (setf (lines doc) fresh)
+        (setf (at-line doc) line (at-col doc) col)
+        (changed doc at (1+ (- to at)) 1)
+        taken))))
 
 (defun delete-region (doc from-line from-col to-line to-col)
   (%remember doc)

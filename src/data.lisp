@@ -76,8 +76,13 @@ The building half of this vocabulary is the fset kinds and nothing, because
 building one a piece at a time and sharing what did not move is what they are for.
 A list says so rather than being copied behind your back.")
   (:method ((c fset:map) key &optional value) (fset:with c key value))
-  (:method ((c fset:seq) key &optional value)
-    (if (integerp key) (fset:with c key value) (fset:with-last c key)))
+  (:method ((c fset:seq) key &optional (value nil valuep))
+    "Given a value it is put at that index; given only a thing, that thing goes on
+the end. Asked of what was handed over and not of what the thing looks like, the
+way the NULL method asks: told to decide by type, (with (seq) 5) put NIL at index
+five and padded the four before it, so a seq of numbers was one WITH could not
+build and INCLUDE on one quietly wrecked it."
+    (if valuep (fset:with c key value) (fset:with-last c key)))
   (:method ((c fset:set) key &optional value)
     (declare (ignore value))
     (fset:with c key))
