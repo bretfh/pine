@@ -13,7 +13,8 @@ it says and what outlives the image"
                 :serial t
                 :pathname "src/fs/"
                 :components ((:file "commit")
-                             (:file "node") (:file "graph") (:file "place")
+                             (:file "node") (:file "attach")
+                             (:file "graph") (:file "place")
                              (:file "tree") (:file "path")
                              (:file "reader") (:file "mount")
                              (:file "log") (:file "store")))

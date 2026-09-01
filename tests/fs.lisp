@@ -134,6 +134,10 @@ never met this one."
       (is (= 55 (node:contents (tree:at "/dev/audio/volume"))))
       (is (equal "volume" (path:leaf p))))))
 
+(defun %exactly (s path)
+  (sqlite:execute-to-list (pine/fs/store::db s)
+                          "select path from node where path = ?" path))
+
 (defun %paths (s like)
   (sqlite:execute-to-list (pine/fs/store::db s)
                           "select path from node where path like ?" like))
@@ -494,3 +498,152 @@ that node waits behind it for the life of the image."
                 "we give up rather than wait behind it"))
           (bordeaux-threads:signal-semaphore go-on)
           (actors:joined holder))))))
+
+(test attach-lets-go-of-what-it-replaces
+  "A node taken out of the tree and left in the reader sets of what it read is
+worked out for ever after, every time any of that moves. DETACH is written to stop
+that; ATTACH over a name is the same thing spelled the other way round, and it did
+not. Declaring a surface twice leaked the first one and it went on being worked
+out from every device it had ever read."
+  (with-tree
+    (let* ((r (node:attach (node:make "r") (tree:root)))
+           (src (node:attach (node:make "src") (tree:root)))
+           (had (node:derive "d" (lambda () (node:contents src))))
+           (fresh (node:derive "d" (lambda () :fresh))))
+      (setf (node:contents src) 1)
+      (node:attach had r)
+      (node:contents had)
+      (is (d:contains (node::readers src) had) "it read SRC")
+      (node:attach fresh r)
+      (is (not (d:contains (node::readers src) had))
+          "and it is out of SRC's readers once something stands in its place")
+      (is (null (node:parent had)) "and off the tree")
+      (is (eq fresh (node:resolve r "d")))
+      (is (equal (list fresh) (node:nodes r)) "listed once, not twice"))))
+
+(test a-node-given-up-on-does-not-stand
+  "The version a reading is checked against is exact, so a node that was given up
+on and has not been worked out again has no answer to check. Saying it stood said
+a node has what it would have if anybody asked -- and the two numberings met,
+because MARK answers out of the version slot once there is no value to answer out
+of."
+  (with-tree
+    (let* ((src (node:attach (node:make "src") (tree:root)))
+           (d (node:derive "d" (lambda () (node:contents src)))))
+      (setf (node:contents src) 1)
+      (node:attach d (tree:root))
+      (node:contents d)
+      (let ((at (node:mark d)))
+        (is (node:currentp d at) "it stands where it was worked out")
+        (setf (node:contents src) 2)
+        (is (not (node:currentp d at))
+            "and does not once what it read has moved")))))
+
+(test listing-a-branch-is-reading-it
+  "What a branch holds is what is under it. Worked out of a listing and never told,
+a surface over /proc showed what was running when it was first drawn, and a face
+written at /face/keyword was one nothing was ever told about."
+  (with-tree
+    (let* ((r (node:attach (node:make "r") (tree:root)))
+           (runs 0)
+           (n (node:derive "n" (lambda () (incf runs) (length (node:nodes r))))))
+      (node:attach n (tree:root))
+      (is (eql 0 (node:contents n)))
+      (is (eql 1 runs))
+      (is (eql 0 (node:contents n)) "and is not worked out again for nothing")
+      (is (eql 1 runs))
+      (node:attach (node:make "one") r)
+      (is (eql 1 (node:contents n)) "attaching one works it out again")
+      (node:erase-child r "one")
+      (is (eql 0 (node:contents n)) "and so does taking one off"))))
+
+(test a-path-nothing-stands-at-is-still-a-reading
+  "A read that answers nothing is a read of the place it looked. Without it, asking
+before anything is there is a question nothing can ever answer again: a config
+reading a device the host system has not put up yet never heard it arrive."
+  (with-tree
+    (let ((n (node:derive "waiting" (lambda () (tree:at "/later/here")))))
+      (node:attach n (tree:root))
+      (is (null (node:contents n)) "nothing stands there yet")
+      (setf (node:contents (tree:ensure "/later/here")) :arrived)
+      (is (eq :arrived (node:contents (node:contents n)))
+          "and the reader hears when it does"))))
+
+(test what-the-store-keeps-comes-back-as-a-value-and-not-as-an-instruction
+  "A seq beginning with a keyword is an instruction to VERB when it is written,
+which is what lets a shell say (:toggle). Put back that way, /tags holding
+[:urgent] came out of the store as an instruction to CONJ and what was kept was
+lost on the way in. A name a node may be called is the other half: per cent and
+underscore are what a LIKE pattern is written in, so erasing /a_b took /axb with
+it."
+  (let ((file (merge-pathnames "pine-test-values.db" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (progn
+           (with-tree
+             (let ((s (store:open-store file)))
+               (store:keeping s)
+               (tree:put "/tags" nil (d:seq :urgent :later))
+               (tree:put "/a_b" nil "under a name a pattern is written in")
+               (tree:put "/axb" nil "beside it")
+               (store:close-store s)))
+           (with-tree
+             (let ((s (store:open-store file)))
+               (tree:ensure "/tags")
+               (tree:ensure "/a_b")
+               (tree:ensure "/axb")
+               (store:restore s)
+               (is (d:same (d:seq :urgent :later) (node:contents (tree:at "/tags")))
+                   "what was kept is what came back")
+               (pine/fs/store::forget "/a_b")
+               (is (null (%exactly s "/a_b")) "the one named went")
+               (is (%exactly s "/axb")
+                   "and the one that only matched a pattern did not")
+               (store:close-store s))))
+      (ignore-errors (delete-file file)))))
+
+(test a-seq-is-built-by-appending-whatever-is-in-it
+  "Told to decide by what the thing looks like, (with (seq) 5) put NIL at index
+five and padded the four before it: a seq of numbers was one WITH could not build,
+and INCLUDE on one quietly wrecked it. Asked of what was handed over instead, the
+way the NULL method already asked."
+  (is (equal '(5) (d:as :list (d:with (d:seq) 5))))
+  (is (equal '(1 2 5) (d:as :list (d:with (d:seq 1 2) 5))))
+  (is (equal '(1 :x) (d:as :list (d:with (d:seq 1 2) 1 :x)))
+      "and given a value it is still an index")
+  (with-tree
+    (pine::write "/nums" (d:seq))
+    (pine::include "/nums" 3)
+    (pine::include "/nums" 4)
+    (is (equal '(3 4) (d:as :list (pine::read "/nums"))))))
+
+(defclass %will-not-print () ())
+
+(defmethod print-object ((it %will-not-print) stream)
+  (declare (ignore stream))
+  (error "this one will not print"))
+
+(test a-file-is-written-beside-itself-and-then-over-itself
+  "The thing being written over is the only copy. SUPERSEDE opens the file, says
+nothing from that moment until it closes, and on a write that did not finish
+deletes what it was making without putting back what was there -- measured, a
+write that threw left no file at all."
+  (let ((file (merge-pathnames "pine-test-atomic.txt" (uiop:temporary-directory))))
+    (ignore-errors (delete-file file))
+    (unwind-protect
+         (with-tree
+           (mount:mount (uiop:temporary-directory) (tree:root) "tmp")
+           (with-open-file (o file :direction :output :if-exists :supersede
+                                   :if-does-not-exist :create)
+             (write-string "what was there before" o))
+           (let ((it (tree:at "/tmp/pine-test-atomic.txt")))
+             (is (equal "what was there before" (node:contents it)))
+             (handler-case (setf (node:contents it) (make-instance '%will-not-print))
+               (error () nil))
+             (is (probe-file file) "a write that would not go left the file there")
+             (is (equal "what was there before" (node:contents it))
+                 "holding exactly what it held before")
+             (setf (node:contents it) "the whole of something else")
+             (is (equal "the whole of something else" (node:contents it))
+                 "and a write that went through is all of it")))
+      (ignore-errors (delete-file file)))))

@@ -9,7 +9,7 @@
   (:export
    #:nodep #:name #:parent #:describes #:full-name #:memo
    #:make #:derive #:answers #:lists #:child #:slots
-   #:attach #:detach #:announced #:reads #:writes)
+   #:attach #:detach #:announced #:reads #:writes #:as-value)
   (:export
    #:depend #:undepend #:reading #:version #:mark #:currentp #:stalep
    #:work-out #:freshp #:cached #:saw #:in-of
@@ -50,12 +50,21 @@ what is being saved.")
 whatever knows what an image is, because this layer loads before there is one --
 the same reason *BROKE* is one.")
 
+(defstruct (under (:constructor %under (&optional order by-name)) (:copier nil))
+  "What is beneath a node: the order it was attached in, and the same nodes under
+the names they answer to.
+
+One object and not two slots, because the two are one fact. Kept apart they were
+replaced one after the other, and two threads attaching the same name could leave
+a node that lists and cannot be reached, or is reached and never listed."
+  (order (d:no-seq))
+  (by-name (d:no-map)))
+
 (defclass node ()
   ((name      :initarg :name      :reader name)
    (parent      :initarg :parent      :accessor parent      :initform nil)
    (describes :initarg :describes :accessor describes :initform nil)
-   (beneath   :initform (d:no-seq) :reader beneath)
-   (by-name   :initform (d:no-map) :reader by-name)
+   (under     :initform (%under)  :reader under)
    (memo      :initform (d:table)  :reader memo)
    (readers   :initform (d:no-set) :reader readers)
    (saw       :initform nil        :accessor saw)
@@ -70,13 +79,16 @@ READERS is who is worked out from this one and SAW is what this one was worked
 out from -- the same edges, kept at both ends, because a write walks one way and
 a node being taken off the tree has to let go the other.
 
-BENEATH is what is under it in the order it was attached, and BY-NAME is the same
-nodes under the names they answer to. Two, because the two questions are different
-and only one of them is asked often: what is under this is asked when somebody
-lists it, and which one is called that is asked for every piece of every name
-anybody ever says. Kept only in order, the second is a walk of the whole list --
-and a copy of it, because a seq has to be made a list to be walked -- for every
-piece of every path.
+UNDER holds both the order things were attached in and the same nodes under the
+names they answer to, because the two questions are different and only one of them
+is asked often: what is under this is asked when somebody lists it, and which one
+is called that is asked for every piece of every name anybody ever says. Kept only
+in order, the second is a walk of the whole list -- and a copy of it, because a seq
+has to be made a list to be walked -- for every piece of every path.
+
+What a branch holds is what is under it, so VERSION moves when something is
+attached or taken off, the same as it moves when a value is written. That is what
+lets a listing be read the way a value is read.
 
 SAVEDP says what it holds outlives the image; LIVEP says the world behind it
 answers rather than a value kept here, which is what stops a snapshot walking into
@@ -106,6 +118,13 @@ rather than be told.")
   (:documentation "How often to ask again, where nothing announces itself.")
   (:method ((n node)) nil))
 
+(defgeneric moved (node)
+  (:documentation "Say NODE moved. Whatever read it is worked out again.
+
+Declared here and answered in graph.lisp, because a write is what the tree does
+and the walk that follows one is the graph's. ATTACH and DETACH say it too: what
+a branch holds is what is under it."))
+
 (defclass value (node)
   ((held :initarg :held :accessor held :initform nil))
   (:documentation "Holds one. Nothing works it out and nothing outside answers for
@@ -121,6 +140,7 @@ landed in words."))
    (in     :initarg :in      :reader  in-of   :initform nil)
    (cached  :initform +unread+ :accessor cached)
    (claim   :initform nil :accessor claim)
+   (claimed :initform nil :accessor claimed)
    (waiting :initform nil :accessor waiting))
   (:documentation "Works its value out, and remembers it until something it read
 moves. What READS reads is recorded while it runs, so a write invalidates exactly
@@ -168,6 +188,10 @@ writing it here says so, so a watcher is told rather than having to ask."))
 
 (defun nodep (x) (typep x 'node))
 
+(defun beneath (n) (under-order (under n)))
+
+(defun by-name (n) (under-by-name (under n)))
+
 (defun make (name &rest initargs &key (class 'value) &allow-other-keys)
   "A node holding one value, kept where it will be found again. That it is kept is
 the class saying so, not a flag anybody has to remember to pass."
@@ -200,24 +224,21 @@ the other readers of a node. This is what protects the image."
   (dolist (each (d:vals (d:all (memo n)))) (%renamed each))
   n)
 
+(defmethod (setf parent) :after (value (n node))
+  "A node that has moved is at a different path, and so is everything under it.
+
+Here and not at each call site: the path is worked out once and kept, so a node
+reparented after somebody asked for its name would answer where it used to be for
+as long as the image ran."
+  (declare (ignore value))
+  (%renamed n))
+
 (defun root (n)
   (loop :for at := n :then (parent at)
         :while (parent at)
         :finally (return at)))
 
 (defun children (n) (d:vals (d:all (memo n))))
-
-(defun child (n name builder)
-  "The child N keeps under NAME, made once. Two threads asking at once both answer
-the one that landed, which is what lets anything reading it be worked out again.
-
-A builder that answers nothing leaves nothing behind: a name nobody has put
-anything at is asked about once per ask, rather than filling the memo with an
-entry that says so and that every walk of the children then has to step over."
-  (let ((name (princ-to-string name)))
-    (or (d:lookup (d:all (memo n)) name)
-        (let ((made (funcall builder)))
-          (when made (d:claim (memo n) name made))))))
 
 (defgeneric nodes (node)
   (:documentation "What is under NODE, in order.
@@ -245,66 +266,6 @@ and /sh lists the ones that have.")
     (d:lookup (by-name n) (%said name))))
 
 (defun leafp (n) (null (nodes n)))
-
-(defgeneric attach (node into)
-  (:documentation "Put NODE under INTO, replacing whatever stood at its name.
-
-Both go together: the order it was attached in, and the name it answers to. A
-node put in one and not the other is one that lists and cannot be reached, or is
-reached and never listed.")
-  (:method ((n node) (into node))
-    (setf (parent n) into)
-    (%renamed n)
-    (let ((said (%said (name n))))
-      (d:swap (slot-value into 'beneath)
-              (lambda (all)
-                (d:with (d:as :seq (cl:remove said (d:as :list all)
-                                              :key #'name :test #'equal))
-                        n)))
-      (d:swap (slot-value into 'by-name) (lambda (all) (d:with all said n))))
-    n))
-
-(defgeneric detach (node name)
-  (:documentation "Take NAME off NODE, and stop it reading anything.
-
-What it read has to be given up here. A node taken off the tree and left in the
-reader sets of what it read is worked out for ever after, every time any of that
-moves, and holds all of it for as long as the image runs. A surface that was
-erased goes on being worked out from /dev/cpu.")
-  (:method ((n node) name)
-    (let ((gone (resolve n name)))
-      (when gone
-        (d:swap (slot-value n 'beneath) (lambda (all) (d:remove gone all)))
-        (d:swap (slot-value n 'by-name)
-                (lambda (all) (d:without all (%said (name gone)))))
-        (dolist (on (saw gone)) (undepend gone on))
-        (setf (saw gone) nil)
-        (setf (parent gone) nil)
-        (%renamed gone))
-      gone)))
-
-(defgeneric make-child (node name)
-  (:documentation "A fresh child of NODE named NAME, made in whatever stands behind
-it: a plain node keeps it here, a mounted directory makes a file on the disk. A name
-that ends in / asks for a branch.")
-  (:method ((n node) name)
-    (attach (make (string-right-trim "/" (princ-to-string name))) n)))
-
-(defgeneric erase-child (node name)
-  (:documentation "Take NAME out of NODE, and out of whatever stands behind it.
-
-Saying the path went is COMMIT:FORGET's, not this one's: a store keeping a copy
-of the tree hears an erasure the same way it hears a write, and this layer names
-nothing that is listening.")
-  (:method ((n node) name)
-    "What was kept is let go after it is detached, not before. Dropped first, the
-detach asks for it again, a worked-out child is built again to be taken off, and
-what is left behind in the memo is that second one with nothing over it."
-    (let ((gone (resolve n name)))
-      (when gone (commit:forget (full-name gone)))
-      (let ((it (detach n name)))
-        (d:drop! (memo n) (princ-to-string name))
-        (or it gone)))))
 
 (defgeneric depend (node on)
   (:documentation "Say N read ON, so moving ON works N out again.")
@@ -334,6 +295,16 @@ what is left behind in the memo is that second one with nothing over it."
 (defun %verbp (v)
   (and (d:seqp v) (plusp (d:size v)) (keywordp (d:lookup v 0))
        (not (eq :quoted (d:lookup v 0)))))
+
+(defun as-value (v)
+  "V spelled so that writing it puts it there, whatever it looks like.
+
+A seq beginning with a keyword is an instruction to VERB. That is what lets a
+shell say (:toggle), and it is what a store putting back what a node held must not
+say: /tags holding [:urgent] came back out of the store as an instruction to CONJ,
+and what was kept was lost on the way in. QUOTED is the escape that already says a
+seq is a value; this is where somebody handing over a value says it."
+  (if (%verbp v) (d:append (d:seq :quoted) v) v))
 
 (defun %quotedp (v)
   "Whether V is a seq somebody meant as a value rather than as something to do.
@@ -384,12 +355,3 @@ object is what this hangs under, which has already been said."
          (verb n (d:lookup value 0) (d:as :list (d:rest value))))
         ((%quotedp value) (call-next-method (d:rest value) n))
         (t (call-next-method))))
-
-(defun slots (object into &rest pairs)
-  "One node per slot of OBJECT, under INTO."
-  (loop :for (name slot) :on pairs :by #'cddr
-        :collect (attach (make-instance 'slot
-                                        :name (string-downcase (string name))
-                                        :object object :slot slot :into into)
-                         into)))
-

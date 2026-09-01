@@ -85,14 +85,19 @@ out stands only if everything *it* read still stands, all the way down."
 Which would be the whole graph on every read, so the answer is remembered: a node
 found to stand while the count of writes was W still stands while it is W, because
 nothing can have moved without that count moving. One comparison in the usual case,
-where nothing is being written at all."
-  (let ((h (and (typep n 'derived) (cached n))))
-    (cond ((not (workedp h)) t)
-          ((eql (checked n) *writes*) t)
-          (t (let ((w *writes*))
-               (when (whole (worked-from h))
-                 (when (eql w *writes*) (setf (checked n) w))
-                 t))))))
+where nothing is being written at all.
+
+A node that is worked out and holds nothing does not stand. It was given up on and
+has not been worked out again, so there is no answer to check and none to hand
+back; saying it stood was saying a node has what it would have if anybody asked."
+  (cond ((not (typep n 'derived)) t)
+        ((not (workedp (cached n))) nil)
+        ((eql (checked n) *writes*) t)
+        (t (let ((h (cached n))
+                 (w *writes*))
+             (when (whole (worked-from h))
+               (when (eql w *writes*) (setf (checked n) w))
+               t)))))
 
 (defun freshp (n)
   (let ((h (cached n)))
@@ -125,13 +130,27 @@ news sent ten times by the one that did the work."
 (defun %done (n)
   "Give up the claim and say so, under the lock where anybody is waiting -- so
 there is no gap between letting go and telling, in which a waiter could settle down
-to wait for something that has already happened."
-  (let ((it (waiting n)))
-    (if it
-        (bordeaux-threads:with-lock-held ((car it))
-          (setf (claim n) nil)
-          (bordeaux-threads:condition-notify (cdr it)))
-        (setf (claim n) nil))))
+to wait for something that has already happened.
+
+The lock is made and not looked for. Looked for, it was made by the waiter in
+exactly that gap: the claim was let go without a word, and the waiter then slept
+out the whole wait for news that had already been said."
+  (let ((it (%waiter n)))
+    (bordeaux-threads:with-lock-held ((car it))
+      (setf (claim n) nil (claimed n) nil)
+      (bordeaux-threads:condition-notify (cdr it)))))
+
+(defun %overdue (n)
+  "Whether somebody has held this node's working-out longer than anybody waits.
+
+A READS is somebody else's code and it talks to the world, and one that never
+answers holds the claim for as long as it runs -- which may be for the life of the
+image. The first reader to want it waits its deadline out and says so. Everybody
+after that is asking about a working-out already known not to be coming, so they
+are handed what the node last worked out to at once rather than each spending the
+same deadline finding out the same thing."
+  (let ((since (claimed n)))
+    (and (claim n) since (> (- (get-universal-time) since) *waiting-on*))))
 
 (defun %edges (n from)
   "Record what it read, and stop reading what it no longer reads.
@@ -236,7 +255,12 @@ thread already holds, and says so instead of waiting for itself for ever.
 Nobody waits for ever on somebody else either. A READS that never answers holds
 the claim for as long as it runs, and without a deadline every reader of that
 node waits behind it for the life of the image. What comes back then is what the
-node last worked out to, and the fault says why it is old."
+node last worked out to, and the fault says why it is old.
+
+Said once. The first reader to want a working-out that is not coming waits its
+deadline out and files the fault; everybody after that is asking about the same
+one, so they are handed the old answer at once. Without that, every read of that
+node cost the whole deadline and another fault, for as long as the image ran."
   (let ((me (bordeaux-threads:current-thread))
         (due (+ (get-universal-time) *waiting-on*)))
     (loop
@@ -245,10 +269,13 @@ node last worked out to, and the fault says why it is old."
       (when (eq (claim n) me)
         (error "~a is worked out from itself." (full-name n)))
       (when (> (get-universal-time) due) (return (%gave-up n)))
+      (when (%overdue n) (return (values (%held n) (mark n))))
       (if (and (null (claim n))
                (d:cas (slot-value n 'claim) nil me))
           (multiple-value-bind (v stands at)
-              (unwind-protect (%mine n) (%done n))
+              (unwind-protect (progn (setf (claimed n) (get-universal-time))
+                                     (%mine n))
+                (%done n))
             (cond ((eq stands :broke) (return (values (%held n) (mark n))))
                   (stands (return (values v at)))))
           (%wait n)))))
@@ -275,29 +302,34 @@ constant did -- to eleven surfaces and every read-only reading of a device."
   "Say the working-out running on this thread read N."
   (%noted n (mark n) n))
 
-(defgeneric moved (node)
-  (:documentation "Say NODE moved. Whatever read it is worked out again.
+(defmethod moved ((n node))
+  "A node already reached by this walk is not reached again: two that read each
+other are a ring, and without this walking it is the last thing the thread does.
+The stamp is shared and only ever goes up, so it holds against two threads writing
+at once -- a list bound on one thread does not."
+  (%moved-on n)
+  (let ((epoch (or *walking* (d:swap *epoch* #'1+))))
+    (when (%seen n epoch)
+      (let ((*walking* epoch))
+        (d:do-each (each (readers n)) (moved each)))))
+  n)
 
-A node already reached by this walk is not reached again: two that read each other
-are a ring, and without this walking it is the last thing the thread does. The
-stamp is shared and only ever goes up, so it holds against two threads writing at
-once -- a list bound on one thread does not.")
-  (:method ((n node))
-    (%moved-on n)
-    (let ((epoch (or *walking* (d:swap *epoch* #'1+))))
-      (when (%seen n epoch)
-        (let ((*walking* epoch))
-          (d:do-each (each (readers n)) (moved each)))))
-    n)
-  (:method :before ((n derived))
-    "What it worked out is no longer what it would work out.
+(defmethod moved :before ((n derived))
+  "What it worked out is no longer what it would work out.
 
 Said and not worked out: a node whose READS closes over something that is not a
 node -- a list, a slot, the world -- has read nothing this could check, so being
 told is the only way it can know. What it read is checked as well, and catches
 what a walk cannot: a walk takes time, and during one a node can have moved and
-not been reached yet."
-    (setf (cached n) +unread+)))
+not been reached yet.
+
+The version it was worked out at is carried into the version slot before the value
+goes, because MARK answers out of that slot once there is no value to answer out
+of. Left where it was, the two numberings meet: a node given up on at version one
+answers one, which is what it said when it was whole, and every reader holding
+that number is told nothing moved."
+  (setf (version n) (mark n))
+  (setf (cached n) +unread+))
 
 (defun announced (n)
   "Say N moved: what read it is worked out again, and whoever is waiting for a
@@ -323,6 +355,40 @@ the version it is as one object."
                (v (call-next-method))
                (after (version n)))
           (when (eql before after) (return (%noted n before v)))))))
+
+(defmethod nodes :around ((n node))
+  "Listing a branch is reading it.
+
+What a branch holds is what is under it, so this is written down the way CONTENTS
+is, against the same version, and moves the same way: ATTACH and DETACH say the
+node moved. Without it a value worked out of a listing is a value nothing can ever
+work out again -- a surface over /proc showed what was running when it was first
+drawn, and a face written at /face/keyword was one nothing was ever told about.
+
+Against MARK and not the version slot, because those are two numbers for a node
+that is worked out: the slot is where it stands and MARK is which version of
+itself it is holding. CURRENTP asks MARK, so a listing written down against the
+slot is a reading labelled with a version nothing will ever compare it to -- and
+HOLDING lists every node it is asked about, so that was every read of a device.
+
+It is read on both sides for the reason CONTENTS reads it on both sides: an attach
+moves what is under a node one way and its version the other, and a listing read
+between them would be labelled with a version it is not."
+  (loop
+    (let* ((before (mark n))
+           (v (call-next-method))
+           (after (mark n)))
+      (when (eql before after) (return (%noted n before v))))))
+
+(defmethod resolve :around ((n node) name)
+  "A name that stands for nothing is still something that was read.
+
+Written down only where nothing was found. What a hit answers is a node, and
+whoever reads that node records the edge themselves; a miss answers nothing there
+is anything to record against but the place it was looked for. Without it, reading
+a path before anything stands there is a read nothing can ever move, which is what
+stopped a config hearing that the place it was waiting for had arrived."
+  (or (call-next-method) (%noted n (mark n) nil)))
 
 (defmethod (setf contents) :after (value (n node))
   (declare (ignore value))
