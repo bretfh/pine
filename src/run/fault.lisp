@@ -5,26 +5,50 @@
   (:export
    #:fault #:borrowed #:take #:resume #:faulted
    #:faults #:standing #:attempt #:or-nothing #:report #:id #:defer
+   #:expected #:expecteds #:forget-expected
    #:borrow #:await #:changed #:wait-until #:forget-faults
    #:with-debugger #:condition-of #:label #:backtrace-of #:offers
    #:taken #:where #:token #:standingp #:*waiting*
-   #:*debugging*))
+   #:*debugging* #:*keeping*))
 (in-package #:pine/run/fault)
 
 (defvar *kept* 50)
 (defvar *faults* nil)
+(defvar *expected* nil
+  "What OR-NOTHING let go of, newest first: the reason, what broke, and when.")
 (defvar *counter* 0)
 (defparameter +leaving+ '("EXIT")
   "Restarts that end the image rather than the work. A fault asks what to do about
 what broke, and /fault is written to answer it; taking the whole image down is not
 one of the answers, so it is not one of the ones offered.")
 (defvar *debugging* nil)
+(defvar *keeping* nil
+  "Where to put the fault this piece of work stands in, for whoever asked for the
+work.
+
+A cell bound around one call on the thread doing it, so what comes back is that
+call's fault. Looked for instead by watching what is standing and taking whatever
+is new, a peer asking this image to evaluate something was answered with whatever
+else happened to break on another thread while it ran.")
 (defvar *noticing* (bordeaux-threads:make-lock "pine-faults"))
 (defvar *noticed* (bordeaux-threads:make-condition-variable))
 (defvar *waiting* 120
   "Seconds a fault stands unattended before it gives up. One number: a caller
 waiting on a fault in another image waits at least this long too, or the fault is
 still standing when the call that would answer it has already timed out.")
+
+(defun expected (why condition)
+  "Keep what was let go of, and the reason it was allowed to go.
+
+The condition itself and not what it says about itself: printing one runs its own
+report, and a report that breaks inside the handler for a break is a fault where
+there was meant to be none."
+  (d:swap *expected* #'d:capped (list why condition (get-universal-time)) *kept*)
+  nil)
+
+(defun expecteds () *expected*)
+
+(defun forget-expected () (setf *expected* nil))
 
 (defmacro or-nothing (why &body body)
   "BODY, or nothing if it will not go, because WHY says that is an answer here.
@@ -35,10 +59,14 @@ a process already reaped, a file that is not there, a symbol nothing was compile
 from -- where nothing broke and there is nothing to keep.
 
 WHY is written down and not optional. The difference between this and swallowing
-a fault is entirely whether whoever wrote it knew which one they were doing, and
-a reason is the only evidence of that."
-  (declare (ignorable why))
-  `(handler-case (progn ,@body) (error () nil)))
+a fault is entirely whether whoever wrote it knew which one they were doing, and a
+reason is the only evidence of that -- so the reason is kept, at /expected, with
+what it was given instead of an answer. Declared ignorable, it went nowhere: this
+was IGNORE-ERRORS with a sentence beside it, and the rule saying a fault is never
+swallowed without a reason was one nothing could check."
+  (let ((c (gensym "BROKE")))
+    `(handler-case (progn ,@body)
+       (error (,c) (expected ,why ,c)))))
 
 (defclass fault ()
   ((id        :initform (d:swap *counter* #'1+) :reader id)
@@ -123,6 +151,7 @@ the frames, and it will not run again until somebody takes a restart."
 
 (defun %noted (f)
   (d:swap *faults* #'d:capped f *kept*)
+  (when *keeping* (setf (car *keeping*) f))
   (changed)
   (handler-case (faulted f)
     (error (broke)
@@ -163,9 +192,15 @@ thread holding them go. Here or in another image, one act.")
         (bordeaux-threads:condition-notify (told f)))
       restart))
   (:method ((f borrowed) restart)
+    "Taken there first, and said to be taken here after.
+
+Said first, whoever was waiting for this image to finish with that one was let go
+while the restart was still on its way: the next thing written down the pipe
+arrived where the child was reading which restart to take, and was swallowed as
+the answer."
     (when (member restart (offers f) :test #'equal)
-      (setf (taken f) restart)
       (resume (where f) f restart)
+      (setf (taken f) restart)
       (when (lock f)
         (bordeaux-threads:with-lock-held ((lock f))
           (bordeaux-threads:condition-notify (told f))))
@@ -260,6 +295,16 @@ the debugger."
                             (when f (take f (princ-to-string value))))))))
 
 (defun %attach (root)
+  (node:attach
+   (node:answers "expected"
+                 :reads (lambda ()
+                          (loop :for (why broke at) :in (expecteds)
+                                :collect (list :why why :at at
+                                               :said (princ-to-string broke))))
+                 :writes (lambda (value)
+                           (unless value (forget-expected)))
+                 :describes "what was let go of, and why nothing was an answer")
+   root)
   (node:attach
    (node:lists "fault"
                :names (lambda () (mapcar #'id (faults)))
