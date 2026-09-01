@@ -98,7 +98,7 @@ else it read."
 (defmethod job:start ((s edit))
   (%sources)
   (setf command:*at* s)
-  (node:attach (%key) (tree:root))
+  (system:puts (%key))
   (let ((scratch (or (text:named "scratch")
                      (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
@@ -113,5 +113,4 @@ else it read."
   (took-all)
   (text:forget-all)
   (dolist (win (windows)) (node:detach (node:parent win) (node:name win)))
-  (tree:erase "/surface/editor")
   s)

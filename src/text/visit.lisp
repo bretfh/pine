@@ -80,13 +80,15 @@ load is a fault like any other: the text still opens, uncoloured."
 
 (defmethod job:start ((s text))
   (%syntax)
-  (node:attach (mode:mode-node) (tree:root))
+  (system:puts (mode:mode-node))
   (root)
   (let ((scratch (make-document "scratch" :mode (make-instance 'mode:lisp))))
     (setf (current) scratch))
   s)
 
 (defmethod job:stop ((s text))
+  "What it put up goes by what OWNED was told as it went up. The documents are its
+own doing rather than a path it attached, so they are named here."
   (forget-all)
   (dolist (d (documents)) (kill (node:name d)))
   s)

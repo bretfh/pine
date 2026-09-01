@@ -110,10 +110,9 @@ same thing, and the answer to which one it was decided who lays out the screen."
 (defmethod job:start ((s wm))
   (let ((class (%under)))
     (unless class (error "no compositor here that pine knows how to talk to."))
-    (node:attach (make-instance class :name "wm"
+    (system:puts (make-instance class :name "wm"
                                 :describes "the compositor: its outputs, its
-windows, and what it takes")
-                 (tree:root))
+windows, and what it takes"))
     (node:attach (wkeys:keys-node) (current)))
   (let ((places (places)))
     (when places
@@ -122,9 +121,8 @@ windows, and what it takes")
   s)
 
 (defmethod job:stop ((s wm))
-  "What places the windows goes first: its own places are under /wm, and /wm is
-what this erases."
+  "What places the windows goes first: its own places are under /wm, and /wm goes
+with this one by what OWNED was told when it went up."
   (let ((places (places)))
     (when (and places (system:named places)) (system:drop places)))
-  (tree:erase "/wm")
   s)
