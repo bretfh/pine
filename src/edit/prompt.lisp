@@ -15,8 +15,7 @@
    (must-match :initarg :must-match :reader must-match :initform nil)
    (history    :initarg :history    :reader history    :initform nil)
    (walking    :initform nil        :accessor walking)
-   (walked     :initform nil        :accessor walked)
-   (seen       :initform nil        :accessor seen))
+   (walked     :initform nil        :accessor walked))
   (:documentation "A question standing, and what will be done with the answer."))
 
 (defmethod print-object ((p standing) stream)
@@ -93,27 +92,28 @@ question nothing can answer, and leaving it there is a prompt that offers nothin
           (when fn (fault:attempt (lambda () (funcall fn text))
                                   "the candidates"))))))
 
-(defun %sync (p)
-  (let ((text (so-far)))
-    (unless (equal text (seen p))
-      (setf (seen p) text)
-      (setf (node:contents (%chose-node)) 0)))
-  p)
-
 (defun chosen (&optional (p *prompt*))
+  "Which candidate is picked, or nought where what has been typed has moved since
+anybody picked one.
+
+Nought is worked out and not written down. What is written down is the answer
+together with the text it was an answer to, so asking is only asking: reading it
+used to put the nought there, and the frame reads it while it is working itself
+out -- so drawing the prompt wrote to a place the drawing depended on, and the
+frame gave itself up and was drawn again for every keystroke."
   (when p
-    (%sync p)
-    (or (node:contents (%chose-node)) 0)))
+    (let ((said (node:contents (%chose-node))))
+      (if (and (consp said) (equal (car said) (so-far))) (cdr said) 0))))
 
 (defun (setf chosen) (value p)
-  (%sync p)
-  (setf (node:contents (%chose-node)) value))
+  (declare (ignore p))
+  (setf (node:contents (%chose-node)) (cons (so-far) value))
+  value)
 
 (defun matching (&optional (p *prompt*))
   "What answers the question as it stands. A file question is already narrowed by
 the directory it is in, so what it offers is what is there."
   (when p
-    (%sync p)
     (if (and (eq p *prompt*) (tree:root))
         (node:contents (%matching-node))
         (if (filep p)
@@ -133,7 +133,7 @@ candidate is chosen are what the frame shows, so they are nodes: a surface follo
 what it read, and a slot nobody reads is a thing nothing can follow."
   (when (tree:root)
     (setf (node:contents (%question-node)) (and p (question p)))
-    (setf (node:contents (%chose-node)) 0)
+    (setf (node:contents (%chose-node)) nil)
     (node:moved (%said-node))
     (%under)))
 
@@ -156,8 +156,7 @@ inside another one would otherwise leave the prompt as what every key edits."
                                           :candidates candidates
                                           :history history
                                           :was (%where-from back))
-          (text:current) d)
-    (setf (seen *prompt*) (so-far)))
+          (text:current) d))
   (%standing)
   *prompt*)
 
@@ -175,7 +174,6 @@ inside another one would otherwise leave the prompt as what every key edits."
   (let ((d (answering)))
     (setf (node:contents d) text)
     (text:move d :text 1)
-    (when *prompt* (setf (seen *prompt*) (so-far)))
     text))
 
 (defun %complete-file (found)
