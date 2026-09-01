@@ -38,7 +38,7 @@
   otherwise
   constants
   infer
-  (memo (make-hash-table :test 'equal))
+  (memo (d:table))
   raw)
 
 (defun node-rule (lang type)
@@ -60,11 +60,11 @@ is a different symbol."
       (or written
           (let ((memo (lang-memo lang))
                 (key (cons name (and package (package-name package)))))
-            (multiple-value-bind (known found) (gethash key memo)
+            (multiple-value-bind (known found) (d:lookup (d:all memo) key)
               (cond (found (unless (eq known :none) known))
-                    ((null (lang-infer lang)) (setf (gethash key memo) :none) nil)
+                    ((null (lang-infer lang)) (d:keep! memo key :none) nil)
                     (t (let ((answer (funcall (lang-infer lang) name package)))
-                         (setf (gethash key memo) (or answer :none))
+                         (d:keep! memo key (or answer :none))
                          answer)))))))))
 
 (defstruct (ctx (:conc-name ctx-) (:copier nil))
@@ -85,6 +85,12 @@ walk emits has to be carried back: EMIT pushes onto the ctx it was given, and
   (string-downcase (source-substring (ctx-src ctx) (ts-node-start-byte node)
                                      (ts-node-end-byte node))))
 
+(defun %to-the-end (src line)
+  "The column a run reaches when it reaches the end of LINE. A number written in
+here instead cut every run short on a line longer than the number: nine hundred and
+ninety nine characters is a line generated code has, and a minified one has more."
+  (length (line-string src line)))
+
 (defun %emit (start-byte end-byte face ctx)
   "Paint bytes START..END. A span crossing a line becomes one run per line; a
 zero-width one paints nothing, since a comment's extent ends at column 0 of the
@@ -96,9 +102,9 @@ next line and that would straddle the incremental window's boundary."
           (if (= sl el)
               (when (> ec sc) (push (list sl sc ec face) (cdr acc)))
               (progn
-                (push (list sl sc 999 face) (cdr acc))
+                (push (list sl sc (%to-the-end src sl) face) (cdr acc))
                 (loop :for l :from (1+ sl) :below el
-                      :do (push (list l 0 999 face) (cdr acc)))
+                      :do (push (list l 0 (%to-the-end src l) face) (cdr acc)))
                 (when (plusp ec) (push (list el 0 ec face) (cdr acc))))))))))
 
 (defun %emit-node (node face ctx)

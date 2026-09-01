@@ -109,10 +109,13 @@ suffix off our hands; the paths below are spelled out, so they cannot.")
  :missing (set LANGUAGE)). A hit is a slot read."))
 
 (defclass ts-entry ()
-  ((parser       :initarg :parser       :accessor entry-parser)
-   (language-ptr :initarg :language-ptr :accessor entry-language-ptr))
-  (:documentation "One loaded grammar: a parser, and the language pointer kept
-so a per-buffer parser can set-language."))
+  ((language-ptr :initarg :language-ptr :accessor entry-language-ptr))
+  (:documentation "One loaded grammar: the language pointer, kept so a per-buffer
+parser can set-language.
+
+The pointer and nothing else. A parser was kept here too, made once to ask whether
+the grammar would be taken and never used again, because a TSParser is not
+something two buffers share and every one of them makes its own."))
 
 (defclass parse-state ()
   ((language :initarg :language :accessor ps-language)

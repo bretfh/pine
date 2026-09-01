@@ -30,30 +30,54 @@
     (setf (covers r) covers)
     r))
 
+(defun %cleared (under)
+  "Take the regions off UNDER. What the mode says now is the whole answer, so one
+it no longer says is one that stands for nothing."
+  (dolist (each (node:nodes under) under)
+    (when (typep each 'region) (node:detach under (node:name each)))))
+
+(defun %forgotten (under kept)
+  "Let go of the regions UNDER no longer has.
+
+A region is kept under its name so that one still there is the same node it was
+and a watcher on it goes on watching. One the mode has stopped naming is not still
+there: typing a name a character at a time says a different one on every key, and
+every one of them stayed for as long as the image ran."
+  (dolist (name (d:keys (d:all (node:memo under))) under)
+    (unless (member name kept :test #'equal)
+      (d:drop! (node:memo under) name))))
+
 (defun %build (under said)
   "Put the spans the mode said into the namespace under UNDER, keeping the node that
 was already at each name so anything watching one keeps watching it.
 
 Two spans a mode gives one name are two places, and the second takes NAME<2>. One
 node standing for both would cover only the last of them, and writing it would
-replace text it was never standing for."
-  (let ((seen (d:no-map)))
+replace text it was never standing for.
+
+Every level is cleared and every level is forgotten. Only the top was, so a span
+inside one that the mode stopped saying stayed where it was with the extent it had
+before the edit -- and writing it replaced text it was never standing for, which
+is the one thing this is written to stop."
+  (%cleared under)
+  (let ((seen (d:no-map))
+        (kept nil))
     (dolist (each said)
       (let* ((base (mode:name-of each))
              (had (or (d:lookup seen base) 0))
              (name (if (plusp had) (format nil "~a<~d>" base (1+ had)) base)))
         (setf seen (d:with seen base (1+ had)))
+        (push name kept)
         (let ((r (%region under name (list (mode:from-of each) (mode:to-of each)))))
           (node:attach r under)
-          (when (mode:inside-of each) (%build r (mode:inside-of each))))))))
+          (when (mode:inside-of each) (%build r (mode:inside-of each))))))
+    (%forgotten under kept)))
 
 (defun restructure (doc)
   "Ask the mode what this text divides into, and put it in the namespace. Regions
 are nodes with identity, so one that is still there is the same node it was and a
 watcher on it goes on watching."
   (let ((said (mode:structure (mode-of doc) doc)))
-    (dolist (each (node:nodes doc))
-      (when (typep each 'region) (node:detach doc (node:name each))))
     (%build doc said)
     said))
 

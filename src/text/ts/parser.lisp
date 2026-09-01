@@ -56,7 +56,7 @@ the lines outside it are what they were."
   (let ((out had))
     (when band
       (dolist (at (d:keys had))
-        (when (and (>= at (car band)) (< at (cdr band)))
+        (when (and (>= at (car band)) (<= at (cdr band)))
           (setf out (d:without out at)))))
     (dolist (run runs out)
       (destructuring-bind (line from to face) run
@@ -200,12 +200,17 @@ plain text."
       p)))
 
 (defun forget (document)
+  "Let go of a document's parse: the tree, the parser and the thread it ran on.
+
+Freed here and not asked for by a message. Told :STOP and stopped in the next
+breath, whether the actor ever read that message was a race -- and losing it left
+a TSParser, a tree and a foreign buffer for every document that had been open."
   (let* ((name (if (stringp document) document (node:name document)))
          (p (d:lookup (d:all *parsers*) name)))
     (when p
-      (job:tell (running p) (list :stop))
-      (job:stop (running p))
-      (d:drop! *parsers* name))
+      (d:drop! *parsers* name)
+      (%dispose p)
+      (job:forget (job:name (running p))))
     p))
 
 (defmethod killing :after ((document document))
@@ -215,5 +220,5 @@ rather than by whoever kills documents."
 
 (defun forget-all ()
   (dolist (p (parsers) (d:clear! *parsers*))
-    (job:tell (running p) (list :stop))
-    (job:stop (running p))))
+    (%dispose p)
+    (job:forget (job:name (running p)))))

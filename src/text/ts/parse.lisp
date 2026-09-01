@@ -1,13 +1,20 @@
 (in-package #:pine/text)
 
 (defun load-language-entry (language library fn-name)
-  (progn
-    (unless library (return-from load-language-entry nil))
-    (let ((lang (grammar-language-pointer library fn-name)))
-      (when (and lang (not (cffi:null-pointer-p lang)))
-        (let ((parser (ts-parser-new)))
-          (when (claim-language parser lang language)
-            (make-instance 'ts-entry :parser parser :language-ptr lang)))))))
+  "The language pointer for LANGUAGE, if this machine has its grammar.
+
+A parser is made to ask whether the grammar will be taken and let go of again once
+it has answered. Kept, it was a TSParser per grammar that nothing ever used --
+every buffer makes its own, because a TSParser is not something two threads share."
+  (unless library (return-from load-language-entry nil))
+  (let ((lang (grammar-language-pointer library fn-name)))
+    (when (and lang (not (cffi:null-pointer-p lang)))
+      (let ((parser (ts-parser-new)))
+        (unwind-protect
+             (when (claim-language parser lang language)
+               (make-instance 'ts-entry :language-ptr lang))
+          (pine/run/fault:or-nothing "a parser that would not be made is not there"
+            (ts-parser-delete parser)))))))
 
 (defun %grammars (runtime) (grammars runtime))
 

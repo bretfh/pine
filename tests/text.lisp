@@ -169,3 +169,42 @@ gamma delta")))
     (is (equal '(0 5) (multiple-value-list (text:move-by :word lines 0 0 1))))
     (is (equal '(0 10) (multiple-value-list (text:move-by :word lines 0 0 2))))
     (is (equal '(0 6) (multiple-value-list (text:move-by :word lines 0 10 -1))))))
+
+(test a-span-the-mode-stops-naming-goes-at-every-level
+  "Only the top was cleared, so a span inside one that the mode stopped saying
+stayed where it was with the extent it had before the edit -- and writing it would
+replace text it was never standing for, which is the one thing regions exist to
+stop. The names it is kept under go with it: typing one a character at a time says
+a different name on every key."
+  (with-tree
+    (let ((doc (text:make-document "%probe-structure"
+                                   :mode (make-instance 'mode:lisp))))
+      (setf (node:contents doc) "(defun alpha () 1)")
+      (text:restructure doc)
+      (let ((head (node:resolve doc "defun")))
+        (is (not (null head)) "the forms are grouped under what they are")
+        (is (not (null (node:resolve head "alpha"))) "and named by what they define")
+        (setf (node:contents doc) "(defun beta () 1)")
+        (text:restructure doc)
+        (is (not (null (node:resolve head "beta"))) "the one it names now is there")
+        (is (null (node:resolve head "alpha"))
+            "and the one it has stopped naming is gone")
+        (is (equal '("beta") (d:keys (d:all (node:memo head))))
+            "and is not kept under the name it had")))))
+
+(test killing-a-document-lets-go-of-the-thread-that-parsed-it
+  "Told :STOP and stopped in the next breath, whether the actor ever read that
+message was a race. A job also puts itself among the jobs as it is made, and one
+nothing supervises was one nothing could take out again."
+  (booted)
+  (with-tree
+    (let* ((doc (text:make-document "%probe-parsed"
+                                    :mode (make-instance 'mode:lisp)))
+           (p (text:parser-for doc)))
+      (if (null p)
+          (is (null p) "no grammar here to parse with, so nothing to let go of")
+          (let ((name (job:name (text:running p))))
+            (is (not (null (job:named name))) "the parse runs on a job")
+            (text:kill (node:name doc))
+            (is (null (job:named name))
+                "and killing the document takes that job with it"))))))

@@ -27,8 +27,12 @@ line; PS-OFFSET is that line."
 
 (defun parse-text! (ps text)
   "Parse TEXT from scratch by splitting it into lines. For callers holding a
-string rather than a buffer: a tool, a test, a snippet."
-  (parse-lines! ps (uiop:split-string text :separator '(#\Newline))))
+string rather than a buffer: a tool, a test, a snippet.
+
+As a seq, because that is what a buffer hands over and what the byte index and the
+read callback ask a line of. Given a list, every line was reached by walking the
+ones before it, so serving the parser one buffer cost the length of it squared."
+  (parse-lines! ps (d:as :seq (uiop:split-string text :separator '(#\Newline)))))
 
 (defun %outermost-path (node)
   "NODE, or the path it sits inside. A path's segments are named nodes so they

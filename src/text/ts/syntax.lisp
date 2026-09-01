@@ -158,7 +158,7 @@ follows it rather than the path it happens to be under."
       (unwind-protect
            (progn
              (parse-lines!
-              ps (uiop:split-string text :separator '(#\Newline)))
+              ps (d:as :seq (uiop:split-string text :separator '(#\Newline))))
              (parse-highlights ps))
         (free-parse-state ps)))))
 
@@ -171,7 +171,7 @@ follows it rather than the path it happens to be under."
         (let ((lines (coerce (uiop:split-string source :separator '(#\Newline))
                              'vector)))
           (parse-lines!
-           ps (uiop:split-string source :separator '(#\Newline)))
+           ps (d:as :seq (uiop:split-string source :separator '(#\Newline))))
           (dolist (h (parse-highlights ps))
             (destructuring-bind (line start-col end-col face) h
               (let* ((text (if (< line (length lines)) (aref lines line) ""))
