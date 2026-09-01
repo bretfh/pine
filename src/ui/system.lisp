@@ -17,7 +17,7 @@
    #:by-row #:caret #:over #:path #:year
    #:month #:day #:bg #:with-faces #:in-force
    #:unhex #:color #:metric #:resolve #:properties #:property
-   #:put-rules #:css-glass #:css-mono #:css-rad #:medium
+   #:put-rules #:sheet #:css-glass #:css-mono #:css-rad #:medium
    #:grid #:make-grid #:put #:put-bg #:ink
    #:measure #:arrange #:paint #:text-size #:dress
    #:styled #:with-pass #:under #:clicked #:clicked-at

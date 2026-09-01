@@ -11,7 +11,13 @@ action, a choice, a slider, a field. Nothing where none does.
 The default descends, so a container needs no method and a widget says only what it
 does with a hit.")
   (:method ((w widget) line col)
-    (some (lambda (part) (under part line col)) (parts w)))
+    "The last part that answers, and not the first. A STACK paints its parts in
+the order they were written and the last is on top, so the first one to cover a
+place was the one underneath -- and a click landed on what was behind."
+    (let ((found nil))
+      (dolist (part (parts w) found)
+        (let ((it (under part line col)))
+          (when it (setf found it))))))
   (:method ((w action) line col)
     (when (%covers w line col) (or (call-next-method) w)))
   (:method ((w choice) line col)

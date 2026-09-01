@@ -67,9 +67,12 @@ read moves. Before there is a tree, it is worked out every time."
                         (node:attach (make-instance 'node:node :name "memo")
                                      (tree:root))))
              (n (node:resolve under name)))
-        (unless n
-          (setf n (node:derive name thunk))
-          (node:attach n under))
+        (cond ((null n)
+               (setf n (node:derive name thunk))
+               (node:attach n under))
+              ((not (eq thunk (node:reads n)))
+               (setf (node:reads n) thunk)
+               (node:moved n)))
         (node:contents n))))
 
 (defgeneric hex (color palette)

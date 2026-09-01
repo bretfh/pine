@@ -513,3 +513,18 @@ ANNOUNCES, REFRESHES, SAVEDP, LIVEP, HOLDING, MAKE-CHILD, ERASE-CHILD, STIR."
                                  (file-namestring file) name)
                          wrong :test #'equal)))))))
     (is (null wrong) "~{~%  ~a~}" wrong)))
+
+(test the-sheet-follows-the-theme-it-was-worked-out-of
+  "Set by hand, nothing could see the stylesheet go stale: writing /theme/active
+changed every face and left the sheet holding the colours of the theme before,
+because the colours in it were read once when somebody remembered to say so."
+  (with-tree
+    (let* ((was (ui:color :bg))
+           (before (second (find ".editor" (ui:sheet) :key #'first :test #'equal))))
+      (is (equal was (getf before :background-color))
+          "the sheet says what the theme in force says")
+      (ui:put-rules (list (list ".probe-follows" (list :color "#010203"))))
+      (is (equal '(:color "#010203")
+                 (second (find ".probe-follows" (ui:sheet)
+                               :key #'first :test #'equal)))
+          "and a rule written at /style is in it without anybody saying so"))))

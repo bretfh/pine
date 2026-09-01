@@ -60,7 +60,6 @@ where a frontend puts what the daemon sent into its own tree."
     (let ((n (tree:ensure "/style" (%path-segment (first each)))))
       (setf (node:contents n) (second each))
       (system:owned (node:full-name n))))
-  (refresh)
   (styles))
 
 (defun built-in ()
@@ -97,11 +96,19 @@ where a frontend puts what the daemon sent into its own tree."
      (list ".candidates" (list :background-color (p :bg-completion)
                                :color (p :fg))))))
 
-(defun refresh ()
-  "The stylesheet in cascade order: what pine ships, then what is at /style."
-  (sheet (append (built-in) (styles)))
-  (forget-rules)
-  (sheet))
+(defmethod sheet ()
+  "The stylesheet in cascade order: what pine ships, then what is at /style.
+
+A rule is written by hand and that is the whole of how a sheet is said: STYLE
+takes a selector and what it holds, and it lands at /style/<selector>. What is
+worked out here is only the two put together.
+
+Worked out and kept, the way the rules compiled from it are, because putting them
+together reads the theme: BUILT-IN calls COLOR for every colour it names. Composed
+once and kept in a variable, nothing could see that go stale -- writing
+/theme/active changed every face and left the sheet painting the colours of the
+theme before it, until somebody thought to compose it again."
+  (memo :sheet (lambda () (append (built-in) (styles)))))
 
 (defun %theme-names () (themes))
 
@@ -168,7 +175,6 @@ a path nobody named should not grow the keyword package."
     (let ((active (%active themes)))
       (unless (node:contents active)
         (setf (node:contents active) (active))))
-    (refresh)
     root))
 
 
