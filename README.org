@@ -1,9 +1,15 @@
 #+TITLE: pine
 
-Pine Is Not Emacs.
+Pine Is Not Emacs. Pine attempts to capture some of the spirit of emacs. If
+emacs can be viewed as a text editing framework, pine trys to do so for
+components of your os. Think of it as a layer on top of your host that can offer
+a uniform way to interact pine through a virtual fs from other languages or ofc
+from pine itself using cl. You can render anything from editors, to desktop
+widgets, to managing your windows (wayland only & leveraging river's protocol).
+Highly experimental and subject to change but im using it for my own needs.
 
 [[file:doc/architecture.org][doc/architecture.org]] is what it is and how it is
-put together.
+put together so far. 
 
 * The shape of it
 
@@ -26,21 +32,24 @@ system:
 : \- document              text, and the structure its mode gives it
 :    \- region             a span of one, with its own sub-regions
 
-A =peer= is an =image= and a =mount= at once: another pine you can evaluate in
-and a namespace you can graft. That is why a read of =/host/laptop/dev/audio=
-and a read of =/dev/audio= are the same act.
+A =peer= is another pine instance mounted: another pine that you can read and
+write to.
 
 * The protocol
 
-Four verbs, and nothing takes more than these. A node answers them by its class,
-so the same call reaches a document, a running job, a device or another machine:
+Four primary behaviors pine provides onto it's ns, it's virtual fs tree which
+provides all of it's behavior within and to peers or through json for handling
+with other languages or through the cli via text/json. A node represents a
+persistent immutable value, text of a file, text of a remote file, or even
+values from evaluation. Nodes answers by their class, so the same call reaches a
+document, a running job, a device or another machine through the same interface:
 
 : ./pine read  /dev/audio/volume
 : ./pine write /dev/net/wifi "cafe-guest"
 : ./pine watch /dev/media/title
 : ./pine ls    /proc
 
-The same four words in lisp, taking the same kind of argument, so what a config
+The same four words in cl, taking the same kind of argument, so what a config
 says and what you type are one language:
 
 #+begin_src lisp
@@ -50,29 +59,16 @@ says and what you type are one language:
   (ls    "/proc")
 #+end_src
 
-A read answers two things: what stands there, and whether anything does. A place
-nobody has written and a place somebody wrote =NIL= to are different questions,
-and =NIL= is the answer to only the second.
-
-Writing is not only storing. These are writes too, spelled the same way from the
-shell and from lisp:
-
-: ./pine toggle  /dev/audio/muted
-: ./pine include /tags urgent
-: ./pine exclude /tags urgent
-
-: ./pine eval '(+ 1 2)'
-: ./pine run  list-documents
-
 =./pine= with no verb lists the rest, which are all conveniences over those:
 =use=, =drop=, =systems=, =jobs=, =reload=, =start=, =stop=, =restart=,
 =status=, =shell=.
 
-* What is on it
+* What's in it
 
-Nothing above the substrate is privileged. Each of these is a system, a class you
-start and stop at =/system/<name>=, and each is written in the same language a
-config is written in. They are what I have put on pine, not what pine is:
+Pine is modular. Each of the ways pine provides a handle to something on your
+host for usage, treesitter, host machine information, rendering with wayland,
+each of these is a system, a class you start and stop at =/system/<name>=, and
+each is written in the same language as everything You load in systems with use:
 
 : ./pine use text     # documents, modes, and the parse behind them
 : ./pine use host     # the machine's own devices, at /dev
@@ -81,14 +77,13 @@ config is written in. They are what I have put on pine, not what pine is:
 : ./pine use desk     # a bar, and the panels it opens
 : ./pine use wm       # the compositor, in the namespace
 
-Dropping one takes its surfaces and its commands with it, and the paths it added
-stop resolving:
+Dropping one takes its entire tree out of pine; surfaces, its commands with
+it, and then paths it added stop resolving:
 
-: ./pine drop desk
+: ./pine drop
 
-The =wm= system is the sharpest case of a system claiming a domain. Pine talks to
-whatever compositor it is under, and on one that asks for a window manager it is
-the window manager, over the same paths either way:
+Pine is designed with niri and river in mind, but the idea is pine be unbiased
+to work with an existing wm or more directly with river's protocol:
 
 : ./pine read  /wm/windows
 : ./pine write /wm/focused 3
@@ -99,9 +94,8 @@ A layout is a class with one =arrange= method, so a config writes its own.
 
 * Making it yours
 
-=pine/user= is the language: common lisp and pine's whole protocol in one
-package, so a package that uses it and nothing else can say everything the
-systems above can say. =~/.config/pine/init.lisp= is read in it.
+=pine/user= is the primary package in interfacing with pine.
+=~/.config/pine/init.lisp= is the daemon's entrypoint for reading configurations.
 
 It is a =defpackage=, in =src/user.lisp=, and a system loaded later puts its own
 vocabulary there as it loads. So the words are symbols the compiler resolved,
@@ -139,12 +133,10 @@ and every surface as PNGs, with no display and no compositor:
 
 : make shot CONFIG=~/.config/pine/init.lisp
 
-[[file:examples/init.lisp][examples/init.lisp]] is a config to copy.
-[[file:examples/notes.lisp][examples/notes.lisp]] is a whole app written that
-way: a kind of node at =/notes=, a mode that divides its text into headings, a
-role and a surface of its own, its own commands and a chord for one. The suite
-loads it, exercises it, and checks that nothing under =src/= has ever heard of
-it:
+- [[file:examples/init.lisp][examples/init.lisp]] is a config to copy.
+- [[file:examples/notes.lisp][examples/notes.lisp]] is a small app created at =/notes=, a mode that divides its
+  text into headings, a role and a surface of its own, its own commands and a
+  chord bound to the keyboard. 
 
 : ./pine use notes
 : ./pine run note today "it works"
@@ -155,7 +147,7 @@ it:
 
 * Running it
 
-Linux and wayland. Guix is what pine develops against:
+I develop pine on guix:
 
 : git clone https://github.com/bretfh/pine
 : cd pine
