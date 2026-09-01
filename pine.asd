@@ -28,7 +28,8 @@ and other images"
                 :serial t
                 :pathname "src/run/"
                 :components ((:file "fault") (:file "libs") (:file "meter")
-                             (:file "actors") (:file "job") (:file "watch")
+                             (:file "actors") (:file "job") (:file "proc")
+                             (:file "watch")
                              (:file "command") (:file "image") (:file "peer")
                              (:file "session") (:file "system")))
 

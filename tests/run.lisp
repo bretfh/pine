@@ -473,3 +473,30 @@ image, and it is DERIVE :IN."
                  "and it read nothing here, because what it read is that image's"))
         (job:stop kid)
         (job:forget "elsewhere")))))
+
+(test a-job-asked-for-without-saying-takes-what-the-class-says
+  "GETF answers NIL for a key nobody gave, and NIL handed to MAKE-INSTANCE is a
+slot set to NIL rather than one left at what the class says. A program started by
+a write to /proc took :ON-FAULT NIL that way, so nothing ever started it again."
+  (is (eq :restart (job:asked-for '(:name "x") :on-fault :restart)))
+  (is (eq :leave (job:asked-for '(:on-fault :leave) :on-fault :restart)))
+  (is (null (job:asked-for '(:on-fault nil) :on-fault :restart))
+      "and one that was given NIL means NIL"))
+
+(defclass %wont-start (job:job) ())
+
+(defmethod job:start ((j %wont-start)) (error "this one will not start"))
+
+(test a-job-that-will-not-start-says-so-where-it-stands
+  "The :BEFORE says it is starting. Left there when START threw, it stayed that
+way for ever: SWEEP starts what is :RUNNING or :FAILED and gives up on what has
+tried too often, and :STARTING is neither."
+  (let ((j (make-instance '%wont-start :name "%probe-wont-start"
+                                       :on-fault :leave)))
+    (unwind-protect
+         (progn
+           (signals error (job:start j))
+           (is (eq :failed (job:state j)) "and is one SWEEP will look at again")
+           (is (not (null (pine/run/job::fault j)))
+               "with what broke where it stands"))
+      (job:forget (job:name j)))))

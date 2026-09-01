@@ -6,36 +6,18 @@
   (:export
    #:job #:thread #:tick #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
-   #:named #:supervise #:sweep #:attend #:emit
+   #:named #:supervise #:sweep #:attend #:emit #:asked-for
    #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:kind #:kinds
    #:took #:runs #:stopping #:argv #:ref))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)
-(defvar *backoff-cap* 60)
-(defvar *settled* 30
-  "Seconds a job has to survive before its tries are forgotten. Without this a job
-that failed six times is held at the longest backoff for the life of the image,
-however well it runs afterwards.")
 (defvar *asking* 5)
-(defvar *every* 1)
 (defvar *stopping* 2
   "Seconds to wait for a thread asked to stop. It is asked and then joined: a
 thread blocked on a stream reads to the end of what it has and then looks, so the
 wait is for that look and not for a clock.")
 (defvar *jobs* (d:table))
-(defvar *kinds* (d:table))
-(defvar *supervised* nil)
-(defvar *under* nil)
-(defvar *tries* 8
-  "How many times a job is started again before it is held.
-
-A job that dies as fast as it starts is not one more try away from working. The
-backoff already spaces the tries out; this is what says to stop, so a crash loop
-is something you can read at /proc rather than something the image does for the
-rest of its life. Surviving *SETTLED* seconds forgets the tries, so this counts
-a run of failures and not a long life with bad days in it.")
-
 (define-condition blocking-ask (error)
   ((of :initarg :of :reader of))
   (:report (lambda (c stream)
@@ -110,34 +92,6 @@ asking for it by name is saying to try again."
   (d:swap (slot-value j 'said) #'d:capped line *out-kept*)
   line)
 
-(defun backoff (j)
-  (min *backoff-cap* (expt 2 (min 16 (tries j)))))
-
-(defun settle (j)
-  "Forget a job's tries once it has run long enough to have earned it."
-  (let ((at (since j)))
-    (when (and at (plusp (tries j))
-               (>= (- (get-universal-time) at) *settled*))
-      (setf (tries j) 0)))
-  j)
-
-(defun heldp (j)
-  "Whether this job has been given up on. Not stopped: nobody asked it to go, and
-nothing will start it again until somebody says so."
-  (eq :held (state j)))
-
-(defun %hold (j)
-  "Stop trying, and say why where the job stands.
-
-Written down rather than logged, because the question a person asks is about
-this job and /proc/<name> is where they ask it."
-  (setf (state j) :held
-        (fault j) (make-condition
-                   'simple-error
-                   :format-control "gave up after ~d tr~:@p, none lasting ~d second~:p"
-                   :format-arguments (list (tries j) *settled*)))
-  j)
-
 (defgeneric alivep (job)
   (:documentation "Whether it is running now, asked of the thing itself.")
   (:method ((j job)) (eq :running (state j))))
@@ -149,6 +103,16 @@ this job and /proc/<name> is where they ask it."
     (setf (state j) :starting (fault j) nil (since j) (get-universal-time)))
   (:method :after ((j job))
     (when (eq :starting (state j)) (setf (state j) :running)))
+  (:method :around ((j job))
+    "One that would not start is one that failed, and says so where it stands.
+
+Left where the :BEFORE put it, a job whose START threw stayed :STARTING for ever:
+SWEEP starts what is :RUNNING or :FAILED and gives up on what has tried too often,
+and :STARTING is neither. A window manager on a compositor pine does not know how
+to talk to sat there saying it was starting for the life of the image."
+    (handler-bind ((error (lambda (c)
+                            (setf (fault j) c (state j) :failed))))
+      (call-next-method)))
   (:method ((j job))
     (error "~a says nothing about how it starts." (node:full-name j))))
 
@@ -300,101 +264,12 @@ its output is already a place, and this is the other side of it."
       (setf (exit-of j) (uiop:wait-process it))))
   j)
 
-(defun supervised () *supervised*)
+(defun asked-for (said key default)
+  "What SAID says about KEY, or DEFAULT where it says nothing.
 
-(defun supervise (j)
-  "Keep J running. A job is a node already; this is where it hangs, so pine read
-/proc/editor answers its state and pine write /proc/editor '(:restart)' starts it
+GETF and not: a key nobody gave answers NIL, and NIL handed to MAKE-INSTANCE is a
+slot set to NIL rather than a slot left at what the class says. A program started
+by a write to /proc took :ON-FAULT NIL that way, and nothing ever started it
 again."
-  (d:swap *supervised*
-           (lambda (all)
-             (append (remove (name j) all :key #'name :test #'equal) (list j))))
-  (when *under* (setf (node:parent j) *under*))
-  j)
-
-(defun forget (name)
-  (let ((j (find name (supervised) :key #'name :test #'equal)))
-    (when j
-      (fault:or-nothing "forgetting a job it could not stop still forgets it"
-        (stop j))
-      (d:swap *supervised* (lambda (all) (remove j all)))
-      (d:drop! *jobs* name))
-    j))
-
-(defun attend (&key (every *every*))
-  "Look over what is supervised, on the wheel. Without this the backoff, the tries
-and the restart are all written down and none of them ever happens."
-  (actors:repeat every #'sweep :as :proc :what "starting again what died"))
-
-(defun kind (name maker)
-  "Say that NAME is a kind of job somebody can ask for, and how one is made from
-what they said. Registered where the class is, so this file names no kind it does
-not define and a kind loaded later is askable without this one being edited."
-  (d:keep! *kinds* (intern (string-upcase (princ-to-string name)) :keyword) maker)
-  name)
-
-(defun kinds () (sort (mapcar #'princ-to-string (d:keys (d:all *kinds*))) #'string<))
-
-(defun %started (said)
-  "Start what SAID asks for, and answer where it stands.
-
-A kind that can be asked for is one a value can describe: a program is its argv,
-an image the systems it loads. A thread and an actor are a function, which no
-value carries, so asking for one says so. The name is given and not minted:
-whoever asked has to find it again, and two asking at once must not race."
-  (let* ((name (and (getf said :name) (princ-to-string (getf said :name))))
-         (want (getf said :kind))
-         (want (and want (intern (string-upcase (princ-to-string want)) :keyword)))
-         (maker (d:lookup (d:all *kinds*) want)))
-    (unless name (error "a job is started under a name; none was given."))
-    (when (named name) (error "~a is already running." name))
-    (unless maker
-      (error "~(~a~) is not a kind that can be asked for. There is ~{~a~^, ~}: a ~
-              thread and an actor are a function, and a value cannot carry one."
-             want (kinds)))
-    (let ((j (funcall maker name said)))
-      (supervise j)
-      (start j)
-      (node:full-name j))))
-
-(kind :program
-      (lambda (name said)
-        (make-instance 'program :name name
-                                :on-fault (getf said :on-fault)
-                                :env (getf said :env)
-                                :argv (mapcar #'princ-to-string
-                                              (getf said :argv)))))
-
-(defun %attach (root)
-  (setf *under* (node:attach (node:lists "proc" :nodes #'supervised
-                                         :writes #'%started
-                                         :describes "what this pine is running")
-                             root))
-  (dolist (j (supervised) *under*) (setf (node:parent j) *under*)))
-
-(defun due (j now)
-  "Whether enough has passed since the last try to make another. Without this a
-program that dies as fast as it starts is started once a second for as long as pine
-runs, and the backoff is a number nobody reads."
-  (let ((last (since j)))
-    (or (null last) (>= now (+ last (backoff j))))))
-
-(defun sweep ()
-  "One pass: start again what died and is owed a try, forget the tries of what has
-run long enough to have earned it, and give up on what will not run at all."
-  (let ((now (get-universal-time)))
-    (dolist (j (supervised) t)
-      (cond ((alivep j) (settle j))
-            ((heldp j))
-            ((and (eq :restart (on-fault j))
-                  (member (state j) '(:running :failed))
-                  (due j now))
-             (if (>= (tries j) *tries*)
-                 (%hold j)
-                 (progn
-                   (setf (state j) :failed (since j) now)
-                   (handler-case (start j)
-                     (error (e) (setf (fault j) e (state j) :failed))))))))))
-
-
-(pine/fs/tree:builder #'%attach)
+  (let ((said (getf said key :none)))
+    (if (eq said :none) default said)))

@@ -65,7 +65,7 @@ and a form written then would be swallowed as the answer."))
 (job:kind :image
           (lambda (name said)
             (make-instance 'child :name name
-                                  :on-fault (getf said :on-fault)
+                                  :on-fault (job:asked-for said :on-fault :restart)
                                   :systems (or (getf said :systems) '(:pine)))))
 
 (defgeneric evaluate (image form &key timeout)
@@ -165,6 +165,18 @@ that image is still offering."
 (defun %hear (j seconds)
   (%until j seconds (lambda (line) (and (saidp line) line))))
 
+(defun %drained (j)
+  "Read what the child has already said, without waiting for any more.
+
+Nothing reads the pipe between one evaluation and the next, so a child that says
+something while nobody is asking fills it and stops -- and a child stopped inside
+a write is one the next question never reaches. What it said goes where everything
+else it says goes."
+  (loop :for line := (%line j 0)
+        :while line
+        :do (job:emit j line))
+  j)
+
 (defun %say (j form)
   (let ((in (%in j)))
     (write-string (prin1-to-string form) in)
@@ -182,12 +194,14 @@ fault, so this waits on the fault rather than looking at a flag over and over."
   (bordeaux-threads:with-lock-held ((turn j))
     (%say j form)
     (let ((line (%hear j timeout)))
-      (when line
-        (multiple-value-bind (value said offers) (answered line)
-          (cond (said
-                 (setf (held j) (borrowing j said offers))
-                 (values nil said offers ""))
-                (t (values (list value) nil nil ""))))))))
+      (multiple-value-prog1
+          (when line
+            (multiple-value-bind (value said offers) (answered line)
+              (cond (said
+                     (setf (held j) (borrowing j said offers))
+                     (values nil said offers ""))
+                    (t (values (list value) nil nil "")))))
+        (unless (held j) (%drained j))))))
 
 (defmethod fault:resume ((j child) f restart)
   (declare (ignore f))
@@ -196,7 +210,8 @@ fault, so this waits on the fault rather than looking at a flag over and over."
          (progn (%say j (list :take restart))
                 (let ((line (%hear j fault:*waiting*)))
                   (when line (answered line))))
-      (setf (held j) nil))))
+      (setf (held j) nil)
+      (%drained j))))
 
 
 (setf node:*elsewhere*
