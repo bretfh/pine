@@ -22,6 +22,7 @@ not hold up the rest, few enough that a hundred of them cannot take the machine.
    (when-told :initarg :tells-when :reader tells-when :initform :on-change)
    (was     :initform '#:unread :accessor was)
    (polling :initarg :poll :reader polling :initform nil)
+   (every   :initarg :every :reader every-of :initform *every*)
    (telling :initform nil :accessor telling)
    (again   :initform nil :accessor again))
   (:documentation "Somebody waiting to hear that a node moved. Not a thread: what
@@ -67,25 +68,47 @@ walks away from."
 (defmethod node:moved ((w watcher))
   "Say the place moved. Told on a worker and not here: this runs inside the walk
 a write does, and a watcher that shells out would hold up the write, everything
-else that walk has still to reach, and whoever was waiting on the write."
-  (cond ((d:cas (slot-value w 'telling) nil t)
-         (actors:later :watch (lambda () (%told w))))
-        (t (setf (again w) t)))
+else that walk has still to reach, and whoever was waiting on the write.
+
+AGAIN is set before the claim is asked for, and not after failing to get it. Set
+after, there was a moment between the two in which whoever held the claim finished,
+looked at AGAIN, saw nothing and stopped -- and the move that had just happened
+was one nobody was ever told about. Set first, the worst that happens is one
+telling more than was needed, which FIRE answers by reading the place again."
+  (setf (again w) t)
+  (when (d:cas (slot-value w 'telling) nil t)
+    (actors:later :watch (lambda () (%told w))))
   w)
 
 (defun polled () (remove-if-not #'polling (watchers)))
 
-(defun sweep ()
-  "Read every watcher that has to be asked, on one tick. A live node is one that
-answers differently without anybody writing it; the ones that announce themselves
-are told by whatever is behind them instead.
+(defun sweep (&optional every)
+  "Read the watchers this tick is for. A live node is one that answers differently
+without anybody writing it; the ones that announce themselves are told by whatever
+is behind them instead.
 
 Through the same door as a write, so a slow one is one telling at a time here
 too and the tick is not what waits for it."
-  (dolist (w (polled) t) (node:moved w)))
+  (dolist (w (polled) t)
+    (when (or (null every) (eql every (every-of w))) (node:moved w))))
 
 (defun attend (&key (every *every*))
-  (actors:repeat every #'sweep :as :watch :what "reading the live nodes"))
+  "Read the live ones every EVERY seconds.
+
+One tick per interval, named by it. One tick for everybody was one tick with
+whichever interval was asked for last, so a watcher that wanted a minute set every
+other polled watcher to a minute as well."
+  (actors:repeat every (lambda () (sweep every))
+                 :as (list :watch every)
+                 :what "reading the live nodes"))
+
+(defun %attending ()
+  "Cancel the ticks nothing is polled on any more."
+  (let ((wanted (remove-duplicates (mapcar #'every-of (polled)))))
+    (dolist (name (actors:ticks) t)
+      (when (and (consp name) (eq :watch (first name))
+                 (not (member (second name) wanted)))
+        (actors:cancel name)))))
 
 (defgeneric watch (n tells &key every name tells-when poll)
   (:documentation "Say TELLS whenever N moves, and answer something to let go of.
@@ -98,7 +121,7 @@ push had to build its own way round it.")
   (:method ((n node:node) tells &key (every *every*) name (tells-when :on-change)
                                     (poll (node:livep n)))
     (let ((w (make-instance 'watcher :watches n :tells tells :tells-when tells-when
-                                     :poll poll
+                                     :poll poll :every every
                                      :name (or name (node:full-name n)))))
       (node:depend w n)
       (d:swap *watchers* (lambda (all) (cons w all)))
@@ -144,13 +167,13 @@ that has a way of hearing says so where it is written.")
 (defun unwatch (w)
   (node:undepend w (watches w))
   (d:swap *watchers* (lambda (all) (remove w all)))
-  (unless (polled) (actors:cancel :watch))
+  (%attending)
   w)
 
 (defun forget-all ()
   (dolist (w (watchers)) (unwatch w))
   (setf *watchers* nil)
-  (actors:cancel :watch))
+  (%attending))
 
 (defun watching (n)
   (remove n (watchers) :key #'watches :test-not #'eq))

@@ -4,7 +4,8 @@
   (:local-nicknames (#:d #:pine/data) (#:command #:pine/run/command))
   (:export
    #:open-session #:sessions #:close #:in #:read
-   #:evaluate #:interact #:answered #:fault #:*session*))
+   #:evaluate #:interact #:answered #:fault #:*session*
+   #:package-of #:readtable-of))
 (in-package #:pine/run/session)
 
 (defvar *session* nil)
@@ -45,14 +46,16 @@ sent from another image is evaluated in one."))
 
 (defun open-session (&rest initargs &key &allow-other-keys)
   (let ((s (apply #'make-instance 'session initargs)))
-    (cl:push s *sessions*)
+    (d:swap *sessions* (lambda (all) (cons s all)))
     s))
 
 (defun sessions () *sessions*)
 
 (defmethod close ((s session))
-  (setf (openp s) nil
-        *sessions* (cl:remove s *sessions*))
+  "One session goes. Replaced rather than set, because the socket opens one per
+caller and two callers arriving together lost one of each other."
+  (setf (openp s) nil)
+  (d:swap *sessions* (lambda (all) (cl:remove s all)))
   s)
 
 (defgeneric read (session &optional from)
