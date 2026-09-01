@@ -5,12 +5,15 @@
                     (#:actors #:pine/run/actors) (#:job #:pine/run/job)
                     (#:fault #:pine/run/fault))
   (:export
-   #:sh #:feed #:lines #:words #:number-in
-   #:firstp #:has #:run-line #:launch #:streaming
+   #:sh #:did #:argv #:feed #:lines #:words #:number-in
+   #:firstp #:has #:run-line #:launch #:streaming #:last-said
    #:sh-node #:forget-all #:*breath*))
 (in-package #:pine/host/shell)
 
 (defvar *ran* nil)
+(defvar *said* nil
+  "What each of the last few lines said when it was last run, newest first. A read
+of /sh/<line> answers out of this, because reading is not running.")
 (defvar *asked* (d:table))
 (defvar *streams* (d:table))
 (defvar *sh* nil)
@@ -46,7 +49,23 @@ closes that end and the stream goes with it.")
 
 (defun %noted (line)
   (d:swap *ran* #'d:capped line *kept*)
+  (when *sh* (node:moved *sh*))
   line)
+
+(defun %kept (line out)
+  "Keep what a line said, so /sh can answer for it without running it again, and
+say the place moved. What a line last said is not a node, so nothing else can see
+it change."
+  (d:swap *said*
+          (lambda (all)
+            (d:capped (cl:remove line all :key #'car :test #'equal)
+                      (cons line out) *kept*)))
+  (when *sh*
+    (let ((n (d:lookup (d:all (node:memo *sh*)) line)))
+      (when n (node:moved n))))
+  out)
+
+(defun last-said (line) (cdr (assoc line *said* :test #'equal)))
 
 (defun %output (line)
   (multiple-value-bind (out err code)
@@ -54,7 +73,7 @@ closes that end and the stream goes with it.")
                         :output '(:string :stripped t)
                         :error-output nil :ignore-error-status t)
     (declare (ignore err code))
-    out))
+    (%kept line out)))
 
 (defun %breathed () (* *breath* internal-time-units-per-second))
 
@@ -81,8 +100,41 @@ one command runs it once and a bar built twice in a frame does not fork twice."
                said)))))
 
 (defun sh (format &rest arguments)
-  "Ask the machine something and answer what it said."
+  "Ask the machine something and answer what it said.
+
+A question, and remembered as one: two things reading /sys/cpu a moment apart are
+asking about the same moment. Telling the machine to do something is DID or ARGV,
+which are not."
   (meter:timing (:sh) (asked (apply #'format nil format arguments))))
+
+(defun did (format &rest arguments)
+  "Tell the machine to do something, through a shell, and answer what it said.
+
+Not remembered. An answer stands for a breath because a question asked twice in
+one frame has one answer; a thing done twice is done twice, and routing a write
+through the memo made muting twice inside a quarter of a second mute once."
+  (meter:counted :sh-fork)
+  (meter:timing (:sh) (%output (apply #'format nil format arguments))))
+
+(defun argv (&rest words)
+  "Run a program with these arguments and answer what it said. No shell.
+
+What a word says is what the program is given, so a value that came out of a
+config or off a socket is an argument and can never be a line of shell. Written
+into one it could say anything: a sink named `x; rm -rf ~' is a name a device
+takes, and quoting it is not an answer -- a double-quoted shell word still spells
+$(...).
+
+Not remembered either, for DID's reason. WITH a pipe or a redirect in it, a line
+is a shell line and SH is the one that runs it."
+  (meter:counted :sh-fork)
+  (meter:timing (:sh)
+    (multiple-value-bind (out err code)
+        (uiop:run-program (mapcar #'princ-to-string (remove nil words))
+                          :output '(:string :stripped t)
+                          :error-output nil :ignore-error-status t)
+      (declare (ignore err code))
+      out)))
 
 (defun feed (line text)
   "Give a program TEXT on its standard input. Not remembered: this is telling the
@@ -185,11 +237,16 @@ runs."
   value)
 
 (defun %line (line)
-  "Reading a line runs it and answers what it said; writing one launches it. Every
-line is a place, whether or not anything has asked for it before, which is why /sh
-lists what has run and answers for what has not."
+  "What this line last said, and a place to tell it to run.
+
+Reading is not running. Every line is a place whether or not one has ever been
+run, and a read used to run it -- so /sh was a shell anything that could reach the
+namespace could type into, by asking it a question. A read is the one thing every
+way in may always do; running something is a write, and this is where it is said.
+
+One that has not run answers nothing. That is what ABSENT is for."
   (node:derive line
-               (lambda () (asked line))
+               (lambda () (last-said line))
                :writes (lambda (v) (declare (ignore v)) (run-line line))))
 
 (defun sh-node ()

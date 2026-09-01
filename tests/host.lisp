@@ -40,6 +40,29 @@
       (is (equal first-said (sh:sh "date +%s%N"))
           "the same line asked twice in a breath forks once"))))
 
+(test telling-the-machine-something-is-not-asking-it-something
+  "An answer stands for a breath because two things reading /sys/cpu a moment
+apart are asking about the same moment. A thing done twice is done twice, and a
+write routed through the memo happened once however many times it was asked for:
+muting twice inside a quarter of a second muted once, and two windows closed one
+after the other closed one."
+  (let ((pine/host/shell:*breath* 10))
+    (is (equal (sh:sh "date +%s%N") (sh:sh "date +%s%N"))
+        "asked twice in a breath, once")
+    (is (not (equal (sh:did "date +%s%N") (sh:did "date +%s%N")))
+        "told twice in a breath, twice")
+    (is (not (equal (sh:argv "date" "+%s%N") (sh:argv "date" "+%s%N")))
+        "and told twice as a program, twice")))
+
+(test what-is-written-to-a-device-is-an-argument-and-not-a-line-of-shell
+  "A sink is named by whoever named it and a network by whoever is broadcasting
+it. Spliced into a line, either could say anything the shell can -- and quoting is
+not an answer, because a double-quoted shell word still spells $(...)."
+  (is (equal "$(id);x" (sh:argv "printf" "%s" "$(id);x"))
+      "what a word says is what the program is given")
+  (is (equal "a b" (sh:argv "printf" "%s" "a b"))
+      "and a space in one is a space in one argument"))
+
 (test a-line-is-a-place-whether-or-not-it-was-asked-before
   (booted)
   (with-tree
@@ -149,3 +172,37 @@ backing would break on a machine with the thinner one."
           "the backing that stands answers what it knows")
       (is (eq :absent (nth-value 1 (pine:read "/dev/%probe-radio/signal")))
           "and what it does not know stands and says so"))))
+
+(test reading-a-line-under-sh-does-not-run-it
+  "Every line is a place whether or not one has ever been run, and a read of one
+used to run it -- so /sh was a shell anything that could reach the namespace could
+type into by asking it a question. A read is the one thing every way in may always
+do; running something is a write."
+  (booted)
+  (with-tree
+    (node:attach (sh:sh-node) (tree:root))
+    (let ((line "echo pine-probe-a-read-does-not-run"))
+      (is (null (node:contents (tree:at (format nil "/sh/~a" line))))
+          "a line nothing has run says nothing")
+      (is (null (sh:last-said line))
+          "and asking the place about it ran nothing")
+      (sh:sh line)
+      (is (equal "pine-probe-a-read-does-not-run"
+                 (node:contents (tree:at (format nil "/sh/~a" line))))
+          "and once something has run it, the place answers for it"))))
+
+(test a-system-takes-its-paths-with-it
+  "A system puts things on the tree and takes them off by what OWNED was told as
+they went up. Attached by hand instead, dropping the host left /sh -- which runs
+things -- and /file, which is the whole filesystem, standing for the life of the
+image with nothing that named them."
+  (booted)
+  (with-tree
+    (system:use "host")
+    (is (not (null (tree:at "/sh"))) "it put /sh up")
+    (is (not (null (tree:at "/file"))) "and the filesystem")
+    (is (not (null (tree:at "/sys"))) "and the machine")
+    (system:drop "host")
+    (is (null (tree:at "/sh")) "and /sh goes with it")
+    (is (null (tree:at "/file")) "and so does the filesystem")
+    (is (null (tree:at "/sys")) "and so does the machine")))

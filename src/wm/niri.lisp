@@ -8,13 +8,16 @@
 (in-package #:pine/wm/niri)
 
 (defparameter +actions+
-  '(("overview"  . "toggle-overview")
-    ("close"     . "close-window")
-    ("expel"     . "consume-or-expel-window-right")
-    ("consume"   . "consume-or-expel-window-left")
-    ("workspace" . "focus-workspace")
-    ("window"    . "focus-window --id")
-    ("exit"      . "quit --skip-confirmation")))
+  '(("overview"  "toggle-overview")
+    ("close"     "close-window")
+    ("expel"     "consume-or-expel-window-right")
+    ("consume"   "consume-or-expel-window-left")
+    ("workspace" "focus-workspace")
+    ("window"    "focus-window" "--id")
+    ("exit"      "quit" "--skip-confirmation"))
+  "What pine calls a thing to do and the words niri is told to do it in. Words and
+not a line: an id or a workspace comes from whoever wrote the place, and a value
+spliced into a line of shell is a value that can say anything the shell can.")
 
 (defclass niri (compositor:compositor) ()
   (:documentation "niri, over its own json protocol."))
@@ -87,7 +90,10 @@ the mode it is in is what the size comes from."
 (defmethod compositor:verbs ((c niri)) (mapcar #'car +actions+))
 
 (defmethod compositor:act ((c niri) verb &rest arguments)
+  "Told and not asked. An answer stands for a breath, so an action routed through
+the memo happened once however many times it was asked for: closing two windows
+one after the other closed one, and focusing back to where you were did nothing."
   (let ((action (cdr (assoc (princ-to-string verb) +actions+ :test #'equal))))
     (when action
-      (sh:sh "niri msg action ~a~{ ~a~}" action arguments)
+      (apply #'sh:argv "niri" "msg" "action" (append action arguments))
       t)))

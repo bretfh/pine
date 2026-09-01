@@ -43,11 +43,16 @@ have, and DEFBACKING for each way of asking this machine about it.")
 (defun %runs (line)
   "A write that runs LINE whatever was written to it. That is what a verb under a
 device is: /dev/power/suspend is not a value somebody sets, it is a thing to do."
-  (lambda (said) (declare (ignore said)) (sh:sh "~a" line) t))
+  (lambda (said) (declare (ignore said)) (sh:did "~a" line) t))
 
-(defun %hands (line)
-  "A write that hands what was written to LINE, which takes it as its one field."
-  (lambda (said) (sh:sh line said) t))
+(defun %hands (&rest words)
+  "A write that hands what was written to a program, as its last argument.
+
+WORDS and not a line: what is written to a device is a value, and a value spliced
+into a line of shell is a value that can say anything the shell can. A sink is
+named by whoever named it and a network by whoever is broadcasting it, and neither
+of them is somebody pine gets to trust."
+  (lambda (said) (apply #'sh:argv (append words (list said))) t))
 
 (defun %default-sink ()
   (getf (find-if (lambda (each) (getf each :default)) (%sinks)) :name))
@@ -60,17 +65,17 @@ else there is to play through"
 (declared:defbacking audio (:needs "wpctl")
   (volume :reads  (%volume)
           :writes (lambda (said)
-                    (sh:sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ ~d%"
-                           (%clamped said))))
+                    (sh:argv "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@"
+                             (format nil "~d%" (%clamped said)))))
   (muted  :reads  (%mutedp)
           :writes (%runs "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"))
-  (sinks  :reads  (%sinks)  :writes (%hands "wpctl set-default ~a"))
-  (sink   :reads  (%default-sink) :writes (%hands "wpctl set-default ~a")))
+  (sinks  :reads  (%sinks)  :writes (%hands "wpctl" "set-default"))
+  (sink   :reads  (%default-sink) :writes (%hands "wpctl" "set-default")))
 
 (declared:defbacking audio (:needs "pamixer")
   (volume :reads  (sh:number-in (sh:sh "pamixer --get-volume"))
           :writes (lambda (said)
-                    (sh:sh "pamixer --set-volume ~d" (%clamped said))))
+                    (sh:argv "pamixer" "--set-volume" (%clamped said))))
   (muted  :reads  (and (search "true" (sh:sh "pamixer --get-mute")) t)
           :writes (%runs "pamixer --toggle-mute")))
 
@@ -93,13 +98,13 @@ else there is to play through"
   (brightness :reads  (%brightness)
               :writes (lambda (said)
                         (when (%backlight)
-                          (sh:sh "brightnessctl --class=backlight set ~d%"
-                                 (max 1 (%clamped said)))))))
+                          (sh:argv "brightnessctl" "--class=backlight" "set"
+                                   (format nil "~d%" (max 1 (%clamped said))))))))
 
 (declared:defbacking screen (:needs "light")
   (brightness :reads  (%brightness)
               :writes (lambda (said)
-                        (sh:sh "light -S ~d" (max 1 (%clamped said))))))
+                        (sh:argv "light" "-S" (max 1 (%clamped said))))))
 
 (declared:defbacking screen ()
   (brightness :reads (%brightness)))
@@ -193,10 +198,12 @@ wants a password and whether it is the one we are on."
   (online :reads (and (search "connected" (sh:sh "nmcli -t -f STATE general")) t))
   (wifi :reads  (%wifi)
         :writes (lambda (said)
-                  "An ssid connects to it. :rescan looks again."
+                  "An ssid connects to it. :rescan looks again. An ssid is a name
+somebody else is broadcasting, so it goes as an argument and never as a word of a
+shell line."
                   (if (eq :rescan said)
-                      (sh:sh "nmcli device wifi rescan")
-                      (sh:sh "nmcli device wifi connect ~s" said))
+                      (sh:argv "nmcli" "device" "wifi" "rescan")
+                      (sh:argv "nmcli" "device" "wifi" "connect" said))
                   t)))
 
 (declared:defbacking net (:needs "ip" :refreshes 10)
@@ -214,8 +221,13 @@ wants a password and whether it is the one we are on."
   (%said-or-nothing (%player player (format nil "metadata ~a" key))))
 
 (defun %tells (player verb)
-  "A write that tells the player to do VERB, whatever was written to it."
-  (lambda (said) (declare (ignore said)) (%player player verb) t))
+  "A write that tells the player to do VERB, whatever was written to it. Told and
+not asked: pressing pause twice is pausing twice."
+  (lambda (said)
+    (declare (ignore said))
+    (apply #'sh:argv "playerctl"
+           (append (when player (list "-p" player)) (list verb)))
+    t))
 
 (declared:defdevice media :describes "what is playing, through mpris")
 
