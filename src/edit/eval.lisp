@@ -1,7 +1,8 @@
 (in-package #:pine/edit)
 
 (defvar *went* nil)
-(defvar *evaluating* nil)
+(defvar *evaluating* (d:table)
+  "The session each document's forms are read and evaluated in, by its name.")
 (defparameter +kinds+ '(:function :macro :generic-function :variable :class))
 (defparameter +delimiters+ (format nil "~c()'`,;\"" #\Newline))
 
@@ -46,27 +47,44 @@
                   (read-from-string token)))
               token))))
 
-(defun %in-string-p (text at)
-  (let ((in nil) (escaped nil) (comment nil))
-    (dotimes (i (min at (length text)) in)
+(defun quoted (text)
+  "A bit per place in TEXT: whether a paren there is inside a string.
+
+Walked once, and the walk is the only one. Asked place by place instead, every ask
+walked the text from the beginning again -- so finding the form before point cost
+the length of the document squared, which on a hundred kilobytes is thousands of
+millions of steps for one C-x C-e.
+
+A comment is followed but not marked: a quote inside one opens no string, and what
+this answers is only whether a place is inside one."
+  (let* ((n (length text))
+         (mask (make-array (1+ n) :element-type 'bit :initial-element 0))
+         (in nil) (escaped nil) (comment nil))
+    (dotimes (i n)
+      (setf (sbit mask i) (if in 1 0))
       (let ((ch (char text i)))
         (cond (escaped (setf escaped nil))
               ((char= ch #\\) (setf escaped t))
               (comment (when (char= ch #\Newline) (setf comment nil)))
               ((char= ch #\") (setf in (not in)))
-              ((and (not in) (char= ch #\;)) (setf comment t)))))))
+              ((and (not in) (char= ch #\;)) (setf comment t)))))
+    (setf (sbit mask n) (if in 1 0))
+    mask))
+
+(defun quotedp (mask at) (plusp (sbit mask (min at (1- (length mask))))))
 
 (defun form-before (text offset)
-  (let ((at (min offset (length text))))
+  (let ((at (min offset (length text)))
+        (mask (quoted text)))
     (loop :while (and (plusp at)
                       (member (char text (1- at)) '(#\Space #\Tab #\Newline)))
           :do (decf at))
     (when (and (plusp at) (char= #\) (char text (1- at)))
-               (not (%in-string-p text (1- at))))
+               (not (quotedp mask (1- at))))
       (let ((depth 0))
         (loop :for i :downfrom (1- at) :to 0
               :for ch := (char text i)
-              :do (unless (%in-string-p text i)
+              :do (unless (quotedp mask i)
                     (case ch
                       (#\) (incf depth))
                       (#\( (decf depth)
@@ -77,17 +95,18 @@
         (when (< from at) (values from at))))))
 
 (defun form-around (text offset)
-  (let ((at (min offset (length text))))
+  (let ((at (min offset (length text)))
+        (mask (quoted text)))
     (let ((from (loop :for i :downfrom (min at (1- (length text))) :to 0
                       :when (and (char= #\( (char text i))
                                  (or (zerop i) (char= #\Newline (char text (1- i))))
-                                 (not (%in-string-p text i)))
+                                 (not (quotedp mask i)))
                         :do (return i))))
       (when from
         (let ((depth 0))
           (loop :for i :from from :below (length text)
                 :for ch := (char text i)
-                :do (unless (%in-string-p text i)
+                :do (unless (quotedp mask i)
                       (case ch
                         (#\( (incf depth))
                         (#\) (decf depth)
@@ -136,11 +155,19 @@ has reached. Two relationships, one protocol."
   (setf (node:contents (%at "was")) name))
 
 (defun evaluating (document)
-  (or *evaluating*
-      (setf *evaluating*
-            (session:open-session :name (node:name document)
-                                  :package (text:package-of document)
-                                  :readtable (text:readtable-of document)))))
+  "The session this document's forms are evaluated in.
+
+One per document, and what it reads in is what the document says it is written in,
+asked again each time because the document may have said something else since. One
+session for the image took whichever document asked first and kept its package for
+ever, so M-: in a second file read its names in the first file's."
+  (let* ((name (node:name document))
+         (s (or (d:lookup (d:all *evaluating*) name)
+                (d:claim *evaluating* name
+                         (session:open-session :name name)))))
+    (setf (session:package-of s) (text:package-of document)
+          (session:readtable-of s) (text:readtable-of document))
+    s))
 
 (defun %there (document text)
   "Evaluate in the image the target names, and say what it said the way a session

@@ -74,6 +74,20 @@ colon or two, and the part after them. Nothing when it is a plain name."
                           (string-equal up name :end2 (length up))))
                    names)))
 
+(defun %names-in (where &key externals)
+  "Every name in WHERE, downcased, each of them once.
+
+A hash table because it is scratch this call owns and throws away, which is what
+one is for. Collected with PUSHNEW instead, every name was compared against every
+name already seen -- over a package that inherits Common Lisp that is hundreds of
+thousands of string comparisons, for one keystroke of a completion."
+  (let ((seen (make-hash-table :test 'equal)))
+    (flet ((note (s) (setf (gethash (string-downcase (symbol-name s)) seen) t)))
+      (if externals
+          (do-external-symbols (s where) (note s))
+          (do-symbols (s where) (note s))))
+    (loop :for name :being :the :hash-keys :of seen :collect name)))
+
 (defmethod mode:complete ((m mode:lisp) document prefix)
   "Every name that starts this way. A name written with its package completes in
 that package -- pine's own source is written that way, so a completion that only
@@ -84,24 +98,14 @@ knew the document's package would be no use in it."
       (cond
         (qualified
          (destructuring-bind (where twice rest) qualified
-           (let ((said (package-name where))
-                 (seen nil))
-             (if twice
-                 (do-symbols (s where) (pushnew s seen))
-                 (do-external-symbols (s where) (pushnew s seen)))
+           (let ((said (package-name where)))
              (setf out
                    (mapcar (lambda (name)
                              (format nil "~(~a~a~a~)" said (if twice "::" ":") name))
-                           (%matching rest
-                                      (mapcar (lambda (s)
-                                                (string-downcase (symbol-name s)))
-                                              seen)))))))
-        (t
-         (let ((seen nil))
-           (do-symbols (s (text:package-of document))
-             (pushnew (string-downcase (symbol-name s)) seen :test #'string=))
-           (setf out (%matching prefix seen)))))
-      (sort (remove-duplicates out :test #'string=) #'string<))))
+                           (%matching rest (%names-in where :externals
+                                                      (not twice))))))))
+        (t (setf out (%matching prefix (%names-in (text:package-of document))))))
+      (sort out #'string<))))
 
 (defmethod arglist ((m mode:lisp) document &optional of)
   (multiple-value-bind (s token) (symbol-at document of)

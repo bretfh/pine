@@ -131,11 +131,21 @@ whoever wants them in an order sorts them there."
   `(command ,name (lambda ,lambda-list ,@body) ,@options :from ,(%home)))
 
 (defun word (x)
+  "What one argument at the prompt means.
+
+A bare name is the word it spells, so (use text) says text and does not look for
+a variable called text. That is what makes a command line a command line.
+
+Anything written as a form is lisp and is worked out. /a/b is a form -- the reader
+makes one -- and handing the form over rather than the place it spells is what
+made (cat /dev/audio/volume) break at the prompt while (read /dev/audio/volume)
+answered, which is the one thing the four verbs are supposed not to do."
   (cond ((null x) x)
         ((eq x t) x)
         ((keywordp x) x)
         ((symbolp x) (string-downcase (symbol-name x)))
         ((and (consp x) (eq 'quote (first x))) (second x))
+        ((consp x) (eval x))
         (t x)))
 
 (defgeneric run (command &optional arguments)

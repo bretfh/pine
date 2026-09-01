@@ -56,8 +56,11 @@ going, and where it started so quitting can go back."))
                    (%land s wrap-line wrap-col))))))
     (%show s)))
 
-(defun %grow (s ch)
-  (setf (needle s) (concatenate 'string (needle s) (string ch))
+(defun %grow (s said)
+  "Add what the key types to what is being looked for. What it types and not the
+name it goes by: SPC is a key called SPC and what it puts in is a space, so taking
+the first letter of the name searched for an S."
+  (setf (needle s) (concatenate 'string (needle s) said)
         (wrapped s) nil)
   (%seek s)
   :again)
@@ -104,7 +107,7 @@ going, and where it started so quitting can go back."))
        (took s)
        nil)
       ((ui:key= k (ui:parse "DEL")) (%shrink s))
-      ((ui:selfp k) (%grow s (char (ui:sym k) 0)))
+      ((ui:selfp k) (%grow s (ui:typed k)))
       (t (took s) (dispatch k) nil))))
 
 (defun start (&key (forward t))
@@ -139,21 +142,24 @@ keeps where it landed and C-g goes back."
      :on '(text "M-%"))
   (let ((document (text:current))
         (from (princ-to-string from)))
-    (ask (format nil "Replace ~a with: " from)
-                :then (lambda (to)
-                        (let ((n 0))
-                          (loop
-                            (multiple-value-bind (line col)
-                                (text:find-in (text:lines document) from
-                                              (text:at-line document)
-                                              (text:at-col document))
-                              (unless line (return))
-                              (text:goto document line col)
-                              (text:delete-region document line col line
+    (if (zerop (length from))
+        (log:note "there is nothing to replace")
+        (progn
+          (ask (format nil "Replace ~a with: " from)
+               :then (lambda (to)
+                       (let ((n 0))
+                         (loop
+                           (multiple-value-bind (line col)
+                               (text:find-in (text:lines document) from
+                                             (text:at-line document)
+                                             (text:at-col document))
+                             (unless line (return))
+                             (text:goto document line col)
+                             (text:delete-region document line col line
                                                  (+ col (length from)))
-                              (text:insert document to)
-                              (incf n)))
-                          (log:note "replaced ~d" n)
-                          n)))
-    :asking))
+                             (text:insert document to)
+                             (incf n)))
+                         (log:note "replaced ~d" n)
+                         n)))
+          :asking))))
 
