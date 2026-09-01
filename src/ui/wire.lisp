@@ -57,26 +57,35 @@ middle and end in slots of its own, and they cross the way a part does."
                                                    :pine/ui)
        (consp (rest v)) (listp (second v))))
 
-(defun to-wire (widget &key on-action)
-  "A widget as plain data. ON-ACTION, given a closure, answers an id to put in its
-place."
+(defun to-wire (widget &key on-action (at nil))
+  "A widget as plain data.
+
+ON-ACTION is given the closure, the widget holding it and the slot it was in, and
+answers the id to put in its place. All three, because what a closure crosses as
+has to say which widget and which of its slots -- one widget may carry both a
+click and a change.
+
+AT is where this widget sits, root first, as the numbers to walk down by. It is
+what identifies one that stands for nothing of its own."
   (when widget
     (let ((props nil))
       (dolist (spec (%known (class-of widget)))
         (destructuring-bind (key reader default) spec
           (let ((v (funcall reader widget)))
             (when (member key +thunks+)
-              (setf v (and v on-action (funcall on-action v))))
+              (setf v (and v on-action (funcall on-action v widget key at))))
             (when (typep v 'widget)
-              (setf v (to-wire v :on-action on-action)))
+              (setf v (to-wire v :on-action on-action :at at)))
             (unless (equal v default) (setf props (list* key v props))))))
       (when (placed widget)
         (setf props (list* :rect (list (top widget) (left widget)
                                        (bottom widget) (right widget))
                            props)))
       (list* (tag widget) (%ordered props)
-             (mapcar (lambda (p) (to-wire p :on-action on-action))
-                     (parts widget))))))
+             (loop :for p :in (parts widget)
+                   :for i :from 0
+                   :collect (to-wire p :on-action on-action
+                                       :at (append at (list i))))))))
 
 (defun from-wire (form &key on-action)
   "Build a widget back from wire FORM, restoring the rect it was arranged at.

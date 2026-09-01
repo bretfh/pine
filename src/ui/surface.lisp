@@ -1,8 +1,12 @@
 (in-package #:pine/ui)
 
 (defvar *acts* (d:table)
-  "What clicking a widget means, by the id it crossed the wire as. A closure
-cannot cross, so what it meant stays here.")
+  "What clicking a widget means: by surface, and under that by the id it crossed
+the wire as. A closure cannot cross, so what it meant stays here.
+
+By surface, because a surface worked out again is a fresh answer to what is on it,
+and the ids that came before are no longer anything. The whole of one surface's is
+replaced in one act, so what is not in the new answer is gone.")
 
 (defclass role () ()
   (:documentation "Where a surface of this kind goes, and whether it is up already.
@@ -112,7 +116,32 @@ what the surface builds follows it like anything else it read."))
   (let ((n (tree:at (root) (princ-to-string name))))
     (and (typep n 'surface) n)))
 
-(defun %id (name at) (format nil "~a/~d" name at))
+(defgeneric spelled-place (it)
+  (:documentation "What a widget stands for, as the one word it crosses as.")
+  (:method ((it path:path)) (path:whole it))
+  (:method ((it node:node)) (node:full-name it))
+  (:method (it) (princ-to-string it)))
+
+(defun %id (widget slot at)
+  "What one closure crosses as.
+
+What the widget stands for, where it stands for anything. OF is the path a row was
+built for and the place a field is over -- /proc/editor, /dev/audio/sink -- and it
+does not move when the list gains a row above it.
+
+Where it sits otherwise, which is the answer for the ones that stand for nothing:
+a bar's mute button is the third thing in the second row, and for one of those the
+shape is the identity.
+
+Counted instead -- one number over the whole walk -- every id after an inserted
+row was the id of a different widget, so a click that crossed during a repaint ran
+whatever had slid into the place it was looking at."
+  (format nil "~a/~(~a~)"
+          (let ((stands-for (of widget)))
+            (if stands-for
+                (spelled-place stands-for)
+                (format nil "@~{~d~^.~}" at)))
+          slot))
 
 (defun %plainly (said)
   "A PLACING as a plist. What crosses a wire is plain lisp data: the far side may
@@ -120,29 +149,35 @@ be another image, and what it reads has to be something a reader can read."
   (list :edges (edges-of said) :wide (wide-of said) :tall (tall-of said)
         :reserve (reserve-of said) :margin (margin-of said)))
 
-(defun act (said)
+(defun act (name said)
   "Do what the widget that crossed as this id meant, with whatever the far side
 says it was given. Nothing where it means nothing, because a pine showing this one
 can be a frame behind."
   (let* ((all (alexandria:ensure-list said))
          (id (princ-to-string (first all)))
-         (thunk (d:lookup (d:all *acts*) id)))
+         (thunk (d:lookup (d:lookup (d:all *acts*) name) id)))
     (when thunk
       (fault:attempt (lambda () (apply thunk (rest all)))
                      (format nil "the widget at ~a" id)))))
 
 (defun %wire (s)
   "This surface's tree written down, with every closure in it left here under the
-id it crossed as."
+id it crossed as.
+
+What this surface meant is replaced whole. Written one id at a time over what was
+there, the closures of every row a listing had ever shown stayed for as long as
+the image ran, and one whose row had gone still answered."
   (let ((name (node:name s))
-        (index -1)
+        (mine (d:no-map))
         (tree (node:contents s)))
     (when tree
-      (to-wire tree
-                    :on-action (lambda (thunk)
-                                 (let ((id (%id name (incf index))))
-                                   (d:keep! *acts* id thunk)
-                                   id))))))
+      (let ((said (to-wire tree
+                           :on-action (lambda (thunk widget slot at)
+                                        (let ((id (%id widget slot at)))
+                                          (setf mine (d:with mine id thunk))
+                                          id)))))
+        (d:keep! *acts* name mine)
+        said))))
 
 (defgeneric declared (surface)
   (:documentation "Say a surface was declared. Whatever paints surfaces puts this
@@ -185,7 +220,7 @@ disagree about what leaving it out meant."
                     :describes "where the role says this goes")
                    s))
     (node:attach (node:answers "click"
-                             :writes #'act
+                             :writes (lambda (said) (act (node:name s) said))
                              :describes "what another pine says was clicked")
                  s)
     (system:owned (list :surface (node:name s)))
@@ -195,14 +230,10 @@ disagree about what leaving it out meant."
 (defun forget-surface (name)
   "Take a surface off, and let go the closures its widgets crossed as.
 
-Erasing the node is not the whole of it. What a widget meant stays in *ACTS* under
-the id it crossed as, so a surface that has gone leaves closures nothing can reach
-and a click on one of its old ids still runs what it used to mean."
-  (let ((under (concatenate 'string (princ-to-string name) "/")))
-    (dolist (id (d:keys (d:all *acts*)))
-      (when (and (> (length id) (length under))
-                 (string= under id :end2 (length under)))
-        (d:drop! *acts* id))))
+Erasing the node is not the whole of it. What a widget meant stays in *ACTS*, so a
+surface that has gone would leave closures nothing can reach, and a click on one of
+its old ids would still run what it used to mean."
+  (d:drop! *acts* (princ-to-string name))
   (tree:erase (format nil "/surface/~a" name))
   name)
 

@@ -166,3 +166,67 @@ listed one node's children. The matcher was written and nothing called it."
           "one name each, and not what is beside them"))
     (is (path:patternp (path:path "/dev/*/volume")))
     (is (not (path:patternp (path:path "/dev/audio/volume"))))))
+
+(test the-part-on-top-is-the-part-a-click-lands-on
+  "A stack paints its parts in the order they were written and the last is on top.
+Answering with the first that covered a place gave the click to what was behind."
+  (let* ((under (ui:button :class "under" :click "under" (ui:label "xxxx")))
+         (over (ui:button :class "over" :click "over" (ui:label "yyyy")))
+         (both (ui:stack under over))
+         (g (ui:make-grid 8 2)))
+    (ui:with-pass
+      (ui:dress both)
+      (ui:measure both g 8 2)
+      (ui:arrange both g 0 0 8 2))
+    (is (eq over (ui:under both 0 1)) "the one drawn last takes it")))
+
+(defun %ids-in (form)
+  "Every id a wire form carries, in the order they appear."
+  (let (out)
+    (labels ((walk (it)
+               (when (consp it)
+                 (destructuring-bind (tag props &rest parts) it
+                   (declare (ignore tag))
+                   (loop :for (k v) :on props :by #'cddr
+                         :when (and (member k '(:click :changed)) (stringp v))
+                           :do (push v out))
+                   (mapc #'walk parts)))))
+      (walk form))
+    (nreverse out)))
+
+(test a-widget-crosses-as-what-it-stands-for
+  "A click that crossed during a repaint has to mean the widget it was on.
+Numbered by counting the walk, every id after a row that went was the id of a
+different widget -- so a listing that lost a row ran the wrong row's action for
+every row below it."
+  (with-tree
+    (setf (node:contents (tree:ensure "/probe/rows/beta")) 2)
+    (setf (node:contents (tree:ensure "/probe/rows/gamma")) 3)
+    (let ((s (ui:make-surface
+              "probe-ids"
+              (lambda ()
+                (ui:rows (path:path "/probe/rows")
+                         (lambda () (ui:button :click (ui:here)
+                                               (ui:label "x"))))))))
+      (is (equal '("/probe/rows/beta/click" "/probe/rows/gamma/click")
+                 (%ids-in (node:contents (tree:at "/surface/probe-ids/wire"))))
+          "an id says what its row is for, not where it fell in the walk")
+      (tree:erase "/probe/rows/beta")
+      (is (equal '("/probe/rows/gamma/click")
+                 (%ids-in (node:contents (tree:at "/surface/probe-ids/wire"))))
+          "and the row that stayed keeps the id it had when the one above went")
+      (pine/ui::forget-surface (node:name s)))))
+
+(test a-widget-that-stands-for-nothing-crosses-as-where-it-sits
+  "A bar's mute button stands for nothing of its own, so for it the shape is the
+identity: the second thing in the first row."
+  (with-tree
+    (let ((s (ui:make-surface
+              "probe-shape"
+              (lambda ()
+                (ui:column (ui:row (ui:label "x")
+                                   (ui:button :click "mute" (ui:label "m"))))))))
+      (is (equal '("@0.1/click")
+                 (%ids-in (node:contents (tree:at "/surface/probe-shape/wire"))))
+          "where it sits, root first")
+      (pine/ui::forget-surface (node:name s)))))
