@@ -12,6 +12,21 @@
   "The socket this pine is answering on, or nothing.")
 (defparameter +backlog+ 16)
 
+(defun %ours (where)
+  "Make WHERE, and make it nobody else's.
+
+The runtime directory is already the user's own and nobody else's. /tmp is not:
+the name is one anybody can work out, so a directory left at whatever the umask
+said is one somebody else may have made first and may still own. Everything pine
+answers rests on who can reach the socket, so the directory it sits in is checked
+rather than assumed."
+  (ensure-directories-exist where)
+  (let ((it (sb-posix:stat where)))
+    (unless (= (sb-posix:stat-uid it) (sb-posix:getuid))
+      (error "~a is not yours; pine will not answer in it." where))
+    (sb-posix:chmod where #o700))
+  where)
+
 (defun where (&optional (name "pine"))
   "The path this pine answers on. Under the runtime directory, which is the
 user's own and nobody else's: what can be asked here is everything a lisp running
@@ -23,7 +38,7 @@ environment is the whole of pointing them at each other."
   (or (uiop:getenv "PINE_SOCKET")
       (let ((run (or (uiop:getenv "XDG_RUNTIME_DIR")
                      (format nil "/tmp/pine-~a" (uiop:getenv "USER")))))
-        (ensure-directories-exist (format nil "~a/pine/" run))
+        (%ours (format nil "~a/pine/" run))
         (format nil "~a/pine/~a.sock" run name))))
 
 (defclass connection ()
@@ -58,7 +73,7 @@ in between: that is what happens, not something that broke."
 (defun %talk (c)
   "Answer this caller until they go. Their watches go when they do."
   (unwind-protect
-       (peer:telling ((lambda (said) (%say c (wire:evented said))) (watching c))
+       (peer:telling ((lambda (said) (%say c (wire:evented said))) (watching c) t)
          (wire:serve (stream-of c) #'peer:received
                      (lambda (text) (%say c text))))
     (%closed c)))
@@ -93,7 +108,9 @@ needs no lisp on the other end."
         (socket (make-instance 'sb-bsd-sockets:local-socket :type :stream)))
     (fault:or-nothing "nothing may be there to take away"
       (delete-file path))
-    (sb-bsd-sockets:socket-bind socket path)
+    (let ((was (sb-posix:umask #o177)))
+      (unwind-protect (sb-bsd-sockets:socket-bind socket path)
+        (sb-posix:umask was)))
     (sb-bsd-sockets:socket-listen socket +backlog+)
     (sb-posix:chmod path #o600)
     (setf *listening* (list socket path))

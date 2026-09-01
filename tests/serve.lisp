@@ -130,3 +130,31 @@ anything that is not an actor."
       (pine::write "/probe/watched" "after")
       (is (until (lambda () (= 1 (length b)))) "the one still there hears it")
       (is (null a) "and the one that left hears nothing"))))
+
+(test a-way-in-that-nobody-asked-for-does-not-evaluate
+  "A read and a write of a place are what the namespace is for, and every way in
+answers them. A form is not: EVAL is the whole image, and a way in that gets it
+without anybody having decided so is a way in that gives it away.
+
+Off by default and turned on by the transport, so a way in added later that has
+not thought about this answers reads and writes and no more -- rather than the
+other way round, which is what a daemon that opened a port for you was."
+  (with-tree
+    (booted)
+    (is (eq :no (first (pine/run/peer::received (list :evaluate '(+ 2 2)))))
+        "nobody said this way in was asked for")
+    (pine/run/peer:telling (nil nil t)
+      (is (eq :ok (first (pine/run/peer::received (list :evaluate '(+ 2 2)))))
+          "and a transport that says so is answered"))
+    (pine/run/peer:telling (nil nil t)
+      (let ((pine/run/peer:*evaluates* nil))
+        (is (eq :no (first (pine/run/peer::received (list :evaluate '(+ 2 2)))))
+            "and one that says so is still refused where it was turned off")))))
+
+(test a-way-in-that-nobody-asked-for-still-reads-and-writes
+  (with-tree
+    (booted)
+    (pine::write "/probe/plain" 1)
+    (is (eq :ok (first (pine/run/peer::received (list :contents "/probe/plain")))))
+    (is (eq :ok (first (pine/run/peer::received (list :write "/probe/plain" 2)))))
+    (is (eql 2 (pine::read "/probe/plain")))))

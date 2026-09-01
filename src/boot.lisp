@@ -167,15 +167,21 @@ answered with an error."
     (unwind-protect (session:interact s)
       (stop))))
 
-(defun daemon (&key (store (store-file)) (remoting actors:*port*)
-                    (config (config-file)))
+(defun daemon (&key (store (store-file)) remoting (config (config-file)))
   "A pine other images talk to. The store is opened after the config: a surface a
 config declares takes the name it is declared under, so a panel restored before the
 config would be the value node the surface then replaced.
 
 Peers are answered last of all. What crosses that way is a read, a write and work
 to do in this image, and opening it before the config has been read is answering
-for a pine the person running it has not finished describing."
+for a pine the person running it has not finished describing.
+
+REMOTING is a port and it is off unless somebody says one. A socket under the
+runtime directory can be opened by nobody who could not already start a lisp as
+this user; a port on the loopback carries no name at all, so anything on the
+machine that can open a socket could read every file, write every device and run
+a line of shell through the namespace. That is a thing to ask for, in a config,
+and not a thing a daemon does because it started."
   (start :remoting remoting)
   (command:defcommand "quit" () (:describes "stop this pine")
                       (quit))
@@ -187,7 +193,7 @@ for a pine the person running it has not finished describing."
     (store:open-store store)
     (log:note "~d node~:p came back" (store:restore store:*store*))
     (store:keeping))
-  (peer:serve)
+  (when (actors:remoting) (peer:serve))
   (fault:attempt (lambda () (pine/serve/socket:open-socket))
                  "answering on a socket")
   (fault:attempt (lambda () (opening :display)) "opening the display")

@@ -1,19 +1,10 @@
 (defpackage #:pine/serve/wire
   (:use #:cl)
-  (:local-nicknames (#:json #:pine/serve/json) (#:said #:pine/said))
+  (:local-nicknames (#:json #:pine/serve/json) (#:said #:pine/said)
+                    (#:peer #:pine/run/peer))
   (:export
-   #:asked #:answered #:evented #:serve #:request #:answer #:eventp
-   #:*evaluates*))
+   #:asked #:answered #:evented #:serve #:request #:answer #:eventp))
 (in-package #:pine/serve/wire)
-
-(defvar *evaluates* t
-  "Whether this way in will evaluate a form.
-
-On, because the way in is a socket under the user's own runtime directory with
-the user's own permissions: anything that can reach it can already run a lisp as
-this user, so refusing here would protect nothing and would take the one verb a
-person at a terminal most wants. A pine that answers anywhere less private than
-that turns this off.")
 
 (defparameter +doing+
   '(("read"  . :contents)
@@ -46,7 +37,7 @@ and events together and whoever asked has to be able to tell which is which."
          (kind (cdr (assoc doing +doing+ :test #'equal))))
     (values
      (cond ((null doing) (list :no "a line says what to do"))
-           ((and (equal doing "eval") (not *evaluates*))
+           ((and (equal doing "eval") (not (peer:evaluatingp)))
             (list :no "this way in does not evaluate"))
            ((null kind) (list :no (format nil "~a is not something to do; there ~
                                               is ~{~a~^, ~}"

@@ -7,10 +7,34 @@
                     (#:fault #:pine/run/fault) (#:said #:pine/said)
                     (#:commit #:pine/fs/commit) (#:log #:pine/fs/log))
   (:export
-   #:reach #:serve #:named #:received #:telling #:forget-watches #:watches))
+   #:reach #:serve #:named #:received #:telling #:forget-watches #:watches
+   #:evaluatingp #:*trusted* #:*evaluates*))
 (in-package #:pine/run/peer)
 
 (defvar *timeout* 30)
+(defvar *trusted* nil
+  "Whether this way in is one somebody asked for.
+
+Off unless a transport says otherwise, and a transport says so by existing at all:
+the socket sits under the runtime directory and cannot be opened by anybody who
+could not already start a lisp as this user, and a port is one nothing opens
+unless the person running pine wrote it down. Both are a decision somebody made.
+
+The default is the point. A way in added later that has not thought about this
+gets a namespace it can read and write, and not a lisp it can evaluate in --
+rather than the other way round, which is what a daemon that turned a port on for
+you was.")
+(defvar *evaluates* t
+  "Whether a way in this image trusts may be given a form to evaluate.
+
+On, because the other end of one could already run a lisp as this user: refusing
+would protect nothing and would take the one verb a person at a terminal most
+wants. A pine answering somewhere it is less sure of turns this off and still
+answers reads and writes.
+
+Here and not in the file that reads a line off a socket, because there is more
+than one way in and what may be asked must not depend on which one somebody
+used.")
 (defvar *asked* (d:table)
   "The faults this image is standing in on somebody else's behalf, by token.")
 (defvar *counter* 0)
@@ -165,12 +189,21 @@ job: stopping it is how you stop listening."
   (let ((to (sento.remoting:make-remote-ref (actors:actors) uri)))
     (lambda (said) (sento.actor:tell to said))))
 
-(defmacro telling ((how &optional watches) &body body)
+(defmacro telling ((how &optional watches trusted) &body body)
   "Answer with HOW as the way back to whoever is asking, collecting the watches
-they make into WATCHES. What a transport binds around its dispatch."
+they make into WATCHES. What a transport binds around its dispatch.
+
+TRUSTED is the transport saying whether the other end carries this user's own
+name. It is said here, where everything else about the connection is said, so
+that what may be asked is one question with one answer however the words arrived."
   `(let ((*telling* ,how)
-         (*watching* (or ,watches *watching*)))
+         (*watching* (or ,watches *watching*))
+         (*trusted* ,trusted))
      ,@body))
+
+(defun evaluatingp ()
+  "Whether this way in may be given a form to evaluate."
+  (and *trusted* *evaluates*))
 
 (defun watches () (and *watching* (cdr *watching*)))
 
@@ -236,7 +269,8 @@ with fset loaded, and may just as well be a shell."
         (list :no (format nil "nothing at ~a" where))
         (case (first message)
           (:contents (%said n))
-          (:write    (setf (node:contents n) (said:took (second message)))
+          (:write    (setf (node:contents n)
+                           (node:as-value (said:took (second message))))
                      (%said n))
           (:verb     (node:verb n (second message)
                                 (mapcar #'said:took (cddr message)))
@@ -246,34 +280,45 @@ with fset loaded, and may just as well be a shell."
 
 (defun %work (form)
   "Evaluate FORM on a thread that stands in whatever breaks, so the restarts it
-offers are the ones still there, and answer as soon as it has a value or a fault."
-  (let ((answered nil)
-        (said (make-string-output-stream))
-        (was (fault:standing)))
+offers are the ones still there, and answer as soon as it has a value or a fault.
+
+Which fault is this work's is said by the work, into a cell this call owns.
+Watched for instead by taking whatever was standing that was not standing before,
+the answer was whatever else happened to break on another thread while this ran.
+
+One that neither answers nor breaks in time says so. Answering :ANSWERED with
+nothing in it said the form had answered nothing, which is a thing a form can
+honestly do -- so a call that had simply not finished came back looking like one
+that had."
+  (let ((mine (list nil))
+        (done (list nil))
+        (answered nil)
+        (said (make-string-output-stream)))
     (actors:blocking
      "answering a peer"
      (lambda ()
        (unwind-protect
-            (let ((*standard-output* said))
+            (let ((*standard-output* said)
+                  (fault:*keeping* mine))
               (fault:with-debugger
                 (fault:attempt
-                 (lambda () (setf answered (multiple-value-list (eval form))))
+                 (lambda () (setf answered (multiple-value-list (eval form))
+                                  (car done) t))
                  "answering a peer")))
          (fault:changed))))
-    (let ((broke (fault:wait-until
-                  (lambda ()
-                    (or (find-if-not (lambda (f) (member f was)) (fault:standing))
-                        (and answered :answered)))
+    (let ((state (fault:wait-until
+                  (lambda () (or (car mine) (and (car done) :answered)))
                   *timeout*)))
-      (when (eq broke :answered) (setf broke nil))
-      (cond (broke
-             (let ((token (d:swap *counter* #'1+)))
-               (d:keep! *asked* token broke)
-               (list :ok :said-broke (princ-to-string (fault:condition-of broke))
-                     :offers (fault:offers broke) :token token
-                     :said (get-output-stream-string said))))
-            (t (list :ok :answered (mapcar #'said:said answered)
-                     :said (get-output-stream-string said)))))))
+      (cond ((null state)
+             (list :no (format nil "no answer within ~d second~:p" *timeout*)))
+            ((eq state :answered)
+             (list :ok :answered (mapcar #'said:said answered)
+                   :said (get-output-stream-string said)))
+            (t (let ((token (d:swap *counter* #'1+)))
+                 (d:keep! *asked* token state)
+                 (list :ok :said-broke (princ-to-string (fault:condition-of state))
+                       :offers (fault:offers state) :token token
+                       :said (get-output-stream-string said))))))))
 
 (defun received (message)
   "What somebody asking gets back. Whatever breaks in here is answered rather than
@@ -301,10 +346,14 @@ half-done line."
 (defun %answer (message)
   (case (first message)
     (:ping (list :ok :pong))
-    (:evaluate (%work (second message)))
+    (:evaluate (if (evaluatingp)
+                   (%work (second message))
+                   (list :no "this way in does not evaluate")))
     (:watch (%watching (second message) (third message)))
     (:done (%done (second message)))
-    (:take (let ((f (d:lookup (d:all *asked*) (third message))))
+    (:take (let* ((token (third message))
+                  (f (d:lookup (d:all *asked*) token)))
+             (d:drop! *asked* token)
              (list :ok (and f (fault:take f (second message))))))
     ((:contents :write :verb :nodes)
      (%place (second message) (list* (first message) (cddr message))))
@@ -313,11 +362,16 @@ half-done line."
 (defun serve (&key (name "tree"))
   "Answer another pine's questions about this one: reads and writes of places, and
 work to do in this image. Pinned, because a fault it stands in would otherwise take
-a shared worker with it."
+a shared worker with it.
+
+Trusted, because there is no port to reach this on until somebody asked for one.
+Opening it is the decision; this is only where the decision is carried."
   (let ((j (make-instance 'job:actor :name name :on-fault :leave
                                      :dispatcher :pinned
                                      :describes "what another pine may ask here"
-                                     :receive #'received)))
+                                     :receive (lambda (message)
+                                                (telling (nil nil t)
+                                                  (received message))))))
     (job:start j)
     (log:note "answering peers at ~a"
               (%uri actors:*host* (or (actors:remoting) 0) name))
