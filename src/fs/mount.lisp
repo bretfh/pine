@@ -44,11 +44,22 @@ another machine. The method differs; nothing above it does."))
         (subseq text 0 (read-sequence text in))))))
 
 (defmethod (setf node:contents) (value (n file))
-  (with-open-file (out (truename-of n) :direction :output
-                                       :if-exists :supersede
-                                       :if-does-not-exist :create
-                                       :external-format :utf-8)
-    (write-string (princ-to-string value) out))
+  "Write the file, beside it and then over it.
+
+A stream opened on the file itself is a file that says nothing from the moment it
+opens until the moment it closes, and one whose write did not finish is a file
+that is gone: SUPERSEDE deletes what it was making and does not put back what was
+there. Measured, not assumed -- a write that threw left no file at all.
+
+Staged, the name answers either the whole of what was written or exactly what it
+held before, and never anything in between. That is what saving a document has to
+be: the thing being written over is the only copy."
+  (uiop:with-staging-pathname (staged (truename-of n))
+    (with-open-file (out staged :direction :output
+                                :if-exists :supersede
+                                :if-does-not-exist :create
+                                :external-format :utf-8)
+      (write-string (princ-to-string value) out)))
   value)
 
 (defun %entries (where)
