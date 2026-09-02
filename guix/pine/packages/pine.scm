@@ -90,20 +90,20 @@
                 (substitute* "vt/pty.lisp"
                   (("\"libpine-pty\"")
                    (string-append "\"" #$output "/lib/libpine-pty\"")))
-                (substitute* "src/text/ts/runtime.lisp"
+                (substitute* "src/systems/text/ts/runtime.lisp"
                   (("\"libtree-sitter\"")
                    (string-append "\"" (found "/lib/libtree-sitter.so") "\"")))
-                (substitute* "src/text/ts/lang/pine.lisp"
+                (substitute* "src/systems/text/ts/lang/pine.lisp"
                   (("\"libtree-sitter-pine\"")
                    (string-append "\"" #$output
                                   "/lib/tree-sitter/libtree-sitter-pine\"")))
-                (substitute* "src/text/ts/lang/commonlisp.lisp"
+                (substitute* "src/systems/text/ts/lang/commonlisp.lisp"
                   (("\"libtree-sitter-commonlisp\"")
                    (string-append
                     "\""
                     (found "/lib/tree-sitter/libtree-sitter-commonlisp.so")
                     "\"")))
-                (substitute* "src/text/ts/lang/scheme.lisp"
+                (substitute* "src/systems/text/ts/lang/scheme.lisp"
                   (("\"libtree-sitter-scheme\"")
                    (string-append
                     "\""

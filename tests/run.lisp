@@ -367,7 +367,7 @@ not show what somebody had just typed."
 are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
-           (n (node:attach (node:answers "coll" :reads (lambda () (d:map :a 1)))
+           (n (node:attach (make-instance 'node:place :name "coll" :reads (lambda () (d:map :a 1)))
                            (tree:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -380,7 +380,7 @@ are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
            (which (list (d:map :a 1)))
-           (n (node:attach (node:answers "coll" :reads (lambda () (first which)))
+           (n (node:attach (make-instance 'node:place :name "coll" :reads (lambda () (first which)))
                            (tree:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -465,7 +465,7 @@ image, and it is DERIVE :IN."
       (job:supervise kid)
       (job:start kid)
       (unwind-protect
-           (let ((n (node:derive "sum" '(+ 20 22) :in kid)))
+           (let ((n (make-instance 'node:derived :name "sum" :reads '(+ 20 22) :in kid)))
              (node:attach n (tree:root))
              (is (eql 42 (node:contents n))
                  "worked out over there, and what came back is a value")

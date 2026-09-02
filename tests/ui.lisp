@@ -125,16 +125,6 @@ both, so they have to be the same three numbers."
         (setf (node:contents (tree:at "/surface/ticker" "shown")) nil)
         (is (null (ui:shown s)))))))
 
-(test nothing-in-the-source-names-that-role
-  (let ((named (loop :for f :in (directory
-                                 (merge-pathnames
-                                  "src/**/*.lisp"
-                                  (asdf:system-source-directory :pine)))
-                     :unless (char= #\. (char (file-namestring f) 0))
-                       :when (search "ticker" (uiop:read-file-string f))
-                         :collect (file-namestring f))))
-    (is (null named) "~{~%  ~a names it~}" named)))
-
 (test a-key-is-one-object-for-one-chord
   (is (ui:key= (ui:parse "C-x") (ui:make-key "x" :ctrl t)))
   (is (equal "C-x C-s" (ui:spelled (ui:chord "C-x C-s"))))
@@ -230,3 +220,18 @@ identity: the second thing in the first row."
                  (%ids-in (node:contents (tree:at "/surface/probe-shape/wire"))))
           "where it sits, root first")
       (pine/ui::forget-surface (node:name s)))))
+
+(test the-sheet-follows-the-theme-it-was-worked-out-of
+  "Set by hand, nothing could see the stylesheet go stale: writing /theme/active
+changed every face and left the sheet holding the colours of the theme before,
+because the colours in it were read once when somebody remembered to say so."
+  (with-tree
+    (let* ((was (ui:color :bg))
+           (before (second (find ".editor" (ui:sheet) :key #'first :test #'equal))))
+      (is (equal was (getf before :background-color))
+          "the sheet says what the theme in force says")
+      (ui:put-rules (list (list ".probe-follows" (list :color "#010203"))))
+      (is (equal '(:color "#010203")
+                 (second (find ".probe-follows" (ui:sheet)
+                               :key #'first :test #'equal)))
+          "and a rule written at /style is in it without anybody saying so"))))

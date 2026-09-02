@@ -2,7 +2,7 @@
                 :description "What a value is, and how one is replaced"
                 :depends-on (#:fset)
                 :serial t
-                :pathname "src/"
+                :pathname "src/kernel/value/"
                 :components ((:file "data") (:file "said")))
 
 (asdf:defsystem #:pine/place
@@ -11,7 +11,7 @@ it says and what outlives the image"
                 :depends-on (#:pine/value #:alexandria #:named-readtables #:sqlite
                              #:bordeaux-threads #:uiop)
                 :serial t
-                :pathname "src/fs/"
+                :pathname "src/kernel/fs/"
                 :components ((:file "commit")
                              (:file "node") (:file "attach")
                              (:file "graph") (:file "place")
@@ -26,47 +26,61 @@ and other images"
                              #:usocket #:cffi #:cffi-libffi #:sb-posix
                              #:sb-introspect #:uiop)
                 :serial t
-                :pathname "src/run/"
+                :pathname "src/kernel/run/"
                 :components ((:file "fault") (:file "libs") (:file "meter")
                              (:file "actors") (:file "job") (:file "proc")
                              (:file "watch")
                              (:file "command") (:file "image") (:file "peer")
                              (:file "session") (:file "system")))
 
-(asdf:defsystem #:pine/ui
-                :description "Widgets, what they are painted with, and the surfaces
-they are declared on"
-                :depends-on (#:pine/run #:closer-mop #:alexandria #:uiop)
+(asdf:defsystem #:pine/serve
+                :description "The wire: the four verbs as lines and as json, and the
+socket they are answered on"
+                :depends-on (#:pine/run #:com.inuoe.jzon #:sb-bsd-sockets)
                 :serial t
-                :pathname "src/ui/"
-                :components ((:file "system")
-                             (:file "widget") (:file "face")
-                             (:file "style") (:file "sheet")
-                             (:file "grid") (:file "layout")
-                             (:file "hit") (:file "wire")
-                             (:file "build") (:file "surface")
-                             (:file "key")))
+                :pathname "src/kernel/serve/"
+                :components ((:file "json") (:file "wire") (:file "socket")))
 
 (asdf:defsystem #:pine
                 :description "Pine Is Not Emacs"
                 :author "Bret Horne"
                 :license "GPL"
                 :version "0.0.1"
-                :depends-on (#:pine/ui #:com.inuoe.jzon #:sb-bsd-sockets)
+                :depends-on (#:pine/serve)
                 :in-order-to ((asdf:test-op (asdf:test-op #:pine/test)))
                 :serial t
-                :pathname "src/"
-                :components ((:file "mode")
-                             (:file "serve/json") (:file "serve/wire")
-                             (:file "serve/socket")
-                             (:file "boot") (:file "verbs") (:file "user") (:file "cli")))
+                :pathname "src/kernel/"
+                :components ((:file "boot") (:file "verbs") (:file "user")
+                             (:file "cli")))
+
+(asdf:defsystem #:pine/ui
+                :description "Widgets, what they are painted with, and the surfaces
+they are declared on"
+                :depends-on (#:pine #:closer-mop #:alexandria #:uiop)
+                :serial t
+                :pathname "src/systems/ui/"
+                :components ((:file "system")
+                             (:file "widget") (:file "face")
+                             (:file "style") (:file "sheet")
+                             (:file "grid") (:file "layout")
+                             (:file "hit") (:file "wire")
+                             (:file "build") (:file "surface")
+                             (:file "key") (:file "words")))
+
+(asdf:defsystem #:pine/mode
+                :description "What kind of text a thing is, what it does with a key,
+and how a chord is bound"
+                :depends-on (#:pine/ui)
+                :serial t
+                :pathname "src/systems/mode/"
+                :components ((:file "mode") (:file "words")))
 
 (asdf:defsystem #:pine/text
                 :description "Documents, the structure their modes give them, and
 the parse behind it"
-                :depends-on (#:pine)
+                :depends-on (#:pine/mode)
                 :serial t
-                :pathname "src/text/"
+                :pathname "src/systems/text/"
                 :components ((:file "system") (:file "words")
                              (:file "lines") (:file "document")
                              (:file "structure")
@@ -94,7 +108,7 @@ the parse behind it"
                 :description "The machine's own devices, in the namespace"
                 :depends-on (#:pine)
                 :serial t
-                :pathname "src/host/"
+                :pathname "src/systems/host/"
                 :components ((:file "shell") (:file "declared") (:file "device")
                              (:file "system") (:file "words")))
 
@@ -102,7 +116,7 @@ the parse behind it"
                 :description "Windows onto documents, and the chords that act on them"
                 :depends-on (#:pine/text)
                 :serial t
-                :pathname "src/edit/"
+                :pathname "src/systems/edit/"
                 :components ((:file "system") (:file "words")
                              (:file "mode") (:file "window") (:file "matching")
                              (:file "prompt") (:file "keys") (:file "render")
@@ -114,14 +128,14 @@ the parse behind it"
                 :description "Programs with screens of their own, as documents"
                 :depends-on (#:pine/edit #:pine/vt)
                 :serial t
-                :pathname "src/term/"
+                :pathname "src/systems/term/"
                 :components ((:file "terminal") (:file "system") (:file "words")))
 
 (asdf:defsystem #:pine/wm
                 :description "The compositor, in the namespace"
-                :depends-on (#:pine/host)
+                :depends-on (#:pine/host #:pine/mode)
                 :serial t
-                :pathname "src/wm/"
+                :pathname "src/systems/wm/"
                 :components ((:file "compositor") (:file "keys")
                              (:file "managed") (:file "niri") (:file "system") (:file "words")))
 
@@ -129,29 +143,29 @@ the parse behind it"
                 :description "One window manager: where the windows go"
                 :depends-on (#:pine/wm)
                 :serial t
-                :pathname "src/wm/"
+                :pathname "src/systems/wm/"
                 :components ((:file "tiles") (:file "tiles-words")))
 
 (asdf:defsystem #:pine/desk
                 :description "A bar along the top, and the panels it opens"
-                :depends-on (#:pine)
+                :depends-on (#:pine/ui)
                 :serial t
-                :pathname "src/desk/"
+                :pathname "src/systems/desk/"
                 :components ((:file "system")))
 
 (asdf:defsystem #:pine/paint
                 :description "Pixels, through cairo: the other medium PAINT
 dispatches on"
-                :depends-on (#:pine #:cl-cairo2)
+                :depends-on (#:pine/ui #:cl-cairo2)
                 :serial t
-                :pathname "src/paint/"
+                :pathname "src/systems/paint/"
                 :components ((:file "canvas") (:file "shot")))
 
 (asdf:defsystem #:pine/wayland
                 :description "The display pine paints its surfaces on"
                 :depends-on (#:pine/paint #:wayflan-client #:posix-shm #:cl-xkb)
                 :serial t
-                :pathname "src/wayland/"
+                :pathname "src/systems/wayland/"
                 :components ((:module "protocol"
                                       :serial t
                                       :components ((:file "wlr-layer-shell")
@@ -192,8 +206,8 @@ dispatches on"
                              (:file "run") (:file "serve")
                              (:file "ui") (:file "text")
                              (:file "host") (:file "edit") (:file "term")
-                             (:file "wm") (:file "config") (:file "app") (:file "draw")
-                             (:file "style"))
+                             (:file "wm") (:file "config") (:file "app")
+                             (:file "draw"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

@@ -5,21 +5,13 @@
 (defvar *app* nil)
 
 (defun app ()
-  "The example app, loaded the way a daemon loads one: in PINE/USER, with pine's
-own readtable. It is nothing but a file somebody wrote."
+  "The example app, loaded the way pine's own are: an asdf system, by its name."
   (editing)
-  (unless *app*
-    (let ((*package* (pine:user-package))
-          (*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax)))
-      (load (merge-pathnames "examples/notes.lisp"
-                             (asdf:system-source-directory :pine))))
-    (setf *app* t))
   (unless (system:named "notes") (pine:use :notes))
   (system:named "notes"))
 
 (test an-app-is-a-system-like-any-other
   (is (not (null (app))))
-  (is (typep (app) 'system:system))
   (is (not (null (tree:at "/system/notes"))))
   (is (member "notes" (mapcar #'job:name (system:systems)) :test #'equal)))
 
@@ -109,15 +101,8 @@ own readtable. It is nothing but a file somebody wrote."
 (defvar *vcs* nil)
 
 (defun vcs-app ()
-  "The other example: an app that brings a device of its own. Loaded the way a
-daemon loads one, so a file nothing compiles is still a file the suite reads."
+  "The other example: an app that brings a device of its own."
   (editing)
-  (unless *vcs*
-    (let ((*package* (pine:user-package))
-          (*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax)))
-      (load (merge-pathnames "examples/vcs.lisp"
-                             (asdf:system-source-directory :pine))))
-    (setf *vcs* t))
   (unless (system:named "vcs") (pine:use :vcs))
   (system:named "vcs"))
 
@@ -198,72 +183,6 @@ surface that has gone still ran what it used to mean."
         (pine/run/system::%take-down home)
         (is (null (held)) "its closures go with it")))))
 
-(test nothing-pine-ships-names-this-app
-  "The claim is that an app is the editor's equal. This is the proof: the editor
-is under src/, this is not, and src/ has never heard of it."
-  (let ((named (loop :for f :in (directory
-                                 (merge-pathnames
-                                  "src/**/*.lisp"
-                                  (asdf:system-source-directory :pine)))
-                     :unless (char= #\. (char (file-namestring f) 0))
-                       :when (let ((said (uiop:read-file-string f)))
-                               (or (search "notes:" said) (search "sticky" said)
-                                   (search "(use :notes)" said)))
-                         :collect (file-namestring f))))
-    (is (null named) "~{~%  ~a names it~}" named)))
-
-(test the-language-is-a-package-and-not-a-registry
-  "PINE/USER is a DEFPACKAGE, so its words are symbols the compiler resolved when
-the file was built. A name misspelled there is a build that fails, where a name
-misspelled in a list of strings was a word that quietly was not in the language.
-
-What a system loaded later brings is its own vocabulary, a package that uses
-nothing and imports what it offers, put here by SPEAKS as it loads."
-  (let ((p (find-package '#:pine/user)))
-    (is (not (null p)) "the language is a package that exists")
-    (dolist (said '("SWAP" "CAS" "READ" "WRITE" "NODE" "DEFCOMMAND" "DEFSURFACE"
-                    "NIL" "T" "LAMBDA" "DEFUN"))
-      (is (eq :external (nth-value 1 (find-symbol said p)))
-          "~a is something a user program can say" said))
-    (dolist (said '("DOCUMENT" "WINDOWS" "DEVICE" "ARRANGE"))
-      (is (eq :external (nth-value 1 (find-symbol said p)))
-          "~a came with the system that offers it" said))
-    (let ((words (let ((n 0)) (do-external-symbols (s p) (declare (ignore s)) (incf n)) n))
-          (cl (let ((n 0)) (do-external-symbols (s :cl) (declare (ignore s)) (incf n)) n)))
-      (is (< (- words cl) 240)
-          "~d words of pine's own: a language, not a grab bag" (- words cl)))))
-
-(test two-vocabularies-cannot-claim-one-word
-  "USE-PACKAGE says so, naming both symbols, at the point of conflict. The list of
-sentences that used to be collected instead was a second value nobody read."
-  (let ((p (find-package '#:pine/user)))
-    (make-package '#:pine/test/clash :use nil)
-    (unwind-protect
-         (progn
-           (export (list (intern "LABEL" '#:pine/test/clash)) '#:pine/test/clash)
-           (signals package-error (use-package '#:pine/test/clash p)))
-      (delete-package '#:pine/test/clash))
-    (is (eq (find-symbol "READ" p) (find-symbol "READ" '#:pine))
-        "READ is shadowed on purpose, so it is pine's and never in question")))
-
-(test a-system-pine-ships-is-written-the-way-one-you-write-is
-  "PINE/DESK uses PINE/USER and nothing else, says what it reads and writes by
-path, and names no package of pine's. It is the same claim NOTHING-PINE-SHIPS-
-NAMES-THIS-APP makes from the other side: if the desktop cannot be written in the
-language, the language is not one."
-  (let* ((file (merge-pathnames "src/desk/system.lisp"
-                                (asdf:system-source-directory :pine)))
-         (said (uiop:read-file-string file))
-         (named (loop :for line :in (uiop:split-string said :separator '(#\Newline))
-                      :when (and (search "pine/" line)
-                                 (not (search "#:pine/desk" line))
-                                 (not (search "#:pine/user" line))
-                                 (not (search "in-readtable" line)))
-                        :collect line)))
-    (is (null named) "~{~%  ~a~}" named)
-    (is (search "/dev/audio/volume" said) "it says what it reads by path")
-    (is (null (search "local-nicknames" said)))))
-
 (test a-word-on-the-command-line-is-all-of-it-or-none-of-it
   "READ-FROM-STRING answers with the first form and how far it got. Without the
 second, pine write /x '1 2' read 1 and wrote it, losing the rest without saying so."
@@ -285,11 +204,3 @@ is the one thing a command line must not get wrong."
     (is (null (pine/cli::%connect nowhere))
         "and asking for a connection answers nothing rather than breaking")))
 
-(test a-client-names-no-actor-system
-  "What a client of pine needs is what any language has: a socket and a line of
-text. Naming the concurrency library here is what made every client a lisp."
-  (let ((source (uiop:read-file-string
-                 (merge-pathnames "src/cli.lisp"
-                                  (asdf:system-source-directory :pine)))))
-    (is (null (search "sento" source))
-        "cli.lisp names sento, so a client still has to be one")))

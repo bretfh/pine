@@ -1,5 +1,5 @@
 .PHONY: foreign foreign-deps foreign-libs foreign-wayflan libs
-.PHONY: repl check test probe bench eval docs daemon shot screen bin
+.PHONY: repl check layers test probe bench eval docs daemon shot screen bin
 
 # Two ways to get what pine needs, and every target below works under either.
 # Guix is what pine develops against and what plain `make' uses. FOREIGN=1 is
@@ -64,6 +64,25 @@ repl: libs
 # load everything and say so, without running anything
 check: libs
 	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(princ :loaded)" --eval "(terpri)"'
+
+# the layers pine is built out of, lowest first. each is loaded on its own, in an
+# image with nothing else in it.
+LAYERS ?= pine/value pine/place pine/run pine/serve pine pine/host
+
+# every layer, alone. the claim a bottom-up program makes is that each of these is
+# something you could write another program in without dragging the ones above it
+# along, and this is that claim run rather than described: a file that names what is
+# above it will not compile here, because the package it names is not loaded.
+layers: libs
+	@$(IN) 'out=$$(mktemp); bad=0; \
+	  for s in $(LAYERS); do \
+	    printf "%-12s " "$$s"; \
+	    if $(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :$$s)" >"$$out" 2>&1; \
+	      then echo "alone"; \
+	      else echo "NAMES WHAT IS ABOVE IT:"; \
+	           grep -E "does not exist|not found|Unhandled|COMPONENT|PACKAGE" "$$out" | head -4; \
+	           bad=1; fi; \
+	  done; rm -f "$$out"; exit $$bad'
 
 # a pine in this terminal: the tree, what its config declares, and its surfaces on
 # the compositor you are under

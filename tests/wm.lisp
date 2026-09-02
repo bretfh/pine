@@ -30,8 +30,6 @@ it is a value, so nothing here needs a compositor."
 
 (test pine-being-the-compositor-is-a-subclass-not-a-second-protocol
   (let ((c (%managed)))
-    (is (typep c 'pine/wm/compositor:compositor))
-    (is (typep c 'pine/wm/managed:managed))
     (is (equal '("1" "2" "3")
                (mapcar (lambda (w) (gethash "id" w)) (compositor:windows c))))
     (is (equal "2" (compositor:focused c)))

@@ -27,7 +27,7 @@
 (defun with-kids (n)
   "A branch with N children, to see what finding one among them costs."
   (let ((under (tree:ensure "/many")))
-    (dotimes (i n) (node:attach (node:make (format nil "kid~d" i)) under))
+    (dotimes (i n) (node:attach (make-instance 'node:value :name (format nil "kid~d" i)) under))
     under))
 
 (defun main ()
@@ -59,11 +59,11 @@
     (let ((s (pine/fs/store:open-store where)))
       (pine/fs/store:keeping s)
       (tree:put "/kept" nil 0)
-      (let ((n (tree:at nil "kept")))
+      (let ((n (tree:at "kept")))
         (cost "write a kept node, store on" (floor *runs* 200)
               (lambda () (setf (node:contents n) (random 1000)))))
       (pine/fs/store:keeping nil)
-      (let ((n (tree:at nil "kept")))
+      (let ((n (tree:at "kept")))
         (cost "write a kept node, store off" (floor *runs* 200)
               (lambda () (setf (node:contents n) (random 1000)))))
       (ignore-errors (pine/fs/store:close-store s))
@@ -72,7 +72,7 @@
   (format t "~&~%what is worked out~%~%")
   (fresh)
   (tree:put "/n" nil 1)
-  (let ((twice (node:attach (node:derive "twice"
+  (let ((twice (node:attach (make-instance 'node:derived :name "twice" :reads
                                          (lambda ()
                                            (* 2 (node:contents (tree:at "/n")))))
                             (tree:root)))

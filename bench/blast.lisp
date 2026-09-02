@@ -50,7 +50,7 @@ whether the *graph* ever hands anybody a number that was never true."
   (let ((below (loop :for i :below *width*
                      :collect (let ((name (format nil "l0/~d" i)))
                                 (node:attach
-                                 (node:derive (format nil "~d" i)
+                                 (make-instance 'node:derived :name (format nil "~d" i) :reads
                                               (lambda ()
                                                 (node:contents (%at "n"))))
                                  (tree:ensure nil "l0"))
@@ -63,7 +63,7 @@ whether the *graph* ever hands anybody a number that was never true."
                                  (b (nth (mod (1+ (* 2 i)) (length below)) below))
                                  (name (format nil "l~d/~d" layer i)))
                             (node:attach
-                             (node:derive (format nil "~d" i)
+                             (make-instance 'node:derived :name (format nil "~d" i) :reads
                                           (lambda ()
                                             (+ (node:contents (%at a))
                                                (node:contents (%at b)))))
@@ -71,7 +71,7 @@ whether the *graph* ever hands anybody a number that was never true."
                             name))))
     (let ((top below))
       (node:attach
-       (node:derive "all" (lambda ()
+       (make-instance 'node:derived :name "all" :reads (lambda ()
                             (loop :for each :in top
                                   :sum (node:contents (%at each)))))
        (tree:root)))))
@@ -108,7 +108,7 @@ anybody's reader set."
                   (handler-case
                       (let ((under (tree:ensure nil "churn")))
                         (node:attach
-                         (node:derive name (lambda () (node:contents (%at "n"))))
+                         (make-instance 'node:derived :name name :reads (lambda () (node:contents (%at "n"))))
                          under)
                         (node:contents (node:resolve under name))
                         (node:erase-child under name)

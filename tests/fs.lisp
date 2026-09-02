@@ -93,7 +93,7 @@ never met this one."
     (let ((w (tree:ensure "/window/width"))
           (runs 0))
       (setf (node:contents w) 80)
-      (let ((line (node:derive "line"
+      (let ((line (make-instance 'node:derived :name "line" :reads
                                (lambda ()
                                  (incf runs)
                                  (make-string (node:contents w)
@@ -110,7 +110,7 @@ never met this one."
 (test a-derived-node-takes-a-function-for-writing
   (with-tree
     (let ((held (list 41)))
-      (let ((n (node:derive "probe" (lambda () (first held))
+      (let ((n (make-instance 'node:derived :name "probe" :reads (lambda () (first held))
                             :writes (lambda (v) (setf (first held) (* 2 v))))))
         (node:attach n (tree:root))
         (is (= 41 (node:contents n)))
@@ -222,7 +222,7 @@ say so."
           "a value three deep is reached: ~a" (reverse seen)))
     (is (not (node:livep (tree:at "/deep/down" "here")))
         "a value kept here is not live")
-    (is (node:livep (node:answers "somewhere"))
+    (is (node:livep (make-instance 'node:place :name "somewhere"))
         "and a place, which the world answers for, is")))
 
 (test a-snapshot-writes-what-the-walk-reached
@@ -298,7 +298,7 @@ name it never had, and answering nothing while nothing went."
 nothing. The memo a walk of the children reads would have a hole in it, and a name
 anybody can ask about would be a name anybody can grow it by."
   (with-tree
-    (let ((p (node:lists "empty" :names (lambda () nil)
+    (let ((p (make-instance 'node:place :name "empty" :names (lambda () nil)
                                  :each (lambda (name) (declare (ignore name)) nil))))
       (node:attach p (tree:root))
       (is (null (node:resolve p "nobody")))
@@ -339,7 +339,7 @@ that flowed into another call used to read whatever the session stood on."
 sit where NODES and RESOLVE never look, and the write would be taken and not be
 there to read."
   (with-tree
-    (let ((p (node:lists "p" :names (constantly nil)
+    (let ((p (make-instance 'node:place :name "p" :names (constantly nil)
                              :each (lambda (name) (declare (ignore name)) nil))))
       (node:attach p (tree:root))
       (signals error (pine::write "/p/thing" :hello)))))
@@ -395,10 +395,10 @@ never was."
   "SAW is recorded so this can be asked. Without it a node that once looked
 somewhere is worked out for ever after whenever that place moves."
   (with-tree
-    (let* ((a (node:attach (node:make "a") (tree:root)))
-           (b (node:attach (node:make "b") (tree:root)))
+    (let* ((a (node:attach (make-instance 'node:value :name "a") (tree:root)))
+           (b (node:attach (make-instance 'node:value :name "b") (tree:root)))
            (which (list a))
-           (dv (node:attach (node:derive "d" (lambda ()
+           (dv (node:attach (make-instance 'node:derived :name "d" :reads (lambda ()
                                                (node:contents (first which))))
                             (tree:root))))
       (setf (node:contents a) 1)
@@ -416,8 +416,8 @@ somewhere is worked out for ever after whenever that place moves."
 
 (test two-nodes-that-read-each-other-do-not-run-the-stack-out
   (with-tree
-    (let ((x (node:attach (node:make "x") (tree:root)))
-          (y (node:attach (node:make "y") (tree:root))))
+    (let ((x (node:attach (make-instance 'node:value :name "x") (tree:root)))
+          (y (node:attach (make-instance 'node:value :name "y") (tree:root))))
       (node:depend x y)
       (node:depend y x)
       (finishes (node:moved x)))))
@@ -426,8 +426,8 @@ somewhere is worked out for ever after whenever that place moves."
   "The memo is let go after the detach, not before: dropped first, the detach asks
 for the child again and what is left is that second one with nothing over it."
   (with-tree
-    (let ((p (node:lists "p" :names (constantly (list "kid"))
-                             :each (lambda (n) (node:answers n)))))
+    (let ((p (make-instance 'node:place :name "p" :names (constantly (list "kid"))
+                             :each (lambda (n) (make-instance 'node:place :name n)))))
       (node:attach p (tree:root))
       (let ((before (node:resolve p "kid")))
         (node:erase-child p "kid")
@@ -442,10 +442,10 @@ answers nothing, and what stands beside it is still worked out."
   (with-tree
     (fault:forget-faults)
     (let ((n (tree:ensure "/probe-src"))
-          (broken (node:derive "broken" (lambda () (error "on purpose")))))
+          (broken (make-instance 'node:derived :name "broken" :reads (lambda () (error "on purpose")))))
       (setf (node:contents n) "still here")
       (node:attach broken (tree:root))
-      (let ((beside (node:derive "beside" (lambda () (node:contents n)))))
+      (let ((beside (make-instance 'node:derived :name "beside" :reads (lambda () (node:contents n)))))
         (node:attach beside (tree:root))
         (is (null (node:contents broken))
             "it answers nothing rather than unwinding into the reader")
@@ -463,7 +463,7 @@ not ready answers the next time somebody asks, with nothing having stirred it."
   (with-tree
     (let ((broken (cons t nil))
           (runs 0))
-      (let ((n (node:derive "probe"
+      (let ((n (make-instance 'node:derived :name "probe" :reads
                             (lambda ()
                               (incf runs)
                               (when (car broken) (error "not yet"))
@@ -482,8 +482,8 @@ that node waits behind it for the life of the image."
   (with-tree
     (let ((started (bordeaux-threads:make-semaphore))
           (go-on (bordeaux-threads:make-semaphore)))
-      (let ((wedged (node:derive
-                     "wedged"
+      (let ((wedged (make-instance 'node:derived
+                     :name "wedged" :reads
                      (lambda ()
                        (bordeaux-threads:signal-semaphore started)
                        (bordeaux-threads:wait-on-semaphore go-on :timeout 30)
@@ -506,10 +506,10 @@ that; ATTACH over a name is the same thing spelled the other way round, and it d
 not. Declaring a surface twice leaked the first one and it went on being worked
 out from every device it had ever read."
   (with-tree
-    (let* ((r (node:attach (node:make "r") (tree:root)))
-           (src (node:attach (node:make "src") (tree:root)))
-           (had (node:derive "d" (lambda () (node:contents src))))
-           (fresh (node:derive "d" (lambda () :fresh))))
+    (let* ((r (node:attach (make-instance 'node:value :name "r") (tree:root)))
+           (src (node:attach (make-instance 'node:value :name "src") (tree:root)))
+           (had (make-instance 'node:derived :name "d" :reads (lambda () (node:contents src))))
+           (fresh (make-instance 'node:derived :name "d" :reads (lambda () :fresh))))
       (setf (node:contents src) 1)
       (node:attach had r)
       (node:contents had)
@@ -528,8 +528,8 @@ a node has what it would have if anybody asked -- and the two numberings met,
 because MARK answers out of the version slot once there is no value to answer out
 of."
   (with-tree
-    (let* ((src (node:attach (node:make "src") (tree:root)))
-           (d (node:derive "d" (lambda () (node:contents src)))))
+    (let* ((src (node:attach (make-instance 'node:value :name "src") (tree:root)))
+           (d (make-instance 'node:derived :name "d" :reads (lambda () (node:contents src)))))
       (setf (node:contents src) 1)
       (node:attach d (tree:root))
       (node:contents d)
@@ -544,15 +544,15 @@ of."
 a surface over /proc showed what was running when it was first drawn, and a face
 written at /face/keyword was one nothing was ever told about."
   (with-tree
-    (let* ((r (node:attach (node:make "r") (tree:root)))
+    (let* ((r (node:attach (make-instance 'node:value :name "r") (tree:root)))
            (runs 0)
-           (n (node:derive "n" (lambda () (incf runs) (length (node:nodes r))))))
+           (n (make-instance 'node:derived :name "n" :reads (lambda () (incf runs) (length (node:nodes r))))))
       (node:attach n (tree:root))
       (is (eql 0 (node:contents n)))
       (is (eql 1 runs))
       (is (eql 0 (node:contents n)) "and is not worked out again for nothing")
       (is (eql 1 runs))
-      (node:attach (node:make "one") r)
+      (node:attach (make-instance 'node:value :name "one") r)
       (is (eql 1 (node:contents n)) "attaching one works it out again")
       (node:erase-child r "one")
       (is (eql 0 (node:contents n)) "and so does taking one off"))))
@@ -562,7 +562,7 @@ written at /face/keyword was one nothing was ever told about."
 before anything is there is a question nothing can ever answer again: a config
 reading a device the host system has not put up yet never heard it arrive."
   (with-tree
-    (let ((n (node:derive "waiting" (lambda () (tree:at "/later/here")))))
+    (let ((n (make-instance 'node:derived :name "waiting" :reads (lambda () (tree:at "/later/here")))))
       (node:attach n (tree:root))
       (is (null (node:contents n)) "nothing stands there yet")
       (setf (node:contents (tree:ensure "/later/here")) :arrived)
@@ -647,3 +647,60 @@ write that threw left no file at all."
              (is (equal "the whole of something else" (node:contents it))
                  "and a write that went through is all of it")))
       (ignore-errors (delete-file file)))))
+
+(test a-read-of-something-slow-does-not-wait-for-it
+  "A working-out that talks to the world is a wait, and a read is a frame or a
+keystroke. The first one pays for finding that out; every one after it is handed
+what stands, and WATCH is how anybody hears the new answer."
+  (booted)
+  (with-tree
+    (let* ((runs 0)
+           (n (node:attach
+               (make-instance 'node:derived :name "slow"
+                              :reads (lambda () (incf runs) (sleep 0.3) runs))
+               (tree:root))))
+      (is (eql 1 (node:contents n)) "the first read waits, and is what says it is slow")
+      (is (node:waits-of n) "and the node knows it now")
+      (node:moved n)
+      (let ((at (get-internal-real-time)))
+        (is (eql 1 (node:contents n)) "a stale read hands back what stood")
+        (is (eq :working (node:holding n)) "and says it is being worked out")
+        (is (< (- (get-internal-real-time) at)
+               (* 0.1 internal-time-units-per-second))
+            "without waiting for it"))
+      (is (until (lambda () (eql 2 (node:contents n))) :seconds 5)
+          "and the new answer lands on its own"))))
+
+(test a-read-that-asked-to-wait-waits
+  "The old behaviour, asked for rather than had. :AWAIT is the whole of it."
+  (booted)
+  (with-tree
+    (let ((n (node:attach
+              (make-instance 'node:derived :name "slow"
+                             :reads (lambda () (sleep 0.3) :answered))
+              (tree:root))))
+      (setf (node:waits-of n) t)
+      (is (eq :answered (pine::read "/slow" :await 5))
+          "waited for, because it was asked to be")
+      (is (eq :held (nth-value 1 (pine::read "/slow")))
+          "and it stands afterwards"))))
+
+(test nothing-worked-out-yet-is-told-from-holding-nothing
+  "A node nobody has worked out answers NIL, and a node holding NIL answers NIL.
+Those are not the same news, and every caller guessed."
+  (booted)
+  (with-tree
+    (let ((n (node:attach
+              (make-instance 'node:derived :name "cold"
+                             :waits t :reads (lambda () nil))
+              (tree:root))))
+      (declare (ignore n))
+      (multiple-value-bind (value kind) (pine::read "/cold")
+        (is (null value) "nothing, because nothing has worked it out")
+        (is (eq :working kind) "and it says that is what the nothing is"))
+      (is (until (lambda () (eq :held (nth-value 1 (pine::read "/cold"))))
+                 :seconds 5)
+          "and once it has been worked out it holds what it holds")
+      (multiple-value-bind (value kind) (pine::read "/cold")
+        (is (null value) "which is NIL")
+        (is (eq :held kind) "said as a value this time, and not as an absence")))))

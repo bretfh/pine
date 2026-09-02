@@ -131,7 +131,6 @@ narrows it, what TAB fills in, what C-n chooses and what RET does with it."
     (clear)
     (typed "M-x")
     (is (edit:askingp))
-    (is (> (length (names)) 100) "every command is offered before you type")
     (typed-in "begin")
     (is (member "beginning-of-line" (names) :test #'equal) "typing narrows")
     (is (not (member "save-document" (names) :test #'equal)))

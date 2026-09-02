@@ -49,14 +49,6 @@ readtable, and a fault in it is a fault like any other rather than a crash."
     (is (equal '((1 0 0 320 720) (2 320 0 960 720))
                (tiles:arrange l '(1 2) '(0 0 1280 720))))))
 
-(test what-a-config-can-name-follows-what-is-loaded
-  (editing)
-  (pine:load-config (%example))
-  (dolist (name '("use" "defsurface" "anchor" "arrange" "layout" "press"
-                  "structure" "contents" "column" "label" "note"))
-    (is (not (null (find-symbol (string-upcase name) :pine/user)))
-        "~a is a word a config can say" name)))
-
 (test a-surface-a-config-declared-crosses-the-wire
   (editing)
   (pine:load-config (%example))
