@@ -141,9 +141,9 @@ answering a prompt and a device declaration were left standing, so dropping a sy
 half worked and nothing said which half."
   (with-tree
     (let ((home "pine/test/probe"))
-      (let ((system:*owner* home))
+      (let ((fs:*owner* home))
         (ui:property :probe-key (lambda (props) (declare (ignore props)) nil))
-        (pine/ui::register (make-instance 'pine/ui::theme :name :probe-theme))
+        (pine/ui::build :probe-theme nil nil nil)
         (edit:completes :probe-category
                         (lambda (&rest ignored) (declare (ignore ignored)) nil))
         (host:defdevice %probe-owned :describes "declared while a system started")
@@ -160,9 +160,9 @@ half worked and nothing said which half."
 
       (pine/run/system::%take-down home)
 
-      (is (member :probe-key (ui:properties)) "the style key stays: it was defined, not put up")
-      (is (member :probe-theme (pine/ui::themes)) "and so does the theme")
-      (is (not (member :probe-category (pine/edit::sources))) "the source goes")
+      (is (not (member :probe-key (ui:properties))) "and the style key goes")
+      (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
+      (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
       (is (not (null (host::declared "%probe-owned")))
           "the declaration stays: a class was loaded, not put up")
       (is (null (fs:at "/ui/surface" "probe-surface")) "and the surface goes")
@@ -175,7 +175,7 @@ it. A click on an id of a surface that has gone runs nothing."
   (with-tree
     (let ((home "pine/test/probe-acts")
           (ran nil))
-      (let ((system:*owner* home))
+      (let ((fs:*owner* home))
         (ui:make-surface "probe-acts"
                          (lambda () (ui:button :click (lambda () (setf ran t))
                                                (ui:label "hi")))

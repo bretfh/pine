@@ -9,7 +9,7 @@
    #:attach #:detach #:announced #:reading #:depend #:undepend #:as-value #:let-go
    #:reads #:writes
    #:root #:make-root #:at #:ensure #:leaf #:erase #:walk #:paths #:split-name
-   #:builder #:built #:absent #:not-a-place #:*root*
+   #:builder #:built #:declared #:undeclared #:*owner* #:absent #:not-a-place #:*root*
    #:writing #:on-commit #:on-forget #:forget-listeners
    #:*broke* #:*elsewhere* #:*working* #:*awaiting* #:*waiting-on* #:*waited*)
   (:documentation "The tree: three kinds of thing stand at a name.
@@ -52,6 +52,9 @@ WRITES. Everything else here is called and not specialised."))
    (named     :initform nil        :accessor named)))
 
 (defgeneric savedp (x) (:method ((x standing)) nil))
+(defvar *owner* nil
+  "Whose what is put up now is: the package of the system starting, while it does.")
+
 (defgeneric livep (x) (:method ((x standing)) nil))
 (defgeneric announces (x) (:method ((x standing)) nil))
 (defgeneric refreshes (x) (:method ((x standing)) nil))

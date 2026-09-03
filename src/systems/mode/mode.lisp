@@ -297,8 +297,8 @@ it was bound to, so whoever asked can say so rather than take the key for text."
 while a system starts is that system's, and goes when it does; one a config binds
 is nobody's and stands."
   (let ((k (%keys class)))
-    (when system:*owner*
-      (setf (owners k) (d:with (owners k) chord system:*owner*)))
+    (when fs:*owner*
+      (setf (owners k) (d:with (owners k) chord fs:*owner*)))
     (setf (fs:contents k) (d:with (fs:contents k) chord command))
     chord))
 

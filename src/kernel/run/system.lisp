@@ -5,15 +5,8 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:system #:use #:drop #:systems
-   #:named #:kinds #:puts #:*owner*))
+   #:named #:kinds #:puts))
 (in-package #:pine/run/system)
-
-(defvar *owner* nil
-  "The package of the system that is starting or stopping, while it does.
-
-Bound around START and STOP rather than passed, because what puts a node up is the
-app's own code and threading an owner through it would be asking every app to say
-twice what package it is written in.")
 
 (defclass system (job:job) ()
   (:documentation "A package pine loaded. It starts and stops like anything else
@@ -44,7 +37,7 @@ class that subclasses SYSTEM is a system, and nothing has to say so twice."
 (defun puts (x &optional (into (fs:root)))
   "Attach X as the running system's: what a system puts up goes when it does, so
 this is ATTACH for an app and the reason an app needs no STOP."
-  (setf (fs:owner x) *owner*)
+  (setf (fs:owner x) fs:*owner*)
   (fs:attach x into)
   x)
 
@@ -65,13 +58,8 @@ one belongs to the world."
 (defmethod job:start :around ((s system))
   "What the system puts up while it starts is its. Cleared first, so a system
 started again does not carry what the last run put up."
-  (let ((*owner* (owns (job:name s))))
+  (let ((fs:*owner* (owns (job:name s))))
     (call-next-method)))
-
-(defmethod job:start :after ((s system))
-  "After, not before: a system may define commands as it starts, and those are
-its as much as the ones its file defined."
-  (let ((prefix (owns (job:name s)))) (when prefix (command:offer prefix))))
 
 (defmethod job:stop ((s system))
   "A system that only puts things up has nothing of its own to stop: what it put up
@@ -85,13 +73,10 @@ was asking each of them to keep a list of what to undo."
   s)
 
 (defmethod job:stop :after ((s system))
-  "What a system defined goes when it does: its commands stand down, what it owns
-in the tree comes off, what it declared beside it is taken back. An app that puts
-up a place and a surface writes no STOP at all."
+  "What a system put up goes when it does. An app that puts up a place and a
+surface writes no STOP at all."
   (let ((prefix (owns (job:name s))))
-    (when prefix
-      (command:withdraw prefix)
-      (%take-down prefix))))
+    (when prefix (%take-down prefix))))
 
 (defun kinds ()
   "Every system there is to load, running or not."
@@ -116,7 +101,6 @@ up a place and a surface writes no STOP at all."
           (let ((class (%class name)))
             (unless class
               (error "~a loaded but is not a system." name))
-            (command:claim (%package class))
             (let ((s (make-instance (class-name class) :name name :on-fault :leave)))
               (job:supervise s)
               (job:start s)

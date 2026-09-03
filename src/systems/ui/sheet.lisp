@@ -1,13 +1,5 @@
 (in-package #:pine/ui)
 
-(defclass themes-node (fs:dir) ()
-  (:documentation "Every theme there is, and which is on.
-
-A class rather than a PLACE, and the one node in the tree where the two questions
-come apart: what is under it is worked out, which is what a place is for, but
-/theme/active is a value that persists and a snapshot does not walk into a live
-node."))
-
 (defun css-color (role) (color role))
 
 (defun css-glass (role &optional (a (metric :opacity 0.4)))
@@ -63,7 +55,7 @@ where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
     (let ((n (fs:leaf "/ui/style" (%path-segment (first each)))))
       (setf (fs:contents n) (second each))
-      (setf (fs:owner n) system:*owner*)))
+      (setf (fs:owner n) fs:*owner*)))
   (styles))
 
 (defun built-in ()
@@ -107,39 +99,10 @@ Compiled as it is worked out, and the compiled rules kept beside."
     (setf (compiled s) (%compiled cascade))
     cascade))
 
-(defun %theme-names () (themes))
-
-(defun %theme (n name)
-  (fs:child n name
-              (lambda ()
-                (make-instance 'fs:derived :name name :parent n :live t
-                            :reads (lambda ()
-                                     (let ((it (theme name)))
-                                       (list :palette (palette it)
-                                             :metrics (metrics it))))))))
-
-(defun %active (n)
-  (fs:child n "active"
-              (lambda () (make-instance 'fs:value :name "active" :parent n))))
-
-(defmethod fs:entries ((n themes-node))
-  (cons (%active n)
-        (loop :for name :in (%theme-names)
-              :collect (%theme n (string-downcase (symbol-name name))))))
-
-(defmethod fs:entry ((n themes-node) name)
-  (cond ((equal name "active") (%active n))
-        ((member name (%theme-names)
-                 :key (lambda (each) (string-downcase (symbol-name each)))
-                 :test #'equal)
-         (%theme n name))))
-
 (defun %attach (root)
   (let* ((ui (fs:ensure root "ui"))
-         (themes (fs:attach
-                  (make-instance 'themes-node :name "theme"
-                                 :describes "every theme there is, and which is on")
-                  ui)))
+         (themes (fs:ensure ui "theme")))
+    (setf (fs:describes themes) "every theme there is, and which is on")
     (fs:attach (make-instance 'face-dir :name "face"
                               :describes "every face in force; write one to change it")
                ui)
@@ -148,7 +111,7 @@ Compiled as it is worked out, and the compiled rules kept beside."
                ui)
     (fs:ensure ui "style")
     (fs:ensure ui "surface")
-    (let ((active (%active themes)))
+    (let ((active (fs:leaf themes "active")))
       (unless (fs:contents active)
         (setf (fs:contents active) (active))))
     root))

@@ -30,10 +30,10 @@ shares it, because a second one is a second image."
   (setf *booted* t))
 
 (defmacro with-tree (&body body)
-  "A fresh namespace for one test. The root is what a test is about; nothing is
-carried over from the last one."
+  "A fresh namespace for one test, with what pine loaded and nothing carried over
+from the last one."
   `(let ((was (fs:root)))
-     (unwind-protect (progn (fs:make-root) ,@body)
+     (unwind-protect (progn (fs:make-root) (fs:built) ,@body)
        (setf fs:*root* was))))
 
 (defun somewhere (rows needle)

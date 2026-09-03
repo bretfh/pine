@@ -52,9 +52,8 @@ returned without being asked to is failed, and the next sweep starts it."
              (job:start j)
              (is (until (lambda () (eq :failed (job:state j))))
                  "a thread that ended by itself is failed, not stopped")
-             (job:sweep)
-             (is (until (lambda () (> (car runs) 1)))
-                 "and a sweep starts it again"))
+             (is (until (lambda () (job:sweep) (> (car runs) 1)) :seconds 5)
+                 "and a sweep starts it again, once it is due"))
         (ignore-errors (job:stop j))
         (job:forget "flaky")))))
 
@@ -152,20 +151,22 @@ returned without being asked to is failed, and the next sweep starts it."
          (signals command:unknown-command (command:run "nothing-of-the-sort")))
     (command:forget "probe-add")))
 
-(test a-command-belongs-where-it-was-written-not-where-it-was-run
-  "A system may define commands as it starts, and START runs in whatever package
-called it. Taking the package standing at that moment made the command the
-caller's, so the system stopping left it behind and an app had to name its own
-commands back off by hand."
-  (let ((home (string-downcase (package-name *package*))))
+(test a-command-defined-as-a-system-starts-is-the-system-s
+  (with-tree
+    (fs:built)
+    (let ((fs:*owner* "pine/test/probe"))
+      (command:defcommand "probe-home" () (:describes "made while starting") t))
+    (command:defcommand "probe-file" () (:describes "made by a file") t)
     (unwind-protect
-         (let ((*package* (find-package :cl-user)))
-           (command:defcommand "probe-home" () (:describes "written here") t)
+         (progn
            (is (not (null (command:named "probe-home"))))
-           (command:withdraw home)
-           (is (null (command:named "probe-home"))
-               "withdrawing what this package wrote takes it off"))
-      (command:forget "probe-home"))))
+           (is (equal '(:describes "made while starting" :asks nil :on nil)
+                      (fs:contents (fs:at "/cmd/probe-home")))
+               "and what it holds is what it is")
+           (pine/run/system::%take-down "pine/test/probe")
+           (is (null (command:named "probe-home")) "it goes with the system")
+           (is (not (null (command:named "probe-file"))) "what a file defined stays"))
+      (command:forget "probe-file"))))
 
 (test a-pine-in-this-terminal-has-a-session-to-read-in
   "What PINE SHELL stands in. OPEN-SESSION takes whatever initargs it is handed

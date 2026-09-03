@@ -62,13 +62,12 @@ what writing means: a file is written, a device is acted on."
       (visit document n))))
 
 (defun %syntax ()
-  "Load tree-sitter and put the languages in the tree. A grammar that will not
-load is a fault like any other: the text still opens, uncoloured."
+  "Load tree-sitter. A grammar that will not load is a fault like any other: the
+text still opens, uncoloured."
   (let ((it (make-ts-runtime)))
     (fault:attempt (lambda () (ensure-ts it)) "loading tree-sitter")
     (when (ts-loaded-p it)
-      (setf *runtime* it)
-      (lang-node (fs:root)))))
+      (setf *runtime* it))))
 
 (command:defcommand "documents" () (:describes "every document there is")
   (mapcar #'fs:name (documents)))

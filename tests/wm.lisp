@@ -110,7 +110,7 @@ a system you load."
   (is (fs:at "/wm/layout"))
   (pine:drop :tiles)
   (is (null (fs:at "/wm/layout")))
-  (is (null (command:named "wm-layout"))))
+  (is (not (null (command:named "wm-layout"))) "what its file defined stays"))
 
 (test a-layout-is-a-class-so-a-config-can-write-one
   (%tiled)

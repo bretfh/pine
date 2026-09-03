@@ -1,25 +1,29 @@
 (in-package #:pine/ui)
 
-(defpackage #:pine/styles
-  (:use)
-  (:documentation "Where a style property's name lives: one symbol per key a
-resolved style may hold, its value how to work that key out from the css props
-that matched."))
+(defclass property (fs:value)
+  ((parser :initarg :parser :reader parser))
+  (:documentation "One key a resolved style may hold, at /ui/property/<key>, and
+how it is worked out from the css props that matched."))
+
+(defmethod fs:savedp ((p property)) nil)
+
+(defun %properties () (fs:ensure (fs:root) "ui" "property"))
 
 (defun property (key parser)
   "Say that a style may hold KEY, worked out by PARSER from the matched props.
 Adding a property is one of these, not an edit to RESOLVE."
-  (setf (symbol-value (intern (symbol-name key) :pine/styles)) parser)
+  (fs:declared (lambda ()
+                 (make-instance 'property :name (string-downcase (symbol-name key))
+                                          :held (list :key key) :parser parser))
+               "ui" "property")
   key)
 
-(defun properties ()
-  (let (out)
-    (do-symbols (s :pine/styles)
-      (when (boundp s) (push (intern (symbol-name s) :keyword) out)))
-    (sort out #'string< :key #'symbol-name)))
+(defun %each-property ()
+  (remove-if-not (lambda (each) (typep each 'property)) (fs:entries (%properties))))
 
-(defun %parser (key)
-  (symbol-value (find-symbol (symbol-name key) :pine/styles)))
+(defun properties ()
+  (sort (mapcar (lambda (p) (getf (fs:contents p) :key)) (%each-property))
+        #'string< :key #'symbol-name))
 
 (defun %words (s)
   (remove "" (uiop:split-string s :separator '(#\space #\tab)) :test #'string=))
@@ -111,13 +115,13 @@ in PINE/UI/SHEET, where what pine ships and what was written are put together.")
 
 (defun resolve (chain &key hover)
   "The style for a widget with this chain of class-sets, root first. A map: what it
-holds is what the properties table says a style may hold, so nothing here has to be
-edited to carry something new."
+holds is what is declared at /ui/property, so nothing here has to be edited to
+carry something new."
   (let ((props (%props chain hover))
         (out (d:no-map)))
-    (dolist (key (properties) out)
-      (let ((v (funcall (%parser key) props)))
-        (when v (setf out (d:with out key v)))))))
+    (dolist (p (%each-property) out)
+      (let ((v (funcall (parser p) props)))
+        (when v (setf out (d:with out (getf (fs:contents p) :key) v)))))))
 
 (defun classes (it)
   "A :class value as a list of class names."

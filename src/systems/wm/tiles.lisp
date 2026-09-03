@@ -146,8 +146,8 @@ were given. AREA is the room there is.")
   (:documentation "One of the window managers pine ships: it reads what the
 compositor handed over and writes where each window goes.
 
-Nothing in the substrate knows this is here. Dropping it takes /wm/layout and its
-commands away, and pine places nothing again."))
+Nothing in the substrate knows this is here. Dropping it takes /wm/layout away,
+and pine places nothing again."))
 
 
 (defun %system ()

@@ -2,18 +2,19 @@
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
-(defpackage #:pine/languages
-  (:use)
-  (:documentation "Where a language's name lives: one symbol per language, its
-value what was declared and what was compiled from it, and on it how to guess
-what a head means where the declaration says nothing."))
+(defclass lang (fs:value)
+  ((compiled :initarg :compiled :reader compiled))
+  (:documentation "A language at /lang/<name>: what was declared for it, and
+beside it what that compiles to."))
 
-(defun %sym (language) (intern (symbol-name language) :pine/languages))
+(defmethod fs:savedp ((l lang)) nil)
 
-(defun infers (language rule)
-  "Say RULE guesses for LANGUAGE what the declaration did not spell out."
-  (setf (get (%sym language) 'infers) rule)
-  language)
+(defgeneric infers (language name package)
+  (:documentation "What LANGUAGE guesses a form headed by NAME does, where the
+declaration says nothing. A method on the language's name.")
+  (:method (language name package)
+    (declare (ignore language name package))
+    nil))
 
 (defmacro language (options &rest clauses)
   `(%language ,options
@@ -85,7 +86,8 @@ what a head means where the declaration says nothing."))
       ((and (boundp sym) (constantp sym)) (d:map :face :function-call :constant t))
       (t (%by-name name)))))
 
-(infers :commonlisp #'%commonlisp-rule)
+(defmethod infers ((language (eql :commonlisp)) name package)
+  (%commonlisp-rule name package))
 
 (defun %names (set)
   (let ((out (make-hash-table :test 'equal)))
@@ -95,7 +97,7 @@ what a head means where the declaration says nothing."))
 (defun %compile (name raw)
   (let* ((options (d:lookup raw :options))
          (indent (d:lookup options :indent))
-         (infer (get (%sym name) 'infers)))
+         (infer (lambda (head package) (infers name head package))))
     (make-language
      :name name
      :grammar (d:lookup options :grammar)
@@ -107,27 +109,32 @@ what a head means where the declaration says nothing."))
      :infer infer
      :raw raw)))
 
+(defun %langs () (fs:ensure (fs:root) "lang"))
+
 (defun declare-language (name raw &key parent)
+  "Declare a language at /lang/<name>."
   (let ((full (%inherit (and parent (%raw parent)) raw)))
-    (setf (symbol-value (%sym name)) (cons full (%compile name full)))
-    (when (fs:root)
-      (setf (fs:contents (fs:leaf "/lang" (string-downcase (string name))))
-            (d:lookup (d:lookup full :options) :doc)))
+    (fs:declared (lambda ()
+                   (make-instance 'lang :name (string-downcase (string name))
+                                        :held full :compiled (%compile name full)))
+                 "lang")
     name))
 
 (defun %declared (name)
-  (let ((s (find-symbol (symbol-name name) :pine/languages)))
-    (and s (boundp s) (symbol-value s))))
+  (let ((it (fs:entry (%langs) (string-downcase (string name)))))
+    (and (typep it 'lang) it)))
 
-(defun %raw (name) (car (%declared name)))
+(defun %raw (name)
+  (let ((it (%declared name))) (and it (fs:contents it))))
 
-(defun for (name) (cdr (%declared name)))
+(defun for (name)
+  (let ((it (%declared name))) (and it (compiled it))))
 
 (defun languages ()
-  (let (out)
-    (do-symbols (s :pine/languages)
-      (when (boundp s) (push (intern (symbol-name s) :keyword) out)))
-    (sort out #'string< :key #'string)))
+  (sort (loop :for each :in (fs:entries (%langs))
+              :when (typep each 'lang)
+                :collect (intern (string-upcase (fs:name each)) :keyword))
+        #'string< :key #'string))
 
 (defmethod readtable-of ((name symbol))
   "The readtable a language is written in, when it says: a language whose
@@ -147,12 +154,6 @@ follows it rather than the path it happens to be under."
   (let* ((lang (for name))
          (g (and lang (lang-grammar lang))))
     (when g (values (d:lookup g :lib) (d:lookup g :fn)))))
-
-(defun lang-node (root)
-  "One node per language declared, saying what it is for."
-  (dolist (name (languages) (fs:ensure root "lang"))
-    (setf (fs:contents (fs:leaf root "lang" (string-downcase (string name))))
-          (d:lookup (d:lookup (%raw name) :options) :doc))))
 
 (defun %state (runtime name)
   (multiple-value-bind (lib fn) (grammar-of name)

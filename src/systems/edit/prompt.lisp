@@ -88,7 +88,7 @@ of question and its own answers to it. It stands at /prompt/completes/<category>
   (let ((n (make-instance 'fs:derived :name (%category category) :live t
                                       :reads (lambda () (funcall function (so-far)))
                                       :describes "what answers this kind of question")))
-    (setf (fs:owner n) system:*owner*)
+    (setf (fs:owner n) fs:*owner*)
     (fs:attach n (%completes))
     category))
 

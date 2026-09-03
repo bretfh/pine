@@ -214,7 +214,7 @@ disagree about what leaving it out meant."
                              :writes (lambda (said) (act (fs:name s) said))
                              :describes "what another pine says was clicked")
                  s)
-    (setf (fs:owner s) system:*owner*)
+    (setf (fs:owner s) fs:*owner*)
     (declared s)
     s))
 

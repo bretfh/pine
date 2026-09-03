@@ -5,11 +5,6 @@
 render: finding the table is three reads and finding a face in it is one, so a paint
 that asks per cell spends most of its time asking where to look.")
 
-(defpackage #:pine/themes
-  (:use)
-  (:documentation "Where a theme's name lives: one symbol per theme, its value the
-theme."))
-
 (defparameter +plain+ :default
   "The face a space that has not said resolves in.")
 
@@ -22,12 +17,15 @@ theme."))
    (italic    :initarg :italic    :accessor italic    :initform nil)
    (underline :initarg :underline :accessor underline :initform nil)))
 
-(defclass theme ()
-  ((name    :initarg :name    :reader name)
-   (palette :initarg :palette :reader palette :initform nil)
-   (metrics :initarg :metrics :reader metrics :initform nil)
-   (faces   :initarg :faces   :reader faces
-            :initform (make-hash-table :test 'eq))))
+(defclass theme (fs:value) ()
+  (:documentation "A theme at /ui/theme/<name>: (:palette … :metrics … :faces …),
+the faces by name, each as a plist."))
+
+(defmethod fs:savedp ((th theme)) nil)
+
+(defun palette (th) (getf (fs:contents th) :palette))
+(defun metrics (th) (getf (fs:contents th) :metrics))
+(defun faces (th) (getf (fs:contents th) :faces))
 
 (defun %as-keyword (name)
   (etypecase name
@@ -35,20 +33,17 @@ theme."))
     (symbol (intern (symbol-name name) :keyword))
     (string (intern (string-upcase name) :keyword))))
 
-(defun register (theme)
-  (setf (symbol-value (intern (symbol-name (name theme)) :pine/themes)) theme)
-  theme)
+(defun %themes () (fs:ensure (fs:root) "ui" "theme"))
 
 (defun themes ()
-  (let (out)
-    (do-symbols (s :pine/themes)
-      (when (boundp s) (push (intern (symbol-name s) :keyword) out)))
-    (sort out #'string< :key #'symbol-name)))
+  (sort (loop :for each :in (fs:entries (%themes))
+              :when (typep each 'theme) :collect (%as-keyword (fs:name each)))
+        #'string< :key #'symbol-name))
 
 (defun theme (name)
-  (let ((s (find-symbol (symbol-name (%as-keyword name)) :pine/themes)))
-    (if (and s (boundp s))
-        (symbol-value s)
+  (let ((it (fs:entry (%themes) (string-downcase (symbol-name (%as-keyword name))))))
+    (if (typep it 'theme)
+        it
         (error "no theme called ~s" name))))
 
 (defun active ()
@@ -67,19 +62,21 @@ names.")
         (error "color ~s is not in the palette" color))))
 
 (defun build (name palette-plist metrics-plist specs)
-  (let ((palette (loop :for (role h) :on palette-plist :by #'cddr
-                       :collect (cons role h)))
-        (metrics (loop :for (key v) :on metrics-plist :by #'cddr
-                       :collect (cons key v)))
-        (faces (make-hash-table :test 'eq)))
-    (dolist (spec specs)
-      (destructuring-bind (fname &key fg bg bold italic underline) spec
-        (setf (gethash fname faces)
-              (make-instance 'face :fg (hex fg palette) :bg (hex bg palette)
-                                   :bold bold :italic italic
-                                   :underline underline))))
-    (make-instance 'theme :name (%as-keyword name) :palette palette :metrics metrics
-                          :faces faces)))
+  "Declare a theme at /ui/theme/<name>."
+  (let* ((palette (loop :for (role h) :on palette-plist :by #'cddr
+                        :collect (cons role h)))
+         (metrics (loop :for (key v) :on metrics-plist :by #'cddr
+                        :collect (cons key v)))
+         (faces (loop :for (fname . spec) :in specs
+                      :collect (destructuring-bind (&key fg bg bold italic underline) spec
+                                 (cons fname (list :fg (hex fg palette) :bg (hex bg palette)
+                                                   :bold bold :italic italic
+                                                   :underline underline)))))
+         (held (list :palette palette :metrics metrics :faces faces)))
+    (fs:declared (lambda ()
+                   (make-instance 'theme :name (string-downcase (symbol-name (%as-keyword name)))
+                                         :held held))
+                 "ui" "theme")))
 
 (defun %as-face (m)
   (when (and (consp m) (keywordp (first m)))
@@ -87,14 +84,10 @@ names.")
                          :bold (getf m :bold) :italic (getf m :italic)
                          :underline (getf m :underline))))
 
-(defun %plist (f)
-  (list :fg (fg f) :bg (bg f) :bold (bold f) :italic (italic f)
-        :underline (underline f)))
-
 (defun %themed (name)
-  "The active theme's face called NAME, or nothing."
+  "The active theme's face called NAME as a plist, or nothing."
   (let ((key (find-symbol (string-upcase name) :keyword)))
-    (and key (gethash key (faces (theme (active)))))))
+    (and key (cdr (assoc key (faces (theme (active))))))))
 
 (defclass face-node (fs:value)
   ((written :initform nil :accessor written))
@@ -110,7 +103,7 @@ something is written here, and what was written after. Saved only once written."
 (defmethod fs:contents ((n face-node))
   (if (written n)
       (call-next-method)
-      (let ((f (%themed (fs:name n)))) (and f (%plist f)))))
+      (%themed (fs:name n))))
 
 (defclass face-dir (fs:dir)
   ((in-force :accessor in-force-of))
@@ -126,7 +119,8 @@ something is written here, and what was written after. Saved only once written."
         (dolist (n (fs:entries d))
           (let ((f (%as-face (fs:contents n))))
             (when f (setf (gethash (%as-keyword (fs:name n)) out) f))))
-        (maphash (lambda (k f) (setf (gethash k out) f)) (faces (theme (active)))))
+        (loop :for (k . plist) :in (faces (theme (active)))
+              :do (setf (gethash k out) (%as-face plist))))
     out))
 
 (defmethod initialize-instance :after ((d face-dir) &key)
@@ -137,7 +131,7 @@ something is written here, and what was written after. Saved only once written."
 (defmethod fs:entries ((d face-dir))
   (let ((had (call-next-method)))
     (append had
-            (loop :for key :being :the :hash-keys :of (faces (theme (active)))
+            (loop :for (key) :in (faces (theme (active)))
                   :for name := (string-downcase (symbol-name key))
                   :unless (find name had :key #'fs:name :test #'equal)
                     :collect (%face-node d name)))))
@@ -186,8 +180,7 @@ hex; this is how a canvas reads one."
           (parse-integer h :start 3 :end 5 :radix 16)
           (parse-integer h :start 5 :end 7 :radix 16))))
 
-(register
- (build
+(build
   :ef-dream
   '(bg        "#232025"   bg-dim    "#322f34"   bg-alt "#3b393e"
     bg-active "#5b595e"   fg        "#efd5c5"   fg-dim "#8f8886"
@@ -248,5 +241,5 @@ hex; this is how a canvas reads one."
     (:ring-ram       :fg blue)
     (:ring-disk      :fg green)
     (:ring-temp      :fg yellow)
-    (:ring-track     :fg bg-active))))
+    (:ring-track     :fg bg-active)))
 

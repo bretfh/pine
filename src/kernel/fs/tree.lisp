@@ -28,17 +28,37 @@ is what a place answers when there is none, so it cannot also be one."
 
 (defun root () *root*)
 
-(defun builder (thunk &key as)
+(defun builder (thunk &key as (now t))
   "Say this package puts something on the tree, and how: done on the root now, and
 again on any root built later. AS names the builder, so saying it again replaces it."
   (let ((key (or as thunk)))
     (setf *builders* (append (cl:remove key *builders* :key #'car :test #'equal)
                              (list (cons key thunk))))
-    (funcall thunk (root))
+    (when now (funcall thunk (root)))
     thunk))
 
 (defun built (&optional (root (root)))
   (dolist (each *builders* root) (funcall (cdr each) root)))
+
+(defun declared (make &rest names)
+  "What MAKE makes, put under NAMES: a system's while one is starting, and
+otherwise had by every root, made again for each."
+  (flet ((into (root)
+           (let ((x (funcall make)))
+             (attach x (apply #'ensure root names))
+             x)))
+    (let ((x (into (root))))
+      (if *owner*
+          (setf (owner x) *owner*)
+          (builder #'into :as (full-name x) :now nil))
+      x)))
+
+(defun undeclared (x)
+  "Take a declared thing back: off its dir, and out of what every root has."
+  (let ((d (parent x)) (was (full-name x)))
+    (setf *builders* (cl:remove was *builders* :key #'car :test #'equal))
+    (when d (erase-entry d (name x)))
+    x))
 
 (defun split-name (text)
   (let ((names nil)

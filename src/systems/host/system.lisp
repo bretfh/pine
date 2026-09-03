@@ -32,7 +32,7 @@ A name in place of a node is made and put under /dev first:
                (let ((it (apply #'%make what arguments)))
                  (when it
                    (fs:attach it (fs:ensure (fs:root) "dev")))))))
-    (when (and (fs:kind n) system:*owner*) (setf (fs:owner n) system:*owner*))
+    (when (and (fs:kind n) fs:*owner*) (setf (fs:owner n) fs:*owner*))
     (%attend n)))
 
 (defun %attend (n)
@@ -67,7 +67,7 @@ A name in place of a node is made and put under /dev first:
     (system:puts (sh:sh-node) root)
     (device (system:puts (made "env") root))
     (device (system:puts (made "sys") root))
-    (setf (fs:owner (mount:mount #p"/" root "file")) system:*owner*)
+    (setf (fs:owner (mount:mount #p"/" root "file")) fs:*owner*)
     (device "clock")
     (job:supervise
      (job:start (make-instance 'job:tick :name "clock" :every 1
