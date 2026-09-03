@@ -67,7 +67,7 @@ every frame would otherwise take again every frame."
                                          (mapcar #'princ-to-string
                                                  (compute-restarts condition)))
                            :fault fault))
-         (document (or (text:named *name*)
+         (document (or (tree:at "/text" *name*)
                        (text:make-document *name*
                                           :mode (make-instance 'debugger)))))
     (setf *standing* s)
@@ -110,7 +110,7 @@ which is what the layer below already does."
 (defun away ()
   (setf *standing* nil)
   (%back)
-  (when (text:named *name*) (command:run "kill-document" (list *name*)))
+  (when (tree:at "/text" *name*) (command:run "kill-document" (list *name*)))
   t)
 
 (command:defcommand "debugger-abort" ()

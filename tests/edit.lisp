@@ -8,14 +8,14 @@
   "A pine with text and the editor up, made once. Starting it twice would be two
 images, and there is one."
   (unless *editing*
-    (pine:start)
+    (pine:boot)
     (pine:use :text)
     (pine:use :edit)
     (setf *editing* t))
   (when (edit:askingp) (command:run "cancel"))
   (when (edit:searching) (edit:took (edit:searching)))
   (ui:take-next nil)
-  (let ((scratch (or (text:named "scratch")
+  (let ((scratch (or (tree:at "/text" "scratch")
                      (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
@@ -340,7 +340,7 @@ the first one at the second file and the first was gone."
              (doc-a (text:make-document name-a)))
         (text:visit doc-a path-a)
         (let* ((name-b (pine/edit::%document-name path-b))
-               (doc-b (or (text:named name-b) (text:make-document name-b))))
+               (doc-b (or (tree:at "/text" name-b) (text:make-document name-b))))
           (text:visit doc-b path-b)
           (is (not (eq doc-a doc-b)) "they are two")
           (is (equal "(this is A)" (node:contents doc-a)) "and the first still is")
@@ -490,7 +490,7 @@ that went into the backtrace: the prompt was there, asking, and unreachable."
          (let ((typed (pine/edit::so-far)))
            (%broke "something else broke")
            (is (edit:askingp) "the question is still standing")
-           (is (eq (text:named "*prompt*") (text:current))
+           (is (eq (tree:at "/text" "*prompt*") (text:current))
                "and it still has the keyboard")
            (pine/edit:type-text "x")
            (is (equal (concatenate 'string typed "x") (pine/edit::so-far))
@@ -507,12 +507,12 @@ for each was a document nobody could type in for as long as it went on."
        (progn
          (%broke "the first")
          (is (equal "*debugger*" (node:name (text:current))))
-         (let ((scratch (text:named "scratch")))
+         (let ((scratch (tree:at "/text" "scratch")))
            (setf (text:current) scratch)
            (%broke "the second")
            (is (eq scratch (text:current))
                "the one already up takes the second rather than the front again")
-           (is (search "the second" (text:text (text:named "*debugger*")))
+           (is (search "the second" (text:text (tree:at "/text" "*debugger*")))
                "and it says what broke this time")))
     (pine/edit::away)))
 

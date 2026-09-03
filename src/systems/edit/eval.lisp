@@ -206,7 +206,7 @@ here would."
   (let ((back (went)))
     (when back
       (destructuring-bind (name line col) back
-        (let ((document (text:named name)))
+        (let ((document (tree:at "/text" name)))
           (when document
             (setf (text:current) document)
             (show (focused) document)

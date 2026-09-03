@@ -64,7 +64,7 @@
 
 (test its-own-role-says-where-its-surface-goes
   (app)
-  (let* ((s (ui:named "sticky"))
+  (let* ((s (tree:at "/surface" "sticky"))
          (where (ui:anchor (ui:role s) 40 20)))
     (is (not (null s)))
     (is (equal '(:top :right) (ui:edges-of where)))
@@ -94,7 +94,7 @@
   (setf *app* t)
   (is (null (system:named "notes")))
   (is (null (tree:at "/notes")))
-  (is (null (ui:named "sticky")))
+  (is (null (tree:at "/surface" "sticky")))
   (is (null (command:named "note")))
   (is (null (tree:at "/system/notes"))))
 
@@ -129,7 +129,7 @@ that uses PINE/USER and nothing else can make."
   (is (null (system:named "vcs")))
   (is (null (tree:at "/dev/vcs")) "the device it put under /dev")
   (is (null (tree:at "/work")) "the place it put up")
-  (is (null (ui:named "board")) "its surface")
+  (is (null (tree:at "/surface" "board")) "its surface")
   (is (null (command:named "branch")) "its commands")
   (is (not (member :vcs-branch (pine/edit::sources)))
       "and the way it answered its own kind of question"))
@@ -154,7 +154,7 @@ half worked and nothing said which half."
       (is (member :probe-theme (pine/ui::themes)) "the theme is there")
       (is (member :probe-category (pine/edit::sources)) "the prompt source is there")
       (is (not (null (declared:named "%probe-owned"))) "the declaration is there")
-      (is (not (null (ui:named "probe-surface"))) "the surface is there")
+      (is (not (null (tree:at "/surface" "probe-surface"))) "the surface is there")
       (is (not (null (mode:binding (make-instance 'mode:text) "C-c C-probe")))
           "the chord is there")
 
@@ -164,7 +164,7 @@ half worked and nothing said which half."
       (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
       (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
       (is (null (declared:named "%probe-owned")) "and the declaration goes")
-      (is (null (ui:named "probe-surface")) "and the surface goes")
+      (is (null (tree:at "/surface" "probe-surface")) "and the surface goes")
       (is (null (mode:binding (make-instance 'mode:text) "C-c C-probe"))
           "and the chord goes"))))
 

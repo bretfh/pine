@@ -1,9 +1,11 @@
 (defpackage #:pine/wm/tiles
-  (:use #:pine/user)
+  (:use #:cl #:pine)
+  (:shadowing-import-from #:pine #:read #:write #:map #:set)
+  (:import-from #:pine/wm/compositor #:ids #:outputs)
   (:local-nicknames (#:node #:pine/fs/node))
   (:export
    #:layout #:tall #:wide #:full #:stacked
-   #:arrange #:named #:layouts
+   #:arrange #:layouts
    #:area #:placed #:id-of #:x-of #:y-of #:wide-of #:tall-of
    #:clip-of #:stack-of))
 (in-package #:pine/wm/tiles)
@@ -36,7 +38,7 @@ of these."))
              (cons class (mapcan #'under (c2mop:class-direct-subclasses class)))))
     (remove (find-class 'layout) (under (find-class 'layout)))))
 
-(defun named (name)
+(defun layout (name)
   (let ((found (find (string-downcase (princ-to-string name)) (layouts)
                      :key (lambda (c) (string-downcase (symbol-name (class-name c))))
                      :test #'equal)))
@@ -160,7 +162,7 @@ commands away, and pine places nothing again."))
                            (string-downcase
                             (class-name (class-of (layout-of s)))))))
               :writes (lambda (value)
-                        (let ((s (%system)) (l (named value)))
+                        (let ((s (%system)) (l (layout value)))
                           (when (and s l)
                             (setf (layout-of s) l)
                             (%placed s))))

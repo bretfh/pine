@@ -38,7 +38,7 @@
   (let ((m (text:mode-of (text:current))))
     (show-listing
      "*help*"
-     (list (mode:type m)
+     (list (node:name m)
            ""
            (format nil "chain     ~{~(~a~)~^ -> ~}"
                    (mapcar #'class-name

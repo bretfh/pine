@@ -36,7 +36,7 @@ reading the line back out of the text."))
 (defun show-listing (name shown-rows &optional on-enter)
   "Put ROWS in a document of its own and show it. With ON-ENTER, RET on a row hands
 it the place that row stands for."
-  (let ((document (or (text:named name)
+  (let ((document (or (tree:at "/text" name)
                       (text:make-document name :mode (make-instance 'listing))))
         (shown-rows (if (stringp shown-rows)
                   (uiop:split-string shown-rows :separator '(#\Newline))

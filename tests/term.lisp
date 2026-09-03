@@ -94,7 +94,7 @@ thing, painted one way."
   (let ((term (%terminal)))
     (let ((name (node:name term)))
       (pine/run/command:run "terminal-close")
-      (is (null (text:named name)))
+      (is (null (tree:at "/text" name)))
       (is (null (job:named name)))
       (is (null (pine/term/terminal:terminals))))))
 

@@ -280,7 +280,7 @@ write, and most of them are not written beside the root one."
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
   (unless (tree:at "/mode") (node:attach (mode:mode-node) (tree:root)))
-  (is (typep (mode:named "wm") 'pine/wm/keys:wm)
+  (is (typep (mode:mode "wm") 'pine/wm/keys:wm)
       "a mode is found by name whichever package it was written in")
   (is (member "wm" (node:contents (tree:at "/mode")) :test #'equal))
   (let ((n (tree:at "/mode/wm/keys")))

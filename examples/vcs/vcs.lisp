@@ -1,5 +1,8 @@
 (defpackage #:vcs
-  (:use #:pine/user)
+  (:use #:cl #:pine #:pine/ui #:pine/host)
+  (:shadowing-import-from #:pine #:read #:write #:map #:set)
+  (:import-from #:pine/mode #:bind)
+  (:import-from #:pine/edit #:completes)
   (:export #:vcs #:board))
 (in-package #:vcs)
 

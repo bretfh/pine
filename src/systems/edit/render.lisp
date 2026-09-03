@@ -27,7 +27,7 @@ Answers the text and the column each character landed in."
 
 (defun %document-of (win)
   (let ((it (shows win)))
-    (or (and (stringp it) (text:named it))
+    (or (and (stringp it) (tree:at "/text" it))
         (and (typep it 'text:document) it)
         (text:current))))
 
@@ -128,7 +128,7 @@ method somebody else writes, and nothing here has to know about it.")
                  :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod drawn ((content string) win)
-  (let ((document (text:named content)))
+  (let ((document (tree:at "/text" content)))
     (if document (drawn document win) (call-next-method))))
 
 (defmethod drawn ((content ui:widget) win)
@@ -140,7 +140,7 @@ window beside a document."
     (ui:with-pass
       (ui:dress content)
       (ui:measure content g across rows)
-      (ui:arrange content g 0 0 across rows)
+      (ui:lay content g 0 0 across rows)
       (ui:paint content g))
     (ui:cells (ui:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
@@ -188,7 +188,7 @@ window beside a document."
 on, and a widget tree has nothing of the sort to say."
   (let ((it (shows win)))
     (or (null it) (typep it 'text:document)
-        (and (stringp it) (text:named it)))))
+        (and (stringp it) (tree:at "/text" it)))))
 
 (defun modeline (win)
   (let* ((document (%document-of win))
@@ -196,7 +196,7 @@ on, and a widget tree has nothing of the sort to say."
          (text (format nil " ~:[  ~;**~] ~a  ~a  L~d C~d"
                        (text:modified document)
                        (node:name document)
-                       (mode:type (text:mode-of document))
+                       (node:name (text:mode-of document))
                        (1+ (text:at-line document))
                        (text:at-col document)))
          (g (ui:make-grid width 1)))
@@ -297,7 +297,7 @@ moving means."
     (ui:with-pass
       (ui:dress tree)
       (ui:measure tree g cols lines)
-      (ui:arrange tree g 0 0 cols lines)
+      (ui:lay tree g 0 0 cols lines)
       (ui:paint tree g))
     (ui:by-row g)))
 

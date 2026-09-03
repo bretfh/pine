@@ -1,26 +1,40 @@
 (defpackage #:pine
-            (:use #:cl)
-            (:shadow #:describe #:read #:write)
-            (:local-nicknames (#:d #:pine/data)
-                              (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
-                              (#:tree #:pine/fs/tree)
-                              (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
-                              (#:store #:pine/fs/store)
-                              (#:libs #:pine/run/libs) (#:log #:pine/fs/log)
-                              (#:meter #:pine/run/meter) (#:fault #:pine/run/fault)
-                              (#:actors #:pine/run/actors) (#:job #:pine/run/job)
-                              (#:watch #:pine/run/watch)
-                              (#:command #:pine/run/command)
-                              (#:image #:pine/run/image)
-                              (#:peer #:pine/run/peer) (#:system #:pine/run/system)
-                              (#:session #:pine/run/session))
-            (:export
-   #:start #:stop #:main #:daemon #:quit
-   #:use #:drop #:reach #:spawn
-   #:at #:read #:write #:watch #:ls #:standsp
-   #:toggle #:include #:exclude #:blend
-   #:speaks #:load-config #:user-package
-   #:console #:opening))
+  (:use #:cl)
+  (:shadow #:describe #:read #:write)
+  (:shadowing-import-from #:pine/data #:map #:set)
+  (:import-from #:pine/data #:seq)
+  (:import-from #:pine/fs/log #:note)
+  (:import-from #:pine/fs/mount #:mount)
+  (:import-from #:pine/fs/node
+   #:contents #:derived #:describes #:name #:node #:place #:value)
+  (:import-from #:pine/fs/tree #:ensure #:erase #:listing #:root)
+  (:import-from #:pine/run/command #:defcommand #:run)
+  (:import-from #:pine/run/fault #:attempt)
+  (:import-from #:pine/run/job #:start #:stop)
+  (:import-from #:pine/run/peer #:reach #:serve)
+  (:import-from #:pine/run/system #:drop #:puts #:system #:use)
+  (:import-from #:pine/run/watch #:unwatch)
+  (:local-nicknames (#:d #:pine/data)
+                    (#:node #:pine/fs/node) (#:commit #:pine/fs/commit)
+                    (#:tree #:pine/fs/tree)
+                    (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
+                    (#:store #:pine/fs/store)
+                    (#:libs #:pine/run/libs) (#:log #:pine/fs/log)
+                    (#:meter #:pine/run/meter) (#:fault #:pine/run/fault)
+                    (#:actors #:pine/run/actors) (#:job #:pine/run/job)
+                    (#:watch #:pine/run/watch)
+                    (#:command #:pine/run/command)
+                    (#:image #:pine/run/image)
+                    (#:peer #:pine/run/peer) (#:system #:pine/run/system)
+                    (#:session #:pine/run/session))
+  (:export
+   #:boot #:leave #:main #:daemon #:quit #:console #:opening #:load-config #:spawn
+   #:at #:read #:write #:watch #:ls #:standsp #:toggle #:include #:exclude #:blend
+   #:use #:drop #:reach #:serve
+   #:seq #:map #:set #:note #:mount
+   #:contents #:derived #:describes #:name #:node #:place #:value
+   #:ensure #:erase #:listing #:root
+   #:defcommand #:run #:attempt #:start #:stop #:puts #:system #:unwatch))
 (in-package #:pine)
 
 (defgeneric opening (what)
@@ -31,38 +45,6 @@ image built without one has nothing to unset and nothing to check -- there is
 simply no method, which is the truth about that image.")
             (:method (what) (declare (ignore what)) nil))
 
-(defun speaks (name)
-  "Put every word the vocabulary NAME holds into the language.
-
-A vocabulary is a package that uses nothing and imports what it offers, so what it
-holds is exactly what it offers and the compiler checked every name in it. A system
-says this as it loads, which is what makes the words it brings sayable in a config
-that was already read.
-
-USE-PACKAGE is the whole mechanism. Two vocabularies claiming one word is a
-PACKAGE-ERROR naming both symbols, where it happens, rather than a sentence
-collected in a list nobody reads."
-  (let ((p (find-package name))
-        (into (find-package '#:pine/user))
-        (all nil))
-    (unless p (error "~a is not a vocabulary this image has." name))
-    (do-symbols (s p) (pushnew s all))
-    (cl:export all p)
-    (when into
-      (dolist (s all)
-        (let ((had (find-symbol (symbol-name s) into)))
-          (when (and had (not (eq had s))
-                     (eq (symbol-package had) (find-package '#:common-lisp)))
-            (shadowing-import s into))))
-      (use-package p into)
-      (cl:export all into))
-    p))
-
-(defun use (name) (system:use name))
-(defun drop (name) (system:drop name))
-(defun reach (name &rest arguments) (apply #'peer:reach name arguments))
-(defun serve (&rest arguments) (apply #'peer:serve arguments))
-
 (defun spawn (name &key (systems '(:pine)))
   "Another lisp of pine's own, supervised. Work can be done in it, and a fault it
 stands in comes back here with the restarts it is still offering."
@@ -72,7 +54,7 @@ stands in comes back here with the restarts it is still offering."
     (job:start j)
     j))
 
-(defun start (&key (name "pine") store remoting)
+(defun boot (&key (name "pine") store remoting)
   (libs:attend)
   (tree:make-root)
   (unless (actors:runningp) (actors:boot :remoting remoting))
@@ -89,7 +71,7 @@ stands in comes back here with the restarts it is still offering."
     (store:keeping))
   (tree:root))
 
-(defun stop ()
+(defun leave ()
   (fault:or-nothing "there may be no socket to close"
     (pine/serve/socket:close-socket))
   (commit:forget-listeners)
@@ -110,17 +92,10 @@ stands in comes back here with the restarts it is still offering."
 (defun store-file ()
   (merge-pathnames "pine/tree.db" (uiop:xdg-data-home)))
 
-(defun user-package ()
-  "Where somebody writes their own: PINE/USER, declared in src/user.lisp.
-
-A system loaded later puts its own vocabulary here as it loads, through
-RUN/SYSTEM:SPEAKS, so what a config can name follows what is loaded."
-  (find-package '#:pine/user))
-
 (defun load-config (&optional (file (config-file)))
-  (user-package)
+  (find-package '#:pine/user)
   (when (and file (probe-file file))
-    (let ((*package* (user-package))
+    (let ((*package* (find-package '#:pine/user))
           (*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax))
           (before (length (fault:faults))))
       (log:note "reading ~a" file)
@@ -145,7 +120,7 @@ RUN/SYSTEM:SPEAKS, so what a config can name follows what is loaded."
                                      (sleep 0.2)
                                      (fault:or-nothing
                                       "leaving anyway"
-                                      (stop))
+                                      (leave))
                                      (sb-ext:exit :abort t :code 0))))
   t)
 
@@ -157,16 +132,16 @@ The readtable and not only the package, so /dev/audio/volume means at the prompt
 what it means in the file. Without it a config taught you a spelling the prompt
 answered with an error."
   (session:open-session :name "console" :in (tree:root)
-                        :package (user-package)
+                        :package (find-package '#:pine/user)
                         :readtable (named-readtables:find-readtable
                                     'pine/fs/reader:syntax)))
 
 (defun main (&key (store (store-file)))
   "A pine in this terminal, with no daemon: the namespace, and a repl on it."
-  (start :store store)
+  (boot :store store)
   (let ((s (console)))
     (unwind-protect (session:interact s)
-      (stop))))
+      (leave))))
 
 (defun daemon (&key (store (store-file)) (remoting actors:*port*)
                     (config (config-file)))
@@ -182,7 +157,7 @@ REMOTING is the port other pines reach this one on. A daemon has one because tha
 is what makes it a daemon: REACH, MOUNT and evaluating in another image are the
 whole of what a peer is, and none of them can happen to a pine nothing can get to.
 Say NIL for one that answers only on its socket."
-  (start :remoting remoting)
+  (boot :remoting remoting)
   (command:defcommand "quit" () (:describes "stop this pine")
                       (quit))
   (command:defcommand "reload" () (:describes "read the config again")

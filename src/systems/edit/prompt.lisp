@@ -28,7 +28,7 @@
 (defun askingp () (and *prompt* t))
 
 (defun answering ()
-  (or (text:named +document+)
+  (or (tree:at "/text" +document+)
       (text:make-document +document+ :mode (make-instance 'prompt))))
 
 (defun %under () (tree:ensure "/prompt"))
@@ -51,7 +51,7 @@ cannot see a thing it cannot see move."
   (%place "asking" (lambda () (make-instance 'node:value :name "asking"))))
 
 (defun %typed ()
-  (let ((d (text:named +document+)))
+  (let ((d (tree:at "/text" +document+)))
     (if d (node:contents d) "")))
 
 (defun %said-node ()
@@ -151,8 +151,8 @@ what it read, and a slot nobody reads is a thing nothing can follow."
 (defun %where-from (had)
   "Where answering goes back to. Never the prompt itself: a question asked from
 inside another one would otherwise leave the prompt as what every key edits."
-  (let ((it (and had (text:named (node:name had)))))
-    (cond ((and it (not (eq it (text:named +document+)))) it)
+  (let ((it (and had (tree:at "/text" (node:name had)))))
+    (cond ((and it (not (eq it (tree:at "/text" +document+)))) it)
           (t (find-if-not #'text:asidep (text:documents))))))
 
 (defun ask (question &key then category initial must-match candidates history)
@@ -249,11 +249,11 @@ so-far, so walking back to the end gives it back."
 (defun %close ()
   (setf (text:current)
         (or (%where-from (and *prompt* (was *prompt*)))
-            (text:named "scratch")
+            (tree:at "/text" "scratch")
             (text:scratch)))
   (setf *prompt* nil)
   (%standing nil)
-  (let ((d (text:named +document+)))
+  (let ((d (tree:at "/text" +document+)))
     (when d (setf (node:contents d) "")))
   nil)
 

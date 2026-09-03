@@ -30,7 +30,7 @@ supervised thing pine has is running and unreadable."
     (unwind-protect
          (let ((j (make-instance 'job:tick :name "probe" :every 0.05
                                              :runs (lambda () nil))))
-           (pine:start)
+           (pine:boot)
            (is (not (null (tree:at "/proc"))))
            (unwind-protect
                 (progn (job:supervise j)

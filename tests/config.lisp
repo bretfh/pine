@@ -25,8 +25,8 @@ readtable, and a fault in it is a fault like any other rather than a crash."
   (is (equal "hello from the config" (command:run "hello")))
   (is (not (null (mode:binding (make-instance 'mode:text) "C-c h")))
       "a chord it bound")
-  (is (not (null (ui:named "ticker"))) "a surface it declared")
-  (is (not (null (ui:named "sound"))))
+  (is (not (null (tree:at "/surface" "ticker"))) "a surface it declared")
+  (is (not (null (tree:at "/surface" "sound"))))
   (is (not (null (find "notes" (mode:modes)
                        :key (lambda (c)
                               (string-downcase (symbol-name (class-name c))))
@@ -36,7 +36,7 @@ readtable, and a fault in it is a fault like any other rather than a crash."
 (test a-role-written-in-a-config-says-where-it-goes
   (editing)
   (pine:load-config (%example))
-  (let* ((s (ui:named "ticker"))
+  (let* ((s (tree:at "/surface" "ticker"))
          (where (ui:anchor (ui:role s) 100 20)))
     (is (equal '(:bottom :right) (ui:edges-of where)))
     (is (equal '(0 12 12 0) (ui:margin-of where)))))
@@ -44,7 +44,7 @@ readtable, and a fault in it is a fault like any other rather than a crash."
 (test a-layout-written-in-a-config-lays-windows-out
   (editing)
   (pine:load-config (%example))
-  (let ((l (tiles:named "sidebar")))
+  (let ((l (tiles:layout "sidebar")))
     (is (not (null l)) "it is offered like the ones pine ships")
     (is (equal '((1 0 0 320 720) (2 320 0 960 720))
                (tiles:arrange l '(1 2) '(0 0 1280 720))))))

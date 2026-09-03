@@ -82,14 +82,14 @@ minimum, then adds margin."
             (when *sizes* (setf (gethash w *sizes*) (list out-w out-h)))
             (values out-w out-h))))))
 
-(defgeneric arrange (widget medium x y w h)
+(defgeneric lay (widget medium x y w h)
   (:documentation "Give the widget this rect, and place what it holds.")
   (:method ((w widget) m x y width height)
     (declare (ignore m))
     (setf (left w) x (top w) y
           (right w) (+ x width) (bottom w) (+ y (max 0 (1- height))))))
 
-(defmethod arrange :around ((w widget) m x y width height)
+(defmethod lay :around ((w widget) m x y width height)
   (let ((mg (%margin w)))
     (if mg
         (call-next-method w m (+ x (fourth mg)) (+ y (first mg))
@@ -191,13 +191,13 @@ weeks a month can fall across."
   (let ((d (max (diameter w) (%min-w w) (%min-h w))))
     (values d d)))
 
-(defmethod arrange ((w ring) m x y width height)
+(defmethod lay ((w ring) m x y width height)
   (call-next-method)
   (let ((part (first (parts w))))
     (when part
       (multiple-value-bind (ix iy iw ih) (%inner w x y width height)
         (multiple-value-bind (cw ch) (measure part m iw ih)
-          (arrange part m (+ ix (floor (- iw cw) 2)) (+ iy (floor (- ih ch) 2))
+          (lay part m (+ ix (floor (- iw cw) 2)) (+ iy (floor (- ih ch) 2))
                    cw ch))))))
 
 (defun %stacked (w m aw ah down)
@@ -237,22 +237,22 @@ weeks a month can fall across."
                               ((:start :stretch) x)
                               (:center (+ x (floor (- width cw) 2)))
                               (:end (+ x (- width cw))))))
-                    (arrange part m cx at (if (eq (align w) :stretch) width cw) fh)
+                    (lay part m cx at (if (eq (align w) :stretch) width cw) fh)
                     (setf at (+ at fh (spacing w))))
                   (let ((fw (+ cw extra))
                         (cy (ecase (align w)
                               ((:start :stretch) y)
                               (:center (+ y (floor (- height ch) 2)))
                               (:end (+ y (- height ch))))))
-                    (arrange part m at cy fw (if (eq (align w) :stretch) height ch))
+                    (lay part m at cy fw (if (eq (align w) :stretch) height ch))
                     (setf at (+ at fw (spacing w))))))))
 
-(defmethod arrange ((w column) m x y width height)
+(defmethod lay ((w column) m x y width height)
   (call-next-method)
   (multiple-value-bind (x y width height) (%inner w x y width height)
     (%lay w m x y width height t)))
 
-(defmethod arrange ((w row) m x y width height)
+(defmethod lay ((w row) m x y width height)
   (call-next-method)
   (multiple-value-bind (x y width height) (%inner w x y width height)
     (%lay w m x y width height nil)))
@@ -263,23 +263,23 @@ weeks a month can fall across."
       (multiple-value-bind (cw ch) (measure part m aw ah)
         (setf wide (max wide cw) high (max high ch))))))
 
-(defmethod arrange ((w stack) m x y width height)
+(defmethod lay ((w stack) m x y width height)
   (call-next-method)
   (multiple-value-bind (x y width height) (%inner w x y width height)
-    (dolist (part (parts w)) (arrange part m x y width height))))
+    (dolist (part (parts w)) (lay part m x y width height))))
 
 (defmethod measure ((w box) m aw ah)
   (declare (ignore aw))
   (let ((part (first (parts w))))
     (values (wide w) (if part (nth-value 1 (measure part m (wide w) ah)) 1))))
 
-(defmethod arrange ((w box) m x y width height)
+(defmethod lay ((w box) m x y width height)
   (declare (ignore width))
   (call-next-method w m x y (wide w) height)
   (let ((part (first (parts w))))
     (when part
       (multiple-value-bind (cw ch) (measure part m (wide w) height)
-        (arrange part m
+        (lay part m
                  (ecase (align w)
                    (:left x)
                    (:right (+ x (- (wide w) cw)))
@@ -290,13 +290,13 @@ weeks a month can fall across."
   (let ((part (first (parts w))))
     (if part (measure part m aw ah) (values 0 0))))
 
-(defmethod arrange ((w center) m x y width height)
+(defmethod lay ((w center) m x y width height)
   (call-next-method)
   (multiple-value-bind (x y width height) (%inner w x y width height)
     (let ((part (first (parts w))))
       (when part
         (multiple-value-bind (cw ch) (measure part m width height)
-          (arrange part m (+ x (floor (- width cw) 2))
+          (lay part m (+ x (floor (- width cw) 2))
                    (+ y (floor (- height ch) 2)) cw ch))))))
 
 (defmethod measure ((w centerbox) m aw ah)
@@ -306,31 +306,31 @@ weeks a month can fall across."
         (setf wide (max wide cw))
         (incf high ch)))))
 
-(defmethod arrange ((w centerbox) m x y width height)
+(defmethod lay ((w centerbox) m x y width height)
   (call-next-method)
   (multiple-value-bind (x y width height) (%inner w x y width height)
     (let* ((s (start w)) (c (middle w)) (e (end w))
            (sh (if s (nth-value 1 (measure s m width height)) 0))
            (eh (if e (nth-value 1 (measure e m width height)) 0)))
-      (when s (arrange s m x y width sh))
-      (when e (arrange e m x (+ y (- height eh)) width eh))
+      (when s (lay s m x y width sh))
+      (when e (lay e m x (+ y (- height eh)) width eh))
       (when c
         (let ((ch (nth-value 1 (measure c m width height)))
               (room (max 0 (- height sh eh))))
-          (arrange c m x (+ y sh (max 0 (floor (- room ch) 2))) width ch))))))
+          (lay c m x (+ y sh (max 0 (floor (- room ch) 2))) width ch))))))
 
 (defmethod measure ((w scroll) m aw ah)
   (declare (ignore ah))
   (let ((part (first (parts w))))
     (values (if part (nth-value 0 (measure part m aw 100000)) 0) (tall w))))
 
-(defmethod arrange ((w scroll) m x y width height)
+(defmethod lay ((w scroll) m x y width height)
   (declare (ignore height))
   (call-next-method w m x y width (tall w))
   (let ((part (first (parts w))))
     (when part
       (let ((ch (nth-value 1 (measure part m width 100000))))
-        (arrange part m x (- y (offset w)) width ch)))))
+        (lay part m x (- y (offset w)) width ch)))))
 
 (defmethod paint ((w scroll) (m grid))
   (let ((part (first (parts w))))
@@ -344,12 +344,12 @@ weeks a month can fall across."
     (multiple-value-bind (cw ch) (if part (measure part m aw ah) (values 0 1))
       (values (+ (length mark) cw) ch))))
 
-(defmethod arrange ((w choice) m x y width height)
+(defmethod lay ((w choice) m x y width height)
   (call-next-method)
   (let ((mark (if (chosen w) (before w) (after w)))
         (part (first (parts w))))
     (when part
-      (arrange part m (+ x (length mark)) y (- width (length mark)) height))))
+      (lay part m (+ x (length mark)) y (- width (length mark)) height))))
 
 (defmethod paint ((w choice) (m grid))
   (let ((mark (if (chosen w) (before w) (after w))))
@@ -361,12 +361,12 @@ weeks a month can fall across."
   (let ((part (first (parts w))))
     (if part (measure part m aw ah) (values 0 1))))
 
-(defmethod arrange ((w action) m x y width height)
+(defmethod lay ((w action) m x y width height)
   (call-next-method)
   (multiple-value-bind (x y width height) (%inner w x y width height)
     (let ((part (first (parts w))))
       (when part
         (multiple-value-bind (cw ch) (measure part m width height)
-          (arrange part m (+ x (floor (- width cw) 2))
+          (lay part m (+ x (floor (- width cw) 2))
                    (+ y (floor (- height ch) 2)) cw ch))))))
 

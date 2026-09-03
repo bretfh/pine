@@ -1,5 +1,10 @@
 (defpackage #:notes
-  (:use #:pine/user)
+  (:use #:cl #:pine)
+  (:shadowing-import-from #:pine #:read #:write #:map #:set)
+  (:import-from #:pine/mode #:prose #:handles #:setting #:regions #:covering #:bind)
+  (:import-from #:pine/text #:line #:line-count)
+  (:import-from #:pine/ui
+   #:overlay #:anchor #:placing #:inset #:defsurface #:column #:label)
   (:local-nicknames (#:node #:pine/fs/node))
   (:shadow #:note)
   (:export #:notes #:note #:journal #:sticky))
@@ -51,7 +56,7 @@ directory says the same thing the same way."
 (defun %headingp (line)
   (and (plusp (length line)) (char= #\* (char line 0))))
 
-(defmethod structure ((m note) document)
+(defmethod regions ((m note) document)
   "Every heading, and the lines under it, as spans. What comes back is put
 in the namespace under the document, so /text/x.note/heading/Today is a place you
 can read, write and watch."

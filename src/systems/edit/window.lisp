@@ -50,12 +50,9 @@ was split into."))
       (list of)
       (loop :for part :in (parts of) :append (windows part))))
 
-(defun named (name &optional (of (root)))
-  (find (princ-to-string name) (windows of) :key #'node:name :test #'equal))
-
 (defun focused (&optional (of (root)))
   (let ((said (node:contents (tree:ensure of "focused"))))
-    (or (and said (named said of))
+    (or (and said (tree:at of said))
         (first (windows of)))))
 
 (defun focus (w &optional (of (root)))
@@ -64,7 +61,7 @@ was split into."))
 
 (defun show (w it)
   "Put something in a window: a document, the name of one, or a widget tree."
-  (let ((content (if (stringp it) (or (text:named it) it) it)))
+  (let ((content (if (stringp it) (or (tree:at "/text" it) it) it)))
     (setf (shows w) content)
     (when (typep content 'text:document) (setf (text:current) content))
     (node:moved w)

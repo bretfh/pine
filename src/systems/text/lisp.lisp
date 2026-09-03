@@ -66,7 +66,7 @@ covers."
           (push (list head name start at) found)
           (setf start nil depth 0))))))
 
-(defmethod mode:structure ((m mode:lisp) document)
+(defmethod mode:regions ((m mode:lisp) document)
   "Toplevel forms, grouped by what they are and named by what they define. So
 /text/init.lisp/defcommand/hello is that form, and writing it replaces it."
   (let ((by-head (d:no-map)))

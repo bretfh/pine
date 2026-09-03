@@ -75,7 +75,7 @@ load is a fault like any other: the text still opens, uncoloured."
 
 (command:defcommand "structure" (&optional name)
     (:describes "what this document's mode makes of it")
-  (let ((d (if name (named name) (current))))
+  (let ((d (if name (tree:at (root) name) (current))))
     (when d (mapcar #'node:name (regions d)))))
 
 (defmethod job:start ((s text))
