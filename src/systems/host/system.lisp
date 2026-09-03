@@ -1,15 +1,3 @@
-(defpackage #:pine/host
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:mount #:pine/fs/mount)
-                    (#:job #:pine/run/job) (#:system #:pine/run/system)
-                    (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
-                    (#:command #:pine/run/command) (#:fault #:pine/run/fault)
-                    (#:sh #:pine/host/shell) (#:dev #:pine/host/device)
-                    (#:declared #:pine/host/declared))
-  (:import-from #:pine/host/declared #:defdevice #:defbacking)
-  (:import-from #:pine/host/shell #:sh)
-  (:export
-   #:device #:defdevice #:defbacking #:sh))
 (in-package #:pine/host)
 
 (defvar *attending* nil)
@@ -30,7 +18,7 @@ the substrate names either."))
 Every device is a declaration. There is no second way of getting one, so a device a
 config declared and a device pine ships are made by the same call -- which is the
 whole of what makes /dev something you can add to."
-  (apply #'declared:made name arguments))
+  (apply #'made name arguments))
 
 (defun device (what &rest arguments)
   "Start what WHAT declared: the streams whose lines say the world behind it moved,
@@ -77,14 +65,14 @@ A name in place of a node is made and put under /dev first:
 (defmethod job:start ((s host))
   (let ((root (fs:root)))
     (system:puts (sh:sh-node) root)
-    (device (system:puts (declared:made "env") root))
-    (device (system:puts (declared:made "sys") root))
+    (device (system:puts (made "env") root))
+    (device (system:puts (made "sys") root))
     (setf (fs:owner (mount:mount #p"/" root "file")) system:*owner*)
     (device "clock")
     (job:supervise
      (job:start (make-instance 'job:tick :name "clock" :every 1
                                            :on-fault :leave
-                                           :runs #'dev:tick)))
+                                           :runs #'tick)))
     root)
   s)
 

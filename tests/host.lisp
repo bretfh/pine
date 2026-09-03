@@ -5,11 +5,11 @@
 (test a-device-is-rows-and-not-a-class-each
   (with-tree
     (let ((held (list 40)))
-      (declared:defdevice %probe-volume :describes "rows, not a class each")
-      (declared:defbacking %probe-volume ()
+      (host:defdevice %probe-volume :describes "rows, not a class each")
+      (host:defbacking %probe-volume ()
         (volume :reads (first held) :writes (lambda (v) (setf (first held) v)))
         (muted  :reads nil))
-      (let ((dev (fs:attach (declared:made "%probe-volume") (fs:root))))
+      (let ((dev (fs:attach (host:made "%probe-volume") (fs:root))))
         (is (equal '("volume" "muted") (fs:contents dev)))
         (is (= 40 (fs:contents (fs:at "/%probe-volume/volume"))))
         (setf (fs:contents (fs:at "/%probe-volume/volume")) 55)
@@ -20,10 +20,10 @@
 
 (test a-device-says-what-it-wants-watched
   (with-tree
-    (declared:defdevice %probe-watched :describes "what it wants watched")
-    (declared:defbacking %probe-watched (:announces '("some stream") :refreshes 5)
+    (host:defdevice %probe-watched :describes "what it wants watched")
+    (host:defbacking %probe-watched (:announces '("some stream") :refreshes 5)
       (one :reads 1))
-    (let ((dev (declared:made "%probe-watched")))
+    (let ((dev (host:made "%probe-watched")))
       (is (equal '("some stream") (fs:announces dev)))
       (is (eql 5 (fs:refreshes dev))))))
 
@@ -71,15 +71,15 @@ not an answer, because a double-quoted shell word still spells $(...)."
 
 (test the-clock-is-the-time-as-paths
   (with-tree
-    (let ((clock (declared:made "clock")))
+    (let ((clock (host:made "clock")))
       (fs:attach clock (fs:root))
-      (device:tick)
+      (host::tick)
       (is (integerp (fs:contents (fs:at "/clock/year"))))
       (is (stringp (fs:contents (fs:at "/clock/hour")))))))
 
 (test the-environment-reads-and-writes-through
   (with-tree
-    (let ((env (declared:made "env")))
+    (let ((env (host:made "env")))
       (fs:attach env (fs:root))
       (let ((n (fs:entry env "PATH")))
         (is (not (null n)))
@@ -91,10 +91,10 @@ Stirring one without the other leaves every reading frozen at whatever it answer
 the first time, which is a clock that never ticks."
   (with-tree
     (let ((n (cons 0 nil)))
-      (declared:defdevice %probe-count :describes "counts every time it is read")
-      (declared:defbacking %probe-count ()
+      (host:defdevice %probe-count :describes "counts every time it is read")
+      (host:defbacking %probe-count ()
         (count :reads (d:swap (car n) #'1+)))
-      (let ((dev (fs:attach (declared:made "%probe-count") (fs:root))))
+      (let ((dev (fs:attach (host:made "%probe-count") (fs:root))))
         (is (eql 1 (fs:contents (fs:at "/%probe-count/count"))))
         (is (eql 1 (fs:contents (fs:at "/%probe-count/count")))
             "and it is remembered until something says otherwise")
@@ -109,11 +109,11 @@ nothing copied anywhere else can come in, and nothing killed here can go out.
 Which program does the copying is the machine's business: the reading stands either
 way, and says :ABSENT where this machine has no way to answer it."
   (with-tree
-    (let ((dev (fs:attach (declared:made "clip") (fs:root))))
+    (let ((dev (fs:attach (host:made "clip") (fs:root))))
       (is (equal '("text") (fs:contents dev)))
       (let ((text (fs:entry dev "text")))
         (is (not (null text)) "the row is a place under it")
-        (if (declared:answering (declared:named "clip"))
+        (if (host:answering (host::declared "clip"))
             (progn
               (is (not (null (fs:reads text))) "it reads")
               (is (not (null (fs:writes text))) "and it is written"))
@@ -125,13 +125,13 @@ way, and says :ABSENT where this machine has no way to answer it."
 :ABSENT is a surface that shows a dash. NIL cannot be the answer to both, which is
 why READ has always had three."
   (with-tree
-    (declared:defdevice %probe-thermostat :describes "nothing here can answer this")
-    (declared:defbacking %probe-thermostat (:needs "no-such-program-anywhere")
+    (host:defdevice %probe-thermostat :describes "nothing here can answer this")
+    (host:defbacking %probe-thermostat (:needs "no-such-program-anywhere")
       (target :reads (sh:sh "no-such-program-anywhere get") :writes (sh:sh "x"))
       (mode   :reads (sh:sh "no-such-program-anywhere mode")))
-    (let ((dev (fs:attach (declared:made "%probe-thermostat")
+    (let ((dev (fs:attach (host:made "%probe-thermostat")
                             (fs:ensure (fs:root) "dev"))))
-      (is (null (declared:answering (declared:named "%probe-thermostat")))
+      (is (null (host:answering (host::declared "%probe-thermostat")))
           "no backing this machine can use")
       (is (equal '("target" "mode") (fs:contents dev))
           "and it still says what it would answer")
@@ -147,10 +147,10 @@ read in the caller's, so the two are spelled the same and are not the same varia
 which every device write got wrong, silently, because nothing here wrote to one."
   (with-tree
     (let ((heard :nothing))
-      (declared:defdevice %probe-lamp :describes "a lamp to write to")
-      (declared:defbacking %probe-lamp ()
+      (host:defdevice %probe-lamp :describes "a lamp to write to")
+      (host:defbacking %probe-lamp ()
         (level :reads 0 :writes (lambda (said) (setf heard said) t)))
-      (fs:attach (declared:made "%probe-lamp") (fs:ensure (fs:root) "dev"))
+      (fs:attach (host:made "%probe-lamp") (fs:ensure (fs:root) "dev"))
       (pine:write "/dev/%probe-lamp/level" 42)
       (is (eql 42 heard) "what was written reached the backing"))))
 
@@ -159,12 +159,12 @@ which every device write got wrong, silently, because nothing here wrote to one.
 knows less does not take the others away, or a surface written against the fuller
 backing would break on a machine with the thinner one."
   (with-tree
-    (declared:defdevice %probe-radio :describes "two ways, one thinner")
-    (declared:defbacking %probe-radio (:needs "no-such-fat-program")
+    (host:defdevice %probe-radio :describes "two ways, one thinner")
+    (host:defbacking %probe-radio (:needs "no-such-fat-program")
       (station :reads "fat") (signal :reads "fat") (preset :reads "fat"))
-    (declared:defbacking %probe-radio ()
+    (host:defbacking %probe-radio ()
       (station :reads "thin"))
-    (let ((dev (fs:attach (declared:made "%probe-radio")
+    (let ((dev (fs:attach (host:made "%probe-radio")
                             (fs:ensure (fs:root) "dev"))))
       (is (equal '("station" "signal" "preset") (fs:contents dev))
           "every reading either backing declares")

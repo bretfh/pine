@@ -1,14 +1,7 @@
-(defpackage #:pine/host/device
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:fault #:pine/run/fault)
-                    (#:sh #:pine/host/shell) (#:declared #:pine/host/declared))
-  (:documentation "The devices pine ships, every one of them a declaration.
+;;; The devices pine ships, every one a declaration: what a config or a system of
+;;; your own holds, and nothing else.
 
-Nothing here is a function anybody calls to get a device. What this file holds is
-what a config or a system of your own holds: DEFDEVICE for what the machine may
-have, and DEFBACKING for each way of asking this machine about it.")
-  (:export #:tick))
-(in-package #:pine/host/device)
+(in-package #:pine/host)
 
 (defvar *now* (get-universal-time))
 (defvar *sampled* nil)
@@ -56,12 +49,12 @@ of them is somebody pine gets to trust."
 (defun %default-sink ()
   (getf (find-if (lambda (each) (getf each :default)) (%sinks)) :name))
 
-(declared:defdevice audio
+(defdevice audio
   :describes "the default sink: how loud, whether it is muted, and what
 else there is to play through"
   :announces '("pactl subscribe"))
 
-(declared:defbacking audio (:needs "wpctl")
+(defbacking audio (:needs "wpctl")
   (volume :reads  (%volume)
           :writes (lambda (said)
                     (sh:argv "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@"
@@ -71,7 +64,7 @@ else there is to play through"
   (sinks  :reads  (%sinks)  :writes (%hands "wpctl" "set-default"))
   (sink   :reads  (%default-sink) :writes (%hands "wpctl" "set-default")))
 
-(declared:defbacking audio (:needs "pamixer")
+(defbacking audio (:needs "pamixer")
   (volume :reads  (sh:number-in (sh:sh "pamixer --get-volume"))
           :writes (lambda (said)
                     (sh:argv "pamixer" "--set-volume" (%clamped said))))
@@ -89,23 +82,23 @@ else there is to play through"
                                        (namestring at)))))
         (when (and now most (plusp most)) (round (* 100 now) most))))))
 
-(declared:defdevice screen
+(defdevice screen
   :describes "the backlight, as a percentage"
   :refreshes 5)
 
-(declared:defbacking screen (:needs "brightnessctl")
+(defbacking screen (:needs "brightnessctl")
   (brightness :reads  (%brightness)
               :writes (lambda (said)
                         (when (%backlight)
                           (sh:argv "brightnessctl" "--class=backlight" "set"
                                    (format nil "~d%" (max 1 (%clamped said))))))))
 
-(declared:defbacking screen (:needs "light")
+(defbacking screen (:needs "light")
   (brightness :reads  (%brightness)
               :writes (lambda (said)
                         (sh:argv "light" "-S" (max 1 (%clamped said))))))
 
-(declared:defbacking screen ()
+(defbacking screen ()
   (brightness :reads (%brightness)))
 
 (defun %supply ()
@@ -128,11 +121,11 @@ else there is to play through"
               ((search "Not charging" said) :idle)
               ((plusp (length said)) :unknown))))))
 
-(declared:defdevice power
+(defdevice power
   :describes "the battery, and lock suspend reboot poweroff logout"
   :refreshes 10)
 
-(declared:defbacking power (:needs ("systemctl" "loginctl"))
+(defbacking power (:needs ("systemctl" "loginctl"))
   (battery  :reads (%battery))
   (state    :reads (%charge))
   (charging :reads (eq :charging (%charge)))
@@ -143,7 +136,7 @@ else there is to play through"
   (logout   :reads "logout"
             :writes (%runs "loginctl terminate-session $XDG_SESSION_ID")))
 
-(declared:defbacking power ()
+(defbacking power ()
   (battery  :reads (%battery))
   (state    :reads (%charge))
   (charging :reads (eq :charging (%charge))))
@@ -165,18 +158,18 @@ wants a password and whether it is the one we are on."
 (defun %said-or-nothing (said)
   (when (plusp (length said)) said))
 
-(declared:defdevice clip
+(defdevice clip
   :describes "the desktop's clipboard")
 
 (defun %copies (line)
   "A write that gives what was written to LINE on its standard input."
   (lambda (said) (sh:feed line (princ-to-string said)) t))
 
-(declared:defbacking clip (:needs "wl-paste" :announces '("wl-paste --watch echo"))
+(defbacking clip (:needs "wl-paste" :announces '("wl-paste --watch echo"))
   (text :reads  (%said-or-nothing (sh:sh "wl-paste --no-newline 2>/dev/null"))
         :writes (%copies "wl-copy")))
 
-(declared:defbacking clip (:needs "xclip" :refreshes 2)
+(defbacking clip (:needs "xclip" :refreshes 2)
   (text :reads  (%said-or-nothing
                  (sh:sh "xclip -o -selection clipboard 2>/dev/null"))
         :writes (%copies "xclip -i -selection clipboard")))
@@ -187,10 +180,10 @@ wants a password and whether it is the one we are on."
          (at (search " dev " said)))
     (when at (first (sh:words (subseq said (+ at 5)))))))
 
-(declared:defdevice net
+(defdevice net
   :describes "what is connected, and what else is in the air")
 
-(declared:defbacking net (:needs "nmcli" :announces '("nmcli monitor"))
+(defbacking net (:needs "nmcli" :announces '("nmcli monitor"))
   (connection :reads (%said-or-nothing
                       (or (sh:firstp (sh:sh "nmcli -t -f NAME connection show --active"))
                           "")))
@@ -205,7 +198,7 @@ shell line."
                       (sh:argv "nmcli" "device" "wifi" "connect" said))
                   t)))
 
-(declared:defbacking net (:needs "ip" :refreshes 10)
+(defbacking net (:needs "ip" :refreshes 10)
   (connection :reads (%route-device))
   (online :reads (plusp (length (sh:sh "ip -o route show default 2>/dev/null")))))
 
@@ -228,9 +221,9 @@ not asked: pressing pause twice is pausing twice."
            (append (when player (list "-p" player)) (list verb)))
     t))
 
-(declared:defdevice media :describes "what is playing, through mpris")
+(defdevice media :describes "what is playing, through mpris")
 
-(declared:defbacking media
+(defbacking media
     (:needs "playerctl" :takes (player)
      :announces (list (format nil "playerctl~@[ -p ~a~] --follow status" player)))
   (status   :reads (let ((said (%player player "status")))
@@ -262,9 +255,9 @@ not asked: pressing pause twice is pausing twice."
           ((equal name "year") year)
           ((equal name "weekday") weekday))))
 
-(declared:defdevice clock :describes "the time, as paths" :refreshes 1)
+(defdevice clock :describes "the time, as paths" :refreshes 1)
 
-(declared:defbacking clock ()
+(defbacking clock ()
   (second  :reads (%part "second" *now*))
   (minute  :reads (%part "minute" *now*))
   (hour    :reads (%part "hour" *now*))
@@ -343,11 +336,11 @@ moment: sampling per read gives the second one no ticks to divide by."
                    :separator '(#\Space))
                   0 3)))
 
-(declared:defdevice sys
+(defdevice sys
   :describes "the machine: cpu, ram, temperature, uptime, load"
   :refreshes 3)
 
-(declared:defbacking sys ()
+(defbacking sys ()
   (cpu    :reads (%cpu))
   (ram    :reads (%ram))
   (disk   :reads (%disk))
@@ -371,10 +364,10 @@ backing's :ROWS is for: the machine says what is there and the rows follow."
                                (sb-posix:setenv name (princ-to-string said) 1))
                            said)))))
 
-(declared:defdevice env
+(defdevice env
   :describes "the environment this image was started in")
 
-(declared:defbacking env (:rows (%environment-rows)))
+(defbacking env (:rows (%environment-rows)))
 
 
 

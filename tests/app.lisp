@@ -111,7 +111,7 @@
 list and nothing anybody wrote could add to it. A declaration is a thing a package
 that uses PINE/USER and nothing else can make."
   (vcs-app)
-  (is (not (null (declared:named "vcs"))) "the app declared one")
+  (is (not (null (host::declared "vcs"))) "the app declared one")
   (is (not (null (fs:at "/dev/vcs"))) "and it stands in the namespace")
   (is (equal '("branch" "dirty" "head") (fs:contents (fs:at "/dev/vcs")))
       "every reading either of its backings declares")
@@ -146,14 +146,14 @@ half worked and nothing said which half."
         (pine/ui::register (make-instance 'pine/ui::theme :name :probe-theme))
         (edit:completes :probe-category
                         (lambda (&rest ignored) (declare (ignore ignored)) nil))
-        (declared:defdevice %probe-owned :describes "declared while a system started")
+        (host:defdevice %probe-owned :describes "declared while a system started")
         (mode:bind 'text "C-c C-probe" "help")
         (ui:make-surface "probe-surface" (lambda () (ui:label "hi")) :as 'ui:panel))
 
       (is (member :probe-key (ui:properties)) "the style key is there")
       (is (member :probe-theme (pine/ui::themes)) "the theme is there")
       (is (member :probe-category (pine/edit::sources)) "the prompt source is there")
-      (is (not (null (declared:named "%probe-owned"))) "the declaration is there")
+      (is (not (null (host::declared "%probe-owned"))) "the declaration is there")
       (is (not (null (fs:at "/surface" "probe-surface"))) "the surface is there")
       (is (not (null (mode:binding (make-instance 'mode:text) "C-c C-probe")))
           "the chord is there")
@@ -163,7 +163,8 @@ half worked and nothing said which half."
       (is (not (member :probe-key (ui:properties))) "and the style key goes")
       (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
       (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
-      (is (null (declared:named "%probe-owned")) "and the declaration goes")
+      (is (not (null (host::declared "%probe-owned")))
+          "the declaration stays: a class was loaded, not put up")
       (is (null (fs:at "/surface" "probe-surface")) "and the surface goes")
       (is (null (mode:binding (make-instance 'mode:text) "C-c C-probe"))
           "and the chord goes"))))

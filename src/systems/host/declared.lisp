@@ -1,127 +1,108 @@
-(defpackage #:pine/host/declared
+(defpackage #:pine/host/devices
+  (:use)
+  (:documentation "Where a device's name lives: one class per kind of device, named
+here whoever declared it, so a config's AUDIO and pine's are one class."))
+
+(defpackage #:pine/host
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
-                    (#:sh #:pine/host/shell) (#:system #:pine/run/system))
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:mount #:pine/fs/mount)
+                    (#:job #:pine/run/job) (#:system #:pine/run/system)
+                    (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
+                    (#:command #:pine/run/command) (#:fault #:pine/run/fault)
+                    (#:sh #:pine/host/shell))
+  (:import-from #:pine/host/shell #:sh)
   (:export
-   #:defdevice #:defbacking #:made #:device #:unanswered #:answering #:named
-   #:needs-of #:backings-of)
-  (:documentation "Declaring a device, and binding it to whatever the host has.
+   #:device #:defdevice #:defbacking #:sh
+   #:made #:answering #:devices #:unanswered)
+  (:documentation "The machine, in the namespace: its devices, its filesystem, its
+environment and what it will run.
 
-A device is a name and a set of readings; a backing is one way of answering them on
-one machine. Which backing answers is asked of the machine, once, when the device is
-made: the first whose programs are all there wins.
+A device is a class: DEFDEVICE declares one, and each DEFBACKING is one way of
+answering it on one machine -- the programs it needs, and a reading for each of the
+device's words. Which backing answers is asked of the machine when the device is
+made, and where none can, every reading stands and says :ABSENT."))
+(in-package #:pine/host)
 
-That is the whole of the difference from a device written as a function. A function
-names one program and reads nothing where that program is absent, so a machine with
-iwd and no nmcli has a /dev/net that answers NIL to everything and cannot say why. A
-declaration names as many backings as somebody has written, and where none of them
-can answer it says :ABSENT -- which is the word pine already had for nothing standing
-somewhere, and is not the word for a volume of zero."))
-(in-package #:pine/host/declared)
-
-(defvar *declared* (d:table)
-  "Every device declared, by name. A device is a declaration and not a function, so
-a config can add one and a system can bring its own.")
-
-(defclass device ()
-  ((title     :initarg :title     :reader title-of)
-   (describes :initarg :describes :reader describes-of :initform nil)
-   (announces :initarg :announces :reader announces-of :initform nil)
-   (refreshes :initarg :refreshes :reader refreshes-of :initform nil)
-   (backings  :initarg :backings  :accessor backings-of :initform nil))
-  (:documentation "Something the machine may have, and the ways of asking it."))
+(defclass device (fs:dir)
+  ((rows  :initarg :rows  :reader rows  :initform nil)
+   (words :initarg :words :reader words :initform nil))
+  (:documentation "Something the machine may have, at /dev/<name>: every reading any
+of its backings declares, each a place, answered by the backing this machine can
+use."))
 
 (defclass backing ()
   ((needs :initarg :needs :reader needs-of :initform nil)
    (makes :initarg :makes :reader makes-of))
   (:documentation "One way of answering a device on one machine. NEEDS is what has to
-be on the path for this way to work.
-
-MAKES is a function of the device's own arguments answering three things: its rows,
-what says the world behind it moved, and how often to ask again where nothing does.
-
-A function and not three slots, because all three can depend on what the device was
-made with. /dev/media follows one player and the line that says it moved names that
-player, so a stream said once when the backing was declared would be following
-whichever player nobody asked for. It is also what lets a backing whose readings are
-not known until you ask -- every variable in the environment -- say so."))
+be on the path. MAKES is a function of the device's own arguments answering its
+rows, what says the world behind it moved, and how often to ask again."))
 
 (defclass unanswered (fs:derived) ()
-  (:documentation "A reading nothing on this machine can answer.
-
-It stands, so the path resolves and a surface reading it is not a surface that
-breaks. It holds nothing, and says :ABSENT rather than NIL, so a bar can show a dash
-where there is no battery instead of a battery at zero."))
+  (:documentation "A reading nothing on this machine can answer. It stands, so the
+path resolves, and says :ABSENT rather than NIL."))
 
 (defmethod fs:holding ((n unanswered)) :absent)
 (defmethod fs:livep ((n unanswered)) t)
 
 (defun %said (name) (string-downcase (princ-to-string name)))
 
-(defun declare-device (title &key describes announces refreshes)
-  (let ((had (d:lookup (d:all *declared*) (%said title))))
-    (or had
-        (let ((it (make-instance 'device :title (%said title)
-                                           :describes describes
-                                           :announces announces
-                                           :refreshes refreshes)))
-          (d:keep! *declared* (%said title) it)
-          (system:owned (list :device (%said title)))
-          it))))
+(defun %symbol (name)
+  (intern (string-upcase (princ-to-string name)) :pine/host/devices))
 
-(defun forget-device (title)
-  "Take a declaration back off. A device a system declared goes when the system does;
-the ones pine ships are declared as their file loads, when nothing owns anything."
-  (d:drop! *declared* (%said title))
-  title)
+(defun declared (name)
+  "The class declared for the device called NAME, or nothing."
+  (let ((s (find-symbol (string-upcase (princ-to-string name)) :pine/host/devices)))
+    (and s (find-class s nil))))
 
-(system:undoes :device #'forget-device)
+(defun devices ()
+  "Every kind of device declared, by name."
+  (labels ((under (c) (cons c (mapcan #'under (sb-mop:class-direct-subclasses c)))))
+    (sort (mapcar (lambda (c) (%said (class-name c)))
+                  (remove (find-class 'device) (under (find-class 'device))))
+          #'string<)))
 
-(defun declare-backing (title needs makes)
-  "Add a way of answering the device TITLE. Declared later is tried later, so the
-first one written is the one preferred."
-  (let ((it (declare-device title)))
-    (setf (backings-of it)
-          (append (backings-of it)
-                  (list (make-instance 'backing :needs needs :makes makes))))
-    it))
+(defun %prototype (class)
+  (unless (sb-mop:class-finalized-p class) (sb-mop:finalize-inheritance class))
+  (sb-mop:class-prototype class))
+
+(defun %option (class key) (getf (slot-value (%prototype class) 'declared) key))
+
+(defun backings-of (class) (slot-value (%prototype class) 'backings))
 
 (defmacro defdevice (name &body options)
-  "Declare a device. OPTIONS is a plist: :describes, :announces, :refreshes.
+  "Declare a kind of device. OPTIONS is a plist: :describes, :announces, :refreshes.
 
   (defdevice audio :describes \"the default sink\" :announces '(\"pactl subscribe\"))"
-  `(declare-device ',name ,@options))
+  (let ((class (%symbol name)))
+    `(let ((class (defclass ,class (device)
+                    ((declared :allocation :class :initform nil)
+                     (backings :allocation :class :initform nil)))))
+       (setf (slot-value (%prototype class) 'declared) (list ,@options))
+       class)))
+
+(defun declare-backing (name needs makes)
+  "Add a way of answering the device NAME. One with the same needs replaces the one
+before it, so a config read again does not answer twice."
+  (let ((class (declared name)))
+    (unless class (error "~a is not a device anybody declared." name))
+    (setf (slot-value (%prototype class) 'backings)
+          (append (remove needs (backings-of class) :key #'needs-of :test #'equal)
+                  (list (make-instance 'backing :needs needs :makes makes))))
+    class))
 
 (defmacro defbacking (name (&key needs announces refreshes takes rows) &body readings)
-  "Declare one way of answering a device on one machine.
-
-NEEDS is the programs that have to be on the path. Each row is a name, a form that
-reads it, and a function that writes it:
+  "Declare one way of answering a device on one machine. NEEDS is the programs that
+have to be on the path. Each row is a word, a form that reads it, and a function
+that writes it:
 
   (defbacking audio (:needs \"wpctl\")
     (volume :reads  (level)
-            :writes (lambda (said)
-                      (sh:sh \"wpctl set-volume @X ~d%\" said))))
+            :writes (lambda (said) (sh \"wpctl set-volume @X ~d%\" said))))
 
-:WRITES is a function and not a form with the value bound behind your back. A row
-written here is read in the package the row was written in, and a name this macro
-binds is a symbol in the package the macro was written in -- two symbols spelled the
-same, so the binding and the use are not the same variable. It is also what
-NODE:DERIVE takes, so there is one answer to what writing a place means.
-
-A row with no :WRITES is one that only answers. A backing that leaves out a reading
-the device declared does not take it away: it stands and says :ABSENT.
-
-TAKES names the device's own arguments, and every form here is written under them:
-
-  (defbacking media (:needs \"playerctl\" :takes (player)
-                     :announces (list (format nil \"playerctl -p ~a --follow status\"
-                                              player)))
-    (title :reads (%meta player \"xesam:title\")))
-
-ROWS is a form answering rows worked out when the device is made, for a backing whose
-readings are not known until you ask -- every variable in the environment is one. They
-come after the ones written here."
+A row with no :WRITES only answers. A backing that leaves out a reading another
+declares does not take it away: it stands and says :ABSENT. TAKES names the
+device's own arguments, and every form here is written under them. ROWS is a form
+answering rows worked out when the device is made."
   `(declare-backing
     ',name (list ,@(if (listp needs) needs (list needs)))
     (lambda (&key ,@takes &allow-other-keys)
@@ -134,18 +115,15 @@ come after the ones written here."
                ,rows)
               ,announces ,refreshes))))
 
-(defun named (title)
-  "The device declared under TITLE, or nothing."
-  (d:lookup (d:all *declared*) (%said title)))
-
-(defun answering (it)
+(defun answering (class)
   "The first backing this machine can answer with, or nothing."
-  (find-if (lambda (b) (every #'sh:has (needs-of b))) (backings-of it)))
+  (and class
+       (find-if (lambda (b) (every #'sh:has (needs-of b))) (backings-of class))))
 
-(defun %words (it arguments)
+(defun %words (class arguments)
   "Every reading this device has under any backing, so a path resolves whether or
 not this machine is the one that can answer it."
-  (remove-duplicates (loop :for b :in (backings-of it)
+  (remove-duplicates (loop :for b :in (backings-of class)
                            :append (mapcar #'first
                                            (apply (makes-of b) arguments)))
                      :test #'equal :from-end t))
@@ -153,41 +131,40 @@ not this machine is the one that can answer it."
 (defun %reading (n row)
   (destructuring-bind (word reads &optional writes) row
     (make-instance 'fs:derived :name word
-                 :reads (lambda () (fs:reading n) (funcall reads))
-                 :parent n :writes writes)))
+                               :reads (lambda () (fs:reading n) (funcall reads))
+                               :parent n :writes writes)))
 
-(defun %made (it b arguments)
-  "The device, standing, answering what backing B knows and saying :ABSENT to every
-other reading it was declared to have.
+(defmethod fs:livep ((d device)) t)
 
-Every declared reading stands whether or not the backing that won answers it. A
-backing that knows the connection but cannot list what is in the air leaves
-/dev/net/wifi a place that says :ABSENT, rather than a path that does not resolve --
-so a surface reading it is the same surface on either machine."
-  (multiple-value-bind (rows announces refreshes)
-      (when b (apply (makes-of b) arguments))
-    (let ((self (list nil))
-          (words (%words it arguments)))
-      (setf (first self)
-            (make-instance 'fs:dir :name (title-of it)
-                        :announces (or announces (announces-of it))
-                        :refreshes (or refreshes (refreshes-of it))
-                        :describes (describes-of it)
-                        :names (lambda () words)
-                        :each (lambda (want)
-                                "Asked for exactly as it is spelled. A row written
-here is downcased once, as it is read; one the machine named keeps the case the
-machine gave it, and PATH is not path."
-                                (let* ((word (princ-to-string want))
-                                       (row (find word rows
-                                                  :key #'first :test #'equal)))
-                                  (cond (row (%reading (first self) row))
-                                        ((member word words :test #'equal)
-                                         (make-instance 'unanswered
-                                                        :name word))))))))))
+(defmethod fs:contents ((d device)) (words d))
+
+(defmethod fs:entry ((d device) name)
+  "Asked for exactly as it is spelled. A word written here is downcased once, as it
+is read; one the machine named keeps the case the machine gave it."
+  (let ((word (princ-to-string name)))
+    (fs:child d word
+              (lambda ()
+                (let ((row (find word (rows d) :key #'first :test #'equal)))
+                  (cond (row (%reading d row))
+                        ((member word (words d) :test #'equal)
+                         (make-instance 'unanswered :name word :parent d))))))))
+
+(defmethod fs:entries ((d device))
+  (remove nil (mapcar (lambda (word) (fs:entry d word)) (words d))))
 
 (defun made (name &rest arguments)
-  "The node for a declared device, bound to whatever this machine has, and made with
-ARGUMENTS. Nothing where no such device was declared."
-  (let ((it (named name)))
-    (when it (%made it (answering it) arguments))))
+  "The device NAME, standing, answering what the backing this machine can use knows
+and saying :ABSENT to every other reading it was declared to have. Nothing where
+no such device was declared."
+  (let ((class (declared name)))
+    (when class
+      (let ((b (answering class)))
+        (multiple-value-bind (rows announces refreshes)
+            (when b (apply (makes-of b) arguments))
+          (make-instance (class-name class)
+                         :name (%said (class-name class))
+                         :rows rows
+                         :words (%words class arguments)
+                         :announces (or announces (%option class :announces))
+                         :refreshes (or refreshes (%option class :refreshes))
+                         :describes (%option class :describes)))))))

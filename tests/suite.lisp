@@ -12,8 +12,7 @@
                     (:peer :pine/run/peer) (:watch :pine/run/watch)
                     (:command :pine/run/command) (:system :pine/run/system)
                     (:session :pine/run/session) (:mode :pine/mode)
-                    (:sh :pine/host/shell) (:device :pine/host/device)
-                    (:declared :pine/host/declared)
+                    (:sh :pine/host/shell) (:host :pine/host)
                     (:log :pine/fs/log)
                     (:compositor :pine/wm/compositor) (:tiles :pine/wm/tiles)))
 

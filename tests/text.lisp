@@ -35,14 +35,16 @@
 
 (test a-chord-is-inherited-the-way-a-method-is
   (command:defcommand "probe-nothing" () (:describes "nothing") nil)
-  (unwind-protect
-       (progn
-         (mode:bind 'mode:text "C-probe" "probe-nothing")
-         (is (command:named "probe-nothing"))
-         (is (eq (command:named "probe-nothing")
-                 (mode:binding (make-instance 'mode:lisp) "C-probe"))
-             "a lisp document inherits what text binds"))
-    (command:forget "probe-nothing")))
+  (with-tree
+    (fs:built)
+    (unwind-protect
+         (progn
+           (mode:bind 'mode:text "C-probe" "probe-nothing")
+           (is (command:named "probe-nothing"))
+           (is (eq (command:named "probe-nothing")
+                   (mode:binding (make-instance 'mode:lisp) "C-probe"))
+               "a lisp document inherits what text binds"))
+      (command:forget "probe-nothing"))))
 
 (test a-document-holds-text-and-a-point
   (with-tree
