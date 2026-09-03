@@ -18,7 +18,6 @@
   "Seconds to wait for a thread asked to stop. It is asked and then joined: a
 thread blocked on a stream reads to the end of what it has and then looks, so the
 wait is for that look and not for a clock.")
-(defvar *jobs* (d:table))
 (define-condition blocking-ask (error)
   ((of :initarg :of :reader of))
   (:report (lambda (c stream)
@@ -72,11 +71,16 @@ handed, or TELL and take the reply as a message." (of c)))))
                                         :writes (lambda (value) (tell j value))
                                         :describes "write here to give it something")
              j)
-  (d:keep! *jobs* (name j) j))
+  (fs:attach j (%proc)))
 
-(defun jobs () (d:vals (d:all *jobs*)))
+(defun %proc () (fs:ensure (fs:root) "proc"))
 
-(defun named (name) (d:lookup (d:all *jobs*) (princ-to-string name)))
+(defun jobs ()
+  (remove-if-not (lambda (each) (typep each 'job)) (fs:entries (%proc))))
+
+(defun named (name)
+  (let ((it (fs:entry (%proc) (princ-to-string name))))
+    (and (typep it 'job) it)))
 
 (defun again (j)
   "Start J afresh: asking for one by name forgets what it tried before."

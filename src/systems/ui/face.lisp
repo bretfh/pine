@@ -119,11 +119,15 @@ something is written here, and what was written after. Saved only once written."
 (defun %face-node (d name)
   (fs:child d name (lambda () (make-instance 'face-node :name name :parent d))))
 
-(defun %in-force (d)
+(defun %in-force (&optional d)
+  "Face name to face: what is at D, or the active theme's where there is no D."
   (let ((out (make-hash-table :test 'eq)))
-    (dolist (n (fs:entries d) out)
-      (let ((f (%as-face (fs:contents n))))
-        (when f (setf (gethash (%as-keyword (fs:name n)) out) f))))))
+    (if d
+        (dolist (n (fs:entries d))
+          (let ((f (%as-face (fs:contents n))))
+            (when f (setf (gethash (%as-keyword (fs:name n)) out) f))))
+        (maphash (lambda (k f) (setf (gethash k out) f)) (faces (theme (active)))))
+    out))
 
 (defmethod initialize-instance :after ((d face-dir) &key)
   (setf (in-force-of d)
@@ -148,9 +152,7 @@ something is written here, and what was written after. Saved only once written."
 on the path every painted cell takes."
   (or *in-force*
       (let ((d (fs:at "/ui/face")))
-        (if d
-            (fs:contents (in-force-of d))
-            (make-hash-table :test 'eq)))))
+        (if d (fs:contents (in-force-of d)) (%in-force)))))
 
 (defmacro with-faces (&body body)
   "Run BODY with the faces in force worked out once."

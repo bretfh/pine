@@ -1,6 +1,5 @@
 (in-package #:pine/run/job)
 
-(defvar *under* nil)
 
 (defvar *tries* 8
   "How many times a job is started again before it is held.
@@ -53,7 +52,6 @@ this job and /proc/<name> is where they ask it."
 (defun supervise (j)
   "Keep J running: what dies is started again, and what will not run is held."
   (setf (supervisedp j) t)
-  (when *under* (setf (fs:parent j) *under*))
   j)
 
 (defun forget (name)
@@ -67,7 +65,7 @@ image."
     (when j
       (fault:or-nothing "forgetting a job it could not stop still forgets it"
         (stop j))
-      (d:drop! *jobs* name))
+      (fs:erase-entry (%proc) (princ-to-string name)))
     j))
 
 (defun due (j now)
@@ -139,10 +137,6 @@ whoever asked has to find it again, and two asking at once must not race."
                           :argv (mapcar #'princ-to-string (getf said :argv))))
 
 (defun %attach (root)
-  (setf *under* (fs:attach (make-instance 'fs:dir :name "proc"
-                                          :entries #'jobs
-                                          :describes "what this pine is running")
-                           root))
-  (dolist (j (jobs) *under*) (setf (fs:parent j) *under*)))
+  (setf (fs:describes (fs:ensure root "proc")) "what this pine is running"))
 
 (pine/fs:builder #'%attach)

@@ -226,12 +226,14 @@ identity: the second thing in the first row."
 changed every face and left the sheet holding the colours of the theme before,
 because the colours in it were read once when somebody remembered to say so."
   (with-tree
-    (let* ((was (ui:color :bg))
-           (before (second (find ".editor" (ui:sheet) :key #'first :test #'equal))))
-      (is (equal was (getf before :background-color))
-          "the sheet says what the theme in force says")
-      (ui:put-rules (list (list ".probe-follows" (list :color "#010203"))))
-      (is (equal '(:color "#010203")
-                 (second (find ".probe-follows" (ui:sheet)
-                               :key #'first :test #'equal)))
-          "and a rule written at /style is in it without anybody saying so"))))
+    (fs:built)
+    (flet ((sheet () (fs:contents (fs:at "/ui/sheet"))))
+      (let* ((was (ui:color :bg))
+             (before (second (find ".editor" (sheet) :key #'first :test #'equal))))
+        (is (equal was (getf before :background-color))
+            "the sheet says what the theme in force says")
+        (ui:put-rules (list (list ".probe-follows" (list :color "#010203"))))
+        (is (equal '(:color "#010203")
+                   (second (find ".probe-follows" (sheet)
+                                 :key #'first :test #'equal)))
+            "and a rule written at /ui/style is in it without anybody saying so")))))

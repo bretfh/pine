@@ -14,23 +14,22 @@ using cannot be had by turning something on afterwards and doing it again.")
   "How many samples an instrument keeps. Enough for a p95 that means something,
 small enough that a hundred instruments cost nothing to hold.")
 
-(defvar *instruments* (d:table))
-
 (defparameter +fields+ '("count" "per-second" "mean" "p50" "p95" "worst" "last"
                          "total" "seconds")
   "What an instrument answers for, as paths. Milliseconds where it is a duration,
 because that is what a person reads a frame in.")
 
-(defstruct (instrument (:constructor %made (name kind)))
-  name
-  kind
-  (count 0)
-  (total 0)
-  (least nil)
-  (most 0)
-  (last 0)
-  (ring nil)
-  (at 0))
+(defclass instrument (fs:dir)
+  ((kind  :initarg :kind :reader kind-of)
+   (count :initform 0   :reader count-of)
+   (total :initform 0   :reader total-of)
+   (least :initform nil :reader least-of)
+   (most  :initform 0   :reader most-of)
+   (last  :initform 0   :accessor last-of)
+   (ring  :initform nil :reader ring-of)
+   (at    :initform 0   :accessor at-of))
+  (:documentation "One thing measured, at /metric/<name>: its samples, and under it
+what they add up to."))
 
 (defun now ()
   "Nanoseconds on a clock that only goes forward. GET-INTERNAL-REAL-TIME here
@@ -39,25 +38,36 @@ steps in four millisecond jumps, which cannot see a frame, let alone a swap."
       (sb-unix:clock-gettime sb-unix:clock-monotonic)
     (+ (* seconds 1000000000) nanoseconds)))
 
+(defmethod initialize-instance :after ((it instrument) &key)
+  (setf (at-of it) (now))
+  (dolist (field +fields+)
+    (fs:attach (make-instance 'fs:derived :name field :live t
+                              :reads (lambda () (%field (reading it) field)))
+               it)))
+
+(defun %metric () (fs:ensure (fs:root) "metric"))
+
 (defun %of (name kind)
-  (or (d:lookup (d:all *instruments*) name)
-      (d:claim *instruments* name
-               (let ((it (%made name kind)))
-                 (setf (instrument-at it) (now))
-                 it))))
+  (let* ((d (%metric))
+         (name (string-downcase (princ-to-string name)))
+         (it (fs:child d name
+                       (lambda ()
+                         (make-instance 'instrument :name name :kind kind :parent d)))))
+    (unless (eq (fs:entry d name) it) (fs:attach it d))
+    it))
 
 (defun %record (name kind measure)
   "One sample, into the instrument's own slots. Each is replaced where it stands
 rather than the whole thing being copied, which is what a sample costing under a
 microsecond is for."
   (let ((it (%of name kind)))
-    (d:swap (instrument-count it) #'1+)
-    (d:swap (instrument-total it) #'+ measure)
-    (d:swap (instrument-most it) #'max measure)
-    (d:swap (instrument-least it)
+    (d:swap (slot-value it 'count) #'1+)
+    (d:swap (slot-value it 'total) #'+ measure)
+    (d:swap (slot-value it 'most) #'max measure)
+    (d:swap (slot-value it 'least)
             (lambda (had) (if had (min had measure) measure)))
-    (d:swap (instrument-ring it) #'d:capped measure *kept*)
-    (setf (instrument-last it) measure))
+    (d:swap (slot-value it 'ring) #'d:capped measure *kept*)
+    (setf (last-of it) measure))
   measure)
 
 (defmacro timing ((name) &body body)
@@ -80,7 +90,9 @@ and the table says so."
   by)
 
 (defun instruments ()
-  (sort (d:keys (d:all *instruments*)) #'string< :key #'princ-to-string))
+  (sort (remove-if-not (lambda (each) (typep each 'instrument))
+                       (fs:entries (%metric)))
+        #'string< :key #'fs:name))
 
 (defun %percentile (ring share)
   (when ring
@@ -89,52 +101,37 @@ and the table says so."
                 (floor (* share (length sorted))))
            sorted))))
 
-(defun reading (name)
-  "What one instrument has to say, in microseconds, as a plist. NIL where it
-has never been touched, which reads as `nothing walked this path' rather than
-as a zero."
-  (let ((box (d:lookup (d:all *instruments*) name)))
-    (when box
-      (let* ((it box)
-             (ring (instrument-ring it))
-             (seconds (max 0.001 (/ (- (now) (instrument-at it)) 1000000000.0))))
-        (list :name name
-              :kind (instrument-kind it)
-              :count (if (eq :count (instrument-kind it))
-                         (instrument-total it)
-                         (instrument-count it))
-              :per-second (/ (if (eq :count (instrument-kind it))
-                                 (instrument-total it)
-                                 (instrument-count it))
-                             seconds)
-              :mean (if (plusp (instrument-count it))
-                        (round (instrument-total it) (instrument-count it))
-                        0)
-              :p50 (%percentile ring 0.50)
-              :p95 (%percentile ring 0.95)
-              :least (instrument-least it)
-              :most (instrument-most it)
-              :last (instrument-last it)
-              :total (instrument-total it)
-              :seconds seconds)))))
+(defun reading (it)
+  "What one instrument has to say, in microseconds, as a plist."
+  (let* ((ring (ring-of it))
+         (had (if (eq :count (kind-of it)) (total-of it) (count-of it)))
+         (seconds (max 0.001 (/ (- (now) (at-of it)) 1000000000.0))))
+    (list :name (fs:name it)
+          :kind (kind-of it)
+          :count had
+          :per-second (/ had seconds)
+          :mean (if (plusp (count-of it)) (round (total-of it) (count-of it)) 0)
+          :p50 (%percentile ring 0.50)
+          :p95 (%percentile ring 0.95)
+          :least (least-of it)
+          :most (most-of it)
+          :last (last-of it)
+          :total (total-of it)
+          :seconds seconds)))
 
 (defun readings ()
   "Every instrument, in one shape. The synthetic runs and the live daemon both
 answer this, which is what lets one be laid beside the other."
-  (remove nil (mapcar #'reading (instruments))))
+  (mapcar #'reading (instruments)))
 
 (defun reset (&optional name)
-  (if name
-      (d:drop! *instruments* name)
-      (d:clear! *instruments*))
+  (let ((d (%metric)))
+    (if name
+        (fs:erase-entry d (string-downcase (princ-to-string name)))
+        (dolist (each (instruments)) (fs:erase-entry d (fs:name each)))))
   t)
 
 (defun %ms (nanoseconds) (and nanoseconds (/ (round nanoseconds 1000) 1000.0)))
-
-(defun %named (name)
-  (find (princ-to-string name) (instruments)
-        :key (lambda (each) (string-downcase (princ-to-string each)))
-        :test #'equal))
 
 (defun %field (said field)
   (cond ((null said) nil)
@@ -149,28 +146,8 @@ answer this, which is what lets one be laid beside the other."
         ((equal field "last") (%ms (getf said :last)))
         ((equal field "total") (%ms (getf said :total)))))
 
-(defun %instrument (name)
-  (when (%named name)
-    (make-instance 'fs:dir :name name
-                :names (constantly +fields+)
-                :each (lambda (field)
-                        (when (member field +fields+ :test #'equal)
-                          (make-instance 'fs:derived :name field :live t
-                                      :reads (lambda ()
-                                               (let ((key (%named name)))
-                                                 (when key
-                                                   (%field (reading key) field))))))))))
-
 (defun %attach (root)
-  (fs:attach
-   (make-instance 'fs:dir :name "metric"
-               :names (lambda ()
-                        (mapcar (lambda (each)
-                                  (string-downcase (princ-to-string each)))
-                                (instruments)))
-               :each #'%instrument
-               :describes "how long what pine does is taking")
-   root))
+  (setf (fs:describes (fs:ensure root "metric")) "how long what pine does is taking"))
 
 (defun report (rows &key (to *standard-output*) about)
   "The table, said once. ABOUT is what produced these numbers: a workload and
