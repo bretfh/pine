@@ -23,24 +23,18 @@
         (ignore-errors (job:stop j))
         (job:forget "ticker")))))
 
-(test starting-pine-puts-what-runs-at-proc
-  "A job hangs at /proc, and START is what puts /proc there. Without this every
-supervised thing pine has is running and unreadable."
+(test a-job-made-before-boot-is-at-proc
   (booted)
-  (let ((was (fs:root)))
+  (let ((j (make-instance 'job:tick :name "probe" :every 0.05
+                                      :runs (lambda () nil))))
     (unwind-protect
-         (let ((j (make-instance 'job:tick :name "probe" :every 0.05
-                                             :runs (lambda () nil))))
-           (pine:boot)
-           (is (not (null (fs:at "/proc"))))
-           (unwind-protect
-                (progn (job:supervise j)
-                       (job:start j)
-                       (is (eq j (fs:at "/proc/probe")))
-                       (is (eq :running (pine:read "/proc/probe/state"))))
-             (ignore-errors (job:stop j))
-             (job:forget "probe")))
-      (setf fs:*root* was))))
+         (progn (is (not (null (fs:at "/proc"))))
+                (job:supervise j)
+                (job:start j)
+                (is (eq j (fs:at "/proc/probe")))
+                (is (eq :running (pine:read "/proc/probe/state"))))
+      (ignore-errors (job:stop j))
+      (job:forget "probe"))))
 
 (test what-died-on-its-own-is-started-again
   "Supervision that never looks is a list of jobs and a promise. A thread that

@@ -54,12 +54,10 @@ stands in comes back here with the restarts it is still offering."
 
 (defun boot (&key (name "pine") store remoting)
   (libs:attend)
-  (fs:make-root)
   (unless (actors:runningp) (actors:boot :remoting remoting))
   (let ((root (fs:root)))
     (setf (fs:contents (fs:leaf root "name")) name)
     (setf (fs:contents (fs:leaf root "port")) (actors:remoting))
-    (fs:built root)
     (fs:ensure "/surface")
     (mount:mount #p"/" root "file"))
   (job:attend)

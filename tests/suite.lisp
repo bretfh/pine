@@ -26,6 +26,7 @@
   "One actor system for the whole run. Every test that needs something to run
 shares it, because a second one is a second image."
   (unless (actors:runningp) (actors:boot))
+  (unless *booted* (job:attend))
   (setf *booted* t))
 
 (defmacro with-tree (&body body)

@@ -1,8 +1,9 @@
 (in-package #:pine/fs)
 
-(defvar *root* nil
-  "The namespace this image is. One per image: a second one is another pine, and it
-is reached by mounting it rather than by holding two here.")
+(defvar *root* (make-instance 'dir :name nil)
+  "The namespace this image is, there from the moment this loads. One per image: a
+second one is another pine, and it is reached by mounting it rather than by holding
+two here.")
 
 (defvar *builders* nil)
 
@@ -27,14 +28,17 @@ is what a place answers when there is none, so it cannot also be one."
 
 (defun root () *root*)
 
-(defun builder (thunk)
-  "Say this package puts something on the tree, and how. Said in the file it is
-defined in, so what the namespace has at boot is the sum of what pine loaded."
-  (setf *builders* (append (cl:remove thunk *builders*) (list thunk)))
-  thunk)
+(defun builder (thunk &key as)
+  "Say this package puts something on the tree, and how: done on the root now, and
+again on any root built later. AS names the builder, so saying it again replaces it."
+  (let ((key (or as thunk)))
+    (setf *builders* (append (cl:remove key *builders* :key #'car :test #'equal)
+                             (list (cons key thunk))))
+    (funcall thunk (root))
+    thunk))
 
 (defun built (&optional (root (root)))
-  (dolist (thunk *builders* root) (funcall thunk root)))
+  (dolist (each *builders* root) (funcall (cdr each) root)))
 
 (defun split-name (text)
   (let ((names nil)
