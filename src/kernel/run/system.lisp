@@ -87,8 +87,9 @@ what is under one belongs to the world."
                (cond ((equal (fs:owner each) home)
                       (fault:or-nothing "what a system put up may have gone already"
                         (fs:erase-entry d (fs:name each))))
-                     ((and (typep each 'fs:dir) (not (fs:livep each)))
-                      (sweep each))))))
+                     (t (fs:let-go each home)
+                        (when (and (typep each 'fs:dir) (not (fs:livep each)))
+                          (sweep each)))))))
     (sweep (fs:root)))
   (dolist (what (reverse (or (d:lookup (d:all *put*) home) nil)))
     (let ((taking (d:lookup (d:all *undoes*) (first what))))

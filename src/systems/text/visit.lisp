@@ -80,7 +80,6 @@ load is a fault like any other: the text still opens, uncoloured."
 
 (defmethod job:start ((s text))
   (%syntax)
-  (system:puts (mode:mode-node))
   (root)
   (let ((scratch (make-document "scratch" :mode (make-instance 'mode:lisp))))
     (setf (current) scratch))

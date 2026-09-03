@@ -12,15 +12,6 @@
    #:dispatch #:modes #:mode-node))
 (in-package #:pine/mode)
 
-(defvar *keys* (d:table)
-  "Chords, by mode class name. A mode's own keymap; what a chord means comes from
-the class precedence list, so a mode inherits its parent's bindings the way it
-inherits its parent's methods.")
-(defvar *carried* (d:table)
-  "What the commands themselves carry, by mode class name, and the turn of the
-command table it was read off. A keystroke asks for this once per class in the
-precedence list, and the commands do not move between two keystrokes.")
-
 (defclass mode () ()
   (:documentation "How a document is understood. The chain is class inheritance:
 CALL-NEXT-METHOD is the fallback, and precedence costs nothing.
@@ -209,56 +200,79 @@ class is loaded is under the same name when the class arrives, rather than under
 string nothing ever reads again."
   (string-downcase (if (symbolp class) (symbol-name class) (princ-to-string class))))
 
-(defun %walked (class)
-  (let ((out (d:no-map)))
+(defclass keys (fs:value)
+  ((owners :initform (d:no-map) :accessor owners))
+  (:documentation "The chords bound by hand in one mode: chord to command. Who
+bound each is kept beside, so a system's go when it does; nobody saves it, so a
+restore cannot overwrite what this run's config bound."))
+
+(defmethod fs:savedp ((k keys)) nil)
+
+(defmethod fs:let-go ((k keys) owner)
+  (let ((mine (loop :for (chord . who) :in (d:pairs (owners k))
+                    :when (equal who owner) :collect chord)))
+    (when mine
+      (setf (owners k) (reduce #'d:without mine :initial-value (owners k)))
+      (setf (fs:contents k) (reduce #'d:without mine :initial-value (fs:contents k))))
+    mine))
+
+(defclass modes (fs:dir) ()
+  (:documentation "/mode: every mode class there is, and any name a chord was
+bound under before its class arrived."))
+
+(defmethod fs:entries ((d modes))
+  (dolist (name (%names)) (fs:entry d name))
+  (call-next-method))
+
+(defmethod fs:entry ((d modes) name)
+  (or (call-next-method)
+      (and (%class name) (%make-mode-dir d (%named-as name)))))
+
+(defun mode-node () (make-instance 'modes :name "mode"
+                                          :describes "every mode there is, and its chords"))
+
+(defun %root ()
+  (or (fs:at "/mode") (fs:attach (mode-node) (fs:root))))
+
+(defun %walked (name)
+  "The chords the commands themselves carry for this mode."
+  (let ((cmd (fs:at "/cmd")) (out (d:no-map)))
+    (when cmd (fs:reading cmd))
     (dolist (c (command:commands) out)
       (let ((on (command:on c)))
-        (when (and on (string-equal class (string (first on))))
+        (when (and on (string-equal name (string (first on))))
           (dolist (chord (rest on))
             (setf out (d:with out chord (command:name c)))))))))
 
-(defun %carried (class)
-  "The chords the commands themselves carry for this mode class. A command says
-what chord means it; nothing tells this file, and a chord goes when the command
-that named it does.
+(defun %make-mode-dir (root name)
+  "The dir for one mode: its bound chords, the keymap in force, and what the mode
+says about itself."
+  (let ((d (fs:attach (make-instance 'fs:dir :name name) root)))
+    (let ((k (fs:attach (make-instance 'keys :name "keys" :held (d:no-map)) d)))
+      (fs:attach (make-instance 'fs:derived :name "keymap"
+                                :reads (lambda ()
+                                         (d:merged (%walked name) (fs:contents k)))
+                                :describes "every chord in force here")
+                 d))
+    (fs:attach (make-instance 'fs:derived :name "said" :live t
+                              :reads (lambda () (%said name)))
+               d)
+    d))
 
-Kept until the commands turn over, because this is asked once per class in the
-precedence list for every key that arrives."
-  (let ((had (d:lookup (d:all *carried*) class))
-        (now (command:turned)))
-    (if (and had (eql (car had) now))
-        (cdr had)
-        (let ((made (%walked class)))
-          (d:keep! *carried* class (cons now made))
-          made))))
+(defun %mode-dir (root name)
+  "The dir for one mode, made once -- for a class there is, or for a name a chord
+was bound under before its class arrived."
+  (or (fs:entry root name) (%make-mode-dir root name)))
 
-(defun keys (class)
-  "Every chord in force for a mode class: what its commands carry, and what
-somebody bound by hand on top of that."
-  (let ((class (%named-as class)))
-    (d:merged (%carried class)
-              (or (d:lookup (d:all *keys*) class) (d:no-map)))))
+(defun %keymap (class)
+  (let ((d (%mode-dir (%root) (%named-as class))))
+    (fs:contents (fs:entry d "keymap"))))
 
-(defun bind (class chord command)
-  "Bind a chord in a mode. A config binds one the way pine does.
+(defun keys (class) (%keymap class))
 
-A chord bound while a system starts is that system's, and goes when it does. One a
-config binds is nobody's and stands, which is the difference between a system you
-can drop and a machine you set up."
-  (let ((class (%named-as class)))
-    (d:update! *keys* class
-               (lambda (had) (d:with (or had (d:no-map)) chord command)))
-    (system:owned (list :chord class chord))
-    chord))
-
-(defun unbind (class chord)
-  "Take a chord off a mode."
-  (let ((class (%named-as class)))
-    (d:update! *keys* class
-               (lambda (had) (if had (d:without had chord) (d:no-map))))
-    chord))
-
-(system:undoes :chord #'unbind)
+(defun %chain (m)
+  (loop :for class :in (c2mop:class-precedence-list (class-of m))
+        :when (subtypep class 'mode) :collect (class-name class)))
 
 (defun binding (m chord)
   "What CHORD runs for this mode: its own keymap, then up the class precedence list,
@@ -266,14 +280,33 @@ so a mode inherits bindings exactly as it inherits methods.
 
 A chord bound to a command that has since gone is not unbound: it answers the name
 it was bound to, so whoever asked can say so rather than take the key for text."
-  (loop :for class :in (c2mop:class-precedence-list (class-of m))
-        :for found := (d:lookup (keys (class-name class)) chord)
+  (loop :for class :in (%chain m)
+        :for found := (d:lookup (%keymap class) chord)
         :when found :do (return (values (command:named found) found))))
 
 (defun bindings (m)
   "Every chord in force for a mode: its own, and its parents', nearest first."
-  (loop :for class :in (c2mop:class-precedence-list (class-of m))
-        :append (d:pairs (keys (class-name class)))))
+  (loop :for class :in (%chain m)
+        :append (d:pairs (%keymap class))))
+
+(defun %keys (class)
+  (fs:entry (%mode-dir (%root) (%named-as class)) "keys"))
+
+(defun bind (class chord command)
+  "Bind a chord in a mode. A config binds one the way pine does. A chord bound
+while a system starts is that system's, and goes when it does; one a config binds
+is nobody's and stands."
+  (let ((k (%keys class)))
+    (when system:*owner*
+      (setf (owners k) (d:with (owners k) chord system:*owner*)))
+    (setf (fs:contents k) (d:with (fs:contents k) chord command))
+    chord))
+
+(defun unbind (class chord)
+  (let ((k (%keys class)))
+    (setf (owners k) (d:without (owners k) chord))
+    (setf (fs:contents k) (d:without (fs:contents k) chord))
+    chord))
 
 (defun dispatch (m subject k &optional (pending (ui:pending)))
   "What a key means to a mode. Answers :taken, what the command answered,
@@ -305,8 +338,8 @@ whether anything wanted it or not."
 (defun prefixp (m chord)
   "Whether CHORD is the beginning of something longer bound in this mode."
   (block found
-    (dolist (class (c2mop:class-precedence-list (class-of m)) nil)
-      (dolist (had (d:keys (keys (class-name class))))
+    (dolist (class (%chain m) nil)
+      (dolist (had (d:keys (%keymap class)))
         (when (and (> (length had) (length chord))
                    (string= chord had :end2 (length chord))
                    (char= #\Space (char had (length chord))))
@@ -319,33 +352,4 @@ whether anything wanted it or not."
   (let ((m (mode name)))
     (when m (list :type (fs:name m) :handles (handles m)))))
 
-(defun %chords (name)
-  "What a mode is bound to, as it stands. A chord a config added is here without
-anything having to be told about it.
-
-The class is looked for among the modes rather than in one package, because a
-mode is a class anybody can write and most of them are not written here."
-  (let ((class (%class name)))
-    (when class
-      (sort (d:pairs (keys (class-name class))) #'string< :key #'car))))
-
-(defun %mode (name)
-  (when (%class name)
-    (make-instance 'fs:dir :name name
-                :names (constantly '("keys" "said"))
-                :each (lambda (field)
-                        (cond ((equal field "keys")
-                               (make-instance 'fs:derived :name field :live t
-                                           :reads (lambda () (%chords name))))
-                              ((equal field "said")
-                               (make-instance 'fs:derived :name field :live t
-                                           :reads (lambda () (%said name)))))))))
-
-(defun mode-node ()
-  "Every mode there is, and its chords, as a place. Made here and attached by
-whoever is putting it up, the way any other node is."
-  (make-instance 'fs:dir :name "mode"
-              :names #'%names
-              :each #'%mode
-              :describes "every mode there is, and its chords"))
-
+(fs:builder (lambda (root) (fs:attach (mode-node) root)))

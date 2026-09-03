@@ -6,7 +6,7 @@
    #:contents #:holding #:verb #:savedp #:livep #:announces #:refreshes #:moved
    #:entries #:entry #:make-entry #:erase-entry #:works #:takes
    #:name #:parent #:owner #:describes #:full-name #:child #:slots
-   #:attach #:detach #:announced #:reading #:depend #:undepend #:as-value
+   #:attach #:detach #:announced #:reading #:depend #:undepend #:as-value #:let-go
    #:reads #:writes
    #:root #:make-root #:at #:ensure #:leaf #:erase #:walk #:paths #:split-name
    #:builder #:built #:absent #:not-a-place #:*root*
@@ -257,6 +257,11 @@ makes a file on the disk.")
       (let ((it (detach d name)))
         (d:drop! (memo d) (%said name))
         (or it gone)))))
+
+(defgeneric let-go (x owner)
+  (:documentation "Take back what OWNER put into X, where X holds what several
+owners put there.")
+  (:method ((x standing) owner) (declare (ignore owner)) nil))
 
 (defun slots (object into &rest pairs)
   "One value under INTO per slot of OBJECT named in PAIRS."

@@ -354,9 +354,7 @@ met and the binding was never found again."
   (mode:bind "text" "C-q test-a" "pwd")
   (is (equal "pwd" (d:lookup (mode::keys 'pine/mode:text) "C-q test-a")))
   (is (equal "pwd" (d:lookup (mode::keys "text") "C-q test-a"))
-      "named either way, it is one keymap")
-  (is (every #'stringp (d:keys (d:all mode::*keys*)))
-      "and they are all kept under one kind of name"))
+      "named either way, it is one keymap"))
 
 (test a-chord-whose-command-has-gone-does-not-type-itself
   "BINDING answered NIL for a chord bound to a command that had been withdrawn,
