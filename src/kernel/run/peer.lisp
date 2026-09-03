@@ -35,10 +35,15 @@ than one way in and what may be asked must not depend on which one somebody
 used.")
 (defvar *waits* nil
   "Whether this way in waits for work it asked for, on its own thread.")
-(defvar *answers* (d:table)
-  "Work a peer asked for and has not yet been told the end of, by token.")
-(defvar *asked* (d:table)
-  "The faults this image is standing in on somebody else's behalf, by token.")
+(defclass asked (job:thread)
+  ((answered    :initform nil :accessor answered)
+   (done        :initform nil :accessor done)
+   (output      :initform (make-string-output-stream) :reader output)
+   (ready       :initform (bordeaux-threads:make-semaphore) :reader ready)
+   (standing-in :initform (list nil) :reader standing-in))
+  (:documentation "Work another pine asked for, at /proc/ask-<token>: what it came
+to, what it printed, and the fault it stands in."))
+
 (defvar *counter* 0)
 (defvar *telling* nil
   "How to reach whoever is asking, where they left a way to be reached. A watch
@@ -49,11 +54,6 @@ needs this.")
   "Where the watches made while answering are collected, so whoever opened the
 connection can let them go when it closes. A watch outlives the question that
 asked for it and must not outlive the asker.")
-(defvar *by-uri* (d:table)
-  "The watches made for somebody with an address of their own, by that address.
-Each of their questions arrives as its own message, so there is no one call to
-collect them in; this is where they are kept until that address says it is done
-or goes away.")
 
 (defclass peer (image:image)
   ((uri :initarg :uri :accessor uri)
@@ -174,11 +174,11 @@ pine lists, or a leaf whose read and write cross to it."
                      :writes (lambda (value)
                                (%crossed p where (list :write (said:said value)))))))
 
-(defmethod watch:watch ((n remote) tells &key every name tells-when poll)
+(defmethod watch:watch ((n remote) tells &key every name tells-when poll for)
   "Watching a place in another pine is asking that pine to say when it moves. The
 near side and the far side were two paths; this is the near one, and it is the verb
 rather than something beside it."
-  (declare (ignore every tells-when poll))
+  (declare (ignore every tells-when poll for))
   (listen-to (peer-of n) (where-of n)
              (lambda (where said) (declare (ignore where)) (funcall tells n said))
              :name name))
@@ -251,19 +251,18 @@ question came, which is the only way there is for anything on a stream."
                                        (declare (ignore said))
                                        (funcall to (list :moved (fs:full-name of) t)))
                                    :name (format nil "~a->~a" (fs:full-name n)
-                                                 (or uri "the connection")))))
+                                                 (or uri "the connection"))
+                                   :for uri)))
                (when *watching* (push w (cdr *watching*)))
-               (when uri (d:update! *by-uri* uri (lambda (had) (cons w had))))
                (list :ok (fs:full-name n)))))))
 
 (defun %done (uri)
   "Somebody with an address says they are finished. Their watches go with them:
 one telling an address nobody is listening at fires for the life of the image and
 reaches no one."
-  (let ((held (d:lookup (d:all *by-uri*) uri)))
+  (let ((held (remove uri (watch:watchers) :key #'watch:for :test-not #'equal)))
     (dolist (w held) (fault:or-nothing "a watch already let go of is let go of"
                        (watch:unwatch w)))
-    (d:drop! *by-uri* uri)
     (list :ok (length held))))
 
 (defun %said (n)
@@ -316,49 +315,48 @@ one actor that answers every peer is held no longer than this by any of them.")
   "Start FORM on a thread that stands in whatever breaks, and answer within BUDGET.
 What finishes in time comes back as its value; what does not comes back as a token
 to ask after, so nothing waits on the far side for work it started."
-  (let ((token (d:swap *counter* #'1+))
-        (mine (list nil))
-        (done (list nil))
-        (answered (list nil))
-        (said (make-string-output-stream))
-        (ready (bordeaux-threads:make-semaphore)))
-    (d:keep! *answers* token (list mine done answered said))
-    (actors:blocking
-     "answering a peer"
-     (lambda ()
-       (unwind-protect
-            (let ((*standard-output* said)
-                  (fault:*keeping* mine))
-              (fault:with-debugger
-                (fault:attempt
-                 (lambda () (setf (car answered) (multiple-value-list (eval form))
-                                  (car done) t))
-                 "answering a peer")))
-         (fault:changed)
-         (bordeaux-threads:signal-semaphore ready))))
+  (let* ((token (d:swap *counter* #'1+))
+         (j (make-instance 'asked :name (%ask-name token) :on-fault :leave
+                                  :describes "work another pine asked for")))
+    (setf (job:runs j)
+          (lambda ()
+            (unwind-protect
+                 (let ((*standard-output* (output j))
+                       (fault:*keeping* (standing-in j)))
+                   (fault:with-debugger
+                     (fault:attempt
+                      (lambda () (setf (answered j) (multiple-value-list (eval form))
+                                       (done j) t))
+                      "answering a peer")))
+              (fault:changed)
+              (setf (job:stopping j) t)
+              (bordeaux-threads:signal-semaphore (ready j)))))
+    (job:start j)
     (when (plusp budget)
-      (bordeaux-threads:wait-on-semaphore ready :timeout budget))
+      (bordeaux-threads:wait-on-semaphore (ready j) :timeout budget))
     (let ((now (%answered token)))
       (if (eq (second now) :working)
           (list :ok :working :token token)
           now))))
 
+(defun %ask-name (token) (format nil "ask-~d" token))
+
 (defun %answered (token)
-  "What the work asked for under TOKEN came to, or :WORKING while it has not."
-  (let ((it (d:lookup (d:all *answers*) token)))
-    (if (null it)
+  "What the work asked for under TOKEN came to, or :WORKING while it has not. One
+that came to something is forgotten as it is told; one standing in a fault stays
+until the fault is taken."
+  (let ((j (job:named (%ask-name token))))
+    (if (null j)
         (list :no (format nil "nothing was asked under ~a" token))
-        (destructuring-bind (mine done answered said) it
-          (cond ((car mine)
-                 (d:drop! *answers* token)
-                 (d:keep! *asked* token (car mine))
-                 (list :ok :said-broke (princ-to-string (fault:condition-of (car mine)))
-                       :offers (fault:offers (car mine)) :token token
-                       :said (get-output-stream-string said)))
-                ((car done)
-                 (d:drop! *answers* token)
-                 (list :ok :answered (mapcar #'said:said (car answered))
-                       :said (get-output-stream-string said)))
+        (let ((f (car (standing-in j))))
+          (cond (f (list :ok :said-broke (princ-to-string (fault:condition-of f))
+                         :offers (fault:offers f) :token token
+                         :said (get-output-stream-string (output j))))
+                ((done j)
+                 (let ((said (list :ok :answered (mapcar #'said:said (answered j))
+                                   :said (get-output-stream-string (output j)))))
+                   (job:forget (job:name j))
+                   said))
                 (t (list :ok :working)))))))
 
 (defun received (message)
@@ -393,10 +391,11 @@ half-done line."
     (:watch (%watching (second message) (third message)))
     (:done (%done (second message)))
     (:answer (%answered (second message)))
-    (:take (let* ((token (third message))
-                  (f (d:lookup (d:all *asked*) token)))
-             (d:drop! *asked* token)
-             (list :ok (and f (fault:take f (second message))))))
+    (:take (let* ((j (job:named (%ask-name (third message))))
+                  (f (and j (car (standing-in j))))
+                  (taken (and f (fault:take f (second message)))))
+             (when j (job:forget (job:name j)))
+             (list :ok taken)))
     ((:contents :write :verb :entries :entry)
      (%place (second message) (list* (first message) (cddr message))))
     (t (list :no "no such question"))))

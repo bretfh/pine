@@ -4,7 +4,8 @@
                     (#:actors #:pine/run/actors) (#:job #:pine/run/job)
                     (#:fault #:pine/run/fault))
   (:export
-   #:watch #:unwatch #:forget-all #:following #:let-go #:*streaming*))
+   #:watch #:unwatch #:forget-all #:following #:let-go #:*streaming*
+   #:watchers #:for))
 (in-package #:pine/run/watch)
 
 (defvar *watchers* nil)
@@ -23,7 +24,8 @@ before there is one -- the same reason NODE:*BROKE* is one.")
    (polling :initarg :poll :reader polling :initform nil)
    (every   :initarg :every :reader every-of :initform *every*)
    (telling :initform nil :accessor telling)
-   (again   :initform nil :accessor again))
+   (again   :initform nil :accessor again)
+   (for     :initarg :for :reader for :initform nil))
   (:documentation "Somebody waiting to hear that a node moved. Not a thread: what
 has to be asked is asked on one sweep, however many there are.
 
@@ -112,8 +114,9 @@ other polled watcher to a minute as well."
                    (not (member name wanted :test #'equal)))
           (job:cancel j))))))
 
-(defgeneric watch (n tells &key every name tells-when poll)
+(defgeneric watch (n tells &key every name tells-when poll for)
   (:documentation "Say TELLS whenever N moves, and answer something to let go of.
+FOR is whom it was made for, where they have an address of their own.
 
 A class answers this. The default is the one every node gets: depend a watcher on
 it, so the walk a write does reaches it. A place somewhere else answers by asking
@@ -121,9 +124,9 @@ wherever it is to say so, which is why this dispatches at all -- three of the fo
 verbs were methods and this one was a function, so every kind of node that could
 push had to build its own way round it.")
   (:method (n tells &key (every *every*) name (tells-when :on-change)
-                    (poll (fs:livep n)))
+                    (poll (fs:livep n)) for)
     (let ((w (make-instance 'watcher :watches n :tells tells :tells-when tells-when
-                                     :poll poll :every every
+                                     :poll poll :every every :for for
                                      :name (or name (fs:full-name n)))))
       (fs:depend w n)
       (d:swap *watchers* (lambda (all) (cons w all)))
