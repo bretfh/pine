@@ -4,15 +4,15 @@
   "A parse that has landed says the document moved. Its text did not, but what is
 laid over it did, and the frame read this document -- so saying so here is the
 edge, and whatever else is reading it hears the same way."
-  (node:moved document))
+  (fs:moved document))
 
 (defun %key ()
   "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
 another pine all press keys the same way."
-  (make-instance 'node:place :name "key"
+  (make-instance 'fs:derived :name "key" :live t
               :reads (lambda () (ui:spelled (ui:pending)))
               :writes (lambda (value)
-                        (commit:writing
+                        (fs:writing
                           (dolist (k (ui:chord (princ-to-string value)))
                             (dispatch k))))
               :describes "write a chord here to type it"))
@@ -27,7 +27,7 @@ another pine all press keys the same way."
   (completes :document
                  (lambda (typed)
                    (declare (ignore typed))
-                   (mapcar (lambda (d) (cons (node:name d)
+                   (mapcar (lambda (d) (cons (fs:name d)
                                              (or (text:file-of d) "")))
                            (text:documents))))
   (completes :mode
@@ -46,14 +46,14 @@ another pine all press keys the same way."
                    (declare (ignore typed))
                    "What the compositor says there is. Read through the namespace:
 the editor has never heard of a window manager, and does not have to."
-                   (let ((n (tree:at "/wm/windows")))
+                   (let ((n (fs:at "/wm/windows")))
                      (when n
-                       (loop :for id :in (node:contents n)
-                             :for each := (tree:at n (princ-to-string id))
-                             :for said := (and each (node:contents each))
-                             :collect (cons (format nil "~a ~a" id
-                                                    (or (getf said :title) ""))
-                                            (or (getf said :app) "")))))))
+                       (flet ((field (id what)
+                                (let ((it (fs:at n (princ-to-string id) what)))
+                                  (or (and it (fs:contents it)) ""))))
+                         (loop :for id :in (fs:contents n)
+                               :collect (cons (format nil "~a ~a" id (field id "title"))
+                                              (field id "app"))))))))
   (completes :file #'files))
 
 (defun %asking (c)
@@ -83,7 +83,7 @@ the command runs again when they answer."
   "The editor, laid out for whatever is showing it. The screen says how big it is by
 writing /surface/editor/size, and this follows that the way it follows anything
 else it read."
-  (let* ((s (tree:at "/surface" "editor"))
+  (let* ((s (fs:at "/surface" "editor"))
          (size (and s (ui:size s)))
          (*font* (getf size :font)))
     (frame :cols (or (getf size :cols) *cols*)
@@ -99,7 +99,7 @@ else it read."
   (%sources)
   (setf command:*at* s)
   (system:puts (%key))
-  (let ((scratch (or (tree:at "/text" "scratch")
+  (let ((scratch (or (fs:at "/text" "scratch")
                      (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
@@ -112,5 +112,5 @@ else it read."
   (ui:take-next nil)
   (took-all)
   (text:forget-all)
-  (dolist (win (windows)) (node:detach (node:parent win) (node:name win)))
+  (dolist (win (windows)) (fs:detach (fs:parent win) (fs:name win)))
   s)

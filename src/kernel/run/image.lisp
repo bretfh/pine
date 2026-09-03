@@ -1,6 +1,6 @@
 (defpackage #:pine/run/image
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:job #:pine/run/job) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:job #:pine/run/job) (#:fs #:pine/fs)
                     (#:fault #:pine/run/fault) (#:actors #:pine/run/actors))
   (:export
    #:image #:child #:evaluate #:borrowing))
@@ -214,7 +214,7 @@ fault, so this waits on the fault rather than looking at a flag over and over."
       (%drained j))))
 
 
-(setf node:*elsewhere*
+(setf fs:*elsewhere*
       (lambda (where form)
         "Work a node out in another image. A fault there is already standing here
 with its restarts, because EVALUATE borrowed it; this signals so the node keeps what

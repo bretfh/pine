@@ -15,11 +15,11 @@ images, and there is one."
   (when (edit:askingp) (command:run "cancel"))
   (when (edit:searching) (edit:took (edit:searching)))
   (ui:take-next nil)
-  (let ((scratch (or (tree:at "/text" "scratch")
+  (let ((scratch (or (fs:at "/text" "scratch")
                      (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
-    (setf (node:contents scratch) "")
+    (setf (text:text scratch) "")
     (text:goto scratch 0 0)
     (edit:show (edit:focused) scratch)
     scratch))
@@ -29,7 +29,7 @@ images, and there is one."
     (is (eq scratch (text:current)))
     (is (typep (text:mode-of scratch) 'mode:lisp))
     (is (eq scratch (edit:shows (edit:focused))))
-    (is (tree:at "/system/edit") "and it is a job you can see")))
+    (is (fs:at "/system/edit") "and it is a job you can see")))
 
 (test typing-lands-in-the-document-and-in-the-frame
   (editing)
@@ -42,11 +42,11 @@ images, and there is one."
 (test a-chord-written-to-key-is-a-chord-typed
   (editing)
   (pine/edit:type-text "hello")
-  (setf (node:contents (tree:at "/key")) "C-a")
+  (setf (fs:contents (fs:at "/key")) "C-a")
   (is (zerop (text:at-col (text:current))))
-  (setf (node:contents (tree:at "/key")) "C-e")
+  (setf (fs:contents (fs:at "/key")) "C-e")
   (is (= 5 (text:at-col (text:current))))
-  (setf (node:contents (tree:at "/key")) "C-a C-k")
+  (setf (fs:contents (fs:at "/key")) "C-a C-k")
   (is (equal "" (text:text (text:current))))
   (command:run "yank")
   (is (equal "hello" (text:text (text:current)))))
@@ -55,7 +55,7 @@ images, and there is one."
   "Type at pine the way a keyboard does: one write to /key each. Nothing about the
 editor is reached around, so what this proves is what a keyboard would get."
   (dolist (c chords chords)
-    (setf (node:contents (tree:at "/key")) c)))
+    (setf (fs:contents (fs:at "/key")) c)))
 
 (test space-is-a-key-like-any-other
   "Every name a keyboard hands over has to be one pine can spell. A space arriving
@@ -78,7 +78,7 @@ per keystroke is the editor talking over itself."
 the path a person is on; a test that reaches past /key proves nothing about it."
   (let ((doc (editing)))
     (flet ((typed-into (want &rest chords)
-             (setf (node:contents doc) "")
+             (setf (text:text doc) "")
              (text:goto doc 0 0)
              (apply #'typed chords)
              (is (equal want (text:text doc)) "~{ ~a~}" chords)))
@@ -157,7 +157,7 @@ narrows it, what TAB fills in, what C-n chooses and what RET does with it."
     (typed "M-x")
     (typed-in "list-documents")
     (typed "Return")
-    (is (equal "*documents*" (node:name (text:current))) "and RET runs it")
+    (is (equal "*documents*" (fs:name (text:current))) "and RET runs it")
     (clear)
     (typed "C-x" "C-f")
     (is (edit:filep edit::*prompt*) "a file question knows it is one")
@@ -184,7 +184,7 @@ still be the space key. /key is the one door everything types through."
 
 (test a-search-lands-and-steps
   (let ((doc (editing)))
-    (setf (node:contents doc) (format nil "one~%two~%three~%two again"))
+    (setf (text:text doc) (format nil "one~%two~%three~%two again"))
     (text:goto doc 0 0)
     (edit:start)
     (pine/edit:type-text "two")
@@ -201,7 +201,7 @@ or everything past the first screenful is unreachable."
   (let ((doc (editing))
         (edit:*cols* 60)
         (edit:*lines* 10))
-    (setf (node:contents doc)
+    (setf (text:text doc)
           (format nil "~{line-~d~^~%~}" (loop :for i :below 200 :collect i)))
     (text:goto doc 0 0)
     (flet ((shows (what)
@@ -226,7 +226,7 @@ or everything past the first screenful is unreachable."
 (test a-listing-row-stands-for-a-thing
   (editing)
   (command:run "list-documents")
-  (is (equal "*documents*" (node:name (text:current))))
+  (is (equal "*documents*" (fs:name (text:current))))
   (is (typep (edit:place) 'text:document))
   (is (typep (text:mode-of (text:current)) 'edit:listing)))
 
@@ -241,7 +241,7 @@ or everything past the first screenful is unreachable."
 
 (test evaluating-a-form-answers-beside-it
   (let ((doc (editing)))
-    (setf (node:contents doc) "(+ 2 2)")
+    (setf (text:text doc) "(+ 2 2)")
     (text:move doc :text 1)
     (command:run "eval-last-expression")
     (is (text:overlays doc) "what it answered is shown beside the line")
@@ -252,7 +252,7 @@ or everything past the first screenful is unreachable."
 knew the document's package would be no use in the thing it is written in."
   (let ((doc (editing)))
     (flet ((completing (text col)
-             (setf (node:contents doc) text)
+             (setf (text:text doc) text)
              (text:goto doc 0 col)
              (command:run "complete-symbol")
              (setf (text:current) doc)
@@ -263,13 +263,13 @@ knew the document's package would be no use in the thing it is written in."
           "and two colons reach what a package keeps to itself")
       (is (equal "(nosuchpackage:thi" (completing "(nosuchpackage:thi" 18))
           "a package that is not there leaves the text alone"))
-    (is (member "pine/fs/node:contents"
-                (mode:complete (text:mode-of doc) doc "pine/fs/node:conten")
+    (is (member "pine/fs:contents"
+                (mode:complete (text:mode-of doc) doc "pine/fs:conten")
                 :test #'equal))))
 
 (test what-is-at-point-is-a-symbol-the-mode-knows
   (let ((doc (editing)))
-    (setf (node:contents doc) "(car nil)")
+    (setf (text:text doc) "(car nil)")
     (text:goto doc 0 2)
     (is (search "car" (or (pine/edit:arglist (text:mode-of doc) doc) "")))
     (is (member "car" (mode:complete (text:mode-of doc) doc "ca")
@@ -288,7 +288,7 @@ prompt. A command that asks a question has to be able to take the answer."
            (let ((d (text:current)))
              (is (search "(defun one () 1)" (text:text d)))
              (is (equal '("one" "two")
-                        (mapcar #'node:name (node:nodes (tree:at d "defun"))))
+                        (mapcar #'fs:name (text:regions (fs:at d "defun"))))
                  "and its mode gave it regions")
              (text:goto d 0 0)
              (typed "x")
@@ -306,15 +306,15 @@ prompt. A command that asks a question has to be able to take the answer."
              (command:run "revert-document" '("no"))
              (setf (text:current) d)
              (is (search "z" (text:text d)) "and no means no")
-             (text:kill (node:name d))))
+             (text:kill (fs:name d))))
       (ignore-errors (delete-file file)))))
 
 (test a-system-stops-and-takes-its-surface-with-it
   (editing)
-  (is (tree:at "/surface/editor"))
+  (is (fs:at "/surface/editor"))
   (pine:drop :edit)
   (is (null (system:named "edit")))
-  (is (null (tree:at "/surface/editor")))
+  (is (null (fs:at "/surface/editor")))
   (setf *editing* nil))
 
 (test two-files-with-one-name-are-two-documents
@@ -331,8 +331,8 @@ the first one at the second file and the first was gone."
                        :direction :output :if-exists :supersede)
       (write-string "(this is B)" s))
     (with-tree
-      (tree:built (tree:root))
-      (mount:mount #p"/" (tree:root) "file")
+      (fs:built (fs:root))
+      (mount:mount #p"/" (fs:root) "file")
       (pine/text::root)
       (let* ((path-a (namestring (merge-pathnames "system.lisp" a)))
              (path-b (namestring (merge-pathnames "system.lisp" b)))
@@ -340,11 +340,11 @@ the first one at the second file and the first was gone."
              (doc-a (text:make-document name-a)))
         (text:visit doc-a path-a)
         (let* ((name-b (pine/edit::%document-name path-b))
-               (doc-b (or (tree:at "/text" name-b) (text:make-document name-b))))
+               (doc-b (or (fs:at "/text" name-b) (text:make-document name-b))))
           (text:visit doc-b path-b)
           (is (not (eq doc-a doc-b)) "they are two")
-          (is (equal "(this is A)" (node:contents doc-a)) "and the first still is")
-          (is (equal "(this is B)" (node:contents doc-b)))
+          (is (equal "(this is A)" (text:text doc-a)) "and the first still is")
+          (is (equal "(this is B)" (text:text doc-b)))
           (is (equal name-a (pine/edit::%document-name path-a))
               "while opening the same file again is still one"))))))
 
@@ -426,7 +426,7 @@ hanging off the window just taken away."
   "SPC is a key called SPC and what it puts in is a space. Taking the first letter
 of the name searched for an S."
   (let ((doc (editing)))
-    (setf (node:contents doc) "alpha beta gamma")
+    (setf (text:text doc) "alpha beta gamma")
     (text:goto doc 0 0)
     (command:run "isearch-forward")
     (edit:dispatch (ui:parse "a"))
@@ -445,8 +445,8 @@ package for ever, so M-: in a second file read its names in the first file's."
         (b (text:make-document "%probe-b")))
     (unwind-protect
          (progn
-           (setf (node:contents a) "(in-package #:pine/user)")
-           (setf (node:contents b) "(in-package #:cl-user)")
+           (setf (text:text a) "(in-package #:pine/user)")
+           (setf (text:text b) "(in-package #:cl-user)")
            (is (eq (find-package :pine/user)
                    (session:package-of (pine/edit::evaluating a))))
            (is (eq (find-package :cl-user)
@@ -490,7 +490,7 @@ that went into the backtrace: the prompt was there, asking, and unreachable."
          (let ((typed (pine/edit::so-far)))
            (%broke "something else broke")
            (is (edit:askingp) "the question is still standing")
-           (is (eq (tree:at "/text" "*prompt*") (text:current))
+           (is (eq (fs:at "/text" "*prompt*") (text:current))
                "and it still has the keyboard")
            (pine/edit:type-text "x")
            (is (equal (concatenate 'string typed "x") (pine/edit::so-far))
@@ -506,13 +506,13 @@ for each was a document nobody could type in for as long as it went on."
   (unwind-protect
        (progn
          (%broke "the first")
-         (is (equal "*debugger*" (node:name (text:current))))
-         (let ((scratch (tree:at "/text" "scratch")))
+         (is (equal "*debugger*" (fs:name (text:current))))
+         (let ((scratch (fs:at "/text" "scratch")))
            (setf (text:current) scratch)
            (%broke "the second")
            (is (eq scratch (text:current))
                "the one already up takes the second rather than the front again")
-           (is (search "the second" (text:text (tree:at "/text" "*debugger*")))
+           (is (search "the second" (text:text (fs:at "/text" "*debugger*")))
                "and it says what broke this time")))
     (pine/edit::away)))
 
@@ -524,7 +524,7 @@ nothing ever said it was stale again. The second question offered nothing, and s
 did every one after it for the life of the image."
   (editing)
   (unwind-protect
-       (flet ((offered () (node:contents (pine/edit::%matching-node))))
+       (flet ((offered () (fs:contents (pine/edit::%matching-node))))
          (command:run "find-file")
          (is (plusp (length (offered))) "the first question")
          (let ((typed (pine/edit::so-far)))

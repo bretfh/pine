@@ -1,6 +1,6 @@
 (defpackage #:pine/wm/niri
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:sh #:pine/host/shell)
+  (:local-nicknames (#:fs #:pine/fs) (#:sh #:pine/host/shell)
                     (#:fault #:pine/run/fault)
                     (#:compositor #:pine/wm/compositor))
   (:export
@@ -22,7 +22,7 @@ spliced into a line of shell is a value that can say anything the shell can.")
 (defclass niri (compositor:compositor) ()
   (:documentation "niri, over its own json protocol."))
 
-(defmethod node:announces ((c niri)) (list "niri msg --json event-stream"))
+(defmethod fs:announces ((c niri)) (list "niri msg --json event-stream"))
 
 (defun json (text)
   (when (and text (plusp (length text)))

@@ -121,7 +121,7 @@ this answers is only whether a place is inside one."
 (defun %remember (document)
   (d:swap *went*
            (lambda (all)
-             (cons (list (node:name document) (text:at-line document)
+             (cons (list (fs:name document) (text:at-line document)
                          (text:at-col document))
                    all))))
 
@@ -142,17 +142,17 @@ has reached. Two relationships, one protocol."
 (defun image-named (name)
   (find (princ-to-string name) (images) :key #'job:name :test #'equal))
 
-(defun %at (name) (tree:ensure "/eval" name))
+(defun %at (name) (fs:leaf "/eval" name))
 
-(defun target () (and (tree:root) (node:contents (%at "target"))))
+(defun target () (and (fs:root) (fs:contents (%at "target"))))
 
 (defun (setf target) (name)
-  (setf (node:contents (%at "target")) name))
+  (setf (fs:contents (%at "target")) name))
 
-(defun target-was () (and (tree:root) (node:contents (%at "was"))))
+(defun target-was () (and (fs:root) (fs:contents (%at "was"))))
 
 (defun (setf target-was) (name)
-  (setf (node:contents (%at "was")) name))
+  (setf (fs:contents (%at "was")) name))
 
 (defun evaluating (document)
   "The session this document's forms are evaluated in.
@@ -161,7 +161,7 @@ One per document, and what it reads in is what the document says it is written i
 asked again each time because the document may have said something else since. One
 session for the image took whichever document asked first and kept its package for
 ever, so M-: in a second file read its names in the first file's."
-  (let* ((name (node:name document))
+  (let* ((name (fs:name document))
          (s (or (d:lookup (d:all *evaluating*) name)
                 (d:claim *evaluating* name
                          (session:open-session :name name)))))
@@ -206,7 +206,7 @@ here would."
   (let ((back (went)))
     (when back
       (destructuring-bind (name line col) back
-        (let ((document (tree:at "/text" name)))
+        (let ((document (fs:at "/text" name)))
           (when document
             (setf (text:current) document)
             (show (focused) document)
@@ -271,7 +271,7 @@ here would."
 (command:defcommand "load-file" ()
     (:describes "compile this document's file and load it" :on '(code "C-c C-l"))
   (let* ((document (text:current)) (file (text:file-of document)))
-    (cond ((null file) (log:note "~a has no file" (node:name document)))
+    (cond ((null file) (log:note "~a has no file" (fs:name document)))
           (t (fault:attempt
               (lambda ()
                 (multiple-value-bind (*package* *readtable*)
@@ -315,6 +315,6 @@ here would."
                    (eval form)
                    (incf n)
                    (setf at next))))))
-     (format nil "evaluating ~a" (node:name document)))
+     (format nil "evaluating ~a" (fs:name document)))
     (log:note "~d form~:p" n)
     n))

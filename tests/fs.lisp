@@ -14,7 +14,7 @@ OR, which reads a written NIL as an absence."
     (multiple-value-bind (value state) (pine::read "/nobody-wrote-this")
       (is (null value))
       (is (eq :absent state) "and nothing stands here at all"))
-    (tree:ensure "/branch/under")
+    (fs:ensure "/branch/under")
     (is (eq :branch (nth-value 1 (pine::read "/branch")))
         "a branch holds nothing by being one")
     (is (pine::standsp "/held"))
@@ -62,10 +62,10 @@ at all."
     (is (null (pine::ls "/nobody-wrote-this")) "and nothing where nothing stands")
     (let ((w (pine::watch "/dev/audio/volume"
                           (lambda (n said) (declare (ignore n said))))))
-      (is (eq (tree:at "/dev/audio/volume") (pine/run/watch::watches w))
+      (is (eq (fs:at "/dev/audio/volume") (pine/run/watch::watches w))
           "a name reaches the same node the other three verbs reach")
       (watch:unwatch w))
-    (signals tree:absent
+    (signals fs:absent
       (pine::watch "/nobody-wrote-this"
                    (lambda (n said) (declare (ignore n said)))))))
 
@@ -76,11 +76,11 @@ ANNOUNCES by hand somewhere else, and a place in another pine had a second path 
 never met this one."
   (with-tree
     (let ((told nil))
-      (defclass %loud (node:node) ((heard :initform nil :accessor heard)))
+      (defclass %loud (fs:dir) ((heard :initform nil :accessor heard)))
       (defmethod watch:watch ((n %loud) tells &key &allow-other-keys)
         (setf (heard n) tells)
         n)
-      (let ((n (node:attach (make-instance '%loud :name "loud") (tree:root))))
+      (let ((n (fs:attach (make-instance '%loud :name "loud") (fs:root))))
         (is (eq n (pine::watch "/loud" (lambda (of said)
                                          (declare (ignore of))
                                          (push said told))))
@@ -90,48 +90,48 @@ never met this one."
 
 (test a-derived-node-follows-what-it-read
   (with-tree
-    (let ((w (tree:ensure "/window/width"))
+    (let ((w (fs:leaf "/window/width"))
           (runs 0))
-      (setf (node:contents w) 80)
-      (let ((line (make-instance 'node:derived :name "line" :reads
+      (setf (fs:contents w) 80)
+      (let ((line (make-instance 'fs:derived :name "line" :reads
                                (lambda ()
                                  (incf runs)
-                                 (make-string (node:contents w)
+                                 (make-string (fs:contents w)
                                               :initial-element #\-)))))
-        (node:attach line (tree:root))
-        (is (= 80 (length (node:contents line))))
-        (node:contents line)
+        (fs:attach line (fs:root))
+        (is (= 80 (length (fs:contents line))))
+        (fs:contents line)
         (is (= 1 runs) "what it worked out is kept")
-        (setf (node:contents w) 20)
-        (is (= 20 (length (node:contents line)))
+        (setf (fs:contents w) 20)
+        (is (= 20 (length (fs:contents line)))
             "a write two levels down stirs it")
         (is (= 2 runs) "exactly once")))))
 
 (test a-derived-node-takes-a-function-for-writing
   (with-tree
     (let ((held (list 41)))
-      (let ((n (make-instance 'node:derived :name "probe" :reads (lambda () (first held))
+      (let ((n (make-instance 'fs:derived :name "probe" :reads (lambda () (first held))
                             :writes (lambda (v) (setf (first held) (* 2 v))))))
-        (node:attach n (tree:root))
-        (is (= 41 (node:contents n)))
-        (setf (node:contents n) 10)
-        (is (= 20 (node:contents n)))))))
+        (fs:attach n (fs:root))
+        (is (= 41 (fs:contents n)))
+        (setf (fs:contents n) 10)
+        (is (= 20 (fs:contents n)))))))
 
 (test a-node-knows-where-it-is
   (with-tree
-    (setf (node:contents (tree:ensure "/window/width")) 80)
-    (is (equal "/window/width" (node:full-name (tree:at "/window/width"))))
-    (is (member "window" (tree:listing (tree:root)) :test #'equal))
-    (is (null (tree:at "/window/nothing")))))
+    (setf (fs:contents (fs:leaf "/window/width")) 80)
+    (is (equal "/window/width" (fs:full-name (fs:at "/window/width"))))
+    (is (member "window" (mapcar #'fs:name (fs:entries (fs:root))) :test #'equal))
+    (is (null (fs:at "/window/nothing")))))
 
 (test a-path-is-a-place
   "A path is one more thing AT and ENSURE take, not a second way to walk the tree."
   (with-tree
-    (setf (node:contents (tree:ensure "/dev/audio" "volume")) 40)
+    (setf (fs:contents (fs:leaf "/dev/audio" "volume")) 40)
     (let ((p (path:path "/dev/audio/volume")))
-      (is (= 40 (node:contents (tree:at p))))
-      (setf (node:contents (tree:ensure p)) 55)
-      (is (= 55 (node:contents (tree:at "/dev/audio/volume"))))
+      (is (= 40 (fs:contents (fs:at p))))
+      (setf (fs:contents (fs:leaf p)) 55)
+      (is (= 55 (fs:contents (fs:at "/dev/audio/volume"))))
       (is (equal "volume" (path:leaf p))))))
 
 (defun %exactly (s path)
@@ -153,16 +153,16 @@ it stood for is what knew how to read it."
            (with-tree
              (let ((s (store:open-store file)))
                (store:keeping s)
-               (tree:put "/kept/note" nil "across")
-               (tree:put "/gone/away" nil "orphan")
+               (pine::write "/kept/note" "across")
+               (pine::write "/gone/away" "orphan")
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (tree:ensure "/kept/note")
+               (fs:leaf "/kept/note")
                (is (eql 1 (store:restore s))
                    "one node stood there to be filled in")
-               (is (equal "across" (node:contents (tree:at "/kept/note"))))
-               (is (null (tree:at "/gone/away"))
+               (is (equal "across" (fs:contents (fs:at "/kept/note"))))
+               (is (null (fs:at "/gone/away"))
                    "and nothing was conjured where nothing stands")
                (is (equal '("/gone/away") (store:stale s))
                    "which the store can say")
@@ -184,7 +184,7 @@ are the whole test; whether the value happens to be NIL is not a third question.
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (tree:ensure "/held")
+               (fs:leaf "/held")
                (store:restore s)
                (is (eq :held (nth-value 1 (pine::read "/held")))
                    "and it came back as a place holding NIL, not as one absent")
@@ -202,9 +202,9 @@ what a crash costs is everything since the image came up."
                  (thing (make-instance 'job:thread :name "held" :on-fault :leave
                                                    :runs (lambda () nil))))
              (store:keeping s)
-             (node:attach thing (tree:root))
-             (node:slots thing thing "state" 'job:state)
-             (setf (node:contents (tree:at "/held/state")) :awake)
+             (fs:attach thing (fs:root))
+             (fs:slots thing thing "state" 'job:state)
+             (setf (fs:contents (fs:at "/held/state")) :awake)
              (is (equal '(("/held/state")) (%paths s "/held%"))
                  "written through, before any shutdown")
              (store:close-store s)))
@@ -215,14 +215,14 @@ what a crash costs is everything since the image came up."
 a walk that stopped at the root would take all of them with it and none would
 say so."
   (with-tree
-    (tree:put "/deep/down/here" nil "value")
+    (pine::write "/deep/down/here" "value")
     (let ((seen nil))
-      (tree:walk (tree:root) (lambda (n) (push (node:full-name n) seen)))
+      (fs:walk (fs:root) (lambda (n) (push (fs:full-name n) seen)))
       (is (member "/deep/down/here" seen :test #'equal)
           "a value three deep is reached: ~a" (reverse seen)))
-    (is (not (node:livep (tree:at "/deep/down" "here")))
+    (is (not (fs:livep (fs:at "/deep/down" "here")))
         "a value kept here is not live")
-    (is (node:livep (make-instance 'node:place :name "somewhere"))
+    (is (fs:livep (make-instance 'fs:derived :name "somewhere" :live t))
         "and a place, which the world answers for, is")))
 
 (test a-snapshot-writes-what-the-walk-reached
@@ -231,7 +231,7 @@ say so."
     (unwind-protect
          (with-tree
            (let ((s (store:open-store file)))
-             (tree:put "/walked/into/it" nil "kept")
+             (pine::write "/walked/into/it" "kept")
              (is (plusp (store:snapshot s)) "the snapshot found something")
              (is (equal '(("/walked/into/it")) (%paths s "/walked%")))
              (store:close-store s)))
@@ -246,9 +246,9 @@ its nodes off the tree, and that is not a reason to forget what they held."
          (with-tree
            (let ((s (store:open-store file)))
              (store:keeping s)
-             (tree:put "/going/away" nil "kept")
-             (setf (commit:on-forget :store) nil)
-             (tree:erase "/going")
+             (pine::write "/going/away" "kept")
+             (setf (fs:on-forget :store) nil)
+             (fs:erase "/going")
              (store:snapshot s)
              (is (equal '(("/going/away")) (%paths s "/going%"))
                  "still there after a snapshot with it off the tree")
@@ -264,10 +264,10 @@ its nodes off the tree, and that is not a reason to forget what they held."
              (with-open-file (o (merge-pathnames "hello.txt" where)
                                 :direction :output :if-exists :supersede)
                (write-string "from the disk" o))
-             (mount:mount where (tree:root) "file")
+             (mount:mount where (fs:root) "file")
              (is (equal "from the disk"
-                        (node:contents (tree:at "/file/hello.txt"))))
-             (setf (node:contents (tree:at "/file/hello.txt")) "written back")
+                        (fs:contents (fs:at "/file/hello.txt"))))
+             (setf (fs:contents (fs:at "/file/hello.txt")) "written back")
              (is (equal "written back"
                         (uiop:read-file-string
                          (merge-pathnames "hello.txt" where)))))
@@ -276,35 +276,35 @@ its nodes off the tree, and that is not a reason to forget what they held."
 
 (test erasing-takes-a-node-off
   (with-tree
-    (tree:put "/a/b" nil 1)
-    (is (tree:at "/a/b"))
-    (tree:erase "/a/b")
-    (is (null (tree:at "/a/b")))))
+    (pine::write "/a/b" 1)
+    (is (fs:at "/a/b"))
+    (fs:erase "/a/b")
+    (is (null (fs:at "/a/b")))))
 
 (test a-place-to-erase-is-named-the-way-every-other-place-is
   "WHERE names a place the way AT does, so the name that goes may be the end of it.
 Reading it as a node to walk from left the RM command taking a path apart from a
 name it never had, and answering nothing while nothing went."
   (with-tree
-    (tree:put "/a/b" nil 1)
-    (tree:erase "/a/b")
-    (is (null (tree:at "/a/b")) "one string, spelling the whole path")
-    (tree:put "/a/b" nil 1)
+    (pine::write "/a/b" 1)
+    (fs:erase "/a/b")
+    (is (null (fs:at "/a/b")) "one string, spelling the whole path")
+    (pine::write "/a/b" 1)
     (is (command:run "rm" '("/a/b")))
-    (is (null (tree:at "/a/b")) "which is what RM hands it")))
+    (is (null (fs:at "/a/b")) "which is what RM hands it")))
 
 (test a-name-nothing-answers-for-is-not-kept
   "A child made once is made once; a child that was never made is not remembered as
 nothing. The memo a walk of the children reads would have a hole in it, and a name
 anybody can ask about would be a name anybody can grow it by."
   (with-tree
-    (let ((p (make-instance 'node:place :name "empty" :names (lambda () nil)
+    (let ((p (make-instance 'fs:dir :name "empty" :names (lambda () nil)
                                  :each (lambda (name) (declare (ignore name)) nil))))
-      (node:attach p (tree:root))
-      (is (null (node:resolve p "nobody")))
-      (is (null (d:keys (d:all (node:memo p)))) "and nothing was kept saying so")
-      (node:attach p (tree:root))
-      (is (equal "/empty" (node:full-name p))
+      (fs:attach p (fs:root))
+      (is (null (fs:entry p "nobody")))
+      (is (null (d:keys (d:all (fs::memo p)))) "and nothing was kept saying so")
+      (fs:attach p (fs:root))
+      (is (equal "/empty" (fs:full-name p))
           "so renaming what is under it has something to rename"))))
 
 (test a-name-means-the-same-place-wherever-it-is-said
@@ -312,36 +312,36 @@ anybody can ask about would be a name anybody can grow it by."
 A name is what it spells, in a config, at a prompt and on the wire alike."
   (with-tree
     (pine::write "/a/b" :at-root)
-    (tree:ensure "/elsewhere")
+    (fs:ensure "/elsewhere")
     (is (eq :at-root (pine::read "a/b")) "with a leading / or without")
-    (tree:erase "/a/b")
-    (is (null (tree:at "/a/b")))))
+    (fs:erase "/a/b")
+    (is (null (fs:at "/a/b")))))
 
 (test nothing-is-not-a-place
   "It is what a place answers when there is none, so it cannot also be one. A miss
 that flowed into another call used to read whatever the session stood on."
   (with-tree
-    (signals tree:not-a-place (tree:at nil))
-    (signals tree:not-a-place (tree:at nil "a" "b"))
-    (signals tree:not-a-place (tree:ensure nil "a"))
-    (signals tree:not-a-place (tree:erase nil "a"))
-    (signals tree:not-a-place (pine::read (tree:at "/nobody-wrote-this")))))
+    (signals fs:not-a-place (fs:at nil))
+    (signals fs:not-a-place (fs:at nil "a" "b"))
+    (signals fs:not-a-place (fs:ensure nil "a"))
+    (signals fs:not-a-place (fs:erase nil "a"))
+    (signals fs:not-a-place (pine::read (fs:at "/nobody-wrote-this")))))
 
 (test erase-takes-a-path-as-readily-as-a-name
   "ERASE names a place the way AT does, so every kind of place AT takes it takes."
   (with-tree
     (pine::write "/a/b" :hello)
-    (tree:erase (pine/fs/path:path "/a/b"))
-    (is (null (tree:at "/a/b")))))
+    (fs:erase (pine/fs/path:path "/a/b"))
+    (is (null (fs:at "/a/b")))))
 
 (test a-write-under-a-worked-out-place-says-so
   "A place that works its children out has none to make. Attached anyway it would
 sit where NODES and RESOLVE never look, and the write would be taken and not be
 there to read."
   (with-tree
-    (let ((p (make-instance 'node:place :name "p" :names (constantly nil)
+    (let ((p (make-instance 'fs:dir :name "p" :names (constantly nil)
                              :each (lambda (name) (declare (ignore name)) nil))))
-      (node:attach p (tree:root))
+      (fs:attach p (fs:root))
       (signals error (pine::write "/p/thing" :hello)))))
 
 (test a-plain-branch-still-takes-a-write
@@ -354,14 +354,14 @@ there to read."
 stored the verb's argument instead. :QUOTED says this one is a value."
   (with-tree
     (pine::write "/data" nil)
-    (setf (node:contents (tree:at "/data")) (d:seq :quoted :alpha :beta))
-    (let ((back (node:contents (tree:at "/data"))))
+    (setf (fs:contents (fs:at "/data")) (d:seq :quoted :alpha :beta))
+    (let ((back (fs:contents (fs:at "/data"))))
       (is (d:seqp back))
       (is (equal '(:alpha :beta) (d:as :list back)))))
   (with-tree
     (pine::write "/flag" nil)
-    (setf (node:contents (tree:at "/flag")) (d:seq :toggle))
-    (is (eq t (node:contents (tree:at "/flag"))) "and a verb is still a verb")))
+    (setf (fs:contents (fs:at "/flag")) (d:seq :toggle))
+    (is (eq t (fs:contents (fs:at "/flag"))) "and a verb is still a verb")))
 
 (test the-store-tells-its-own-words-from-somebody-elses
   "A map is written (:map ...), so a list that begins with :map came back a map it
@@ -379,77 +379,77 @@ never was."
   (with-tree
     (let ((heard nil))
       (pine::write "/x" 1)
-      (setf (commit:on-commit :aaa-bad)
+      (setf (fs:on-commit :aaa-bad)
             (lambda (m) (declare (ignore m)) (error "listener broke")))
-      (setf (commit:on-commit :zzz-good)
+      (setf (fs:on-commit :zzz-good)
             (lambda (m) (declare (ignore m)) (setf heard t)))
       (unwind-protect
-           (progn (finishes (setf (node:contents (tree:at "/x")) 2))
-                  (is (= 2 (node:contents (tree:at "/x"))) "the value landed")
+           (progn (finishes (setf (fs:contents (fs:at "/x")) 2))
+                  (is (= 2 (fs:contents (fs:at "/x"))) "the value landed")
                   (is (not (null heard))
                       "and the other listener was still told"))
-        (setf (commit:on-commit :aaa-bad) nil)
-        (setf (commit:on-commit :zzz-good) nil)))))
+        (setf (fs:on-commit :aaa-bad) nil)
+        (setf (fs:on-commit :zzz-good) nil)))))
 
 (test a-derived-node-stops-reading-what-it-stopped-reading
   "SAW is recorded so this can be asked. Without it a node that once looked
 somewhere is worked out for ever after whenever that place moves."
   (with-tree
-    (let* ((a (node:attach (make-instance 'node:value :name "a") (tree:root)))
-           (b (node:attach (make-instance 'node:value :name "b") (tree:root)))
+    (let* ((a (fs:attach (make-instance 'fs:value :name "a") (fs:root)))
+           (b (fs:attach (make-instance 'fs:value :name "b") (fs:root)))
            (which (list a))
-           (dv (node:attach (make-instance 'node:derived :name "d" :reads (lambda ()
-                                               (node:contents (first which))))
-                            (tree:root))))
-      (setf (node:contents a) 1)
-      (setf (node:contents b) 2)
-      (node:contents dv)
+           (dv (fs:attach (make-instance 'fs:derived :name "d" :reads (lambda ()
+                                               (fs:contents (first which))))
+                            (fs:root))))
+      (setf (fs:contents a) 1)
+      (setf (fs:contents b) 2)
+      (fs:contents dv)
       (setf which (list b))
-      (node:moved dv)
-      (node:contents dv)
-      (is (zerop (d:size (pine/fs/node::readers a))) "a is no longer read")
-      (is (= 1 (d:size (pine/fs/node::readers b))))
-      (setf (node:contents a) 99)
-      (is (not (pine/fs/node::stalep dv)) "and moving it does not stir d")
-      (setf (node:contents b) 99)
-      (is (pine/fs/node::stalep dv) "while moving what it does read still does"))))
+      (fs:moved dv)
+      (fs:contents dv)
+      (is (zerop (d:size (pine/fs::readers a))) "a is no longer read")
+      (is (= 1 (d:size (pine/fs::readers b))))
+      (setf (fs:contents a) 99)
+      (is (not (pine/fs::stalep dv)) "and moving it does not stir d")
+      (setf (fs:contents b) 99)
+      (is (pine/fs::stalep dv) "while moving what it does read still does"))))
 
 (test two-nodes-that-read-each-other-do-not-run-the-stack-out
   (with-tree
-    (let ((x (node:attach (make-instance 'node:value :name "x") (tree:root)))
-          (y (node:attach (make-instance 'node:value :name "y") (tree:root))))
-      (node:depend x y)
-      (node:depend y x)
-      (finishes (node:moved x)))))
+    (let ((x (fs:attach (make-instance 'fs:value :name "x") (fs:root)))
+          (y (fs:attach (make-instance 'fs:value :name "y") (fs:root))))
+      (fs:depend x y)
+      (fs:depend y x)
+      (finishes (fs:moved x)))))
 
 (test erasing-a-worked-out-child-leaves-nothing-behind
   "The memo is let go after the detach, not before: dropped first, the detach asks
 for the child again and what is left is that second one with nothing over it."
   (with-tree
-    (let ((p (make-instance 'node:place :name "p" :names (constantly (list "kid"))
-                             :each (lambda (n) (make-instance 'node:place :name n)))))
-      (node:attach p (tree:root))
-      (let ((before (node:resolve p "kid")))
-        (node:erase-child p "kid")
-        (let ((after (node:resolve p "kid")))
+    (let ((p (make-instance 'fs:dir :name "p" :names (constantly (list "kid"))
+                             :each (lambda (n) (make-instance 'fs:dir :name n)))))
+      (fs:attach p (fs:root))
+      (let ((before (fs:entry p "kid")))
+        (fs:erase-entry p "kid")
+        (let ((after (fs:entry p "kid")))
           (is (not (eq before after)) "what comes back is a fresh one")
-          (is (eq p (node:parent after)) "standing where it should")
-          (is (equal "/p/kid" (node:full-name after))))))))
+          (is (eq p (fs:parent after)) "standing where it should")
+          (is (equal "/p/kid" (fs:full-name after))))))))
 
 (test a-working-out-that-throws-does-not-unwind-into-whoever-read
   "One surface breaking must not blank the frame. The fault is kept, the node
 answers nothing, and what stands beside it is still worked out."
   (with-tree
     (fault:forget-faults)
-    (let ((n (tree:ensure "/probe-src"))
-          (broken (make-instance 'node:derived :name "broken" :reads (lambda () (error "on purpose")))))
-      (setf (node:contents n) "still here")
-      (node:attach broken (tree:root))
-      (let ((beside (make-instance 'node:derived :name "beside" :reads (lambda () (node:contents n)))))
-        (node:attach beside (tree:root))
-        (is (null (node:contents broken))
+    (let ((n (fs:leaf "/probe-src"))
+          (broken (make-instance 'fs:derived :name "broken" :reads (lambda () (error "on purpose")))))
+      (setf (fs:contents n) "still here")
+      (fs:attach broken (fs:root))
+      (let ((beside (make-instance 'fs:derived :name "beside" :reads (lambda () (fs:contents n)))))
+        (fs:attach beside (fs:root))
+        (is (null (fs:contents broken))
             "it answers nothing rather than unwinding into the reader")
-        (is (equal "still here" (node:contents beside))
+        (is (equal "still here" (fs:contents beside))
             "and what is beside it still answers")
         (is (find-if (lambda (f)
                        (search "on purpose"
@@ -463,16 +463,16 @@ not ready answers the next time somebody asks, with nothing having stirred it."
   (with-tree
     (let ((broken (cons t nil))
           (runs 0))
-      (let ((n (make-instance 'node:derived :name "probe" :reads
+      (let ((n (make-instance 'fs:derived :name "probe" :reads
                             (lambda ()
                               (incf runs)
                               (when (car broken) (error "not yet"))
                               :ready))))
-        (node:attach n (tree:root))
-        (is (null (node:contents n)))
+        (fs:attach n (fs:root))
+        (is (null (fs:contents n)))
         (is (= 1 runs))
         (setf (car broken) nil)
-        (is (eq :ready (node:contents n)) "asked again")
+        (is (eq :ready (fs:contents n)) "asked again")
         (is (= 2 runs) "and only once more")))))
 
 (test nobody-waits-for-ever-on-somebody-elses-working-out
@@ -482,19 +482,19 @@ that node waits behind it for the life of the image."
   (with-tree
     (let ((started (bordeaux-threads:make-semaphore))
           (go-on (bordeaux-threads:make-semaphore)))
-      (let ((wedged (make-instance 'node:derived
+      (let ((wedged (make-instance 'fs:derived
                      :name "wedged" :reads
                      (lambda ()
                        (bordeaux-threads:signal-semaphore started)
                        (bordeaux-threads:wait-on-semaphore go-on :timeout 30)
                        :answered))))
-        (node:attach wedged (tree:root))
+        (fs:attach wedged (fs:root))
         (let ((holder (actors:blocking "wedged"
-                                       (lambda () (node:contents wedged)))))
+                                       (lambda () (fs:contents wedged)))))
           (is (bordeaux-threads:wait-on-semaphore started :timeout 5)
               "the other thread has the claim")
-          (let ((node:*waited* 1/10) (node:*waiting-on* 1))
-            (is (null (node:contents wedged))
+          (let ((fs:*waited* 1/10) (fs:*waiting-on* 1))
+            (is (null (fs:contents wedged))
                 "we give up rather than wait behind it"))
           (bordeaux-threads:signal-semaphore go-on)
           (actors:joined holder))))))
@@ -506,20 +506,20 @@ that; ATTACH over a name is the same thing spelled the other way round, and it d
 not. Declaring a surface twice leaked the first one and it went on being worked
 out from every device it had ever read."
   (with-tree
-    (let* ((r (node:attach (make-instance 'node:value :name "r") (tree:root)))
-           (src (node:attach (make-instance 'node:value :name "src") (tree:root)))
-           (had (make-instance 'node:derived :name "d" :reads (lambda () (node:contents src))))
-           (fresh (make-instance 'node:derived :name "d" :reads (lambda () :fresh))))
-      (setf (node:contents src) 1)
-      (node:attach had r)
-      (node:contents had)
-      (is (d:contains (node::readers src) had) "it read SRC")
-      (node:attach fresh r)
-      (is (not (d:contains (node::readers src) had))
+    (let* ((r (fs:attach (make-instance 'fs:dir :name "r") (fs:root)))
+           (src (fs:attach (make-instance 'fs:value :name "src") (fs:root)))
+           (had (make-instance 'fs:derived :name "d" :reads (lambda () (fs:contents src))))
+           (fresh (make-instance 'fs:derived :name "d" :reads (lambda () :fresh))))
+      (setf (fs:contents src) 1)
+      (fs:attach had r)
+      (fs:contents had)
+      (is (d:contains (fs::readers src) had) "it read SRC")
+      (fs:attach fresh r)
+      (is (not (d:contains (fs::readers src) had))
           "and it is out of SRC's readers once something stands in its place")
-      (is (null (node:parent had)) "and off the tree")
-      (is (eq fresh (node:resolve r "d")))
-      (is (equal (list fresh) (node:nodes r)) "listed once, not twice"))))
+      (is (null (fs:parent had)) "and off the tree")
+      (is (eq fresh (fs:entry r "d")))
+      (is (equal (list fresh) (fs:entries r)) "listed once, not twice"))))
 
 (test a-node-given-up-on-does-not-stand
   "The version a reading is checked against is exact, so a node that was given up
@@ -528,15 +528,15 @@ a node has what it would have if anybody asked -- and the two numberings met,
 because MARK answers out of the version slot once there is no value to answer out
 of."
   (with-tree
-    (let* ((src (node:attach (make-instance 'node:value :name "src") (tree:root)))
-           (d (make-instance 'node:derived :name "d" :reads (lambda () (node:contents src)))))
-      (setf (node:contents src) 1)
-      (node:attach d (tree:root))
-      (node:contents d)
-      (let ((at (node:mark d)))
-        (is (node:currentp d at) "it stands where it was worked out")
-        (setf (node:contents src) 2)
-        (is (not (node:currentp d at))
+    (let* ((src (fs:attach (make-instance 'fs:value :name "src") (fs:root)))
+           (d (make-instance 'fs:derived :name "d" :reads (lambda () (fs:contents src)))))
+      (setf (fs:contents src) 1)
+      (fs:attach d (fs:root))
+      (fs:contents d)
+      (let ((at (fs::mark d)))
+        (is (fs::currentp d at) "it stands where it was worked out")
+        (setf (fs:contents src) 2)
+        (is (not (fs::currentp d at))
             "and does not once what it read has moved")))))
 
 (test listing-a-branch-is-reading-it
@@ -544,29 +544,29 @@ of."
 a surface over /proc showed what was running when it was first drawn, and a face
 written at /face/keyword was one nothing was ever told about."
   (with-tree
-    (let* ((r (node:attach (make-instance 'node:value :name "r") (tree:root)))
+    (let* ((r (fs:attach (make-instance 'fs:dir :name "r") (fs:root)))
            (runs 0)
-           (n (make-instance 'node:derived :name "n" :reads (lambda () (incf runs) (length (node:nodes r))))))
-      (node:attach n (tree:root))
-      (is (eql 0 (node:contents n)))
+           (n (make-instance 'fs:derived :name "n" :reads (lambda () (incf runs) (length (fs:entries r))))))
+      (fs:attach n (fs:root))
+      (is (eql 0 (fs:contents n)))
       (is (eql 1 runs))
-      (is (eql 0 (node:contents n)) "and is not worked out again for nothing")
+      (is (eql 0 (fs:contents n)) "and is not worked out again for nothing")
       (is (eql 1 runs))
-      (node:attach (make-instance 'node:value :name "one") r)
-      (is (eql 1 (node:contents n)) "attaching one works it out again")
-      (node:erase-child r "one")
-      (is (eql 0 (node:contents n)) "and so does taking one off"))))
+      (fs:attach (make-instance 'fs:value :name "one") r)
+      (is (eql 1 (fs:contents n)) "attaching one works it out again")
+      (fs:erase-entry r "one")
+      (is (eql 0 (fs:contents n)) "and so does taking one off"))))
 
 (test a-path-nothing-stands-at-is-still-a-reading
   "A read that answers nothing is a read of the place it looked. Without it, asking
 before anything is there is a question nothing can ever answer again: a config
 reading a device the host system has not put up yet never heard it arrive."
   (with-tree
-    (let ((n (make-instance 'node:derived :name "waiting" :reads (lambda () (tree:at "/later/here")))))
-      (node:attach n (tree:root))
-      (is (null (node:contents n)) "nothing stands there yet")
-      (setf (node:contents (tree:ensure "/later/here")) :arrived)
-      (is (eq :arrived (node:contents (node:contents n)))
+    (let ((n (make-instance 'fs:derived :name "waiting" :reads (lambda () (fs:at "/later/here")))))
+      (fs:attach n (fs:root))
+      (is (null (fs:contents n)) "nothing stands there yet")
+      (setf (fs:contents (fs:leaf "/later/here")) :arrived)
+      (is (eq :arrived (fs:contents (fs:contents n)))
           "and the reader hears when it does"))))
 
 (test what-the-store-keeps-comes-back-as-a-value-and-not-as-an-instruction
@@ -583,17 +583,17 @@ it."
            (with-tree
              (let ((s (store:open-store file)))
                (store:keeping s)
-               (tree:put "/tags" nil (d:seq :urgent :later))
-               (tree:put "/a_b" nil "under a name a pattern is written in")
-               (tree:put "/axb" nil "beside it")
+               (pine::write "/tags" (d:seq :urgent :later))
+               (pine::write "/a_b" "under a name a pattern is written in")
+               (pine::write "/axb" "beside it")
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (tree:ensure "/tags")
-               (tree:ensure "/a_b")
-               (tree:ensure "/axb")
+               (fs:leaf "/tags")
+               (fs:leaf "/a_b")
+               (fs:leaf "/axb")
                (store:restore s)
-               (is (d:same (d:seq :urgent :later) (node:contents (tree:at "/tags")))
+               (is (d:same (d:seq :urgent :later) (fs:contents (fs:at "/tags")))
                    "what was kept is what came back")
                (pine/fs/store::forget "/a_b")
                (is (null (%exactly s "/a_b")) "the one named went")
@@ -632,19 +632,19 @@ write that threw left no file at all."
     (ignore-errors (delete-file file))
     (unwind-protect
          (with-tree
-           (mount:mount (uiop:temporary-directory) (tree:root) "tmp")
+           (mount:mount (uiop:temporary-directory) (fs:root) "tmp")
            (with-open-file (o file :direction :output :if-exists :supersede
                                    :if-does-not-exist :create)
              (write-string "what was there before" o))
-           (let ((it (tree:at "/tmp/pine-test-atomic.txt")))
-             (is (equal "what was there before" (node:contents it)))
-             (handler-case (setf (node:contents it) (make-instance '%will-not-print))
+           (let ((it (fs:at "/tmp/pine-test-atomic.txt")))
+             (is (equal "what was there before" (fs:contents it)))
+             (handler-case (setf (fs:contents it) (make-instance '%will-not-print))
                (error () nil))
              (is (probe-file file) "a write that would not go left the file there")
-             (is (equal "what was there before" (node:contents it))
+             (is (equal "what was there before" (fs:contents it))
                  "holding exactly what it held before")
-             (setf (node:contents it) "the whole of something else")
-             (is (equal "the whole of something else" (node:contents it))
+             (setf (fs:contents it) "the whole of something else")
+             (is (equal "the whole of something else" (fs:contents it))
                  "and a write that went through is all of it")))
       (ignore-errors (delete-file file)))))
 
@@ -655,31 +655,31 @@ what stands, and WATCH is how anybody hears the new answer."
   (booted)
   (with-tree
     (let* ((runs 0)
-           (n (node:attach
-               (make-instance 'node:derived :name "slow"
+           (n (fs:attach
+               (make-instance 'fs:derived :name "slow"
                               :reads (lambda () (incf runs) (sleep 0.3) runs))
-               (tree:root))))
-      (is (eql 1 (node:contents n)) "the first read waits, and is what says it is slow")
-      (is (node:waits-of n) "and the node knows it now")
-      (node:moved n)
+               (fs:root))))
+      (is (eql 1 (fs:contents n)) "the first read waits, and is what says it is slow")
+      (is (fs::waits-of n) "and the node knows it now")
+      (fs:moved n)
       (let ((at (get-internal-real-time)))
-        (is (eql 1 (node:contents n)) "a stale read hands back what stood")
-        (is (eq :working (node:holding n)) "and says it is being worked out")
+        (is (eql 1 (fs:contents n)) "a stale read hands back what stood")
+        (is (eq :working (fs:holding n)) "and says it is being worked out")
         (is (< (- (get-internal-real-time) at)
                (* 0.1 internal-time-units-per-second))
             "without waiting for it"))
-      (is (until (lambda () (eql 2 (node:contents n))) :seconds 5)
+      (is (until (lambda () (eql 2 (fs:contents n))) :seconds 5)
           "and the new answer lands on its own"))))
 
 (test a-read-that-asked-to-wait-waits
   "The old behaviour, asked for rather than had. :AWAIT is the whole of it."
   (booted)
   (with-tree
-    (let ((n (node:attach
-              (make-instance 'node:derived :name "slow"
+    (let ((n (fs:attach
+              (make-instance 'fs:derived :name "slow"
                              :reads (lambda () (sleep 0.3) :answered))
-              (tree:root))))
-      (setf (node:waits-of n) t)
+              (fs:root))))
+      (setf (fs::waits-of n) t)
       (is (eq :answered (pine::read "/slow" :await 5))
           "waited for, because it was asked to be")
       (is (eq :held (nth-value 1 (pine::read "/slow")))
@@ -690,10 +690,10 @@ what stands, and WATCH is how anybody hears the new answer."
 Those are not the same news, and every caller guessed."
   (booted)
   (with-tree
-    (let ((n (node:attach
-              (make-instance 'node:derived :name "cold"
+    (let ((n (fs:attach
+              (make-instance 'fs:derived :name "cold"
                              :waits t :reads (lambda () nil))
-              (tree:root))))
+              (fs:root))))
       (declare (ignore n))
       (multiple-value-bind (value kind) (pine::read "/cold")
         (is (null value) "nothing, because nothing has worked it out")

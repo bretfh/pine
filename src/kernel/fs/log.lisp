@@ -1,6 +1,6 @@
 (defpackage #:pine/fs/log
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs))
   (:export
    #:note #:*to* #:last-said))
 (in-package #:pine/fs/log)
@@ -8,10 +8,7 @@
 (defvar *kept* 500)
 (defvar *to* nil)
 (defvar *said* nil)
-(defvar *node* nil
-  "Where the log stands, once it stands anywhere. Adding a line is writing that
-place, so whatever is showing the log is worked out again -- which the log has to
-say itself, because nothing else can see *SAID* move.")
+(defvar *node* nil)
 
 (defun note (format &rest arguments)
   (let ((line (apply #'format nil format arguments)))
@@ -19,7 +16,7 @@ say itself, because nothing else can see *SAID* move.")
     (when *to*
       (format *to* "~&~a~%" line)
       (force-output *to*))
-    (when *node* (node:moved *node*))
+    (when *node* (fs:moved *node*))
     line))
 
 (defun said () *said*)
@@ -29,12 +26,11 @@ say itself, because nothing else can see *SAID* move.")
 (defun forget () (setf *said* nil))
 
 (defun %attach (root)
-  (setf *node* (node:attach (make-instance 'node:place :name "log"
-                                        :reads #'said
-                                        :writes (lambda (value)
-                                                  (unless value (forget)))
-                                        :describes "what pine said")
-                            root)))
+  (setf *node* (fs:attach (make-instance 'fs:derived :name "log"
+                                         :reads #'said
+                                         :writes (lambda (value)
+                                                   (unless value (forget)))
+                                         :describes "what pine said")
+                          root)))
 
-
-(pine/fs/tree:builder #'%attach)
+(fs:builder #'%attach)

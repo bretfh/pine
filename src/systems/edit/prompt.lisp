@@ -28,54 +28,54 @@
 (defun askingp () (and *prompt* t))
 
 (defun answering ()
-  (or (tree:at "/text" +document+)
+  (or (fs:at "/text" +document+)
       (text:make-document +document+ :mode (make-instance 'prompt))))
 
-(defun %under () (tree:ensure "/prompt"))
+(defun %under () (fs:ensure "/prompt"))
 
 (defun %place (name builder)
   (let ((under (%under)))
-    (or (node:resolve under name)
-        (node:attach (funcall builder) under))))
+    (or (fs:entry under name)
+        (fs:attach (funcall builder) under))))
 
 (defun %question-node ()
-  (%place "question" (lambda () (make-instance 'node:value :name "question"))))
+  (%place "question" (lambda () (make-instance 'fs:value :name "question"))))
 
 (defun %chose-node ()
-  (%place "chose" (lambda () (make-instance 'node:value :name "chose"))))
+  (%place "chose" (lambda () (make-instance 'fs:value :name "chose"))))
 
 (defun %asking-node ()
   "Which question is standing, as a number no other question answers to. What
 MATCHING reads, so that it reads nodes only: *PROMPT* is not one, and the graph
 cannot see a thing it cannot see move."
-  (%place "asking" (lambda () (make-instance 'node:value :name "asking"))))
+  (%place "asking" (lambda () (make-instance 'fs:value :name "asking"))))
 
 (defun %typed ()
-  (let ((d (tree:at "/text" +document+)))
-    (if d (node:contents d) "")))
+  (let ((d (fs:at "/text" +document+)))
+    (if d (text:text d) "")))
 
 (defun %said-node ()
   (%place "said"
-          (lambda () (make-instance 'node:derived :name "said" :reads #'%typed))))
+          (lambda () (make-instance 'fs:derived :name "said" :reads #'%typed))))
 
 (defun %matching-node ()
   (%place "matching"
           (lambda ()
-            (make-instance 'node:derived :name "matching"
+            (make-instance 'fs:derived :name "matching"
                          :reads (lambda ()
-                           (let ((p (and (node:contents (%asking-node)) *prompt*)))
+                           (let ((p (and (fs:contents (%asking-node)) *prompt*)))
                              (when p
-                               (let ((text (node:contents (%said-node))))
+                               (let ((text (fs:contents (%said-node))))
                                  (if (filep p)
                                      (candidates p text)
                                      (matches text (candidates p text)))))))))))
 
 (defun so-far ()
   "What has been typed into the prompt so far."
-  (if (tree:root) (node:contents (%said-node)) (%typed)))
+  (if (fs:root) (fs:contents (%said-node)) (%typed)))
 
 (defun asked ()
-  (and (tree:root) (node:contents (%question-node))))
+  (and (fs:root) (fs:contents (%question-node))))
 
 (defun completes (category function)
   "Say how to answer a prompt asking for CATEGORY. A command asks for one by name --
@@ -112,20 +112,20 @@ used to put the nought there, and the frame reads it while it is working itself
 out -- so drawing the prompt wrote to a place the drawing depended on, and the
 frame gave itself up and was drawn again for every keystroke."
   (when p
-    (let ((said (node:contents (%chose-node))))
+    (let ((said (fs:contents (%chose-node))))
       (if (and (consp said) (equal (car said) (so-far))) (cdr said) 0))))
 
 (defun (setf chosen) (value p)
   (declare (ignore p))
-  (setf (node:contents (%chose-node)) (cons (so-far) value))
+  (setf (fs:contents (%chose-node)) (cons (so-far) value))
   value)
 
 (defun matching (&optional (p *prompt*))
   "What answers the question as it stands. A file question is already narrowed by
 the directory it is in, so what it offers is what is there."
   (when p
-    (if (and (eq p *prompt*) (tree:root))
-        (node:contents (%matching-node))
+    (if (and (eq p *prompt*) (fs:root))
+        (fs:contents (%matching-node))
         (if (filep p)
             (candidates p)
             (matches (so-far) (candidates p))))))
@@ -141,25 +141,25 @@ the directory it is in, so what it offers is what is there."
   "What is being asked, at a place. A question, what has been typed at it and which
 candidate is chosen are what the frame shows, so they are nodes: a surface follows
 what it read, and a slot nobody reads is a thing nothing can follow."
-  (when (tree:root)
-    (setf (node:contents (%question-node)) (and p (question p)))
-    (setf (node:contents (%asking-node)) (and p (incf *asked*)))
-    (setf (node:contents (%chose-node)) nil)
-    (node:moved (%said-node))
+  (when (fs:root)
+    (setf (fs:contents (%question-node)) (and p (question p)))
+    (setf (fs:contents (%asking-node)) (and p (incf *asked*)))
+    (setf (fs:contents (%chose-node)) nil)
+    (fs:moved (%said-node))
     (%under)))
 
 (defun %where-from (had)
   "Where answering goes back to. Never the prompt itself: a question asked from
 inside another one would otherwise leave the prompt as what every key edits."
-  (let ((it (and had (tree:at "/text" (node:name had)))))
-    (cond ((and it (not (eq it (tree:at "/text" +document+)))) it)
+  (let ((it (and had (fs:at "/text" (fs:name had)))))
+    (cond ((and it (not (eq it (fs:at "/text" +document+)))) it)
           (t (find-if-not #'text:asidep (text:documents))))))
 
 (defun ask (question &key then category initial must-match candidates history)
   (let ((d (answering))
         (seed (or initial (when (eq category :file) (here-directory)) ""))
         (back (or (and *prompt* (was *prompt*)) (text:current))))
-    (setf (node:contents d) seed)
+    (setf (text:text d) seed)
     (text:move d :text 1)
     (setf *prompt* (make-instance 'standing :question question :then then
                                           :category category
@@ -183,7 +183,7 @@ inside another one would otherwise leave the prompt as what every key edits."
 
 (defun %put (text)
   (let ((d (answering)))
-    (setf (node:contents d) text)
+    (setf (text:text d) text)
     (text:move d :text 1)
     text))
 
@@ -215,18 +215,18 @@ starting over."
             (first found))))))
 
 (defun %history-node (name)
-  (when (and name (tree:root))
-    (tree:ensure "/prompt/history" (string-downcase (string name)))))
+  (when (and name (fs:root))
+    (fs:leaf "/prompt/history" (string-downcase (string name)))))
 
 (defun history-of (name)
   (let ((n (%history-node name)))
-    (and n (node:contents n))))
+    (and n (fs:contents n))))
 
 (defun remember (name text)
   (let ((n (%history-node name)))
     (when (and n (stringp text) (plusp (length text)))
-      (setf (node:contents n)
-            (d:capped (remove text (node:contents n) :test #'equal)
+      (setf (fs:contents n)
+            (d:capped (remove text (fs:contents n) :test #'equal)
                       text *history-kept*))))
   text)
 
@@ -249,12 +249,12 @@ so-far, so walking back to the end gives it back."
 (defun %close ()
   (setf (text:current)
         (or (%where-from (and *prompt* (was *prompt*)))
-            (tree:at "/text" "scratch")
+            (fs:at "/text" "scratch")
             (text:scratch)))
   (setf *prompt* nil)
   (%standing nil)
-  (let ((d (tree:at "/text" +document+)))
-    (when d (setf (node:contents d) "")))
+  (let ((d (fs:at "/text" +document+)))
+    (when d (setf (text:text d) "")))
   nil)
 
 (defun descendsp (p)

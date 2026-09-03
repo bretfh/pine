@@ -11,16 +11,16 @@
 (defun %on-the-host (where)
   "The place on this machine's filesystem that WHERE names, whether or not a file
 is there yet: opening one that is not is a document on a place, not on a file."
-  (let ((at (tree:at "/file"))
-        (names (tree:split-name (namestring where))))
+  (let ((at (fs:at "/file"))
+        (names (fs:split-name (namestring where))))
     (loop :while (and at (rest names))
-          :do (setf at (node:resolve at (pop names))))
+          :do (setf at (fs:entry at (pop names))))
     (and at names (mount:node-for at (first names)))))
 
 (defun %place (where)
   "The node WHERE names, or a place on the host where the tree has none. AT says
 what a node, a path and a name each mean, so there is nothing to ask here."
-  (or (tree:at where) (%on-the-host where)))
+  (or (fs:at where) (%on-the-host where)))
 
 (defun visit (document where)
   "Open DOCUMENT onto WHERE: a file on the host, or any node in the tree. What it
@@ -29,7 +29,7 @@ shows is whatever stands there, so /metric/frame reads like a file does."
     (when n
       (setf (source document) n)
       (%recently (origin document))
-      (setf (node:contents document) (or (node:contents n) ""))
+      (setf (text document) (or (fs:contents n) ""))
       (let ((m (mode:mode-for (origin document))))
         (when m (setf (mode-of document) m)))
       (let ((had (visited document)))
@@ -51,13 +51,13 @@ what writing means: a file is written, a device is acted on."
   (let ((n (source document)))
     (when n
       (mode:saving (mode-of document) document)
-      (setf (node:contents n) (text document))
+      (setf (fs:contents n) (text document))
       (setf (modified document) nil)
       (origin document))))
 
 (defun revert (document)
   (let ((n (source document)))
-    (when (and n (node:contents n))
+    (when (and n (fs:contents n))
       (leaving document)
       (visit document n))))
 
@@ -68,15 +68,15 @@ load is a fault like any other: the text still opens, uncoloured."
     (fault:attempt (lambda () (ensure-ts it)) "loading tree-sitter")
     (when (ts-loaded-p it)
       (setf *runtime* it)
-      (lang-node (tree:root)))))
+      (lang-node (fs:root)))))
 
 (command:defcommand "documents" () (:describes "every document there is")
-  (mapcar #'node:name (documents)))
+  (mapcar #'fs:name (documents)))
 
 (command:defcommand "structure" (&optional name)
     (:describes "what this document's mode makes of it")
-  (let ((d (if name (tree:at (root) name) (current))))
-    (when d (mapcar #'node:name (regions d)))))
+  (let ((d (if name (fs:at (root) name) (current))))
+    (when d (mapcar #'fs:name (regions d)))))
 
 (defmethod job:start ((s text))
   (%syntax)
@@ -90,6 +90,6 @@ load is a fault like any other: the text still opens, uncoloured."
   "What it put up goes by what OWNED was told as it went up. The documents are its
 own doing rather than a path it attached, so they are named here."
   (forget-all)
-  (dolist (d (documents)) (kill (node:name d)))
+  (dolist (d (documents)) (kill (fs:name d)))
   s)
 

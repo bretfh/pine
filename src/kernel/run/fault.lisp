@@ -1,6 +1,6 @@
 (defpackage #:pine/run/fault
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:log #:pine/fs/log))
   (:export
    #:fault #:borrowed #:take #:resume #:faulted
@@ -279,24 +279,30 @@ the place they were looking at."
 standing there, here or in another image, so this is the same act as taking one in
 the debugger."
   (when (%at name)
-    (make-instance 'node:place :name name
-                :names (constantly '("offers"))
-                :each (lambda (field)
-                        (when (equal field "offers")
-                          (make-instance 'node:place :name field
-                                      :reads (lambda ()
-                                               (let ((f (%at name)))
-                                                 (when f (defer f) (offers f)))))))
-                :reads (lambda ()
-                         (let ((f (%at name)))
-                           (and f (princ-to-string (condition-of f)))))
-                :writes (lambda (value)
-                          (let ((f (%at name)))
-                            (when f (take f (princ-to-string value))))))))
+    (flet ((it () (%at name)))
+      (make-instance 'fs:dir :name name
+                  :names (constantly '("said" "offers" "taken"))
+                  :each (lambda (field)
+                          (cond ((equal field "said")
+                                 (make-instance 'fs:derived :name field :live t
+                                             :reads (lambda ()
+                                                      (let ((f (it)))
+                                                        (and f (princ-to-string (condition-of f)))))))
+                                ((equal field "offers")
+                                 (make-instance 'fs:derived :name field :live t
+                                             :reads (lambda ()
+                                                      (let ((f (it)))
+                                                        (when f (defer f) (offers f))))))
+                                ((equal field "taken")
+                                 (make-instance 'fs:derived :name field :live t
+                                             :reads (lambda () (let ((f (it))) (and f (taken f))))
+                                             :writes (lambda (value)
+                                                       (let ((f (it)))
+                                                         (when f (take f (princ-to-string value)))))))))))))
 
 (defun %attach (root)
-  (node:attach
-   (make-instance 'node:place :name "expected"
+  (fs:attach
+   (make-instance 'fs:derived :name "expected" :live t
                  :reads (lambda ()
                           (loop :for (why broke at) :in (expecteds)
                                 :collect (list :why why :at at
@@ -305,19 +311,18 @@ the debugger."
                            (unless value (forget-expected)))
                  :describes "what was let go of, and why nothing was an answer")
    root)
-  (node:attach
-   (make-instance 'node:place :name "fault"
+  (fs:attach
+   (make-instance 'fs:dir :name "fault"
                :names (lambda () (mapcar #'id (faults)))
                :each #'%fault
-               :reads (lambda () (length (faults)))
                :describes "what has broken, and what it stands in")
    root))
 
 
-(setf pine/fs/commit:*broke*
-      (lambda (c) (report c "telling what is listening that a place moved")))
+(setf pine/fs:*broke*
+      (lambda (c where)
+        (report c (if where
+                      (format nil "working out ~a" where)
+                      "telling what is listening that a place moved"))))
 
-(setf pine/fs/node:*broke*
-      (lambda (c where) (report c (format nil "working out ~a" where))))
-
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

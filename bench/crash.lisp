@@ -3,7 +3,7 @@
 
 (defpackage #:pine/bench/crash
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:tree #:pine/kernel/tree)
+  (:local-nicknames (#:fs #:pine/fs) (#:d #:pine/data) (#:tree #:pine/kernel/tree)
                     (#:log #:pine/kernel/log) (#:k #:pine/kernel/call)))
 (in-package #:pine/bench/crash)
 
@@ -43,7 +43,7 @@ of steps rather than a list of states."
     (format t "~&~30@a ~a~%" "every entry all or none:"
             (if (zerop neither) "yes"
                 (format nil "NO ~d of them are neither" neither)))
-    (setf tree:*root* (tree:make-root))
+    (setf fs:*root* (fs:make-root))
     (log:replay *where*)
     (let ((a (k:read "/three/a")) (b (k:read "/three/b")) (c (k:read "/three/c")))
       (format t "~&~30@a a ~a, b ~a, c ~a~%" "what came back:" a b c)

@@ -1,7 +1,6 @@
 (defpackage #:pine/host/shell
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:meter #:pine/run/meter)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:meter #:pine/run/meter)
                     (#:actors #:pine/run/actors) (#:job #:pine/run/job)
                     (#:fault #:pine/run/fault))
   (:export
@@ -40,7 +39,7 @@ not inherit.")
 pine keeps the other end of, so pine going -- stopped, crashed or killed outright --
 closes that end and the stream goes with it.")
 
-(defclass stream-node (node:live)
+(defclass stream-node (fs:derived)
   ((line :initarg :line :reader line)
    (took :initform nil :accessor took)
    (said :initform nil :reader said)))
@@ -49,7 +48,7 @@ closes that end and the stream goes with it.")
 
 (defun %noted (line)
   (d:swap *ran* #'d:capped line *kept*)
-  (when *sh* (node:moved *sh*))
+  (when *sh* (fs:moved *sh*))
   line)
 
 (defun %kept (line out)
@@ -61,8 +60,8 @@ it change."
             (d:capped (cl:remove line all :key #'car :test #'equal)
                       (cons line out) *kept*)))
   (when *sh*
-    (let ((n (d:lookup (d:all (node:memo *sh*)) line)))
-      (when n (node:moved n))))
+    (let ((n (d:lookup (d:all (fs::memo *sh*)) line)))
+      (when n (fs:moved n))))
   out)
 
 (defun last-said (line) (cdr (assoc line *said* :test #'equal)))
@@ -204,7 +203,7 @@ machine something, and telling it twice is twice."
                               (stream-error () nil))
                :while said
                :do (d:swap (slot-value n 'said) #'d:capped said *lines-kept*)
-                   (node:moved n))))))
+                   (fs:moved n))))))
   n)
 
 (defun quiet (n)
@@ -223,16 +222,18 @@ machine something, and telling it twice is twice."
   "A command whose output says the world moved, listened to for as long as pine
 runs."
   (when *sh*
-    (let ((n (node:child *sh* (format nil "stream:~a" line)
+    (let ((n (fs:child *sh* (format nil "stream:~a" line)
                          (lambda ()
                            (make-instance 'stream-node :name line :parent *sh*
                                                        :line line)))))
       (d:keep! *streams* line n)
       (hear n))))
 
-(defmethod node:contents ((n stream-node)) (first (said n)))
+(defmethod fs:livep ((n stream-node)) t)
 
-(defmethod (setf node:contents) (value (n stream-node))
+(defmethod fs:works ((n stream-node)) (first (said n)))
+
+(defmethod fs:takes ((n stream-node) value)
   (if value (hear n) (quiet n))
   value)
 
@@ -245,14 +246,14 @@ namespace could type into, by asking it a question. A read is the one thing ever
 way in may always do; running something is a write, and this is where it is said.
 
 One that has not run answers nothing. That is what ABSENT is for."
-  (make-instance 'node:derived :name line
+  (make-instance 'fs:derived :name line
                :reads (lambda () (last-said line))
                :writes (lambda (v) (declare (ignore v)) (run-line line))))
 
 (defun sh-node ()
   "Every shell line that has been run, and what it said."
-  (setf *sh* (make-instance 'node:place :name "sh"
-                         :names #'ran :each #'%line :reads #'ran
+  (setf *sh* (make-instance 'fs:dir :name "sh"
+                         :names #'ran :each #'%line
                          :describes "running something, and what it said")))
 
 (defun forget-all ()

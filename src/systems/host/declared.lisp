@@ -1,6 +1,6 @@
 (defpackage #:pine/host/declared
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:sh #:pine/host/shell) (#:system #:pine/run/system))
   (:export
    #:defdevice #:defbacking #:made #:device #:unanswered #:answering #:named
@@ -46,14 +46,15 @@ player, so a stream said once when the backing was declared would be following
 whichever player nobody asked for. It is also what lets a backing whose readings are
 not known until you ask -- every variable in the environment -- say so."))
 
-(defclass unanswered (node:place) ()
+(defclass unanswered (fs:derived) ()
   (:documentation "A reading nothing on this machine can answer.
 
 It stands, so the path resolves and a surface reading it is not a surface that
 breaks. It holds nothing, and says :ABSENT rather than NIL, so a bar can show a dash
 where there is no battery instead of a battery at zero."))
 
-(defmethod node:holding ((n unanswered)) :absent)
+(defmethod fs:holding ((n unanswered)) :absent)
+(defmethod fs:livep ((n unanswered)) t)
 
 (defun %said (name) (string-downcase (princ-to-string name)))
 
@@ -151,8 +152,8 @@ not this machine is the one that can answer it."
 
 (defun %reading (n row)
   (destructuring-bind (word reads &optional writes) row
-    (make-instance 'node:derived :name word
-                 :reads (lambda () (node:reading n) (funcall reads))
+    (make-instance 'fs:derived :name word
+                 :reads (lambda () (fs:reading n) (funcall reads))
                  :parent n :writes writes)))
 
 (defun %made (it b arguments)
@@ -168,11 +169,10 @@ so a surface reading it is the same surface on either machine."
     (let ((self (list nil))
           (words (%words it arguments)))
       (setf (first self)
-            (make-instance 'node:place :name (title-of it)
+            (make-instance 'fs:dir :name (title-of it)
                         :announces (or announces (announces-of it))
                         :refreshes (or refreshes (refreshes-of it))
                         :describes (describes-of it)
-                        :reads (lambda () words)
                         :names (lambda () words)
                         :each (lambda (want)
                                 "Asked for exactly as it is spelled. A row written

@@ -2,7 +2,7 @@
   (:use #:cl #:pine)
   (:shadowing-import-from #:pine #:read #:write #:map #:set)
   (:import-from #:pine/wm/compositor #:ids #:outputs)
-  (:local-nicknames (#:node #:pine/fs/node))
+  (:local-nicknames (#:fs #:pine/fs))
   (:export
    #:layout #:tall #:wide #:full #:stacked
    #:arrange #:layouts
@@ -155,7 +155,7 @@ commands away, and pine places nothing again."))
 
 (defun %layout ()
   "Which layout is in force, by name: pine write /wm/layout wide."
-  (make-instance 'place :name "layout"
+  (make-instance 'derived :name "layout" :live t
               :reads (lambda ()
                        (let ((s (%system)))
                          (when s
@@ -208,8 +208,8 @@ of being the window manager here."
 (defmethod start ((s tiles))
   (let ((c (at /wm)))
     (unless c (error "no /wm: use the wm system before this one."))
-    (node:attach (%layout) c)
-    (let ((said (node:resolve c "said")))
+    (fs:attach (%layout) c)
+    (let ((said (fs:entry c "said")))
       (when said
         (setf (watching s)
               (list (watch said

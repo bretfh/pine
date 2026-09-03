@@ -61,7 +61,7 @@ again."
   (d:swap *supervised*
            (lambda (all)
              (append (remove (name j) all :key #'name :test #'equal) (list j))))
-  (when *under* (setf (node:parent j) *under*))
+  (when *under* (setf (fs:parent j) *under*))
   j)
 
 (defun forget (name)
@@ -118,7 +118,7 @@ not define and a kind loaded later is askable without this one being edited."
 
 (defun kinds () (sort (mapcar #'princ-to-string (d:keys (d:all *kinds*))) #'string<))
 
-(defun %started (said)
+(defun started (said)
   "Start what SAID asks for, and answer where it stands.
 
 A kind that can be asked for is one a value can describe: a program is its argv,
@@ -138,7 +138,7 @@ whoever asked has to find it again, and two asking at once must not race."
     (let ((j (funcall maker name said)))
       (supervise j)
       (start j)
-      (node:full-name j))))
+      (fs:full-name j))))
 
 (kind :program
       (lambda (name said)
@@ -149,11 +149,10 @@ whoever asked has to find it again, and two asking at once must not race."
                                               (getf said :argv)))))
 
 (defun %attach (root)
-  (setf *under* (node:attach (make-instance 'node:place :name "proc"
-                                         :nodes #'supervised
-                                         :writes #'%started
-                                         :describes "what this pine is running")
-                             root))
-  (dolist (j (supervised) *under*) (setf (node:parent j) *under*)))
+  (setf *under* (fs:attach (make-instance 'fs:dir :name "proc"
+                                          :entries #'supervised
+                                          :describes "what this pine is running")
+                           root))
+  (dolist (j (supervised) *under*) (setf (fs:parent j) *under*)))
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

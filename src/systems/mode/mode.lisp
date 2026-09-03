@@ -1,8 +1,7 @@
 (defpackage #:pine/mode
   (:use #:cl)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:command #:pine/run/command)
+                    (#:d #:pine/data) (#:fs #:pine/fs) (#:command #:pine/run/command)
                     (#:fault #:pine/run/fault) (#:system #:pine/run/system))
   (:export
    #:mode #:text #:prose #:code #:lisp
@@ -118,7 +117,7 @@ back said nobody had ever set it.")
   (:documentation "The globs of paths and names this mode is for.")
   (:method ((m mode)) nil))
 
-(defmethod node:name ((m mode))
+(defmethod fs:name ((m mode))
   (string-downcase (symbol-name (class-name (class-of m)))))
 
 (defmethod setting ((m text) key)
@@ -318,7 +317,7 @@ whether anything wanted it or not."
 
 (defun %said (name)
   (let ((m (mode name)))
-    (when m (list :type (node:name m) :handles (handles m)))))
+    (when m (list :type (fs:name m) :handles (handles m)))))
 
 (defun %chords (name)
   "What a mode is bound to, as it stands. A chord a config added is here without
@@ -332,18 +331,20 @@ mode is a class anybody can write and most of them are not written here."
 
 (defun %mode (name)
   (when (%class name)
-    (make-instance 'node:place :name name
-                :names (constantly '("keys"))
+    (make-instance 'fs:dir :name name
+                :names (constantly '("keys" "said"))
                 :each (lambda (field)
-                        (when (equal field "keys")
-                          (make-instance 'node:place :name field
-                                      :reads (lambda () (%chords name)))))
-                :reads (lambda () (%said name)))))
+                        (cond ((equal field "keys")
+                               (make-instance 'fs:derived :name field :live t
+                                           :reads (lambda () (%chords name))))
+                              ((equal field "said")
+                               (make-instance 'fs:derived :name field :live t
+                                           :reads (lambda () (%said name)))))))))
 
 (defun mode-node ()
   "Every mode there is, and its chords, as a place. Made here and attached by
 whoever is putting it up, the way any other node is."
-  (make-instance 'node:place :name "mode"
+  (make-instance 'fs:dir :name "mode"
               :names #'%names
               :each #'%mode
               :describes "every mode there is, and its chords"))

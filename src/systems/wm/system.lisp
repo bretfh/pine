@@ -1,6 +1,6 @@
 (defpackage #:pine/wm
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+  (:local-nicknames (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command) (#:sh #:pine/host/shell)
                     (#:compositor #:pine/wm/compositor) (#:niri #:pine/wm/niri)
@@ -16,17 +16,17 @@
 it. Which compositor it is is one class under COMPOSITOR."))
 
 
-(defun current () (tree:at "/wm"))
+(defun current () (fs:at "/wm"))
 
 (defun terminal ()
-  (or (node:contents (tree:ensure "/wm-terminal")) *terminal*))
+  (or (fs:contents (fs:leaf "/wm-terminal")) *terminal*))
 
 (defun places ()
   "The name of the system that says where the windows go, or nothing. Core does
 not know what is behind the name: it is a system, and it is used the way any of
 them is. A config writes it because /wm cannot exist until the compositor has
 handed the windows over, which is after the config was read."
-  (node:contents (tree:ensure "/wm-places")))
+  (fs:contents (fs:leaf "/wm-places")))
 
 (defun %under ()
   "Which compositor this session is under, as a class. Pine managing one and pine
@@ -40,7 +40,7 @@ what it can reach that a package it cannot name is not.
 :PINE or :COMPOSITOR, and not a yes and a no. ENSURE makes the node to read it, so
 a place written NIL and a place nobody has written are the same node holding the
 same thing, and the answer to which one it was decided who lays out the screen."
-  (cond ((eq :pine (node:contents (tree:ensure "/wm-manages")))
+  (cond ((eq :pine (fs:contents (fs:leaf "/wm-manages")))
          'managed:managed)
         ((uiop:getenv "NIRI_SOCKET") 'niri:niri)
         ((sh:has "niri") 'niri:niri)))
@@ -112,7 +112,7 @@ same thing, and the answer to which one it was decided who lays out the screen."
     (system:puts (make-instance class :name "wm"
                                 :describes "the compositor: its outputs, its
 windows, and what it takes"))
-    (node:attach (wkeys:keys-node) (current)))
+    (fs:attach (wkeys:keys-node) (current)))
   (let ((places (places)))
     (when places
       (when (system:named places) (system:drop places))

@@ -9,7 +9,7 @@
    #:lines #:mark #:mode-of #:motion #:move #:move-by #:newline #:point #:redo
    #:region-of #:span #:undo)
   (:import-from #:pine/ui #:surfaces)
-  (:local-nicknames (#:node #:pine/fs/node) (#:d #:pine/data))
+  (:local-nicknames (#:fs #:pine/fs) (#:d #:pine/data))
   (:export))
 (in-package #:pine/edit/commands)
 
@@ -359,7 +359,7 @@ by whoever asks for it."
 (defcommand "refresh" () (:describes "draw everything again")
   (let ((n 0))
     (dolist (each (surfaces) n)
-      (attempt (lambda () (node:moved each)) (name each))
+      (attempt (lambda () (fs:moved each)) (name each))
       (incf n))))
 
 (defcommand "keyboard-quit" ()
@@ -374,7 +374,7 @@ by whoever asks for it."
   (let ((win (focused)))
     (setf (scrolled win)
           (max 0 (- (at-line (current)) (floor (down win) 2))))
-    (node:moved win)))
+    (fs:moved win)))
 
 (defcommand "scroll-up" ()
     (:describes "a screenful on" :on '(text "C-v" "PageDown"))

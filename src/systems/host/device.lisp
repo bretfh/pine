@@ -1,7 +1,6 @@
 (defpackage #:pine/host/device
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:fault #:pine/run/fault)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:fault #:pine/run/fault)
                     (#:sh #:pine/host/shell) (#:declared #:pine/host/declared))
   (:documentation "The devices pine ships, every one of them a declaration.
 

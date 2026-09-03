@@ -302,7 +302,7 @@ with a backtrace where it owed a sentence."
            (%say (ask (if (%verb value)
                           (list* :verb (first rest) value)
                           (list :write (first rest) value)))))))
-      ((equal verb "ls") (%say (ask (list :nodes (or (first rest) "/")))))
+      ((equal verb "ls") (%say (ask (list :entries (or (first rest) "/")))))
       ((equal verb "toggle")
        (when (%wants verb rest 1 "WHERE")
          (%say (ask (list :verb (first rest) :toggle)))))

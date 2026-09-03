@@ -219,8 +219,8 @@ the next highlight call, or any failure here, marks the cache stale."
 (defun %band-lines (lines band)
   "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
   (if band
-      (d:subseq lines (car band)
-                        (min (d:size lines) (1+ (cdr band))))
+      (fset:subseq lines (car band)
+                   (min (d:size lines) (1+ (cdr band))))
       lines))
 
 (defun %parse-band (ps lines band band-lines same-band edit)

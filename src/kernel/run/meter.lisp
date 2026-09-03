@@ -1,6 +1,6 @@
 (defpackage #:pine/run/meter
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node))
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs))
   (:export
    #:timing #:counted #:readings #:reset #:report
    #:now))
@@ -151,27 +151,24 @@ answer this, which is what lets one be laid beside the other."
 
 (defun %instrument (name)
   (when (%named name)
-    (make-instance 'node:place :name name
+    (make-instance 'fs:dir :name name
                 :names (constantly +fields+)
                 :each (lambda (field)
                         (when (member field +fields+ :test #'equal)
-                          (make-instance 'node:place :name field
+                          (make-instance 'fs:derived :name field :live t
                                       :reads (lambda ()
                                                (let ((key (%named name)))
                                                  (when key
-                                                   (%field (reading key) field)))))))
-                :reads (lambda ()
-                         (let ((key (%named name))) (when key (reading key)))))))
+                                                   (%field (reading key) field))))))))))
 
 (defun %attach (root)
-  (node:attach
-   (make-instance 'node:place :name "metric"
+  (fs:attach
+   (make-instance 'fs:dir :name "metric"
                :names (lambda ()
                         (mapcar (lambda (each)
                                   (string-downcase (princ-to-string each)))
                                 (instruments)))
                :each #'%instrument
-               :reads (lambda () (mapcar (lambda (row) (getf row :name)) (readings)))
                :describes "how long what pine does is taking")
    root))
 
@@ -193,4 +190,4 @@ is a number about nothing."
                 (or (%ms (getf row :mean)) 0) (or (%ms (getf row :p95)) 0)
                 (or (%ms (getf row :most)) 0)))))
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

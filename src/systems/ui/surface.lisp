@@ -93,30 +93,31 @@ content is here.")
     (declare (ignore width height))
     (placing)))
 
-(defclass surface (node:derived)
+(defclass surface (fs:dir)
   ((role  :initarg :role  :accessor role)
    (shown :initarg :shown :accessor shown)
    (size  :initarg :size  :accessor size :initform nil))
-  (:documentation "A widget tree that is worked out, so it follows whatever it read.
-SHOWN is a node under it: writing /surface/audio/shown '(:toggle)' is the whole of
-putting a panel up. So is SIZE: what shows it says how big it came out there, and
-what the surface builds follows it like anything else it read."))
+  (:documentation "A surface: under it TREE, the widget tree worked out from what it
+read; SHOWN, which writing puts it up or down; SIZE, what shows it says it came out
+at; ROLE, WHERE and WIRE."))
+
+(defun tree (s)
+  (let ((n (fs:entry s "tree"))) (and n (fs:contents n))))
 
 (defmethod print-object ((s surface) stream)
   (print-unreadable-object (s stream :type t)
-    (format stream "~a ~(~a~)~:[~; shown~]" (node:name s)
+    (format stream "~a ~(~a~)~:[~; shown~]" (fs:name s)
             (class-name (class-of (role s))) (shown s))))
 
-(defun root () (tree:ensure "/surface"))
+(defun root () (fs:ensure "/surface"))
 
 (defun surfaces ()
-  (remove-if-not (lambda (n) (typep n 'surface)) (node:nodes (root))))
+  (remove-if-not (lambda (n) (typep n 'surface)) (fs:entries (root))))
 
 (defgeneric spelled-place (it)
   (:documentation "What a widget stands for, as the one word it crosses as.")
   (:method ((it path:path)) (path:whole it))
-  (:method ((it node:node)) (node:full-name it))
-  (:method (it) (princ-to-string it)))
+  (:method (it) (if (fs:kind it) (fs:full-name it) (princ-to-string it))))
 
 (defun %id (widget slot at)
   "What one closure crosses as.
@@ -163,9 +164,9 @@ id it crossed as.
 What this surface meant is replaced whole. Written one id at a time over what was
 there, the closures of every row a listing had ever shown stayed for as long as
 the image ran, and one whose row had gone still answered."
-  (let ((name (node:name s))
+  (let ((name (fs:name s))
         (mine (d:no-map))
-        (tree (node:contents s)))
+        (tree (tree s)))
     (when tree
       (let ((said (to-wire tree
                            :on-action (lambda (thunk widget slot at)
@@ -186,7 +187,7 @@ nothing more, which is exactly what it is in a test.")
 three words because it is three answers: DEFSURFACE and a direct call used to
 disagree about what leaving it out meant."
   (let* ((r (make-instance as))
-         (s (make-instance 'surface :name (princ-to-string name) :reads reads
+         (s (make-instance 'surface :name (princ-to-string name)
                                     :role r
                                     :shown (ecase starts
                                              (:up t)
@@ -194,33 +195,36 @@ disagree about what leaving it out meant."
                                              (:as-the-role-says
                                               (eq :always (shows r))))
                                     :describes "a widget tree, and where it goes")))
-    (node:attach s (root))
-    (let ((size (second (node:slots s s "shown" 'shown "size" 'size))))
-      (node:attach (make-instance
-                    'node:derived :name "role"
+    (fs:attach s (root))
+    (fs:attach (make-instance 'fs:derived :name "tree" :reads reads :parent s
+                              :describes "the widget tree, worked out from what it read")
+               s)
+    (let ((size (second (fs:slots s s "shown" 'shown "size" 'size))))
+      (fs:attach (make-instance
+                    'fs:derived :name "role"
                     :reads (lambda () (string-downcase (class-name (class-of (role s)))))
                     :parent s
                     :describes "which kind of surface this is")
                    s)
-      (node:attach (make-instance 'node:derived :name "wire"
+      (fs:attach (make-instance 'fs:derived :name "wire"
                                 :reads (lambda () (%wire s)) :parent s
                                 :describes "the tree, as it crosses to another pine")
                    s)
-      (node:attach (make-instance
-                    'node:derived :name "where"
+      (fs:attach (make-instance
+                    'fs:derived :name "where"
                     :reads (lambda ()
-                      (let ((said (node:contents size)))
+                      (let ((said (fs:contents size)))
                         (%plainly (anchor (role s)
                                           (or (getf said :wide) 0)
                                           (or (getf said :tall) 0)))))
                     :parent s
                     :describes "where the role says this goes")
                    s))
-    (node:attach (make-instance 'node:place :name "click"
-                             :writes (lambda (said) (act (node:name s) said))
+    (fs:attach (make-instance 'fs:derived :name "click" :live t
+                             :writes (lambda (said) (act (fs:name s) said))
                              :describes "what another pine says was clicked")
                  s)
-    (system:owned (list :surface (node:name s)))
+    (system:owned (list :surface (fs:name s)))
     (declared s)
     s))
 
@@ -231,7 +235,7 @@ Erasing the node is not the whole of it. What a widget meant stays in *ACTS*, so
 surface that has gone would leave closures nothing can reach, and a click on one of
 its old ids would still run what it used to mean."
   (d:drop! *acts* (princ-to-string name))
-  (tree:erase (format nil "/surface/~a" name))
+  (fs:erase (format nil "/surface/~a" name))
   name)
 
 (system:undoes :surface #'forget-surface)

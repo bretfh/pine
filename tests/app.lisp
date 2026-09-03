@@ -12,17 +12,17 @@
 
 (test an-app-is-a-system-like-any-other
   (is (not (null (app))))
-  (is (not (null (tree:at "/system/notes"))))
+  (is (not (null (fs:at "/system/notes"))))
   (is (member "notes" (mapcar #'job:name (system:systems)) :test #'equal)))
 
 (test its-own-kind-of-node-is-a-place
   (app)
   (command:run "note" '("today" "it works"))
-  (is (equal '("today") (node:contents (tree:at "/notes"))))
-  (is (equal "it works" (node:contents (tree:at "/notes/today"))))
-  (setf (node:contents (tree:at "/notes/today")) "written from a path")
-  (is (equal "written from a path" (node:contents (tree:at "/notes/today"))))
-  (is (eq (tree:at "/notes/today") (tree:at "/notes/today"))
+  (is (equal '("today") (fs:contents (fs:at "/notes"))))
+  (is (equal "it works" (fs:contents (fs:at "/notes/today"))))
+  (setf (fs:contents (fs:at "/notes/today")) "written from a path")
+  (is (equal "written from a path" (fs:contents (fs:at "/notes/today"))))
+  (is (eq (fs:at "/notes/today") (fs:at "/notes/today"))
       "the same node every time, so something can watch it"))
 
 (test a-place-of-its-own-can-be-watched-like-anything-else
@@ -30,20 +30,20 @@
   (app)
   (command:run "note" '("watched" "before"))
   (let ((heard (cons nil nil)))
-    (let ((w (watch:watch (tree:at "/notes/watched")
+    (let ((w (watch:watch (fs:at "/notes/watched")
                           (lambda (of said)
                             (declare (ignore of))
                             (setf (car heard) said)))))
       (unwind-protect
            (progn
-             (setf (node:contents (tree:at "/notes/watched")) "after")
+             (setf (fs:contents (fs:at "/notes/watched")) "after")
              (is (until (lambda () (equal "after" (car heard))))))
         (watch:unwatch w)))))
 
 (test its-own-mode-gives-its-text-structure
   (app)
   (let ((document (text:make-document "diary.note")))
-    (setf (node:contents document)
+    (setf (text:text document)
           (format nil "* Today~%it works~%* Tomorrow~%it still does~%"))
     (setf (text:mode-of document) (mode:mode-for "diary.note"))
     (is (string-equal "notes"
@@ -53,10 +53,10 @@
         "the mode that claims the file is the app's own")
     (text:restructure document)
     (is (equal '("Today" "Tomorrow")
-               (mapcar #'node:name (node:nodes (tree:at document "heading")))))
+               (mapcar #'fs:name (text:regions (fs:at document "heading")))))
     (is (equal (format nil "* Today~%it works")
-               (node:contents (tree:at document "heading/Today"))))
-    (setf (node:contents (tree:at document "heading/Today"))
+               (fs:contents (fs:at document "heading/Today/text"))))
+    (setf (fs:contents (fs:at document "heading/Today/text"))
           (format nil "* Today~%it really works"))
     (is (search "it really works" (text:text document))
         "and writing one replaces that span")
@@ -64,7 +64,7 @@
 
 (test its-own-role-says-where-its-surface-goes
   (app)
-  (let* ((s (tree:at "/surface" "sticky"))
+  (let* ((s (fs:at "/surface" "sticky"))
          (where (ui:anchor (ui:role s) 40 20)))
     (is (not (null s)))
     (is (equal '(:top :right) (ui:edges-of where)))
@@ -74,12 +74,12 @@
 (test its-surface-follows-what-it-read-and-crosses-the-wire
   (app)
   (command:run "note" '("zzz" "the last one written"))
-  (let ((form (node:contents (tree:at "/surface/sticky/wire"))))
+  (let ((form (fs:contents (fs:at "/surface/sticky/wire"))))
     (is (search "zzz" (princ-to-string form)))
     (is (typep (pine/ui:from-wire form) 'ui:column)))
   (command:run "note" '("zzzz" "later still"))
   (is (search "zzzz" (princ-to-string
-                      (node:contents (tree:at "/surface/sticky/wire"))))
+                      (fs:contents (fs:at "/surface/sticky/wire"))))
       "a write to its own node works its surface out again"))
 
 (test its-own-chord-runs-its-own-command
@@ -93,10 +93,10 @@
   (pine:drop :notes)
   (setf *app* t)
   (is (null (system:named "notes")))
-  (is (null (tree:at "/notes")))
-  (is (null (tree:at "/surface" "sticky")))
+  (is (null (fs:at "/notes")))
+  (is (null (fs:at "/surface" "sticky")))
   (is (null (command:named "note")))
-  (is (null (tree:at "/system/notes"))))
+  (is (null (fs:at "/system/notes"))))
 
 (defvar *vcs* nil)
 
@@ -112,10 +112,10 @@ list and nothing anybody wrote could add to it. A declaration is a thing a packa
 that uses PINE/USER and nothing else can make."
   (vcs-app)
   (is (not (null (declared:named "vcs"))) "the app declared one")
-  (is (not (null (tree:at "/dev/vcs"))) "and it stands in the namespace")
-  (is (equal '("branch" "dirty" "head") (node:contents (tree:at "/dev/vcs")))
+  (is (not (null (fs:at "/dev/vcs"))) "and it stands in the namespace")
+  (is (equal '("branch" "dirty" "head") (fs:contents (fs:at "/dev/vcs")))
       "every reading either of its backings declares")
-  (is (not (null (tree:at "/dev/vcs/branch")))
+  (is (not (null (fs:at "/dev/vcs/branch")))
       "and each is a place, whichever backing this machine can use")
   (is (member :vcs-branch (pine/edit::sources))
       "and it brought a kind of question of its own, and the words that answer it")
@@ -127,9 +127,9 @@ that uses PINE/USER and nothing else can make."
   (pine:drop :vcs)
   (setf *vcs* t)
   (is (null (system:named "vcs")))
-  (is (null (tree:at "/dev/vcs")) "the device it put under /dev")
-  (is (null (tree:at "/work")) "the place it put up")
-  (is (null (tree:at "/surface" "board")) "its surface")
+  (is (null (fs:at "/dev/vcs")) "the device it put under /dev")
+  (is (null (fs:at "/work")) "the place it put up")
+  (is (null (fs:at "/surface" "board")) "its surface")
   (is (null (command:named "branch")) "its commands")
   (is (not (member :vcs-branch (pine/edit::sources)))
       "and the way it answered its own kind of question"))
@@ -154,7 +154,7 @@ half worked and nothing said which half."
       (is (member :probe-theme (pine/ui::themes)) "the theme is there")
       (is (member :probe-category (pine/edit::sources)) "the prompt source is there")
       (is (not (null (declared:named "%probe-owned"))) "the declaration is there")
-      (is (not (null (tree:at "/surface" "probe-surface"))) "the surface is there")
+      (is (not (null (fs:at "/surface" "probe-surface"))) "the surface is there")
       (is (not (null (mode:binding (make-instance 'mode:text) "C-c C-probe")))
           "the chord is there")
 
@@ -164,7 +164,7 @@ half worked and nothing said which half."
       (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
       (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
       (is (null (declared:named "%probe-owned")) "and the declaration goes")
-      (is (null (tree:at "/surface" "probe-surface")) "and the surface goes")
+      (is (null (fs:at "/surface" "probe-surface")) "and the surface goes")
       (is (null (mode:binding (make-instance 'mode:text) "C-c C-probe"))
           "and the chord goes"))))
 
@@ -176,7 +176,7 @@ surface that has gone still ran what it used to mean."
     (let ((home "pine/test/probe-acts"))
       (let ((system:*owner* home))
         (ui:make-surface "probe-acts" (lambda () (ui:label "hi")) :as 'ui:panel))
-      (node:contents (tree:at "/surface/probe-acts/wire"))
+      (fs:contents (fs:at "/surface/probe-acts/wire"))
       (flet ((held () (remove-if-not
                        (lambda (id) (eql 0 (search "probe-acts/" id)))
                        (d:keys (d:all pine/ui::*acts*)))))

@@ -1,13 +1,11 @@
 (defpackage #:pine/edit
   (:use #:cl)
-  (:local-nicknames (#:actors #:pine/run/actors) (#:command #:pine/run/command)
-                    (#:commit #:pine/fs/commit) (#:d #:pine/data)
+  (:local-nicknames (#:actors #:pine/run/actors) (#:command #:pine/run/command) (#:d #:pine/data)
                     (#:fault #:pine/run/fault) (#:image #:pine/run/image)
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
                     (#:meter #:pine/run/meter) (#:mode #:pine/mode)
-                    (#:node #:pine/fs/node) (#:session #:pine/run/session)
-                    (#:system #:pine/run/system) (#:text #:pine/text)
-                    (#:tree #:pine/fs/tree) (#:ui #:pine/ui))
+                    (#:fs #:pine/fs) (#:session #:pine/run/session)
+                    (#:system #:pine/run/system) (#:text #:pine/text) (#:ui #:pine/ui))
   (:export
    #:prompt #:listing #:windows #:focused #:focus
    #:shows #:scrolled #:sideways #:across #:down

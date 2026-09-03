@@ -39,7 +39,7 @@ knows the roles by name."))
 
 (test the-more-particular-rule-wins
   (with-tree
-    (tree:built)
+    (fs:built)
     (pine/ui:put-rules (list (list ".a" (list :color "#ff0000" :min-width "20"))
                              (list ".a.b" (list :color "#00ff00"))))
     (let ((general (ui:resolve '(("a"))))
@@ -56,7 +56,7 @@ knows the roles by name."))
   "A painter takes a colour from a style and a colour from a face and paints with
 both, so they have to be the same three numbers."
   (with-tree
-    (tree:built)
+    (fs:built)
     (pine/ui:put-rules (list (list ".x" (list :background-color
                                              (ui:color :accent)))))
     (is (equal (ui:unhex (ui:color :accent))
@@ -82,12 +82,12 @@ both, so they have to be the same three numbers."
 
 (test a-control-takes-the-place-it-edits
   (with-tree
-    (let ((volume (tree:ensure "/dev/audio" "volume")))
-      (setf (node:contents volume) 40)
+    (let ((volume (fs:leaf "/dev/audio" "volume")))
+      (setf (fs:contents volume) 40)
       (let ((s (ui:slider volume :low 0 :high 100)))
         (is (= 40 (ui:held s)))
         (funcall (ui:changed s) 75)
-        (is (= 75 (node:contents volume)))))))
+        (is (= 75 (fs:contents volume)))))))
 
 (test a-click-lands-on-what-was-drawn-there
   (with-tree
@@ -107,22 +107,22 @@ both, so they have to be the same three numbers."
 
 (test a-surface-carries-its-role-and-follows-what-it-read
   (with-tree
-    (let ((where (tree:ensure "/probe")))
-      (setf (node:contents where) "one")
+    (let ((where (fs:leaf "/probe")))
+      (setf (fs:contents where) "one")
       (let ((s (ui:make-surface "ticker"
-                               (lambda () (ui:label (node:contents where)))
+                               (lambda () (ui:label (fs:contents where)))
                                :as 'ticker :starts :as-the-role-says)))
         (is (typep (ui:role s) 'ticker))
         (is (ui:shown s) "a role that shows :always is up already")
         (let ((placed (ui:anchor (ui:role s) 100 20)))
           (is (equal '(:bottom :right) (ui:edges-of placed)))
           (is (equal '(4 4 4 4) (ui:margin-of placed))))
-        (is (equal "one" (ui:content (node:contents s))))
-        (setf (node:contents where) "two")
-        (is (equal "two" (ui:content (node:contents s)))
+        (is (equal "one" (ui:content (ui:tree s))))
+        (setf (fs:contents where) "two")
+        (is (equal "two" (ui:content (ui:tree s)))
             "it follows what it read, with nothing subscribing")
-        (is (eq s (tree:at "/surface" "ticker")))
-        (setf (node:contents (tree:at "/surface/ticker" "shown")) nil)
+        (is (eq s (fs:at "/surface" "ticker")))
+        (setf (fs:contents (fs:at "/surface/ticker" "shown")) nil)
         (is (null (ui:shown s)))))))
 
 (test a-key-is-one-object-for-one-chord
@@ -150,7 +150,7 @@ listed one node's children. The matcher was written and nothing called it."
     (pine::write "/dev/audio/muted" nil)
     (let ((found (mapcar #'pine/fs/path:whole
                          (mapcar (lambda (n) (pine/fs/path:path
-                                              (node:full-name n)))
+                                              (fs:full-name n)))
                                  (path:matching (path:path "/dev/*/volume"))))))
       (is (equal '("/dev/audio/volume" "/dev/screen/volume") (sort found #'string<))
           "one name each, and not what is beside them"))
@@ -190,8 +190,8 @@ Numbered by counting the walk, every id after a row that went was the id of a
 different widget -- so a listing that lost a row ran the wrong row's action for
 every row below it."
   (with-tree
-    (setf (node:contents (tree:ensure "/probe/rows/beta")) 2)
-    (setf (node:contents (tree:ensure "/probe/rows/gamma")) 3)
+    (setf (fs:contents (fs:leaf "/probe/rows/beta")) 2)
+    (setf (fs:contents (fs:leaf "/probe/rows/gamma")) 3)
     (let ((s (ui:make-surface
               "probe-ids"
               (lambda ()
@@ -199,13 +199,13 @@ every row below it."
                          (lambda () (ui:button :click (ui:here)
                                                (ui:label "x"))))))))
       (is (equal '("/probe/rows/beta/click" "/probe/rows/gamma/click")
-                 (%ids-in (node:contents (tree:at "/surface/probe-ids/wire"))))
+                 (%ids-in (fs:contents (fs:at "/surface/probe-ids/wire"))))
           "an id says what its row is for, not where it fell in the walk")
-      (tree:erase "/probe/rows/beta")
+      (fs:erase "/probe/rows/beta")
       (is (equal '("/probe/rows/gamma/click")
-                 (%ids-in (node:contents (tree:at "/surface/probe-ids/wire"))))
+                 (%ids-in (fs:contents (fs:at "/surface/probe-ids/wire"))))
           "and the row that stayed keeps the id it had when the one above went")
-      (pine/ui::forget-surface (node:name s)))))
+      (pine/ui::forget-surface (fs:name s)))))
 
 (test a-widget-that-stands-for-nothing-crosses-as-where-it-sits
   "A bar's mute button stands for nothing of its own, so for it the shape is the
@@ -217,9 +217,9 @@ identity: the second thing in the first row."
                 (ui:column (ui:row (ui:label "x")
                                    (ui:button :click "mute" (ui:label "m"))))))))
       (is (equal '("@0.1/click")
-                 (%ids-in (node:contents (tree:at "/surface/probe-shape/wire"))))
+                 (%ids-in (fs:contents (fs:at "/surface/probe-shape/wire"))))
           "where it sits, root first")
-      (pine/ui::forget-surface (node:name s)))))
+      (pine/ui::forget-surface (fs:name s)))))
 
 (test the-sheet-follows-the-theme-it-was-worked-out-of
   "Set by hand, nothing could see the stylesheet go stale: writing /theme/active

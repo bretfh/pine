@@ -4,9 +4,9 @@
                     (:text :pine/text)
                     (:ui :pine/ui)
                     (:d :pine/data)
-                    (:node :pine/fs/node) (:tree :pine/fs/tree)
+                    (:fs :pine/fs)
                     (:mount :pine/fs/mount) (:store :pine/fs/store)
-                    (:path :pine/fs/path) (:commit :pine/fs/commit)
+                    (:path :pine/fs/path)
                     (:actors :pine/run/actors) (:job :pine/run/job)
                     (:fault :pine/run/fault) (:image :pine/run/image)
                     (:peer :pine/run/peer) (:watch :pine/run/watch)
@@ -32,9 +32,9 @@ shares it, because a second one is a second image."
 (defmacro with-tree (&body body)
   "A fresh namespace for one test. The root is what a test is about; nothing is
 carried over from the last one."
-  `(let ((was (tree:root)))
-     (unwind-protect (progn (tree:make-root) ,@body)
-       (setf tree:*root* was))))
+  `(let ((was (fs:root)))
+     (unwind-protect (progn (fs:make-root) ,@body)
+       (setf fs:*root* was))))
 
 (defun somewhere (rows needle)
   (some (lambda (row) (search needle (car row))) rows))

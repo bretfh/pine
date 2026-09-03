@@ -5,16 +5,14 @@
                 :pathname "src/kernel/value/"
                 :components ((:file "data") (:file "said")))
 
-(asdf:defsystem #:pine/place
-                :description "The namespace: what a node is, where it stands, what
-it says and what outlives the image"
+(asdf:defsystem #:pine/fs
+                :description "The tree: dirs, values and what is derived from them,
+where each stands, and what outlives the image"
                 :depends-on (#:pine/value #:alexandria #:named-readtables #:sqlite
                              #:bordeaux-threads #:uiop)
                 :serial t
                 :pathname "src/kernel/fs/"
-                :components ((:file "commit")
-                             (:file "node") (:file "attach")
-                             (:file "graph") (:file "place")
+                :components ((:file "dir") (:file "graph") (:file "commit")
                              (:file "tree") (:file "path")
                              (:file "reader") (:file "mount")
                              (:file "log") (:file "store")))
@@ -22,7 +20,7 @@ it says and what outlives the image"
 (asdf:defsystem #:pine/run
                 :description "What runs: jobs, actors, faults, commands, sessions,
 and other images"
-                :depends-on (#:pine/place #:bordeaux-threads #:sento #:sento-remoting
+                :depends-on (#:pine/fs #:bordeaux-threads #:sento #:sento-remoting
                              #:usocket #:cffi #:cffi-libffi #:sb-posix
                              #:sb-introspect #:uiop)
                 :serial t

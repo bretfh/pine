@@ -1,7 +1,6 @@
 (defpackage #:pine/run/command
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:commit #:pine/fs/commit))
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs))
   (:export
    #:command #:defcommand #:named #:commands #:forget
    #:name #:describes #:asks #:on #:run
@@ -163,7 +162,7 @@ inner one joins the batch the outer one opened.")
       (unless c (error 'unknown-command :name name))
       (run c arguments)))
   (:method ((c command) &optional arguments)
-    (commit:writing
+    (fs:writing
       (if (and (null arguments) (asks c))
           (let ((asked (asking *at* c)))
             (if (eq asked :asking) :asking (apply (action c) asked)))
@@ -183,16 +182,16 @@ command runs with what it was given.")
   "What the command at this path is for, as it stands now: one redefined at the
 repl is the same path saying something else."
   (when (named name)
-    (make-instance 'node:place :name name
+    (make-instance 'fs:derived :name name :live t
                    :reads (lambda ()
                             (let ((c (named name))) (and c (describes c)))))))
 
 (defun %attach (root)
-  (node:attach (make-instance 'node:place :name "cmd"
+  (fs:attach (make-instance 'fs:dir :name "cmd"
                            :names (lambda () (mapcar #'name (sorted)))
                            :each #'%command
                            :describes "every command there is")
                root))
 
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

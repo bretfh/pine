@@ -1,6 +1,6 @@
 (defpackage #:pine/wm/managed
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:compositor #:pine/wm/compositor))
   (:export
    #:managed))
@@ -105,29 +105,29 @@ be. Until something places it there is nothing to say."
 what pine wants done about it. Nothing under src/ writes the placement: a window
 manager is a system that does, and the answer is total -- a window it does not name
 is hidden. What is wanted is taken once, so nothing is done twice."
-  (let ((all (list (make-instance 'node:place :name "said"
+  (let ((all (list (make-instance 'fs:derived :name "said" :live t
                                :reads (lambda () (told c))
                                :writes (lambda (value)
                                          (setf (said c) value)
-                                         (node:moved c))
+                                         (fs:moved c))
                                :describes "what the compositor handed over")
-                   (make-instance 'node:place :name "placement"
+                   (make-instance 'fs:derived :name "placement" :live t
                                :reads (lambda () (where c))
                                :writes (lambda (value)
                                          (setf (where c) (d:as :list value))
-                                         (node:moved c))
+                                         (fs:moved c))
                                :describes "where each window goes")
-                   (make-instance 'node:place :name "wants"
+                   (make-instance 'fs:derived :name "wants" :live t
                                :reads (lambda () (take c))
                                :writes (lambda (value) (asked c value))
                                :describes "what pine wants done about it"))))
-    (dolist (each all) (setf (node:parent each) c))
+    (dolist (each all) (setf (fs:parent each) c))
     (setf (kids c) all)))
 
-(defmethod node:nodes ((c managed))
+(defmethod fs:entries ((c managed))
   (append (call-next-method) (kids c)))
 
-(defmethod node:resolve ((c managed) name)
+(defmethod fs:entry ((c managed) name)
   (let ((name (princ-to-string name)))
-    (or (find name (kids c) :key #'node:name :test #'equal)
+    (or (find name (kids c) :key #'fs:name :test #'equal)
         (call-next-method))))

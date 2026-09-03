@@ -67,13 +67,13 @@ every frame would otherwise take again every frame."
                                          (mapcar #'princ-to-string
                                                  (compute-restarts condition)))
                            :fault fault))
-         (document (or (tree:at "/text" *name*)
+         (document (or (fs:at "/text" *name*)
                        (text:make-document *name*
                                           :mode (make-instance 'debugger)))))
     (setf *standing* s)
     (unless (typep (text:mode-of document) 'debugger)
       (setf (text:mode-of document) (make-instance 'debugger)))
-    (setf (node:contents document) (%text s))
+    (setf (text:text document) (%text s))
     (text:goto document 0 0)
     (when front (%front document))
     document))
@@ -110,7 +110,7 @@ which is what the layer below already does."
 (defun away ()
   (setf *standing* nil)
   (%back)
-  (when (tree:at "/text" *name*) (command:run "kill-document" (list *name*)))
+  (when (fs:at "/text" *name*) (command:run "kill-document" (list *name*)))
   t)
 
 (command:defcommand "debugger-abort" ()
@@ -130,7 +130,7 @@ which is what the layer below already does."
     (:describes "the last fault, as a document" :on '(text "C-x e"))
   (let ((f (or (first (fault:standing)) (first (fault:faults)))))
     (if f
-        (node:name (put-up (fault:condition-of f) :fault f :front t))
+        (fs:name (put-up (fault:condition-of f) :fault f :front t))
         (log:note "nothing has faulted"))))
 
 (command:defcommand "debugger-next" ()

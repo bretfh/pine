@@ -2,8 +2,8 @@
   (:use #:cl)
   (:local-nicknames (#:command #:pine/run/command) (#:d #:pine/data)
                     (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
-                    (#:meter #:pine/run/meter) (#:node #:pine/fs/node)
-                    (#:path #:pine/fs/path) (#:tree #:pine/fs/tree)
+                    (#:meter #:pine/run/meter) (#:fs #:pine/fs)
+                    (#:path #:pine/fs/path)
                     (#:system #:pine/run/system))
     (:export
    #:widget #:parts #:label #:rule #:gap
@@ -23,7 +23,7 @@
    #:styled #:with-pass #:under #:clicked #:clicked-at
    #:value-at #:to-wire #:from-wire #:field #:icon
    #:button #:image #:rows #:acting #:here
-   #:confirming #:surface #:defsurface #:surfaces
+   #:confirming #:surface #:tree #:defsurface #:surfaces
    #:make-surface #:role #:anchor #:shown
    #:placing #:edges-of #:reserve-of #:margin-of #:inset
    #:shows #:size #:bar #:panel #:overlay

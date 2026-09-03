@@ -1,7 +1,6 @@
 (defpackage #:pine/run/system
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node) (#:sb-mop #:sb-mop)
-                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:sb-mop #:sb-mop) (#:job #:pine/run/job)
                     (#:command #:pine/run/command) (#:log #:pine/fs/log)
                     (#:fault #:pine/run/fault))
   (:export
@@ -80,10 +79,10 @@ thing once and the undoing is not its to write."
     (d:update! *put* home (lambda (had) (append had (list what)))))
   what)
 
-(defun puts (node &optional (into (tree:root)))
+(defun puts (node &optional (into (fs:root)))
   "Attach NODE, and say the running system put it there. What a system puts up it
 takes down: this is ATTACH for an app, and the reason an app needs no STOP."
-  (owned (node:full-name (node:attach node into)))
+  (owned (fs:full-name (fs:attach node into)))
   node)
 
 (defun %take-down (home)
@@ -95,7 +94,7 @@ that has gone."
   (dolist (what (reverse (or (d:lookup (d:all *put*) home) nil)))
     (etypecase what
       (string (fault:or-nothing "a path a system put up may have gone already"
-                (tree:erase what)))
+                (fs:erase what)))
       (cons (let ((taking (d:lookup (d:all *undoes*) (first what))))
               (when taking
                 (fault:or-nothing "what a system put up may have gone already"
@@ -153,11 +152,11 @@ is still a system that is loaded."
     (and (typep j 'system) j)))
 
 (defun %attach (root)
-  (setf *under* (node:attach (make-instance 'node:place :name "system"
-                                         :nodes #'systems
-                                         :describes "what pine has loaded")
-                             root))
-  (dolist (s (systems) *under*) (setf (node:parent s) *under*)))
+  (setf *under* (fs:attach (make-instance 'fs:dir :name "system"
+                                          :entries #'systems
+                                          :describes "what pine has loaded")
+                           root))
+  (dolist (s (systems) *under*) (setf (fs:parent s) *under*)))
 
 (defun use (name)
   "Load a system and start it. /system/<name> is a node afterwards, so
@@ -174,7 +173,7 @@ pine write /system/desk '(:stop)' takes it away again."
               (error "~a loaded but is not a system." name))
             (command:claim (%package class))
             (let ((s (make-instance (class-name class) :name name :on-fault :leave)))
-              (when *under* (setf (node:parent s) *under*))
+              (when *under* (setf (fs:parent s) *under*))
               (job:supervise s)
               (job:start s)
               (log:note "~a is up" name)
@@ -190,4 +189,4 @@ pine write /system/desk '(:stop)' takes it away again."
     s))
 
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

@@ -1,7 +1,7 @@
 (defpackage #:pine/wayland/hands
   (:use #:cl #:wayflan-client)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+                    (#:fs #:pine/fs)
                     (#:log #:pine/fs/log) (#:pump #:pine/wayland/pump)
                     (#:shell #:pine/wayland/shell) (#:pane #:pine/wayland/pane)
                     (#:input #:pine/wayland/input) (#:wm #:pine/wayland/wm)
@@ -97,9 +97,9 @@
 
 (defmethod screen:typed ((s screen:screen) said)
   (screen:tell s (lambda ()
-            (let ((n (tree:at "/key")))
+            (let ((n (fs:at "/key")))
               (if n
-                  (setf (node:contents n) said)
+                  (setf (fs:contents n) said)
                   (log:note "nothing at /key"))))))
 
 
@@ -109,11 +109,11 @@ to /wm/key, which is what says what it means; if that leaves the window manager
 part way through a chord, the next key has to come here too."
   (screen:tell s
         (lambda ()
-          (let ((n (tree:at "/wm/key")))
+          (let ((n (fs:at "/wm/key")))
             (cond ((null n) (log:note "nothing at /wm/key"))
-                  ((null said) (setf (node:contents n) ""))
-                  (t (setf (node:contents n) said)
-                     (when (plusp (length (node:contents n)))
+                  ((null said) (setf (fs:contents n) ""))
+                  (t (setf (fs:contents n) said)
+                     (when (plusp (length (fs:contents n)))
                        (pump:hand (screen:pump s)
                                   (lambda () (wm:eat-next (screen:wm-of s))))))))))
   t)

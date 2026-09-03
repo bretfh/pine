@@ -35,7 +35,7 @@ what the terminal is asked to colour."
 
 (test writing-a-terminal-is-typing-at-the-program
   (with-terminal (term)
-    (setf (node:contents term) (format nil "echo the-pty-answered~%"))
+    (setf (text:text term) (format nil "echo the-pty-answered~%"))
     (is (until (lambda () (search "the-pty-answered" (text:text term)))
                :seconds 5))))
 
@@ -50,17 +50,17 @@ what the terminal is asked to colour."
 (test a-terminals-size-is-a-node
   (with-terminal (term)
     (is (eql (pine/term/terminal:wide term)
-             (node:contents (tree:at term "wide"))))
+             (fs:contents (fs:at term "wide"))))
     (pine/term/terminal:resize term 100 30)
-    (is (eql 100 (node:contents (tree:at term "wide"))))
-    (is (eql 30 (node:contents (tree:at term "tall"))))))
+    (is (eql 100 (fs:contents (fs:at term "wide"))))
+    (is (eql 30 (fs:contents (fs:at term "tall"))))))
 
 (test the-colour-a-program-asked-for-is-spans-on-the-document
   "A terminal's colour is not a thing of its own: it is spans over the text, which
 is what a search that has just landed says and what a parse says. One kind of
 thing, painted one way."
   (with-terminal (term)
-    (setf (node:contents term) (%printf "[31mred[0m [1;32mgreen[0m"))
+    (setf (text:text term) (%printf "[31mred[0m [1;32mgreen[0m"))
     (is (until (lambda () (search "red green" (text:text term))) :seconds 5))
     (let* ((spans (text:spans term))
            (red (find-if (lambda (each) (equal '(172 66 66) (first (fourth each))))
@@ -74,7 +74,7 @@ thing, painted one way."
 
 (test what-the-grid-paints-is-what-the-program-asked-for
   (with-terminal (term)
-    (setf (node:contents term) (%printf "[31mred[0m"))
+    (setf (text:text term) (%printf "[31mred[0m"))
     (is (until (lambda () (search "red" (text:text term))) :seconds 5))
     (edit:show (edit:focused) term)
     (let* ((rows (edit:rows :cols 60 :lines 8))
@@ -84,7 +84,7 @@ thing, painted one way."
 
 (test the-frame-draws-a-terminal-like-any-document
   (with-terminal (term)
-    (setf (node:contents term) (format nil "echo drawn-in-the-frame~%"))
+    (setf (text:text term) (format nil "echo drawn-in-the-frame~%"))
     (is (until (lambda () (search "drawn-in-the-frame" (text:text term)))
                :seconds 5))
     (edit:show (edit:focused) term)
@@ -92,9 +92,9 @@ thing, painted one way."
 
 (test closing-one-takes-its-job-and-its-document-with-it
   (let ((term (%terminal)))
-    (let ((name (node:name term)))
+    (let ((name (fs:name term)))
       (pine/run/command:run "terminal-close")
-      (is (null (tree:at "/text" name)))
+      (is (null (fs:at "/text" name)))
       (is (null (job:named name)))
       (is (null (pine/term/terminal:terminals))))))
 
@@ -103,9 +103,9 @@ thing, painted one way."
 program and what it wrote is text a window shows."
   (with-terminal (term)
     (is (job:alivep term))
-    (setf (node:contents term) (format nil "echo from-the-program~%"))
+    (setf (text:text term) (format nil "echo from-the-program~%"))
     (is (until (lambda () (search "from-the-program" (text:text term)))
                :seconds 5))
     (pine/term/terminal:resize term 100 30)
-    (is (eql 100 (node:contents (tree:at term "wide"))))
-    (is (eql 30 (node:contents (tree:at term "tall"))))))
+    (is (eql 100 (fs:contents (fs:at term "wide"))))
+    (is (eql 30 (fs:contents (fs:at term "tall"))))))

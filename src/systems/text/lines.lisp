@@ -26,8 +26,8 @@ document answers for the lines it holds, because they are the same question.")
 
 (defun %replace (lines from to fresh)
   (let ((n (d:size lines)))
-    (d:append (d:append (d:subseq lines 0 (min from n)) fresh)
-              (d:subseq lines (min (max from to) n) n))))
+    (fset:concat (fset:concat (fset:subseq lines 0 (min from n)) fresh)
+                 (fset:subseq lines (min (max from to) n) n))))
 
 (defun inserted (lines at col string)
   (multiple-value-bind (at col) (clamp lines at col)
@@ -61,7 +61,7 @@ document answers for the lines it holds, because they are the same question.")
           (subseq (line lines from-line) from-col to-col)
           (format nil "~a~%~{~a~%~}~a"
                   (subseq (line lines from-line) from-col)
-                  (d:as :list (d:subseq lines (1+ from-line) to-line))
+                  (d:as :list (fset:subseq lines (1+ from-line) to-line))
                   (subseq (line lines to-line) 0 to-col))))))
 
 (defun cut (lines from-line from-col to-line to-col)

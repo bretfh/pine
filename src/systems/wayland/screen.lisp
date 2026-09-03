@@ -1,8 +1,7 @@
 (defpackage #:pine/wayland/screen
   (:use #:cl #:wayflan-client)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
+                    (#:d #:pine/data) (#:fs #:pine/fs) (#:job #:pine/run/job)
                     (#:watch #:pine/run/watch) (#:system #:pine/run/system)
                     (#:fault #:pine/run/fault) (#:log #:pine/fs/log)
                     (#:pump #:pine/wayland/pump) (#:display #:pine/wayland/display)
@@ -47,17 +46,17 @@ connection is a thing you block on."))
 (defun availablep () (and (uiop:getenv "WAYLAND_DISPLAY") t))
 
 (defun %at (name &rest under)
-  (apply #'tree:at "/surface" name under))
+  (apply #'fs:at "/surface" name under))
 
 (defun tell (s thunk)
   "Do something that is not drawing, off the thread holding the connection."
   (let ((to (says s)))
     (when to (job:tell to thunk) t)))
 
-(defun %named (name) (tree:at "/surface" name))
+(defun %named (name) (fs:at "/surface" name))
 
 (defun %tree (name)
-  (let ((it (%named name))) (when it (node:contents it))))
+  (let ((it (%named name))) (when it (ui:tree it))))
 
 (defun %shownp (name)
   (let ((it (%named name))) (and it (ui:shown it) t)))
@@ -68,7 +67,7 @@ connection is a thing you block on."))
 
 (defun %where (name)
   (let ((n (%at name "where")))
-    (and n (node:contents n))))
+    (and n (fs:contents n))))
 
 (defun %sizing (p cell-w cell-h)
   (list :wide (pane:wide p) :tall (pane:tall p)
@@ -82,8 +81,8 @@ worked out from the size."
   (let ((said (%sizing p cell-w cell-h))
         (n (%at name "size")))
     (flet ((put ()
-             (when (and n (not (equal said (node:contents n))))
-               (setf (node:contents n) said))))
+             (when (and n (not (equal said (fs:contents n))))
+               (setf (fs:contents n) said))))
       (if now (put) (tell s #'put)))))
 
 (defun open-one (s name)
@@ -161,7 +160,7 @@ name, and the old one is something nothing writes."
 (defun %settle (s)
   "Take down what /surface no longer says."
   (d:do-each (name (d:keys (d:all (up s))))
-    (unless (tree:at "/surface" name)
+    (unless (fs:at "/surface" name)
       (let ((p (d:lookup (d:all (up s)) name)))
         (%unlisten s name)
         (d:drop! (up s) name)
@@ -189,12 +188,12 @@ name, and the old one is something nothing writes."
 it: river kills a manager that waits."
   (tell s
         (lambda ()
-          (let ((where (tree:at "/wm/said")))
-            (when where (setf (node:contents where) said)))
-          (let ((wants (let ((n (tree:at "/wm/wants")))
-                         (and n (node:contents n))))
-                (layout (let ((n (tree:at "/wm/placement")))
-                          (and n (node:contents n)))))
+          (let ((where (fs:at "/wm/said")))
+            (when where (setf (fs:contents where) said)))
+          (let ((wants (let ((n (fs:at "/wm/wants")))
+                         (and n (fs:contents n))))
+                (layout (let ((n (fs:at "/wm/placement")))
+                          (and n (fs:contents n)))))
             (pump:hand (pump s)
                        (lambda ()
                          (let ((it (wm-of s)))
@@ -214,8 +213,8 @@ it: river kills a manager that waits."
   (when (and (pane:chromep p) (pane:dirty p)) (wm:wake (wm-of s))))
 
 (defun %names ()
-  (let ((n (tree:at "/surface")))
-    (and n (mapcar #'node:name (node:nodes n)))))
+  (let ((n (fs:at "/surface")))
+    (and n (mapcar #'fs:name (fs:entries n)))))
 
 (defun %managing-windows (s)
   "Where the compositor asked for a manager, say so and load the one that is it.
@@ -223,7 +222,7 @@ A wm already up is the wrong one, so it goes first."
   (when (wm-of s)
     (fault:attempt
      (lambda ()
-       (setf (node:contents (tree:ensure "/wm-manages")) :pine)
+       (setf (fs:contents (fs:leaf "/wm-manages")) :pine)
        (when (system:named "wm") (system:drop "wm"))
        (system:use "wm")
        (chords-wanted s))
@@ -273,7 +272,7 @@ compositor put it; what it draws is the new node's to say."
       (setf (shell:chrome (shell-of s)) (wm:manager (wm-of s))))
     (setf (says s)
           (job:start (make-instance 'job:actor
-                                    :name (format nil "~a-work" (node:name s))
+                                    :name (format nil "~a-work" (fs:name s))
                                     :on-fault :leave :dispatcher :pinned
                                     :receive (lambda (thunk)
                                                (fault:attempt thunk "the screen")))))
@@ -314,7 +313,7 @@ in the namespace: the surface layer holds no pointer to whatever is painting, an
 there being nothing painting is not a case anybody has to write down."
   (let ((s (job:named "screen")))
     (when (and (typep s 'screen) (job:alivep s))
-      (tell s (lambda () (took-up s (node:name it)))))))
+      (tell s (lambda () (took-up s (fs:name it)))))))
 
 (defun close-screen (&optional (name "screen"))
   (let ((s (job:named name)))

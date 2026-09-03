@@ -1,7 +1,7 @@
 (defpackage #:pine/paint/shot
   (:use #:cl)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:canvas #:pine/paint/canvas))
   (:export
    #:every-surface))
@@ -56,12 +56,12 @@ as tall and as narrow as it measured, rather than stretched to fill a window it
 would never be given."
   (loop :for each :in (ui:surfaces)
         :when (ui:shown each)
-          :collect (let ((tree (node:contents each)))
+          :collect (let ((tree (ui:tree each)))
                      (when tree
                        (multiple-value-bind (cw ch) (measure tree :width width
                                                                   :height height)
                          (draw tree (merge-pathnames
-                                     (format nil "pine-~a.png" (node:name each))
+                                     (format nil "pine-~a.png" (fs:name each))
                                      into)
                                :width (max 16 (min width cw))
                                :height (max 16 (min height ch))))))))

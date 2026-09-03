@@ -24,7 +24,7 @@ there are.")
         (otherwise nil))
     (dolist (clause clauses)
       (destructuring-bind (where . rule) clause
-        (let ((parts (tree:split-name where)))
+        (let ((parts (fs:split-name where)))
           (cond ((equal '("otherwise") parts) (setf otherwise rule))
                 ((equal "node" (first parts))
                  (setf (gethash (string-downcase (second parts)) nodes) rule))
@@ -108,8 +108,8 @@ there are.")
 (defun declare-language (name raw &key parent)
   (let ((full (%inherit (and parent (%raw parent)) raw)))
     (d:keep! *compiled* name (cons full (%compile name full)))
-    (when (tree:root)
-      (setf (node:contents (tree:ensure "/lang" (string-downcase (string name))))
+    (when (fs:root)
+      (setf (fs:contents (fs:leaf "/lang" (string-downcase (string name))))
             (d:lookup (d:lookup full :options) :doc)))
     name))
 
@@ -143,8 +143,8 @@ follows it rather than the path it happens to be under."
 
 (defun lang-node (root)
   "One node per language declared, saying what it is for."
-  (dolist (name (languages) (tree:ensure root "lang"))
-    (setf (node:contents (tree:ensure root "lang" (string-downcase (string name))))
+  (dolist (name (languages) (fs:ensure root "lang"))
+    (setf (fs:contents (fs:leaf root "lang" (string-downcase (string name))))
           (d:lookup (d:lookup (%raw name) :options) :doc))))
 
 (defun %state (runtime name)

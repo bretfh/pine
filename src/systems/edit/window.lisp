@@ -2,7 +2,7 @@
 
 (defvar *counter* 0)
 
-(defclass window (node:node)
+(defclass window (fs:dir)
   ((shows    :initarg :shows    :accessor shows    :initform nil)
    (scrolled   :initarg :scroll   :accessor scrolled   :initform 0)
    (sideways :initarg :sideways :accessor sideways :initform 0)
@@ -18,30 +18,30 @@ was split into."))
 
 (defmethod print-object ((w window) stream)
   (print-unreadable-object (w stream :type t)
-    (format stream "~a~@[ ~a~]" (node:name w)
+    (format stream "~a~@[ ~a~]" (fs:name w)
             (let ((it (shows w)))
-              (if (node:nodep it) (node:name it) it)))))
+              (if (fs:kind it) (fs:name it) it)))))
 
-(defmethod node:contents ((w window))
-  (let ((it (shows w)))
-    (if (node:nodep it) (node:name it) it)))
+(defmethod initialize-instance :after ((w window) &key)
+  (fs:attach (make-instance 'fs:derived :name "shows" :live t
+                            :reads (lambda ()
+                                     (let ((it (shows w)))
+                                       (if (fs:kind it) (fs:name it) it)))
+                            :writes (lambda (value) (show w value)))
+             w))
 
-(defmethod (setf node:contents) (value (w window))
-  (show w value)
-  value)
-
-(defun root () (tree:ensure "/window"))
+(defun root () (fs:ensure "/window"))
 
 (defun make-window (&key shows (into (root)) name)
   (let ((w (make-instance 'window
                           :name (or name (format nil "~d" (d:swap *counter* #'1+)))
                           :shows shows
                           :describes "what one window is showing")))
-    (node:attach w into)
+    (fs:attach w into)
     w))
 
 (defun parts (of)
-  (remove-if-not (lambda (n) (typep n 'window)) (node:nodes of)))
+  (remove-if-not (lambda (n) (typep n 'window)) (fs:entries of)))
 
 (defun splitp (w) (and (runs w) t))
 
@@ -51,20 +51,20 @@ was split into."))
       (loop :for part :in (parts of) :append (windows part))))
 
 (defun focused (&optional (of (root)))
-  (let ((said (node:contents (tree:ensure of "focused"))))
-    (or (and said (tree:at of said))
+  (let ((said (let ((n (fs:at of "focused"))) (and n (fs:contents n)))))
+    (or (and said (fs:at of said))
         (first (windows of)))))
 
 (defun focus (w &optional (of (root)))
-  (setf (node:contents (tree:ensure of "focused")) (node:name w))
+  (setf (fs:contents (fs:leaf of "focused")) (fs:name w))
   w)
 
 (defun show (w it)
   "Put something in a window: a document, the name of one, or a widget tree."
-  (let ((content (if (stringp it) (or (tree:at "/text" it) it) it)))
+  (let ((content (if (stringp it) (or (fs:at "/text" it) it) it)))
     (setf (shows w) content)
     (when (typep content 'text:document) (setf (text:current) content))
-    (node:moved w)
+    (fs:moved w)
     w))
 
 (defun follow (document)
@@ -75,7 +75,7 @@ else or the document keeps to itself."
                (not (text:asidep document))
                (not (eq document (shows w))))
       (setf (shows w) document)
-      (node:moved w))
+      (fs:moved w))
     w))
 
 (defmethod text:showing :after ((document text:document))
@@ -99,23 +99,23 @@ the flag saying it was split came up before, so closing the sibling of a split
 left a window claiming to run in a column with nothing in it -- and everything
 that had been in that column was still hanging off the one just taken away, where
 nothing could reach it."
-  (let ((up (node:parent w)))
+  (let ((up (fs:parent w)))
     (when (and up (typep up 'window))
-      (node:detach up (node:name w))
+      (fs:detach up (fs:name w))
       (let ((left (parts up)))
         (when (= 1 (length left))
           (let ((only (first left)))
             (setf (shows up) (shows only)
                   (runs up) (runs only))
             (dolist (each (parts only))
-              (node:detach only (node:name each))
-              (node:attach each up))
-            (node:detach up (node:name only)))))
+              (fs:detach only (fs:name each))
+              (fs:attach each up))
+            (fs:detach up (fs:name only)))))
       (focus (or (first (windows of)) up) of))
     w))
 
 (defun only (w &optional (of (root)))
-  (dolist (part (parts of)) (node:detach of (node:name part)))
+  (dolist (part (parts of)) (fs:detach of (fs:name part)))
   (let ((fresh (make-window :shows (shows w) :into of)))
     (focus fresh of)
     fresh))
@@ -129,36 +129,36 @@ nothing could reach it."
 (command:defcommand "split-window-below" ()
     (:describes "two windows, one above the other" :on '(text "C-x 2"))
   (split (focused) :below)
-  (mapcar #'node:name (windows)))
+  (mapcar #'fs:name (windows)))
 
 (command:defcommand "split-window-right" ()
     (:describes "two windows, side by side" :on '(text "C-x 3"))
   (split (focused) :beside)
-  (mapcar #'node:name (windows)))
+  (mapcar #'fs:name (windows)))
 
 (command:defcommand "delete-window" ()
     (:describes "close this window" :on '(text "C-x 0"))
   (close-window (focused))
-  (mapcar #'node:name (windows)))
+  (mapcar #'fs:name (windows)))
 
 (command:defcommand "delete-other-windows" ()
     (:describes "this window alone" :on '(text "C-x 1"))
   (only (focused))
-  (mapcar #'node:name (windows)))
+  (mapcar #'fs:name (windows)))
 
 (command:defcommand "other-window" ()
     (:describes "move the keyboard to the next window" :on '(text "C-x o"))
   (let* ((all (windows))
          (at (or (position (focused) all) 0)))
     (focus (nth (mod (1+ at) (length all)) all))
-    (node:name (focused))))
+    (fs:name (focused))))
 
 (defun %weighed (win to)
   "Give WIN this much of the room, and say it moved. What lays the windows out is
 worked out from what it read, and how big this one is is one of the things it
 read: set without a word, the room changed and nothing drew it again."
   (setf (weight win) to)
-  (node:moved win)
+  (fs:moved win)
   to)
 
 (command:defcommand "enlarge-window" ()

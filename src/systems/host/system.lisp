@@ -1,7 +1,6 @@
 (defpackage #:pine/host
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:mount #:pine/fs/mount)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
@@ -40,16 +39,16 @@ and its interval where it has no stream to speak for it.
 A name in place of a node is made and put under /dev first:
 
   (device \"media\" :player \"emms\")"
-  (let ((n (if (node:nodep what)
+  (let ((n (if (fs:kind what)
                what
                (let ((it (apply #'%make what arguments)))
                  (when it
-                   (node:attach it (tree:ensure (tree:root) "dev")))))))
-    (when (node:nodep n) (system:owned (node:full-name n)))
+                   (fs:attach it (fs:ensure (fs:root) "dev")))))))
+    (when (fs:kind n) (system:owned (fs:full-name n)))
     (%attend n)))
 
 (defun %attend (n)
-  (when (node:nodep n)
+  (when (fs:kind n)
     (let ((held (watch:following n)))
       (d:swap *attending* (lambda (all) (cons (list n held) all)))))
   n)
@@ -65,22 +64,22 @@ A name in place of a node is made and put under /dev first:
   (sh:forget-all))
 
 (command:defcommand "devices" () (:describes "what the machine has")
-  (tree:listing (tree:at (tree:root) "dev")))
+  (mapcar #'fs:name (fs:entries (fs:at (fs:root) "dev"))))
 
 (command:defcommand "device" (name &rest arguments)
     (:describes "put a device in the tree")
   (let ((it (apply #'device name arguments)))
-    (and it (node:full-name it))))
+    (and it (fs:full-name it))))
 
 (command:defcommand "sh" (line) (:describes "run something")
   (sh:run-line (princ-to-string line)))
 
 (defmethod job:start ((s host))
-  (let ((root (tree:root)))
+  (let ((root (fs:root)))
     (system:puts (sh:sh-node) root)
     (device (system:puts (declared:made "env") root))
     (device (system:puts (declared:made "sys") root))
-    (system:owned (node:full-name (mount:mount #p"/" root "file")))
+    (system:owned (fs:full-name (mount:mount #p"/" root "file")))
     (device "clock")
     (job:supervise
      (job:start (make-instance 'job:tick :name "clock" :every 1

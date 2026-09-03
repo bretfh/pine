@@ -1,6 +1,6 @@
 (defpackage #:pine/wm/compositor
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node))
+  (:local-nicknames (#:fs #:pine/fs))
   (:export #:compositor #:workspaces #:windows #:titled #:focused #:focus
            #:outputs #:ids #:rect #:hidden #:hide #:show
            #:step-window #:close-window #:overview #:leave #:split #:act #:verbs))
@@ -10,7 +10,7 @@
 
 (defparameter +window-fields+ '("title" "app" "rect" "hidden" "focused"))
 
-(defclass compositor (node:live)
+(defclass compositor (fs:dir)
   ((places :initform nil :accessor places))
   (:documentation "The compositor this session is under, in the namespace: its
 outputs, its windows, and what it will take.
@@ -138,7 +138,7 @@ placement is written in these, so what goes in comes back out unchanged.")
 it off the screen or puts it back and writing FOCUSED gives it the keyboard; the
 rest is what the compositor says, and says alone."
   (when (member name +window-fields+ :test #'equal)
-    (make-instance 'node:place :name name
+    (make-instance 'fs:derived :name name :live t
                 :reads (lambda () (%field (%window-said c id) name))
                 :writes (lambda (value)
                           (cond ((equal name "hidden")
@@ -148,39 +148,36 @@ rest is what the compositor says, and says alone."
 
 (defun %window (c id)
   (when (%named (windows c) "id" id)
-    (make-instance 'node:place :name id
+    (make-instance 'fs:dir :name id
                 :names (constantly +window-fields+)
-                :each (lambda (name) (%window-field c id name))
-                :reads (lambda () (%window-said c id))
-                :writes (lambda (value) (when value (focus c id))))))
+                :each (lambda (name) (%window-field c id name)))))
 
 (defun %windows (c)
-  (make-instance 'node:place :name "windows"
+  (make-instance 'fs:dir :name "windows"
               :names (lambda () (ids c))
               :each (lambda (id) (%window c id))
               :describes "every window there is"))
 
 (defun %output (c name)
   (when (%output-said c name)
-    (make-instance 'node:place :name name
+    (make-instance 'fs:dir :name name
                 :names (constantly +output-fields+)
                 :each (lambda (field)
                         (when (member field +output-fields+ :test #'equal)
-                          (make-instance 'node:place :name field
+                          (make-instance 'fs:derived :name field :live t
                                       :reads (lambda ()
                                                (%field (%output-said c name)
-                                                       field)))))
-                :reads (lambda () (%output-said c name)))))
+                                                       field))))))))
 
 (defun %outputs (c)
-  (make-instance 'node:place :name "outputs"
+  (make-instance 'fs:dir :name "outputs"
               :names (lambda () (mapcar (lambda (o) (getf o :name)) (outputs c)))
               :each (lambda (name) (%output c name))
               :describes "every screen, and what is left after the bars"))
 
 (defun %workspace (c idx)
   (when (%named (workspaces c) "idx" idx)
-    (make-instance 'node:place :name idx
+    (make-instance 'fs:derived :name idx :live t
                 :reads (lambda ()
                          (let ((w (%named (workspaces c) "idx" idx)))
                            (when w
@@ -190,20 +187,20 @@ rest is what the compositor says, and says alone."
                 :writes (lambda (value) (when value (act c "workspace" idx))))))
 
 (defun %workspaces (c)
-  (make-instance 'node:place :name "workspaces"
+  (make-instance 'fs:dir :name "workspaces"
               :names (lambda () (mapcar (lambda (w) (gethash "idx" w))
                                         (workspaces c)))
               :each (lambda (idx) (%workspace c idx))
               :describes "how this compositor groups them, where it does"))
 
 (defun %focused (c)
-  (make-instance 'node:place :name "focused"
+  (make-instance 'fs:derived :name "focused" :live t
               :reads (lambda () (focused c))
               :writes (lambda (value) (when value (focus c value)))
               :describes "which window has the keyboard"))
 
 (defun %verb (c name)
-  (make-instance 'node:place :name name
+  (make-instance 'fs:derived :name name :live t
               :reads (constantly name)
               :writes (lambda (value)
                         (declare (ignore value))
@@ -212,21 +209,17 @@ rest is what the compositor says, and says alone."
 (defmethod initialize-instance :after ((c compositor) &key)
   (let ((all (list* (%outputs c) (%workspaces c) (%windows c) (%focused c)
                     (mapcar (lambda (name) (%verb c name)) (verbs c)))))
-    (dolist (each all) (setf (node:parent each) c))
+    (dolist (each all) (setf (fs:parent each) c))
     (setf (places c) all)))
 
-(defmethod node:nodes ((c compositor))
+(defmethod fs:entries ((c compositor))
   "What the compositor answers for, and whatever was hung here besides: a window
 manager attaches its own places under /wm and they are found like any other."
   (append (places c) (call-next-method)))
 
-(defmethod node:resolve ((c compositor) name)
+(defmethod fs:entry ((c compositor) name)
   (let ((name (princ-to-string name)))
-    (or (find name (places c) :key #'node:name :test #'equal)
+    (or (find name (places c) :key #'fs:name :test #'equal)
         (call-next-method))))
 
-(defmethod node:contents ((c compositor))
-  (list :outputs (length (outputs c))
-        :windows (length (windows c))
-        :focused (focused c)))
 

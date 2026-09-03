@@ -8,7 +8,7 @@
                     (#:text #:pine/text)
                     (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:meter #:pine/run/meter)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)
+                    (#:fs #:pine/fs)
                     (#:mode #:pine/mode) (#:device #:pine/host/device))
   (:export #:run #:workloads))
 (in-package #:pine/bench)
@@ -34,7 +34,7 @@ came from."
 
 (defun %sized ()
   "Say how big the surface came out, the way the screen would."
-  (setf (node:contents (tree:at nil "surface/editor/size"))
+  (setf (fs:contents (fs:at nil "surface/editor/size"))
         (list :wide (* 9 +cols+) :tall (* 18 +lines+)
               :cols +cols+ :lines +lines+ :font 15)))
 
@@ -52,7 +52,7 @@ the workload: what is timed below starts from a document already walked."
   "A document of LINES lines, in the window, parsed once before anything is timed."
   (let ((d (text:make-document name :mode (make-instance 'mode:lisp)))
         (w (edit:focused)))
-    (setf (node:contents d) (%lisp-text lines))
+    (setf (fs:contents d) (%lisp-text lines))
     (setf (edit:across w) +cols+ (edit:down w) +lines+)
     (edit:show w d)
     (setf (text:current) d)
@@ -63,7 +63,7 @@ the workload: what is timed below starts from a document already walked."
 
 (defun %wire (&optional (name "editor"))
   "What the screen would be handed. This is the whole of what a frame costs."
-  (node:contents (tree:at nil (format nil "surface/~a/wire" name))))
+  (fs:contents (fs:at nil (format nil "surface/~a/wire" name))))
 
 (defun %ready ()
   (pine:use :text)
@@ -119,7 +119,7 @@ surface built, the tree written down, and what came out the same as before"
     (loop :while (< (get-universal-time) until)
           :do (device:tick)
               (dolist (each (ui:surfaces))
-                (when (ui:shown each) (%wire (node:name each))))
+                (when (ui:shown each) (%wire (fs:name each))))
               (sleep 1/20))))
 
 (workload many ()
@@ -128,7 +128,7 @@ surface built, the tree written down, and what came out the same as before"
   (dotimes (n 200)
     (let ((d (text:make-document (format nil "many-~d" n)
                                 :mode (make-instance 'mode:lisp))))
-      (setf (node:contents d) (%lisp-text 50))))
+      (setf (fs:contents d) (%lisp-text 50))))
   (let ((d (%shown "many-shown" *size*)))
     (dotimes (n 50)
       (edit:dispatch (ui:make-key "x"))

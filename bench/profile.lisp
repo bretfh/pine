@@ -4,7 +4,7 @@
 
 (defpackage #:pine/bench/profile
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:place #:pine/kernel/place)
+  (:local-nicknames (#:fs #:pine/fs) (#:d #:pine/data) (#:place #:pine/kernel/place)
                     (#:graph #:pine/kernel/graph) (#:tell #:pine/kernel/tell)
                     (#:tree #:pine/kernel/tree) (#:watch #:pine/kernel/watch)
                     (#:k #:pine/kernel/call)))
@@ -14,7 +14,7 @@
 (defvar *runs* (or (ignore-errors (parse-integer (uiop:getenv "RUNS"))) 2000000))
 
 (defun fresh ()
-  (setf tree:*root* (tree:make-root))
+  (setf fs:*root* (fs:make-root))
   (tell:forget-all)
   (watch:forget-all))
 
@@ -49,7 +49,7 @@
          (fresh)
          (k:write "/dev/audio/volume" 50)
          (values "reach a name three deep"
-                 (lambda () (tree:reach "/dev/audio/volume"))))
+                 (lambda () (fs:reach "/dev/audio/volume"))))
         ((equal *what* "derived")
          (fresh)
          (k:write "/n" 1)

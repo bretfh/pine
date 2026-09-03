@@ -47,7 +47,7 @@ asked about where it landed."
                                 \"value\":~a}" json))
                 (declare (ignore id))
                 message))
-             (node:contents (tree:at "/probe"))))
+             (fs:contents (fs:at "/probe"))))
       (is (d:mapp (wrote "{\"map\":[[\":a\",1]]}")) "a map lands a map")
       (is (d:seqp (wrote "{\"seq\":[1,2]}")) "a seq lands a seq")
       (is (d:setp (wrote "{\"set\":[1]}")) "a set lands a set")
@@ -73,9 +73,9 @@ nothing with a dropped connection and something with a sentence."
 (test asking-about-nothing-and-about-an-object-are-both-answered
   (with-tree
     (is (eq :no (first (pine/run/peer::received (list :contents "/nowhere")))))
-    (tree:built (tree:root))
+    (fs:built (fs:root))
     (ui:make-surface "test-surface" (lambda () (ui:label "hi")) :as 'ui:panel)
-    (let ((said (pine/run/peer::received (list :contents "/surface/test-surface"))))
+    (let ((said (pine/run/peer::received (list :contents "/surface/test-surface/tree"))))
       (is (eq :no (first said)) "a widget has no spelling")
       (is (search "test-surface" (second said)) "and the answer names the place"))
     (is (eq :ok (first (pine/run/peer::received

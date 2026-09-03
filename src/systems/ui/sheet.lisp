@@ -1,6 +1,6 @@
 (in-package #:pine/ui)
 
-(defclass themes-node (node:node) ()
+(defclass themes-node (fs:dir) ()
   (:documentation "Every theme there is, and which is on.
 
 A class rather than a PLACE, and the one node in the tree where the two questions
@@ -41,13 +41,13 @@ compound, a string the selector as written.")
 
 (defun styles ()
   "What is written at /style, as (SELECTOR PROPS), by selector."
-  (let ((at (and (tree:root) (tree:at "/style")))
+  (let ((at (and (fs:root) (fs:at "/style")))
         (acc nil))
     (when at
-      (dolist (each (node:nodes at))
-        (let ((props (node:contents each)))
+      (dolist (each (fs:entries at))
+        (let ((props (fs:contents each)))
           (when (consp props)
-            (push (list (%selector (node:name each)) props) acc)))))
+            (push (list (%selector (fs:name each)) props) acc)))))
     (sort acc #'string< :key #'first)))
 
 (defun style (selector properties)
@@ -61,9 +61,9 @@ What PINE:STYLE calls, so a config saying one rule and a frontend taking a whole
 sheet off the wire arrive the same way. This is also the far end of BROADCAST,
 where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (let ((n (tree:ensure "/style" (%path-segment (first each)))))
-      (setf (node:contents n) (second each))
-      (system:owned (node:full-name n))))
+    (let ((n (fs:leaf "/style" (%path-segment (first each)))))
+      (setf (fs:contents n) (second each))
+      (system:owned (fs:full-name n))))
   (styles))
 
 (defun built-in ()
@@ -117,31 +117,29 @@ theme before it, until somebody thought to compose it again."
 (defun %theme-names () (themes))
 
 (defun %theme (n name)
-  (node:child n name
+  (fs:child n name
               (lambda ()
-                (make-instance 'node:place :name name :parent n
+                (make-instance 'fs:derived :name name :parent n :live t
                             :reads (lambda ()
                                      (let ((it (theme name)))
                                        (list :palette (palette it)
                                              :metrics (metrics it))))))))
 
 (defun %active (n)
-  (node:child n "active"
-              (lambda () (make-instance 'node:value :name "active" :parent n))))
+  (fs:child n "active"
+              (lambda () (make-instance 'fs:value :name "active" :parent n))))
 
-(defmethod node:nodes ((n themes-node))
+(defmethod fs:entries ((n themes-node))
   (cons (%active n)
         (loop :for name :in (%theme-names)
               :collect (%theme n (string-downcase (symbol-name name))))))
 
-(defmethod node:resolve ((n themes-node) name)
+(defmethod fs:entry ((n themes-node) name)
   (cond ((equal name "active") (%active n))
         ((member name (%theme-names)
                  :key (lambda (each) (string-downcase (symbol-name each)))
                  :test #'equal)
          (%theme n name))))
-
-(defmethod node:contents ((n themes-node)) (%theme-names))
 
 (defun %face-key (name)
   "The keyword a face is kept under, without making one that is not already there:
@@ -159,7 +157,7 @@ a path nobody named should not grow the keyword package."
 (defun %face (name)
   (let ((key (%face-key name)))
     (when (and key (in-force key))
-      (make-instance 'node:place :name name
+      (make-instance 'fs:derived :name name :live t
                   :reads (lambda ()
                            (let ((f (in-force (%face-key name))))
                              (when f
@@ -168,20 +166,20 @@ a path nobody named should not grow the keyword package."
                                      :underline (underline f)))))))))
 
 (defun %attach (root)
-  (let ((themes (node:attach
+  (let ((themes (fs:attach
                  (make-instance 'themes-node :name "theme"
                                 :describes "every theme there is, and which is on")
                  root)))
-    (node:attach (make-instance 'node:place :name "faces"
+    (fs:attach (make-instance 'fs:dir :name "faces"
                              :names #'%face-names :each #'%face
                              :describes "every face in force")
                  root)
-    (tree:ensure root "face")
-    (tree:ensure root "style")
+    (fs:ensure root "face")
+    (fs:ensure root "style")
     (let ((active (%active themes)))
-      (unless (node:contents active)
-        (setf (node:contents active) (active))))
+      (unless (fs:contents active)
+        (setf (fs:contents active) (active))))
     root))
 
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

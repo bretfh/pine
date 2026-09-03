@@ -1,8 +1,8 @@
 (defpackage #:pine/term/terminal
   (:use #:cl)
-  (:local-nicknames (#:text #:pine/text) (#:tree #:pine/fs/tree)
+  (:local-nicknames (#:text #:pine/text)
                     (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:node #:pine/fs/node)
+                    (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
@@ -43,11 +43,11 @@ IMAGE and a MOUNT."))
 
 (defmethod print-object ((term terminal) stream)
   (print-unreadable-object (term stream :type t)
-    (format stream "~a ~dx~d~:[ (ended)~;~]" (node:name term)
+    (format stream "~a ~dx~d~:[ (ended)~;~]" (fs:name term)
             (wide term) (tall term) (fd-of term))))
 
 (defun terminals ()
-  (remove-if-not (lambda (n) (typep n 'terminal)) (node:nodes (tree:ensure "/text"))))
+  (remove-if-not (lambda (n) (typep n 'terminal)) (fs:entries (fs:ensure "/text"))))
 
 (defun %rgb (colour)
   "A colour the program asked for, as the three numbers a cell is painted with.
@@ -91,7 +91,7 @@ program's cursor: what you are looking at is where it is writing."
     (setf (text:spans term) spans))
   (text:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
   (setf (text:modified term) nil)
-  (node:moved term)
+  (fs:moved term)
   term)
 
 (defun %escape (term k)
@@ -167,7 +167,7 @@ they do not take."))
         (vt:pty-kill pid))
       (fault:or-nothing "one already reaped has no status left to take"
         (vt:pty-reap pid))))
-  (log:note "~a ended" (node:name term))
+  (log:note "~a ended" (fs:name term))
   term)
 
 (defun %reading (term)
@@ -184,9 +184,8 @@ This is what a thread is for: a pty read blocks, and nothing else here does."
                       (return)))))
     (%ended term)))
 
-(defmethod (setf node:contents) (value (term terminal))
-  "Writing a terminal is typing at it. There is nothing else a write could mean:
-the text is the program's, not yours."
+(defmethod (setf text:text) (value (term terminal))
+  "Writing a terminal is typing at it: the text is the program's, not yours."
   (send term (princ-to-string value))
   value)
 
@@ -215,7 +214,7 @@ screen; writing it is typing at the program."
       (setf (fd-of term) fd (pid-of term) pid))
     (setf (vt:term-input-fn vt) (lambda (said) (send term said))
           (job:runs term) (%reading term))
-    (node:slots term term "wide" 'wide "tall" 'tall)
+    (fs:slots term term "wide" 'wide "tall" 'tall)
     (job:supervise term)
     (job:start term)
     (%shown term)

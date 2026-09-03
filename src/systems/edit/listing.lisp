@@ -16,7 +16,7 @@ reading the line back out of the text."))
 (defun listings () (d:all *listings*))
 
 (defun %listing (document)
-  (d:lookup (d:all *listings*) (node:name document)))
+  (d:lookup (d:all *listings*) (fs:name document)))
 
 (defun said (row) (if (consp row) (car row) (princ-to-string row)))
 
@@ -36,12 +36,12 @@ reading the line back out of the text."))
 (defun show-listing (name shown-rows &optional on-enter)
   "Put ROWS in a document of its own and show it. With ON-ENTER, RET on a row hands
 it the place that row stands for."
-  (let ((document (or (tree:at "/text" name)
+  (let ((document (or (fs:at "/text" name)
                       (text:make-document name :mode (make-instance 'listing))))
         (shown-rows (if (stringp shown-rows)
                   (uiop:split-string shown-rows :separator '(#\Newline))
                   shown-rows)))
-    (setf (node:contents document)
+    (setf (text:text document)
           (format nil "~{~a~^~%~}" (mapcar #'said shown-rows)))
     (text:goto document 0 0)
     (unless (typep (text:mode-of document) 'listing)
@@ -49,7 +49,7 @@ it the place that row stands for."
     (d:keep! *listings* name (make-instance 'listed :shown-rows shown-rows :on-enter on-enter))
     (setf (text:current) document)
     (%mark document)
-    (node:name document)))
+    (fs:name document)))
 
 (defmethod text:killing :before ((document text:document))
   "A killed document takes its rows with it. Kept, they are rows standing for things
@@ -58,7 +58,7 @@ in a document nothing can reach, held for as long as the image runs.
 :BEFORE and not :AFTER because the parse already takes itself off in an :AFTER on
 this same class, and a second method of the same qualifier and specializers is not
 another method -- it is the same one, written again."
-  (d:drop! *listings* (node:name document)))
+  (d:drop! *listings* (fs:name document)))
 
 (defun activate ()
   (let* ((document (text:current))
@@ -92,7 +92,7 @@ another method -- it is the same one, written again."
     (:describes "what the row point is on stands for" :on '(listing "."))
   (let ((it (place)))
     (log:note "~a" (cond ((null it) "this row stands for nothing")
-                         ((node:nodep it) (node:full-name it))
+                         ((fs:kind it) (fs:full-name it))
                          (t it)))
     it))
 

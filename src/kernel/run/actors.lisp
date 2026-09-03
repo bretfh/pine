@@ -1,6 +1,6 @@
 (defpackage #:pine/run/actors
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:fault #:pine/run/fault))
   (:export
    #:boot #:leave #:actors #:runningp #:remoting
@@ -176,23 +176,22 @@ to the end before whoever started it goes, or the last of it is lost."
 
 (defun %tick (name)
   (when (%named name)
-    (make-instance 'node:place :name name
+    (make-instance 'fs:derived :name name :live t
                 :reads (lambda () (and (%named name) t))
                 :writes (lambda (value)
                           (let ((had (%named name)))
                             (when (and had (null value)) (cancel had)))))))
 
 (defun %attach (root)
-  (node:attach
-   (make-instance 'node:place :name "tick"
+  (fs:attach
+   (make-instance 'fs:dir :name "tick"
                :names #'ticks
                :each #'%tick
-               :reads (lambda () (mapcar #'princ-to-string (ticks)))
                :describes "what repeats on the image's clock")
    root))
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)
 
 (pool :working *reading-workers*)
 
-(setf node:*working* #'%hand-off)
+(setf fs:*working* #'%hand-off)

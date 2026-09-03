@@ -27,7 +27,7 @@ Answers the text and the column each character landed in."
 
 (defun %document-of (win)
   (let ((it (shows win)))
-    (or (and (stringp it) (tree:at "/text" it))
+    (or (and (stringp it) (fs:at "/text" it))
         (and (typep it 'text:document) it)
         (text:current))))
 
@@ -128,7 +128,7 @@ method somebody else writes, and nothing here has to know about it.")
                  :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod drawn ((content string) win)
-  (let ((document (tree:at "/text" content)))
+  (let ((document (fs:at "/text" content)))
     (if document (drawn document win) (call-next-method))))
 
 (defmethod drawn ((content ui:widget) win)
@@ -145,7 +145,7 @@ window beside a document."
     (ui:cells (ui:by-row g) :class "editor-view" :expand 1 :font *font*)))
 
 (defmethod drawn ((document text:document) win)
-  (node:reading document)
+  (fs:reading document)
   (let* ((from (scrolled win))
          (left (sideways win))
          (width (max 1 (across win)))
@@ -188,15 +188,15 @@ window beside a document."
 on, and a widget tree has nothing of the sort to say."
   (let ((it (shows win)))
     (or (null it) (typep it 'text:document)
-        (and (stringp it) (tree:at "/text" it)))))
+        (and (stringp it) (fs:at "/text" it)))))
 
 (defun modeline (win)
   (let* ((document (%document-of win))
          (width (max 1 (across win)))
          (text (format nil " ~:[  ~;**~] ~a  ~a  L~d C~d"
                        (text:modified document)
-                       (node:name document)
-                       (node:name (text:mode-of document))
+                       (fs:name document)
+                       (fs:name (text:mode-of document))
                        (1+ (text:at-line document))
                        (text:at-col document)))
          (g (ui:make-grid width 1)))
@@ -265,13 +265,13 @@ on, and a widget tree has nothing of the sort to say."
   "The frame, and what it read: every window, the question standing and what was
 last said. A surface follows what it read, so this is where the editor says what
 moving means."
-  (node:reading (root))
-  (node:reading (%asking-node))
-  (node:reading (tree:ensure "/log"))
+  (fs:reading (root))
+  (fs:reading (%asking-node))
+  (fs:reading (fs:ensure "/log"))
   (let* ((wins (windows))
          (weight (reduce #'+ wins :key #'weight :initial-value 0))
          (room (max 2 (1- lines))))
-    (dolist (win wins) (node:reading win))
+    (dolist (win wins) (fs:reading win))
     (dolist (win wins)
       (setf (across win) (max 1 across)
             (down win)

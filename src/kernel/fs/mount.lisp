@@ -1,59 +1,44 @@
 (defpackage #:pine/fs/mount
   (:use #:cl)
   (:shadow #:directory)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree))
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs))
   (:export
    #:mount #:truename-of #:node-for #:file))
 (in-package #:pine/fs/mount)
 
-
-(defclass mount (node:live) ()
-  (:documentation "A namespace from somewhere else, grafted into this one. What is
-behind it keeps its own contents, so nothing here is snapshotted and everything
-here answers differently without being written."))
-
-(defclass file (mount)
+(defclass mount ()
   ((truename-of :initarg :truename :reader truename-of))
-  (:documentation "A file on this machine."))
+  (:documentation "Somewhere on this machine's disk, grafted into the tree."))
 
-(defclass directory (mount)
-  ((truename-of :initarg :truename :reader truename-of))
-  (:documentation "A directory on this machine."))
+(defclass file (mount fs:derived) ())
+
+(defclass directory (mount fs:dir) ())
+
+(defmethod fs:livep ((n file)) t)
+(defmethod fs:livep ((n directory)) t)
 
 (defgeneric mount (what into name)
-  (:documentation "Graft the namespace WHAT stands for into INTO, under NAME.
-
-A pathname is a directory on this machine. A peer is another pine, here or on
-another machine. The method differs; nothing above it does."))
+  (:documentation "Graft the namespace WHAT stands for into INTO, under NAME."))
 
 (defmethod mount ((what pathname) into name)
   (let* ((it (truename what))
          (n (make-instance 'directory :name name :truename it
                                       :describes (namestring it))))
-    (node:attach n into)
+    (fs:attach n into)
     n))
 
 (defmethod mount ((what string) into name)
   (mount (pathname what) into name))
 
-(defmethod node:contents ((n file))
+(defmethod fs:works ((n file))
   (when (probe-file (truename-of n))
     (with-open-file (in (truename-of n) :external-format :utf-8)
       (let ((text (make-string (file-length in))))
         (subseq text 0 (read-sequence text in))))))
 
-(defmethod (setf node:contents) (value (n file))
-  "Write the file, beside it and then over it.
-
-A stream opened on the file itself is a file that says nothing from the moment it
-opens until the moment it closes, and one whose write did not finish is a file
-that is gone: SUPERSEDE deletes what it was making and does not put back what was
-there. Measured, not assumed -- a write that threw left no file at all.
-
-Staged, the name answers either the whole of what was written or exactly what it
-held before, and never anything in between. That is what saving a document has to
-be: the thing being written over is the only copy."
+(defmethod fs:takes ((n file) value)
+  "Written beside itself and then over itself, so the name answers either the
+whole of what was written or exactly what it held before."
   (uiop:with-staging-pathname (staged (truename-of n))
     (with-open-file (out staged :direction :output
                                 :if-exists :supersede
@@ -66,76 +51,68 @@ be: the thing being written over is the only copy."
   (append (cl:directory (merge-pathnames "*.*" where))
           (cl:directory (merge-pathnames "*/" where))))
 
-(defun %named (path)
+(defun %leaf-name (path)
   (if (pathname-name path)
       (file-namestring path)
       (car (last (pathname-directory path)))))
 
-(defun %branchp (name)
-  (let ((n (length name)))
-    (and (plusp n) (char= #\/ (char name (1- n))))))
-
-(defun %bare (name)
-  (if (%branchp name) (subseq name 0 (1- (length name))) name))
-
 (defun %under (n name)
   (let ((where (truename-of n)))
-    (or (probe-file (merge-pathnames (%bare name) where))
-        (probe-file (merge-pathnames (concatenate 'string (%bare name) "/")
-                                     where)))))
+    (or (probe-file (merge-pathnames name where))
+        (probe-file (merge-pathnames (concatenate 'string name "/") where)))))
 
 (defun %node-for (n path name)
-  "The node N keeps for PATH, made once, so what reads it can be worked out again."
-  (node:child n name
-              (lambda ()
-                (make-instance (if (pathname-name path) 'file 'directory)
-                               :name name :parent n :truename path))))
+  (fs:child n name
+            (lambda ()
+              (make-instance (if (pathname-name path) 'file 'directory)
+                             :name name :parent n :truename path))))
 
-(defmethod node:nodes ((n directory))
+(defmethod fs:entries ((n directory))
   (let ((seen (make-hash-table :test 'equal)))
     (loop :for path :in (%entries (truename-of n))
-          :for name := (%named path)
+          :for name := (%leaf-name path)
           :unless (or (null name) (gethash name seen))
             :do (setf (gethash name seen) t)
             :and :collect (%node-for n path name))))
 
-(defmethod node:resolve ((n directory) name)
-  "Asked of the disk rather than derived from NODES: finding one file by listing a
-directory of ten thousand is what a mount cannot afford."
-  (let ((path (%under n name)))
-    (when path (%node-for n path (%bare name)))))
+(defmethod fs:entry ((n directory) name)
+  "Asked of the disk rather than listed: finding one file by listing a directory of
+ten thousand is what a mount cannot afford."
+  (let* ((name (princ-to-string name))
+         (path (%under n name)))
+    (when path (%node-for n path name))))
 
-(defmethod node:contents ((n directory))
-  (mapcar #'node:name (node:nodes n)))
-
-(defmethod node:make-child ((n directory) name)
-  "Make NAME on the disk. A name that ends in / is a directory."
-  (let* ((where (truename-of n))
-         (path (merge-pathnames (if (%branchp name) name (%bare name)) where)))
-    (if (%branchp name)
+(defmethod fs:make-entry ((n directory) name kind)
+  (let* ((name (princ-to-string name))
+         (where (truename-of n))
+         (path (merge-pathnames (if (eq kind :dir)
+                                    (concatenate 'string name "/")
+                                    name)
+                                where)))
+    (if (eq kind :dir)
         (ensure-directories-exist path)
         (let ((stream (open path :direction :output :if-exists nil
                                  :if-does-not-exist :create)))
           (when stream (close stream))))
-    (node:moved n)
-    (%node-for n (probe-file path) (%bare name))))
+    (fs:moved n)
+    (%node-for n (probe-file path) name)))
 
-(defmethod node:erase-child ((n directory) name)
-  "Take NAME off the disk. A directory has to be empty first, so removing one node
-cannot cost a tree nobody looked at."
-  (let ((path (%under n name)))
+(defmethod fs:erase-entry ((n directory) name)
+  "A directory has to be empty first, so removing one entry cannot cost a tree
+nobody looked at."
+  (let* ((name (princ-to-string name))
+         (path (%under n name)))
     (when path
       (if (pathname-name path)
           (delete-file path)
           (uiop:delete-empty-directory path))
-      (d:drop! (node:memo n) (%bare name))
-      (node:moved n))
+      (d:drop! (fs::memo n) name)
+      (fs:moved n))
     path))
 
 (defun node-for (n name)
-  "The node N keeps for NAME, whether or not anything stands there yet. Reading one
-that is not there answers nothing and writing it makes it, which is what opening a
-file that does not exist is: a buffer on a place, not on a file."
-  (or (node:resolve n name)
-      (%node-for n (merge-pathnames (%bare name) (truename-of n)) (%bare name))))
-
+  "The entry N keeps for NAME, whether or not anything stands there yet: a buffer
+on a place, not on a file."
+  (let ((name (princ-to-string name)))
+    (or (fs:entry n name)
+        (%node-for n (merge-pathnames name (truename-of n)) name))))

@@ -3,7 +3,7 @@
 
 (defpackage #:pine/bench/costs
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:place #:pine/kernel/place)
+  (:local-nicknames (#:fs #:pine/fs) (#:d #:pine/data) (#:place #:pine/kernel/place)
                     (#:graph #:pine/kernel/graph) (#:tell #:pine/kernel/tell)
                     (#:tree #:pine/kernel/tree) (#:watch #:pine/kernel/watch)
                     (#:log #:pine/kernel/log) (#:k #:pine/kernel/call)))
@@ -22,7 +22,7 @@
   (multiple-value-bind (ns per) (ns-each n thunk)
     (format t "~&~44@a ~8,0f ns  ~12:d /s~%" what ns (round per))))
 
-(defun fresh () (setf tree:*root* (tree:make-root)) (tell:forget-all)
+(defun fresh () (setf fs:*root* (fs:make-root)) (tell:forget-all)
   (watch:forget-all))
 
 (defun deep (n)
@@ -39,7 +39,7 @@
   (k:write "/n" 1)
   (dotimes (i n)
     (k:make (format nil "/wide/~d" i) :derived (lambda () (k:read "/n"))))
-  (loop :for i :below n :collect (tree:reach (format nil "/wide/~d" i))))
+  (loop :for i :below n :collect (fs:reach (format nil "/wide/~d" i))))
 
 (defun main ()
   (format t "~&~%what one thing costs, on one thread, with nothing else running~%~%")
@@ -50,7 +50,7 @@
   (say "write a place" *runs* (lambda () (k:write "/x" 42)))
   (say "swap a place" *runs* (lambda () (k:swap "/x" #'1+)))
   (say "reach a name three deep" *runs*
-       (lambda () (tree:reach "/a/b/c")))
+       (lambda () (fs:reach "/a/b/c")))
 
   (fresh)
   (k:write "/n" 1)

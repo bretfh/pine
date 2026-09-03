@@ -24,7 +24,7 @@
     (:describes "every chord in force here" :on '(text "C-h b"))
   (show-listing
    "*help*"
-   (cons (format nil "chords in force in ~a" (node:name (text:current)))
+   (cons (format nil "chords in force in ~a" (fs:name (text:current)))
          (cons ""
                (loop :for (chord . name)
                        :in (sort (bindings (text:mode-of (text:current))) #'string< :key #'car)
@@ -38,7 +38,7 @@
   (let ((m (text:mode-of (text:current))))
     (show-listing
      "*help*"
-     (list (node:name m)
+     (list (fs:name m)
            ""
            (format nil "chain     ~{~(~a~)~^ -> ~}"
                    (mapcar #'class-name
@@ -63,7 +63,7 @@
   (let ((document (text:current)))
     (show-listing
      "*help*"
-     (cons (format nil "settings in ~a" (node:name document))
+     (cons (format nil "settings in ~a" (fs:name document))
            (cons ""
                  (loop :for (key . says) :in +settings+
                        :collect (format nil "~(~16a~) ~12a ~a" key
@@ -89,11 +89,11 @@
     (:describes "every document there is" :on '(text "C-x C-b"))
   (show-listing "*documents*"
                 (mapcar (lambda (d)
-                          (cons (format nil "~a~30t~a" (node:name d)
+                          (cons (format nil "~a~30t~a" (fs:name d)
                                         (or (text:file-of d) ""))
                                 d))
                         (text:documents))
-                (lambda (d) (when (node:nodep d) (setf (text:current) d)))))
+                (lambda (d) (when (fs:kind d) (setf (text:current) d)))))
 
 (command:defcommand "list-jobs" ()
     (:describes "what this image is running" :on '(text "C-x j"))

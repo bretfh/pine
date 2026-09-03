@@ -9,7 +9,7 @@
 (defparameter +doing+
   '(("read"  . :contents)
     ("write" . :write)
-    ("ls"    . :nodes)
+    ("ls"    . :entries)
     ("verb"  . :verb)
     ("watch" . :watch)
     ("eval"  . :evaluate)

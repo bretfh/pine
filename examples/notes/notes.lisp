@@ -5,7 +5,7 @@
   (:import-from #:pine/text #:line #:line-count)
   (:import-from #:pine/ui
    #:overlay #:anchor #:placing #:inset #:defsurface #:column #:label)
-  (:local-nicknames (#:node #:pine/fs/node))
+  (:local-nicknames (#:fs #:pine/fs))
   (:shadow #:note)
   (:export #:notes #:note #:journal #:sticky))
 (in-package #:notes)
@@ -20,23 +20,13 @@
 ;;; for what it says, write it to say something else, and anything watching one
 ;;; hears about it -- from this image or from another machine.
 
-(defclass journal (node) ()
+(defclass journal (dir) ()
   (:documentation "Everything written down. /notes is one of these.
 
 There is no map of entries here. An entry is a node under this one, which is a
 place, is saved, and is watched, and keeping the text in a variable beside the tree
 would be keeping it twice -- one of them the copy that persists and one of them the
 copy anything else can reach."))
-
-(defmethod contents ((n journal)) (sort (listing n) #'string<))
-
-(defmethod node:make-child ((n journal) name)
-  "What is under it is what it says, so putting one there moves it. A mounted
-directory says the same thing the same way."
-  (let ((made (call-next-method))) (node:moved n) made))
-
-(defmethod node:erase-child ((n journal) name)
-  (let ((gone (call-next-method))) (node:moved n) gone))
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of
 ;;; its own to say: what its text divides into.

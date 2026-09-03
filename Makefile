@@ -67,7 +67,7 @@ check: libs
 
 # the layers pine is built out of, lowest first. each is loaded on its own, in an
 # image with nothing else in it.
-LAYERS ?= pine/value pine/place pine/run pine/serve pine pine/host
+LAYERS ?= pine/value pine/fs pine/run pine/serve pine pine/host
 
 # every layer, alone. the claim a bottom-up program makes is that each of these is
 # something you could write another program in without dragging the ones above it

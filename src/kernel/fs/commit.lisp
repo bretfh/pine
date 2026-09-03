@@ -1,65 +1,52 @@
-(defpackage #:pine/fs/commit
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data))
-  (:export
-   #:forget #:writing #:announce #:on-commit #:on-forget
-   #:forget-listeners #:*broke*))
-(in-package #:pine/fs/commit)
+(in-package #:pine/fs)
 
-(defvar *listening* (d:table))
-(defvar *forgetting* (d:table)
-  "Who to tell that a path went, by name. A write and an erasure are two things
-that happen to a place, so they are two lists and not one with a tag on it.")
+(defvar *listening* nil)
+(defvar *forgetting* nil)
 (defvar *moving* nil)
-(defvar *broke* nil
-  "What to do about a listener that would not run. Filled in by whatever keeps
-faults, because this layer loads before there is one.")
 
 (defun %tell (tells said)
-  "Tell one listener, and let it break on its own. A write is not wrong because
-somebody listening to it is, and the listeners after it are still owed the news."
+  "Tell one listener, and let it break on its own: a write is not wrong because
+somebody listening to it is."
   (handler-case (funcall tells said)
-    (error (c) (when *broke* (funcall *broke* c)) nil)))
+    (error (c) (when *broke* (funcall *broke* c nil)) nil)))
 
-(defun forget (place)
-  "Say PLACE and everything under it went. A value goes with the node that held it,
-so there is nothing to take out here; what is left is telling whoever keeps a copy
-of the tree, which is why nothing lower down has to know who that is."
-  (dolist (tells (d:vals (d:all *forgetting*)) place)
-    (%tell tells place)))
+(defun %went (path)
+  "Say PATH and everything under it went, to whoever keeps a copy of the tree."
+  (dolist (each *forgetting* path)
+    (%tell (cdr each) path)))
 
-(defun listeners () (d:all *listening*))
-
-(defun on-commit (key) (d:lookup (listeners) key))
+(defun on-commit (key) (cdr (assoc key *listening*)))
 
 (defun (setf on-commit) (tells key)
-  (if tells (d:keep! *listening* key tells) (d:drop! *listening* key))
+  (setf *listening* (remove key *listening* :key #'car))
+  (when tells (push (cons key tells) *listening*))
   tells)
 
-(defun on-forget (key) (d:lookup (d:all *forgetting*) key))
+(defun on-forget (key) (cdr (assoc key *forgetting*)))
 
 (defun (setf on-forget) (tells key)
-  (if tells (d:keep! *forgetting* key tells) (d:drop! *forgetting* key))
+  (setf *forgetting* (remove key *forgetting* :key #'car))
+  (when tells (push (cons key tells) *forgetting*))
   tells)
 
 (defun forget-listeners ()
-  (d:clear! *listening*)
-  (d:clear! *forgetting*))
+  (setf *listening* nil *forgetting* nil))
 
 (defun %told (moved)
   (when moved
     (let ((moved (remove-duplicates (reverse moved))))
-      (loop :for tells :in (d:vals (listeners))
+      (loop :for (nil . tells) :in *listening*
             :do (%tell tells moved)
             :finally (return moved)))))
 
-(defun announce (n)
+(defun %announce (x)
   (if *moving*
-      (push n (cdr *moving*))
-      (%told (list n)))
-  n)
+      (push x (cdr *moving*))
+      (%told (list x)))
+  x)
 
 (defmacro writing (&body body)
+  "Batch every write inside BODY into one telling."
   (let ((mine (gensym "MOVING")) (outer (gensym "OUTER")))
     `(let* ((,outer *moving*)
             (,mine (or ,outer (cons :moving nil))))

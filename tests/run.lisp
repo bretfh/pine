@@ -5,7 +5,7 @@
 (test a-tick-is-a-job-and-a-node
   (booted)
   (with-tree
-    (tree:built)
+    (fs:built)
     (let* ((n (cons 0 nil))
            (j (make-instance 'job:tick :name "ticker" :every 0.05
                                          :runs (lambda () (d:swap (car n) #'1+)))))
@@ -15,10 +15,11 @@
              (job:start j)
              (is (job:alivep j))
              (is (until (lambda () (> (car n) 2))))
-             (is (eq j (tree:at "/proc/ticker")))
-             (is (eq :running (node:contents j)))
-             (setf (node:contents j) (d:seq :stop))
-             (is (eq :stopped (node:contents j))))
+             (is (eq j (fs:at "/proc/ticker")))
+             (is (eq :running (job:state j)))
+             (is (eq :running (pine:read "/proc/ticker/state")))
+             (job:stop j)
+             (is (eq :stopped (pine:read "/proc/ticker/state"))))
         (ignore-errors (job:stop j))
         (job:forget "ticker")))))
 
@@ -26,27 +27,27 @@
   "A job hangs at /proc, and START is what puts /proc there. Without this every
 supervised thing pine has is running and unreadable."
   (booted)
-  (let ((was (tree:root)))
+  (let ((was (fs:root)))
     (unwind-protect
          (let ((j (make-instance 'job:tick :name "probe" :every 0.05
                                              :runs (lambda () nil))))
            (pine:boot)
-           (is (not (null (tree:at "/proc"))))
+           (is (not (null (fs:at "/proc"))))
            (unwind-protect
                 (progn (job:supervise j)
                        (job:start j)
-                       (is (eq j (tree:at "/proc/probe")))
-                       (is (eq :running (pine:read "/proc/probe"))))
+                       (is (eq j (fs:at "/proc/probe")))
+                       (is (eq :running (pine:read "/proc/probe/state"))))
              (ignore-errors (job:stop j))
              (job:forget "probe")))
-      (setf tree:*root* was))))
+      (setf fs:*root* was))))
 
 (test what-died-on-its-own-is-started-again
   "Supervision that never looks is a list of jobs and a promise. A thread that
 returned without being asked to is failed, and the next sweep starts it."
   (booted)
   (with-tree
-    (tree:built)
+    (fs:built)
     (let* ((runs (cons 0 nil))
            (j (make-instance 'job:thread :name "flaky" :on-fault :restart
                                          :runs (lambda ()
@@ -66,7 +67,7 @@ returned without being asked to is failed, and the next sweep starts it."
 (test being-asked-to-stop-is-not-dying
   (booted)
   (with-tree
-    (tree:built)
+    (fs:built)
     (let ((j nil))
       (setf j (make-instance 'job:thread
                              :name "quiet" :on-fault :restart
@@ -179,7 +180,7 @@ says nothing until somebody runs the verb."
   (with-tree
     (let ((s (pine:console)))
       (unwind-protect
-           (is (eq (tree:root) (session:in s))
+           (is (eq (fs:root) (session:in s))
                "a relative name typed there is measured from the root")
         (session:close s)))))
 
@@ -203,21 +204,21 @@ image's one down and puts a listening one in its place."
          (actors:leave)
          (actors:boot :remoting 0)
          (with-tree
-           (tree:put "/dev/audio/volume" nil 41)
+           (pine::write "/dev/audio/volume" 41)
            (peer:serve)
            (let ((p (peer:reach "self" :port (actors:remoting))))
              (unwind-protect
                   (progn
                     (is (job:alivep p))
-                    (mount:mount p (tree:root) "host")
-                    (is (equal 41 (node:contents
-                                   (tree:at "/host/dev/audio/volume"))))
-                    (setf (node:contents (tree:at "/host/dev/audio/volume"))
+                    (mount:mount p (fs:root) "host")
+                    (is (equal 41 (fs:contents
+                                   (fs:at "/host/dev/audio/volume"))))
+                    (setf (fs:contents (fs:at "/host/dev/audio/volume"))
                           77)
-                    (is (equal 77 (node:contents
-                                   (tree:at "/dev/audio/volume"))))
+                    (is (equal 77 (fs:contents
+                                   (fs:at "/dev/audio/volume"))))
                     (is (equal '("audio")
-                               (tree:listing (tree:at "/host/dev"))))
+                               (mapcar #'fs:name (fs:entries (fs:at "/host/dev")))))
                     (is (equal '(4) (image:evaluate p '(+ 2 2))))
                     (fault:forget-faults)
                     (multiple-value-bind (answered broke offers)
@@ -367,8 +368,8 @@ not show what somebody had just typed."
 are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
-           (n (node:attach (make-instance 'node:place :name "coll" :reads (lambda () (d:map :a 1)))
-                           (tree:root)))
+           (n (fs:attach (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (d:map :a 1)))
+                           (fs:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
                            :poll t)))
@@ -380,8 +381,8 @@ are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
            (which (list (d:map :a 1)))
-           (n (node:attach (make-instance 'node:place :name "coll" :reads (lambda () (first which)))
-                           (tree:root)))
+           (n (fs:attach (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (first which)))
+                           (fs:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
                            :poll t)))
@@ -420,7 +421,7 @@ the rest of its life."
                  "and where it stands says why")
              (job:sweep)
              (is (job:heldp j) "and a later pass leaves it alone")
-             (node:verb j :start nil)
+             (job:again j)
              (is (not (job:heldp j))
                  "asking for it by name takes it out of being held")
              (is (< (job:tries j) 3)
@@ -432,10 +433,10 @@ the rest of its life."
 nor everything else the walk has still to reach, nor whoever was waiting on it."
   (with-tree
     (booted)
-    (let ((n (tree:ensure "/probe-slow"))
+    (let ((n (fs:leaf "/probe-slow"))
           (let-go (bordeaux-threads:make-semaphore))
           (told nil))
-      (setf (node:contents n) "before")
+      (setf (fs:contents n) "before")
       (let ((w (watch:watch n (lambda (of said)
                                 (declare (ignore of said))
                                 (bordeaux-threads:wait-on-semaphore let-go
@@ -443,7 +444,7 @@ nor everything else the walk has still to reach, nor whoever was waiting on it."
                                 (setf told t)))))
         (unwind-protect
              (let ((at (get-internal-real-time)))
-               (setf (node:contents n) "after")
+               (setf (fs:contents n) "after")
                (is (< (- (get-internal-real-time) at)
                       internal-time-units-per-second)
                    "the write does not wait to be told about")
@@ -465,11 +466,11 @@ image, and it is DERIVE :IN."
       (job:supervise kid)
       (job:start kid)
       (unwind-protect
-           (let ((n (make-instance 'node:derived :name "sum" :reads '(+ 20 22) :in kid)))
-             (node:attach n (tree:root))
-             (is (eql 42 (node:contents n))
+           (let ((n (make-instance 'fs:derived :name "sum" :reads '(+ 20 22) :in kid)))
+             (fs:attach n (fs:root))
+             (is (eql 42 (fs:contents n))
                  "worked out over there, and what came back is a value")
-             (is (null (node:saw n))
+             (is (null (fs::saw n))
                  "and it read nothing here, because what it read is that image's"))
         (job:stop kid)
         (job:forget "elsewhere")))))

@@ -1,12 +1,11 @@
 (defpackage #:pine/text
   (:use #:cl)
-  (:local-nicknames (#:actors #:pine/run/actors) (#:command #:pine/run/command)
-                    (#:commit #:pine/fs/commit) (#:d #:pine/data)
+  (:local-nicknames (#:actors #:pine/run/actors) (#:command #:pine/run/command) (#:d #:pine/data)
                     (#:fault #:pine/run/fault) (#:job #:pine/run/job)
                     (#:meter #:pine/run/meter) (#:mode #:pine/mode)
-                    (#:mount #:pine/fs/mount) (#:node #:pine/fs/node)
+                    (#:mount #:pine/fs/mount) (#:fs #:pine/fs)
                     (#:path #:pine/fs/path)
-                    (#:system #:pine/run/system) (#:tree #:pine/fs/tree))
+                    (#:system #:pine/run/system))
   (:export
    #:of #:line #:line-count #:inserted #:region
    #:move-by #:leading #:find-in #:document #:make-document

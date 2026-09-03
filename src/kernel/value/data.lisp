@@ -1,15 +1,15 @@
 (defpackage #:pine/data
   (:use #:cl)
-  (:shadow #:map #:set #:remove #:subseq #:rest #:append)
+  (:shadow #:map #:set)
   (:export
    #:map #:seq #:set #:mapp #:seqp
    #:setp #:collectionp #:lookup #:with #:without
    #:size #:keys #:vals #:pairs #:do-each
    #:do-pairs #:do-map #:as #:merged #:contains
-   #:rest #:append #:subseq #:remove #:no-map
+   #:no-map
    #:no-seq #:no-set #:capped #:swap #:cas
    #:emptied #:table #:all #:keep! #:drop!
-   #:claim #:clear! #:update! #:same #:emptyp))
+   #:claim #:clear! #:update! #:same))
 (in-package #:pine/data)
 
 (defvar +no-map+ (fset:empty-map))
@@ -43,7 +43,7 @@ Two values, because a collection may hold NIL and holding it is not the same as
 holding nothing. Whoever only wants the value reads the first and never knows.
 
 Not AT: a node is at a path and a value is looked up in a collection, and reading
-(d:at (d:all *commands*) name) beside (tree:at \"/wm\") meant knowing which was
+(d:at (d:all *commands*) name) beside (fs:at \"/wm\") meant knowing which was
 which before you could read either.")
   (:method ((c fset:map) key &optional default)
     (multiple-value-bind (value foundp) (fset:lookup c key)
@@ -110,8 +110,6 @@ whether the value happens to be NIL."
   (:method ((c sequence)) (length c))
   (:method ((c hash-table)) (hash-table-count c)))
 
-
-(defun emptyp (collection) (zerop (size collection)))
 
 (defgeneric contains (collection value)
   (:documentation "Whether VALUE is one of the things COLLECTION holds.
@@ -236,11 +234,6 @@ and quietly keeping the second is worse than saying there is none."
                   ((and (mapp a) (mapp b)) (fset:map-union a b))
                   (t (error "~s and ~s are not both maps." a b))))
           collections :initial-value +no-map+))
-
-(defun rest (c) (fset:subseq c 1))
-(defun append (a b) (fset:concat a b))
-(defun subseq (c from &optional to) (fset:subseq c from (or to (size c))))
-(defun remove (item c) (fset:remove item c))
 
 (defun capped (list value n)
   "LIST with VALUE in front of it, no longer than N: the newest N of something

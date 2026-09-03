@@ -3,7 +3,7 @@
   (:local-nicknames (#:edit #:pine/edit)
                     (#:d #:pine/data)
                     (#:text #:pine/text)
-                    (#:node #:pine/fs/node)
+                    (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:command #:pine/run/command)
                     (#:terminal #:pine/term/terminal))
@@ -45,7 +45,7 @@ fits."
 (command:defcommand "terminal" (&optional line)
     (:describes "a program with a screen of its own, in a document"
      :on '(text "C-x t"))
-  (node:full-name (%open :runs (and line (princ-to-string line)))))
+  (fs:full-name (%open :runs (and line (princ-to-string line)))))
 
 (command:defcommand "terminal-interrupt" ()
     (:describes "interrupt what the terminal is running" :on '(shell "C-c C-c"))
@@ -57,13 +57,13 @@ fits."
   (let ((term (current)))
     (when term
       (job:stop term)
-      (job:forget (node:name term))
-      (text:kill (node:name term))
+      (job:forget (fs:name term))
+      (text:kill (fs:name term))
       t)))
 
 (command:defcommand "terminals" () (:describes "every terminal there is")
   (loop :for each :in (terminal:terminals)
-        :collect (list (node:name each) (terminal:runs each)
+        :collect (list (fs:name each) (terminal:runs each)
                        (job:state each))))
 
 (defmethod job:start ((s term)) s)
@@ -71,6 +71,6 @@ fits."
 (defmethod job:stop ((s term))
   (dolist (each (terminal:terminals))
     (job:stop each)
-    (job:forget (node:name each))
-    (text:kill (node:name each)))
+    (job:forget (fs:name each))
+    (text:kill (fs:name each)))
   s)

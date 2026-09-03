@@ -1,10 +1,9 @@
 (require :asdf)
-(asdf:load-system :pine/place)
+(asdf:load-system :pine/fs)
 
 (defpackage #:pine/bench/blast
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:commit #:pine/fs/commit)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:bt #:bordeaux-threads)))
 (in-package #:pine/bench/blast)
 
@@ -30,7 +29,7 @@ machine does; a key is ten a second and a device tick is one.")
 (defun did (what) (d:update! *counts* what (lambda (n) (1+ (or n 0)))))
 (defun tally (what) (or (d:lookup (d:all *counts*) what) 0))
 
-(defun %at (name) (tree:at nil name))
+(defun %at (name) (fs:at nil name))
 
 (defun build ()
   "A graph whose whole answer is decided by one node.
@@ -44,16 +43,16 @@ checked without knowing which write won is whether the answer is that factor tim
 One input on purpose. A graph with many would tear because writing several nodes is
 writing several nodes, and nothing here claims otherwise. What is being asked is
 whether the *graph* ever hands anybody a number that was never true."
-  (tree:make-root)
-  (commit:forget-listeners)
-  (setf (node:contents (tree:ensure nil "n")) 0)
+  (fs:make-root)
+  (fs:forget-listeners)
+  (setf (fs:contents (fs:ensure nil "n")) 0)
   (let ((below (loop :for i :below *width*
                      :collect (let ((name (format nil "l0/~d" i)))
-                                (node:attach
-                                 (make-instance 'node:derived :name (format nil "~d" i) :reads
+                                (fs:attach
+                                 (make-instance 'fs:derived :name (format nil "~d" i) :reads
                                               (lambda ()
-                                                (node:contents (%at "n"))))
-                                 (tree:ensure nil "l0"))
+                                                (fs:contents (%at "n"))))
+                                 (fs:ensure nil "l0"))
                                 name))))
     (loop :for layer :from 1 :below *layers*
           :do (setf below
@@ -62,28 +61,28 @@ whether the *graph* ever hands anybody a number that was never true."
                           (let* ((a (nth (mod (* 2 i) (length below)) below))
                                  (b (nth (mod (1+ (* 2 i)) (length below)) below))
                                  (name (format nil "l~d/~d" layer i)))
-                            (node:attach
-                             (make-instance 'node:derived :name (format nil "~d" i) :reads
+                            (fs:attach
+                             (make-instance 'fs:derived :name (format nil "~d" i) :reads
                                           (lambda ()
-                                            (+ (node:contents (%at a))
-                                               (node:contents (%at b)))))
-                             (tree:ensure nil (format nil "l~d" layer)))
+                                            (+ (fs:contents (%at a))
+                                               (fs:contents (%at b)))))
+                             (fs:ensure nil (format nil "l~d" layer)))
                             name))))
     (let ((top below))
-      (node:attach
-       (make-instance 'node:derived :name "all" :reads (lambda ()
+      (fs:attach
+       (make-instance 'fs:derived :name "all" :reads (lambda ()
                             (loop :for each :in top
-                                  :sum (node:contents (%at each)))))
-       (tree:root)))))
+                                  :sum (fs:contents (%at each)))))
+       (fs:root)))))
 
 (defun factor ()
-  (setf (node:contents (%at "n")) 1)
-  (node:contents (%at "all")))
+  (setf (fs:contents (%at "n")) 1)
+  (fs:contents (%at "all")))
 
 (defun writer (me)
   (lambda ()
     (loop :until *stop*
-          :do (setf (node:contents (%at "n")) (random 1000))
+          :do (setf (fs:contents (%at "n")) (random 1000))
               (did :writes)
               (if (plusp *pause*)
                   (sleep (/ *pause* 1000000.0))
@@ -92,7 +91,7 @@ whether the *graph* ever hands anybody a number that was never true."
 (defun reader ()
   (lambda ()
     (loop :until *stop*
-          :do (let ((all (node:contents (%at "all"))))
+          :do (let ((all (fs:contents (%at "all"))))
                 (did :reads)
                 (unless (and (integerp all) (zerop (mod all *factor*)))
                   (bad :torn))))))
@@ -106,12 +105,12 @@ anybody's reader set."
       (loop :until *stop*
             :do (let ((name (format nil "~d-~d" me (incf n))))
                   (handler-case
-                      (let ((under (tree:ensure nil "churn")))
-                        (node:attach
-                         (make-instance 'node:derived :name name :reads (lambda () (node:contents (%at "n"))))
+                      (let ((under (fs:ensure nil "churn")))
+                        (fs:attach
+                         (make-instance 'fs:derived :name name :reads (lambda () (fs:contents (%at "n"))))
                          under)
-                        (node:contents (node:resolve under name))
-                        (node:erase-child under name)
+                        (fs:contents (fs:entry under name))
+                        (fs:erase-entry under name)
                         (did :churn))
                     (error () (bad :churn-broke)))
                   (when (> n 100000) (setf n 0)))))))
@@ -119,8 +118,8 @@ anybody's reader set."
 (defun loose ()
   "Readers of /n that stand nowhere: a churner's node erased and left behind."
   (let ((n 0))
-    (d:do-each (each (node::readers (%at "n")) n)
-      (unless (node:over each) (incf n)))))
+    (d:do-each (each (fs::readers (%at "n")) n)
+      (unless (fs:over each) (incf n)))))
 
 (defun main ()
   (format t "~&~%blasting the namespace for ~d s~%" *seconds*)
@@ -128,7 +127,7 @@ anybody's reader set."
           *layers* *width* *writers* *readers* *churners*)
   (build)
   (setf *factor* (factor))
-  (node:contents (%at "all"))
+  (fs:contents (%at "all"))
   (let ((at (get-internal-real-time))
         (threads (append
                   (loop :for i :below *writers* :collect (bt:make-thread (writer i)))
@@ -147,8 +146,8 @@ anybody's reader set."
       (format t "~&~14@a ~12:d ~10,1f /s~%" "made+erased" (tally :churn)
               (/ (tally :churn) took))
       (format t "~&~%")
-      (let* ((all (node:contents (%at "all")))
-             (n (node:contents (%at "n")))
+      (let* ((all (fs:contents (%at "all")))
+             (n (fs:contents (%at "n")))
              (left (loose))
              (broke (d:pairs (d:all *wrong*))))
         (format t "~&~34@a ~a~%" "every answer whole:"

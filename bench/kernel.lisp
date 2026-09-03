@@ -3,7 +3,7 @@
 
 (defpackage #:pine/bench/kernel
   (:use #:cl)
-  (:local-nicknames (#:place #:pine/kernel/place) (#:graph #:pine/kernel/graph)
+  (:local-nicknames (#:fs #:pine/fs) (#:place #:pine/kernel/place) (#:graph #:pine/kernel/graph)
                     (#:tree #:pine/kernel/tree) (#:dispatch #:pine/run/dispatch)
                     (#:k #:pine/kernel/call)))
 (in-package #:pine/bench/kernel)
@@ -23,13 +23,13 @@ pool doing nothing faster than one thread doing nothing.")
       (setf x (logand most-positive-fixnum (+ (* x 6364136223846793005) 1))))))
 
 (defun wide-graph (n)
-  (setf tree:*root* (tree:make-root))
+  (setf fs:*root* (fs:make-root))
   (k:write "/seed" 1)
   (dotimes (i n)
     (let ((i i))
       (k:make (format nil "/each/~d" i) :derived
               (lambda () (burn *work* (+ i (k:read "/seed")))))))
-  (loop :for i :below n :collect (tree:reach (format nil "/each/~d" i))))
+  (loop :for i :below n :collect (fs:reach (format nil "/each/~d" i))))
 
 (defun ns () (get-internal-real-time))
 

@@ -1,6 +1,6 @@
 (defpackage #:pine/fs/path
   (:use #:cl)
-  (:local-nicknames (#:node #:pine/fs/node) (#:tree #:pine/fs/tree))
+  (:local-nicknames (#:fs #:pine/fs))
   (:export
    #:path #:pathp #:whole #:leaf #:patternp #:matching))
 (in-package #:pine/fs/path)
@@ -27,12 +27,6 @@
 any run of them, and ?name is one that is captured."
   (and (pathp p) (some (lambda (s) (not (typep s 'literal))) (segments p))))
 
-(defgeneric kind (segment)
-  (:method ((s literal)) :literal)
-  (:method ((s binding)) :binding)
-  (:method ((s any)) :any)
-  (:method ((s deep)) :deep))
-
 (defun %segment (text)
   (cond ((string= text "**") (make-instance 'deep :value text))
         ((string= text "*") (make-instance 'any :value text))
@@ -47,11 +41,10 @@ any run of them, and ?name is one that is captured."
                                            (path (segments p))
                                            (segment (list p))
                                            (string (mapcar #'%segment
-                                                           (tree:split-name p)))
+                                                           (fs:split-name p)))
                                            (t (list (%segment (princ-to-string p))))))))
 
 (defgeneric segment-text (segment)
-  (:documentation "A segment as it was written, so a path prints as it reads.")
   (:method ((s segment)) (value s))
   (:method ((s binding)) (concatenate 'string "?" (value s))))
 
@@ -64,14 +57,6 @@ any run of them, and ?name is one that is captured."
 (defun rootp (p) (null (segments p)))
 
 (defun leaf (p) (let ((s (car (last (segments p))))) (and s (value s))))
-
-(defun parent (p)
-  (make-instance 'path :segments (butlast (segments p))))
-
-(defun prefixp (prefix p)
-  (let ((a (segments prefix)) (b (segments p)))
-    (and (<= (length a) (length b))
-         (every (lambda (x y) (equal (value x) (value y))) a (subseq b 0 (length a))))))
 
 (defun match (pattern subject)
   (let ((bound nil))
@@ -96,22 +81,22 @@ any run of them, and ?name is one that is captured."
 
 (defun %spelled (p) (mapcar #'value (segments p)))
 
-(defmethod tree:at ((p path) &rest names)
-  "A path is one more thing you can name a place with, so it is one more method
-rather than a second way to walk the tree."
-  (apply #'tree:at (tree:root) (append (%spelled p) names)))
+(defmethod fs:at ((p path) &rest names)
+  (apply #'fs:at (fs:root) (append (%spelled p) names)))
 
-(defmethod tree:ensure ((p path) &rest names)
-  (apply #'tree:ensure (tree:root) (append (%spelled p) names)))
+(defmethod fs:ensure ((p path) &rest names)
+  (apply #'fs:ensure (fs:root) (append (%spelled p) names)))
 
-(defmethod tree:erase ((p path) &rest pieces)
-  (apply #'tree:erase (tree:root) (append (%spelled p) pieces)))
+(defmethod fs:leaf ((p path) &rest names)
+  (apply #'fs:leaf (fs:root) (append (%spelled p) names)))
 
-(defun matching (pattern &optional (where (tree:root)))
+(defmethod fs:erase ((p path) &rest pieces)
+  (apply #'fs:erase (fs:root) (append (%spelled p) pieces)))
+
+(defun matching (pattern &optional (where (fs:root)))
   (let ((found nil))
-    (tree:walk where
-               (lambda (each)
-                 (when (match pattern (path (node:full-name each)))
-                   (push each found))))
+    (fs:walk where
+             (lambda (each)
+               (when (match pattern (path (fs:full-name each)))
+                 (push each found))))
     (nreverse found)))
-

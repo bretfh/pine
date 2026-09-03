@@ -1,11 +1,9 @@
 (defpackage #:pine/run/peer
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:mount #:pine/fs/mount)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:mount #:pine/fs/mount)
                     (#:job #:pine/run/job) (#:image #:pine/run/image)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
-                    (#:fault #:pine/run/fault) (#:said #:pine/said)
-                    (#:commit #:pine/fs/commit) (#:log #:pine/fs/log))
+                    (#:fault #:pine/run/fault) (#:said #:pine/said) (#:log #:pine/fs/log))
   (:export
    #:reach #:serve #:named #:received #:telling #:forget-watches #:watches
    #:evaluatingp #:*trusted* #:*evaluates*))
@@ -150,29 +148,31 @@ far side never waits, so nothing else asking it is held behind this."
 (defun %under (where name)
   (format nil "~a/~a" (string-right-trim "/" where) name))
 
-(defclass remote (node:place)
+(defclass remote ()
   ((peer  :initarg :peer  :reader peer-of)
    (where :initarg :where :reader where-of))
-  (:documentation "A place in another pine's namespace. A class rather than a plain
-one, so watching it is a method: what it answers is asking that pine to say when it
-moves, which is what makes a read, a write and a watch of /host/laptop/dev/audio all
-the same three acts they are here."))
+  (:documentation "Somewhere in another pine's namespace. Watching it is a method:
+asking that pine to say when it moves."))
 
-(defun remote (p where name)
-  "A place in another pine's namespace: four closures over which pine and which
-path. A read is a read and a write is a write, and what is under it is what that
-pine says is under it."
-  (make-instance 'remote :name name
-              :peer p :where where
-              :describes (uri p)
-              :reads  (lambda () (said:took (%crossed p where (list :contents))))
-              :writes (lambda (value)
-                        (%crossed p where (list :write (said:said value))))
-              :names  (lambda () (%crossed p where (list :nodes)))
-              :each   (lambda (child)
-                        (let ((child (princ-to-string child)))
-                          (when (%crossed p where (list :node child))
-                            (remote p (%under where child) child))))))
+(defclass remote-dir (remote fs:dir) ())
+(defclass remote-leaf (remote fs:derived) ())
+
+(defun remote (p where name &optional (kind :dir))
+  "What stands at WHERE in another pine, of the kind it says: a dir listing what that
+pine lists, or a leaf whose read and write cross to it."
+  (if (eq kind :dir)
+      (make-instance 'remote-dir :name name :peer p :where where :describes (uri p)
+                     :names (lambda () (%crossed p where (list :entries)))
+                     :each (lambda (child)
+                             (let* ((child (princ-to-string child))
+                                    (kind (%crossed p where (list :entry child))))
+                               (when kind
+                                 (remote p (%under where child) child kind)))))
+      (make-instance 'remote-leaf :name name :peer p :where where :describes (uri p)
+                     :live t
+                     :reads (lambda () (said:took (%crossed p where (list :contents))))
+                     :writes (lambda (value)
+                               (%crossed p where (list :write (said:said value)))))))
 
 (defmethod watch:watch ((n remote) tells &key every name tells-when poll)
   "Watching a place in another pine is asking that pine to say when it moves. The
@@ -186,7 +186,7 @@ rather than something beside it."
 (defmethod mount:mount ((what peer) into name)
   "Graft another pine's namespace here. From now on a read of a path under it is a
 read, and a write is a write."
-  (node:attach (remote what "/" name) into))
+  (fs:attach (remote what "/" name :dir) into))
 
 (defun local-uri (name)
   "Where an actor in this image is reached from another one."
@@ -243,18 +243,18 @@ the life of the image and reaches nobody."
 
 Where they are an actor with an address, that address; otherwise back the way the
 question came, which is the only way there is for anything on a stream."
-  (let ((n (tree:at (tree:root) (string-left-trim "/" (princ-to-string where))))
+  (let ((n (fs:at (fs:root) (string-left-trim "/" (princ-to-string where))))
         (to (if uri (%to-uri uri) *telling*)))
     (cond ((null n) (list :no (format nil "nothing at ~a" where)))
           ((null to) (list :no "there is no way back to whoever asked"))
           (t (let ((w (watch:watch n (lambda (of said)
                                        (declare (ignore said))
-                                       (funcall to (list :moved (node:full-name of) t)))
-                                   :name (format nil "~a->~a" (node:full-name n)
+                                       (funcall to (list :moved (fs:full-name of) t)))
+                                   :name (format nil "~a->~a" (fs:full-name n)
                                                  (or uri "the connection")))))
                (when *watching* (push w (cdr *watching*)))
                (when uri (d:update! *by-uri* uri (lambda (had) (cons w had))))
-               (list :ok (node:full-name n)))))))
+               (list :ok (fs:full-name n)))))))
 
 (defun %done (uri)
   "Somebody with an address says they are finished. Their watches go with them:
@@ -270,12 +270,12 @@ reaches no one."
   "What stands at N, spelled. A value that has no spelling is an object standing
 for itself -- a widget, a document, a compositor -- and the answer is to say so
 and name the place, rather than a nil that reads as an empty one."
-  (let ((value (node:contents n)))
+  (let ((value (fs:contents n)))
     (if (said:sayablep value)
-        (list :ok (said:said value) :kind (node:holding n))
+        (list :ok (said:said value) :kind (fs:holding n))
         (list :no (format nil "~a holds a ~(~a~), which has no spelling; what is ~
                                under it may"
-                          (node:full-name n)
+                          (fs:full-name n)
                           (class-name (class-of value)))))))
 
 (defun %place (where message)
@@ -287,22 +287,22 @@ What crosses is spelled rather than handed over: whoever is asking may be a lisp
 with fset loaded, and may just as well be a shell."
   (let* ((name (string-left-trim "/" (princ-to-string where)))
          (n (if (eq :write (first message))
-                (tree:ensure (tree:root) name)
-                (tree:at (tree:root) name))))
+                (fs:leaf (fs:root) name)
+                (fs:at (fs:root) name))))
     (if (null n)
         (list :no (format nil "nothing at ~a" where))
         (case (first message)
           (:contents (%said n))
-          (:write    (setf (node:contents n)
-                           (node:as-value (said:took (second message))))
+          (:write    (setf (fs:contents n)
+                           (fs:as-value (said:took (second message))))
                      (%said n))
-          (:verb     (node:verb n (second message)
+          (:verb     (fs:verb n (second message)
                                 (mapcar #'said:took (cddr message)))
                      (%said n))
-          (:nodes    (list :ok (mapcar #'node:name (node:nodes n))))
-          (:node     (let ((it (node:resolve n (second message))))
+          (:entries  (list :ok (mapcar #'fs:name (fs:entries n))))
+          (:entry    (let ((it (fs:entry n (second message))))
                        (if it
-                           (list :ok (node:name it))
+                           (list :ok (if (typep it 'fs:dir) :dir :leaf))
                            (list :no (format nil "nothing at ~a under ~a"
                                              (second message) where)))))
           (t (list :no "no such question about a place"))))))
@@ -382,7 +382,7 @@ half-done line."
                             (fault:report c "answering what was asked here")
                             (return-from answering
                               (list :no (princ-to-string c))))))
-      (commit:writing (%answer message)))))
+      (fs:writing (%answer message)))))
 
 (defun %answer (message)
   (case (first message)
@@ -397,7 +397,7 @@ half-done line."
                   (f (d:lookup (d:all *asked*) token)))
              (d:drop! *asked* token)
              (list :ok (and f (fault:take f (second message))))))
-    ((:contents :write :verb :nodes :node)
+    ((:contents :write :verb :entries :entry)
      (%place (second message) (list* (first message) (cddr message))))
     (t (list :no "no such question"))))
 

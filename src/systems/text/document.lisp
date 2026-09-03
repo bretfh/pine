@@ -6,8 +6,9 @@
 
 (defstruct (was (:constructor was (lines at col))) lines at col)
 
-(defclass document (node:node)
+(defclass document (fs:dir)
   ((lines    :initform (of "") :accessor lines)
+   (text-node :initform nil :accessor text-node)
    (at-line  :initform 0   :accessor at-line)
    (at-col   :initform 0   :accessor at-col)
    (mark     :initform nil :accessor mark)
@@ -42,30 +43,31 @@ says a span, a parse says spans, and a terminal says one for every run of colour
 its program asked for -- the same few numbers a cell is painted with, whoever
 worked them out. They belong to the document, so they go when it does."))
 
-(defclass region (node:live)
+(defclass region (fs:dir)
   ((covers :initarg :covers :accessor covers))
-  (:documentation "A stretch of a document. Its contents is the text it covers,
-its nodes are its sub-regions, and writing it replaces that stretch."))
+  (:documentation "A stretch of a document: its sub-regions, and under TEXT what it
+covers, which writing replaces."))
 
 (defmethod print-object ((doc document) stream)
   (print-unreadable-object (doc stream :type t)
-    (format stream "~a ~d:~d" (node:name doc) (at-line doc) (at-col doc))))
+    (format stream "~a ~d:~d" (fs:name doc) (at-line doc) (at-col doc))))
 
-(defun root () (tree:ensure "/text"))
+(defun root () (fs:ensure "/text"))
 
 (defmethod line ((doc document) n) (line (lines doc) n))
 (defmethod line-count ((doc document)) (line-count (lines doc)))
-(defun text (doc) (joined (lines doc)))
+(defun text (doc)
+  (when (text-node doc) (fs:reading (text-node doc)))
+  (joined (lines doc)))
 (defun point (doc) (list (at-line doc) (at-col doc)))
 
-(defmethod node:contents ((doc document)) (text doc))
-
-(defmethod (setf node:contents) (value (doc document))
-  (%remember doc)
-  (setf (edit-of doc) nil)
-  (setf (lines doc) (of (princ-to-string value)))
-  (changed doc)
-  value)
+(defgeneric (setf text) (value doc)
+  (:method (value (doc document))
+    (%remember doc)
+    (setf (edit-of doc) nil)
+    (setf (lines doc) (of (princ-to-string value)))
+    (changed doc)
+    value))
 
 (defun %bytes (text)
   (length (sb-ext:string-to-octets (or text "") :external-format :utf-8)))
@@ -108,7 +110,8 @@ knows; without them everything worked out of the text is given up."
   (if (and at old new)
       (%kept-declaration doc at old new)
       (setf (declared doc) nil))
-  (node:announced doc)
+  (fs:announced doc)
+  (when (text-node doc) (fs:moved (text-node doc)))
   doc)
 
 (defun %edited (doc had at old new bytes)
@@ -138,21 +141,27 @@ lets it go here.")
 is text plus something of its own."
   (let ((doc (apply #'make-instance class :name name
                     (alexandria:remove-from-plist initargs :class))))
-    (node:attach doc (root))
-    (node:slots doc doc "at-line" 'at-line "at-col" 'at-col "tick" 'tick)
-    (node:attach (make-instance 'node:place :name "source"
-                             :reads (lambda () (origin doc))
-                             :writes (lambda (value)
-                                       (visiting doc (princ-to-string value)))
-                             :describes "where this document reads and writes")
-                 doc)
+    (fs:attach doc (root))
+    (setf (text-node doc)
+          (fs:attach (make-instance 'fs:derived :name "text" :live t
+                                    :reads (lambda () (text doc))
+                                    :writes (lambda (value) (setf (text doc) value))
+                                    :describes "what it says")
+                     doc))
+    (fs:slots doc doc "at-line" 'at-line "at-col" 'at-col "tick" 'tick)
+    (fs:attach (make-instance 'fs:derived :name "source" :live t
+                              :reads (lambda () (origin doc))
+                              :writes (lambda (value)
+                                        (visiting doc (princ-to-string value)))
+                              :describes "where this document reads and writes")
+               doc)
     doc))
 
 (defun documents ()
-  (remove-if-not (lambda (n) (typep n 'document)) (node:nodes (root))))
+  (remove-if-not (lambda (n) (typep n 'document)) (fs:entries (root))))
 
 (defun scratch ()
-  (or (tree:at (root) "scratch")
+  (or (fs:at (root) "scratch")
       (make-document "scratch" :mode (make-instance 'mode:lisp))))
 
 (defun kill (name)
@@ -161,10 +170,10 @@ is text plus something of its own."
 ERASE-CHILD and not DETACH: a document keeps where point is and how many times it
 has been edited as nodes of its own, and those outlive the image. Taken off
 without a word, every document ever opened left its rows in the store for ever."
-  (let ((doc (tree:at (root) name)))
+  (let ((doc (fs:at (root) name)))
     (when doc
       (killing doc)
-      (node:erase-child (root) (node:name doc))
+      (fs:erase-entry (root) (fs:name doc))
       (when (eq doc *current*) (setf *current* (or (first (documents)) (scratch)))))
     doc))
 
@@ -172,7 +181,7 @@ without a word, every document ever opened left its rows in the store for ever."
 
 (defun (setf current) (doc)
   (when *current* (leaving *current*))
-  (setf *current* (if (stringp doc) (tree:at (root) doc) doc))
+  (setf *current* (if (stringp doc) (fs:at (root) doc) doc))
   (when *current* (showing *current*))
   *current*)
 
@@ -195,7 +204,7 @@ about a key the document had answered."
 (defun goto (doc at col)
   (multiple-value-bind (at col) (clamp (lines doc) at col)
     (setf (at-line doc) at (at-col doc) col)
-    (node:announced doc)
+    (fs:announced doc)
     (point doc)))
 
 (defun move (doc unit n)
@@ -293,7 +302,7 @@ written to avoid."
 name or the numbers themselves: (FG BG ATTR), where a colour is (R G B) or
 nothing for whatever the theme says."
   (push (list line from to face) (spans doc))
-  (node:moved doc)
+  (fs:moved doc)
   doc)
 
 (defun (setf spans) (runs doc)
@@ -301,7 +310,7 @@ nothing for whatever the theme says."
 whenever the program writes, and saying so a line at a time would move the
 document a hundred times for one keystroke."
   (setf (slot-value doc 'spans) runs)
-  (node:moved doc)
+  (fs:moved doc)
   runs)
 
 (defun forget-spans (doc)
@@ -312,12 +321,12 @@ document a hundred times for one keystroke."
   "Text shown after a line without being in it. What an evaluation answers is put
 here, so the document is what was typed and nothing else."
   (push (list line text face) (overlays doc))
-  (node:moved doc)
+  (fs:moved doc)
   doc)
 
 (defun forget-overlays (doc)
   (setf (overlays doc) nil)
-  (node:moved doc)
+  (fs:moved doc)
   doc)
 
 (defun mark-at (doc name) (d:lookup (marks doc) name))
@@ -349,7 +358,7 @@ here, so the document is what was typed and nothing else."
     target))
 
 (defun origin (doc)
-  (or (file-of doc) (let ((n (source doc))) (and n (node:full-name n)))))
+  (or (file-of doc) (let ((n (source doc))) (and n (fs:full-name n)))))
 
 (defun visited (doc) (d:lookup *places* (origin doc)))
 
@@ -362,5 +371,5 @@ here, so the document is what was typed and nothing else."
   (setf (slot-value doc 'source) n
         (slot-value doc 'file-of) (and (typep n 'mount:file)
                                        (namestring (mount:truename-of n))))
-  (node:moved doc)
+  (fs:moved doc)
   n)

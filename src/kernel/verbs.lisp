@@ -4,11 +4,11 @@
   "Where a command given no place looks: the node a session was moved to by CD, or
 the root. A default for an argument nobody supplied, and nothing more -- it is not
 a place a name can be measured from, so it reaches neither a config nor the wire."
-  (or (and session:*session* (session:in session:*session*)) (tree:root)))
+  (or (and session:*session* (session:in session:*session*)) (fs:root)))
 
 (defun at (where &rest names)
   "The node WHERE names, and NAMES on from there."
-  (apply #'tree:at where names))
+  (apply #'fs:at where names))
 
 (defun read (where &key (else nil elsep) await)
   "What stands at WHERE, and which of four things that is.
@@ -29,18 +29,18 @@ holds what the world says and is never asked what it has beneath.
 ELSE is what to say instead of nothing, said once where it is read rather than as an
 OR at every call site. It does not change the second answer: what to say and what was
 found are two questions."
-  (let ((n (tree:at where)))
+  (let ((n (fs:at where)))
     (if (null n)
         (values (if elsep else nil) :absent)
-        (let* ((node:*awaiting* (or await node:*awaiting*))
-               (node:*waiting-on* (if (numberp await) await node:*waiting-on*))
-               (value (node:contents n)))
+        (let* ((fs:*awaiting* (or await fs:*awaiting*))
+               (fs:*waiting-on* (if (numberp await) await fs:*waiting-on*))
+               (value (fs:contents n)))
           (values (if (and (null value) elsep) else value)
-                  (node:holding n))))))
+                  (fs:holding n))))))
 
 (defun standsp (where)
   "Whether anything stands at WHERE."
-  (and (tree:at where) t))
+  (and (fs:at where) t))
 
 (defun write (where value)
   "Put VALUE at WHERE, making the place if nothing has been put there yet: a read
@@ -49,15 +49,15 @@ finds what is there and a write makes what is not.
 A value, whatever it looks like. TOGGLE and the three below it are the words for
 telling a place to do something; this one is for putting something there, so a seq
 beginning with a keyword goes down as the seq it is."
-  (setf (node:contents (tree:ensure where)) (node:as-value value)))
+  (setf (fs:contents (fs:leaf where)) (fs:as-value value)))
 
 (defun ls (where)
   "The names directly under WHERE, and none where nothing stands.
 
 The fourth verb. It was a command and not a word, so a session could say it and a
 config could not."
-  (let ((n (tree:at where)))
-    (if n (tree:listing n) (list))))
+  (let ((n (fs:at where)))
+    (if n (mapcar #'fs:name (fs:entries n)) (list))))
 
 (defun watch (where tells &rest options)
   "Say TELLS whenever what stands at WHERE moves. It is given the node and what it
@@ -66,8 +66,8 @@ now holds.
 WHERE names a place the way the other three verbs do. Watching one nothing stands
 at is a mistake rather than a silence: the watcher would be told about a node the
 world is going to replace."
-  (let ((n (tree:at where)))
-    (unless n (error 'tree:absent :where where))
+  (let ((n (fs:at where)))
+    (unless n (error 'fs:absent :where where))
     (apply #'watch:watch n tells options)))
 
 (defun toggle (where)
@@ -77,73 +77,72 @@ A write, like the three below it: the four of them are what NODE:VERB has always
 done, said in words rather than by writing a seq that begins with a keyword. That
 spelling worked from the shell and not from lisp, which is why the mute button in
 a config could mute and never unmute."
-  (node:verb (tree:ensure where) :toggle nil))
+  (fs:verb (fs:leaf where) :toggle nil))
 
 (defun include (where value)
   "Put VALUE into the set at WHERE."
-  (node:verb (tree:ensure where) :conj (list value)))
+  (fs:verb (fs:leaf where) :conj (list value)))
 
 (defun exclude (where value)
   "Take VALUE out of the set at WHERE."
-  (node:verb (tree:ensure where) :disj (list value)))
+  (fs:verb (fs:leaf where) :disj (list value)))
 
 (defun blend (where map)
   "Merge MAP into the map at WHERE."
-  (node:verb (tree:ensure where) :merge (list map)))
+  (fs:verb (fs:leaf where) :merge (list map)))
 
 (defun describe (where)
-  (let ((n (tree:at where)))
+  (let ((n (fs:at where)))
     (when n
-      (list :name (node:full-name n)
+      (list :name (fs:full-name n)
             :class (class-name (class-of n))
-            :describes (node:describes n)
-            :under (tree:listing n)
-            :saved (node:savedp n)
-            :live (node:livep n)))))
+            :describes (fs:describes n)
+            :under (mapcar #'fs:name (fs:entries n))
+            :saved (fs:savedp n)
+            :live (fs:livep n)))))
 
 (command:defcommand "pwd" () (:describes "where this session is")
-                    (node:full-name (%cursor)))
+                    (fs:full-name (%cursor)))
 
 (command:defcommand "ls" (&optional where) (:describes "what is under a node")
-                    (let ((n (if where (tree:at where) (%cursor))))
-                      (if n (tree:listing n) (list))))
+                    (let ((n (if where (fs:at where) (%cursor))))
+                      (if n (mapcar #'fs:name (fs:entries n)) (list))))
 
 (command:defcommand "cd" (&optional where) (:describes "go to a node")
-                    (let ((n (if where (tree:at where) (tree:root))))
+                    (let ((n (if where (fs:at where) (fs:root))))
                       (when (and n session:*session*) (setf (session:in session:*session*) n))
-                      (and n (node:full-name n))))
+                      (and n (fs:full-name n))))
 
 (command:defcommand "cat" (where) (:describes "what a node holds")
-                    (let ((n (tree:at where)))
-                      (and n (node:contents n))))
+                    (let ((n (fs:at where)))
+                      (and n (fs:contents n))))
 
-(command:defcommand "put" (where value) (:describes "write a node")
-                    (setf (node:contents (tree:ensure where))
-                          value))
+(command:defcommand "put" (where value) (:describes "write a value")
+                    (setf (fs:contents (fs:leaf where)) value))
 
-(command:defcommand "mkdir" (where) (:describes "make a branch")
-                    (node:full-name (tree:ensure where)))
+(command:defcommand "mkdir" (where) (:describes "make a dir")
+                    (fs:full-name (fs:ensure where)))
 
 (command:defcommand "rm" (where) (:describes "take a node off")
-                    (and (tree:erase where) t))
+                    (and (fs:erase where) t))
 
 (command:defcommand "tree" (&optional where)
                     (:describes "every node under one that pine keeps")
-  (let ((n (if where (tree:at where) (%cursor))))
-    (unless n (error 'tree:absent :where where))
-    (tree:paths n)))
+  (let ((n (if where (fs:at where) (%cursor))))
+    (unless n (error 'fs:absent :where where))
+    (fs:paths n)))
 
 (command:defcommand "live" ()
                     (:describes "what answers from the world, not the store")
                     (let (out)
-                      (tree:walk (tree:root)
-                                 (lambda (n) (when (node:livep n) (push (node:full-name n) out))))
+                      (fs:walk (fs:root)
+                                 (lambda (n) (when (fs:livep n) (push (fs:full-name n) out))))
                       (nreverse out)))
 
 (command:defcommand "mount" (what name)
                     (:describes "put a directory, or another pine, in the tree")
                     (let ((it (or (peer:named what) (pathname (princ-to-string what)))))
-                      (node:full-name (mount:mount it (tree:root) (princ-to-string name)))))
+                      (fs:full-name (mount:mount it (fs:root) (princ-to-string name)))))
 
 (command:defcommand "reach" (name port &optional host)
                     (:describes "get to another pine")
@@ -169,6 +168,18 @@ a config could mute and never unmute."
 
 (command:defcommand "spawn" (name) (:describes "another lisp of pine's own")
                     (job:name (spawn name)))
+
+(command:defcommand "start" (name &rest said)
+                    (:describes "start a job again, or a program or image by name")
+                    (let ((name (princ-to-string name))
+                          (j (job:named (princ-to-string name))))
+                      (if j
+                          (progn (job:again j) (job:state j))
+                          (job:started (list* :name name said)))))
+
+(command:defcommand "stop" (name) (:describes "stop a job")
+                    (let ((j (job:named (princ-to-string name))))
+                      (when j (job:stop j) (job:state j))))
 
 (command:defcommand "kill" (name) (:describes "stop a job and forget it")
                     (let ((j (job:named (princ-to-string name))))

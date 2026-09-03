@@ -5,7 +5,7 @@
 (defun on-screen ()
   "What the editor surface holds, as text. Not what a function answers when asked
 directly: what is on the screen."
-  (let ((tree (node:contents (tree:at "/surface" "editor"))))
+  (let ((tree (ui:tree (fs:at "/surface" "editor"))))
     (with-output-to-string (out)
       (labels ((walk (w)
                  (when w
@@ -17,7 +17,7 @@ directly: what is on the screen."
 
 (defun on-screen-painted ()
   "The rows with their colours, so a selection moving is a change."
-  (let ((tree (node:contents (tree:at "/surface" "editor")))
+  (let ((tree (ui:tree (fs:at "/surface" "editor")))
         (out nil))
     (labels ((walk (w)
                (when w
@@ -83,7 +83,7 @@ after it edits a document nothing shows."
     (typed "C-x" "C-f")
     (typed "C-g")
     (quiet)
-    (setf (node:contents doc) "")
+    (setf (text:text doc) "")
     (text:goto doc 0 0)
     (typed "o" "k")
     (is (search "ok" (on-screen)))))
@@ -94,20 +94,20 @@ screen is a picture until pine is restarted."
   (with-tree
     (let* ((said (cons nil nil))
            (broken (cons t nil))
-           (n (tree:ensure "/probe-src")))
-      (setf (node:contents n) "first")
+           (n (fs:leaf "/probe-src")))
+      (setf (fs:contents n) "first")
       (let ((s (ui:make-surface "probe-surface"
                                (lambda ()
-                                 (let ((v (node:contents n)))
+                                 (let ((v (fs:contents n)))
                                    (when (car broken) (error "on purpose"))
                                    (setf (car said) v)
                                    (ui:label v)))
                                :as 'ui:panel :starts :up)))
-        (is (null (node:contents s))
+        (is (null (ui:tree s))
             "it answers nothing rather than unwinding into the frame")
         (setf (car broken) nil)
-        (setf (node:contents n) "second")
-        (node:contents s)
+        (setf (fs:contents n) "second")
+        (ui:tree s)
         (is (equal "second" (car said)))))))
 
 (test refresh-draws-everything-again
@@ -134,7 +134,7 @@ screen is a picture until pine is restarted."
 that was there a keystroke ago."
   (let ((doc (editing)))
     (quiet)
-    (setf (node:contents doc) "(car (cdr xs))")
+    (setf (text:text doc) "(car (cdr xs))")
     (text:goto doc 0 0)
     (is (member '(1 4 :builtin) (faces-on-line doc 0) :test #'equal)
         "~s" (faces-on-line doc 0))
@@ -149,9 +149,9 @@ that was there a keystroke ago."
         "and taking it back puts it back: ~s" (faces-on-line doc 0))))
 
 (defun in-language (name text)
-  (let ((doc (or (tree:at "/text" name)
+  (let ((doc (or (fs:at "/text" name)
                  (text:make-document name :mode (make-instance 'mode:lisp)))))
-    (setf (node:contents doc) text)
+    (setf (text:text doc) text)
     (text:goto doc 0 0)
     (edit:show (edit:focused) doc)
     (setf (text:current) doc)
@@ -218,9 +218,9 @@ case that has to hold."
                      :collect (format nil "async-many-~d" i))))
     (dolist (name names)
       (let ((doc (text:make-document name :mode (make-instance 'mode:lisp))))
-        (setf (node:contents doc) "(defun f (x) x)")))
+        (setf (text:text doc) "(defun f (x) x)")))
     (dolist (name names)
-      (is (until (lambda () (text:highlights (tree:at "/text" name))) :seconds 10)
+      (is (until (lambda () (text:highlights (fs:at "/text" name))) :seconds 10)
           "~a never got colours" name))
     (dolist (name names) (text:kill name))))
 
@@ -236,7 +236,7 @@ case that has to hold."
     (dotimes (i 5) (text:insert doc "q"))
     (is (until (lambda () (= 5 (count #\q (text:text doc)))))
         "the document stopped editing after its parser faulted")
-    (is (stringp (text:text (tree:at "/text" "scratch")))
+    (is (stringp (text:text (fs:at "/text" "scratch")))
         "and the rest of pine stopped answering")
     (text:kill "async-wedge")))
 
@@ -245,7 +245,7 @@ case that has to hold."
   (quiet)
   (let ((before (length (sb-thread:list-all-threads))))
     (in-language "async-kill" "(defun f (x) x)")
-    (is (not (null (text:parser-for (tree:at "/text" "async-kill")))))
+    (is (not (null (text:parser-for (fs:at "/text" "async-kill")))))
     (text:kill "async-kill")
     (is (until (lambda () (<= (length (sb-thread:list-all-threads)) before))
                :seconds 5)

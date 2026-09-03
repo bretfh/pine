@@ -1,13 +1,13 @@
 (in-package #:pine/text)
 
-(defmethod node:contents ((r region))
+(defun covered (r)
   (let ((doc (%document r)))
     (when doc
       (destructuring-bind (from to) (covers r)
         (region (lines doc) (car from) (cdr from)
                       (car to) (cdr to))))))
 
-(defmethod (setf node:contents) (value (r region))
+(defun (setf covered) (value r)
   "Writing a region replaces the text it covers."
   (let ((doc (%document r)))
     (when doc
@@ -19,22 +19,28 @@
   value)
 
 (defun %document (r)
-  (loop :for at := r :then (node:parent at)
+  (loop :for at := r :then (fs:parent at)
         :while at
         :when (typep at 'document) :do (return at)))
 
 (defun %region (under name covers)
-  (let ((r (node:child under name
-                       (lambda () (make-instance 'region :name name :parent under
-                                                         :covers covers)))))
+  (let ((r (fs:child under name
+                     (lambda ()
+                       (let ((r (make-instance 'region :name name :parent under
+                                                       :covers covers)))
+                         (fs:attach (make-instance 'fs:derived :name "text" :live t
+                                                   :reads (lambda () (covered r))
+                                                   :writes (lambda (v) (setf (covered r) v)))
+                                    r)
+                         r)))))
     (setf (covers r) covers)
     r))
 
 (defun %cleared (under)
   "Take the regions off UNDER. What the mode says now is the whole answer, so one
 it no longer says is one that stands for nothing."
-  (dolist (each (node:nodes under) under)
-    (when (typep each 'region) (node:detach under (node:name each)))))
+  (dolist (each (fs:entries under) under)
+    (when (typep each 'region) (fs:detach under (fs:name each)))))
 
 (defun %forgotten (under kept)
   "Let go of the regions UNDER no longer has.
@@ -43,9 +49,9 @@ A region is kept under its name so that one still there is the same node it was
 and a watcher on it goes on watching. One the mode has stopped naming is not still
 there: typing a name a character at a time says a different one on every key, and
 every one of them stayed for as long as the image ran."
-  (dolist (name (d:keys (d:all (node:memo under))) under)
+  (dolist (name (d:keys (d:all (fs::memo under))) under)
     (unless (member name kept :test #'equal)
-      (d:drop! (node:memo under) name))))
+      (d:drop! (fs::memo under) name))))
 
 (defun %build (under said)
   "Put the spans the mode said into the namespace under UNDER, keeping the node that
@@ -69,7 +75,7 @@ is the one thing this is written to stop."
         (setf seen (d:with seen base (1+ had)))
         (push name kept)
         (let ((r (%region under name (list (mode:from-of each) (mode:to-of each)))))
-          (node:attach r under)
+          (fs:attach r under)
           (when (mode:inside-of each) (%build r (mode:inside-of each))))))
     (%forgotten under kept)))
 
@@ -90,13 +96,13 @@ was never standing for."
     (restructure doc))
   doc)
 
-(defmethod node:nodes ((doc document))
+(defmethod fs:entries ((doc document))
   (fresh-structure doc)
   (call-next-method))
 
-(defmethod node:resolve ((doc document) name)
+(defmethod fs:entry ((doc document) name)
   (fresh-structure doc)
   (call-next-method))
 
 (defun regions (doc)
-  (remove-if-not (lambda (n) (typep n 'region)) (node:nodes doc)))
+  (remove-if-not (lambda (n) (typep n 'region)) (fs:entries doc)))

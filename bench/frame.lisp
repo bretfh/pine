@@ -6,7 +6,7 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:text #:pine/text) (#:edit #:pine/edit)
                     (#:ui #:pine/ui) (#:mode #:pine/mode)
-                    (#:node #:pine/fs/node) (#:tree #:pine/fs/tree)))
+                    (#:fs #:pine/fs)))
 (in-package #:pine/bench/frame)
 
 (defvar *lines* (or (ignore-errors (parse-integer (uiop:getenv "LINES"))) 20000))
@@ -44,12 +44,12 @@
   (pine:use :edit)
   (let* ((d (text:make-document "frame" :mode (make-instance 'mode:lisp)))
          (w (edit:focused)))
-    (setf (node:contents d) (text-of *lines*))
+    (setf (fs:contents d) (text-of *lines*))
     (setf (edit:across w) +cols+ (edit:down w) +rows+)
     (edit:show w d)
     (setf (text:current) d)
     (text:goto d 10 0)
-    (setf (node:contents (tree:at nil "surface/editor/size"))
+    (setf (fs:contents (fs:at nil "surface/editor/size"))
           (list :wide (* 9 +cols+) :tall (* 18 +rows+)
                 :cols +cols+ :lines +rows+ :font 15))
     (waited d)
@@ -70,7 +70,7 @@
       (cost "a key, then the whole wire" 60
             (lambda ()
               (edit:dispatch (ui:make-key (string (code-char (+ 97 (mod (incf n) 26))))))
-              (node:contents (tree:at nil "surface/editor/wire"))))
+              (fs:contents (fs:at nil "surface/editor/wire"))))
       (cost "a key, then text:highlights" 60
             (lambda ()
               (edit:dispatch (ui:make-key (string (code-char (+ 97 (mod (incf n) 26))))))
@@ -94,18 +94,18 @@
       (cost "  parser-for alone" 20 (lambda () (text:parser-for d))))
     (cost "text:spans" 20 (lambda () (text:spans d)))
     (cost "the whole wire the screen is handed" 20
-          (lambda () (node:contents (tree:at nil "surface/editor/wire"))))
+          (lambda () (fs:contents (fs:at nil "surface/editor/wire"))))
 
     (format t "~&~%and paging to the end, then again~%~%")
     (setf (edit:scrolled w) (max 0 (- *lines* +rows+)))
     (text:goto d (edit:scrolled w) 0)
-    (node:contents (tree:at nil "surface/editor/wire"))
+    (fs:contents (fs:at nil "surface/editor/wire"))
     (waited d)
     (let ((runs (text:highlights d)))
       (format t "~&~40@a ~:d~%" "highlight runs now walked" (length runs)))
     (cost "text:highlights" 20 (lambda () (text:highlights d)))
     (cost "the whole wire" 20
-          (lambda () (node:contents (tree:at nil "surface/editor/wire"))))
+          (lambda () (fs:contents (fs:at nil "surface/editor/wire"))))
     (pine:stop)))
 
 (main)

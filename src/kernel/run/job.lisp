@@ -1,14 +1,14 @@
 (defpackage #:pine/run/job
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:actors #:pine/run/actors) (#:fault #:pine/run/fault))
-  (:import-from #:pine/fs/node #:name)
+  (:import-from #:pine/fs #:name)
   (:export
    #:job #:thread #:tick #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
    #:named #:supervise #:sweep #:attend #:emit #:asked-for
    #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:kind #:kinds
-   #:took #:runs #:stopping #:argv #:ref))
+   #:took #:runs #:stopping #:argv #:ref #:started #:again))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)
@@ -25,7 +25,7 @@ wait is for that look and not for a clock.")
 A receive owes its mailbox an answer, so it may not wait for one: read what it was
 handed, or TELL and take the reply as a message." (of c)))))
 
-(defclass job (node:live)
+(defclass job (fs:dir)
   ((state     :initform :stopped :accessor state)
    (tries     :initform 0        :accessor tries)
    (on-fault :initarg :on-fault :accessor on-fault :initform :restart)
@@ -61,32 +61,26 @@ handed, or TELL and take the reply as a message." (of c)))))
     (format stream "~a ~a" (name j) (state j))))
 
 (defmethod initialize-instance :after ((j job) &key)
-  (node:slots j j "state" 'state "tries" 'tries)
-  (node:attach (make-instance 'node:place :name "said" :reads (lambda () (said j))
-                                  :describes "the last lines it said")
-               j)
-  (node:attach (make-instance 'node:place :name "tell"
-                           :writes (lambda (value) (tell j value))
-                           :describes "write here to give it something")
-               j)
+  (fs:slots j j "state" 'state "tries" 'tries)
+  (fs:attach (make-instance 'fs:derived :name "said" :live t
+                                        :reads (lambda () (said j))
+                                        :describes "the last lines it said")
+             j)
+  (fs:attach (make-instance 'fs:derived :name "tell" :live t
+                                        :writes (lambda (value) (tell j value))
+                                        :describes "write here to give it something")
+             j)
   (d:keep! *jobs* (name j) j))
 
 (defun jobs () (d:vals (d:all *jobs*)))
 
 (defun named (name) (d:lookup (d:all *jobs*) (princ-to-string name)))
 
-(defmethod node:contents ((j job)) (state j))
-
-(defmethod node:verb ((j job) name arguments)
-  "Starting one that was given up on forgets what it tried before: a person
-asking for it by name is saying to try again."
-  (declare (ignore arguments))
-  (flet ((afresh () (setf (tries j) 0)))
-    (case name
-      (:start   (afresh) (start j) (state j))
-      (:stop    (stop j) (state j))
-      (:restart (stop j) (afresh) (start j) (state j))
-      (t (error "~a takes :start, :stop or :restart." (node:full-name j))))))
+(defun again (j)
+  "Start J afresh: asking for one by name forgets what it tried before."
+  (setf (tries j) 0)
+  (start j)
+  j)
 
 (defun emit (j line)
   (d:swap (slot-value j 'said) #'d:capped line *out-kept*)
@@ -114,7 +108,7 @@ to talk to sat there saying it was starting for the life of the image."
                             (setf (fault j) c (state j) :failed))))
       (call-next-method)))
   (:method ((j job))
-    (error "~a says nothing about how it starts." (node:full-name j))))
+    (error "~a says nothing about how it starts." (fs:full-name j))))
 
 (defgeneric stoppedp (job)
   (:documentation "Whether asking it to stop worked.
@@ -140,7 +134,7 @@ in the tree that names it."
         (setf (state j) :stopped (took j) nil)
         (setf (state j) :stopping)))
   (:method ((j job))
-    (error "~a says nothing about how it stops." (node:full-name j))))
+    (error "~a says nothing about how it stops." (fs:full-name j))))
 
 (defun stoppingp (j)
   "Whether this thread has been asked to stop. A loop that blocks on a stream cannot

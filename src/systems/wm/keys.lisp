@@ -1,7 +1,7 @@
 (defpackage #:pine/wm/keys
   (:use #:cl)
   (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:node #:pine/fs/node) (#:mode #:pine/mode))
+                    (#:d #:pine/data) (#:fs #:pine/fs) (#:mode #:pine/mode))
   (:export
    #:wm #:chords #:keys-node))
 (in-package #:pine/wm/keys)
@@ -38,7 +38,7 @@ from this: a key it was never told about is one it will not hand over."
 (defun keys-node ()
   "Where a chord the compositor took arrives. Writing one here is pressing it, so a
 keyboard, a test and another pine all press the same way."
-  (make-instance 'node:place :name "key"
+  (make-instance 'fs:derived :name "key" :live t
               :reads (lambda () (ui:spelled (pending)))
               :writes #'dispatch
               :describes "write a chord here to press it"))

@@ -1,7 +1,6 @@
 (defpackage #:pine/serve/socket
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:node #:pine/fs/node)
-                    (#:tree #:pine/fs/tree) (#:job #:pine/run/job)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:job #:pine/run/job)
                     (#:peer #:pine/run/peer) (#:fault #:pine/run/fault)
                     (#:log #:pine/fs/log) (#:wire #:pine/serve/wire))
   (:export
@@ -137,11 +136,11 @@ needs no lisp on the other end."
 (defun serve-node ()
   "Where this pine answers, as a place. Somebody who has the tree by another way
 can read where to reach it by this one."
-  (make-instance 'node:place :name "serve"
+  (make-instance 'fs:derived :name "serve" :live t
               :reads #'listening
               :describes "the socket this pine answers on"))
 
 (defun %attach (root)
-  (node:attach (serve-node) root))
+  (fs:attach (serve-node) root))
 
-(pine/fs/tree:builder #'%attach)
+(pine/fs:builder #'%attach)

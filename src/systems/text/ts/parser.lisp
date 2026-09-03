@@ -16,7 +16,7 @@
 
 (defmethod print-object ((p parser) stream)
   (print-unreadable-object (p stream :type t)
-    (format stream "~a ~(~a~) at ~d" (node:name (document-of p)) (language-of p)
+    (format stream "~a ~(~a~) at ~d" (fs:name (document-of p)) (language-of p)
             (parsed p))))
 
 (defun parsers () (d:vals (d:all *parsers*)))
@@ -137,7 +137,7 @@ its mode says."
                 (job:start
                  (make-instance 'job:actor
                                 :name (format nil "parse-~a-~d"
-                                              (node:name document)
+                                              (fs:name document)
                                               (d:swap *counter* #'1+))
                                 :dispatcher :pinned
                                 :receive (lambda (message) (%receive p message)))))
@@ -153,7 +153,7 @@ its mode says."
 just finished a parse both ask, so the one that lands is the one everybody gets and
 the other is freed rather than left holding a foreign parser."
   (let* ((language (%grammar document))
-         (had (d:lookup (d:all *parsers*) (node:name document))))
+         (had (d:lookup (d:all *parsers*) (fs:name document))))
     (when (and had (not (eq language (language-of had))))
       (forget document)
       (setf had nil))
@@ -161,7 +161,7 @@ the other is freed rather than left holding a foreign parser."
       (or had
           (let ((mine (%make document language)))
             (when mine
-              (let ((kept (d:claim *parsers* (node:name document) mine)))
+              (let ((kept (d:claim *parsers* (fs:name document) mine)))
                 (cond ((eq kept mine)
                        (job:tell (running mine) (list :parse (tick document)))
                        mine)
@@ -205,7 +205,7 @@ plain text."
 Freed here and not asked for by a message. Told :STOP and stopped in the next
 breath, whether the actor ever read that message was a race -- and losing it left
 a TSParser, a tree and a foreign buffer for every document that had been open."
-  (let* ((name (if (stringp document) document (node:name document)))
+  (let* ((name (if (stringp document) document (fs:name document)))
          (p (d:lookup (d:all *parsers*) name)))
     (when p
       (d:drop! *parsers* name)

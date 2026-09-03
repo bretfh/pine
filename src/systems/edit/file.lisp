@@ -18,7 +18,7 @@ twice is still one."
                   path)))
     (loop :for i :from 1
           :for name := (if (= i 1) base (format nil "~a<~d>" base i))
-          :for had := (tree:at "/text" name)
+          :for had := (fs:at "/text" name)
           :when (or (null had) (%same-file-p (text:origin had) path))
             :do (return name))))
 
@@ -30,12 +30,12 @@ twice is still one."
     (if (uiop:directory-exists-p path)
         (log:note "~a is a directory" path)
         (let* ((name (%document-name path))
-               (document (or (tree:at "/text" name) (text:make-document name))))
+               (document (or (fs:at "/text" name) (text:make-document name))))
           (text:visit document path)
           (setf (text:current) document)
           (let ((win (focused)))
             (when win (show win document)))
-          (node:full-name document)))))
+          (fs:full-name document)))))
 
 (command:defcommand "find-recent" ()
     (:describes "a file opened here before" :on '(text "C-x C-r"))
@@ -75,16 +75,16 @@ twice is still one."
                 (log:note "reverted ~a" (text:origin document))
                 t))
           (t (log:note "~a is on nothing to read again"
-                       (node:name document))))))
+                       (fs:name document))))))
 
 (command:defcommand "switch-to-document" (name)
     (:describes "show a document here, making it if there is none"
      :asks '((:prompt "Document: " :category :document))
      :on '(text "C-x b"))
   (let* ((name (princ-to-string name))
-         (document (or (tree:at "/text" name) (text:make-document name))))
+         (document (or (fs:at "/text" name) (text:make-document name))))
     (setf (text:current) document)
-    (node:full-name document)))
+    (fs:full-name document)))
 
 (command:defcommand "new-document" (name)
     (:describes "an empty document"
@@ -93,14 +93,14 @@ twice is still one."
   (let ((document (text:make-document (princ-to-string name))))
     (setf (text:current) document)
     (show (focused) document)
-    (node:full-name document)))
+    (fs:full-name document)))
 
 (command:defcommand "kill-document" (&optional name)
     (:describes "forget a document"
      :asks '((:prompt "Kill document: " :category :document :must-match t))
      :on '(text "C-x k"))
-  (let* ((name (princ-to-string (or name (node:name (text:current)))))
-         (gone (tree:at "/text" name)))
+  (let* ((name (princ-to-string (or name (fs:name (text:current)))))
+         (gone (fs:at "/text" name)))
     (when gone
       (text:forget name)
       (text:kill name)
