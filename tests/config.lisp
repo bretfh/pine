@@ -89,3 +89,39 @@ language and not the syntax, so /dev/audio/volume was an error at the prompt."
          (is (eq (named-readtables:find-readtable 'pine/fs/reader:syntax)
                  (pine/run/session::readtable-of s)))
       (pine/run/session:close s))))
+
+(defpackage #:pine/test/probe-words (:use) (:export #:%probe-word #:%probe-taken))
+(defun pine/test/probe-words:%probe-word () :from-the-package)
+
+(defun %config-saying (text)
+  (let ((file (merge-pathnames "pine-config-probe.lisp" (uiop:temporary-directory))))
+    (with-open-file (o file :direction :output :if-exists :supersede)
+      (write-string text o))
+    file))
+
+(test a-word-the-reader-made-does-not-block-the-package-that-has-it
+  "A config read before its USE-PACKAGE ran -- or a form in it that did not --
+left the word interned in PINE/USER as nothing. The next USE-PACKAGE of the
+package that has that word was refused as a conflict, so one failed read broke
+every read after it for the life of the image."
+  (editing)
+  (fault:forget-faults)
+  (unintern (find-symbol "%PROBE-WORD" :pine/user) :pine/user)
+  (unuse-package :pine/test/probe-words :pine/user)
+  (intern "%PROBE-WORD" :pine/user)
+  (is (pine:load-config (%config-saying "(use-package '#:pine/test/probe-words)
+(%probe-word)")))
+  (is (eq 'pine/test/probe-words:%probe-word (find-symbol "%PROBE-WORD" :pine/user))
+      "the used package's word is the one PINE/USER has now")
+  (unuse-package :pine/test/probe-words :pine/user))
+
+(test a-word-that-means-something-here-is-still-a-conflict
+  (editing)
+  (fault:forget-faults)
+  (unuse-package :pine/test/probe-words :pine/user)
+  (setf (symbol-function (intern "%PROBE-TAKEN" :pine/user)) (lambda () :mine))
+  (is (not (pine:load-config (%config-saying "(use-package '#:pine/test/probe-words)")))
+      "a function of the config's own is not silently replaced")
+  (fmakunbound (find-symbol "%PROBE-TAKEN" :pine/user))
+  (unintern (find-symbol "%PROBE-TAKEN" :pine/user) :pine/user)
+  (fault:forget-faults))
