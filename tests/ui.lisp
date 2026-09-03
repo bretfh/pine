@@ -18,7 +18,7 @@ knows the roles by name."))
       (ui:dress tree)
       (let ((m (ui:make-grid cols lines)))
         (ui:measure tree m cols lines)
-        (ui:arrange tree m 0 0 cols lines)
+        (ui:lay tree m 0 0 cols lines)
         (ui:paint tree m)
         (values (mapcar (lambda (r) (string-right-trim " " (car r))) (ui:by-row m))
                 tree m)))))
@@ -85,7 +85,7 @@ both, so they have to be the same three numbers."
     (let ((volume (tree:ensure "/dev/audio" "volume")))
       (setf (node:contents volume) 40)
       (let ((s (ui:slider volume :low 0 :high 100)))
-        (is (= 40 (ui:value s)))
+        (is (= 40 (ui:held s)))
         (funcall (ui:changed s) 75)
         (is (= 75 (node:contents volume)))))))
 
@@ -121,7 +121,7 @@ both, so they have to be the same three numbers."
         (setf (node:contents where) "two")
         (is (equal "two" (ui:content (node:contents s)))
             "it follows what it read, with nothing subscribing")
-        (is (eq s (ui:named "ticker")))
+        (is (eq s (tree:at "/surface" "ticker")))
         (setf (node:contents (tree:at "/surface/ticker" "shown")) nil)
         (is (null (ui:shown s)))))))
 
@@ -167,7 +167,7 @@ Answering with the first that covered a place gave the click to what was behind.
     (ui:with-pass
       (ui:dress both)
       (ui:measure both g 8 2)
-      (ui:arrange both g 0 0 8 2))
+      (ui:lay both g 0 0 8 2))
     (is (eq over (ui:under both 0 1)) "the one drawn last takes it")))
 
 (defun %ids-in (form)

@@ -151,12 +151,8 @@ is text plus something of its own."
 (defun documents ()
   (remove-if-not (lambda (n) (typep n 'document)) (node:nodes (root))))
 
-(defun named (name)
-  (let ((n (tree:at (root) (princ-to-string name))))
-    (and (typep n 'document) n)))
-
 (defun scratch ()
-  (or (named "scratch")
+  (or (tree:at (root) "scratch")
       (make-document "scratch" :mode (make-instance 'mode:lisp))))
 
 (defun kill (name)
@@ -165,7 +161,7 @@ is text plus something of its own."
 ERASE-CHILD and not DETACH: a document keeps where point is and how many times it
 has been edited as nodes of its own, and those outlive the image. Taken off
 without a word, every document ever opened left its rows in the store for ever."
-  (let ((doc (named name)))
+  (let ((doc (tree:at (root) name)))
     (when doc
       (killing doc)
       (node:erase-child (root) (node:name doc))
@@ -176,7 +172,7 @@ without a word, every document ever opened left its rows in the store for ever."
 
 (defun (setf current) (doc)
   (when *current* (leaving *current*))
-  (setf *current* (if (stringp doc) (named doc) doc))
+  (setf *current* (if (stringp doc) (tree:at (root) doc) doc))
   (when *current* (showing *current*))
   *current*)
 

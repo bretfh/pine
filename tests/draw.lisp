@@ -5,7 +5,7 @@
 (defun on-screen ()
   "What the editor surface holds, as text. Not what a function answers when asked
 directly: what is on the screen."
-  (let ((tree (node:contents (ui:named "editor"))))
+  (let ((tree (node:contents (tree:at "/surface" "editor"))))
     (with-output-to-string (out)
       (labels ((walk (w)
                  (when w
@@ -17,7 +17,7 @@ directly: what is on the screen."
 
 (defun on-screen-painted ()
   "The rows with their colours, so a selection moving is a change."
-  (let ((tree (node:contents (ui:named "editor")))
+  (let ((tree (node:contents (tree:at "/surface" "editor")))
         (out nil))
     (labels ((walk (w)
                (when w
@@ -149,7 +149,7 @@ that was there a keystroke ago."
         "and taking it back puts it back: ~s" (faces-on-line doc 0))))
 
 (defun in-language (name text)
-  (let ((doc (or (text:named name)
+  (let ((doc (or (tree:at "/text" name)
                  (text:make-document name :mode (make-instance 'mode:lisp)))))
     (setf (node:contents doc) text)
     (text:goto doc 0 0)
@@ -220,7 +220,7 @@ case that has to hold."
       (let ((doc (text:make-document name :mode (make-instance 'mode:lisp))))
         (setf (node:contents doc) "(defun f (x) x)")))
     (dolist (name names)
-      (is (until (lambda () (text:highlights (text:named name))) :seconds 10)
+      (is (until (lambda () (text:highlights (tree:at "/text" name))) :seconds 10)
           "~a never got colours" name))
     (dolist (name names) (text:kill name))))
 
@@ -236,7 +236,7 @@ case that has to hold."
     (dotimes (i 5) (text:insert doc "q"))
     (is (until (lambda () (= 5 (count #\q (text:text doc)))))
         "the document stopped editing after its parser faulted")
-    (is (stringp (text:text (text:named "scratch")))
+    (is (stringp (text:text (tree:at "/text" "scratch")))
         "and the rest of pine stopped answering")
     (text:kill "async-wedge")))
 
@@ -245,7 +245,7 @@ case that has to hold."
   (quiet)
   (let ((before (length (sb-thread:list-all-threads))))
     (in-language "async-kill" "(defun f (x) x)")
-    (is (not (null (text:parser-for (text:named "async-kill")))))
+    (is (not (null (text:parser-for (tree:at "/text" "async-kill")))))
     (text:kill "async-kill")
     (is (until (lambda () (<= (length (sb-thread:list-all-threads)) before))
                :seconds 5)

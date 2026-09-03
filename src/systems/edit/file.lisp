@@ -18,7 +18,7 @@ twice is still one."
                   path)))
     (loop :for i :from 1
           :for name := (if (= i 1) base (format nil "~a<~d>" base i))
-          :for had := (text:named name)
+          :for had := (tree:at "/text" name)
           :when (or (null had) (%same-file-p (text:origin had) path))
             :do (return name))))
 
@@ -30,7 +30,7 @@ twice is still one."
     (if (uiop:directory-exists-p path)
         (log:note "~a is a directory" path)
         (let* ((name (%document-name path))
-               (document (or (text:named name) (text:make-document name))))
+               (document (or (tree:at "/text" name) (text:make-document name))))
           (text:visit document path)
           (setf (text:current) document)
           (let ((win (focused)))
@@ -82,7 +82,7 @@ twice is still one."
      :asks '((:prompt "Document: " :category :document))
      :on '(text "C-x b"))
   (let* ((name (princ-to-string name))
-         (document (or (text:named name) (text:make-document name))))
+         (document (or (tree:at "/text" name) (text:make-document name))))
     (setf (text:current) document)
     (node:full-name document)))
 
@@ -100,7 +100,7 @@ twice is still one."
      :asks '((:prompt "Kill document: " :category :document :must-match t))
      :on '(text "C-x k"))
   (let* ((name (princ-to-string (or name (node:name (text:current)))))
-         (gone (text:named name)))
+         (gone (tree:at "/text" name)))
     (when gone
       (text:forget name)
       (text:kill name)

@@ -40,7 +40,7 @@ the screen, in a file you can look at."
              (ui:with-faces
                (ui:dress tree)
                (ui:measure tree m width height)
-               (ui:arrange tree m 0 0 width height)
+               (ui:lay tree m 0 0 width height)
                (ui:paint tree m)))
            (ensure-directories-exist path)
            (cl-cairo2:surface-write-to-png s (namestring path))

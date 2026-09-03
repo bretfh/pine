@@ -77,7 +77,7 @@ is the one thing this is written to stop."
   "Ask the mode what this text divides into, and put it in the namespace. Regions
 are nodes with identity, so one that is still there is the same node it was and a
 watcher on it goes on watching."
-  (let ((said (mode:structure (mode-of doc) doc)))
+  (let ((said (mode:regions (mode-of doc) doc)))
     (%build doc said)
     said))
 

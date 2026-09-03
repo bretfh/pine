@@ -49,10 +49,6 @@ IMAGE and a MOUNT."))
 (defun terminals ()
   (remove-if-not (lambda (n) (typep n 'terminal)) (node:nodes (tree:ensure "/text"))))
 
-(defun named (name)
-  (let ((it (text:named (princ-to-string name))))
-    (and (typep it 'terminal) it)))
-
 (defun %rgb (colour)
   "A colour the program asked for, as the three numbers a cell is painted with.
 An index is one of the 256 a terminal has; anything else is already the numbers."

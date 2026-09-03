@@ -13,19 +13,19 @@
    #:face #:css-class #:hint #:radius #:fill-color
    #:grad #:font #:pad #:chosen #:top
    #:left #:width #:height #:content #:changed
-   #:upright #:value #:thickness #:fraction #:rows-of
+   #:upright #:held #:thickness #:fraction #:rows-of
    #:by-row #:caret #:over #:path #:year
    #:month #:day #:bg #:with-faces #:in-force
    #:unhex #:color #:metric #:resolve #:properties #:property
    #:put-rules #:style #:sheet #:css-glass #:css-mono #:css-rad #:medium
    #:grid #:make-grid #:put #:put-bg #:ink
-   #:measure #:arrange #:paint #:text-size #:dress
+   #:measure #:lay #:paint #:text-size #:dress
    #:styled #:with-pass #:under #:clicked #:clicked-at
    #:value-at #:to-wire #:from-wire #:field #:icon
    #:button #:image #:rows #:acting #:here
-   #:confirming #:surface #:defsurface #:surfaces #:named
+   #:confirming #:surface #:defsurface #:surfaces
    #:make-surface #:role #:anchor #:shown
-   #:placing #:edges-of #:wide-of #:tall-of #:reserve-of #:margin-of #:inset
+   #:placing #:edges-of #:reserve-of #:margin-of #:inset
    #:shows #:size #:bar #:panel #:overlay
    #:background #:window #:tile #:declared #:make-key
    #:parse #:chord #:spelled #:key= #:selfp

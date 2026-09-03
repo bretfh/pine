@@ -83,7 +83,7 @@ the command runs again when they answer."
   "The editor, laid out for whatever is showing it. The screen says how big it is by
 writing /surface/editor/size, and this follows that the way it follows anything
 else it read."
-  (let* ((s (ui:named "editor"))
+  (let* ((s (tree:at "/surface" "editor"))
          (size (and s (ui:size s)))
          (*font* (getf size :font)))
     (frame :cols (or (getf size :cols) *cols*)
@@ -99,7 +99,7 @@ else it read."
   (%sources)
   (setf command:*at* s)
   (system:puts (%key))
-  (let ((scratch (or (text:named "scratch")
+  (let ((scratch (or (tree:at "/text" "scratch")
                      (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)

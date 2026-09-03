@@ -112,10 +112,6 @@ what the surface builds follows it like anything else it read."))
 (defun surfaces ()
   (remove-if-not (lambda (n) (typep n 'surface)) (node:nodes (root))))
 
-(defun named (name)
-  (let ((n (tree:at (root) (princ-to-string name))))
-    (and (typep n 'surface) n)))
-
 (defgeneric spelled-place (it)
   (:documentation "What a widget stands for, as the one word it crosses as.")
   (:method ((it path:path)) (path:whole it))

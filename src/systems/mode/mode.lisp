@@ -4,14 +4,13 @@
                     (#:d #:pine/data) (#:node #:pine/fs/node)
                     (#:tree #:pine/fs/tree) (#:command #:pine/run/command)
                     (#:fault #:pine/run/fault) (#:system #:pine/run/system))
-  (:shadow #:type #:structure)
   (:export
    #:mode #:text #:prose #:code #:lisp
    #:pine #:scheme #:org #:press #:typing
-   #:indent #:complete #:saving #:structure #:setting #:says
+   #:indent #:complete #:saving #:regions #:setting #:says
    #:covering #:name-of #:from-of #:to-of #:inside-of
    #:handles #:mode-for #:bind #:unbind #:binding #:bindings
-   #:dispatch #:named #:modes #:type #:mode-node))
+   #:dispatch #:modes #:mode-node))
 (in-package #:pine/mode)
 
 (defvar *keys* (d:table)
@@ -89,7 +88,7 @@ nothing to catch it, because every one of those shapes is a list."))
   (make-instance 'covering :name (princ-to-string name) :from from :to to
                            :inside inside))
 
-(defgeneric structure (mode document)
+(defgeneric regions (mode document)
   (:documentation "What this text divides into, as a tree of COVERING.
 
 What comes back is put in the namespace under the document, so a form or a heading
@@ -119,9 +118,8 @@ back said nobody had ever set it.")
   (:documentation "The globs of paths and names this mode is for.")
   (:method ((m mode)) nil))
 
-(defgeneric type (mode)
-  (:documentation "What the modeline calls it.")
-  (:method ((m mode)) (string-downcase (symbol-name (class-name (class-of m))))))
+(defmethod node:name ((m mode))
+  (string-downcase (symbol-name (class-name (class-of m)))))
 
 (defmethod setting ((m text) key)
   (case key (:tab-width 8) (t (call-next-method))))
@@ -181,7 +179,7 @@ in another image. The order the classes were defined in is not one pine is given
         :key (lambda (c) (string-downcase (symbol-name (class-name c))))
         :test #'string-equal))
 
-(defun named (name)
+(defun mode (name)
   (let ((class (%class name)))
     (when class (fault:or-nothing "a mode class may take initargs nobody gave"
                   (make-instance (class-name class))))))
@@ -319,8 +317,8 @@ whether anything wanted it or not."
   (mapcar (lambda (c) (string-downcase (symbol-name (class-name c)))) (modes)))
 
 (defun %said (name)
-  (let ((m (named name)))
-    (when m (list :type (type m) :handles (handles m)))))
+  (let ((m (mode name)))
+    (when m (list :type (node:name m) :handles (handles m)))))
 
 (defun %chords (name)
   "What a mode is bound to, as it stands. A chord a config added is here without

@@ -54,7 +54,7 @@ connection is a thing you block on."))
   (let ((to (says s)))
     (when to (job:tell to thunk) t)))
 
-(defun %named (name) (ui:named name))
+(defun %named (name) (tree:at "/surface" name))
 
 (defun %tree (name)
   (let ((it (%named name))) (when it (node:contents it))))
@@ -161,7 +161,7 @@ name, and the old one is something nothing writes."
 (defun %settle (s)
   "Take down what /surface no longer says."
   (d:do-each (name (d:keys (d:all (up s))))
-    (unless (ui:named name)
+    (unless (tree:at "/surface" name)
       (let ((p (d:lookup (d:all (up s)) name)))
         (%unlisten s name)
         (d:drop! (up s) name)

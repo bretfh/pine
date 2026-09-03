@@ -1,5 +1,14 @@
 (defpackage #:pine/edit/commands
-  (:use #:pine/user)
+  (:use #:cl #:pine)
+  (:shadowing-import-from #:pine #:read #:write #:map #:set)
+  (:import-from #:pine/edit #:askingp #:cancel #:down #:focused #:scrolled #:indenting)
+  (:import-from #:pine/mode #:says #:setting)
+  (:import-from #:pine/text
+   #:at-col #:at-line #:current #:delete-back #:delete-region #:document
+   #:forget-spans #:goto #:indent-line #:insert #:leading #:line #:line-count
+   #:lines #:mark #:mode-of #:motion #:move #:move-by #:newline #:point #:redo
+   #:region-of #:span #:undo)
+  (:import-from #:pine/ui #:surfaces)
   (:local-nicknames (#:node #:pine/fs/node) (#:d #:pine/data))
   (:export))
 (in-package #:pine/edit/commands)

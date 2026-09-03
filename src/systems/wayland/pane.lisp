@@ -94,7 +94,7 @@ arranged as it is painted, so what a click lands on is what was drawn there."
                        (ui:with-faces
                          (ui:dress (tree s))
                          (ui:measure (tree s) m width height)
-                         (ui:arrange (tree s) m 0 0 width height)
+                         (ui:lay (tree s) m 0 0 width height)
                          (ui:paint (tree s) m))))
                 (cl-cairo2:destroy (canvas:context m))
                 (cl-cairo2:destroy it)))

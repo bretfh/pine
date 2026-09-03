@@ -8,8 +8,9 @@
                     (#:sh #:pine/host/shell) (#:dev #:pine/host/device)
                     (#:declared #:pine/host/declared))
   (:import-from #:pine/host/declared #:defdevice #:defbacking)
+  (:import-from #:pine/host/shell #:sh)
   (:export
-   #:device #:defdevice #:defbacking))
+   #:device #:defdevice #:defbacking #:sh))
 (in-package #:pine/host)
 
 (defvar *attending* nil)

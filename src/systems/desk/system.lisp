@@ -1,5 +1,6 @@
 (defpackage #:pine/desk
-  (:use #:pine/user)
+  (:use #:cl #:pine #:pine/ui)
+  (:shadowing-import-from #:pine #:read #:write #:map #:set)
   (:local-nicknames (#:path #:pine/fs/path))
   (:export))
 (in-package #:pine/desk)

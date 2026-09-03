@@ -52,7 +52,7 @@
   (let ((slider (input:pointer-drag (screen:pointer s)))
         (p (input:pointer-focus (screen:pointer s))))
     (when (and slider p)
-      (setf (ui:value slider)
+      (setf (ui:held slider)
             (ui:value-at slider (round (input:pointer-at-x (screen:pointer s)))))
       (pane:paint p))))
 
@@ -61,7 +61,7 @@
     (when slider
       (setf (input:pointer-drag (screen:pointer s)) nil)
       (let ((fn (ui:changed slider)))
-        (when fn (screen:tell s (lambda () (funcall fn (ui:value slider)))))))))
+        (when fn (screen:tell s (lambda () (funcall fn (ui:held slider)))))))))
 
 (defun click (s)
   (let* ((at (screen:pointer s))
