@@ -169,19 +169,24 @@ half worked and nothing said which half."
           "and the chord goes"))))
 
 (test a-surface-that-has-gone-leaves-no-closure-behind
-  "What a widget meant crosses the wire as an id and stays behind it in *ACTS*.
-Erasing the node was not the whole of taking a surface off: a click on an id of a
-surface that has gone still ran what it used to mean."
+  "What a widget meant crosses the wire as an id and stays on the surface under
+it. A click on an id of a surface that has gone runs nothing."
   (with-tree
-    (let ((home "pine/test/probe-acts"))
+    (let ((home "pine/test/probe-acts")
+          (ran nil))
       (let ((system:*owner* home))
-        (ui:make-surface "probe-acts" (lambda () (ui:label "hi")) :as 'ui:panel))
-      (fs:contents (fs:at "/surface/probe-acts/wire"))
-      (flet ((held () (remove-if-not
-                       (lambda (id) (eql 0 (search "probe-acts/" id)))
-                       (d:keys (d:all pine/ui::*acts*)))))
-        (pine/run/system::%take-down home)
-        (is (null (held)) "its closures go with it")))))
+        (ui:make-surface "probe-acts"
+                         (lambda () (ui:button :click (lambda () (setf ran t))
+                                               (ui:label "hi")))
+                         :as 'ui:panel))
+      (let ((id (first (d:keys (pine/ui::acts (fs:at "/surface" "probe-acts"))))))
+        (fs:contents (fs:at "/surface/probe-acts/wire"))
+        (let ((id (or id (first (d:keys (pine/ui::acts (fs:at "/surface" "probe-acts")))))))
+          (is (not (null id)) "the click crossed as an id")
+          (pine/run/system::%take-down home)
+          (is (null (fs:at "/surface" "probe-acts")) "the surface goes")
+          (pine/ui::act "probe-acts" (list id))
+          (is (null ran) "and its closures went with it"))))))
 
 (test a-word-on-the-command-line-is-all-of-it-or-none-of-it
   "READ-FROM-STRING answers with the first form and how far it got. Without the

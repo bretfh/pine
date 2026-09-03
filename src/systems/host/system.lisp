@@ -44,7 +44,7 @@ A name in place of a node is made and put under /dev first:
                (let ((it (apply #'%make what arguments)))
                  (when it
                    (fs:attach it (fs:ensure (fs:root) "dev")))))))
-    (when (fs:kind n) (system:owned (fs:full-name n)))
+    (when (and (fs:kind n) system:*owner*) (setf (fs:owner n) system:*owner*))
     (%attend n)))
 
 (defun %attend (n)
@@ -79,7 +79,7 @@ A name in place of a node is made and put under /dev first:
     (system:puts (sh:sh-node) root)
     (device (system:puts (declared:made "env") root))
     (device (system:puts (declared:made "sys") root))
-    (system:owned (fs:full-name (mount:mount #p"/" root "file")))
+    (setf (fs:owner (mount:mount #p"/" root "file")) system:*owner*)
     (device "clock")
     (job:supervise
      (job:start (make-instance 'job:tick :name "clock" :every 1
@@ -89,8 +89,8 @@ A name in place of a node is made and put under /dev first:
   s)
 
 (defmethod job:stop ((s host))
-  "The paths go by what OWNED was told as they went up. What is left here is the
-streams and the ticks, which are running rather than standing."
+  "What it put in the tree goes with it. What is left here is the streams and the
+ticks, which are running rather than standing."
   (leave)
   s)
 

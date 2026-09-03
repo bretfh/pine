@@ -99,7 +99,8 @@ a config could mute and never unmute."
             :describes (fs:describes n)
             :under (mapcar #'fs:name (fs:entries n))
             :saved (fs:savedp n)
-            :live (fs:livep n)))))
+            :live (fs:livep n)
+            :owner (fs:owner n)))))
 
 (command:defcommand "pwd" () (:describes "where this session is")
                     (fs:full-name (%cursor)))

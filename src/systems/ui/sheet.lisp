@@ -63,7 +63,7 @@ where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
     (let ((n (fs:leaf "/style" (%path-segment (first each)))))
       (setf (fs:contents n) (second each))
-      (system:owned (fs:full-name n))))
+      (setf (fs:owner n) system:*owner*)))
   (styles))
 
 (defun built-in ()

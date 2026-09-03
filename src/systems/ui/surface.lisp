@@ -1,13 +1,5 @@
 (in-package #:pine/ui)
 
-(defvar *acts* (d:table)
-  "What clicking a widget means: by surface, and under that by the id it crossed
-the wire as. A closure cannot cross, so what it meant stays here.
-
-By surface, because a surface worked out again is a fresh answer to what is on it,
-and the ids that came before are no longer anything. The whole of one surface's is
-replaced in one act, so what is not in the new answer is gone.")
-
 (defclass role () ()
   (:documentation "Where a surface of this kind goes, and whether it is up already.
 
@@ -96,7 +88,8 @@ content is here.")
 (defclass surface (fs:dir)
   ((role  :initarg :role  :accessor role)
    (shown :initarg :shown :accessor shown)
-   (size  :initarg :size  :accessor size :initform nil))
+   (size  :initarg :size  :accessor size :initform nil)
+   (acts  :initform (d:no-map) :accessor acts))
   (:documentation "A surface: under it TREE, the widget tree worked out from what it
 read; SHOWN, which writing puts it up or down; SIZE, what shows it says it came out
 at; ROLE, WHERE and WIRE."))
@@ -152,20 +145,17 @@ says it was given. Nothing where it means nothing, because a pine showing this o
 can be a frame behind."
   (let* ((all (alexandria:ensure-list said))
          (id (princ-to-string (first all)))
-         (thunk (d:lookup (d:lookup (d:all *acts*) name) id)))
+         (s (fs:at "/surface" (princ-to-string name)))
+         (thunk (and s (d:lookup (acts s) id))))
     (when thunk
       (fault:attempt (lambda () (apply thunk (rest all)))
                      (format nil "the widget at ~a" id)))))
 
 (defun %wire (s)
-  "This surface's tree written down, with every closure in it left here under the
-id it crossed as.
-
-What this surface meant is replaced whole. Written one id at a time over what was
-there, the closures of every row a listing had ever shown stayed for as long as
-the image ran, and one whose row had gone still answered."
-  (let ((name (fs:name s))
-        (mine (d:no-map))
+  "This surface's tree written down, with every closure in it kept on the surface
+under the id it crossed as. Replaced whole: one whose row has gone no longer
+answers."
+  (let ((mine (d:no-map))
         (tree (tree s)))
     (when tree
       (let ((said (to-wire tree
@@ -173,7 +163,7 @@ the image ran, and one whose row had gone still answered."
                                         (let ((id (%id widget slot at)))
                                           (setf mine (d:with mine id thunk))
                                           id)))))
-        (d:keep! *acts* name mine)
+        (setf (acts s) mine)
         said))))
 
 (defgeneric declared (surface)
@@ -224,21 +214,13 @@ disagree about what leaving it out meant."
                              :writes (lambda (said) (act (fs:name s) said))
                              :describes "what another pine says was clicked")
                  s)
-    (system:owned (list :surface (fs:name s)))
+    (setf (fs:owner s) system:*owner*)
     (declared s)
     s))
 
 (defun forget-surface (name)
-  "Take a surface off, and let go the closures its widgets crossed as.
-
-Erasing the node is not the whole of it. What a widget meant stays in *ACTS*, so a
-surface that has gone would leave closures nothing can reach, and a click on one of
-its old ids would still run what it used to mean."
-  (d:drop! *acts* (princ-to-string name))
   (fs:erase (format nil "/surface/~a" name))
   name)
-
-(system:undoes :surface #'forget-surface)
 
 (defmacro defsurface (name options &body body)
   "Declare a surface. OPTIONS is :as and a role class."

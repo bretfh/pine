@@ -11,14 +11,9 @@
 (defvar *under* nil)
 
 (defvar *put* (d:table)
-  "What each system put up while it ran, by the package its code is written in: the
-paths it attached and the chords it bound, newest last.
-
-The same answer as *OWNS* is for commands, for the two things a system puts up that
-a command is not. Without it a system took its commands away when it stopped and
-left its nodes and its surfaces standing, so DROP half worked and every app had to
-finish the job by hand -- naming its own paths in its own STOP, which is a list to
-keep in step with the code that made them.")
+  "What each system declared beside the tree while it ran, by the package its code
+is written in: (KIND . ARGUMENTS), newest last. What it put in the tree needs no
+list: each entry knows its owner.")
 
 (defvar *owner* nil
   "The package of the system that is starting or stopping, while it does.
@@ -70,35 +65,36 @@ what that kind is, in the file that puts one up."
   kind)
 
 (defun owned (what &optional (home *owner*))
-  "Say the system that is starting put WHAT up. A string is a path to erase; a list
-is (KIND . ARGUMENTS), handed back to whatever said how to take that kind back.
-
-Called by whatever does the putting -- MAKE-SURFACE, BIND -- so an app declares a
-thing once and the undoing is not its to write."
-  (when home
+  "Say the system that is starting declared WHAT, a (KIND . ARGUMENTS) handed back
+to whatever said how to take that kind back."
+  (when (and home (consp what))
     (d:update! *put* home (lambda (had) (append had (list what)))))
   what)
 
-(defun puts (node &optional (into (fs:root)))
-  "Attach NODE, and say the running system put it there. What a system puts up it
-takes down: this is ATTACH for an app, and the reason an app needs no STOP."
-  (owned (fs:full-name (fs:attach node into)))
-  node)
+(defun puts (x &optional (into (fs:root)))
+  "Attach X as the running system's: what a system puts up goes when it does, so
+this is ATTACH for an app and the reason an app needs no STOP."
+  (setf (fs:owner x) *owner*)
+  (fs:attach x into)
+  x)
 
 (defun %take-down (home)
-  "Take off what the system written in HOME put up, newest first.
-
-Newest first because a system may put a node under one it put up itself, and taking
-the branch off first would leave the erase of what was under it looking for a parent
-that has gone."
+  "Take off everything in the tree the system written in HOME owns, and take back
+what it declared beside it. Not into what was taken off, and not into a live dir:
+what is under one belongs to the world."
+  (labels ((sweep (d)
+             (dolist (each (fs:entries d))
+               (cond ((equal (fs:owner each) home)
+                      (fault:or-nothing "what a system put up may have gone already"
+                        (fs:erase-entry d (fs:name each))))
+                     ((and (typep each 'fs:dir) (not (fs:livep each)))
+                      (sweep each))))))
+    (sweep (fs:root)))
   (dolist (what (reverse (or (d:lookup (d:all *put*) home) nil)))
-    (etypecase what
-      (string (fault:or-nothing "a path a system put up may have gone already"
-                (fs:erase what)))
-      (cons (let ((taking (d:lookup (d:all *undoes*) (first what))))
-              (when taking
-                (fault:or-nothing "what a system put up may have gone already"
-                  (apply taking (rest what))))))))
+    (let ((taking (d:lookup (d:all *undoes*) (first what))))
+      (when taking
+        (fault:or-nothing "what a system declared may have gone already"
+          (apply taking (rest what))))))
   (d:drop! *put* home))
 
 (defmethod job:start :around ((s system))
@@ -126,19 +122,13 @@ was asking each of them to keep a list of what to undo."
   s)
 
 (defmethod job:stop :after ((s system))
-  "What a system defined goes when it does. Nothing keeps a list of names: a command
-knows the package it was written in, and the system knows which package is its.
-
-Its nodes and its surfaces go the same way, by what OWNED was told as they went up.
-An app that puts up a place and a surface writes no STOP at all.
-
-Its commands and not its words: a command that has stood down is one nothing will
-run, while a word still names the class it named, because a system that is stopped
-is still a system that is loaded."
+  "What a system defined goes when it does: its commands stand down, what it owns
+in the tree comes off, what it declared beside it is taken back. An app that puts
+up a place and a surface writes no STOP at all."
   (let ((prefix (owns (job:name s))))
     (when prefix
       (command:withdraw prefix)
-      (let ((*owner* prefix)) (%take-down prefix)))))
+      (%take-down prefix))))
 
 (defun kinds ()
   "Every system there is to load, running or not."
