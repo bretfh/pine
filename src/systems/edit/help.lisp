@@ -105,9 +105,7 @@
           :collect (cons (format nil "~16a ~10a ~a"
                                  (string-downcase (class-name (class-of j)))
                                  (job:state j) (job:name j))
-                         j))
-    (loop :for name :in (actors:ticks)
-          :collect (format nil "~16a ~10a ~a" "tick" :running name)))
+                         j)))
    (lambda (it) (log:note "~a" (or it "that row is a heading")))))
 
 (command:defcommand "list-faults" ()

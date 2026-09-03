@@ -62,11 +62,10 @@ and steal each other's replies. While the child stands in a fault the pipe belon
 to whoever will take a restart, because the next thing the child reads is which one
 and a form written then would be swallowed as the answer."))
 
-(job:kind :image
-          (lambda (name said)
-            (make-instance 'child :name name
-                                  :on-fault (job:asked-for said :on-fault :restart)
-                                  :systems (or (getf said :systems) '(:pine)))))
+(defmethod job:told ((kind (eql :image)) name said)
+  (make-instance 'child :name name
+                        :on-fault (job:asked-for said :on-fault :restart)
+                        :systems (or (getf said :systems) '(:pine))))
 
 (defgeneric evaluate (image form &key timeout)
   (:documentation "Do work in IMAGE and answer what it said:

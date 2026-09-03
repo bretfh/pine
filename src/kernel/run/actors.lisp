@@ -4,13 +4,12 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:boot #:leave #:actors #:runningp #:remoting
-   #:dispatcher-for #:*host* #:*port* #:repeat #:cancel #:pool #:pools
-   #:later #:ticks #:blocking #:joined))
+   #:dispatcher-for #:*host* #:*port* #:schedule #:unschedule #:after
+   #:later #:blocking #:joined #:*reading-workers* #:*watching-workers*))
 (in-package #:pine/run/actors)
 
 (defvar *actors* nil)
 (defvar *wheel* nil)
-(defvar *ticks* (d:table))
 (defvar *host* "127.0.0.1")
 (defvar *port* 17000)
 (defparameter *soonest* 0.05)
@@ -20,34 +19,16 @@
 Asked then and not while this file loads, because a saved image is built on one
 machine and run on another: read at load, the number the binary carries is the
 number of cores the machine that built it had.")
-(defvar *reading-workers* 8)
-(defvar *pools* (d:table)
-  "The dispatchers this image will have, by name. A system that wants work of its
-own kept off everybody else's asks for one before boot; sento fixes them when the
-system is made, so this is read once and not added to after.")
-
-(defun pool (name workers &key (strategy :round-robin))
-  "Ask for a dispatcher of NAME with WORKERS workers. Nothing is reserved: the
-parse has one because text asked for it, not because this file knows about text.
-
-Round robin, and not the random the shared one takes. Random is right for
-messages, where an actor's mailbox is the thing that keeps order and one worker
-being briefly unlucky costs nothing. It is wrong for work: sixty pieces handed out
-at random leave some workers holding two while others hold none, and the whole is
-only done when the unluckiest is. Measured on thirty-one workers, that is 7.9x
-against 11.9x."
-  (d:keep! *pools* name (list workers strategy))
-  name)
-
-(defun pools () (d:all *pools*))
+(defvar *reading-workers* 8
+  "Workers on the pool a slow working-out is handed to.")
+(defvar *watching-workers* 4
+  "Workers on the pool a watcher is told on: enough that one that shells out does
+not hold up the rest, few enough that a hundred of them cannot take the machine.")
 
 (defun dispatcher-for (name)
-  "The dispatcher an actor asks for, if this image has it. Sento fixes its pools
-when the system is made, so a system loaded after boot that asked for one of its
-own runs on the shared pool until the next start rather than refusing to run."
-  (if (or (member name '(:shared :pinned)) (d:lookup (pools) name))
-      name
-      :shared))
+  "The dispatcher an actor asks for, if this image has it. Round robin for work,
+because sixty pieces handed out at random leave some workers holding two."
+  (if (member name '(:shared :pinned :working :watch)) name :shared))
 
 (defun workers ()
   "How many workers to run the shared pool with, asked of this machine."
@@ -61,10 +42,9 @@ own runs on the shared pool until the next start rather than refusing to run."
 
 (defun %config ()
   (list :dispatchers
-        (list* :shared (list :workers (workers) :strategy :random)
-               (loop :for (name . asked) :in (d:pairs (pools))
-                     :append (list name (list :workers (first asked)
-                                              :strategy (second asked)))))
+        (list :shared (list :workers (workers) :strategy :random)
+              :working (list :workers *reading-workers* :strategy :round-robin)
+              :watch (list :workers *watching-workers* :strategy :round-robin))
         :scheduler (list :enabled :true :max-size 1000
                          :resolution (round (* 1000 *soonest*)))))
 
@@ -113,7 +93,6 @@ for what every write hands over."
        (sento.remoting:remoting-port *actors*)))
 
 (defun leave ()
-  (dolist (name (ticks)) (cancel name))
   (let ((sys *actors*))
     (when sys
       (when (sento.remoting:remoting-enabled-p sys)
@@ -123,8 +102,6 @@ for what every write hands over."
         (sento.actor-context:shutdown sys :wait t))))
   (setf *actors* nil *wheel* nil)
   t)
-
-(defun ticks () (d:keys (d:all *ticks*)))
 
 (defun %off-wheel (thunk what)
   "Off the wheel thread. The wheel is one thread for the whole image and these
@@ -136,25 +113,20 @@ thunks shell out, read files and paint."
             (sento.tasks:with-context (sys) (sento.tasks:task-start #'run))
             (run))))))
 
-(defun cancel (name)
-  (let ((had (d:lookup (d:all *ticks*) name)))
-    (when (and had *wheel*)
-      (fault:or-nothing "a tick that has already fired is not there to cancel"
-        (sento.wheel-timer:cancel *wheel* had))
-      (d:drop! *ticks* name))
-    name))
-
-(defun repeat (seconds thunk &key (as (gensym "REPEAT-")) (what "a tick"))
-  "Run THUNK every SECONDS, under the name AS. Asking again under one name replaces
-what was there."
+(defun schedule (seconds thunk what)
+  "Run THUNK every SECONDS on the wheel, and answer what to unschedule it by."
   (when *wheel*
-    (cancel as)
     (let ((signature (gensym "PINE-REPEAT-"))
           (seconds (max seconds *soonest*)))
       (sento.wheel-timer:schedule-recurring *wheel* seconds seconds
                                             (%off-wheel thunk what) signature)
-      (d:keep! *ticks* as signature)
-      as)))
+      signature)))
+
+(defun unschedule (signature)
+  (when (and signature *wheel*)
+    (fault:or-nothing "a tick that has already fired is not there to cancel"
+      (sento.wheel-timer:cancel *wheel* signature)))
+  signature)
 
 (defun after (seconds thunk &key (what "a tick"))
   (when *wheel*
@@ -170,28 +142,5 @@ own loop. Everything else is an actor or a tick."
   "Wait for one of those to finish. What is read on another thread has to be read
 to the end before whoever started it goes, or the last of it is lost."
   (when thread (bordeaux-threads:join-thread thread)))
-
-(defun %named (name)
-  (find name (ticks) :key #'princ-to-string :test #'equal))
-
-(defun %tick (name)
-  (when (%named name)
-    (make-instance 'fs:derived :name name :live t
-                :reads (lambda () (and (%named name) t))
-                :writes (lambda (value)
-                          (let ((had (%named name)))
-                            (when (and had (null value)) (cancel had)))))))
-
-(defun %attach (root)
-  (fs:attach
-   (make-instance 'fs:dir :name "tick"
-               :names #'ticks
-               :each #'%tick
-               :describes "what repeats on the image's clock")
-   root))
-
-(pine/fs:builder #'%attach)
-
-(pool :working *reading-workers*)
 
 (setf fs:*working* #'%hand-off)

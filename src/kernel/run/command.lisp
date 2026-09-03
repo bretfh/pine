@@ -1,6 +1,12 @@
+(defpackage #:pine/commands
+  (:use)
+  (:documentation "Where a command's name lives: one symbol per command, its value
+the command. A namespace, the way functions have one."))
+
 (defpackage #:pine/run/command
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs))
+  (:import-from #:pine/fs #:name #:describes)
   (:export
    #:command #:defcommand #:named #:commands #:forget
    #:name #:describes #:asks #:on #:run
@@ -8,14 +14,6 @@
    #:unknown-command #:asking #:turned #:*at*))
 (in-package #:pine/run/command)
 
-(defvar *commands* (d:table))
-(defvar *turned* 0
-  "How many times what stands here has changed. Whoever works something out from
-the commands keeps this beside it and works it out again when it moves; without
-it a keymap has to be built from every command on every keystroke.")
-(defvar *defined* (d:table)
-  "Every command there is, by the package it was written in. A command is defined
-where its code is; whether it stands is whether its system is running.")
 (defvar *claimed* nil)
 (defvar *at* nil
   "Who there is to ask, when a command needs words nobody gave it: a session on a
@@ -28,22 +26,25 @@ layer knows there is somebody to ask and nothing whatever about how.")
   ((name-of :initarg :name :reader name-of))
   (:report (lambda (c s) (format s "no command named ~s" (name-of c)))))
 
-(defclass command ()
-  ((name      :initarg :name      :reader name)
-   (action    :initarg :action    :reader action)
-   (describes :initarg :describes :reader describes :initform "")
-   (asks      :initarg :asks      :reader asks      :initform nil)
-   (on        :initarg :on        :reader on        :initform nil)
-   (from      :initarg :from      :reader from      :initform nil))
+(defclass command (fs:derived)
+  ((action   :initarg :action :reader action)
+   (asks     :initarg :asks   :reader asks :initform nil)
+   (on       :initarg :on     :reader on   :initform nil)
+   (from     :initarg :from   :reader from :initform nil)
+   (standing :initform t      :accessor standing))
   (:documentation "A named thing you can run. Not a lisp function: its arguments
-are words, so a name nobody has fbound is still something to do.
+are words, so a name nobody has fbound is still something to do. It stands at
+/cmd/<name>, and what it holds is what it is for.
 
 FROM is the package it was written in, which is how dropping a system takes its
-commands with it without anybody keeping a list of their names.
+commands with it; STANDING is whether that system is running.
 
 ON is the mode a chord in it means this, and the chords: (text \"C-f\" \"Right\").
 The command carries it and whatever keeps keymaps reads it, so this layer names
 nothing above it and a chord goes when the command it names does."))
+
+(defmethod fs:livep ((c command)) t)
+(defmethod fs:works ((c command)) (describes c))
 
 (defmethod print-object ((c command) stream)
   (print-unreadable-object (c stream :type t)
@@ -60,10 +61,14 @@ nothing above it and a chord goes when the command it names does."))
              (and (> (length said) (length under))
                   (string= under said :end2 (length under)))))))
 
+(defun %all ()
+  (let (out)
+    (do-symbols (s :pine/commands out)
+      (when (boundp s) (push (symbol-value s) out)))))
+
 (defun defined (prefix)
   "Every command written in PREFIX or under it, running or not."
-  (loop :for (home . all) :in (d:pairs (d:all *defined*))
-        :when (%underp prefix home) :append (d:vals all)))
+  (remove-if-not (lambda (c) (%underp prefix (from c))) (%all)))
 
 (defun claim (&optional (prefix (%home)))
   "Say the commands written here belong to a system: they stand while it runs and
@@ -74,20 +79,26 @@ not before. Whatever was already defined stands down until it starts."
 (defun %claimedp (said)
   (some (lambda (prefix) (%underp prefix said)) *claimed*))
 
-(defun turned ()
-  "Which turn what stands is on. Answered before the commands are read and
-compared after, so a keymap kept from a turn that has passed is built again."
-  *turned*)
+(defun %dir () (and (fs:root) (fs:at "/cmd")))
 
-(defun %turned () (d:swap *turned* #'1+))
+(defun turned ()
+  "Which version of /cmd stands. Answered before the commands are read and compared
+after, so a keymap kept from a turn that has passed is built again."
+  (let ((d (%dir))) (if d (fs::version d) 0)))
+
+(defun %turned (&optional name)
+  (let ((d (%dir)))
+    (when d
+      (when name (fs:erase-entry d name))
+      (fs:moved d))))
 
 (defun offer (prefix)
   (dolist (c (defined prefix) (progn (%turned) prefix))
-    (d:keep! *commands* (name c) c)))
+    (setf (standing c) t)))
 
 (defun withdraw (prefix)
   (dolist (c (defined prefix) (progn (%turned) prefix))
-    (d:drop! *commands* (name c))))
+    (setf (standing c) nil)))
 
 (defun command (name action &key (describes "") asks on (from (%home)))
   "A binding beside the command it names is one thing to read and one thing to
@@ -100,28 +111,29 @@ caller's rather than the system's."
   (let* ((home from)
          (c (make-instance 'command :name name :action action :from home
                                     :describes describes :asks asks :on on)))
-    (d:update! *defined* home
-               (lambda (had) (d:with (or had (d:no-map)) name c)))
-    (unless (%claimedp home) (d:keep! *commands* name c))
-    (%turned)
+    (setf (standing c) (not (%claimedp home)))
+    (setf (symbol-value (intern name :pine/commands)) c)
+    (%turned name)
     c))
 
 (defun forget (name)
-  (d:drop! *commands* name)
-  (%turned)
+  (let ((s (find-symbol name :pine/commands)))
+    (when s (makunbound s) (unintern s :pine/commands)))
+  (%turned name)
   name)
 
 (defun named (name)
   (etypecase name
     (null nil)
     (command name)
-    (string (d:lookup (d:all *commands*) name))
-    (symbol (d:lookup (d:all *commands*) (string-downcase (symbol-name name))))))
+    (string (let ((s (find-symbol name :pine/commands)))
+              (and s (boundp s) (standing (symbol-value s)) (symbol-value s))))
+    (symbol (named (string-downcase (symbol-name name))))))
 
 (defun commands ()
   "Every command standing, in no order. A keymap asks this on every keystroke, so
 whoever wants them in an order sorts them there."
-  (d:vals (d:all *commands*)))
+  (remove-if-not #'standing (%all)))
 
 (defun sorted ()
   (sort (commands) #'string< :key #'name))
@@ -178,20 +190,12 @@ command runs with what it was given.")
     (declare (ignore where c))
     nil))
 
-(defun %command (name)
-  "What the command at this path is for, as it stands now: one redefined at the
-repl is the same path saying something else."
-  (when (named name)
-    (make-instance 'fs:derived :name name :live t
-                   :reads (lambda ()
-                            (let ((c (named name))) (and c (describes c)))))))
-
 (defun %attach (root)
   (fs:attach (make-instance 'fs:dir :name "cmd"
-                           :names (lambda () (mapcar #'name (sorted)))
-                           :each #'%command
-                           :describes "every command there is")
-               root))
+                            :names (lambda () (mapcar #'name (sorted)))
+                            :each #'named
+                            :describes "every command there is")
+             root))
 
 
 (pine/fs:builder #'%attach)

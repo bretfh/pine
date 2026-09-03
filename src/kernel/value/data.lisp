@@ -40,11 +40,7 @@
 and whether anything was there.
 
 Two values, because a collection may hold NIL and holding it is not the same as
-holding nothing. Whoever only wants the value reads the first and never knows.
-
-Not AT: a node is at a path and a value is looked up in a collection, and reading
-(d:at (d:all *commands*) name) beside (fs:at \"/wm\") meant knowing which was
-which before you could read either.")
+holding nothing. Whoever only wants the value reads the first and never knows.")
   (:method ((c fset:map) key &optional default)
     (multiple-value-bind (value foundp) (fset:lookup c key)
       (if foundp (values value t) (values default nil))))

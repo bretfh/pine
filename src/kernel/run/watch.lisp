@@ -1,7 +1,8 @@
 (defpackage #:pine/run/watch
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
-                    (#:actors #:pine/run/actors) (#:fault #:pine/run/fault))
+                    (#:actors #:pine/run/actors) (#:job #:pine/run/job)
+                    (#:fault #:pine/run/fault))
   (:export
    #:watch #:unwatch #:forget-all #:following #:let-go #:*streaming*))
 (in-package #:pine/run/watch)
@@ -12,9 +13,6 @@
 when it does. Filled in by whatever knows what a shell is, because this layer loads
 before there is one -- the same reason NODE:*BROKE* is one.")
 (defparameter *every* 1)
-(defparameter *workers* 4
-  "Workers on the pool a watcher is told on. Enough that one that shells out does
-not hold up the rest, few enough that a hundred of them cannot take the machine.")
 
 (defclass watcher ()
   ((name    :initarg :name    :reader name)
@@ -99,17 +97,20 @@ too and the tick is not what waits for it."
 One tick per interval, named by it. One tick for everybody was one tick with
 whichever interval was asked for last, so a watcher that wanted a minute set every
 other polled watcher to a minute as well."
-  (actors:repeat every (lambda () (sweep every))
-                 :as (list :watch every)
-                 :what "reading the live nodes"))
+  (job:repeat every (lambda () (sweep every))
+              :as (%tick-name every)
+              :what "reading the live nodes"))
+
+(defun %tick-name (every) (format nil "watch-~a" every))
 
 (defun %attending ()
   "Cancel the ticks nothing is polled on any more."
-  (let ((wanted (remove-duplicates (mapcar #'every-of (polled)))))
-    (dolist (name (actors:ticks) t)
-      (when (and (consp name) (eq :watch (first name))
-                 (not (member (second name) wanted)))
-        (actors:cancel name)))))
+  (let ((wanted (mapcar #'%tick-name (remove-duplicates (mapcar #'every-of (polled))))))
+    (dolist (j (job:ticks) t)
+      (let ((name (job:name j)))
+        (when (and (eql 0 (search "watch-" name))
+                   (not (member name wanted :test #'equal)))
+          (job:cancel j))))))
 
 (defgeneric watch (n tells &key every name tells-when poll)
   (:documentation "Say TELLS whenever N moves, and answer something to let go of.
@@ -153,16 +154,16 @@ that has a way of hearing says so where it is written.")
                                                          (fs:name n) line)))))
           (ticking (let ((seconds (fs:refreshes n)))
                      (when seconds
-                       (actors:repeat seconds (lambda () (fs:moved n))
-                                      :as (list :following (fs:full-name n))
-                                      :what (fs:name n))))))
+                       (job:repeat seconds (lambda () (fs:moved n))
+                                   :as (format nil "following~a" (fs:full-name n))
+                                   :what (fs:name n))))))
       (list heard ticking))))
 
 (defun let-go (held)
   "Let go of what FOLLOWING answered."
   (destructuring-bind (heard ticking) held
     (mapc #'unwatch heard)
-    (when ticking (actors:cancel ticking)))
+    (when ticking (job:cancel ticking)))
   t)
 
 (defun unwatch (w)
@@ -179,5 +180,3 @@ that has a way of hearing says so where it is written.")
 (defun watching (n)
   (remove n (watchers) :key #'watches :test-not #'eq))
 
-
-(actors:pool :watch *workers*)

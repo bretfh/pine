@@ -6,9 +6,10 @@
   (:export
    #:job #:thread #:tick #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
-   #:named #:supervise #:sweep #:attend #:emit #:asked-for
-   #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:kind #:kinds
-   #:took #:runs #:stopping #:argv #:ref #:started #:again))
+   #:named #:supervise #:supervised #:sweep #:attend #:emit #:asked-for
+   #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:told #:kinds
+   #:took #:runs #:stopping #:argv #:ref #:started #:again
+   #:repeat #:cancel #:ticks))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)
@@ -28,6 +29,7 @@ handed, or TELL and take the reply as a message." (of c)))))
 (defclass job (fs:dir)
   ((state     :initform :stopped :accessor state)
    (tries     :initform 0        :accessor tries)
+   (supervised :initform nil     :accessor supervisedp)
    (on-fault :initarg :on-fault :accessor on-fault :initform :restart)
    (took      :initform nil      :accessor took)
    (exit-of   :initform nil      :accessor exit-of)
@@ -145,8 +147,7 @@ be interrupted, so what can look between reads has to."
   (let ((it (took j)))
     (and (typep it 'bordeaux-threads:thread) (bordeaux-threads:thread-alive-p it))))
 
-(defmethod alivep ((j tick))
-  (and (member (name j) (actors:ticks) :test #'equal) t))
+(defmethod alivep ((j tick)) (and (took j) t))
 
 (defmethod start ((j thread))
   (setf (stopping j) nil)
@@ -159,7 +160,7 @@ be interrupted, so what can look between reads has to."
   j)
 
 (defmethod start ((j tick))
-  (setf (took j) (actors:repeat (seconds j) (runs j) :as (name j) :what (name j)))
+  (setf (took j) (actors:schedule (seconds j) (runs j) (name j)))
   j)
 
 (defmethod stop ((j thread))
@@ -170,7 +171,27 @@ be interrupted, so what can look between reads has to."
   j)
 
 (defmethod stop ((j tick))
-  (let ((it (took j))) (when it (actors:cancel it))) j)
+  (let ((it (took j))) (when it (actors:unschedule it) (setf (took j) nil))) j)
+
+(defun ticks () (remove-if-not (lambda (j) (typep j 'tick)) (jobs)))
+
+(defun repeat (seconds thunk &key (as (gensym "REPEAT-")) (what "a tick"))
+  "A tick called AS, running THUNK every SECONDS. Asking again under one name
+replaces what was there."
+  (let ((name (substitute #\. #\/ (princ-to-string as))))
+    (let ((had (named name)))
+      (when (typep had 'tick) (stop had) (forget name)))
+    (let ((j (make-instance 'tick :name name :every seconds :runs thunk
+                                  :on-fault :leave :describes what)))
+      (start j)
+      j)))
+
+(defun cancel (tick)
+  (let ((j (if (stringp tick) (named tick) tick)))
+    (when (typep j 'tick)
+      (stop j)
+      (forget (name j)))
+    j))
 
 (defmethod alivep ((j actor)) (and (took j) t))
 

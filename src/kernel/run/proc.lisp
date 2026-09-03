@@ -1,7 +1,5 @@
 (in-package #:pine/run/job)
 
-(defvar *supervised* nil)
-
 (defvar *under* nil)
 
 (defvar *tries* 8
@@ -21,8 +19,6 @@ that failed six times is held at the longest backoff for the life of the image,
 however well it runs afterwards.")
 
 (defvar *every* 1)
-
-(defvar *kinds* (d:table))
 
 (defun backoff (j)
   (min *backoff-cap* (expt 2 (min 16 (tries j)))))
@@ -52,15 +48,11 @@ this job and /proc/<name> is where they ask it."
                    :format-arguments (list (tries j) *settled*)))
   j)
 
-(defun supervised () *supervised*)
+(defun supervised () (remove-if-not #'supervisedp (jobs)))
 
 (defun supervise (j)
-  "Keep J running. A job is a node already; this is where it hangs, so pine read
-/proc/editor answers its state and pine write /proc/editor '(:restart)' starts it
-again."
-  (d:swap *supervised*
-           (lambda (all)
-             (append (remove (name j) all :key #'name :test #'equal) (list j))))
+  "Keep J running: what dies is started again, and what will not run is held."
+  (setf (supervisedp j) t)
   (when *under* (setf (fs:parent j) *under*))
   j)
 
@@ -71,12 +63,10 @@ Out of the jobs whether or not it was supervised. A job puts itself there as it 
 made, and one that nothing supervises was one nothing could ever take out again --
 which is a parser actor for every document ever opened, held for the life of the
 image."
-  (let ((j (or (find name (supervised) :key #'name :test #'equal)
-               (named name))))
+  (let ((j (named name)))
     (when j
       (fault:or-nothing "forgetting a job it could not stop still forgets it"
         (stop j))
-      (d:swap *supervised* (lambda (all) (remove j all)))
       (d:drop! *jobs* name))
     j))
 
@@ -107,16 +97,19 @@ run long enough to have earned it, and give up on what will not run at all."
 (defun attend (&key (every *every*))
   "Look over what is supervised, on the wheel. Without this the backoff, the tries
 and the restart are all written down and none of them ever happens."
-  (actors:repeat every #'sweep :as :proc :what "starting again what died"))
+  (repeat every #'sweep :as "proc" :what "starting again what died"))
 
-(defun kind (name maker)
-  "Say that NAME is a kind of job somebody can ask for, and how one is made from
-what they said. Registered where the class is, so this file names no kind it does
-not define and a kind loaded later is askable without this one being edited."
-  (d:keep! *kinds* (intern (string-upcase (princ-to-string name)) :keyword) maker)
-  name)
+(defgeneric told (kind name said)
+  (:documentation "A job of KIND, made from what somebody said: a value describes
+a program by its argv and an image by the systems it loads, and a kind that a
+value can describe answers here."))
 
-(defun kinds () (sort (mapcar #'princ-to-string (d:keys (d:all *kinds*))) #'string<))
+(defun kinds ()
+  (sort (loop :for m :in (sb-mop:generic-function-methods #'told)
+              :for spec := (first (sb-mop:method-specializers m))
+              :when (typep spec 'sb-mop:eql-specializer)
+                :collect (princ-to-string (sb-mop:eql-specializer-object spec)))
+        #'string<))
 
 (defun started (said)
   "Start what SAID asks for, and answer where it stands.
@@ -127,32 +120,29 @@ value carries, so asking for one says so. The name is given and not minted:
 whoever asked has to find it again, and two asking at once must not race."
   (let* ((name (and (getf said :name) (princ-to-string (getf said :name))))
          (want (getf said :kind))
-         (want (and want (intern (string-upcase (princ-to-string want)) :keyword)))
-         (maker (d:lookup (d:all *kinds*) want)))
+         (want (and want (intern (string-upcase (princ-to-string want)) :keyword))))
     (unless name (error "a job is started under a name; none was given."))
     (when (named name) (error "~a is already running." name))
-    (unless maker
+    (unless (member (princ-to-string want) (kinds) :test #'equal)
       (error "~(~a~) is not a kind that can be asked for. There is ~{~a~^, ~}: a ~
               thread and an actor are a function, and a value cannot carry one."
              want (kinds)))
-    (let ((j (funcall maker name said)))
+    (let ((j (told want name said)))
       (supervise j)
       (start j)
       (fs:full-name j))))
 
-(kind :program
-      (lambda (name said)
-        (make-instance 'program :name name
-                                :on-fault (asked-for said :on-fault :restart)
-                                :env (getf said :env)
-                                :argv (mapcar #'princ-to-string
-                                              (getf said :argv)))))
+(defmethod told ((kind (eql :program)) name said)
+  (make-instance 'program :name name
+                          :on-fault (asked-for said :on-fault :restart)
+                          :env (getf said :env)
+                          :argv (mapcar #'princ-to-string (getf said :argv))))
 
 (defun %attach (root)
   (setf *under* (fs:attach (make-instance 'fs:dir :name "proc"
-                                          :entries #'supervised
+                                          :entries #'jobs
                                           :describes "what this pine is running")
                            root))
-  (dolist (j (supervised) *under*) (setf (fs:parent j) *under*)))
+  (dolist (j (jobs) *under*) (setf (fs:parent j) *under*)))
 
 (pine/fs:builder #'%attach)
