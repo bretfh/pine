@@ -52,26 +52,32 @@ the faces by name, each as a plist."))
         (and n (fs:contents n)))
       +theme+))
 
+(defun %role (plist name)
+  "What PLIST says for NAME, by name: a role reads the same whichever package
+spelled it."
+  (loop :for (k v) :on plist :by #'cddr
+        :when (string= k name) :return (values v t)))
+
 (defgeneric hex (color palette)
   (:documentation "COLOR as the hex it stands for: a literal, or a role the palette
 names.")
   (:method ((color null) palette) (declare (ignore palette)) nil)
   (:method ((color string) palette) (declare (ignore palette)) color)
   (:method ((color symbol) palette)
-    (or (cdr (assoc color palette :test #'string=))
+    (or (%role palette color)
         (error "color ~s is not in the palette" color))))
 
 (defun build (name palette-plist metrics-plist specs)
   "Declare a theme at /ui/theme/<name>."
   (let* ((palette (loop :for (role h) :on palette-plist :by #'cddr
-                        :collect (cons role h)))
+                        :append (list (%as-keyword role) h)))
          (metrics (loop :for (key v) :on metrics-plist :by #'cddr
-                        :collect (cons key v)))
+                        :append (list (%as-keyword key) v)))
          (faces (loop :for (fname . spec) :in specs
-                      :collect (destructuring-bind (&key fg bg bold italic underline) spec
-                                 (cons fname (list :fg (hex fg palette) :bg (hex bg palette)
-                                                   :bold bold :italic italic
-                                                   :underline underline)))))
+                      :append (destructuring-bind (&key fg bg bold italic underline) spec
+                                (list fname (list :fg (hex fg palette) :bg (hex bg palette)
+                                                  :bold bold :italic italic
+                                                  :underline underline)))))
          (held (list :palette palette :metrics metrics :faces faces)))
     (fs:declared (lambda ()
                    (make-instance 'theme :name (string-downcase (symbol-name (%as-keyword name)))
@@ -87,7 +93,7 @@ names.")
 (defun %themed (name)
   "The active theme's face called NAME as a plist, or nothing."
   (let ((key (find-symbol (string-upcase name) :keyword)))
-    (and key (cdr (assoc key (faces (theme (active))))))))
+    (and key (getf (faces (theme (active))) key))))
 
 (defclass face-node (fs:value)
   ((written :initform nil :accessor written))
@@ -119,7 +125,7 @@ something is written here, and what was written after. Saved only once written."
         (dolist (n (fs:entries d))
           (let ((f (%as-face (fs:contents n))))
             (when f (setf (gethash (%as-keyword (fs:name n)) out) f))))
-        (loop :for (k . plist) :in (faces (theme (active)))
+        (loop :for (k plist) :on (faces (theme (active))) :by #'cddr
               :do (setf (gethash k out) (%as-face plist))))
     out))
 
@@ -131,7 +137,7 @@ something is written here, and what was written after. Saved only once written."
 (defmethod fs:entries ((d face-dir))
   (let ((had (call-next-method)))
     (append had
-            (loop :for (key) :in (faces (theme (active)))
+            (loop :for (key) :on (faces (theme (active))) :by #'cddr
                   :for name := (string-downcase (symbol-name key))
                   :unless (find name had :key #'fs:name :test #'equal)
                     :collect (%face-node d name)))))
@@ -165,12 +171,12 @@ look-up are one word because they are one idea."
 
 (defun color (role)
   "The hex of a palette ROLE in the active theme."
-  (or (cdr (assoc role (palette (theme (active))) :test #'string=))
+  (or (%role (palette (theme (active))) role)
       (error "the active theme has no color ~s" role)))
 
 (defun metric (key &optional default)
-  (let ((cell (assoc key (metrics (theme (active))) :test #'string=)))
-    (if cell (cdr cell) default)))
+  (multiple-value-bind (v found) (%role (metrics (theme (active))) key)
+    (if found v default)))
 
 (defun unhex (h)
   "A #rrggbb string as (r g b), or nothing for anything else. A face's FG and BG are
