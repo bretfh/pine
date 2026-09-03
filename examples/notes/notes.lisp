@@ -88,7 +88,7 @@ what it is worked out again for, and a place is what it can read."
     (when title (list title (read (format NIL "/notes/~a" title) :else "")))))
 
 ;;; The system. It starts like anything else that runs, which is what puts it at
-;;; /system/notes. What it puts up while it starts is its, so there is no STOP:
+;;; /proc/notes. What it puts up while it starts is its, so there is no STOP:
 ;;; the place, the surface and the chord all go when it does.
 
 (defclass notes (system) ()

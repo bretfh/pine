@@ -1,7 +1,7 @@
 (in-package #:pine/user)
 
 ;; What this pine loads. Each is a system: a class that starts and stops, at
-;; /system/<name>, and nothing here is more privileged than what you write.
+;; /proc/<name>, and nothing here is more privileged than what you write.
 
 (use :text)
 (use :host)
@@ -24,8 +24,8 @@
 
 ;; A write makes the node if nothing has put one there yet.
 
-(write /theme/active :ef-dream)
-(write /wm-terminal "alacritty")
+(write /ui/theme/active :ef-dream)
+(write /wm/terminal "alacritty")
 
 ;; A mode is a class, so the chain is class inheritance and CALL-NEXT-METHOD is
 ;; the fallback. This one is org with a tab stop of its own.
@@ -47,7 +47,7 @@
 ;; keyboard; a chord in WM is one the compositor takes and hands over whatever is
 ;; focused, which is what makes it a window manager's rather than an editor's.
 
-(write /wm-places "tiles")
+(write /wm/places "tiles")
 
 (bind 'wm "s-Return" "wm-terminal")
 (bind 'wm "s-q" "wm-close-window")

@@ -12,7 +12,7 @@
 
 (test an-app-is-a-system-like-any-other
   (is (not (null (app))))
-  (is (not (null (fs:at "/system/notes"))))
+  (is (not (null (fs:at "/proc/notes"))))
   (is (member "notes" (mapcar #'job:name (system:systems)) :test #'equal)))
 
 (test its-own-kind-of-node-is-a-place
@@ -64,7 +64,7 @@
 
 (test its-own-role-says-where-its-surface-goes
   (app)
-  (let* ((s (fs:at "/surface" "sticky"))
+  (let* ((s (fs:at "/ui/surface" "sticky"))
          (where (ui:anchor (ui:role s) 40 20)))
     (is (not (null s)))
     (is (equal '(:top :right) (ui:edges-of where)))
@@ -74,12 +74,12 @@
 (test its-surface-follows-what-it-read-and-crosses-the-wire
   (app)
   (command:run "note" '("zzz" "the last one written"))
-  (let ((form (fs:contents (fs:at "/surface/sticky/wire"))))
+  (let ((form (fs:contents (fs:at "/ui/surface/sticky/wire"))))
     (is (search "zzz" (princ-to-string form)))
     (is (typep (pine/ui:from-wire form) 'ui:column)))
   (command:run "note" '("zzzz" "later still"))
   (is (search "zzzz" (princ-to-string
-                      (fs:contents (fs:at "/surface/sticky/wire"))))
+                      (fs:contents (fs:at "/ui/surface/sticky/wire"))))
       "a write to its own node works its surface out again"))
 
 (test its-own-chord-runs-its-own-command
@@ -94,9 +94,9 @@
   (setf *app* t)
   (is (null (system:named "notes")))
   (is (null (fs:at "/notes")))
-  (is (null (fs:at "/surface" "sticky")))
+  (is (null (fs:at "/ui/surface" "sticky")))
   (is (null (command:named "note")))
-  (is (null (fs:at "/system/notes"))))
+  (is (null (fs:at "/proc/notes"))))
 
 (defvar *vcs* nil)
 
@@ -129,7 +129,7 @@ that uses PINE/USER and nothing else can make."
   (is (null (system:named "vcs")))
   (is (null (fs:at "/dev/vcs")) "the device it put under /dev")
   (is (null (fs:at "/work")) "the place it put up")
-  (is (null (fs:at "/surface" "board")) "its surface")
+  (is (null (fs:at "/ui/surface" "board")) "its surface")
   (is (null (command:named "branch")) "its commands")
   (is (not (member :vcs-branch (pine/edit::sources)))
       "and the way it answered its own kind of question"))
@@ -154,7 +154,7 @@ half worked and nothing said which half."
       (is (member :probe-theme (pine/ui::themes)) "the theme is there")
       (is (member :probe-category (pine/edit::sources)) "the prompt source is there")
       (is (not (null (host::declared "%probe-owned"))) "the declaration is there")
-      (is (not (null (fs:at "/surface" "probe-surface"))) "the surface is there")
+      (is (not (null (fs:at "/ui/surface" "probe-surface"))) "the surface is there")
       (is (not (null (mode:binding (make-instance 'mode:text) "C-c C-probe")))
           "the chord is there")
 
@@ -165,7 +165,7 @@ half worked and nothing said which half."
       (is (not (member :probe-category (pine/edit::sources))) "the source goes")
       (is (not (null (host::declared "%probe-owned")))
           "the declaration stays: a class was loaded, not put up")
-      (is (null (fs:at "/surface" "probe-surface")) "and the surface goes")
+      (is (null (fs:at "/ui/surface" "probe-surface")) "and the surface goes")
       (is (null (mode:binding (make-instance 'mode:text) "C-c C-probe"))
           "and the chord goes"))))
 
@@ -180,12 +180,12 @@ it. A click on an id of a surface that has gone runs nothing."
                          (lambda () (ui:button :click (lambda () (setf ran t))
                                                (ui:label "hi")))
                          :as 'ui:panel))
-      (let ((id (first (d:keys (pine/ui::acts (fs:at "/surface" "probe-acts"))))))
-        (fs:contents (fs:at "/surface/probe-acts/wire"))
-        (let ((id (or id (first (d:keys (pine/ui::acts (fs:at "/surface" "probe-acts")))))))
+      (let ((id (first (d:keys (pine/ui::acts (fs:at "/ui/surface" "probe-acts"))))))
+        (fs:contents (fs:at "/ui/surface/probe-acts/wire"))
+        (let ((id (or id (first (d:keys (pine/ui::acts (fs:at "/ui/surface" "probe-acts")))))))
           (is (not (null id)) "the click crossed as an id")
           (pine/run/system::%take-down home)
-          (is (null (fs:at "/surface" "probe-acts")) "the surface goes")
+          (is (null (fs:at "/ui/surface" "probe-acts")) "the surface goes")
           (pine/ui::act "probe-acts" (list id))
           (is (null ran) "and its closures went with it"))))))
 

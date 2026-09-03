@@ -97,7 +97,7 @@
 
 (defmethod screen:typed ((s screen:screen) said)
   (screen:tell s (lambda ()
-            (let ((n (fs:at "/key")))
+            (let ((n (fs:at "/edit/key")))
               (if n
                   (setf (fs:contents n) said)
                   (log:note "nothing at /key"))))))

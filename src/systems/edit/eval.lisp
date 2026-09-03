@@ -140,7 +140,7 @@ has reached. Two relationships, one protocol."
 (defun image-named (name)
   (find (princ-to-string name) (images) :key #'job:name :test #'equal))
 
-(defun %at (name) (fs:leaf "/eval" name))
+(defun %at (name) (fs:leaf "/edit/eval" name))
 
 (defun target () (and (fs:root) (fs:contents (%at "target"))))
 

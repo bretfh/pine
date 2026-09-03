@@ -2,11 +2,14 @@
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:job #:pine/run/job)
                     (#:peer #:pine/run/peer) (#:fault #:pine/run/fault)
-                    (#:log #:pine/fs/log) (#:wire #:pine/serve/wire))
+                    (#:log #:pine/fs/log) (#:wire #:pine/serve/wire)
+                    (#:actors #:pine/run/actors))
   (:export
-   #:where #:listening #:open-socket #:close-socket #:serve-node))
+   #:where #:listening #:open-socket #:close-socket #:serve-node #:*name*))
 (in-package #:pine/serve/socket)
 
+(defvar *name* "pine"
+  "What this pine is called: the socket it answers on is named after it.")
 (defvar *listening* nil
   "The socket this pine is answering on, or nothing.")
 (defparameter +backlog+ 16)
@@ -97,7 +100,7 @@ in between: that is what happens, not something that broke."
           :while took
           :do (%took took))))
 
-(defun open-socket (&key (name "pine"))
+(defun open-socket (&key (name *name*))
   "Answer on a socket, in the words anything can speak.
 
 Not another protocol: every line becomes one of the questions the tree already
@@ -137,8 +140,10 @@ needs no lisp on the other end."
   "Where this pine answers, as a place. Somebody who has the tree by another way
 can read where to reach it by this one."
   (make-instance 'fs:derived :name "serve" :live t
-              :reads #'listening
-              :describes "the socket this pine answers on"))
+              :reads (lambda ()
+                       (list :name *name* :socket (listening)
+                             :port (actors:remoting)))
+              :describes "what this pine is called and where it answers"))
 
 (defun %attach (root)
   (fs:attach (serve-node) root))

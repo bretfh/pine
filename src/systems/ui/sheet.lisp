@@ -40,8 +40,8 @@ compound, a string the selector as written.")
   (if (%compound segment) segment (format nil ".~a" segment)))
 
 (defun styles ()
-  "What is written at /style, as (SELECTOR PROPS), by selector."
-  (let ((at (and (fs:root) (fs:at "/style")))
+  "What is written at /ui/style, as (SELECTOR PROPS), by selector."
+  (let ((at (fs:at "/ui/style"))
         (acc nil))
     (when at
       (dolist (each (fs:entries at))
@@ -55,13 +55,13 @@ compound, a string the selector as written.")
   (first (put-rules (list (list selector properties)))))
 
 (defun put-rules (pairs)
-  "Put (SELECTOR PROPS) pairs at /style/?selector, replacing what stood there.
+  "Put (SELECTOR PROPS) pairs at /ui/style/?selector, replacing what stood there.
 
 What PINE:STYLE calls, so a config saying one rule and a frontend taking a whole
 sheet off the wire arrive the same way. This is also the far end of BROADCAST,
 where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (let ((n (fs:leaf "/style" (%path-segment (first each)))))
+    (let ((n (fs:leaf "/ui/style" (%path-segment (first each)))))
       (setf (fs:contents n) (second each))
       (setf (fs:owner n) system:*owner*)))
   (styles))
@@ -100,19 +100,12 @@ where a frontend puts what the daemon sent into its own tree."
      (list ".candidates" (list :background-color (p :bg-completion)
                                :color (p :fg))))))
 
-(defmethod sheet ()
-  "The stylesheet in cascade order: what pine ships, then what is at /style.
-
-A rule is written by hand and that is the whole of how a sheet is said: STYLE
-takes a selector and what it holds, and it lands at /style/<selector>. What is
-worked out here is only the two put together.
-
-Worked out and kept, the way the rules compiled from it are, because putting them
-together reads the theme: BUILT-IN calls COLOR for every colour it names. Composed
-once and kept in a variable, nothing could see that go stale -- writing
-/theme/active changed every face and left the sheet painting the colours of the
-theme before it, until somebody thought to compose it again."
-  (memo :sheet (lambda () (append (built-in) (styles)))))
+(defmethod fs:works ((s sheet))
+  "The stylesheet in cascade order: what pine ships, then what is at /ui/style.
+Compiled as it is worked out, and the compiled rules kept beside."
+  (let ((cascade (append (built-in) (styles))))
+    (setf (compiled s) (%compiled cascade))
+    cascade))
 
 (defun %theme-names () (themes))
 
@@ -141,41 +134,20 @@ theme before it, until somebody thought to compose it again."
                  :test #'equal)
          (%theme n name))))
 
-(defun %face-key (name)
-  "The keyword a face is kept under, without making one that is not already there:
-a path nobody named should not grow the keyword package."
-  (find-symbol (string-upcase (princ-to-string name)) :keyword))
-
-(defun %face-names ()
-  (let (acc)
-    (maphash (lambda (name f)
-               (declare (ignore f))
-               (push (string-downcase (symbol-name name)) acc))
-             (faces (theme (active))))
-    (sort acc #'string<)))
-
-(defun %face (name)
-  (let ((key (%face-key name)))
-    (when (and key (in-force key))
-      (make-instance 'fs:derived :name name :live t
-                  :reads (lambda ()
-                           (let ((f (in-force (%face-key name))))
-                             (when f
-                               (list :fg (fg f) :bg (bg f)
-                                     :bold (bold f) :italic (italic f)
-                                     :underline (underline f)))))))))
-
 (defun %attach (root)
-  (let ((themes (fs:attach
-                 (make-instance 'themes-node :name "theme"
-                                :describes "every theme there is, and which is on")
-                 root)))
-    (fs:attach (make-instance 'fs:dir :name "faces"
-                             :names #'%face-names :each #'%face
-                             :describes "every face in force")
-                 root)
-    (fs:ensure root "face")
-    (fs:ensure root "style")
+  (let* ((ui (fs:ensure root "ui"))
+         (themes (fs:attach
+                  (make-instance 'themes-node :name "theme"
+                                 :describes "every theme there is, and which is on")
+                  ui)))
+    (fs:attach (make-instance 'face-dir :name "face"
+                              :describes "every face in force; write one to change it")
+               ui)
+    (fs:attach (make-instance 'sheet :name "sheet"
+                              :describes "the stylesheet, in cascade order")
+               ui)
+    (fs:ensure ui "style")
+    (fs:ensure ui "surface")
     (let ((active (%active themes)))
       (unless (fs:contents active)
         (setf (fs:contents active) (active))))

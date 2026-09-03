@@ -30,7 +30,7 @@ was split into."))
                             :writes (lambda (value) (show w value)))
              w))
 
-(defun root () (fs:ensure "/window"))
+(defun root () (fs:ensure "/edit/window"))
 
 (defun make-window (&key shows (into (root)) name)
   (let ((w (make-instance 'window

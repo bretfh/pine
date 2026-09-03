@@ -102,7 +102,7 @@ at; ROLE, WHERE and WIRE."))
     (format stream "~a ~(~a~)~:[~; shown~]" (fs:name s)
             (class-name (class-of (role s))) (shown s))))
 
-(defun root () (fs:ensure "/surface"))
+(defun root () (fs:ensure "/ui/surface"))
 
 (defun surfaces ()
   (remove-if-not (lambda (n) (typep n 'surface)) (fs:entries (root))))
@@ -145,7 +145,7 @@ says it was given. Nothing where it means nothing, because a pine showing this o
 can be a frame behind."
   (let* ((all (alexandria:ensure-list said))
          (id (princ-to-string (first all)))
-         (s (fs:at "/surface" (princ-to-string name)))
+         (s (fs:at "/ui/surface" (princ-to-string name)))
          (thunk (and s (d:lookup (acts s) id))))
     (when thunk
       (fault:attempt (lambda () (apply thunk (rest all)))
@@ -219,7 +219,7 @@ disagree about what leaving it out meant."
     s))
 
 (defun forget-surface (name)
-  (fs:erase (format nil "/surface/~a" name))
+  (fs:erase (format nil "/ui/surface/~a" name))
   name)
 
 (defmacro defsurface (name options &body body)

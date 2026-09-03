@@ -8,8 +8,6 @@
    #:named #:kinds #:puts #:*owner*))
 (in-package #:pine/run/system)
 
-(defvar *under* nil)
-
 (defvar *owner* nil
   "The package of the system that is starting or stopping, while it does.
 
@@ -106,16 +104,8 @@ up a place and a surface writes no STOP at all."
   (let ((j (job:named (string-downcase (princ-to-string name)))))
     (and (typep j 'system) j)))
 
-(defun %attach (root)
-  (setf *under* (fs:attach (make-instance 'fs:dir :name "system"
-                                          :entries #'systems
-                                          :describes "what pine has loaded")
-                           root))
-  (dolist (s (systems) *under*) (setf (fs:parent s) *under*)))
-
 (defun use (name)
-  "Load a system and start it. /system/<name> is a node afterwards, so
-pine write /system/desk '(:stop)' takes it away again."
+  "Load a system and start it. It is at /proc/<name> afterwards."
   (let ((name (string-downcase (princ-to-string name))))
     (or (named name)
         (progn
@@ -128,7 +118,6 @@ pine write /system/desk '(:stop)' takes it away again."
               (error "~a loaded but is not a system." name))
             (command:claim (%package class))
             (let ((s (make-instance (class-name class) :name name :on-fault :leave)))
-              (when *under* (setf (fs:parent s) *under*))
               (job:supervise s)
               (job:start s)
               (log:note "~a is up" name)
@@ -142,6 +131,3 @@ pine write /system/desk '(:stop)' takes it away again."
       (job:forget (job:name s))
       (log:note "~a is down" (job:name s)))
     s))
-
-
-(pine/fs:builder #'%attach)

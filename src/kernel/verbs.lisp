@@ -95,7 +95,7 @@ a config could mute and never unmute."
   (let ((n (fs:at where)))
     (when n
       (list :name (fs:full-name n)
-            :class (class-name (class-of n))
+            :class (string-downcase (princ-to-string (class-name (class-of n))))
             :describes (fs:describes n)
             :under (mapcar #'fs:name (fs:entries n))
             :saved (fs:savedp n)

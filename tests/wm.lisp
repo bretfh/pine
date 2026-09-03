@@ -14,7 +14,7 @@
   "A pine that is the window manager, told what a compositor has. Everything about
 it is a value, so nothing here needs a compositor."
   (editing)
-  (setf (fs:contents (fs:leaf "/wm-manages")) :pine)
+  (setf (fs:contents (fs:leaf "/wm/manages")) :pine)
   (unless (system:named "wm") (pine:use :wm))
   (let ((c (pine/wm:current)))
     (setf (fs:contents (fs:at "/wm/said")) +said+)
@@ -159,11 +159,11 @@ different class in between, so what places the windows has to come with it."
   (editing)
   (when (system:named "tiles") (pine:drop :tiles))
   (when (system:named "wm") (pine:drop :wm))
-  (setf (fs:contents (fs:leaf "/wm-places")) "tiles")
-  (setf (fs:contents (fs:leaf "/wm-manages")) :compositor)
+  (setf (fs:contents (fs:leaf "/wm/places")) "tiles")
+  (setf (fs:contents (fs:leaf "/wm/manages")) :compositor)
   (pine:use :wm)
   (is (system:named "tiles") "the config's answer is used when the wm comes up")
-  (setf (fs:contents (fs:leaf "/wm-manages")) :pine)
+  (setf (fs:contents (fs:leaf "/wm/manages")) :pine)
   (pine:drop :wm)
   (pine:use :wm)
   (is (typep (pine/wm:current) 'pine/wm/managed:managed))

@@ -2,6 +2,7 @@
   (:use #:cl #:pine)
   (:shadowing-import-from #:pine #:read #:write #:map #:set)
   (:import-from #:pine/wm/compositor #:ids #:outputs)
+  (:import-from #:pine/wm #:current)
   (:local-nicknames (#:fs #:pine/fs))
   (:export
    #:layout #:tall #:wide #:full #:stacked
@@ -150,8 +151,8 @@ commands away, and pine places nothing again."))
 
 
 (defun %system ()
-  "The system itself: a system is a node, and /system/tiles is where it stands."
-  (at /system/tiles))
+  "The system itself, where it runs: /proc/tiles."
+  (at /proc/tiles))
 
 (defun %layout ()
   "Which layout is in force, by name: pine write /wm/layout wide."
@@ -170,14 +171,14 @@ commands away, and pine places nothing again."))
 
 (defun %area (s)
   (declare (ignore s))
-  (let ((c (at /wm)))
+  (let ((c (current)))
     (destructuring-bind (&optional (x 0) (y 0) (wide 1920) (tall 1080))
         (or (getf (first (outputs c)) :area) (list))
       (area :x x :y y :wide wide :tall tall))))
 
 (defun %ids (s)
   (declare (ignore s))
-  (ids (at /wm)))
+  (ids (current)))
 
 (defun %plainly (p)
   "One PLACED as plain data. Whatever shows a window may be another pine, so what
@@ -206,10 +207,10 @@ of being the window manager here."
           (layouts)))
 
 (defmethod start ((s tiles))
-  (let ((c (at /wm)))
-    (unless c (error "no /wm: use the wm system before this one."))
-    (fs:attach (%layout) c)
-    (let ((said (fs:entry c "said")))
+  (let ((c (current)))
+    (unless c (error "no compositor: use the wm system before this one."))
+    (puts (%layout) (ensure "/wm"))
+    (let ((said (fs:at "/wm/said")))
       (when said
         (setf (watching s)
               (list (watch said

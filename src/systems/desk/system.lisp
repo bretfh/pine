@@ -15,7 +15,7 @@ not. It names no package of pine's: what it reads and writes, it says by path, a
 what it draws, it says in the words pine offers."))
 
 
-(defun %at (name) (at (format nil "/surface/~a/shown" name)))
+(defun %at (name) (at (format nil "/ui/surface/~a/shown" name)))
 
 (defun %shown (name)
   (let ((n (%at name))) (and n (contents n))))
@@ -114,11 +114,11 @@ what it draws, it says in the words pine offers."))
                        (and (shown each) t))))
 
 (defcommand "surface" (said) (:describes "what one surface is")
-  (let ((s (at (format nil "/surface/~a" said))))
+  (let ((s (at (format nil "/ui/surface/~a" said))))
     (when s
       (list :role (string-downcase (class-name (class-of (role s))))
             :shown (and (shown s) t)
-            :size (read (format nil "/surface/~a/size" said))))))
+            :size (read (format nil "/ui/surface/~a/size" said))))))
 
 (defmethod start ((s desk))
   (%bar)
@@ -130,5 +130,5 @@ what it draws, it says in the words pine offers."))
 
 (defmethod stop ((s desk))
   (dolist (each '("bar" "sound" "power" "calendar"))
-    (erase (format nil "/surface/~a" each)))
+    (erase (format nil "/ui/surface/~a" each)))
   s)

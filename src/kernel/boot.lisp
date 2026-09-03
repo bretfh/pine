@@ -55,10 +55,9 @@ stands in comes back here with the restarts it is still offering."
 (defun boot (&key (name "pine") store remoting)
   (libs:attend)
   (unless (actors:runningp) (actors:boot :remoting remoting))
+  (setf pine/serve/socket:*name* name)
   (let ((root (fs:root)))
-    (setf (fs:contents (fs:leaf root "name")) name)
-    (setf (fs:contents (fs:leaf root "port")) (actors:remoting))
-    (fs:ensure "/surface")
+    (fs:ensure "/ui/surface")
     (mount:mount #p"/" root "file"))
   (job:attend)
   (when store
@@ -183,7 +182,7 @@ Say NIL for one that answers only on its socket."
                  "answering on a socket")
   (fault:attempt (lambda () (opening :display)) "opening the display")
   (log:note "~a: remoting ~a, ~d command~:p, ~d running"
-            (fs:contents (fs:at "/name"))
+            pine/serve/socket:*name*
             (actors:remoting)
             (length (command:commands))
             (length (job:jobs)))

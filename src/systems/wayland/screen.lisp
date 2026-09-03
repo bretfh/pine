@@ -46,14 +46,14 @@ connection is a thing you block on."))
 (defun availablep () (and (uiop:getenv "WAYLAND_DISPLAY") t))
 
 (defun %at (name &rest under)
-  (apply #'fs:at "/surface" name under))
+  (apply #'fs:at "/ui/surface" name under))
 
 (defun tell (s thunk)
   "Do something that is not drawing, off the thread holding the connection."
   (let ((to (says s)))
     (when to (job:tell to thunk) t)))
 
-(defun %named (name) (fs:at "/surface" name))
+(defun %named (name) (fs:at "/ui/surface" name))
 
 (defun %tree (name)
   (let ((it (%named name))) (when it (ui:tree it))))
@@ -160,7 +160,7 @@ name, and the old one is something nothing writes."
 (defun %settle (s)
   "Take down what /surface no longer says."
   (d:do-each (name (d:keys (d:all (up s))))
-    (unless (fs:at "/surface" name)
+    (unless (fs:at "/ui/surface" name)
       (let ((p (d:lookup (d:all (up s)) name)))
         (%unlisten s name)
         (d:drop! (up s) name)
@@ -213,7 +213,7 @@ it: river kills a manager that waits."
   (when (and (pane:chromep p) (pane:dirty p)) (wm:wake (wm-of s))))
 
 (defun %names ()
-  (let ((n (fs:at "/surface")))
+  (let ((n (fs:at "/ui/surface")))
     (and n (mapcar #'fs:name (fs:entries n)))))
 
 (defun %managing-windows (s)
@@ -222,7 +222,7 @@ A wm already up is the wrong one, so it goes first."
   (when (wm-of s)
     (fault:attempt
      (lambda ()
-       (setf (fs:contents (fs:leaf "/wm-manages")) :pine)
+       (setf (fs:contents (fs:leaf "/wm/manages")) :pine)
        (when (system:named "wm") (system:drop "wm"))
        (system:use "wm")
        (chords-wanted s))

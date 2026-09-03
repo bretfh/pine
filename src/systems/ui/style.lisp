@@ -60,25 +60,21 @@ order they were written in."
     (destructuring-bind (bs bc) b
       (or (> as bs) (and (= as bs) (> ac bc))))))
 
-(defgeneric sheet ()
-  (:documentation "The stylesheet, as (SELECTOR PROPS) pairs in cascade order.
+(defclass sheet (fs:derived)
+  ((compiled :initform nil :accessor compiled))
+  (:documentation "The stylesheet at /ui/sheet, and what it compiles to. Worked out
+in PINE/UI/SHEET, where what pine ships and what was written are put together."))
 
-Answered in PINE/UI/SHEET, which is where what pine ships and what a config wrote
-are put together. Declared here because RULES compiles it and this file loads
-first."))
+(defun %compiled (cascade)
+  (loop :for (text props) :in cascade
+        :for at :from 0
+        :append (loop :for segments :in (%group text)
+                      :collect (list segments props (specificity segments) at))))
 
 (defun rules ()
-  "Every rule, compiled, worked out once and kept until what it was worked out of
-moves. It reads the sheet, the sheet reads the theme and what is at /style, and
-each of those is a place -- so a colour changed anywhere is a rule compiled again
-and nothing has to be told."
-  (memo
-   :rules
-   (lambda ()
-     (loop :for (text props) :in (sheet)
-           :for at :from 0
-           :append (loop :for segments :in (%group text)
-                         :collect (list segments props (specificity segments) at))))))
+  "Every rule, compiled, kept until what the sheet read moves."
+  (let ((s (fs:at "/ui/sheet")))
+    (when s (fs:contents s) (compiled s))))
 
 (defun %fits (segment classes hover)
   (let ((pseudo (getf segment :pseudo)))

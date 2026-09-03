@@ -30,7 +30,7 @@
   (or (fs:at "/text" +document+)
       (text:make-document +document+ :mode (make-instance 'prompt))))
 
-(defun %under () (fs:ensure "/prompt"))
+(defun %under () (fs:ensure "/edit/prompt"))
 
 (defun %place (name builder)
   (let ((under (%under)))
@@ -220,7 +220,7 @@ starting over."
 
 (defun %history-node (name)
   (when (and name (fs:root))
-    (fs:leaf "/prompt/history" (string-downcase (string name)))))
+    (fs:leaf "/edit/prompt/history" (string-downcase (string name)))))
 
 (defun history-of (name)
   (let ((n (%history-node name)))

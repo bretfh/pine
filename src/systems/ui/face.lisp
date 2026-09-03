@@ -52,28 +52,10 @@ theme."))
         (error "no theme called ~s" name))))
 
 (defun active ()
-  "The theme in force here: /theme/active, which is a value like any other."
-  (or (let ((n (and (fs:root) (fs:at "/theme/active"))))
+  "The theme in force here: /ui/theme/active, which is a value like any other."
+  (or (let ((n (fs:at "/ui/theme/active")))
         (and n (fs:contents n)))
       +theme+))
-
-(defun memo (which thunk)
-  "What WHICH worked out to, kept in the tree so it is thrown away when anything it
-read moves. Before there is a tree, it is worked out every time."
-  (if (null (fs:root))
-      (funcall thunk)
-      (let* ((name (string-downcase (symbol-name which)))
-             (under (or (fs:entry (fs:root) "memo")
-                        (fs:attach (make-instance 'fs:dir :name "memo")
-                                     (fs:root))))
-             (n (fs:entry under name)))
-        (cond ((null n)
-               (setf n (make-instance 'fs:derived :name name :reads thunk))
-               (fs:attach n under))
-              ((not (eq thunk (fs:reads n)))
-               (setf (fs:reads n) thunk)
-               (fs:moved n)))
-        (fs:contents n))))
 
 (defgeneric hex (color palette)
   (:documentation "COLOR as the hex it stands for: a literal, or a role the palette
@@ -105,21 +87,70 @@ names.")
                          :bold (getf m :bold) :italic (getf m :italic)
                          :underline (getf m :underline))))
 
-(defun %resolve ()
-  "The active theme's faces with whatever was written at /face/?name on top."
-  (let ((out (make-hash-table :test 'eq))
-        (written (and (fs:root) (fs:at "/face"))))
-    (maphash (lambda (k v) (setf (gethash k out) v)) (faces (theme (active))))
-    (when written
-      (dolist (each (fs:entries written))
-        (let ((f (%as-face (fs:contents each))))
-          (when f (setf (gethash (%as-keyword (fs:name each)) out) f)))))
-    out))
+(defun %plist (f)
+  (list :fg (fg f) :bg (bg f) :bold (bold f) :italic (italic f)
+        :underline (underline f)))
+
+(defun %themed (name)
+  "The active theme's face called NAME, or nothing."
+  (let ((key (find-symbol (string-upcase name) :keyword)))
+    (and key (gethash key (faces (theme (active)))))))
+
+(defclass face-node (fs:value)
+  ((written :initform nil :accessor written))
+  (:documentation "One face in force at /ui/face/<name>: the active theme's until
+something is written here, and what was written after. Saved only once written."))
+
+(defmethod fs:savedp ((n face-node)) (written n))
+
+(defmethod (setf fs:contents) :after (value (n face-node))
+  (declare (ignore value))
+  (setf (written n) t))
+
+(defmethod fs:contents ((n face-node))
+  (if (written n)
+      (call-next-method)
+      (let ((f (%themed (fs:name n)))) (and f (%plist f)))))
+
+(defclass face-dir (fs:dir)
+  ((in-force :accessor in-force-of))
+  (:documentation "Every face in force, one entry each."))
+
+(defun %face-node (d name)
+  (fs:child d name (lambda () (make-instance 'face-node :name name :parent d))))
+
+(defun %in-force (d)
+  (let ((out (make-hash-table :test 'eq)))
+    (dolist (n (fs:entries d) out)
+      (let ((f (%as-face (fs:contents n))))
+        (when f (setf (gethash (%as-keyword (fs:name n)) out) f))))))
+
+(defmethod initialize-instance :after ((d face-dir) &key)
+  (setf (in-force-of d)
+        (make-instance 'fs:derived :name "in force" :parent d
+                       :reads (lambda () (%in-force d)))))
+
+(defmethod fs:entries ((d face-dir))
+  (let ((had (call-next-method)))
+    (append had
+            (loop :for key :being :the :hash-keys :of (faces (theme (active)))
+                  :for name := (string-downcase (symbol-name key))
+                  :unless (find name had :key #'fs:name :test #'equal)
+                    :collect (%face-node d name)))))
+
+(defmethod fs:entry ((d face-dir) name)
+  (or (call-next-method)
+      (let ((name (princ-to-string name)))
+        (and (%themed name) (%face-node d name)))))
 
 (defun faces-in-force ()
-  "Face name to face, worked out once and kept until the tree moves: NAMED is on the
-path every painted cell takes."
-  (or *in-force* (memo :faces #'%resolve)))
+  "Face name to face, worked out once and kept until what it read moves: NAMED is
+on the path every painted cell takes."
+  (or *in-force*
+      (let ((d (fs:at "/ui/face")))
+        (if d
+            (fs:contents (in-force-of d))
+            (make-hash-table :test 'eq)))))
 
 (defmacro with-faces (&body body)
   "Run BODY with the faces in force worked out once."

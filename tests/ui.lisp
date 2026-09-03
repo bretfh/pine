@@ -121,8 +121,8 @@ both, so they have to be the same three numbers."
         (setf (fs:contents where) "two")
         (is (equal "two" (ui:content (ui:tree s)))
             "it follows what it read, with nothing subscribing")
-        (is (eq s (fs:at "/surface" "ticker")))
-        (setf (fs:contents (fs:at "/surface/ticker" "shown")) nil)
+        (is (eq s (fs:at "/ui/surface" "ticker")))
+        (setf (fs:contents (fs:at "/ui/surface/ticker" "shown")) nil)
         (is (null (ui:shown s)))))))
 
 (test a-key-is-one-object-for-one-chord
@@ -199,11 +199,11 @@ every row below it."
                          (lambda () (ui:button :click (ui:here)
                                                (ui:label "x"))))))))
       (is (equal '("/probe/rows/beta/click" "/probe/rows/gamma/click")
-                 (%ids-in (fs:contents (fs:at "/surface/probe-ids/wire"))))
+                 (%ids-in (fs:contents (fs:at "/ui/surface/probe-ids/wire"))))
           "an id says what its row is for, not where it fell in the walk")
       (fs:erase "/probe/rows/beta")
       (is (equal '("/probe/rows/gamma/click")
-                 (%ids-in (fs:contents (fs:at "/surface/probe-ids/wire"))))
+                 (%ids-in (fs:contents (fs:at "/ui/surface/probe-ids/wire"))))
           "and the row that stayed keeps the id it had when the one above went")
       (pine/ui::forget-surface (fs:name s)))))
 
@@ -217,7 +217,7 @@ identity: the second thing in the first row."
                 (ui:column (ui:row (ui:label "x")
                                    (ui:button :click "mute" (ui:label "m"))))))))
       (is (equal '("@0.1/click")
-                 (%ids-in (fs:contents (fs:at "/surface/probe-shape/wire"))))
+                 (%ids-in (fs:contents (fs:at "/ui/surface/probe-shape/wire"))))
           "where it sits, root first")
       (pine/ui::forget-surface (fs:name s)))))
 

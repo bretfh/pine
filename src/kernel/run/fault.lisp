@@ -300,21 +300,22 @@ the debugger."
                                                        (let ((f (it)))
                                                          (when f (take f (princ-to-string value)))))))))))))
 
-(defun %attach (root)
-  (fs:attach
-   (make-instance 'fs:derived :name "expected" :live t
+(defun %expected ()
+  (make-instance 'fs:derived :name "expected" :live t
                  :reads (lambda ()
                           (loop :for (why broke at) :in (expecteds)
                                 :collect (list :why why :at at
                                                :said (princ-to-string broke))))
                  :writes (lambda (value)
                            (unless value (forget-expected)))
-                 :describes "what was let go of, and why nothing was an answer")
-   root)
+                 :describes "what was let go of, and why nothing was an answer"))
+
+(defun %attach (root)
   (fs:attach
    (make-instance 'fs:dir :name "fault"
-               :names (lambda () (mapcar #'id (faults)))
-               :each #'%fault
+               :names (lambda () (cons "expected" (mapcar #'id (faults))))
+               :each (lambda (name)
+                       (if (equal name "expected") (%expected) (%fault name)))
                :describes "what has broken, and what it stands in")
    root))
 

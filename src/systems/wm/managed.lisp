@@ -14,8 +14,7 @@ about arrangement -- that is whatever writes /wm/placement.")
 (defclass managed (compositor:compositor)
   ((said  :initform nil :accessor said)
    (wants :initform nil :accessor wants)
-   (where :initform nil :accessor where)
-   (kids  :initform nil :accessor kids))
+   (where :initform nil :accessor where))
   (:documentation "A compositor pine is the window manager of.
 
 The other subclass talks to one; this one is told what there is and says where it
@@ -121,13 +120,4 @@ is hidden. What is wanted is taken once, so nothing is done twice."
                                :reads (lambda () (take c))
                                :writes (lambda (value) (asked c value))
                                :describes "what pine wants done about it"))))
-    (dolist (each all) (setf (fs:parent each) c))
-    (setf (kids c) all)))
-
-(defmethod fs:entries ((c managed))
-  (append (call-next-method) (kids c)))
-
-(defmethod fs:entry ((c managed) name)
-  (let ((name (princ-to-string name)))
-    (or (find name (kids c) :key #'fs:name :test #'equal)
-        (call-next-method))))
+    (setf (compositor:parts c) (append (compositor:parts c) all))))

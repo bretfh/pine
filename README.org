@@ -67,7 +67,7 @@ says and what you type are one language:
 
 Pine is modular. Each of the ways pine provides a handle to something on your
 host for usage, treesitter, host machine information, rendering with wayland,
-each of these is a system, a class you start and stop at =/system/<name>=, and
+each of these is a system, a class you start and stop at =/proc/<name>=, and
 each is written in the same language as everything You load in systems with use:
 
 : ./pine use text     # documents, modes, and the parse behind them
@@ -142,7 +142,7 @@ and every surface as PNGs, with no display and no compositor:
 : ./pine run note today "it works"
 : ./pine read /notes
 : ./pine read /notes/today
-: ./pine toggle /surface/sticky/shown
+: ./pine toggle /ui/surface/sticky/shown
 : ./pine drop notes                    # and everything it put there goes
 
 * Running it

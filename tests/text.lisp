@@ -110,7 +110,7 @@ wrong stretch, so writing it replaces something it was never standing for."
     (is (equal "(defun a () 1)"
                (fs:contents (fs:at doc "defun/a/text"))))
     (text:goto doc 0 0)
-    (setf (fs:contents (fs:at "/key")) "C-e")
+    (setf (fs:contents (fs:at "/edit/key")) "C-e")
     (setf (fs:contents (fs:at doc "defun/b/text")) "(defun b () 99)")
     (is (equal (format nil "(defun a () 1)~%(defun b () 99)") (text:text doc)))))
 

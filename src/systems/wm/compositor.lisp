@@ -1,7 +1,7 @@
 (defpackage #:pine/wm/compositor
   (:use #:cl)
   (:local-nicknames (#:fs #:pine/fs))
-  (:export #:compositor #:workspaces #:windows #:titled #:focused #:focus
+  (:export #:compositor #:parts #:workspaces #:windows #:titled #:focused #:focus
            #:outputs #:ids #:rect #:hidden #:hide #:show
            #:step-window #:close-window #:overview #:leave #:split #:act #:verbs))
 (in-package #:pine/wm/compositor)
@@ -11,9 +11,9 @@
 (defparameter +window-fields+ '("title" "app" "rect" "hidden" "focused"))
 
 (defclass compositor (fs:dir)
-  ((places :initform nil :accessor places))
-  (:documentation "The compositor this session is under, in the namespace: its
-outputs, its windows, and what it will take.
+  ((parts :initform nil :accessor parts))
+  (:documentation "The compositor this session is under. PARTS are what it answers
+for, put under /wm: its outputs, its windows, and what it will take.
 
 A class, so pine being the compositor and pine talking to one are the same protocol
 with two subclasses under it. What is under here is the machine's window resources
@@ -209,17 +209,6 @@ rest is what the compositor says, and says alone."
 (defmethod initialize-instance :after ((c compositor) &key)
   (let ((all (list* (%outputs c) (%workspaces c) (%windows c) (%focused c)
                     (mapcar (lambda (name) (%verb c name)) (verbs c)))))
-    (dolist (each all) (setf (fs:parent each) c))
-    (setf (places c) all)))
-
-(defmethod fs:entries ((c compositor))
-  "What the compositor answers for, and whatever was hung here besides: a window
-manager attaches its own places under /wm and they are found like any other."
-  (append (places c) (call-next-method)))
-
-(defmethod fs:entry ((c compositor) name)
-  (let ((name (princ-to-string name)))
-    (or (find name (places c) :key #'fs:name :test #'equal)
-        (call-next-method))))
+    (setf (parts c) all)))
 
 

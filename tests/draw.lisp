@@ -5,7 +5,7 @@
 (defun on-screen ()
   "What the editor surface holds, as text. Not what a function answers when asked
 directly: what is on the screen."
-  (let ((tree (ui:tree (fs:at "/surface" "editor"))))
+  (let ((tree (ui:tree (fs:at "/ui/surface" "editor"))))
     (with-output-to-string (out)
       (labels ((walk (w)
                  (when w
@@ -17,7 +17,7 @@ directly: what is on the screen."
 
 (defun on-screen-painted ()
   "The rows with their colours, so a selection moving is a change."
-  (let ((tree (ui:tree (fs:at "/surface" "editor")))
+  (let ((tree (ui:tree (fs:at "/ui/surface" "editor")))
         (out nil))
     (labels ((walk (w)
                (when w

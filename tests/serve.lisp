@@ -75,11 +75,11 @@ nothing with a dropped connection and something with a sentence."
     (is (eq :no (first (pine/run/peer::received (list :contents "/nowhere")))))
     (fs:built (fs:root))
     (ui:make-surface "test-surface" (lambda () (ui:label "hi")) :as 'ui:panel)
-    (let ((said (pine/run/peer::received (list :contents "/surface/test-surface/tree"))))
+    (let ((said (pine/run/peer::received (list :contents "/ui/surface/test-surface/tree"))))
       (is (eq :no (first said)) "a widget has no spelling")
       (is (search "test-surface" (second said)) "and the answer names the place"))
     (is (eq :ok (first (pine/run/peer::received
-                        (list :contents "/surface/test-surface/wire"))))
+                        (list :contents "/ui/surface/test-surface/wire"))))
         "while what is under it does have one")))
 
 
