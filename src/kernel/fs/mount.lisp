@@ -106,7 +106,7 @@ nobody looked at."
       (if (pathname-name path)
           (delete-file path)
           (uiop:delete-empty-directory path))
-      (d:drop! (fs::memo n) name)
+      (d:swap (slot-value n 'fs::memo) #'d:without name)
       (fs:moved n))
     path))
 

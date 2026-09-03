@@ -21,13 +21,13 @@
 machine does; a key is ten a second and a device tick is one.")
 
 (defvar *stop* nil)
-(defvar *wrong* (d:table))
-(defvar *counts* (d:table))
+(defvar *wrong* (d:no-map))
+(defvar *counts* (d:no-map))
 (defvar *factor* nil)
 
-(defun bad (what) (d:update! *wrong* what (lambda (n) (1+ (or n 0)))))
-(defun did (what) (d:update! *counts* what (lambda (n) (1+ (or n 0)))))
-(defun tally (what) (or (d:lookup (d:all *counts*) what) 0))
+(defun bad (what) (d:swap *wrong* (lambda (m) (d:with m what (1+ (or (d:lookup m what) 0))))))
+(defun did (what) (d:swap *counts* (lambda (m) (d:with m what (1+ (or (d:lookup m what) 0))))))
+(defun tally (what) (or (d:lookup *counts* what) 0))
 
 (defun %at (name) (fs:at nil name))
 
@@ -149,7 +149,7 @@ anybody's reader set."
       (let* ((all (fs:contents (%at "all")))
              (n (fs:contents (%at "n")))
              (left (loose))
-             (broke (d:pairs (d:all *wrong*))))
+             (broke (d:pairs *wrong*)))
         (format t "~&~34@a ~a~%" "every answer whole:"
                 (if (null broke) "yes" (format nil "NO ~a" broke)))
         (format t "~&~34@a ~a~%" "settled to one state:"

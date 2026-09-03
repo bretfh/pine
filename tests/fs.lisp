@@ -302,7 +302,7 @@ anybody can ask about would be a name anybody can grow it by."
                                  :each (lambda (name) (declare (ignore name)) nil))))
       (fs:attach p (fs:root))
       (is (null (fs:entry p "nobody")))
-      (is (null (d:keys (d:all (fs::memo p)))) "and nothing was kept saying so")
+      (is (null (d:keys (fs::memo p))) "and nothing was kept saying so")
       (fs:attach p (fs:root))
       (is (equal "/empty" (fs:full-name p))
           "so renaming what is under it has something to rename"))))

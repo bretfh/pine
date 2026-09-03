@@ -37,7 +37,7 @@ closes that end and the stream goes with it.")
 (defclass shell (fs:dir)
   ((ran     :initform nil :accessor ran-of)
    (said    :initform nil :accessor said-of)
-   (asked   :initform (d:table) :reader asked-of)
+   (asked   :initform (d:no-map) :accessor asked-of)
    (streams :initform nil :accessor streams))
   (:documentation "Every shell line that has been run and what it said; what each
 line last said, kept for a breath; and the streams whose lines say the world
@@ -63,7 +63,7 @@ it change."
           (lambda (all)
             (d:capped (cl:remove line all :key #'car :test #'equal)
                       (cons line out) *kept*)))
-  (let ((n (d:lookup (d:all (fs::memo *sh*)) line)))
+  (let ((n (d:lookup (fs::memo *sh*) line)))
     (when n (fs:moved n)))
   out)
 
@@ -83,23 +83,23 @@ it change."
   "Let go of the answers whose breath has passed. Done when the table has grown
 rather than on every ask, so a line that is asked about every frame costs a lookup
 and nothing else."
-  (let ((old (%breathed)) (asked (asked-of *sh*)))
-    (d:do-map (line had (d:all asked))
-      (when (> (- now (cdr had)) old) (d:drop! asked line)))))
+  (let ((old (%breathed)))
+    (d:do-map (line had (asked-of *sh*))
+      (when (> (- now (cdr had)) old)
+        (d:swap (slot-value *sh* 'asked) #'d:without line)))))
 
 (defun asked (line)
   "What a line says, remembered for a breath, so a panel reading three things out of
 one command runs it once and a bar built twice in a frame does not fork twice."
   (let* ((now (get-internal-real-time))
-         (asked (asked-of *sh*))
-         (had (d:lookup (d:all asked) line)))
+         (had (d:lookup (asked-of *sh*) line)))
     (cond ((and had (< (- now (cdr had)) (%breathed)))
            (car had))
-          (t (when (> (d:size (d:all asked)) *asked-kept*)
+          (t (when (> (d:size (asked-of *sh*)) *asked-kept*)
                (%forget-stale now))
              (meter:counted :sh-fork)
              (let ((said (%output line)))
-               (d:keep! asked line (cons said now))
+               (d:swap (slot-value *sh* 'asked) #'d:with line (cons said now))
                said)))))
 
 (defun sh (format &rest arguments)

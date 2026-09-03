@@ -49,9 +49,9 @@ A region is kept under its name so that one still there is the same node it was
 and a watcher on it goes on watching. One the mode has stopped naming is not still
 there: typing a name a character at a time says a different one on every key, and
 every one of them stayed for as long as the image ran."
-  (dolist (name (d:keys (d:all (fs::memo under))) under)
+  (dolist (name (d:keys (fs::memo under)) under)
     (unless (member name kept :test #'equal)
-      (d:drop! (fs::memo under) name))))
+      (d:swap (slot-value under 'fs::memo) #'d:without name))))
 
 (defun %build (under said)
   "Put the spans the mode said into the namespace under UNDER, keeping the node that

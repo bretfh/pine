@@ -13,7 +13,7 @@
   (:export #:run #:workloads))
 (in-package #:pine/bench)
 
-(defvar *workloads* (d:table))
+(defvar *workloads* (d:no-map))
 (defvar *size* 2000)
 (defvar *for* 5)
 (defparameter +cols+ 100)
@@ -24,7 +24,7 @@
 is printed above the numbers, so a number can never appear without saying where it
 came from."
   (declare (ignore options))
-  `(d:keep! *workloads* ,(string-downcase (string name))
+  `(d:swap *workloads* #'d:with ,(string-downcase (string name))
             (list :drives ,drives :run (lambda () ,@body))))
 
 (defun %lisp-text (lines)
@@ -100,7 +100,7 @@ parse and the highlight walk are re-driven at every screen"
 (workload huge ()
     "the same typing, in a hundred thousand lines"
   (let ((*size* 100000))
-    (funcall (getf (d:lookup (d:all *workloads*) "typing") :run))))
+    (funcall (getf (d:lookup *workloads* "typing") :run))))
 
 (workload cold ()
     "what the first of everything costs: the first parse of a document, and the
@@ -188,13 +188,13 @@ side never touched says so rather than showing a zero."
                     "-"))))))
 
 (defun workloads ()
-  (sort (d:keys (d:all *workloads*)) #'string<))
+  (sort (d:keys *workloads*) #'string<))
 
 (defun %image ()
   (or (uiop:getenv "PINE_VERSION") (lisp-implementation-version)))
 
 (defun run (name)
-  (let ((it (d:lookup (d:all *workloads*) name)))
+  (let ((it (d:lookup *workloads* name)))
     (unless it
       (format t "~&no workload called ~a. there is: ~{~a~^ ~}~%" name (workloads))
       (return-from run nil))

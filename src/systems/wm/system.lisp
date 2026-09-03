@@ -34,7 +34,7 @@ handed the windows over, which is after the config was read."
 talking to one are the same protocol with two subclasses under it, and this is
 where a third is added.
 
-Who manages the windows is written at /wm-manages rather than held here: the screen
+Who manages the windows is written at /wm/manages rather than held here: the screen
 finds a compositor asking for a manager before this system exists, and a path is
 what it can reach that a package it cannot name is not.
 

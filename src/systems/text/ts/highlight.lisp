@@ -38,7 +38,7 @@
   otherwise
   constants
   infer
-  (memo (d:table))
+  (memo (d:no-map))
   raw)
 
 (defun node-rule (lang type)
@@ -58,13 +58,14 @@ is a different symbol."
   (when name
     (let ((written (gethash name (lang-heads lang))))
       (or written
-          (let ((memo (lang-memo lang))
-                (key (cons name (and package (package-name package)))))
-            (multiple-value-bind (known found) (d:lookup (d:all memo) key)
+          (let ((key (cons name (and package (package-name package)))))
+            (multiple-value-bind (known found) (d:lookup (lang-memo lang) key)
               (cond (found (unless (eq known :none) known))
-                    ((null (lang-infer lang)) (d:keep! memo key :none) nil)
+                    ((null (lang-infer lang))
+                     (d:swap (lang-memo lang) #'d:with key :none)
+                     nil)
                     (t (let ((answer (funcall (lang-infer lang) name package)))
-                         (d:keep! memo key (or answer :none))
+                         (d:swap (lang-memo lang) #'d:with key (or answer :none))
                          answer)))))))))
 
 (defstruct (ctx (:conc-name ctx-) (:copier nil))

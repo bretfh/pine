@@ -8,8 +8,7 @@
    #:do-pairs #:do-map #:as #:merged #:contains
    #:no-map
    #:no-seq #:no-set #:capped #:swap #:cas
-   #:emptied #:table #:all #:keep! #:drop!
-   #:claim #:clear! #:update! #:same))
+   #:emptied #:same))
 (in-package #:pine/data)
 
 (defvar +no-map+ (fset:empty-map))
@@ -300,50 +299,4 @@ PLACE's subforms, OLD and NEW are each evaluated once, left to right."
             (,new-var ,new))
        (eq ,old-var ,cas-form))))
 
-(defstruct (table (:constructor %table) (:copier nil))
-  "A name-to-thing registry nothing has to lock to touch. A thing in its own
-right, unlike a slot: it is passed around and kept, so it is a struct and not a
-place somebody else owns."
-  (of +no-map+))
-
-(defun table () (%table))
-
-(defun all (table) (table-of table))
-
-(defun keep! (table key value)
-  (swap (table-of table) (lambda (m) (fset:with m key value)))
-  value)
-
-(defun drop! (table key)
-  (swap (table-of table) (lambda (m) (fset:less m key)))
-  nil)
-
-(defun update! (table key function &rest arguments)
-  "Replace what TABLE holds at KEY with FUNCTION of it, and answer that.
-
-One act. A LOOKUP and a KEEP! with a gap between them are two, and whoever writes
-in the gap is lost; FUNCTION runs again if somebody got there first, so it must be
-pure the way SWAP's is."
-  (fset:lookup (swap (table-of table)
-                     (lambda (m)
-                       (fset:with m key
-                                  (apply function (fset:lookup m key) arguments))))
-               key))
-
-(defun claim (table key value)
-  "Put VALUE at KEY unless something is there already, and answer whatever is
-there afterwards, so the loser of a race gets the winner's object.
-
-Whether something is there is asked of the map and not of what it holds: a key
-somebody claimed with NIL is claimed, and the next to ask must not take it."
-  (fset:lookup (swap (table-of table)
-                     (lambda (m)
-                       (if (nth-value 1 (fset:lookup m key))
-                           m
-                           (fset:with m key value))))
-               key))
-
-(defun clear! (table)
-  (swap (table-of table) (constantly +no-map+))
-  table)
 

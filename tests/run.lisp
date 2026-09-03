@@ -392,10 +392,10 @@ are not, so a bar reading a map was pushed at every tick."
   "The table is keyed by the line, so a bar that asks about a window held an
 answer for every window there had ever been."
   (dotimes (i 400) (sh:sh "echo bounded-~d" i))
-  (is (<= (d:size (d:all (pine/host/shell::asked-of pine/host/shell::*sh*)))
+  (is (<= (d:size (pine/host/shell::asked-of pine/host/shell::*sh*))
           (+ pine/host/shell::*asked-kept* 2))
       "~d stand, and the cap is ~d"
-      (d:size (d:all (pine/host/shell::asked-of pine/host/shell::*sh*))) pine/host/shell::*asked-kept*))
+      (d:size (pine/host/shell::asked-of pine/host/shell::*sh*)) pine/host/shell::*asked-kept*))
 
 (test a-job-that-will-not-run-is-held-rather-than-spun
   "A crash loop is something to read at /proc, not something the image does for

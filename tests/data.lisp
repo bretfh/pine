@@ -58,13 +58,6 @@ retry that built the function again would build it once per contending thread."
       (is (eq :now (svref v 0)))
       (is (not (d:cas (svref v 0) :was :never))))))
 
-(test a-table-claims-once
-  (let ((table (d:table)))
-    (is (equal "mine" (d:claim table :k "mine")))
-    (is (equal "mine" (d:claim table :k "yours")))
-    (d:drop! table :k)
-    (is (null (d:lookup (d:all table) :k)))))
-
 (test do-map-binds-what-it-was-given
   (let ((seen nil))
     (d:do-map (k v (d:map :a 1 :b 2))
@@ -129,14 +122,6 @@ touched."
              (multiple-value-list (d:lookup (list :a :b :c 1) :b :none)))
       "a key in a value's place is not a key"))
 
-(test a-table-claims-a-nil-once
-  "Whether something is there is asked of the table, not of what it holds: a key
-claimed with NIL is claimed, and the next to ask must be told so."
-  (let ((tb (d:table)))
-    (is (null (d:claim tb "k" nil)))
-    (is (= 1 (d:size (d:all tb))))
-    (is (null (d:claim tb "k" :loser)) "the winner's nothing, not the loser's value")))
-
 (test with-takes-its-shape-from-what-is-being-built
   "Not from the value. Given a value it builds a map whether the value is NIL or
 not; a map built a piece at a time must not turn into a seq at the first nothing."
@@ -198,16 +183,17 @@ built here is a question about the last edit."
   (is (not (equal (d:map :a 1) (d:map :a 1))))
   (is (not (d:same (d:map :a 1) (d:map :a 2)))))
 
-(test a-table-is-updated-in-one-act
-  "A LOOKUP and a KEEP! with a gap between them are two, and whoever writes in the
+(test a-map-in-a-place-is-swapped-in-one-act
+  "A LOOKUP and a write with a gap between them are two, and whoever writes in the
 gap is lost."
   (booted)
-  (let ((tb (d:table))
+  (let ((box (list (d:no-map)))
         (threads nil))
     (dotimes (i 8)
       (push (bordeaux-threads:make-thread
              (lambda () (dotimes (n 50)
-                          (d:update! tb "n" (lambda (had) (1+ (or had 0)))))))
+                          (d:swap (car box)
+                                  (lambda (m) (d:with m "n" (1+ (or (d:lookup m "n") 0))))))))
             threads))
     (mapc #'bordeaux-threads:join-thread threads)
-    (is (= 400 (d:lookup (d:all tb) "n")))))
+    (is (= 400 (d:lookup (car box) "n")))))
