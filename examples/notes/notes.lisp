@@ -30,13 +30,13 @@ copy anything else can reach."))
 
 (defmethod contents ((n journal)) (sort (listing n) #'string<))
 
-(defmethod make-child ((n journal) name)
+(defmethod node:make-child ((n journal) name)
   "What is under it is what it says, so putting one there moves it. A mounted
 directory says the same thing the same way."
   (let ((made (call-next-method))) (node:moved n) made))
 
-(defmethod erase-child ((n journal) name)
-  (let ((gone (call-next-method))) (moved n) gone))
+(defmethod node:erase-child ((n journal) name)
+  (let ((gone (call-next-method))) (node:moved n) gone))
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of
 ;;; its own to say: what its text divides into.

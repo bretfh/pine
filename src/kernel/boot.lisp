@@ -92,8 +92,21 @@ stands in comes back here with the restarts it is still offering."
 (defun store-file ()
   (merge-pathnames "pine/tree.db" (uiop:xdg-data-home)))
 
+(defun %the-used (c)
+  "A name USE-PACKAGE will not take because the reader already made one here --
+read before the package was used, or in a form that never ran. One that is only
+a symbol means nothing and the used package's is taken; one with a function, a
+value or a class is a real conflict and stays one."
+  (let* ((mine (find-package '#:pine/user))
+         (had (find-if (lambda (s) (eq (symbol-package s) mine))
+                       (sb-ext:name-conflict-symbols c)))
+         (theirs (find-if-not (lambda (s) (eq (symbol-package s) mine))
+                              (sb-ext:name-conflict-symbols c))))
+    (when (and had theirs
+               (not (fboundp had)) (not (boundp had)) (not (find-class had nil)))
+      (invoke-restart (find-restart 'sb-ext:resolve-conflict c) theirs))))
+
 (defun load-config (&optional (file (config-file)))
-  (find-package '#:pine/user)
   (when (and file (probe-file file))
     (let ((*package* (find-package '#:pine/user))
           (*readtable* (named-readtables:find-readtable 'pine/fs/reader:syntax))
@@ -101,7 +114,8 @@ stands in comes back here with the restarts it is still offering."
       (log:note "reading ~a" file)
       (fault:attempt
        (lambda ()
-         (handler-bind ((sb-kernel:redefinition-with-defmethod #'muffle-warning))
+         (handler-bind ((sb-kernel:redefinition-with-defmethod #'muffle-warning)
+                        (sb-ext:name-conflict #'%the-used))
            (commit:writing (load file))))
        (format nil "reading ~a" file))
       (let ((broke (- (length (fault:faults)) before)))
