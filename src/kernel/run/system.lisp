@@ -5,15 +5,10 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:system #:use #:drop #:systems
-   #:named #:kinds #:puts #:owned #:undoes #:*owner* #:*undoes*))
+   #:named #:kinds #:puts #:*owner*))
 (in-package #:pine/run/system)
 
 (defvar *under* nil)
-
-(defvar *put* (d:table)
-  "What each system declared beside the tree while it ran, by the package its code
-is written in: (KIND . ARGUMENTS), newest last. What it put in the tree needs no
-list: each entry knows its owner.")
 
 (defvar *owner* nil
   "The package of the system that is starting or stopping, while it does.
@@ -21,16 +16,6 @@ list: each entry knows its owner.")
 Bound around START and STOP rather than passed, because what puts a node up is the
 app's own code and threading an owner through it would be asking every app to say
 twice what package it is written in.")
-
-(defvar *undoes* (d:table)
-  "How to take back each kind of thing a system can put up, by the keyword that
-names that kind. Filled in by whatever knows what the kind is, because this layer
-loads before any of them -- the same reason NODE:*ELSEWHERE* is a variable.
-
-One table and not one variable per kind. A system can put up a chord, a style
-property, a theme, a way of answering a prompt, a device declaration and a surface,
-and every one of those lives in a layer this one cannot name; a variable each would
-mean editing this file to add a sixth.")
 
 (defclass system (job:job) ()
   (:documentation "A package pine loaded. It starts and stops like anything else
@@ -58,19 +43,6 @@ class that subclasses SYSTEM is a system, and nothing has to say so twice."
 (defun owns (name)
   (let ((c (%class name))) (and c (%package c))))
 
-(defun undoes (kind taking)
-  "Say how to take back what OWNED was told as KIND. Said by the layer that knows
-what that kind is, in the file that puts one up."
-  (d:keep! *undoes* kind taking)
-  kind)
-
-(defun owned (what &optional (home *owner*))
-  "Say the system that is starting declared WHAT, a (KIND . ARGUMENTS) handed back
-to whatever said how to take that kind back."
-  (when (and home (consp what))
-    (d:update! *put* home (lambda (had) (append had (list what)))))
-  what)
-
 (defun puts (x &optional (into (fs:root)))
   "Attach X as the running system's: what a system puts up goes when it does, so
 this is ATTACH for an app and the reason an app needs no STOP."
@@ -79,9 +51,9 @@ this is ATTACH for an app and the reason an app needs no STOP."
   x)
 
 (defun %take-down (home)
-  "Take off everything in the tree the system written in HOME owns, and take back
-what it declared beside it. Not into what was taken off, and not into a live dir:
-what is under one belongs to the world."
+  "Take off everything in the tree the system written in HOME owns, and out of what
+it wrote into. Not into what was taken off, and not into a live dir: what is under
+one belongs to the world."
   (labels ((sweep (d)
              (dolist (each (fs:entries d))
                (cond ((equal (fs:owner each) home)
@@ -90,21 +62,13 @@ what is under one belongs to the world."
                      (t (fs:let-go each home)
                         (when (and (typep each 'fs:dir) (not (fs:livep each)))
                           (sweep each)))))))
-    (sweep (fs:root)))
-  (dolist (what (reverse (or (d:lookup (d:all *put*) home) nil)))
-    (let ((taking (d:lookup (d:all *undoes*) (first what))))
-      (when taking
-        (fault:or-nothing "what a system declared may have gone already"
-          (apply taking (rest what))))))
-  (d:drop! *put* home))
+    (sweep (fs:root))))
 
 (defmethod job:start :around ((s system))
   "What the system puts up while it starts is its. Cleared first, so a system
 started again does not carry what the last run put up."
-  (let ((home (owns (job:name s))))
-    (when home (d:drop! *put* home))
-    (let ((*owner* home))
-      (call-next-method))))
+  (let ((*owner* (owns (job:name s))))
+    (call-next-method)))
 
 (defmethod job:start :after ((s system))
   "After, not before: a system may define commands as it starts, and those are

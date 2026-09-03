@@ -4,9 +4,12 @@
   (:documentation "The line you answer a question on. A mode rather than a flag laid
 over another one: what RET means here is a method, and the keymap is this class's."))
 
-(defclass listing (mode:text) ()
-  (:documentation "Rows that stand for things. RET acts on the thing the row is
-for, not on the text of it."))
+(defclass listing (mode:text)
+  ((shown-rows :initarg :shown-rows :accessor shown-rows :initform nil)
+   (on-enter   :initarg :on-enter   :accessor on-enter   :initform nil))
+  (:documentation "Rows that stand for things: a row is a string, or (TEXT . PLACE)
+where PLACE is what that row is about, so RET acts on the thing rather than on the
+text of it."))
 
 (defclass debugger (mode:text) ()
   (:documentation "A fault, as something you act on: the restarts it offers are

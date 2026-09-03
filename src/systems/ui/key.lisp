@@ -1,6 +1,7 @@
 (in-package #:pine/ui)
 
-(defvar *keys* (d:table))
+(defvar *interned* (make-hash-table :test 'equal :synchronized t)
+  "The one key for each chord, so KEY= is EQ.")
 (defvar *pending* nil)
 (defvar *last* nil)
 (defvar *taking* nil)
@@ -45,8 +46,11 @@ takes it back, so a chord can be asked of a compositor in the spelling it knows.
 object, which is what lets KEY= be EQ."
   (let* ((sym (%named sym))
          (id (list sym ctrl meta shift super)))
-    (d:claim *keys* id (%key :sym sym :ctrl ctrl :meta meta :shift shift
-                             :super super))))
+    (or (gethash id *interned*)
+        (sb-ext:with-locked-hash-table (*interned*)
+          (or (gethash id *interned*)
+              (setf (gethash id *interned*)
+                    (%key :sym sym :ctrl ctrl :meta meta :shift shift :super super)))))))
 
 (defun key= (a b) (eq a b))
 

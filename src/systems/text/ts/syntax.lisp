@@ -2,15 +2,17 @@
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
-(defvar *compiled* (d:table))
-(defvar *inferrers* (d:table)
-  "How to guess what a head means where the declaration says nothing, by language.
-A registry: a language adds itself here, and nothing here knows which languages
-there are.")
+(defpackage #:pine/languages
+  (:use)
+  (:documentation "Where a language's name lives: one symbol per language, its
+value what was declared and what was compiled from it, and on it how to guess
+what a head means where the declaration says nothing."))
+
+(defun %sym (language) (intern (symbol-name language) :pine/languages))
 
 (defun infers (language rule)
   "Say RULE guesses for LANGUAGE what the declaration did not spell out."
-  (d:keep! *inferrers* language rule)
+  (setf (get (%sym language) 'infers) rule)
   language)
 
 (defmacro language (options &rest clauses)
@@ -93,7 +95,7 @@ there are.")
 (defun %compile (name raw)
   (let* ((options (d:lookup raw :options))
          (indent (d:lookup options :indent))
-         (infer (d:lookup (d:all *inferrers*) name)))
+         (infer (get (%sym name) 'infers)))
     (make-language
      :name name
      :grammar (d:lookup options :grammar)
@@ -107,20 +109,25 @@ there are.")
 
 (defun declare-language (name raw &key parent)
   (let ((full (%inherit (and parent (%raw parent)) raw)))
-    (d:keep! *compiled* name (cons full (%compile name full)))
+    (setf (symbol-value (%sym name)) (cons full (%compile name full)))
     (when (fs:root)
       (setf (fs:contents (fs:leaf "/lang" (string-downcase (string name))))
             (d:lookup (d:lookup full :options) :doc)))
     name))
 
-(defun %raw (name)
-  (car (d:lookup (d:all *compiled*) name)))
+(defun %declared (name)
+  (let ((s (find-symbol (symbol-name name) :pine/languages)))
+    (and s (boundp s) (symbol-value s))))
 
-(defun for (name)
-  (cdr (d:lookup (d:all *compiled*) name)))
+(defun %raw (name) (car (%declared name)))
+
+(defun for (name) (cdr (%declared name)))
 
 (defun languages ()
-  (sort (d:keys (d:all *compiled*)) #'string< :key #'string))
+  (let (out)
+    (do-symbols (s :pine/languages)
+      (when (boundp s) (push (intern (symbol-name s) :keyword) out)))
+    (sort out #'string< :key #'string)))
 
 (defmethod readtable-of ((name symbol))
   "The readtable a language is written in, when it says: a language whose

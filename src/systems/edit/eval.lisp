@@ -1,8 +1,6 @@
 (in-package #:pine/edit)
 
 (defvar *went* nil)
-(defvar *evaluating* (d:table)
-  "The session each document's forms are read and evaluated in, by its name.")
 (defparameter +kinds+ '(:function :macro :generic-function :variable :class))
 (defparameter +delimiters+ (format nil "~c()'`,;\"" #\Newline))
 
@@ -161,10 +159,9 @@ One per document, and what it reads in is what the document says it is written i
 asked again each time because the document may have said something else since. One
 session for the image took whichever document asked first and kept its package for
 ever, so M-: in a second file read its names in the first file's."
-  (let* ((name (fs:name document))
-         (s (or (d:lookup (d:all *evaluating*) name)
-                (d:claim *evaluating* name
-                         (session:open-session :name name)))))
+  (let ((s (or (text:session document)
+               (setf (text:session document)
+                     (session:open-session :name (fs:name document))))))
     (setf (session:package-of s) (text:package-of document)
           (session:readtable-of s) (text:readtable-of document))
     s))

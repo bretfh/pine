@@ -9,6 +9,8 @@
 (defclass document (fs:dir)
   ((lines    :initform (of "") :accessor lines)
    (text-node :initform nil :accessor text-node)
+   (session  :initform nil :accessor session)
+   (parser   :initform nil :accessor parser)
    (at-line  :initform 0   :accessor at-line)
    (at-col   :initform 0   :accessor at-col)
    (mark     :initform nil :accessor mark)

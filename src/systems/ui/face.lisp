@@ -5,7 +5,10 @@
 render: finding the table is three reads and finding a face in it is one, so a paint
 that asks per cell spends most of its time asking where to look.")
 
-(defvar *themes* (d:table))
+(defpackage #:pine/themes
+  (:use)
+  (:documentation "Where a theme's name lives: one symbol per theme, its value the
+theme."))
 
 (defparameter +plain+ :default
   "The face a space that has not said resolves in.")
@@ -33,23 +36,20 @@ that asks per cell spends most of its time asking where to look.")
     (string (intern (string-upcase name) :keyword))))
 
 (defun register (theme)
-  (d:keep! *themes* (name theme) theme)
-  (system:owned (list :theme (name theme)))
+  (setf (symbol-value (intern (symbol-name (name theme)) :pine/themes)) theme)
   theme)
 
-(defun forget-theme (name)
-  "Take a theme back off. One a system brought goes when the system does."
-  (d:drop! *themes* name)
-  name)
-
-(system:undoes :theme #'forget-theme)
-
 (defun themes ()
-  (sort (d:keys (d:all *themes*)) #'string< :key #'symbol-name))
+  (let (out)
+    (do-symbols (s :pine/themes)
+      (when (boundp s) (push (intern (symbol-name s) :keyword) out)))
+    (sort out #'string< :key #'symbol-name)))
 
 (defun theme (name)
-  (or (d:lookup (d:all *themes*) (%as-keyword name))
-      (error "no theme called ~s" name)))
+  (let ((s (find-symbol (symbol-name (%as-keyword name)) :pine/themes)))
+    (if (and s (boundp s))
+        (symbol-value s)
+        (error "no theme called ~s" name))))
 
 (defun active ()
   "The theme in force here: /theme/active, which is a value like any other."

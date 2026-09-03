@@ -21,7 +21,7 @@
    #:make-parse-state #:free-parse-state #:parse-lines! #:parse-highlights #:language
    #:declare-language #:for #:grammar-of #:parser-for #:highlights
    #:note #:forget #:forget-all #:band #:reparsed
-   #:indent #:motion #:currentp #:running #:*runtime*))
+   #:indent #:motion #:currentp #:running #:*runtime* #:session #:parser))
 (in-package #:pine/text)
 
 (defvar *recent* nil)

@@ -9,13 +9,8 @@
    #:sh-node #:forget-all #:*breath*))
 (in-package #:pine/host/shell)
 
-(defvar *ran* nil)
-(defvar *said* nil
-  "What each of the last few lines said when it was last run, newest first. A read
-of /sh/<line> answers out of this, because reading is not running.")
-(defvar *asked* (d:table))
-(defvar *streams* (d:table))
-(defvar *sh* nil)
+(defvar *sh* nil
+  "The shell: /sh once it stands there, and what it keeps either way.")
 (defparameter *breath* 1/4
   "Seconds an answer stands for. What a bar reads is read again next frame, not
 three times in this one.")
@@ -39,32 +34,40 @@ not inherit.")
 pine keeps the other end of, so pine going -- stopped, crashed or killed outright --
 closes that end and the stream goes with it.")
 
+(defclass shell (fs:dir)
+  ((ran     :initform nil :accessor ran-of)
+   (said    :initform nil :accessor said-of)
+   (asked   :initform (d:table) :reader asked-of)
+   (streams :initform nil :accessor streams))
+  (:documentation "Every shell line that has been run and what it said; what each
+line last said, kept for a breath; and the streams whose lines say the world
+moved."))
+
 (defclass stream-node (fs:derived)
   ((line :initarg :line :reader line)
    (took :initform nil :accessor took)
    (said :initform nil :reader said)))
 
-(defun ran () *ran*)
+(defun ran () (ran-of *sh*))
 
 (defun %noted (line)
-  (d:swap *ran* #'d:capped line *kept*)
-  (when *sh* (fs:moved *sh*))
+  (d:swap (slot-value *sh* 'ran) #'d:capped line *kept*)
+  (fs:moved *sh*)
   line)
 
 (defun %kept (line out)
   "Keep what a line said, so /sh can answer for it without running it again, and
 say the place moved. What a line last said is not a node, so nothing else can see
 it change."
-  (d:swap *said*
+  (d:swap (slot-value *sh* 'said)
           (lambda (all)
             (d:capped (cl:remove line all :key #'car :test #'equal)
                       (cons line out) *kept*)))
-  (when *sh*
-    (let ((n (d:lookup (d:all (fs::memo *sh*)) line)))
-      (when n (fs:moved n))))
+  (let ((n (d:lookup (d:all (fs::memo *sh*)) line)))
+    (when n (fs:moved n)))
   out)
 
-(defun last-said (line) (cdr (assoc line *said* :test #'equal)))
+(defun last-said (line) (cdr (assoc line (said-of *sh*) :test #'equal)))
 
 (defun %output (line)
   (multiple-value-bind (out err code)
@@ -80,22 +83,23 @@ it change."
   "Let go of the answers whose breath has passed. Done when the table has grown
 rather than on every ask, so a line that is asked about every frame costs a lookup
 and nothing else."
-  (let ((old (%breathed)))
-    (d:do-map (line had (d:all *asked*))
-      (when (> (- now (cdr had)) old) (d:drop! *asked* line)))))
+  (let ((old (%breathed)) (asked (asked-of *sh*)))
+    (d:do-map (line had (d:all asked))
+      (when (> (- now (cdr had)) old) (d:drop! asked line)))))
 
 (defun asked (line)
   "What a line says, remembered for a breath, so a panel reading three things out of
 one command runs it once and a bar built twice in a frame does not fork twice."
-  (let ((now (get-internal-real-time))
-        (had (d:lookup (d:all *asked*) line)))
+  (let* ((now (get-internal-real-time))
+         (asked (asked-of *sh*))
+         (had (d:lookup (d:all asked) line)))
     (cond ((and had (< (- now (cdr had)) (%breathed)))
            (car had))
-          (t (when (> (d:size (d:all *asked*)) *asked-kept*)
+          (t (when (> (d:size (d:all asked)) *asked-kept*)
                (%forget-stale now))
              (meter:counted :sh-fork)
              (let ((said (%output line)))
-               (d:keep! *asked* line (cons said now))
+               (d:keep! asked line (cons said now))
                said)))))
 
 (defun sh (format &rest arguments)
@@ -221,13 +225,12 @@ machine something, and telling it twice is twice."
 (defun streaming (line)
   "A command whose output says the world moved, listened to for as long as pine
 runs."
-  (when *sh*
-    (let ((n (fs:child *sh* (format nil "stream:~a" line)
-                         (lambda ()
-                           (make-instance 'stream-node :name line :parent *sh*
-                                                       :line line)))))
-      (d:keep! *streams* line n)
-      (hear n))))
+  (let ((n (fs:child *sh* (format nil "stream:~a" line)
+                     (lambda ()
+                       (make-instance 'stream-node :name line :parent *sh*
+                                                   :line line)))))
+    (pushnew n (streams *sh*))
+    (hear n)))
 
 (defmethod fs:livep ((n stream-node)) t)
 
@@ -250,12 +253,17 @@ One that has not run answers nothing. That is what ABSENT is for."
                :reads (lambda () (last-said line))
                :writes (lambda (v) (declare (ignore v)) (run-line line))))
 
+(defun %shell ()
+  (make-instance 'shell :name "sh" :names #'ran :each #'%line
+                        :describes "running something, and what it said"))
+
 (defun sh-node ()
-  "Every shell line that has been run, and what it said."
-  (setf *sh* (make-instance 'fs:dir :name "sh"
-                         :names #'ran :each #'%line
-                         :describes "running something, and what it said")))
+  "The shell, to put at /sh: the one there is, since what it has run is the image's
+and not a tree's."
+  *sh*)
 
 (defun forget-all ()
-  (dolist (n (d:vals (d:all *streams*)) t) (quiet n))
-  (d:clear! *streams*))
+  (dolist (n (streams *sh*) t) (quiet n))
+  (setf (streams *sh*) nil))
+
+(setf *sh* (%shell))

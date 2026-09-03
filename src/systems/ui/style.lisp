@@ -1,23 +1,25 @@
 (in-package #:pine/ui)
 
-(defvar *properties* (d:table)
-  "What a resolved style may hold: a key, and how to work it out from the css props
-that matched. Adding a property is one entry here, not an edit to RESOLVE.")
+(defpackage #:pine/styles
+  (:use)
+  (:documentation "Where a style property's name lives: one symbol per key a
+resolved style may hold, its value how to work that key out from the css props
+that matched."))
 
 (defun property (key parser)
-  "Say that a style may hold KEY, worked out by PARSER from the matched props."
-  (d:keep! *properties* key parser)
-  (system:owned (list :style key))
+  "Say that a style may hold KEY, worked out by PARSER from the matched props.
+Adding a property is one of these, not an edit to RESOLVE."
+  (setf (symbol-value (intern (symbol-name key) :pine/styles)) parser)
   key)
 
-(defun forget-property (key)
-  "Take a style key back off. What a system taught a style to hold goes when it does."
-  (d:drop! *properties* key)
-  key)
+(defun properties ()
+  (let (out)
+    (do-symbols (s :pine/styles)
+      (when (boundp s) (push (intern (symbol-name s) :keyword) out)))
+    (sort out #'string< :key #'symbol-name)))
 
-(system:undoes :style #'forget-property)
-
-(defun properties () (d:keys (d:all *properties*)))
+(defun %parser (key)
+  (symbol-value (find-symbol (symbol-name key) :pine/styles)))
 
 (defun %words (s)
   (remove "" (uiop:split-string s :separator '(#\space #\tab)) :test #'string=))
@@ -117,8 +119,8 @@ holds is what the properties table says a style may hold, so nothing here has to
 edited to carry something new."
   (let ((props (%props chain hover))
         (out (d:no-map)))
-    (d:do-map (key parser (d:all *properties*) out)
-      (let ((v (funcall parser props)))
+    (dolist (key (properties) out)
+      (let ((v (funcall (%parser key) props)))
         (when v (setf out (d:with out key v)))))))
 
 (defun classes (it)

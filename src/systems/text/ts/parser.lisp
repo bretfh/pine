@@ -1,6 +1,5 @@
 (in-package #:pine/text)
 
-(defvar *parsers* (d:table))
 (defvar *runtime* nil)
 (defvar *counter* 0)
 
@@ -19,7 +18,7 @@
     (format stream "~a ~(~a~) at ~d" (fs:name (document-of p)) (language-of p)
             (parsed p))))
 
-(defun parsers () (d:vals (d:all *parsers*)))
+(defun parsers () (remove nil (mapcar #'parser (documents))))
 
 (defgeneric band (document)
   (:documentation "The band of lines something is showing of DOCUMENT, as
@@ -153,7 +152,7 @@ its mode says."
 just finished a parse both ask, so the one that lands is the one everybody gets and
 the other is freed rather than left holding a foreign parser."
   (let* ((language (%grammar document))
-         (had (d:lookup (d:all *parsers*) (fs:name document))))
+         (had (parser document)))
     (when (and had (not (eq language (language-of had))))
       (forget document)
       (setf had nil))
@@ -161,11 +160,10 @@ the other is freed rather than left holding a foreign parser."
       (or had
           (let ((mine (%make document language)))
             (when mine
-              (let ((kept (d:claim *parsers* (fs:name document) mine)))
-                (cond ((eq kept mine)
-                       (job:tell (running mine) (list :parse (tick document)))
-                       mine)
-                      (t (%dispose mine) kept)))))))))
+              (cond ((d:cas (slot-value document 'parser) nil mine)
+                     (job:tell (running mine) (list :parse (tick document)))
+                     mine)
+                    (t (%dispose mine) (parser document)))))))))
 
 (defun note (document)
   "Tell the parser it has fallen behind: the document moved, or what shows it is
@@ -205,10 +203,10 @@ plain text."
 Freed here and not asked for by a message. Told :STOP and stopped in the next
 breath, whether the actor ever read that message was a race -- and losing it left
 a TSParser, a tree and a foreign buffer for every document that had been open."
-  (let* ((name (if (stringp document) document (fs:name document)))
-         (p (d:lookup (d:all *parsers*) name)))
+  (let* ((doc (if (stringp document) (fs:at "/text" document) document))
+         (p (and doc (parser doc))))
     (when p
-      (d:drop! *parsers* name)
+      (setf (parser doc) nil)
       (%dispose p)
       (job:forget (job:name (running p))))
     p))
@@ -219,6 +217,4 @@ rather than by whoever kills documents."
   (forget document))
 
 (defun forget-all ()
-  (dolist (p (parsers) (d:clear! *parsers*))
-    (%dispose p)
-    (job:forget (job:name (running p)))))
+  (dolist (doc (documents) t) (forget doc)))

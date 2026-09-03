@@ -160,9 +160,9 @@ half worked and nothing said which half."
 
       (pine/run/system::%take-down home)
 
-      (is (not (member :probe-key (ui:properties))) "and the style key goes")
-      (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
-      (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
+      (is (member :probe-key (ui:properties)) "the style key stays: it was defined, not put up")
+      (is (member :probe-theme (pine/ui::themes)) "and so does the theme")
+      (is (not (member :probe-category (pine/edit::sources))) "the source goes")
       (is (not (null (host::declared "%probe-owned")))
           "the declaration stays: a class was loaded, not put up")
       (is (null (fs:at "/surface" "probe-surface")) "and the surface goes")

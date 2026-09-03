@@ -1,7 +1,6 @@
 (in-package #:pine/edit)
 
 (defvar *prompt* nil)
-(defvar *sources* (d:table))
 (defvar *shown* 12)
 (defvar *asked* 0)
 (defvar *history-kept* 200)
@@ -67,8 +66,8 @@ cannot see a thing it cannot see move."
                              (when p
                                (let ((text (fs:contents (%said-node))))
                                  (if (filep p)
-                                     (candidates p text)
-                                     (matches text (candidates p text)))))))))))
+                                     (candidates p)
+                                     (matches text (candidates p)))))))))))
 
 (defun so-far ()
   "What has been typed into the prompt so far."
@@ -77,30 +76,35 @@ cannot see a thing it cannot see move."
 (defun asked ()
   (and (fs:root) (fs:contents (%question-node))))
 
+(defun %completes () (fs:ensure (%under) "completes"))
+
+(defun %category (category) (string-downcase (string category)))
+
 (defun completes (category function)
-  "Say how to answer a prompt asking for CATEGORY. A command asks for one by name --
-:asks '((:prompt \"Note: \" :category :note-title)) -- and this is what offers the
-words, so a system brings its own kind of question and its own answers to it."
-  (d:keep! *sources* category function)
-  (system:owned (list :completes category))
-  category)
+  "Say how to answer a prompt asking for CATEGORY: FUNCTION of what has been typed.
+A command asks for one by name -- :asks '((:prompt \"Note: \" :category
+:note-title)) -- and this is what offers the words, so a system brings its own kind
+of question and its own answers to it. It stands at /prompt/completes/<category>."
+  (let ((n (make-instance 'fs:derived :name (%category category) :live t
+                                      :reads (lambda () (funcall function (so-far)))
+                                      :describes "what answers this kind of question")))
+    (setf (fs:owner n) system:*owner*)
+    (fs:attach n (%completes))
+    category))
 
 (defun forget-completes (category)
-  "Take a way of answering a prompt back off. A category whose system has gone is a
-question nothing can answer, and leaving it there is a prompt that offers nothing."
-  (d:drop! *sources* category)
+  (fs:erase (%completes) (%category category))
   category)
 
-(system:undoes :completes #'forget-completes)
+(defun sources ()
+  (mapcar (lambda (e) (intern (string-upcase (fs:name e)) :keyword))
+          (fs:entries (%completes))))
 
-(defun sources () (d:keys (d:all *sources*)))
-
-(defun candidates (&optional (p *prompt*) (text (so-far)))
+(defun candidates (&optional (p *prompt*))
   (when p
     (or (given p)
-        (let ((fn (d:lookup (d:all *sources*) (category p))))
-          (when fn (fault:attempt (lambda () (funcall fn text))
-                                  "the candidates"))))))
+        (let ((n (fs:entry (%completes) (%category (category p)))))
+          (when n (fault:attempt (lambda () (fs:contents n)) "the candidates"))))))
 
 (defun chosen (&optional (p *prompt*))
   "Which candidate is picked, or nought where what has been typed has moved since

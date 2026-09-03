@@ -9,7 +9,8 @@ sets two others.")
   "Slots holding a function. A closure cannot cross, so it goes as an id and what
 it meant stays where it was made.")
 
-(defvar *classes* (d:table))
+(defvar *known* (make-hash-table :test 'eq :synchronized t)
+  "What each widget class carries, worked out once.")
 
 (defun %slots (class)
   "The slots this class carries, as (initarg reader default). Direct slots up the
@@ -32,8 +33,8 @@ ask about, and what crosses is what somebody can read back."
   "What this class carries, taken from its own slots. A property added to a widget
 crosses because it is there, not because somebody remembered to list it."
   (let ((name (class-name class)))
-    (or (d:lookup (d:all *classes*) name)
-        (d:claim *classes* name (%slots class)))))
+    (or (gethash name *known*)
+        (setf (gethash name *known*) (%slots class)))))
 
 (defun tag (widget)
   (intern (symbol-name (class-name (class-of widget))) :keyword))
