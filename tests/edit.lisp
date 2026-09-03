@@ -473,3 +473,65 @@ supposed not to do."
              (is (equal '(42) (session:answered e))
                  "the command was given the place, not the form for it"))
         (session:close s)))))
+
+(defun %broke (what)
+  (pine/edit::put-up (make-condition 'simple-error :format-control what)))
+
+(test a-fault-does-not-take-the-keyboard-from-a-question
+  "A fault in some other thread put the debugger up and made it the current
+document. The question was still standing and still drawn, and every key after
+that went into the backtrace: the prompt was there, asking, and unreachable."
+  (editing)
+  (pine/edit::away)
+  (unwind-protect
+       (progn
+         (command:run "find-file")
+         (is (edit:askingp))
+         (let ((typed (pine/edit::so-far)))
+           (%broke "something else broke")
+           (is (edit:askingp) "the question is still standing")
+           (is (eq (text:named "*prompt*") (text:current))
+               "and it still has the keyboard")
+           (pine/edit:type-text "x")
+           (is (equal (concatenate 'string typed "x") (pine/edit::so-far))
+               "so what is typed goes to it")))
+    (when (edit:askingp) (command:run "cancel"))
+    (pine/edit::away)))
+
+(test a-fault-a-frame-takes-the-front-once
+  "A node that throws throws again every time it is worked out. Taking the front
+for each was a document nobody could type in for as long as it went on."
+  (editing)
+  (pine/edit::away)
+  (unwind-protect
+       (progn
+         (%broke "the first")
+         (is (equal "*debugger*" (node:name (text:current))))
+         (let ((scratch (text:named "scratch")))
+           (setf (text:current) scratch)
+           (%broke "the second")
+           (is (eq scratch (text:current))
+               "the one already up takes the second rather than the front again")
+           (is (search "the second" (text:text (text:named "*debugger*")))
+               "and it says what broke this time")))
+    (pine/edit::away)))
+
+(test the-prompt-offers-candidates-every-time-it-is-asked
+  "Asked, put away and asked again at the same directory. What MATCHING read was
+*PROMPT*, which the graph cannot see move: a frame taken while no question stood
+worked the node out to nothing, what had been typed had not changed, and so
+nothing ever said it was stale again. The second question offered nothing, and so
+did every one after it for the life of the image."
+  (editing)
+  (unwind-protect
+       (flet ((offered () (node:contents (pine/edit::%matching-node))))
+         (command:run "find-file")
+         (is (plusp (length (offered))) "the first question")
+         (let ((typed (pine/edit::so-far)))
+           (command:run "cancel")
+           (is (null (offered)) "and nothing stands, so nothing is offered")
+           (command:run "find-file")
+           (is (equal typed (pine/edit::so-far)) "the same directory again")
+           (is (plusp (length (offered))) "the second question")
+           (is (plusp (length (pine/edit::%candidates))) "and the frame draws them")))
+    (when (edit:askingp) (command:run "cancel"))))

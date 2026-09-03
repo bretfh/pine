@@ -266,7 +266,7 @@ on, and a widget tree has nothing of the sort to say."
 last said. A surface follows what it read, so this is where the editor says what
 moving means."
   (node:reading (root))
-  (node:reading (tree:ensure "/prompt"))
+  (node:reading (%asking-node))
   (node:reading (tree:ensure "/log"))
   (let* ((wins (windows))
          (weight (reduce #'+ wins :key #'weight :initial-value 0))

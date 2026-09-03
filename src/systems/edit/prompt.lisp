@@ -3,6 +3,7 @@
 (defvar *prompt* nil)
 (defvar *sources* (d:table))
 (defvar *shown* 12)
+(defvar *asked* 0)
 (defvar *history-kept* 200)
 (defparameter +document+ "*prompt*")
 
@@ -43,6 +44,12 @@
 (defun %chose-node ()
   (%place "chose" (lambda () (make-instance 'node:value :name "chose"))))
 
+(defun %asking-node ()
+  "Which question is standing, as a number no other question answers to. What
+MATCHING reads, so that it reads nodes only: *PROMPT* is not one, and the graph
+cannot see a thing it cannot see move."
+  (%place "asking" (lambda () (make-instance 'node:value :name "asking"))))
+
 (defun %typed ()
   (let ((d (text:named +document+)))
     (if d (node:contents d) "")))
@@ -56,7 +63,7 @@
           (lambda ()
             (make-instance 'node:derived :name "matching"
                          :reads (lambda ()
-                           (let ((p *prompt*))
+                           (let ((p (and (node:contents (%asking-node)) *prompt*)))
                              (when p
                                (let ((text (node:contents (%said-node))))
                                  (if (filep p)
@@ -136,6 +143,7 @@ candidate is chosen are what the frame shows, so they are nodes: a surface follo
 what it read, and a slot nobody reads is a thing nothing can follow."
   (when (tree:root)
     (setf (node:contents (%question-node)) (and p (question p)))
+    (setf (node:contents (%asking-node)) (and p (incf *asked*)))
     (setf (node:contents (%chose-node)) nil)
     (node:moved (%said-node))
     (%under)))
