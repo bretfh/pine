@@ -46,7 +46,18 @@ broke. What the target was is kept, and putting the debugger away puts it back."
       (setf (target) (unless (eq was :here) was))
       (setf (target-was) nil))))
 
-(defun put-up (condition &key restarts fault)
+(defun %front (document)
+  (setf (text:current) document)
+  (show (focused) document)
+  document)
+
+(defun %takes-the-front ()
+  "A fault takes the keyboard from nothing that is already using it: not from a
+question standing, and not from the debugger already up, which a node that throws
+every frame would otherwise take again every frame."
+  (and (null *standing*) (not (askingp))))
+
+(defun put-up (condition &key restarts fault (front (%takes-the-front)))
   "Put a fault up as a document you can act on rather than a line you cannot."
   (%follow fault)
   (let* ((s (make-instance 'offered
@@ -64,8 +75,7 @@ broke. What the target was is kept, and putting the debugger away puts it back."
       (setf (text:mode-of document) (make-instance 'debugger)))
     (setf (node:contents document) (%text s))
     (text:goto document 0 0)
-    (setf (text:current) document)
-    (show (focused) document)
+    (when front (%front document))
     document))
 
 (defmethod fault:faulted ((f fault:fault))
@@ -95,7 +105,7 @@ which is what the layer below already does."
          (s (standing))
          (at (position (and s (fault-of s)) all))
          (f (nth (mod (1+ (or at -1)) (max 1 (length all))) all)))
-    (when f (put-up (fault:condition-of f) :fault f))))
+    (when f (put-up (fault:condition-of f) :fault f :front t))))
 
 (defun away ()
   (setf *standing* nil)
@@ -120,7 +130,7 @@ which is what the layer below already does."
     (:describes "the last fault, as a document" :on '(text "C-x e"))
   (let ((f (or (first (fault:standing)) (first (fault:faults)))))
     (if f
-        (node:name (put-up (fault:condition-of f) :fault f))
+        (node:name (put-up (fault:condition-of f) :fault f :front t))
         (log:note "nothing has faulted"))))
 
 (command:defcommand "debugger-next" ()

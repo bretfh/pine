@@ -57,6 +57,23 @@ dead. This is that, asserted against the screen."
   (typed "C-g")
   (is (search "hello" (on-screen)) "and cancelling puts the buffer back"))
 
+(test a-question-shows-up-on-a-screen-drawn-before-it
+  "The frame followed /prompt, and no question is written there: what one is is
+written in the nodes under it, and a frame taken while none stood read none of
+them. Asked after that, the question was standing, what had been typed went into
+it, and the screen went on showing what it showed before -- so the binding looked
+dead, and so did the next one, for as long as no document moved."
+  (editing)
+  (quiet)
+  (is (not (search "M-x" (on-screen))) "nothing is being asked")
+  (command:run "run-command")
+  (is (edit:askingp))
+  (is (search "M-x" (on-screen)) "the question is on the screen")
+  (typed "b" "e" "g" "i")
+  (is (search "beginning-of-" (on-screen)) "and so are its candidates")
+  (typed "C-g")
+  (is (not (search "M-x" (on-screen))) "and putting it away takes it off"))
+
 (test a-prompt-inside-a-prompt-does-not-strand-you
   "Answering restores what was current. If that is the prompt itself, every key
 after it edits a document nothing shows."
