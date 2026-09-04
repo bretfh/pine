@@ -107,8 +107,7 @@ the parse behind it"
                 :depends-on (#:pine)
                 :serial t
                 :pathname "src/systems/host/"
-                :components ((:file "shell") (:file "declared") (:file "device")
-                             (:file "system")))
+                :components ((:file "shell") (:file "host")))
 
 (asdf:defsystem #:pine/edit
                 :description "Windows onto documents, and the chords that act on them"
@@ -134,7 +133,7 @@ the parse behind it"
                 :depends-on (#:pine/host #:pine/mode)
                 :serial t
                 :pathname "src/systems/wm/"
-                :components ((:file "compositor") (:file "keys")
+                :components ((:file "keys") (:file "compositor")
                              (:file "managed") (:file "niri") (:file "system")))
 
 (asdf:defsystem #:pine/tiles
@@ -151,17 +150,9 @@ the parse behind it"
                 :pathname "src/systems/desk/"
                 :components ((:file "system")))
 
-(asdf:defsystem #:pine/paint
-                :description "Pixels, through cairo: the other medium PAINT
-dispatches on"
-                :depends-on (#:pine/ui #:cl-cairo2)
-                :serial t
-                :pathname "src/systems/paint/"
-                :components ((:file "canvas") (:file "shot")))
-
 (asdf:defsystem #:pine/wayland
                 :description "The display pine paints its surfaces on"
-                :depends-on (#:pine/paint #:wayflan-client #:posix-shm #:cl-xkb)
+                :depends-on (#:pine/ui #:cl-cairo2 #:wayflan-client #:posix-shm #:cl-xkb)
                 :serial t
                 :pathname "src/systems/wayland/"
                 :components ((:module "protocol"
@@ -170,7 +161,7 @@ dispatches on"
                                                    (:file "river-wm")
                                                    (:file "river-xkb")
                                                    (:file "river-layer-shell")))
-                             (:file "pump") (:file "display") (:file "shell")
+                             (:file "canvas") (:file "shot") (:file "pump") (:file "display") (:file "shell")
                              (:file "pane") (:file "input") (:file "chords")
                              (:file "wm") (:file "screen") (:file "hands")))
 
@@ -193,7 +184,7 @@ dispatches on"
 (asdf:defsystem #:pine/all
                 :description "Every system pine ships, built in"
                 :depends-on (#:pine/edit #:pine/host #:pine/wm #:pine/tiles
-                             #:pine/desk #:pine/term #:pine/paint
+                             #:pine/desk #:pine/term
                              #:pine/wayland))
 
 (asdf:defsystem #:pine/test

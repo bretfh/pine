@@ -1,12 +1,4 @@
-(defpackage #:pine/wayland/input
-  (:use #:cl #:wayflan-client)
-  (:local-nicknames (#:shm #:posix-shm))
-  (:export
-   #:make-keys #:forget-held #:keys-rate #:keys-delay #:keymap
-   #:modifiers #:pressed #:released #:repeating #:deadline
-   #:make-pointer #:pointer-at-x #:pointer-at-y #:pointer-focus #:pointer-drag
-   #:pointer-serial))
-(in-package #:pine/wayland/input)
+(in-package #:pine/wayland)
 
 (defparameter +modifiers+
   '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"

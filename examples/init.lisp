@@ -9,7 +9,7 @@
 (use :term)
 (use :desk)
 
-(use-package '(#:pine/ui #:pine/mode #:pine/host #:pine/wm/tiles))
+(use-package '(#:pine/ui #:pine/mode #:pine/host #:pine/wm))
 
 ;; What the machine has, in the tree. A device is rows -- a name, how to read it
 ;; and how to write it -- so /dev/audio/volume is read and written like anything.

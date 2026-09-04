@@ -116,25 +116,25 @@ a system you load."
   (%tiled)
   (is (member "tall" (mapcar (lambda (each)
                                (string-downcase (symbol-name (class-name each))))
-                             (pine/wm/tiles:layouts))
+                             (pine/wm:layouts))
               :test #'equal))
-  (let* ((l (make-instance 'pine/wm/tiles:tall :share 1/4 :gaps 4))
-         (one (first (pine/wm/tiles:arrange
-                      l '(1 2) (pine/wm/tiles:area :wide 1280 :tall 720)))))
-    (is (typep one 'pine/wm/tiles:placed) "a layout answers PLACED, not a list")
+  (let* ((l (make-instance 'pine/wm:tall :share 1/4 :gaps 4))
+         (one (first (pine/wm:arrange
+                      l '(1 2) (pine/wm:area :wide 1280 :tall 720)))))
+    (is (typep one 'pine/wm:placed) "a layout answers PLACED, not a list")
     (is (equal '(1 4 4 312 712)
-               (list (pine/wm/tiles:id-of one) (pine/wm/tiles:x-of one)
-                     (pine/wm/tiles:y-of one) (pine/wm/tiles:wide-of one)
-                     (pine/wm/tiles:tall-of one)))
+               (list (pine/wm:id-of one) (pine/wm:x-of one)
+                     (pine/wm:y-of one) (pine/wm:wide-of one)
+                     (pine/wm:tall-of one)))
         "the share and the gaps are what the layout was made with")))
 
-(defclass %clipped (pine/wm/tiles:layout) ()
+(defclass %clipped (pine/wm:layout) ()
   (:documentation "A layout written outside the substrate that clips and stacks."))
 
-(defmethod pine/wm/tiles:arrange ((l %clipped) windows (a pine/wm/tiles:area))
+(defmethod pine/wm:arrange ((l %clipped) windows (a pine/wm:area))
   (declare (ignore a))
   (loop :for id :in windows
-        :collect (pine/wm/tiles:placed id :x 0 :y 0 :wide 100 :tall 100
+        :collect (pine/wm:placed id :x 0 :y 0 :wide 100 :tall 100
                                           :clip '(0 0 50 50) :stack :bottom)))
 
 (test a-layout-can-clip-and-stack-and-it-reaches-what-shows-a-window
@@ -143,9 +143,9 @@ the stack: %SHOWN takes both. A layout could not say either, because what ARRANG
 answered was a list of five and the two keywords APPLY-LAYOUT destructures after it
 were never written. Nothing caught it, because every shape of that list is a list."
   (%tiled)
-  (let* ((out (pine/wm/tiles:arrange (make-instance '%clipped) '(7)
-                                     (pine/wm/tiles:area :wide 800 :tall 600)))
-         (plain (pine/wm/tiles::%plainly (first out))))
+  (let* ((out (pine/wm:arrange (make-instance '%clipped) '(7)
+                                     (pine/wm:area :wide 800 :tall 600)))
+         (plain (pine/wm::%plainly (first out))))
     (is (equal '(7 0 0 100 100 :clip (0 0 50 50) :stack :bottom) plain))
     (destructuring-bind (id x y wide tall &key clip stack) plain
       (declare (ignore id x y wide tall))
@@ -166,7 +166,7 @@ different class in between, so what places the windows has to come with it."
   (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
   (pine:drop :wm)
   (pine:use :wm)
-  (is (typep (pine/wm:current) 'pine/wm/managed:managed))
+  (is (typep (pine/wm:current) 'pine/wm:managed))
   (is (fs:at "/wm/layout")
       "and it is bound again to the wm that replaced the first")
   (setf (fs:contents (fs:at "/wm/said")) +said+)
@@ -260,18 +260,18 @@ manager; what it reads is a path."
   "What pine calls s-Return xkb calls Return with mod4. The protocol spells a
 bitfield as the list of what is set, not a number."
   (flet ((of (spec) (let ((k (ui:parse spec)))
-                      (list (pine/wayland/chords:keysym k)
-                            (pine/wayland/chords:mask k)))))
+                      (list (pine/wayland:keysym k)
+                            (pine/wayland:mask k)))))
     (is (equal (list (xkb:xkb-keysym-from-name "Return" '()) '(:mod4))
                (of "s-Return")))
     (is (equal (list (xkb:xkb-keysym-from-name "x" '()) '(:ctrl :mod1))
                (of "C-M-x")))
     (is (equal (list (xkb:xkb-keysym-from-name "Tab" '()) '(:shift))
                (of "S-TAB")))
-    (is (null (pine/wayland/chords:keysym (ui:parse "NoSuchKeyAtAll")))
+    (is (null (pine/wayland:keysym (ui:parse "NoSuchKeyAtAll")))
         "a name xkb does not know is no chord"))
   (is (equal '("s-x" "s-r") (mapcar (lambda (k) (ui:spelled (list k)))
-                                    (pine/wayland/chords:every-key '("s-x s-r"))))
+                                    (pine/wayland:every-key '("s-x s-r"))))
       "and both keys of a chord have to be asked for, not just the first"))
 
 (test a-modes-chords-are-readable-wherever-the-mode-was-written

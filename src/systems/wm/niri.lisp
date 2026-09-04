@@ -1,11 +1,4 @@
-(defpackage #:pine/wm/niri
-  (:use #:cl)
-  (:local-nicknames (#:fs #:pine/fs) (#:sh #:pine/host/shell)
-                    (#:fault #:pine/run/fault)
-                    (#:compositor #:pine/wm/compositor))
-  (:export
-   #:niri))
-(in-package #:pine/wm/niri)
+(in-package #:pine/wm)
 
 (defparameter +actions+
   '(("overview"  "toggle-overview")
@@ -19,7 +12,7 @@
 not a line: an id or a workspace comes from whoever wrote the place, and a value
 spliced into a line of shell is a value that can say anything the shell can.")
 
-(defclass niri (compositor:compositor) ()
+(defclass niri (compositor) ()
   (:documentation "niri, over its own json protocol."))
 
 (defmethod fs:announces ((c niri)) (list "niri msg --json event-stream"))
@@ -33,11 +26,11 @@ spliced into a line of shell is a value that can say anything the shell can.")
   (let ((value (json (sh:sh "niri msg --json ~a" command))))
     (when (vectorp value) (coerce value 'list))))
 
-(defmethod compositor:workspaces ((c niri)) (%list "workspaces"))
+(defmethod workspaces ((c niri)) (%list "workspaces"))
 
-(defmethod compositor:windows ((c niri)) (%list "windows"))
+(defmethod windows ((c niri)) (%list "windows"))
 
-(defmethod compositor:outputs ((c niri))
+(defmethod outputs ((c niri))
   "What niri says about the screens. Its answer is keyed by connector name, and
 the mode it is in is what the size comes from."
   (let ((said (json (sh:sh "niri msg --json outputs"))))
@@ -57,16 +50,16 @@ the mode it is in is what the size comes from."
             :collect (list :name name :position at :size size
                            :area (append at size))))))
 
-(defmethod compositor:focused ((c niri))
+(defmethod focused ((c niri))
   (let ((found (find-if (lambda (w) (gethash "is_focused" w))
-                        (compositor:windows c))))
+                        (windows c))))
     (when found (princ-to-string (gethash "id" found)))))
 
-(defmethod compositor:rect ((c niri) id)
+(defmethod rect ((c niri) id)
   (let ((found (find-if (lambda (w)
                           (equal (princ-to-string id)
                                  (princ-to-string (gethash "id" w ""))))
-                        (compositor:windows c))))
+                        (windows c))))
     (when found
       (let ((at (gethash "layout" found)))
         (when at
@@ -77,19 +70,19 @@ the mode it is in is what the size comes from."
               (list (round (aref pos 0)) (round (aref pos 1))
                     (round (aref size 0)) (round (aref size 1))))))))))
 
-(defmethod compositor:titled ((c niri) id)
+(defmethod titled ((c niri) id)
   (let ((found (find-if (lambda (w)
                           (equal (princ-to-string id)
                                  (princ-to-string (gethash "id" w ""))))
-                        (compositor:windows c))))
+                        (windows c))))
     (when found (gethash "title" found))))
 
-(defmethod compositor:focus ((c niri) id)
-  (compositor:act c "window" id))
+(defmethod focus ((c niri) id)
+  (act c "window" id))
 
-(defmethod compositor:verbs ((c niri)) (mapcar #'car +actions+))
+(defmethod verbs ((c niri)) (mapcar #'car +actions+))
 
-(defmethod compositor:act ((c niri) verb &rest arguments)
+(defmethod act ((c niri) verb &rest arguments)
   "Told and not asked. An answer stands for a breath, so an action routed through
 the memo happened once however many times it was asked for: closing two windows
 one after the other closed one, and focusing back to where you were did nothing."

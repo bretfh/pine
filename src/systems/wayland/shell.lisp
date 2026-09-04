@@ -1,10 +1,4 @@
-(defpackage #:pine/wayland/shell
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol)
-  (:local-nicknames (#:display #:pine/wayland/display))
-  (:export
-   #:bind #:compositor #:shm #:layer #:toplevel
-   #:chrome #:show #:unshow #:at-surface))
-(in-package #:pine/wayland/shell)
+(in-package #:pine/wayland)
 
 (defclass shell ()
   ((display-of :initarg :display :reader display-of)
@@ -52,12 +46,12 @@ own: the window manager hands it out, and pine is the window manager there."))
                (wl-proxy-hooks it)))))
     (:name (name) (declare (ignore name)))))
 
-(defun bind (d &key on-pointer on-keyboard)
+(defun open-shell (d &key on-pointer on-keyboard)
   "Bind what pine paints with: a compositor, shared memory, the two shells and a
 seat. A compositor that has no layer shell can still show a window."
   (let* ((s (make-instance 'shell :display d :on-pointer on-pointer
                                   :on-keyboard on-keyboard))
-         (it (display:of d))
+         (it (of d))
          (registry (wl-display.get-registry it)))
     (push (evlambda
             (:global (name interface version)

@@ -1,19 +1,12 @@
-(defpackage #:pine/paint/shot
-  (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:fs #:pine/fs)
-                    (#:canvas #:pine/paint/canvas))
-  (:export
-   #:every-surface))
-(in-package #:pine/paint/shot)
+(in-package #:pine/wayland)
 
 (defparameter +background+ '(30 30 46))
 
-(defun measure (tree &key (width 800) (height 600) (font 14))
+(defun %measured (tree &key (width 800) (height 600) (font 14))
   "How big TREE wants to be in pixels, and the canvas it was measured on. The
 measurement is cairo's, so it is the one the paint will use."
   (let* ((s (cl-cairo2:create-image-surface :argb32 1 1))
-         (m (make-instance 'canvas:canvas
+         (m (make-instance 'canvas
                            :context (cl-cairo2:create-context s)
                            :size font)))
     (unwind-protect
@@ -30,11 +23,11 @@ measurement is cairo's, so it is the one the paint will use."
 the screen, in a file you can look at."
   (let* ((s (cl-cairo2:create-image-surface :argb32 width height))
          (context (cl-cairo2:create-context s))
-         (m (make-instance 'canvas:canvas :context context :size font)))
+         (m (make-instance 'canvas :context context :size font)))
     (unwind-protect
          (progn
-           (canvas:with-canvas (m)
-             (canvas:rgb background)
+           (with-canvas (m)
+             (rgb background)
              (cl-cairo2:paint))
            (ui:with-pass
              (ui:with-faces
@@ -58,7 +51,7 @@ would never be given."
         :when (ui:shown each)
           :collect (let ((tree (ui:tree each)))
                      (when tree
-                       (multiple-value-bind (cw ch) (measure tree :width width
+                       (multiple-value-bind (cw ch) (%measured tree :width width
                                                                   :height height)
                          (draw tree (merge-pathnames
                                      (format nil "pine-~a.png" (fs:name each))

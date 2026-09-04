@@ -1,10 +1,4 @@
-(defpackage #:pine/wayland/pump
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fault #:pine/run/fault))
-  (:export
-   #:make-pump #:close-pump #:wake-in #:wake #:hand
-   #:drain #:drain-wake))
-(in-package #:pine/wayland/pump)
+(in-package #:pine/wayland)
 
 (defparameter +nonblock+ 2048
   "O_NONBLOCK. The read end must never block: the thread that reads it is the one

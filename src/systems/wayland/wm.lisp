@@ -1,13 +1,4 @@
-(defpackage #:pine/wayland/wm
-  (:use #:cl #:wayflan-client #:pine/wayland/protocol)
-  (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:log #:pine/fs/log)
-                    (#:fault #:pine/run/fault) (#:chords #:pine/wayland/chords)
-                    (#:display #:pine/wayland/display))
-  (:export
-   #:bind #:take #:laid #:wake #:wants-chords
-   #:eat-next #:manager))
-(in-package #:pine/wayland/wm)
+(in-package #:pine/wayland)
 
 (defparameter +all-edges+ '(:top :bottom :left :right)
   "Every edge, as the protocol spells a bitfield: a list of what is set.")
@@ -60,7 +51,7 @@ is a write and a read of the daemon's namespace."))
     (push it (windows w))
     it))
 
-(defun %at (w proxy) (find proxy (windows w) :key #'of))
+(defun %window-at (w proxy) (find proxy (windows w) :key #'of))
 
 (defun %by-id (w id)
   (find (princ-to-string id) (windows w)
@@ -212,15 +203,15 @@ because that is the only place the protocol lets a binding be enabled."
   (when (manager w) (river-window-manager-v1.manage-dirty (manager w)))
   chords)
 
-(defun eat-next (w) (chords:eat-next (chords w)))
+(defun eat-next (w) (eat-next (chords w)))
 
 (defun %seat-events (w proxy)
   (push proxy (seats w))
-  (chords:attend (chords w) proxy)
+  (attend (chords w) proxy)
   (push (evlambda
           (:wl-seat (name) (declare (ignore name)))
           (:window-interaction (window)
-           (let ((it (%at w window)))
+           (let ((it (%window-at w window)))
              (when it (setf (focused w) it (dirty w) t))
              (river-seat-v1.focus-window proxy window)))
           (:shell-surface-interaction (shell-surface)
@@ -234,7 +225,7 @@ because that is the only place the protocol lets a binding be enabled."
         (wl-proxy-hooks proxy))
   proxy)
 
-(defun wake (w)
+(defun cycle (w)
   "Ask for a cycle. A manage sequence is always followed by a render one, which
 is where anything of the window manager's own is committed."
   (when (and w (manager w))
@@ -269,7 +260,7 @@ The answer comes from another image, so it is never waited for here: a manager
 that waits is one the compositor gives up on, and it says so after three
 seconds."
   (%default-output w)
-  (when (wanted w) (chords:ask-for (chords w) (wanted w)) (setf (wanted w) nil))
+  (when (wanted w) (ask-for (chords w) (wanted w)) (setf (wanted w) nil))
   (when (placedp w) (apply-layout w (pending w)))
   (river-window-manager-v1.manage-finish (manager w))
   (when (and (dirty w) (on-said w) (not (asking w)))
@@ -312,10 +303,10 @@ over data and not a protocol of its own."
         (t nil)))
     (setf (dirty w) t)))
 
-(defun bind (d &key on-said on-render on-chord)
+(defun open-manager (d &key on-said on-render on-chord)
   "Become the compositor's window manager, if it is asking for one. Answers
 nothing where the compositor manages its own windows."
-  (let* ((it (display:of d))
+  (let* ((it (of d))
          (registry (wl-display.get-registry it))
          (found nil)
          (layers nil)
@@ -340,7 +331,7 @@ nothing where the compositor manages its own windows."
     (wl-display-roundtrip it)
     (when found
       (let ((w (make-instance 'wm :manager found :layers layers
-                                  :chords (chords:make-chords chords
+                                  :chords (make-chords chords
                                                               :told on-chord)
                                   :on-said on-said :on-render on-render)))
         (push (evlambda

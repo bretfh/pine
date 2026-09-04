@@ -1,15 +1,4 @@
-(defpackage #:pine/wm/tiles
-  (:use #:cl #:pine)
-  (:shadowing-import-from #:pine #:read #:write #:map #:set)
-  (:import-from #:pine/wm/compositor #:ids #:outputs)
-  (:import-from #:pine/wm #:current)
-  (:local-nicknames (#:fs #:pine/fs))
-  (:export
-   #:layout #:tall #:wide #:full #:stacked
-   #:arrange #:layouts
-   #:area #:placed #:id-of #:x-of #:y-of #:wide-of #:tall-of
-   #:clip-of #:stack-of))
-(in-package #:pine/wm/tiles)
+(in-package #:pine/wm)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 

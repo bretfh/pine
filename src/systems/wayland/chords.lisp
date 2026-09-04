@@ -1,14 +1,6 @@
-(defpackage #:pine/wayland/chords
-  (:use #:cl #:wayflan-client #:pine/wayland/protocol)
-  (:local-nicknames (#:ui #:pine/ui)
-                    (#:log #:pine/fs/log)
-                    (#:fault #:pine/run/fault))
-  (:export
-   #:make-chords #:attend #:ask-for #:eat-next #:every-key
-   #:mask #:keysym))
-(in-package #:pine/wayland/chords)
+(in-package #:pine/wayland)
 
-(defparameter +modifiers+
+(defparameter +river-modifiers+
   '((:shift . :shift) (:ctrl . :ctrl) (:meta . :mod1) (:super . :mod4))
   "What pine calls a modifier and what river does. Its mod1 is what a keyboard
 calls alt and pine calls meta; its mod4 is super. The protocol spells a bitfield
@@ -29,11 +21,11 @@ at it."))
 
 (defun make-chords (of &key told) (make-instance 'chords :of of :told told))
 
-(defun availablep (c) (and c (of c) t))
+(defun usablep (c) (and c (of c) t))
 
 (defun mask (k)
   "The modifiers a key is held with, as the protocol spells them."
-  (loop :for (mine . theirs) :in +modifiers+
+  (loop :for (mine . theirs) :in +river-modifiers+
         :when (ecase mine
                 (:shift (ui:shift k)) (:ctrl (ui:ctrl k))
                 (:meta (ui:meta k)) (:super (ui:super k)))
@@ -55,7 +47,7 @@ to be asked for as much as the first."
 
 (defun attend (c proxy)
   "Take this seat, and the object that lets the next key be taken with it."
-  (when (and (availablep c) (null (seat c)))
+  (when (and (usablep c) (null (seat c)))
     (setf (seat c) proxy)
     (setf (eating c)
           (fault:or-nothing "the compositor may not offer chord binding"
@@ -77,7 +69,7 @@ to be asked for as much as the first."
 (defun ask-for (c chords)
   "Ask the compositor for every key these chords are spelled with, and enable
 each. Only inside a manage sequence: that is where the protocol allows it."
-  (when (and (availablep c) (seat c))
+  (when (and (usablep c) (seat c))
     (forget c)
     (dolist (k (every-key chords))
       (let ((sym (keysym k)))
@@ -97,7 +89,7 @@ each. Only inside a manage sequence: that is where the protocol allows it."
 (defun eat-next (c)
   "Take the next key from whatever has focus too: pine is part way through a chord
 and the rest of it is not the focused window's to see."
-  (when (and (availablep c) (eating c))
+  (when (and (usablep c) (eating c))
     (fault:or-nothing "the compositor may have taken the seat back"
       (river-xkb-bindings-seat-v1.ensure-next-key-eaten (eating c))))
   c)

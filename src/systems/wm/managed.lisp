@@ -1,17 +1,11 @@
-(defpackage #:pine/wm/managed
-  (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
-                    (#:compositor #:pine/wm/compositor))
-  (:export
-   #:managed))
-(in-package #:pine/wm/managed)
+(in-package #:pine/wm)
 
 (defparameter +verbs+ '("close" "exit" "next" "previous")
   "What this compositor takes. A verb is a node: writing /wm/close closes the
 focused window, and that is the whole of the protocol for it. Nothing here is
 about arrangement -- that is whatever writes /wm/placement.")
 
-(defclass managed (compositor:compositor)
+(defclass managed (compositor)
   ((said  :initform nil :accessor said)
    (wants :initform nil :accessor wants)
    (where :initform nil :accessor where))
@@ -49,12 +43,12 @@ writing it is the whole of being a window manager."))
   (loop :for had := (wants c)
         :when (d:cas (slot-value c 'wants) had nil) :do (return had)))
 
-(defmethod compositor:outputs ((c managed)) (getf (told c) :outputs))
+(defmethod outputs ((c managed)) (getf (told c) :outputs))
 
-(defmethod compositor:ids ((c managed))
+(defmethod ids ((c managed))
   (mapcar (lambda (w) (getf w :id)) (windows-of c)))
 
-(defmethod compositor:windows ((c managed))
+(defmethod windows ((c managed))
   (loop :for w :in (windows-of c)
         :collect (let ((h (make-hash-table :test 'equal)))
                    (setf (gethash "id" h) (princ-to-string (getf w :id))
@@ -64,14 +58,14 @@ writing it is the whole of being a window manager."))
                          (equal (getf w :id) (getf (told c) :focused)))
                    h)))
 
-(defmethod compositor:focused ((c managed))
+(defmethod focused ((c managed))
   (let ((id (getf (told c) :focused)))
     (and id (princ-to-string id))))
 
-(defmethod compositor:titled ((c managed) id)
+(defmethod titled ((c managed) id)
   (getf (%window c id) :title))
 
-(defmethod compositor:rect ((c managed) id)
+(defmethod rect ((c managed) id)
   "Where a window is: what was last placed for it, which is what it was told to
 be. Until something places it there is nothing to say."
   (let ((each (find (princ-to-string id) (placement c)
@@ -79,21 +73,21 @@ be. Until something places it there is nothing to say."
                     :test #'equal)))
     (when each (subseq each 1 5))))
 
-(defmethod compositor:hidden ((c managed) id)
+(defmethod hidden ((c managed) id)
   (and (getf (%window c id) :hidden) t))
 
-(defmethod compositor:hide ((c managed) id)
+(defmethod hide ((c managed) id)
   (asked c (list :hide (princ-to-string id))))
 
-(defmethod compositor:show ((c managed) id)
+(defmethod show ((c managed) id)
   (asked c (list :show (princ-to-string id))))
 
-(defmethod compositor:focus ((c managed) id)
+(defmethod focus ((c managed) id)
   (asked c (list :focus (princ-to-string id))))
 
-(defmethod compositor:verbs ((c managed)) +verbs+)
+(defmethod verbs ((c managed)) +verbs+)
 
-(defmethod compositor:act ((c managed) verb &rest arguments)
+(defmethod act ((c managed) verb &rest arguments)
   (let ((verb (princ-to-string verb)))
     (when (member verb +verbs+ :test #'equal)
       (asked c (list* (intern (string-upcase verb) :keyword) arguments))
@@ -104,8 +98,8 @@ be. Until something places it there is nothing to say."
 what pine wants done about it. Nothing under src/ writes the placement: a window
 manager is a system that does, and the answer is total -- a window it does not name
 is hidden. What is wanted is taken once, so nothing is done twice."
-  (setf (compositor:parts c)
-        (append (compositor:parts c)
+  (setf (parts c)
+        (append (parts c)
                 (list (make-instance 'handed :name "said" :of c
                                      :describes "what the compositor handed over")
                       (make-instance 'placement :name "placement" :of c

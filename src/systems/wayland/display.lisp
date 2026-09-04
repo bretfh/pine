@@ -1,9 +1,4 @@
-(defpackage #:pine/wayland/display
-  (:use #:cl #:wayflan-client)
-  (:local-nicknames (#:wayflan #:xyz.shunter.wayflan.wire) (#:pump #:pine/wayland/pump))
-  (:export
-   #:connect #:of #:dispatch #:disconnect #:wait))
-(in-package #:pine/wayland/display)
+(in-package #:pine/wayland)
 
 (defconstant +af-unix+ 1)
 (defconstant +sock-stream+ 1)
@@ -57,7 +52,7 @@ descriptor is held. Answers whether the pump is what woke us."
       (setf (cffi:foreign-slot-value connection '(:struct pollfd) 'fd) (fd d)
             (cffi:foreign-slot-value connection '(:struct pollfd) 'events) +pollin+
             (cffi:foreign-slot-value connection '(:struct pollfd) 'revents) 0
-            (cffi:foreign-slot-value queue '(:struct pollfd) 'fd) (pump:wake-in p)
+            (cffi:foreign-slot-value queue '(:struct pollfd) 'fd) (wake-in p)
             (cffi:foreign-slot-value queue '(:struct pollfd) 'events) +pollin+
             (cffi:foreign-slot-value queue '(:struct pollfd) 'revents) 0)
       (let ((ready (cffi:foreign-funcall "poll"

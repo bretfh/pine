@@ -28,16 +28,10 @@ class that subclasses SYSTEM is a system, and nothing has to say so twice."
           :key (lambda (c) (string-downcase (symbol-name (class-name c))))
           :test #'equal)))
 
-(defun %package (class)
-  (string-downcase (package-name (symbol-package (class-name class)))))
-
-(defun owns (name)
-  (let ((c (%class name))) (and c (%package c))))
-
 (defun %take-down (home)
-  "Take off everything in the tree the system written in HOME mounted, and out of
-what it mounted into; a job it mounted is stopped as it goes. Not into what was
-taken off, and not into a live mount: what is under one belongs to the world."
+  "Take off everything in the tree the system named HOME mounted, and out of what
+it mounted into; a job it mounted is stopped as it goes. Not into what was taken
+off, and not into a live mount: what is under one belongs to the world."
   (labels ((sweep (d)
              (dolist (each (fs:entries d))
                (cond ((equal (fs:owner each) home)
@@ -53,7 +47,7 @@ taken off, and not into a live mount: what is under one belongs to the world."
 (defmethod job:start :around ((s system))
   "What the system puts up while it starts is its. Cleared first, so a system
 started again does not carry what the last run put up."
-  (let ((fs:*owner* (owns (job:name s))))
+  (let ((fs:*owner* (job:name s)))
     (call-next-method)))
 
 (defmethod job:stop ((s system))
@@ -70,8 +64,7 @@ was asking each of them to keep a list of what to undo."
 (defmethod job:stop :after ((s system))
   "What a system put up goes when it does. An app that puts up a place and a
 surface writes no STOP at all."
-  (let ((prefix (owns (job:name s))))
-    (when prefix (%take-down prefix))))
+  (%take-down (job:name s)))
 
 (defun kinds ()
   "Every system there is to load, running or not."

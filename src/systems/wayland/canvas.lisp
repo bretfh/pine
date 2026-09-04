@@ -1,10 +1,17 @@
-(defpackage #:pine/paint/canvas
-  (:use #:cl)
-  (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:fault #:pine/run/fault))
+(defpackage #:pine/wayland
+  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol)
+  (:local-nicknames (#:ui #:pine/ui) (#:d #:pine/data) (#:fs #:pine/fs)
+                    (#:job #:pine/run/job) (#:watch #:pine/run/watch)
+                    (#:system #:pine/run/system) (#:fault #:pine/run/fault)
+                    (#:log #:pine/fs/log) (#:wayflan #:xyz.shunter.wayflan.wire)
+                    (#:shm #:posix-shm))
   (:export
-   #:canvas #:context #:with-canvas #:rgb))
-(in-package #:pine/paint/canvas)
+   #:canvas #:context #:with-canvas #:rgb #:every-surface
+   #:screen #:wm-of #:tell #:pointing #:keyboard-said #:typed #:chorded #:chords-wanted
+   #:keysym #:mask #:every-key)
+  (:documentation "The display pine paints its surfaces on: pixels, through cairo,
+and wayland, through wayflan."))
+(in-package #:pine/wayland)
 
 (defvar *font* "Maple Mono NF")
 

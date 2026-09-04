@@ -1,10 +1,22 @@
-(defpackage #:pine/wm/compositor
-  (:use #:cl)
-  (:local-nicknames (#:fs #:pine/fs))
-  (:export #:compositor #:parts #:workspaces #:windows #:titled #:focused #:focus
-           #:outputs #:ids #:rect #:hidden #:hide #:show
-           #:step-window #:close-window #:overview #:leave #:split #:act #:verbs))
-(in-package #:pine/wm/compositor)
+(defpackage #:pine/wm
+  (:use #:cl #:pine)
+  (:shadowing-import-from #:pine #:read #:write #:map #:set)
+  (:shadow #:leave)
+  (:local-nicknames (#:fs #:pine/fs) (#:d #:pine/data)
+                    (#:job #:pine/run/job) (#:system #:pine/run/system)
+                    (#:command #:pine/run/command) (#:sh #:pine/host/shell)
+                    (#:fault #:pine/run/fault) (#:wkeys #:pine/wm/keys))
+  (:export
+   #:current
+   #:compositor #:workspaces #:windows #:titled #:focused #:focus
+   #:outputs #:ids #:rect #:hidden #:hide #:show
+   #:step-window #:close-window #:overview #:split #:act #:verbs
+   #:managed #:niri
+   #:layout #:tall #:wide #:full #:stacked #:arrange #:layouts
+   #:area #:placed #:id-of #:x-of #:y-of #:wide-of #:tall-of #:clip-of #:stack-of)
+  (:documentation "The window manager: the compositor this session is under, in
+the namespace at /wm, the ways of talking to one, and where the windows go."))
+(in-package #:pine/wm)
 
 (defclass compositor (fs:mount)
   ((parts :initform nil :accessor parts))

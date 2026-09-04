@@ -14,7 +14,7 @@
                     (:session :pine/run/session) (:mode :pine/mode)
                     (:sh :pine/host/shell) (:host :pine/host)
                     (:log :pine/fs/log)
-                    (:compositor :pine/wm/compositor) (:tiles :pine/wm/tiles)))
+                    (:compositor :pine/wm) (:tiles :pine/wm)))
 
 (in-package :pine/test)
 

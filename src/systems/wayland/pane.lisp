@@ -1,20 +1,10 @@
-(defpackage #:pine/wayland/pane
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol)
-  (:local-nicknames (#:ui #:pine/ui)
-                    (#:d #:pine/data) (#:canvas #:pine/paint/canvas)
-                    (#:shm #:posix-shm) (#:shell #:pine/wayland/shell)
-                    (#:fault #:pine/run/fault))
-  (:export
-   #:pane #:open-pane #:close-pane #:paint #:render
-   #:measure #:name-of #:tree #:wide #:tall
-   #:dirty #:chromep #:cell #:*font*))
-(in-package #:pine/wayland/pane)
+(in-package #:pine/wayland)
 
 (defvar *namespace* "gtk-layer-shell"
   "What the compositor knows this surface as. Its blur and shadow rules commonly
 match on this one.")
 
-(defvar *font* 15)
+(defvar *font-size* 15)
 (defparameter +window+ '(900 . 600)
   "How big a window is until the compositor says otherwise. A toplevel is sized by
 whoever is showing it, and until it does the client picks.")
@@ -63,9 +53,9 @@ before is a frame that does not fill the surface it lands in."
 (defun %canvas (data width height stride)
   (let ((it (cl-cairo2:create-image-surface-for-data data :argb32 width height
                                                      stride)))
-    (values (make-instance 'canvas:canvas
+    (values (make-instance 'canvas
                            :context (cl-cairo2:create-context it)
-                           :size *font*)
+                           :size *font-size*)
             it)))
 
 (defun %blit (s)
@@ -78,14 +68,14 @@ arranged as it is painted, so what a click lands on is what was drawn there."
              (size (* stride height)))
         (shm:with-open-shm-and-mmap* (obj data (:direction :io) (size))
           (let (buffer)
-            (with-proxy (pool (wl-shm.create-pool (shell:shm (shell s))
+            (with-proxy (pool (wl-shm.create-pool (shm (shell s))
                                                   (shm:shm-fd obj) size))
               (setf buffer (wl-shm-pool.create-buffer pool 0 width height stride
                                                       :argb8888)))
             (multiple-value-bind (m it) (%canvas data width height stride)
               (unwind-protect
                    (progn
-                     (canvas:with-canvas (m)
+                     (with-canvas (m)
                        (cl-cairo2:set-operator :source)
                        (cl-cairo2:set-source-rgba 0d0 0d0 0d0 0d0)
                        (cl-cairo2:paint)
@@ -96,7 +86,7 @@ arranged as it is painted, so what a click lands on is what was drawn there."
                          (ui:measure (tree s) m width height)
                          (ui:lay (tree s) m 0 0 width height)
                          (ui:paint (tree s) m))))
-                (cl-cairo2:destroy (canvas:context m))
+                (cl-cairo2:destroy (context m))
                 (cl-cairo2:destroy it)))
             (when (uiop:getenv "PINE_FRAME_DUMP")
               (fault:or-nothing "cairo may refuse the buffer it was handed"
@@ -143,8 +133,8 @@ answers to the compositor rather than to us."
 (defun measure (s &key (avail 3840))
   "How big the tree wants to be, measured the way it will be painted."
   (let* ((it (cl-cairo2:create-image-surface :argb32 1 1))
-         (m (make-instance 'canvas:canvas :context (cl-cairo2:create-context it)
-                                          :size *font*)))
+         (m (make-instance 'canvas :context (cl-cairo2:create-context it)
+                                          :size *font-size*)))
     (unwind-protect
          (ui:with-pass
            (ui:with-faces
@@ -157,9 +147,9 @@ answers to the compositor rather than to us."
 lands in them."
   (declare (ignore s))
   (let* ((it (cl-cairo2:create-image-surface :argb32 1 1))
-         (m (make-instance 'canvas:canvas :context (cl-cairo2:create-context it)
-                                          :size *font*)))
-    (unwind-protect (ui:text-size m "M" *font*)
+         (m (make-instance 'canvas :context (cl-cairo2:create-context it)
+                                          :size *font-size*)))
+    (unwind-protect (ui:text-size m "M" *font-size*)
       (cl-cairo2:destroy it))))
 
 (defun %layer (where)
@@ -173,9 +163,9 @@ background; one that keeps a strip for itself is furniture; anything else floats
 
 (defun %open-layer (s where)
   (let* ((sh (shell s))
-         (surface (wl-compositor.create-surface (shell:compositor sh)))
+         (surface (wl-compositor.create-surface (compositor sh)))
          (it (zwlr-layer-shell-v1.get-layer-surface
-              (shell:layer sh) surface nil (%layer where) *namespace*)))
+              (layer sh) surface nil (%layer where) *namespace*)))
     (setf (surface s) surface (took s) it)
     (zwlr-layer-surface-v1.set-anchor it (getf where :edges))
     (zwlr-layer-surface-v1.set-size it (or (getf where :wide) 0)
@@ -201,8 +191,8 @@ window manager there, and a window manager's own surfaces come from it.
 Nothing configures one, so it is drawn at the size it measured to. Nothing is
 committed here either: that happens in a render sequence."
   (let* ((sh (shell s))
-         (surface (wl-compositor.create-surface (shell:compositor sh)))
-         (it (river-window-manager-v1.get-shell-surface (shell:chrome sh)
+         (surface (wl-compositor.create-surface (compositor sh)))
+         (it (river-window-manager-v1.get-shell-surface (chrome sh)
                                                         surface)))
     (setf (surface s) surface (took s) it (kind s) :chrome
           (node-of s) (river-shell-surface-v1.get-node it)
@@ -215,8 +205,8 @@ committed here either: that happens in a render sequence."
   (when (zerop (wide s)) (setf (wide s) (car +window+)))
   (when (zerop (tall s)) (setf (tall s) (cdr +window+)))
   (let* ((sh (shell s))
-         (surface (wl-compositor.create-surface (shell:compositor sh)))
-         (xdg (xdg-wm-base.get-xdg-surface (shell:toplevel sh) surface))
+         (surface (wl-compositor.create-surface (compositor sh)))
+         (xdg (xdg-wm-base.get-xdg-surface (toplevel sh) surface))
          (top (xdg-surface.get-toplevel xdg)))
     (setf (surface s) surface (took s) top)
     (push (evelambda
@@ -248,10 +238,10 @@ happens here: the thread that owns the compositor is the only one that may."
     (when (plusp (or (getf where :tall) 0)) (setf (tall s) (getf where :tall)))
     (setf (where s) where)
     (cond (windowp (setf (kind s) :window) (%open-window s title))
-          ((shell:layer sh) (setf (kind s) :layer) (%open-layer s where))
-          ((shell:chrome sh) (%open-chrome s where))
+          ((layer sh) (setf (kind s) :layer) (%open-layer s where))
+          ((chrome sh) (%open-chrome s where))
           (t (setf (kind s) :window) (%open-window s title)))
-    (shell:show sh (surface s) s)
+    (show sh (surface s) s)
     s))
 
 (defun close-pane (s)
@@ -264,7 +254,7 @@ happens here: the thread that owns the compositor is the only one that may."
          (t (xdg-toplevel.destroy it))))))
   (when (surface s) (fault:or-nothing "and so is the surface under it"
                       (wl-surface.destroy (surface s))))
-  (shell:unshow (shell s) s)
+  (unshow (shell s) s)
   (setf (surface s) nil (took s) nil (configuredp s) nil)
   s)
 
