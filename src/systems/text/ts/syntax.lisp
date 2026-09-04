@@ -109,15 +109,16 @@ declaration says nothing. A method on the language's name.")
      :infer infer
      :raw raw)))
 
-(defun %langs () (fs:ensure (fs:root) "lang"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "every language declared"))
+          "/lang")
+
+(defun %langs () (fs:at "/lang"))
 
 (defun declare-language (name raw &key parent)
   "Declare a language at /lang/<name>."
   (let ((full (%inherit (and parent (%raw parent)) raw)))
-    (fs:declared (lambda ()
-                   (make-instance 'lang :name (string-downcase (string name))
-                                        :held full :compiled (%compile name full)))
-                 "lang")
+    (fs:mount (lambda () (make-instance 'lang :held full :compiled (%compile name full)))
+              (format nil "/lang/~a" (string-downcase (string name))))
     name))
 
 (defun %declared (name)

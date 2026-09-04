@@ -331,8 +331,7 @@ the first one at the second file and the first was gone."
                        :direction :output :if-exists :supersede)
       (write-string "(this is B)" s))
     (with-tree
-      (fs:built (fs:root))
-      (mount:mount #p"/" (fs:root) "file")
+      (fs:mount #p"/" "/file")
       (pine/text::root)
       (let* ((path-a (namestring (merge-pathnames "system.lisp" a)))
              (path-b (namestring (merge-pathnames "system.lisp" b)))

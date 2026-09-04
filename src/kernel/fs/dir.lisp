@@ -1,28 +1,31 @@
 (defpackage #:pine/fs
   (:use #:cl)
+  (:shadow #:directory)
   (:local-nicknames (#:d #:pine/data))
   (:export
-   #:dir #:value #:derived #:kind
+   #:mount #:value #:derived #:kind
    #:contents #:holding #:verb #:savedp #:livep #:announces #:refreshes #:moved
    #:entries #:entry #:make-entry #:erase-entry #:works #:takes
    #:name #:parent #:owner #:describes #:full-name #:child #:slots
-   #:attach #:detach #:announced #:reading #:depend #:undepend #:as-value #:let-go
+   #:detach #:announced #:reading #:depend #:undepend #:as-value #:let-go
    #:reads #:writes
-   #:root #:make-root #:at #:ensure #:leaf #:erase #:walk #:paths #:split-name
-   #:builder #:built #:declared #:undeclared #:*owner* #:absent #:not-a-place #:*root*
+   #:root #:make-root #:at #:erase #:walk #:paths #:split-name
+   #:directory #:file #:truename-of #:node-for
+   #:*owner* #:absent #:not-a-place #:*root*
    #:writing #:on-commit #:on-forget #:forget-listeners
    #:*broke* #:*elsewhere* #:*working* #:*awaiting* #:*waiting-on* #:*waited*)
   (:documentation "The tree: three kinds of thing stand at a name.
 
-A DIR has entries and holds nothing. A VALUE holds one thing that was written. A
-DERIVED works one out from what it read and keeps it until something it read moves
--- or, where the world behind it answers and nothing here can see that move, asks
-every time.
+A MOUNT serves what is under it and holds nothing of its own. A VALUE holds one
+thing that was written. A DERIVED works one out from what it read and keeps it
+until something it read moves -- or, where the world behind it answers and nothing
+here can see that move, asks every time.
 
-What a class answers is CONTENTS, (SETF CONTENTS), HOLDING, VERB, SAVEDP, LIVEP,
-ANNOUNCES, REFRESHES and MOVED; a dir answers ENTRIES, ENTRY, MAKE-ENTRY and
-ERASE-ENTRY; a derived may answer WORKS and TAKES instead of being given READS and
-WRITES. Everything else here is called and not specialised."))
+MOUNT is also the verb: what puts a thing at a name. What a class answers is
+CONTENTS, (SETF CONTENTS), HOLDING, VERB, SAVEDP, LIVEP, ANNOUNCES, REFRESHES and
+MOVED; a mount answers ENTRIES, ENTRY, MAKE-ENTRY and ERASE-ENTRY; a derived may
+answer WORKS and TAKES instead of being given READS and WRITES. Everything else
+here is called and not specialised."))
 (in-package #:pine/fs)
 
 (defvar *reading* nil)
@@ -40,7 +43,7 @@ WRITES. Everything else here is called and not specialised."))
   (by-name (d:no-map)))
 
 (defclass standing ()
-  ((name      :initarg :name      :reader name)
+  ((name      :initarg :name      :reader name      :initform nil)
    (parent    :initarg :parent    :accessor parent    :initform nil)
    (owner     :initarg :owner     :accessor owner     :initform nil)
    (describes :initarg :describes :accessor describes :initform nil)
@@ -53,14 +56,14 @@ WRITES. Everything else here is called and not specialised."))
 
 (defgeneric savedp (x) (:method ((x standing)) nil))
 (defvar *owner* nil
-  "Whose what is put up now is: the package of the system starting, while it does.")
+  "Whose what is mounted now is: the package of the system starting, while it does.")
 
 (defgeneric livep (x) (:method ((x standing)) nil))
 (defgeneric announces (x) (:method ((x standing)) nil))
 (defgeneric refreshes (x) (:method ((x standing)) nil))
 (defgeneric moved (x))
 
-(defclass dir (standing)
+(defclass mount (standing)
   ((under     :initform (%under)  :reader under)
    (memo      :initform (d:no-map) :accessor memo)
    (names     :initarg :names     :reader names-of   :initform nil)
@@ -68,9 +71,9 @@ WRITES. Everything else here is called and not specialised."))
    (entries   :initarg :entries   :reader entries-of :initform nil)
    (announces :initarg :announces :reader announces  :initform nil)
    (refreshes :initarg :refreshes :reader refreshes  :initform nil))
-  (:documentation "Entries. Attached one at a time, or listed from the world: NAMES
-says what is under it and EACH makes one, kept so the same name is the same entry
-every time; ENTRIES answers them all, already made."))
+  (:documentation "Serves a subtree: what was mounted under it, or what it lists from
+the world. NAMES says what is under it and EACH makes one, kept so the same name is
+the same entry every time; ENTRIES answers them all, already made."))
 
 (defclass value (standing)
   ((held :initarg :held :accessor held :initform nil))
@@ -103,11 +106,11 @@ there."))
 
 (defmethod savedp ((x value)) t)
 
-(defmethod livep ((d dir))
+(defmethod livep ((d mount))
   (and (or (names-of d) (each-of d) (entries-of d)) t))
 
 (defun kind (x)
-  (typecase x (dir :dir) (value :value) (derived :derived)))
+  (typecase x (mount :mount) (value :value) (derived :derived)))
 
 (defmethod initialize-instance :after ((x standing) &key)
   (let ((said (slot-value x 'name)))
@@ -132,7 +135,7 @@ there."))
 
 (defun %renamed (x)
   (setf (named x) nil)
-  (when (typep x 'dir)
+  (when (typep x 'mount)
     (d:do-each (each (beneath x)) (%renamed each))
     (dolist (each (d:vals (memo x))) (%renamed each)))
   x)
@@ -171,7 +174,7 @@ nothing."
 (defgeneric entries (x)
   (:documentation "What is under X, in order.")
   (:method ((x standing)) nil)
-  (:method ((d dir))
+  (:method ((d mount))
     (cond ((entries-of d) (funcall (entries-of d)))
           ((names-of d) (remove nil (mapcar (lambda (each) (%kid d each)) (%listed d))))
           (t (d:as :list (beneath d))))))
@@ -179,7 +182,7 @@ nothing."
 (defgeneric entry (x name)
   (:documentation "What X has under NAME, or nothing.")
   (:method ((x standing) name) (declare (ignore name)) nil)
-  (:method ((d dir) name)
+  (:method ((d mount) name)
     (let ((name (%said name)))
       (cond ((entries-of d)
              (find name (funcall (entries-of d)) :key #'name :test #'equal))
@@ -203,36 +206,58 @@ nothing."
                     (d:without (under-by-name all) (%said (name x))))))
   d)
 
-(defgeneric attach (x into)
-  (:documentation "Put X under INTO, in place of whatever stood at its name, and out
-of wherever it was.")
-  (:method ((x standing) (into dir))
-    (let* ((said (%said (name x)))
-           (had (d:lookup (by-name into) said))
-           (was (parent x)))
-      (when (and had (not (eq had x)))
-        (detach into said)
-        (when (eq had (d:lookup (memo into) said))
-          (d:swap (slot-value into 'memo) #'d:without said)))
-      (when (and (typep was 'dir) (not (eq was into)))
-        (%unlisted was x)
-        (moved was))
-      (setf (parent x) into)
-      (d:swap (slot-value into 'under)
-              (lambda (all)
-                (%under (d:with (d:as :seq (cl:remove said
-                                                      (d:as :list (under-order all))
-                                                      :key #'name :test #'equal))
-                                x)
-                        (d:with (under-by-name all) said x))))
-      (moved into))
-    x))
+(defun %plainp (x)
+  "A bare mount, or a value with nothing in it: one made only to stand at a name."
+  (or (eq (class-of x) (find-class 'mount))
+      (and (eq (class-of x) (find-class 'value)) (null (held x)))))
+
+(defgeneric mount (what where)
+  (:documentation "Put WHAT at WHERE: under a mount by its own name, or at the path
+WHERE spells, making the way there. It stands in place of whatever stood at the
+name, and out of wherever it was; a bare mount or an empty value put where something
+stands answers what stands. What is mounted while a system starts is the system's.
+A function is what it makes, mounted now and again on every root made later."))
+
+(defmethod mount ((x standing) (into mount))
+  (let* ((said (%said (name x)))
+         (had (d:lookup (by-name into) said))
+         (was (parent x)))
+    (when (or (each-of into) (entries-of into))
+      (error "~a works out what is under it; ~a is not a place to mount at."
+             (full-name into) said))
+    (flet ((put ()
+             (when had
+               (detach into said)
+               (when (eq had (d:lookup (memo into) said))
+                 (d:swap (slot-value into 'memo) #'d:without said)))
+             (when (and (typep was 'mount) (not (eq was into)))
+               (%unlisted was x)
+               (moved was))
+             (when *owner* (setf (owner x) *owner*))
+             (setf (parent x) into)
+             (d:swap (slot-value into 'under)
+                     (lambda (all)
+                       (%under (d:with (d:as :seq (cl:remove said
+                                                             (d:as :list (under-order all))
+                                                             :key #'name :test #'equal))
+                                       x)
+                               (d:with (under-by-name all) said x))))
+             (moved into)
+             x))
+      (cond ((eq had x) x)
+            ((%plainp x)
+             (let ((stands (or had (entry into said))))
+               (cond (stands
+                      (when (describes x) (setf (describes stands) (describes x)))
+                      stands)
+                     (t (put)))))
+            (t (put))))))
 
 (defgeneric detach (d name)
   (:documentation "Take NAME off D and stop it reading anything. What the memo keeps
 stays, so a name taken off and put back answers the same entry; ERASE-ENTRY is the
 one that means it has gone.")
-  (:method ((d dir) name)
+  (:method ((d mount) name)
     (let ((gone (entry d name)))
       (when gone
         (%unlisted d gone)
@@ -243,24 +268,24 @@ one that means it has gone.")
       gone)))
 
 (defgeneric make-entry (d name kind)
-  (:documentation "A fresh entry under D called NAME, of KIND -- :DIR or :VALUE --
-made in whatever stands behind D: a plain dir keeps it here, a mounted directory
+  (:documentation "A fresh entry under D called NAME, of KIND -- :MOUNT or :VALUE --
+made in whatever stands behind D: a plain mount keeps it here, a mounted directory
 makes a file on the disk.")
   (:method ((x standing) name kind)
     (declare (ignore kind))
     (error "~a holds a ~(~a~); nothing goes under it, so there is no ~a there."
            (full-name x) (kind x) name))
-  (:method ((d dir) name kind)
+  (:method ((d mount) name kind)
     (when (or (each-of d) (entries-of d))
       (error "~a works out what is under it; ~a is not a place to make."
              (full-name d) name))
-    (attach (make-instance (ecase kind (:dir 'dir) (:value 'value))
-                           :name (%said name))
-            d)))
+    (mount (make-instance (ecase kind (:mount 'mount) (:value 'value))
+                          :name (%said name))
+           d)))
 
 (defgeneric erase-entry (d name)
   (:documentation "Take NAME out of D and out of whatever stands behind it.")
-  (:method ((d dir) name)
+  (:method ((d mount) name)
     (let ((gone (entry d name)))
       (when gone (%went (full-name gone)))
       (let ((it (detach d name)))
@@ -275,10 +300,10 @@ owners put there.")
 (defun slots (object into &rest pairs)
   "One value under INTO per slot of OBJECT named in PAIRS."
   (loop :for (name slot) :on pairs :by #'cddr
-        :collect (attach (make-instance 'slot
-                                        :name (string-downcase (string name))
-                                        :object object :slot slot :into into)
-                         into)))
+        :collect (mount (make-instance 'slot
+                                       :name (string-downcase (string name))
+                                       :object object :slot slot :into into)
+                        into)))
 
 (defgeneric verb (x name arguments)
   (:documentation "What writing (:toggle) and its like means.")
@@ -320,22 +345,22 @@ WRITES it was given.")
       (funcall f value))))
 
 (defgeneric contents (x)
-  (:documentation "What X holds: a dir the names under it, a value what was written,
-a derived what it works out to.")
-  (:method ((d dir))
+  (:documentation "What X holds: a mount the names under it, a value what was
+written, a derived what it works out to.")
+  (:method ((d mount))
     (if (names-of d) (%listed d) (mapcar #'name (entries d))))
   (:method ((x value)) (held x))
   (:method ((x slot)) (slot-value (object-of x) (slot-of x))))
 
 (defgeneric holding (x)
   (:documentation "Which of :BRANCH, :HELD, :WORKING or :ABSENT stands here.")
-  (:method ((d dir)) :branch)
+  (:method ((d mount)) :branch)
   (:method ((x value)) :held))
 
 (defgeneric (setf contents) (value x)
-  (:method (v (d dir))
+  (:method (v (d mount))
     (declare (ignore v))
-    (error "~a is a dir; what is written is what is under it." (full-name d)))
+    (error "~a is a mount; what is written is what is under it." (full-name d)))
   (:method (v (x value)) (setf (held x) v))
   (:method (v (x slot))
     (setf (slot-value (object-of x) (slot-of x)) v)

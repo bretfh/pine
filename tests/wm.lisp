@@ -14,7 +14,7 @@
   "A pine that is the window manager, told what a compositor has. Everything about
 it is a value, so nothing here needs a compositor."
   (editing)
-  (setf (fs:contents (fs:leaf "/wm/manages")) :pine)
+  (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
   (unless (system:named "wm") (pine:use :wm))
   (let ((c (pine/wm:current)))
     (setf (fs:contents (fs:at "/wm/said")) +said+)
@@ -159,11 +159,11 @@ different class in between, so what places the windows has to come with it."
   (editing)
   (when (system:named "tiles") (pine:drop :tiles))
   (when (system:named "wm") (pine:drop :wm))
-  (setf (fs:contents (fs:leaf "/wm/places")) "tiles")
-  (setf (fs:contents (fs:leaf "/wm/manages")) :compositor)
+  (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/places")) "tiles")
+  (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :compositor)
   (pine:use :wm)
   (is (system:named "tiles") "the config's answer is used when the wm comes up")
-  (setf (fs:contents (fs:leaf "/wm/manages")) :pine)
+  (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
   (pine:drop :wm)
   (pine:use :wm)
   (is (typep (pine/wm:current) 'pine/wm/managed:managed))
@@ -279,7 +279,7 @@ bitfield as the list of what is set, not a number."
 write, and most of them are not written beside the root one."
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")
-  (unless (fs:at "/mode") (fs:attach (mode:mode-node) (fs:root)))
+  (unless (fs:at "/mode") (fs:mount (mode:mode-node) (fs:root)))
   (is (typep (mode:mode "wm") 'pine/wm/keys:wm)
       "a mode is found by name whichever package it was written in")
   (is (member "wm" (fs:contents (fs:at "/mode")) :test #'equal))

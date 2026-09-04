@@ -15,7 +15,7 @@ is there yet: opening one that is not is a document on a place, not on a file."
         (names (fs:split-name (namestring where))))
     (loop :while (and at (rest names))
           :do (setf at (fs:entry at (pop names))))
-    (and at names (mount:node-for at (first names)))))
+    (and at names (fs:node-for at (first names)))))
 
 (defun %place (where)
   "The node WHERE names, or a place on the host where the tree has none. AT says

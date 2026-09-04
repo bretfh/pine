@@ -18,7 +18,7 @@ what it stands for."
 
 (deftype somewhere ()
   "What names a place rather than being a value: a node, or a path naming one."
-  '(or fs:dir fs:value fs:derived path:path))
+  '(or fs:mount fs:value fs:derived path:path))
 
 (defun placep (it) (typep it 'somewhere))
 
@@ -33,7 +33,7 @@ handed, and a value answers it by being one.")
 (defgeneric (setf held) (value it)
   (:method (value it) (setf (fs:contents it) value))
   (:method (value (it path:path))
-    (setf (fs:contents (fs:leaf it)) value)))
+    (setf (fs:contents (fs:mount (make-instance 'fs:value) it)) value)))
 
 (defun %shown (it)
   "What a slot shows: what HELD answers, with nothing shown as the empty string.

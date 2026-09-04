@@ -28,7 +28,7 @@
                      (lambda ()
                        (let ((r (make-instance 'region :name name :parent under
                                                        :covers covers)))
-                         (fs:attach (make-instance 'fs:derived :name "text" :live t
+                         (fs:mount (make-instance 'fs:derived :name "text" :live t
                                                    :reads (lambda () (covered r))
                                                    :writes (lambda (v) (setf (covered r) v)))
                                     r)
@@ -75,7 +75,7 @@ is the one thing this is written to stop."
         (setf seen (d:with seen base (1+ had)))
         (push name kept)
         (let ((r (%region under name (list (mode:from-of each) (mode:to-of each)))))
-          (fs:attach r under)
+          (fs:mount r under)
           (when (mode:inside-of each) (%build r (mode:inside-of each))))))
     (%forgotten under kept)))
 

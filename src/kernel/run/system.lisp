@@ -5,7 +5,7 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:system #:use #:drop #:systems
-   #:named #:kinds #:puts))
+   #:named #:kinds))
 (in-package #:pine/run/system)
 
 (defclass system (job:job) ()
@@ -34,24 +34,19 @@ class that subclasses SYSTEM is a system, and nothing has to say so twice."
 (defun owns (name)
   (let ((c (%class name))) (and c (%package c))))
 
-(defun puts (x &optional (into (fs:root)))
-  "Attach X as the running system's: what a system puts up goes when it does, so
-this is ATTACH for an app and the reason an app needs no STOP."
-  (setf (fs:owner x) fs:*owner*)
-  (fs:attach x into)
-  x)
-
 (defun %take-down (home)
-  "Take off everything in the tree the system written in HOME owns, and out of what
-it wrote into. Not into what was taken off, and not into a live dir: what is under
-one belongs to the world."
+  "Take off everything in the tree the system written in HOME mounted, and out of
+what it mounted into; a job it mounted is stopped as it goes. Not into what was
+taken off, and not into a live mount: what is under one belongs to the world."
   (labels ((sweep (d)
              (dolist (each (fs:entries d))
                (cond ((equal (fs:owner each) home)
                       (fault:or-nothing "what a system put up may have gone already"
-                        (fs:erase-entry d (fs:name each))))
+                        (if (typep each 'job:job)
+                            (job:forget (fs:name each))
+                            (fs:erase-entry d (fs:name each)))))
                      (t (fs:let-go each home)
-                        (when (and (typep each 'fs:dir) (not (fs:livep each)))
+                        (when (and (typep each 'fs:mount) (not (fs:livep each)))
                           (sweep each)))))))
     (sweep (fs:root))))
 

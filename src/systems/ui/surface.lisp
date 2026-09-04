@@ -85,7 +85,7 @@ content is here.")
     (declare (ignore width height))
     (placing)))
 
-(defclass surface (fs:dir)
+(defclass surface (fs:mount)
   ((role  :initarg :role  :accessor role)
    (shown :initarg :shown :accessor shown)
    (size  :initarg :size  :accessor size :initform nil)
@@ -102,7 +102,7 @@ at; ROLE, WHERE and WIRE."))
     (format stream "~a ~(~a~)~:[~; shown~]" (fs:name s)
             (class-name (class-of (role s))) (shown s))))
 
-(defun root () (fs:ensure "/ui/surface"))
+(defun root () (fs:at "/ui/surface"))
 
 (defun surfaces ()
   (remove-if-not (lambda (n) (typep n 'surface)) (fs:entries (root))))
@@ -185,22 +185,22 @@ disagree about what leaving it out meant."
                                              (:as-the-role-says
                                               (eq :always (shows r))))
                                     :describes "a widget tree, and where it goes")))
-    (fs:attach s (root))
-    (fs:attach (make-instance 'fs:derived :name "tree" :reads reads :parent s
+    (fs:mount s (root))
+    (fs:mount (make-instance 'fs:derived :name "tree" :reads reads :parent s
                               :describes "the widget tree, worked out from what it read")
                s)
     (let ((size (second (fs:slots s s "shown" 'shown "size" 'size))))
-      (fs:attach (make-instance
+      (fs:mount (make-instance
                     'fs:derived :name "role"
                     :reads (lambda () (string-downcase (class-name (class-of (role s)))))
                     :parent s
                     :describes "which kind of surface this is")
                    s)
-      (fs:attach (make-instance 'fs:derived :name "wire"
+      (fs:mount (make-instance 'fs:derived :name "wire"
                                 :reads (lambda () (%wire s)) :parent s
                                 :describes "the tree, as it crosses to another pine")
                    s)
-      (fs:attach (make-instance
+      (fs:mount (make-instance
                     'fs:derived :name "where"
                     :reads (lambda ()
                       (let ((said (fs:contents size)))
@@ -210,7 +210,7 @@ disagree about what leaving it out meant."
                     :parent s
                     :describes "where the role says this goes")
                    s))
-    (fs:attach (make-instance 'fs:derived :name "click" :live t
+    (fs:mount (make-instance 'fs:derived :name "click" :live t
                              :writes (lambda (said) (act (fs:name s) said))
                              :describes "what another pine says was clicked")
                  s)

@@ -280,7 +280,7 @@ standing there, here or in another image, so this is the same act as taking one 
 the debugger."
   (when (%at name)
     (flet ((it () (%at name)))
-      (make-instance 'fs:dir :name name
+      (make-instance 'fs:mount :name name
                   :names (constantly '("said" "offers" "taken"))
                   :each (lambda (field)
                           (cond ((equal field "said")
@@ -310,14 +310,13 @@ the debugger."
                            (unless value (forget-expected)))
                  :describes "what was let go of, and why nothing was an answer"))
 
-(defun %attach (root)
-  (fs:attach
-   (make-instance 'fs:dir :name "fault"
-               :names (lambda () (cons "expected" (mapcar #'id (faults))))
-               :each (lambda (name)
-                       (if (equal name "expected") (%expected) (%fault name)))
-               :describes "what has broken, and what it stands in")
-   root))
+(fs:mount (lambda ()
+            (make-instance 'fs:mount
+                           :names (lambda () (cons "expected" (mapcar #'id (faults))))
+                           :each (lambda (name)
+                                   (if (equal name "expected") (%expected) (%fault name)))
+                           :describes "what has broken, and what it stands in"))
+          "/fault")
 
 
 (setf pine/fs:*broke*
@@ -325,5 +324,3 @@ the debugger."
         (report c (if where
                       (format nil "working out ~a" where)
                       "telling what is listening that a place moved"))))
-
-(pine/fs:builder #'%attach)

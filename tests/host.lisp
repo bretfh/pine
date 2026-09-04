@@ -9,7 +9,7 @@
       (host:defbacking %probe-volume ()
         (volume :reads (first held) :writes (lambda (v) (setf (first held) v)))
         (muted  :reads nil))
-      (let ((dev (fs:attach (host:made "%probe-volume") (fs:root))))
+      (let ((dev (fs:mount (host:made "%probe-volume") (fs:root))))
         (is (equal '("volume" "muted") (fs:contents dev)))
         (is (= 40 (fs:contents (fs:at "/%probe-volume/volume"))))
         (setf (fs:contents (fs:at "/%probe-volume/volume")) 55)
@@ -66,13 +66,13 @@ not an answer, because a double-quoted shell word still spells $(...)."
 (test a-line-is-a-place-whether-or-not-it-was-asked-before
   (booted)
   (with-tree
-    (fs:attach (sh:sh-node) (fs:root))
+    (fs:mount (sh:sh-node) (fs:root))
     (is (equal "hello" (fs:contents (fs:at "/sh/echo hello"))))))
 
 (test the-clock-is-the-time-as-paths
   (with-tree
     (let ((clock (host:made "clock")))
-      (fs:attach clock (fs:root))
+      (fs:mount clock (fs:root))
       (host::tick)
       (is (integerp (fs:contents (fs:at "/clock/year"))))
       (is (stringp (fs:contents (fs:at "/clock/hour")))))))
@@ -80,7 +80,7 @@ not an answer, because a double-quoted shell word still spells $(...)."
 (test the-environment-reads-and-writes-through
   (with-tree
     (let ((env (host:made "env")))
-      (fs:attach env (fs:root))
+      (fs:mount env (fs:root))
       (let ((n (fs:entry env "PATH")))
         (is (not (null n)))
         (is (equal (uiop:getenv "PATH") (fs:contents n)))))))
@@ -94,7 +94,7 @@ the first time, which is a clock that never ticks."
       (host:defdevice %probe-count :describes "counts every time it is read")
       (host:defbacking %probe-count ()
         (count :reads (d:swap (car n) #'1+)))
-      (let ((dev (fs:attach (host:made "%probe-count") (fs:root))))
+      (let ((dev (fs:mount (host:made "%probe-count") (fs:root))))
         (is (eql 1 (fs:contents (fs:at "/%probe-count/count"))))
         (is (eql 1 (fs:contents (fs:at "/%probe-count/count")))
             "and it is remembered until something says otherwise")
@@ -109,7 +109,7 @@ nothing copied anywhere else can come in, and nothing killed here can go out.
 Which program does the copying is the machine's business: the reading stands either
 way, and says :ABSENT where this machine has no way to answer it."
   (with-tree
-    (let ((dev (fs:attach (host:made "clip") (fs:root))))
+    (let ((dev (fs:mount (host:made "clip") (fs:root))))
       (is (equal '("text") (fs:contents dev)))
       (let ((text (fs:entry dev "text")))
         (is (not (null text)) "the row is a place under it")
@@ -129,8 +129,8 @@ why READ has always had three."
     (host:defbacking %probe-thermostat (:needs "no-such-program-anywhere")
       (target :reads (sh:sh "no-such-program-anywhere get") :writes (sh:sh "x"))
       (mode   :reads (sh:sh "no-such-program-anywhere mode")))
-    (let ((dev (fs:attach (host:made "%probe-thermostat")
-                            (fs:ensure (fs:root) "dev"))))
+    (let ((dev (fs:mount (host:made "%probe-thermostat")
+                            (fs:at "/dev"))))
       (is (null (host:answering (host::declared "%probe-thermostat")))
           "no backing this machine can use")
       (is (equal '("target" "mode") (fs:contents dev))
@@ -150,7 +150,7 @@ which every device write got wrong, silently, because nothing here wrote to one.
       (host:defdevice %probe-lamp :describes "a lamp to write to")
       (host:defbacking %probe-lamp ()
         (level :reads 0 :writes (lambda (said) (setf heard said) t)))
-      (fs:attach (host:made "%probe-lamp") (fs:ensure (fs:root) "dev"))
+      (fs:mount (host:made "%probe-lamp") (fs:at "/dev"))
       (pine:write "/dev/%probe-lamp/level" 42)
       (is (eql 42 heard) "what was written reached the backing"))))
 
@@ -164,8 +164,8 @@ backing would break on a machine with the thinner one."
       (station :reads "fat") (signal :reads "fat") (preset :reads "fat"))
     (host:defbacking %probe-radio ()
       (station :reads "thin"))
-    (let ((dev (fs:attach (host:made "%probe-radio")
-                            (fs:ensure (fs:root) "dev"))))
+    (let ((dev (fs:mount (host:made "%probe-radio")
+                            (fs:at "/dev"))))
       (is (equal '("station" "signal" "preset") (fs:contents dev))
           "every reading either backing declares")
       (is (equal "thin" (pine:read "/dev/%probe-radio/station"))
@@ -180,7 +180,7 @@ type into by asking it a question. A read is the one thing every way in may alwa
 do; running something is a write."
   (booted)
   (with-tree
-    (fs:attach (sh:sh-node) (fs:root))
+    (fs:mount (sh:sh-node) (fs:root))
     (let ((line "echo pine-probe-a-read-does-not-run"))
       (is (null (fs:contents (fs:at (format nil "/sh/~a" line))))
           "a line nothing has run says nothing")

@@ -30,12 +30,17 @@
   (or (fs:at "/text" +document+)
       (text:make-document +document+ :mode (make-instance 'prompt))))
 
-(defun %under () (fs:ensure "/edit/prompt"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "the line you answer a question on"))
+          "/edit/prompt")
+(fs:mount (lambda () (make-instance 'fs:mount :describes "what answers each kind of question"))
+          "/edit/prompt/completes")
+
+(defun %under () (fs:at "/edit/prompt"))
 
 (defun %place (name builder)
   (let ((under (%under)))
     (or (fs:entry under name)
-        (fs:attach (funcall builder) under))))
+        (fs:mount (funcall builder) under))))
 
 (defun %question-node ()
   (%place "question" (lambda () (make-instance 'fs:value :name "question"))))
@@ -76,7 +81,7 @@ cannot see a thing it cannot see move."
 (defun asked ()
   (and (fs:root) (fs:contents (%question-node))))
 
-(defun %completes () (fs:ensure (%under) "completes"))
+(defun %completes () (fs:at "/edit/prompt/completes"))
 
 (defun %category (category) (string-downcase (string category)))
 
@@ -89,7 +94,7 @@ of question and its own answers to it. It stands at /prompt/completes/<category>
                                       :reads (lambda () (funcall function (so-far)))
                                       :describes "what answers this kind of question")))
     (setf (fs:owner n) fs:*owner*)
-    (fs:attach n (%completes))
+    (fs:mount n (%completes))
     category))
 
 (defun forget-completes (category)
@@ -220,7 +225,8 @@ starting over."
 
 (defun %history-node (name)
   (when (and name (fs:root))
-    (fs:leaf "/edit/prompt/history" (string-downcase (string name)))))
+    (fs:mount (make-instance 'fs:value)
+              (format nil "/edit/prompt/history/~a" (string-downcase (string name))))))
 
 (defun history-of (name)
   (let ((n (%history-node name)))

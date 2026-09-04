@@ -33,7 +33,7 @@ the faces by name, each as a plist."))
     (symbol (intern (symbol-name name) :keyword))
     (string (intern (string-upcase name) :keyword))))
 
-(defun %themes () (fs:ensure (fs:root) "ui" "theme"))
+(defun %themes () (fs:at "/ui/theme"))
 
 (defun themes ()
   (sort (loop :for each :in (fs:entries (%themes))
@@ -79,10 +79,8 @@ names.")
                                                   :bold bold :italic italic
                                                   :underline underline)))))
          (held (list :palette palette :metrics metrics :faces faces)))
-    (fs:declared (lambda ()
-                   (make-instance 'theme :name (string-downcase (symbol-name (%as-keyword name)))
-                                         :held held))
-                 "ui" "theme")))
+    (fs:mount (lambda () (make-instance 'theme :held held))
+              (format nil "/ui/theme/~a" (string-downcase (symbol-name (%as-keyword name)))))))
 
 (defun %as-face (m)
   (when (and (consp m) (keywordp (first m)))
@@ -111,7 +109,7 @@ something is written here, and what was written after. Saved only once written."
       (call-next-method)
       (%themed (fs:name n))))
 
-(defclass face-dir (fs:dir)
+(defclass face-dir (fs:mount)
   ((in-force :accessor in-force-of))
   (:documentation "Every face in force, one entry each."))
 

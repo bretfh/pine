@@ -14,7 +14,7 @@ OR, which reads a written NIL as an absence."
     (multiple-value-bind (value state) (pine::read "/nobody-wrote-this")
       (is (null value))
       (is (eq :absent state) "and nothing stands here at all"))
-    (fs:ensure "/branch/under")
+    (fs:mount (make-instance 'fs:mount) "/branch/under")
     (is (eq :branch (nth-value 1 (pine::read "/branch")))
         "a branch holds nothing by being one")
     (is (pine::standsp "/held"))
@@ -76,11 +76,11 @@ ANNOUNCES by hand somewhere else, and a place in another pine had a second path 
 never met this one."
   (with-tree
     (let ((told nil))
-      (defclass %loud (fs:dir) ((heard :initform nil :accessor heard)))
+      (defclass %loud (fs:mount) ((heard :initform nil :accessor heard)))
       (defmethod watch:watch ((n %loud) tells &key &allow-other-keys)
         (setf (heard n) tells)
         n)
-      (let ((n (fs:attach (make-instance '%loud :name "loud") (fs:root))))
+      (let ((n (fs:mount (make-instance '%loud :name "loud") (fs:root))))
         (is (eq n (pine::watch "/loud" (lambda (of said)
                                          (declare (ignore of))
                                          (push said told))))
@@ -90,7 +90,7 @@ never met this one."
 
 (test a-derived-node-follows-what-it-read
   (with-tree
-    (let ((w (fs:leaf "/window/width"))
+    (let ((w (fs:mount (make-instance 'fs:value) "/window/width"))
           (runs 0))
       (setf (fs:contents w) 80)
       (let ((line (make-instance 'fs:derived :name "line" :reads
@@ -98,7 +98,7 @@ never met this one."
                                  (incf runs)
                                  (make-string (fs:contents w)
                                               :initial-element #\-)))))
-        (fs:attach line (fs:root))
+        (fs:mount line (fs:root))
         (is (= 80 (length (fs:contents line))))
         (fs:contents line)
         (is (= 1 runs) "what it worked out is kept")
@@ -112,14 +112,14 @@ never met this one."
     (let ((held (list 41)))
       (let ((n (make-instance 'fs:derived :name "probe" :reads (lambda () (first held))
                             :writes (lambda (v) (setf (first held) (* 2 v))))))
-        (fs:attach n (fs:root))
+        (fs:mount n (fs:root))
         (is (= 41 (fs:contents n)))
         (setf (fs:contents n) 10)
         (is (= 20 (fs:contents n)))))))
 
 (test a-node-knows-where-it-is
   (with-tree
-    (setf (fs:contents (fs:leaf "/window/width")) 80)
+    (setf (fs:contents (fs:mount (make-instance 'fs:value) "/window/width")) 80)
     (is (equal "/window/width" (fs:full-name (fs:at "/window/width"))))
     (is (member "window" (mapcar #'fs:name (fs:entries (fs:root))) :test #'equal))
     (is (null (fs:at "/window/nothing")))))
@@ -127,10 +127,10 @@ never met this one."
 (test a-path-is-a-place
   "A path is one more thing AT and ENSURE take, not a second way to walk the tree."
   (with-tree
-    (setf (fs:contents (fs:leaf "/dev/audio" "volume")) 40)
+    (setf (fs:contents (fs:mount (make-instance 'fs:value) "/dev/audio/volume")) 40)
     (let ((p (path:path "/dev/audio/volume")))
       (is (= 40 (fs:contents (fs:at p))))
-      (setf (fs:contents (fs:leaf p)) 55)
+      (setf (fs:contents (fs:mount (make-instance 'fs:value) p)) 55)
       (is (= 55 (fs:contents (fs:at "/dev/audio/volume"))))
       (is (equal "volume" (path:leaf p))))))
 
@@ -158,7 +158,7 @@ it stood for is what knew how to read it."
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (fs:leaf "/kept/note")
+               (fs:mount (make-instance 'fs:value) "/kept/note")
                (is (eql 1 (store:restore s))
                    "one node stood there to be filled in")
                (is (equal "across" (fs:contents (fs:at "/kept/note"))))
@@ -184,7 +184,7 @@ are the whole test; whether the value happens to be NIL is not a third question.
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (fs:leaf "/held")
+               (fs:mount (make-instance 'fs:value) "/held")
                (store:restore s)
                (is (eq :held (nth-value 1 (pine::read "/held")))
                    "and it came back as a place holding NIL, not as one absent")
@@ -202,7 +202,7 @@ what a crash costs is everything since the image came up."
                  (thing (make-instance 'job:thread :name "held" :on-fault :leave
                                                    :runs (lambda () nil))))
              (store:keeping s)
-             (fs:attach thing (fs:root))
+             (fs:mount thing (fs:root))
              (fs:slots thing thing "state" 'job:state)
              (setf (fs:contents (fs:at "/held/state")) :awake)
              (is (equal '(("/held/state")) (%paths s "/held%"))
@@ -264,7 +264,7 @@ its nodes off the tree, and that is not a reason to forget what they held."
              (with-open-file (o (merge-pathnames "hello.txt" where)
                                 :direction :output :if-exists :supersede)
                (write-string "from the disk" o))
-             (mount:mount where (fs:root) "file")
+             (fs:mount where "/file")
              (is (equal "from the disk"
                         (fs:contents (fs:at "/file/hello.txt"))))
              (setf (fs:contents (fs:at "/file/hello.txt")) "written back")
@@ -298,12 +298,12 @@ name it never had, and answering nothing while nothing went."
 nothing. The memo a walk of the children reads would have a hole in it, and a name
 anybody can ask about would be a name anybody can grow it by."
   (with-tree
-    (let ((p (make-instance 'fs:dir :name "empty" :names (lambda () nil)
+    (let ((p (make-instance 'fs:mount :name "empty" :names (lambda () nil)
                                  :each (lambda (name) (declare (ignore name)) nil))))
-      (fs:attach p (fs:root))
+      (fs:mount p (fs:root))
       (is (null (fs:entry p "nobody")))
       (is (null (d:keys (fs::memo p))) "and nothing was kept saying so")
-      (fs:attach p (fs:root))
+      (fs:mount p (fs:root))
       (is (equal "/empty" (fs:full-name p))
           "so renaming what is under it has something to rename"))))
 
@@ -312,7 +312,7 @@ anybody can ask about would be a name anybody can grow it by."
 A name is what it spells, in a config, at a prompt and on the wire alike."
   (with-tree
     (pine::write "/a/b" :at-root)
-    (fs:ensure "/elsewhere")
+    (fs:mount (make-instance 'fs:mount) "/elsewhere")
     (is (eq :at-root (pine::read "a/b")) "with a leading / or without")
     (fs:erase "/a/b")
     (is (null (fs:at "/a/b")))))
@@ -323,7 +323,7 @@ that flowed into another call used to read whatever the session stood on."
   (with-tree
     (signals fs:not-a-place (fs:at nil))
     (signals fs:not-a-place (fs:at nil "a" "b"))
-    (signals fs:not-a-place (fs:ensure nil "a"))
+    (signals fs:not-a-place (fs:mount (make-instance 'fs:mount) nil))
     (signals fs:not-a-place (fs:erase nil "a"))
     (signals fs:not-a-place (pine::read (fs:at "/nobody-wrote-this")))))
 
@@ -339,9 +339,9 @@ that flowed into another call used to read whatever the session stood on."
 sit where NODES and RESOLVE never look, and the write would be taken and not be
 there to read."
   (with-tree
-    (let ((p (make-instance 'fs:dir :name "p" :names (constantly nil)
+    (let ((p (make-instance 'fs:mount :name "p" :names (constantly nil)
                              :each (lambda (name) (declare (ignore name)) nil))))
-      (fs:attach p (fs:root))
+      (fs:mount p (fs:root))
       (signals error (pine::write "/p/thing" :hello)))))
 
 (test a-plain-branch-still-takes-a-write
@@ -395,10 +395,10 @@ never was."
   "SAW is recorded so this can be asked. Without it a node that once looked
 somewhere is worked out for ever after whenever that place moves."
   (with-tree
-    (let* ((a (fs:attach (make-instance 'fs:value :name "a") (fs:root)))
-           (b (fs:attach (make-instance 'fs:value :name "b") (fs:root)))
+    (let* ((a (fs:mount (make-instance 'fs:value :name "a") (fs:root)))
+           (b (fs:mount (make-instance 'fs:value :name "b") (fs:root)))
            (which (list a))
-           (dv (fs:attach (make-instance 'fs:derived :name "d" :reads (lambda ()
+           (dv (fs:mount (make-instance 'fs:derived :name "d" :reads (lambda ()
                                                (fs:contents (first which))))
                             (fs:root))))
       (setf (fs:contents a) 1)
@@ -416,8 +416,8 @@ somewhere is worked out for ever after whenever that place moves."
 
 (test two-nodes-that-read-each-other-do-not-run-the-stack-out
   (with-tree
-    (let ((x (fs:attach (make-instance 'fs:value :name "x") (fs:root)))
-          (y (fs:attach (make-instance 'fs:value :name "y") (fs:root))))
+    (let ((x (fs:mount (make-instance 'fs:value :name "x") (fs:root)))
+          (y (fs:mount (make-instance 'fs:value :name "y") (fs:root))))
       (fs:depend x y)
       (fs:depend y x)
       (finishes (fs:moved x)))))
@@ -426,9 +426,9 @@ somewhere is worked out for ever after whenever that place moves."
   "The memo is let go after the detach, not before: dropped first, the detach asks
 for the child again and what is left is that second one with nothing over it."
   (with-tree
-    (let ((p (make-instance 'fs:dir :name "p" :names (constantly (list "kid"))
-                             :each (lambda (n) (make-instance 'fs:dir :name n)))))
-      (fs:attach p (fs:root))
+    (let ((p (make-instance 'fs:mount :name "p" :names (constantly (list "kid"))
+                             :each (lambda (n) (make-instance 'fs:mount :name n)))))
+      (fs:mount p (fs:root))
       (let ((before (fs:entry p "kid")))
         (fs:erase-entry p "kid")
         (let ((after (fs:entry p "kid")))
@@ -441,12 +441,12 @@ for the child again and what is left is that second one with nothing over it."
 answers nothing, and what stands beside it is still worked out."
   (with-tree
     (fault:forget-faults)
-    (let ((n (fs:leaf "/probe-src"))
+    (let ((n (fs:mount (make-instance 'fs:value) "/probe-src"))
           (broken (make-instance 'fs:derived :name "broken" :reads (lambda () (error "on purpose")))))
       (setf (fs:contents n) "still here")
-      (fs:attach broken (fs:root))
+      (fs:mount broken (fs:root))
       (let ((beside (make-instance 'fs:derived :name "beside" :reads (lambda () (fs:contents n)))))
-        (fs:attach beside (fs:root))
+        (fs:mount beside (fs:root))
         (is (null (fs:contents broken))
             "it answers nothing rather than unwinding into the reader")
         (is (equal "still here" (fs:contents beside))
@@ -468,7 +468,7 @@ not ready answers the next time somebody asks, with nothing having stirred it."
                               (incf runs)
                               (when (car broken) (error "not yet"))
                               :ready))))
-        (fs:attach n (fs:root))
+        (fs:mount n (fs:root))
         (is (null (fs:contents n)))
         (is (= 1 runs))
         (setf (car broken) nil)
@@ -488,7 +488,7 @@ that node waits behind it for the life of the image."
                        (bordeaux-threads:signal-semaphore started)
                        (bordeaux-threads:wait-on-semaphore go-on :timeout 30)
                        :answered))))
-        (fs:attach wedged (fs:root))
+        (fs:mount wedged (fs:root))
         (let ((holder (actors:blocking "wedged"
                                        (lambda () (fs:contents wedged)))))
           (is (bordeaux-threads:wait-on-semaphore started :timeout 5)
@@ -506,15 +506,15 @@ that; ATTACH over a name is the same thing spelled the other way round, and it d
 not. Declaring a surface twice leaked the first one and it went on being worked
 out from every device it had ever read."
   (with-tree
-    (let* ((r (fs:attach (make-instance 'fs:dir :name "r") (fs:root)))
-           (src (fs:attach (make-instance 'fs:value :name "src") (fs:root)))
+    (let* ((r (fs:mount (make-instance 'fs:mount :name "r") (fs:root)))
+           (src (fs:mount (make-instance 'fs:value :name "src") (fs:root)))
            (had (make-instance 'fs:derived :name "d" :reads (lambda () (fs:contents src))))
            (fresh (make-instance 'fs:derived :name "d" :reads (lambda () :fresh))))
       (setf (fs:contents src) 1)
-      (fs:attach had r)
+      (fs:mount had r)
       (fs:contents had)
       (is (d:contains (fs::readers src) had) "it read SRC")
-      (fs:attach fresh r)
+      (fs:mount fresh r)
       (is (not (d:contains (fs::readers src) had))
           "and it is out of SRC's readers once something stands in its place")
       (is (null (fs:parent had)) "and off the tree")
@@ -528,10 +528,10 @@ a node has what it would have if anybody asked -- and the two numberings met,
 because MARK answers out of the version slot once there is no value to answer out
 of."
   (with-tree
-    (let* ((src (fs:attach (make-instance 'fs:value :name "src") (fs:root)))
+    (let* ((src (fs:mount (make-instance 'fs:value :name "src") (fs:root)))
            (d (make-instance 'fs:derived :name "d" :reads (lambda () (fs:contents src)))))
       (setf (fs:contents src) 1)
-      (fs:attach d (fs:root))
+      (fs:mount d (fs:root))
       (fs:contents d)
       (let ((at (fs::mark d)))
         (is (fs::currentp d at) "it stands where it was worked out")
@@ -544,15 +544,15 @@ of."
 a surface over /proc showed what was running when it was first drawn, and a face
 written at /face/keyword was one nothing was ever told about."
   (with-tree
-    (let* ((r (fs:attach (make-instance 'fs:dir :name "r") (fs:root)))
+    (let* ((r (fs:mount (make-instance 'fs:mount :name "r") (fs:root)))
            (runs 0)
            (n (make-instance 'fs:derived :name "n" :reads (lambda () (incf runs) (length (fs:entries r))))))
-      (fs:attach n (fs:root))
+      (fs:mount n (fs:root))
       (is (eql 0 (fs:contents n)))
       (is (eql 1 runs))
       (is (eql 0 (fs:contents n)) "and is not worked out again for nothing")
       (is (eql 1 runs))
-      (fs:attach (make-instance 'fs:value :name "one") r)
+      (fs:mount (make-instance 'fs:value :name "one") r)
       (is (eql 1 (fs:contents n)) "attaching one works it out again")
       (fs:erase-entry r "one")
       (is (eql 0 (fs:contents n)) "and so does taking one off"))))
@@ -563,9 +563,9 @@ before anything is there is a question nothing can ever answer again: a config
 reading a device the host system has not put up yet never heard it arrive."
   (with-tree
     (let ((n (make-instance 'fs:derived :name "waiting" :reads (lambda () (fs:at "/later/here")))))
-      (fs:attach n (fs:root))
+      (fs:mount n (fs:root))
       (is (null (fs:contents n)) "nothing stands there yet")
-      (setf (fs:contents (fs:leaf "/later/here")) :arrived)
+      (setf (fs:contents (fs:mount (make-instance 'fs:value) "/later/here")) :arrived)
       (is (eq :arrived (fs:contents (fs:contents n)))
           "and the reader hears when it does"))))
 
@@ -589,9 +589,9 @@ it."
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (fs:leaf "/tags")
-               (fs:leaf "/a_b")
-               (fs:leaf "/axb")
+               (fs:mount (make-instance 'fs:value) "/tags")
+               (fs:mount (make-instance 'fs:value) "/a_b")
+               (fs:mount (make-instance 'fs:value) "/axb")
                (store:restore s)
                (is (d:same (d:seq :urgent :later) (fs:contents (fs:at "/tags")))
                    "what was kept is what came back")
@@ -632,7 +632,7 @@ write that threw left no file at all."
     (ignore-errors (delete-file file))
     (unwind-protect
          (with-tree
-           (mount:mount (uiop:temporary-directory) (fs:root) "tmp")
+           (fs:mount (uiop:temporary-directory) "/tmp")
            (with-open-file (o file :direction :output :if-exists :supersede
                                    :if-does-not-exist :create)
              (write-string "what was there before" o))
@@ -655,7 +655,7 @@ what stands, and WATCH is how anybody hears the new answer."
   (booted)
   (with-tree
     (let* ((runs 0)
-           (n (fs:attach
+           (n (fs:mount
                (make-instance 'fs:derived :name "slow"
                               :reads (lambda () (incf runs) (sleep 0.3) runs))
                (fs:root))))
@@ -675,7 +675,7 @@ what stands, and WATCH is how anybody hears the new answer."
   "The old behaviour, asked for rather than had. :AWAIT is the whole of it."
   (booted)
   (with-tree
-    (let ((n (fs:attach
+    (let ((n (fs:mount
               (make-instance 'fs:derived :name "slow"
                              :reads (lambda () (sleep 0.3) :answered))
               (fs:root))))
@@ -690,7 +690,7 @@ what stands, and WATCH is how anybody hears the new answer."
 Those are not the same news, and every caller guessed."
   (booted)
   (with-tree
-    (let ((n (fs:attach
+    (let ((n (fs:mount
               (make-instance 'fs:derived :name "cold"
                              :waits t :reads (lambda () nil))
               (fs:root))))

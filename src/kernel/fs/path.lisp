@@ -84,11 +84,8 @@ any run of them, and ?name is one that is captured."
 (defmethod fs:at ((p path) &rest names)
   (apply #'fs:at (fs:root) (append (%spelled p) names)))
 
-(defmethod fs:ensure ((p path) &rest names)
-  (apply #'fs:ensure (fs:root) (append (%spelled p) names)))
-
-(defmethod fs:leaf ((p path) &rest names)
-  (apply #'fs:leaf (fs:root) (append (%spelled p) names)))
+(defmethod fs:mount (what (where path))
+  (fs:mount what (whole where)))
 
 (defmethod fs:erase ((p path) &rest pieces)
   (apply #'fs:erase (fs:root) (append (%spelled p) pieces)))

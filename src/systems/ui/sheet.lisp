@@ -53,7 +53,8 @@ What PINE:STYLE calls, so a config saying one rule and a frontend taking a whole
 sheet off the wire arrive the same way. This is also the far end of BROADCAST,
 where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (let ((n (fs:leaf "/ui/style" (%path-segment (first each)))))
+    (let ((n (fs:mount (make-instance 'fs:value)
+                       (format nil "/ui/style/~a" (%path-segment (first each))))))
       (setf (fs:contents n) (second each))
       (setf (fs:owner n) fs:*owner*)))
   (styles))
@@ -99,22 +100,16 @@ Compiled as it is worked out, and the compiled rules kept beside."
     (setf (compiled s) (%compiled cascade))
     cascade))
 
-(defun %attach (root)
-  (let* ((ui (fs:ensure root "ui"))
-         (themes (fs:ensure ui "theme")))
-    (setf (fs:describes themes) "every theme there is, and which is on")
-    (fs:attach (make-instance 'face-dir :name "face"
-                              :describes "every face in force; write one to change it")
-               ui)
-    (fs:attach (make-instance 'sheet :name "sheet"
-                              :describes "the stylesheet, in cascade order")
-               ui)
-    (fs:ensure ui "style")
-    (fs:ensure ui "surface")
-    (let ((active (fs:leaf themes "active")))
-      (unless (fs:contents active)
-        (setf (fs:contents active) (active))))
-    root))
-
-
-(pine/fs:builder #'%attach)
+(fs:mount (lambda () (make-instance 'fs:mount :describes "the look, and the surfaces"))
+          "/ui")
+(fs:mount (lambda () (make-instance 'fs:mount :describes "every theme there is, and which is on"))
+          "/ui/theme")
+(fs:mount (lambda () (make-instance 'fs:value :held +theme+)) "/ui/theme/active")
+(fs:mount (lambda () (make-instance 'face-dir :describes "every face in force; write one to change it"))
+          "/ui/face")
+(fs:mount (lambda () (make-instance 'sheet :describes "the stylesheet, in cascade order"))
+          "/ui/sheet")
+(fs:mount (lambda () (make-instance 'fs:mount :describes "the rules, by selector"))
+          "/ui/style")
+(fs:mount (lambda () (make-instance 'fs:mount :describes "every surface, and where it goes"))
+          "/ui/surface")

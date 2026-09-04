@@ -47,7 +47,7 @@ IMAGE and a MOUNT."))
             (wide term) (tall term) (fd-of term))))
 
 (defun terminals ()
-  (remove-if-not (lambda (n) (typep n 'terminal)) (fs:entries (fs:ensure "/text"))))
+  (remove-if-not (lambda (n) (typep n 'terminal)) (fs:entries (fs:at "/text"))))
 
 (defun %rgb (colour)
   "A colour the program asked for, as the three numbers a cell is painted with.

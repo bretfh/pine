@@ -267,7 +267,7 @@ last said. A surface follows what it read, so this is where the editor says what
 moving means."
   (fs:reading (root))
   (fs:reading (%asking-node))
-  (fs:reading (fs:ensure "/log"))
+  (fs:reading (fs:at "/log"))
   (let* ((wins (windows))
          (weight (reduce #'+ wins :key #'weight :initial-value 0))
          (room (max 2 (1- lines))))

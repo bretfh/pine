@@ -136,7 +136,5 @@ whoever asked has to find it again, and two asking at once must not race."
                           :env (getf said :env)
                           :argv (mapcar #'princ-to-string (getf said :argv))))
 
-(defun %attach (root)
-  (setf (fs:describes (fs:ensure root "proc")) "what this pine is running"))
-
-(pine/fs:builder #'%attach)
+(fs:mount (lambda () (make-instance 'fs:mount :describes "what this pine is running"))
+          "/proc")

@@ -145,7 +145,4 @@ can read where to reach it by this one."
                              :port (actors:remoting)))
               :describes "what this pine is called and where it answers"))
 
-(defun %attach (root)
-  (fs:attach (serve-node) root))
-
-(pine/fs:builder #'%attach)
+(fs:mount #'serve-node "/serve")

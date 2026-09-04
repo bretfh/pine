@@ -10,7 +10,7 @@
 
 (defparameter +window-fields+ '("title" "app" "rect" "hidden" "focused"))
 
-(defclass compositor (fs:dir)
+(defclass compositor (fs:mount)
   ((parts :initform nil :accessor parts))
   (:documentation "The compositor this session is under. PARTS are what it answers
 for, put under /wm: its outputs, its windows, and what it will take.
@@ -148,19 +148,19 @@ rest is what the compositor says, and says alone."
 
 (defun %window (c id)
   (when (%named (windows c) "id" id)
-    (make-instance 'fs:dir :name id
+    (make-instance 'fs:mount :name id
                 :names (constantly +window-fields+)
                 :each (lambda (name) (%window-field c id name)))))
 
 (defun %windows (c)
-  (make-instance 'fs:dir :name "windows"
+  (make-instance 'fs:mount :name "windows"
               :names (lambda () (ids c))
               :each (lambda (id) (%window c id))
               :describes "every window there is"))
 
 (defun %output (c name)
   (when (%output-said c name)
-    (make-instance 'fs:dir :name name
+    (make-instance 'fs:mount :name name
                 :names (constantly +output-fields+)
                 :each (lambda (field)
                         (when (member field +output-fields+ :test #'equal)
@@ -170,7 +170,7 @@ rest is what the compositor says, and says alone."
                                                        field))))))))
 
 (defun %outputs (c)
-  (make-instance 'fs:dir :name "outputs"
+  (make-instance 'fs:mount :name "outputs"
               :names (lambda () (mapcar (lambda (o) (getf o :name)) (outputs c)))
               :each (lambda (name) (%output c name))
               :describes "every screen, and what is left after the bars"))
@@ -187,7 +187,7 @@ rest is what the compositor says, and says alone."
                 :writes (lambda (value) (when value (act c "workspace" idx))))))
 
 (defun %workspaces (c)
-  (make-instance 'fs:dir :name "workspaces"
+  (make-instance 'fs:mount :name "workspaces"
               :names (lambda () (mapcar (lambda (w) (gethash "idx" w))
                                         (workspaces c)))
               :each (lambda (idx) (%workspace c idx))

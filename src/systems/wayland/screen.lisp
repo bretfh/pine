@@ -222,7 +222,7 @@ A wm already up is the wrong one, so it goes first."
   (when (wm-of s)
     (fault:attempt
      (lambda ()
-       (setf (fs:contents (fs:leaf "/wm/manages")) :pine)
+       (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
        (when (system:named "wm") (system:drop "wm"))
        (system:use "wm")
        (chords-wanted s))

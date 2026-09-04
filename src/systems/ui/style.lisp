@@ -7,15 +7,16 @@ how it is worked out from the css props that matched."))
 
 (defmethod fs:savedp ((p property)) nil)
 
-(defun %properties () (fs:ensure (fs:root) "ui" "property"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "what a resolved style may hold"))
+          "/ui/property")
+
+(defun %properties () (fs:at "/ui/property"))
 
 (defun property (key parser)
   "Say that a style may hold KEY, worked out by PARSER from the matched props.
 Adding a property is one of these, not an edit to RESOLVE."
-  (fs:declared (lambda ()
-                 (make-instance 'property :name (string-downcase (symbol-name key))
-                                          :held (list :key key) :parser parser))
-               "ui" "property")
+  (fs:mount (lambda () (make-instance 'property :held (list :key key) :parser parser))
+            (format nil "/ui/property/~a" (string-downcase (symbol-name key))))
   key)
 
 (defun %each-property ()

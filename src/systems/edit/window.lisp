@@ -2,7 +2,7 @@
 
 (defvar *counter* 0)
 
-(defclass window (fs:dir)
+(defclass window (fs:mount)
   ((shows    :initarg :shows    :accessor shows    :initform nil)
    (scrolled   :initarg :scroll   :accessor scrolled   :initform 0)
    (sideways :initarg :sideways :accessor sideways :initform 0)
@@ -23,21 +23,25 @@ was split into."))
               (if (fs:kind it) (fs:name it) it)))))
 
 (defmethod initialize-instance :after ((w window) &key)
-  (fs:attach (make-instance 'fs:derived :name "shows" :live t
+  (fs:mount (make-instance 'fs:derived :name "shows" :live t
                             :reads (lambda ()
                                      (let ((it (shows w)))
                                        (if (fs:kind it) (fs:name it) it)))
                             :writes (lambda (value) (show w value)))
              w))
 
-(defun root () (fs:ensure "/edit/window"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "the editor")) "/edit")
+(fs:mount (lambda () (make-instance 'fs:mount :describes "every window, as the screen is split"))
+          "/edit/window")
+
+(defun root () (fs:at "/edit/window"))
 
 (defun make-window (&key shows (into (root)) name)
   (let ((w (make-instance 'window
                           :name (or name (format nil "~d" (d:swap *counter* #'1+)))
                           :shows shows
                           :describes "what one window is showing")))
-    (fs:attach w into)
+    (fs:mount w into)
     w))
 
 (defun parts (of)
@@ -56,7 +60,7 @@ was split into."))
         (first (windows of)))))
 
 (defun focus (w &optional (of (root)))
-  (setf (fs:contents (fs:leaf of "focused")) (fs:name w))
+  (setf (fs:contents (fs:mount (make-instance 'fs:value :name "focused") of)) (fs:name w))
   w)
 
 (defun show (w it)
@@ -109,7 +113,7 @@ nothing could reach it."
                   (runs up) (runs only))
             (dolist (each (parts only))
               (fs:detach only (fs:name each))
-              (fs:attach each up))
+              (fs:mount each up))
             (fs:detach up (fs:name only)))))
       (focus (or (first (windows of)) up) of))
     w))

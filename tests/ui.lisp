@@ -39,7 +39,6 @@ knows the roles by name."))
 
 (test the-more-particular-rule-wins
   (with-tree
-    (fs:built)
     (pine/ui:put-rules (list (list ".a" (list :color "#ff0000" :min-width "20"))
                              (list ".a.b" (list :color "#00ff00"))))
     (let ((general (ui:resolve '(("a"))))
@@ -56,7 +55,6 @@ knows the roles by name."))
   "A painter takes a colour from a style and a colour from a face and paints with
 both, so they have to be the same three numbers."
   (with-tree
-    (fs:built)
     (pine/ui:put-rules (list (list ".x" (list :background-color
                                              (ui:color :accent)))))
     (is (equal (ui:unhex (ui:color :accent))
@@ -82,7 +80,7 @@ both, so they have to be the same three numbers."
 
 (test a-control-takes-the-place-it-edits
   (with-tree
-    (let ((volume (fs:leaf "/dev/audio" "volume")))
+    (let ((volume (fs:mount (make-instance 'fs:value) "/dev/audio/volume")))
       (setf (fs:contents volume) 40)
       (let ((s (ui:slider volume :low 0 :high 100)))
         (is (= 40 (ui:held s)))
@@ -107,7 +105,7 @@ both, so they have to be the same three numbers."
 
 (test a-surface-carries-its-role-and-follows-what-it-read
   (with-tree
-    (let ((where (fs:leaf "/probe")))
+    (let ((where (fs:mount (make-instance 'fs:value) "/probe")))
       (setf (fs:contents where) "one")
       (let ((s (ui:make-surface "ticker"
                                (lambda () (ui:label (fs:contents where)))
@@ -190,8 +188,8 @@ Numbered by counting the walk, every id after a row that went was the id of a
 different widget -- so a listing that lost a row ran the wrong row's action for
 every row below it."
   (with-tree
-    (setf (fs:contents (fs:leaf "/probe/rows/beta")) 2)
-    (setf (fs:contents (fs:leaf "/probe/rows/gamma")) 3)
+    (setf (fs:contents (fs:mount (make-instance 'fs:value) "/probe/rows/beta")) 2)
+    (setf (fs:contents (fs:mount (make-instance 'fs:value) "/probe/rows/gamma")) 3)
     (let ((s (ui:make-surface
               "probe-ids"
               (lambda ()
@@ -226,7 +224,6 @@ identity: the second thing in the first row."
 changed every face and left the sheet holding the colours of the theme before,
 because the colours in it were read once when somebody remembered to say so."
   (with-tree
-    (fs:built)
     (flet ((sheet () (fs:contents (fs:at "/ui/sheet"))))
       (let* ((was (ui:color :bg))
              (before (second (find ".editor" (sheet) :key #'first :test #'equal))))

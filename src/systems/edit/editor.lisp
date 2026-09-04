@@ -98,7 +98,7 @@ else it read."
 (defmethod job:start ((s edit))
   (%sources)
   (setf command:*at* s)
-  (system:puts (%key) (fs:ensure "/edit"))
+  (fs:mount (%key) "/edit/key")
   (let ((scratch (or (fs:at "/text" "scratch")
                      (text:make-document "scratch"
                                         :mode (make-instance 'mode:lisp)))))

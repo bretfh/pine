@@ -6,7 +6,7 @@
 
 (defstruct (was (:constructor was (lines at col))) lines at col)
 
-(defclass document (fs:dir)
+(defclass document (fs:mount)
   ((lines    :initform (of "") :accessor lines)
    (text-node :initform nil :accessor text-node)
    (session  :initform nil :accessor session)
@@ -45,7 +45,7 @@ says a span, a parse says spans, and a terminal says one for every run of colour
 its program asked for -- the same few numbers a cell is painted with, whoever
 worked them out. They belong to the document, so they go when it does."))
 
-(defclass region (fs:dir)
+(defclass region (fs:mount)
   ((covers :initarg :covers :accessor covers))
   (:documentation "A stretch of a document: its sub-regions, and under TEXT what it
 covers, which writing replaces."))
@@ -54,7 +54,10 @@ covers, which writing replaces."))
   (print-unreadable-object (doc stream :type t)
     (format stream "~a ~d:~d" (fs:name doc) (at-line doc) (at-col doc))))
 
-(defun root () (fs:ensure "/text"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "documents, and terminals"))
+          "/text")
+
+(defun root () (fs:at "/text"))
 
 (defmethod line ((doc document) n) (line (lines doc) n))
 (defmethod line-count ((doc document)) (line-count (lines doc)))
@@ -143,15 +146,15 @@ lets it go here.")
 is text plus something of its own."
   (let ((doc (apply #'make-instance class :name name
                     (alexandria:remove-from-plist initargs :class))))
-    (fs:attach doc (root))
+    (fs:mount doc (root))
     (setf (text-node doc)
-          (fs:attach (make-instance 'fs:derived :name "text" :live t
+          (fs:mount (make-instance 'fs:derived :name "text" :live t
                                     :reads (lambda () (text doc))
                                     :writes (lambda (value) (setf (text doc) value))
                                     :describes "what it says")
                      doc))
     (fs:slots doc doc "at-line" 'at-line "at-col" 'at-col "tick" 'tick)
-    (fs:attach (make-instance 'fs:derived :name "source" :live t
+    (fs:mount (make-instance 'fs:derived :name "source" :live t
                               :reads (lambda () (origin doc))
                               :writes (lambda (value)
                                         (visiting doc (princ-to-string value)))
@@ -371,7 +374,7 @@ here, so the document is what was typed and nothing else."
 
 (defun (setf source) (n doc)
   (setf (slot-value doc 'source) n
-        (slot-value doc 'file-of) (and (typep n 'mount:file)
-                                       (namestring (mount:truename-of n))))
+        (slot-value doc 'file-of) (and (typep n 'fs:file)
+                                       (namestring (fs:truename-of n))))
   (fs:moved doc)
   n)

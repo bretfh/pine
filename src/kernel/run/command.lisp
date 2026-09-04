@@ -43,20 +43,19 @@ Whatever keeps keymaps reads it, so a chord goes when the command it names does.
 
 (defun commandp (x) (typep x 'command))
 
-(defun %cmd () (fs:ensure (fs:root) "cmd"))
+(defun %cmd () (fs:at "/cmd"))
 
 (defun command (name action &key (describes "") asks on)
   "ON is kept with the mode by its name, so what a command holds is plain data."
   (let ((on (and on (cons (string-downcase (string (first on))) (rest on)))))
-    (fs:declared (lambda ()
-                   (make-instance 'command :name name :action action
-                                  :held (list :describes describes :asks asks :on on)))
-                 "cmd")))
+    (fs:mount (lambda ()
+                (make-instance 'command :action action
+                               :held (list :describes describes :asks asks :on on)))
+              (format nil "/cmd/~a" name))))
 
 (defun forget (name)
-  (let ((c (named name)))
-    (when c (fs:undeclared c))
-    name))
+  (fs:erase (format nil "/cmd/~a" name))
+  name)
 
 (defun named (name)
   (etypecase name
@@ -125,7 +124,5 @@ command runs with what it was given.")
     (declare (ignore where c))
     nil))
 
-(defun %attach (root)
-  (setf (fs:describes (fs:ensure root "cmd")) "every command there is"))
-
-(pine/fs:builder #'%attach)
+(fs:mount (lambda () (make-instance 'fs:mount :describes "every command there is"))
+          "/cmd")

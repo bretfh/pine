@@ -10,6 +10,10 @@ a place a name can be measured from, so it reaches neither a config nor the wire
   "The node WHERE names, and NAMES on from there."
   (apply #'fs:at where names))
 
+(defun %leaf (where)
+  "Somewhere to write: what stands at WHERE, or a value made there."
+  (if (fs:kind where) where (fs:mount (make-instance 'fs:value) where)))
+
 (defun read (where &key (else nil elsep) await)
   "What stands at WHERE, and which of four things that is.
 
@@ -49,7 +53,7 @@ finds what is there and a write makes what is not.
 A value, whatever it looks like. TOGGLE and the three below it are the words for
 telling a place to do something; this one is for putting something there, so a seq
 beginning with a keyword goes down as the seq it is."
-  (setf (fs:contents (fs:leaf where)) (fs:as-value value)))
+  (setf (fs:contents (%leaf where)) (fs:as-value value)))
 
 (defun ls (where)
   "The names directly under WHERE, and none where nothing stands.
@@ -77,19 +81,19 @@ A write, like the three below it: the four of them are what NODE:VERB has always
 done, said in words rather than by writing a seq that begins with a keyword. That
 spelling worked from the shell and not from lisp, which is why the mute button in
 a config could mute and never unmute."
-  (fs:verb (fs:leaf where) :toggle nil))
+  (fs:verb (%leaf where) :toggle nil))
 
 (defun include (where value)
   "Put VALUE into the set at WHERE."
-  (fs:verb (fs:leaf where) :conj (list value)))
+  (fs:verb (%leaf where) :conj (list value)))
 
 (defun exclude (where value)
   "Take VALUE out of the set at WHERE."
-  (fs:verb (fs:leaf where) :disj (list value)))
+  (fs:verb (%leaf where) :disj (list value)))
 
 (defun blend (where map)
   "Merge MAP into the map at WHERE."
-  (fs:verb (fs:leaf where) :merge (list map)))
+  (fs:verb (%leaf where) :merge (list map)))
 
 (defun describe (where)
   (let ((n (fs:at where)))
@@ -119,10 +123,10 @@ a config could mute and never unmute."
                       (and n (fs:contents n))))
 
 (command:defcommand "put" (where value) (:describes "write a value")
-                    (setf (fs:contents (fs:leaf where)) value))
+                    (setf (fs:contents (%leaf where)) value))
 
-(command:defcommand "mkdir" (where) (:describes "make a dir")
-                    (fs:full-name (fs:ensure where)))
+(command:defcommand "mkdir" (where) (:describes "make a mount")
+                    (fs:full-name (fs:mount (make-instance 'fs:mount) where)))
 
 (command:defcommand "rm" (where) (:describes "take a node off")
                     (and (fs:erase where) t))
@@ -143,7 +147,7 @@ a config could mute and never unmute."
 (command:defcommand "mount" (what name)
                     (:describes "put a directory, or another pine, in the tree")
                     (let ((it (or (peer:named what) (pathname (princ-to-string what)))))
-                      (fs:full-name (mount:mount it (fs:root) (princ-to-string name)))))
+                      (fs:full-name (fs:mount it (format nil "/~a" name)))))
 
 (command:defcommand "reach" (name port &optional host)
                     (:describes "get to another pine")

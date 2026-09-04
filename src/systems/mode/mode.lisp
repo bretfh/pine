@@ -216,7 +216,7 @@ restore cannot overwrite what this run's config bound."))
       (setf (fs:contents k) (reduce #'d:without mine :initial-value (fs:contents k))))
     mine))
 
-(defclass modes (fs:dir) ()
+(defclass modes (fs:mount) ()
   (:documentation "/mode: every mode class there is, and any name a chord was
 bound under before its class arrived."))
 
@@ -231,8 +231,7 @@ bound under before its class arrived."))
 (defun mode-node () (make-instance 'modes :name "mode"
                                           :describes "every mode there is, and its chords"))
 
-(defun %root ()
-  (or (fs:at "/mode") (fs:attach (mode-node) (fs:root))))
+(defun %root () (fs:at "/mode"))
 
 (defun %walked (name)
   "The chords the commands themselves carry for this mode."
@@ -244,17 +243,19 @@ bound under before its class arrived."))
           (dolist (chord (rest on))
             (setf out (d:with out chord (command:name c)))))))))
 
+(defclass mode-dir (fs:mount) ()
+  (:documentation "One mode at /mode/<name>: its bound chords, the keymap in force,
+and what the mode says about itself."))
+
 (defun %make-mode-dir (root name)
-  "The dir for one mode: its bound chords, the keymap in force, and what the mode
-says about itself."
-  (let ((d (fs:attach (make-instance 'fs:dir :name name) root)))
-    (let ((k (fs:attach (make-instance 'keys :name "keys" :held (d:no-map)) d)))
-      (fs:attach (make-instance 'fs:derived :name "keymap"
+  (let ((d (fs:mount (make-instance 'mode-dir :name name) root)))
+    (let ((k (fs:mount (make-instance 'keys :name "keys" :held (d:no-map)) d)))
+      (fs:mount (make-instance 'fs:derived :name "keymap"
                                 :reads (lambda ()
                                          (d:merged (%walked name) (fs:contents k)))
                                 :describes "every chord in force here")
                  d))
-    (fs:attach (make-instance 'fs:derived :name "said" :live t
+    (fs:mount (make-instance 'fs:derived :name "said" :live t
                               :reads (lambda () (%said name)))
                d)
     d))
@@ -352,4 +353,4 @@ whether anything wanted it or not."
   (let ((m (mode name)))
     (when m (list :type (fs:name m) :handles (handles m)))))
 
-(fs:builder (lambda (root) (fs:attach (mode-node) root)))
+(fs:mount #'mode-node "/mode")

@@ -5,7 +5,7 @@ here whoever declared it, so a config's AUDIO and pine's are one class."))
 
 (defpackage #:pine/host
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:mount #:pine/fs/mount)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:system #:pine/run/system)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:command #:pine/run/command) (#:fault #:pine/run/fault)
@@ -23,7 +23,7 @@ device's words. Which backing answers is asked of the machine when the device is
 made, and where none can, every reading stands and says :ABSENT."))
 (in-package #:pine/host)
 
-(defclass device (fs:dir)
+(defclass device (fs:mount)
   ((rows  :initarg :rows  :reader rows  :initform nil)
    (words :initarg :words :reader words :initform nil))
   (:documentation "Something the machine may have, at /dev/<name>: every reading any
@@ -168,3 +168,6 @@ no such device was declared."
                          :announces (or announces (%option class :announces))
                          :refreshes (or refreshes (%option class :refreshes))
                          :describes (%option class :describes)))))))
+
+(fs:mount (lambda () (make-instance (quote fs:mount) :describes "the machine, as devices"))
+          "/dev")

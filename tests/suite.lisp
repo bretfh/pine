@@ -5,7 +5,7 @@
                     (:ui :pine/ui)
                     (:d :pine/data)
                     (:fs :pine/fs)
-                    (:mount :pine/fs/mount) (:store :pine/fs/store)
+                    (:store :pine/fs/store)
                     (:path :pine/fs/path)
                     (:actors :pine/run/actors) (:job :pine/run/job)
                     (:fault :pine/run/fault) (:image :pine/run/image)
@@ -33,7 +33,7 @@ shares it, because a second one is a second image."
   "A fresh namespace for one test, with what pine loaded and nothing carried over
 from the last one."
   `(let ((was (fs:root)))
-     (unwind-protect (progn (fs:make-root) (fs:built) ,@body)
+     (unwind-protect (progn (fs:make-root) ,@body)
        (setf fs:*root* was))))
 
 (defun somewhere (rows needle)

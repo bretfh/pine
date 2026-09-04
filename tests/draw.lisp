@@ -94,7 +94,7 @@ screen is a picture until pine is restarted."
   (with-tree
     (let* ((said (cons nil nil))
            (broken (cons t nil))
-           (n (fs:leaf "/probe-src")))
+           (n (fs:mount (make-instance 'fs:value) "/probe-src")))
       (setf (fs:contents n) "first")
       (let ((s (ui:make-surface "probe-surface"
                                (lambda ()

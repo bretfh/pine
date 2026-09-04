@@ -259,7 +259,7 @@ other."
                (after (version x)))
           (when (eql before after) (return (%noted x before v)))))))
 
-(defmethod entries :around ((d dir))
+(defmethod entries :around ((d mount))
   "Listing a dir is reading it, against MARK on both sides."
   (loop
     (let* ((before (mark d))
@@ -267,7 +267,7 @@ other."
            (after (mark d)))
       (when (eql before after) (return (%noted d before v))))))
 
-(defmethod entry :around ((d dir) name)
+(defmethod entry :around ((d mount) name)
   "A name that stands for nothing is still something that was read."
   (or (call-next-method) (%noted d (mark d) nil)))
 

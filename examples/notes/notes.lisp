@@ -20,7 +20,7 @@
 ;;; for what it says, write it to say something else, and anything watching one
 ;;; hears about it -- from this image or from another machine.
 
-(defclass journal (dir) ()
+(defclass journal (mount) ()
   (:documentation "Everything written down. /notes is one of these.
 
 There is no map of entries here. An entry is a node under this one, which is a
@@ -97,8 +97,7 @@ corner of the screen showing the last one."))
 
 
 (defmethod start ((s notes))
-  (puts (make-instance 'journal :name "notes"
-                                :describes "what has been written down"))
+  (mount (make-instance 'journal :describes "what has been written down") "/notes")
   (defcommand "note" (title said)
     (:describes "write something down"
      :asks '((:prompt "Note: ")))

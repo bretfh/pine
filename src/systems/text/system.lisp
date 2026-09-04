@@ -3,7 +3,7 @@
   (:local-nicknames (#:actors #:pine/run/actors) (#:command #:pine/run/command) (#:d #:pine/data)
                     (#:fault #:pine/run/fault) (#:job #:pine/run/job)
                     (#:meter #:pine/run/meter) (#:mode #:pine/mode)
-                    (#:mount #:pine/fs/mount) (#:fs #:pine/fs)
+                    (#:fs #:pine/fs)
                     (#:path #:pine/fs/path)
                     (#:system #:pine/run/system))
   (:export

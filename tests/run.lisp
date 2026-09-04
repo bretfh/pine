@@ -5,7 +5,6 @@
 (test a-tick-is-a-job-and-a-node
   (booted)
   (with-tree
-    (fs:built)
     (let* ((n (cons 0 nil))
            (j (make-instance 'job:tick :name "ticker" :every 0.05
                                          :runs (lambda () (d:swap (car n) #'1+)))))
@@ -41,7 +40,6 @@
 returned without being asked to is failed, and the next sweep starts it."
   (booted)
   (with-tree
-    (fs:built)
     (let* ((runs (cons 0 nil))
            (j (make-instance 'job:thread :name "flaky" :on-fault :restart
                                          :runs (lambda ()
@@ -60,7 +58,6 @@ returned without being asked to is failed, and the next sweep starts it."
 (test being-asked-to-stop-is-not-dying
   (booted)
   (with-tree
-    (fs:built)
     (let ((j nil))
       (setf j (make-instance 'job:thread
                              :name "quiet" :on-fault :restart
@@ -153,7 +150,6 @@ returned without being asked to is failed, and the next sweep starts it."
 
 (test a-command-defined-as-a-system-starts-is-the-system-s
   (with-tree
-    (fs:built)
     (let ((fs:*owner* "pine/test/probe"))
       (command:defcommand "probe-home" () (:describes "made while starting") t))
     (command:defcommand "probe-file" () (:describes "made by a file") t)
@@ -205,7 +201,7 @@ image's one down and puts a listening one in its place."
              (unwind-protect
                   (progn
                     (is (job:alivep p))
-                    (mount:mount p (fs:root) "host")
+                    (fs:mount p "/host")
                     (is (equal 41 (fs:contents
                                    (fs:at "/host/dev/audio/volume"))))
                     (setf (fs:contents (fs:at "/host/dev/audio/volume"))
@@ -363,7 +359,7 @@ not show what somebody had just typed."
 are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
-           (n (fs:attach (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (d:map :a 1)))
+           (n (fs:mount (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (d:map :a 1)))
                            (fs:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -376,7 +372,7 @@ are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
            (which (list (d:map :a 1)))
-           (n (fs:attach (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (first which)))
+           (n (fs:mount (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (first which)))
                            (fs:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -428,7 +424,7 @@ the rest of its life."
 nor everything else the walk has still to reach, nor whoever was waiting on it."
   (with-tree
     (booted)
-    (let ((n (fs:leaf "/probe-slow"))
+    (let ((n (fs:mount (make-instance 'fs:value) "/probe-slow"))
           (let-go (bordeaux-threads:make-semaphore))
           (told nil))
       (setf (fs:contents n) "before")
@@ -462,7 +458,7 @@ image, and it is DERIVE :IN."
       (job:start kid)
       (unwind-protect
            (let ((n (make-instance 'fs:derived :name "sum" :reads '(+ 20 22) :in kid)))
-             (fs:attach n (fs:root))
+             (fs:mount n (fs:root))
              (is (eql 42 (fs:contents n))
                  "worked out over there, and what came back is a value")
              (is (null (fs::saw n))

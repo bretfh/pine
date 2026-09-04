@@ -34,7 +34,7 @@ not inherit.")
 pine keeps the other end of, so pine going -- stopped, crashed or killed outright --
 closes that end and the stream goes with it.")
 
-(defclass shell (fs:dir)
+(defclass shell (fs:mount)
   ((ran     :initform nil :accessor ran-of)
    (said    :initform nil :accessor said-of)
    (asked   :initform (d:no-map) :accessor asked-of)

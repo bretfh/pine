@@ -73,7 +73,6 @@ nothing with a dropped connection and something with a sentence."
 (test asking-about-nothing-and-about-an-object-are-both-answered
   (with-tree
     (is (eq :no (first (pine/run/peer::received (list :contents "/nowhere")))))
-    (fs:built (fs:root))
     (ui:make-surface "test-surface" (lambda () (ui:label "hi")) :as 'ui:panel)
     (let ((said (pine/run/peer::received (list :contents "/ui/surface/test-surface/tree"))))
       (is (eq :no (first said)) "a widget has no spelling")

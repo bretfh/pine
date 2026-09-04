@@ -31,7 +31,7 @@ A name in place of a node is made and put under /dev first:
                what
                (let ((it (apply #'%make what arguments)))
                  (when it
-                   (fs:attach it (fs:ensure (fs:root) "dev")))))))
+                   (fs:mount it (fs:at "/dev")))))))
     (when (and (fs:kind n) fs:*owner*) (setf (fs:owner n) fs:*owner*))
     (%attend n)))
 
@@ -63,17 +63,15 @@ A name in place of a node is made and put under /dev first:
   (sh:run-line (princ-to-string line)))
 
 (defmethod job:start ((s host))
-  (let ((root (fs:root)))
-    (system:puts (sh:sh-node) root)
-    (device (system:puts (made "env") root))
-    (device (system:puts (made "sys") root))
-    (setf (fs:owner (mount:mount #p"/" root "file")) fs:*owner*)
-    (device "clock")
-    (job:supervise
-     (job:start (make-instance 'job:tick :name "clock" :every 1
-                                           :on-fault :leave
-                                           :runs #'tick)))
-    root)
+  (fs:mount (sh:sh-node) "/sh")
+  (device (fs:mount (made "env") "/env"))
+  (device (fs:mount (made "sys") "/sys"))
+  (fs:mount #p"/" "/file")
+  (device "clock")
+  (job:supervise
+   (job:start (make-instance 'job:tick :name "clock" :every 1
+                                         :on-fault :leave
+                                         :runs #'tick)))
   s)
 
 (defmethod job:stop ((s host))

@@ -78,9 +78,9 @@ in the corner saying where it is and what is uncommitted."))
 
 
 (defmethod start ((s vcs))
-  (puts (make-instance 'value :name "work"
-                       :held (namestring *default-pathname-defaults*)
-                       :describes "the checkout everything here is about"))
+  (mount (make-instance 'value :held (namestring *default-pathname-defaults*)
+                               :describes "the checkout everything here is about")
+         "/work")
   (device "vcs")
   (defcommand "work" (&optional where)
     (:describes "the checkout, or where to point it")

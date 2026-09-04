@@ -25,7 +25,7 @@ wait is for that look and not for a clock.")
 A receive owes its mailbox an answer, so it may not wait for one: read what it was
 handed, or TELL and take the reply as a message." (of c)))))
 
-(defclass job (fs:dir)
+(defclass job (fs:mount)
   ((state     :initform :stopped :accessor state)
    (tries     :initform 0        :accessor tries)
    (supervised :initform nil     :accessor supervisedp)
@@ -63,17 +63,17 @@ handed, or TELL and take the reply as a message." (of c)))))
 
 (defmethod initialize-instance :after ((j job) &key)
   (fs:slots j j "state" 'state "tries" 'tries)
-  (fs:attach (make-instance 'fs:derived :name "said" :live t
+  (fs:mount (make-instance 'fs:derived :name "said" :live t
                                         :reads (lambda () (said j))
                                         :describes "the last lines it said")
              j)
-  (fs:attach (make-instance 'fs:derived :name "tell" :live t
+  (fs:mount (make-instance 'fs:derived :name "tell" :live t
                                         :writes (lambda (value) (tell j value))
                                         :describes "write here to give it something")
              j)
-  (fs:attach j (%proc)))
+  (fs:mount j (%proc)))
 
-(defun %proc () (fs:ensure (fs:root) "proc"))
+(defun %proc () (fs:at "/proc"))
 
 (defun jobs ()
   (remove-if-not (lambda (each) (typep each 'job)) (fs:entries (%proc))))

@@ -209,7 +209,7 @@ of being the window manager here."
 (defmethod start ((s tiles))
   (let ((c (current)))
     (unless c (error "no compositor: use the wm system before this one."))
-    (puts (%layout) (ensure "/wm"))
+    (mount (%layout) "/wm/layout")
     (let ((said (fs:at "/wm/said")))
       (when said
         (setf (watching s)

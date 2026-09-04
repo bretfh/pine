@@ -36,7 +36,6 @@
 (test a-chord-is-inherited-the-way-a-method-is
   (command:defcommand "probe-nothing" () (:describes "nothing") nil)
   (with-tree
-    (fs:built)
     (unwind-protect
          (progn
            (mode:bind 'mode:text "C-probe" "probe-nothing")
@@ -90,7 +89,7 @@
            (progn
              (with-open-file (o file :direction :output :if-exists :supersede)
                (write-string "(defun probe () 1)" o))
-             (mount:mount #p"/" (fs:root) "file")
+             (fs:mount #p"/" "/file")
              (let ((doc (text:make-document "visit")))
                (text:visit doc (namestring file))
                (is (equal "(defun probe () 1)" (text:text doc)))

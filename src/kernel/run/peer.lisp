@@ -1,6 +1,6 @@
 (defpackage #:pine/run/peer
   (:use #:cl)
-  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs) (#:mount #:pine/fs/mount)
+  (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:image #:pine/run/image)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
                     (#:fault #:pine/run/fault) (#:said #:pine/said) (#:log #:pine/fs/log))
@@ -154,7 +154,7 @@ far side never waits, so nothing else asking it is held behind this."
   (:documentation "Somewhere in another pine's namespace. Watching it is a method:
 asking that pine to say when it moves."))
 
-(defclass remote-dir (remote fs:dir) ())
+(defclass remote-dir (remote fs:mount) ())
 (defclass remote-leaf (remote fs:derived) ())
 
 (defun remote (p where name &optional (kind :dir))
@@ -183,10 +183,10 @@ rather than something beside it."
              (lambda (where said) (declare (ignore where)) (funcall tells n said))
              :name name))
 
-(defmethod mount:mount ((what peer) into name)
+(defmethod fs:mount ((what peer) where)
   "Graft another pine's namespace here. From now on a read of a path under it is a
 read, and a write is a write."
-  (fs:attach (remote what "/" name :dir) into))
+  (fs:mount (remote what "/" (job:name what) :dir) where))
 
 (defun local-uri (name)
   "Where an actor in this image is reached from another one."
@@ -286,7 +286,7 @@ What crosses is spelled rather than handed over: whoever is asking may be a lisp
 with fset loaded, and may just as well be a shell."
   (let* ((name (string-left-trim "/" (princ-to-string where)))
          (n (if (eq :write (first message))
-                (fs:leaf (fs:root) name)
+                (fs:mount (make-instance 'fs:value) (concatenate 'string "/" name))
                 (fs:at (fs:root) name))))
     (if (null n)
         (list :no (format nil "nothing at ~a" where))
@@ -301,7 +301,7 @@ with fset loaded, and may just as well be a shell."
           (:entries  (list :ok (mapcar #'fs:name (fs:entries n))))
           (:entry    (let ((it (fs:entry n (second message))))
                        (if it
-                           (list :ok (if (typep it 'fs:dir) :dir :leaf))
+                           (list :ok (if (typep it 'fs:mount) :dir :leaf))
                            (list :no (format nil "nothing at ~a under ~a"
                                              (second message) where)))))
           (t (list :no "no such question about a place"))))))

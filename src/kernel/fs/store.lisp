@@ -134,16 +134,14 @@ it."
         :unless (and names (apply #'fs:at root names))
           :collect path))
 
-(defun %attach (root)
-  (fs:attach (make-instance 'fs:derived :name "store"
-                            :reads (lambda ()
-                                     (let ((s *store*))
-                                       (and s (princ-to-string (file-of s)))))
-                            :writes (lambda (value)
-                                      (declare (ignore value))
-                                      (and *store* (snapshot *store*)))
-                            :describes "where this pine persists, and writing it
-writes the tree down")
-             root))
-
-(fs:builder #'%attach)
+(fs:mount (lambda ()
+            (make-instance 'fs:derived
+                           :reads (lambda ()
+                                    (let ((s *store*))
+                                      (and s (princ-to-string (file-of s)))))
+                           :writes (lambda (value)
+                                     (declare (ignore value))
+                                     (and *store* (snapshot *store*)))
+                           :describes "where this pine persists, and writing it
+writes the tree down"))
+          "/store")

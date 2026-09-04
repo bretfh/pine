@@ -25,12 +25,10 @@
 
 (defun forget () (setf *said* nil))
 
-(defun %attach (root)
-  (setf *node* (fs:attach (make-instance 'fs:derived :name "log"
-                                         :reads #'said
-                                         :writes (lambda (value)
-                                                   (unless value (forget)))
-                                         :describes "what pine said")
-                          root)))
-
-(fs:builder #'%attach)
+(fs:mount (lambda ()
+            (setf *node* (make-instance 'fs:derived
+                                        :reads #'said
+                                        :writes (lambda (value)
+                                                  (unless value (forget)))
+                                        :describes "what pine said")))
+          "/log")

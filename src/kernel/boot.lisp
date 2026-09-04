@@ -4,18 +4,17 @@
   (:shadowing-import-from #:pine/data #:map #:set)
   (:import-from #:pine/data #:seq)
   (:import-from #:pine/fs/log #:note)
-  (:import-from #:pine/fs/mount #:mount)
   (:import-from #:pine/fs
-   #:contents #:derived #:describes #:dir #:name #:value #:ensure #:erase #:root)
+   #:contents #:derived #:describes #:mount #:name #:value #:erase #:root)
   (:import-from #:pine/run/command #:defcommand #:run)
   (:import-from #:pine/run/fault #:attempt)
   (:import-from #:pine/run/job #:start #:stop)
   (:import-from #:pine/run/peer #:reach #:serve)
-  (:import-from #:pine/run/system #:drop #:puts #:system #:use)
+  (:import-from #:pine/run/system #:drop #:system #:use)
   (:import-from #:pine/run/watch #:unwatch)
   (:local-nicknames (#:d #:pine/data)
                     (#:fs #:pine/fs)
-                    (#:path #:pine/fs/path) (#:mount #:pine/fs/mount)
+                    (#:path #:pine/fs/path)
                     (#:store #:pine/fs/store)
                     (#:libs #:pine/run/libs) (#:log #:pine/fs/log)
                     (#:meter #:pine/run/meter) (#:fault #:pine/run/fault)
@@ -30,9 +29,9 @@
    #:at #:read #:write #:watch #:ls #:standsp #:toggle #:include #:exclude #:blend
    #:use #:drop #:reach #:serve
    #:seq #:map #:set #:note #:mount
-   #:contents #:derived #:describes #:dir #:name #:value
-   #:ensure #:erase #:root
-   #:defcommand #:run #:attempt #:start #:stop #:puts #:system #:unwatch))
+   #:contents #:derived #:describes #:name #:value
+   #:erase #:root
+   #:defcommand #:run #:attempt #:start #:stop #:system #:unwatch))
 (in-package #:pine)
 
 (defgeneric opening (what)
@@ -56,9 +55,7 @@ stands in comes back here with the restarts it is still offering."
   (libs:attend)
   (unless (actors:runningp) (actors:boot :remoting remoting))
   (setf pine/serve/socket:*name* name)
-  (let ((root (fs:root)))
-    (fs:ensure "/ui/surface")
-    (mount:mount #p"/" root "file"))
+  (fs:mount #p"/" "/file")
   (job:attend)
   (when store
     (store:open-store store)

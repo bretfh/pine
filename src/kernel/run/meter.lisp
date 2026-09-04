@@ -19,7 +19,7 @@ small enough that a hundred instruments cost nothing to hold.")
   "What an instrument answers for, as paths. Milliseconds where it is a duration,
 because that is what a person reads a frame in.")
 
-(defclass instrument (fs:dir)
+(defclass instrument (fs:mount)
   ((kind  :initarg :kind :reader kind-of)
    (count :initform 0   :reader count-of)
    (total :initform 0   :reader total-of)
@@ -41,11 +41,11 @@ steps in four millisecond jumps, which cannot see a frame, let alone a swap."
 (defmethod initialize-instance :after ((it instrument) &key)
   (setf (at-of it) (now))
   (dolist (field +fields+)
-    (fs:attach (make-instance 'fs:derived :name field :live t
+    (fs:mount (make-instance 'fs:derived :name field :live t
                               :reads (lambda () (%field (reading it) field)))
                it)))
 
-(defun %metric () (fs:ensure (fs:root) "metric"))
+(defun %metric () (fs:at "/metric"))
 
 (defun %of (name kind)
   (let* ((d (%metric))
@@ -53,7 +53,7 @@ steps in four millisecond jumps, which cannot see a frame, let alone a swap."
          (it (fs:child d name
                        (lambda ()
                          (make-instance 'instrument :name name :kind kind :parent d)))))
-    (unless (eq (fs:entry d name) it) (fs:attach it d))
+    (unless (eq (fs:entry d name) it) (fs:mount it d))
     it))
 
 (defun %record (name kind measure)
@@ -146,8 +146,8 @@ answer this, which is what lets one be laid beside the other."
         ((equal field "last") (%ms (getf said :last)))
         ((equal field "total") (%ms (getf said :total)))))
 
-(defun %attach (root)
-  (setf (fs:describes (fs:ensure root "metric")) "how long what pine does is taking"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "how long what pine does is taking"))
+          "/metric")
 
 (defun report (rows &key (to *standard-output*) about)
   "The table, said once. ABOUT is what produced these numbers: a workload and
@@ -166,5 +166,3 @@ is a number about nothing."
                 (getf row :count) (float (getf row :per-second))
                 (or (%ms (getf row :mean)) 0) (or (%ms (getf row :p95)) 0)
                 (or (%ms (getf row :most)) 0)))))
-
-(pine/fs:builder #'%attach)
