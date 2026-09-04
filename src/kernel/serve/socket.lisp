@@ -139,10 +139,15 @@ needs no lisp on the other end."
 (defun serve-node ()
   "Where this pine answers, as a place. Somebody who has the tree by another way
 can read where to reach it by this one."
-  (make-instance 'fs:derived :name "serve" :live t
-              :reads (lambda ()
-                       (list :name *name* :socket (listening)
-                             :port (actors:remoting)))
-              :describes "what this pine is called and where it answers"))
+  (make-instance 'answering :name "serve"
+                 :describes "what this pine is called and where it answers"))
+
+(defclass answering (fs:derived) ()
+  (:documentation "/serve: what this pine is called, and where it answers."))
+
+(defmethod fs:livep ((n answering) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n answering))
+  (list :name *name* :socket (listening) :port (actors:remoting)))
 
 (fs:mount #'serve-node "/serve")

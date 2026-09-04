@@ -232,7 +232,7 @@ runs."
     (pushnew n (streams *sh*))
     (hear n)))
 
-(defmethod fs:livep ((n stream-node)) t)
+(defmethod fs:livep ((n stream-node) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n stream-node)) (first (said n)))
 
@@ -240,22 +240,34 @@ runs."
   (if value (hear n) (quiet n))
   value)
 
-(defun %line (line)
-  "What this line last said, and a place to tell it to run.
+(defclass spoken (fs:derived) ()
+  (:documentation "One line at /sh/<line>: what it last said, and a place to tell it
+to run.
 
 Reading is not running. Every line is a place whether or not one has ever been
 run, and a read used to run it -- so /sh was a shell anything that could reach the
 namespace could type into, by asking it a question. A read is the one thing every
 way in may always do; running something is a write, and this is where it is said.
 
-One that has not run answers nothing. That is what ABSENT is for."
-  (make-instance 'fs:derived :name line
-               :reads (lambda () (last-said line))
-               :writes (lambda (v) (declare (ignore v)) (run-line line))))
+One that has not run answers nothing. That is what ABSENT is for."))
+
+(defmethod fs:works ((n spoken)) (last-said (fs:name n)))
+
+(defmethod fs:takes ((n spoken) value)
+  (declare (ignore value))
+  (run-line (fs:name n)))
+
+(defmethod fs:livep ((s shell) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:entry ((s shell) name)
+  (let ((name (princ-to-string name)))
+    (fs:child s name (lambda () (make-instance 'spoken :name name :parent s)))))
+
+(defmethod fs:entries ((s shell))
+  (mapcar (lambda (line) (fs:entry s line)) (ran-of s)))
 
 (defun %shell ()
-  (make-instance 'shell :name "sh" :names #'ran :each #'%line
-                        :describes "running something, and what it said"))
+  (make-instance 'shell :name "sh" :describes "running something, and what it said"))
 
 (defun sh-node ()
   "The shell, to put at /sh: the one there is, since what it has run is the image's

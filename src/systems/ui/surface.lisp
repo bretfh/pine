@@ -89,6 +89,7 @@ content is here.")
   ((role  :initarg :role  :accessor role)
    (shown :initarg :shown :accessor shown)
    (size  :initarg :size  :accessor size :initform nil)
+   (reads :initarg :reads :reader reads)
    (acts  :initform (d:no-map) :accessor acts))
   (:documentation "A surface: under it TREE, the widget tree worked out from what it
 read; SHOWN, which writing puts it up or down; SIZE, what shows it says it came out
@@ -178,7 +179,7 @@ three words because it is three answers: DEFSURFACE and a direct call used to
 disagree about what leaving it out meant."
   (let* ((r (make-instance as))
          (s (make-instance 'surface :name (princ-to-string name)
-                                    :role r
+                                    :role r :reads reads
                                     :shown (ecase starts
                                              (:up t)
                                              (:down nil)
@@ -186,37 +187,49 @@ disagree about what leaving it out meant."
                                               (eq :always (shows r))))
                                     :describes "a widget tree, and where it goes")))
     (fs:mount s (root))
-    (fs:mount (make-instance 'fs:derived :name "tree" :reads reads :parent s
-                              :describes "the widget tree, worked out from what it read")
-               s)
-    (let ((size (second (fs:slots s s "shown" 'shown "size" 'size))))
-      (fs:mount (make-instance
-                    'fs:derived :name "role"
-                    :reads (lambda () (string-downcase (class-name (class-of (role s)))))
-                    :parent s
-                    :describes "which kind of surface this is")
-                   s)
-      (fs:mount (make-instance 'fs:derived :name "wire"
-                                :reads (lambda () (%wire s)) :parent s
-                                :describes "the tree, as it crosses to another pine")
-                   s)
-      (fs:mount (make-instance
-                    'fs:derived :name "where"
-                    :reads (lambda ()
-                      (let ((said (fs:contents size)))
-                        (%plainly (anchor (role s)
-                                          (or (getf said :wide) 0)
-                                          (or (getf said :tall) 0)))))
-                    :parent s
-                    :describes "where the role says this goes")
-                   s))
-    (fs:mount (make-instance 'fs:derived :name "click" :live t
-                             :writes (lambda (said) (act (fs:name s) said))
-                             :describes "what another pine says was clicked")
-                 s)
-    (setf (fs:owner s) fs:*owner*)
     (declared s)
     s))
+
+(defmethod fs:read ((s surface) (name (eql :tree)))
+  "The widget tree, worked out from what it read."
+  (funcall (reads s)))
+
+(defmethod fs:read ((s surface) (name (eql :role)))
+  "Which kind of surface this is."
+  (string-downcase (class-name (class-of (role s)))))
+
+(defmethod fs:read ((s surface) (name (eql :wire)))
+  "The tree, as it crosses to another pine."
+  (%wire s))
+
+(defmethod fs:read ((s surface) (name (eql :where)))
+  "Where the role says this goes."
+  (let ((said (fs:contents (fs:entry s "size"))))
+    (%plainly (anchor (role s) (or (getf said :wide) 0) (or (getf said :tall) 0)))))
+
+(defmethod fs:read ((s surface) (name (eql :shown)))
+  "Whether it is up; writing puts it up or down."
+  (shown s))
+
+(defmethod fs:write ((s surface) (name (eql :shown)) value)
+  (setf (shown s) value))
+
+(defmethod fs:read ((s surface) (name (eql :size)))
+  "What shows it says it came out at."
+  (size s))
+
+(defmethod fs:write ((s surface) (name (eql :size)) value)
+  (setf (size s) value))
+
+(defmethod fs:write ((s surface) (name (eql :click)) said)
+  "What another pine says was clicked."
+  (act (fs:name s) said))
+
+(defmethod fs:livep ((s surface) &optional name)
+  "The tree, the wire and where it goes are worked out and kept."
+  (if name
+      (not (member name '("tree" "wire" "where") :test #'equal))
+      (call-next-method)))
 
 (defun forget-surface (name)
   (fs:erase (format nil "/ui/surface/~a" name))

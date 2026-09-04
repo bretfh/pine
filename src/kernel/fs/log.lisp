@@ -25,10 +25,12 @@
 
 (defun forget () (setf *said* nil))
 
-(fs:mount (lambda ()
-            (setf *node* (make-instance 'fs:derived
-                                        :reads #'said
-                                        :writes (lambda (value)
-                                                  (unless value (forget)))
-                                        :describes "what pine said")))
+(defclass saying (fs:derived) ()
+  (:documentation "/log: what pine said. Writing nothing here forgets it."))
+
+(defmethod fs:works ((n saying)) (said))
+
+(defmethod fs:takes ((n saying) value) (unless value (forget)))
+
+(fs:mount (lambda () (setf *node* (make-instance 'saying :describes "what pine said")))
           "/log")

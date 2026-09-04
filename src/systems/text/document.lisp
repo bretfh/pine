@@ -147,20 +147,53 @@ is text plus something of its own."
   (let ((doc (apply #'make-instance class :name name
                     (alexandria:remove-from-plist initargs :class))))
     (fs:mount doc (root))
-    (setf (text-node doc)
-          (fs:mount (make-instance 'fs:derived :name "text" :live t
-                                    :reads (lambda () (text doc))
-                                    :writes (lambda (value) (setf (text doc) value))
-                                    :describes "what it says")
-                     doc))
-    (fs:slots doc doc "at-line" 'at-line "at-col" 'at-col "tick" 'tick)
-    (fs:mount (make-instance 'fs:derived :name "source" :live t
-                              :reads (lambda () (origin doc))
-                              :writes (lambda (value)
-                                        (visiting doc (princ-to-string value)))
-                              :describes "where this document reads and writes")
-               doc)
+    (setf (text-node doc) (fs:entry doc "text"))
     doc))
+
+(defmethod fs:read ((doc document) (name (eql :text)))
+  "What it says."
+  (text doc))
+
+(defmethod fs:write ((doc document) (name (eql :text)) value)
+  (setf (text doc) value))
+
+(defmethod fs:read ((doc document) (name (eql :at-line)))
+  "The line point is on."
+  (at-line doc))
+
+(defmethod fs:write ((doc document) (name (eql :at-line)) value)
+  (setf (at-line doc) value))
+
+(defmethod fs:read ((doc document) (name (eql :at-col)))
+  "The column point is at."
+  (at-col doc))
+
+(defmethod fs:write ((doc document) (name (eql :at-col)) value)
+  (setf (at-col doc) value))
+
+(defmethod fs:read ((doc document) (name (eql :tick)))
+  "How many times it has been edited."
+  (tick doc))
+
+(defmethod fs:read ((doc document) (name (eql :source)))
+  "Where it reads and writes."
+  (origin doc))
+
+(defmethod fs:write ((doc document) (name (eql :source)) value)
+  (visiting doc (princ-to-string value)))
+
+(defmethod fs:read ((doc document) (name (eql :mode)))
+  "What kind of text it is; writing another kind's name makes it that."
+  (string-downcase (symbol-name (class-name (class-of (mode-of doc))))))
+
+(defmethod fs:write ((doc document) (name (eql :mode)) value)
+  (let ((class (find (string-downcase (princ-to-string value)) (mode:modes)
+                     :key (lambda (c) (string-downcase (symbol-name (class-name c))))
+                     :test #'equal)))
+    (unless class (error "no mode called ~a" value))
+    (setf (mode-of doc) (make-instance class))
+    (fs:moved doc)
+    value))
 
 (defun documents ()
   (remove-if-not (lambda (n) (typep n 'document)) (fs:entries (root))))

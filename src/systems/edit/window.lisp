@@ -22,13 +22,13 @@ was split into."))
             (let ((it (shows w)))
               (if (fs:kind it) (fs:name it) it)))))
 
-(defmethod initialize-instance :after ((w window) &key)
-  (fs:mount (make-instance 'fs:derived :name "shows" :live t
-                            :reads (lambda ()
-                                     (let ((it (shows w)))
-                                       (if (fs:kind it) (fs:name it) it)))
-                            :writes (lambda (value) (show w value)))
-             w))
+(defmethod fs:read ((w window) (name (eql :shows)))
+  "What it is showing, by name."
+  (let ((it (shows w)))
+    (if (fs:kind it) (fs:name it) it)))
+
+(defmethod fs:write ((w window) (name (eql :shows)) value)
+  (show w value))
 
 (fs:mount (lambda () (make-instance 'fs:mount :describes "the editor")) "/edit")
 (fs:mount (lambda () (make-instance 'fs:mount :describes "every window, as the screen is split"))

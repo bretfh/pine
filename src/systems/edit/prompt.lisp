@@ -30,7 +30,28 @@
   (or (fs:at "/text" +document+)
       (text:make-document +document+ :mode (make-instance 'prompt))))
 
-(fs:mount (lambda () (make-instance 'fs:mount :describes "the line you answer a question on"))
+(defclass prompting (fs:mount) ()
+  (:documentation "/edit/prompt: the question standing, what has been typed at it,
+and what that matches."))
+
+(defmethod fs:livep ((p prompting) &optional name)
+  "What was typed and what it matches are worked out and kept."
+  (if name nil (call-next-method)))
+
+(defmethod fs:read ((p prompting) (name (eql :said)))
+  "What has been typed at the question so far."
+  (%typed))
+
+(defmethod fs:read ((p prompting) (name (eql :matching)))
+  "The candidates what was typed matches."
+  (let ((p (and (fs:contents (%asking-node)) *prompt*)))
+    (when p
+      (let ((text (fs:contents (%said-node))))
+        (if (filep p)
+            (candidates p)
+            (matches text (candidates p)))))))
+
+(fs:mount (lambda () (make-instance 'prompting :describes "the line you answer a question on"))
           "/edit/prompt")
 (fs:mount (lambda () (make-instance 'fs:mount :describes "what answers each kind of question"))
           "/edit/prompt/completes")
@@ -58,21 +79,9 @@ cannot see a thing it cannot see move."
   (let ((d (fs:at "/text" +document+)))
     (if d (text:text d) "")))
 
-(defun %said-node ()
-  (%place "said"
-          (lambda () (make-instance 'fs:derived :name "said" :reads #'%typed))))
+(defun %said-node () (fs:entry (%under) "said"))
 
-(defun %matching-node ()
-  (%place "matching"
-          (lambda ()
-            (make-instance 'fs:derived :name "matching"
-                         :reads (lambda ()
-                           (let ((p (and (fs:contents (%asking-node)) *prompt*)))
-                             (when p
-                               (let ((text (fs:contents (%said-node))))
-                                 (if (filep p)
-                                     (candidates p)
-                                     (matches text (candidates p)))))))))))
+(defun %matching-node () (fs:entry (%under) "matching"))
 
 (defun so-far ()
   "What has been typed into the prompt so far."

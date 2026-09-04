@@ -247,17 +247,21 @@ bound under before its class arrived."))
   (:documentation "One mode at /mode/<name>: its bound chords, the keymap in force,
 and what the mode says about itself."))
 
+(defmethod fs:read ((d mode-dir) (name (eql :keymap)))
+  "Every chord in force here: what was bound, over what the commands carry."
+  (d:merged (%walked (fs:name d)) (fs:contents (fs:entry d "keys"))))
+
+(defmethod fs:read ((d mode-dir) (name (eql :said)))
+  "What the mode says about itself."
+  (%said (fs:name d)))
+
+(defmethod fs:livep ((d mode-dir) &optional name)
+  "The keymap is worked out and kept."
+  (if name (not (equal name "keymap")) (call-next-method)))
+
 (defun %make-mode-dir (root name)
   (let ((d (fs:mount (make-instance 'mode-dir :name name) root)))
-    (let ((k (fs:mount (make-instance 'keys :name "keys" :held (d:no-map)) d)))
-      (fs:mount (make-instance 'fs:derived :name "keymap"
-                                :reads (lambda ()
-                                         (d:merged (%walked name) (fs:contents k)))
-                                :describes "every chord in force here")
-                 d))
-    (fs:mount (make-instance 'fs:derived :name "said" :live t
-                              :reads (lambda () (%said name)))
-               d)
+    (fs:mount (make-instance 'keys :name "keys" :held (d:no-map)) d)
     d))
 
 (defun %mode-dir (root name)

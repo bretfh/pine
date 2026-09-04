@@ -120,9 +120,9 @@ it."
         (*putting-back* t))
     (loop :for (path text) :in (sqlite:execute-to-list
                                 (db s) "select path, value from node")
-          :do (multiple-value-bind (value read) (read-back text)
+          :do (multiple-value-bind (value okp) (read-back text)
                 (let* ((names (fs:split-name path))
-                       (at (and names read (apply #'fs:at root names))))
+                       (at (and names okp (apply #'fs:at root names))))
                   (when (and at (fs:savedp at))
                     (setf (fs:contents at) (fs:as-value value))
                     (incf n))))
@@ -134,14 +134,19 @@ it."
         :unless (and names (apply #'fs:at root names))
           :collect path))
 
+(defclass persisting (fs:derived) ()
+  (:documentation "/store: where this pine persists. Writing it writes the tree
+down."))
+
+(defmethod fs:works ((n persisting))
+  (let ((s *store*)) (and s (princ-to-string (file-of s)))))
+
+(defmethod fs:takes ((n persisting) value)
+  (declare (ignore value))
+  (and *store* (snapshot *store*)))
+
 (fs:mount (lambda ()
-            (make-instance 'fs:derived
-                           :reads (lambda ()
-                                    (let ((s *store*))
-                                      (and s (princ-to-string (file-of s)))))
-                           :writes (lambda (value)
-                                     (declare (ignore value))
-                                     (and *store* (snapshot *store*)))
+            (make-instance 'persisting
                            :describes "where this pine persists, and writing it
 writes the tree down"))
           "/store")

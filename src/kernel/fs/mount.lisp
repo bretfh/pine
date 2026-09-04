@@ -8,8 +8,8 @@
   ((truename-of :initarg :truename :reader truename-of))
   (:documentation "One file on the disk."))
 
-(defmethod livep ((n file)) t)
-(defmethod livep ((n directory)) t)
+(defmethod livep ((n file) &optional name) (declare (ignore name)) t)
+(defmethod livep ((n directory) &optional name) (declare (ignore name)) t)
 
 (defmethod mount ((what pathname) where)
   (let ((it (truename what)))

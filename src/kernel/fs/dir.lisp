@@ -1,12 +1,12 @@
 (defpackage #:pine/fs
   (:use #:cl)
-  (:shadow #:directory)
+  (:shadow #:directory #:read #:write)
   (:local-nicknames (#:d #:pine/data))
   (:export
-   #:mount #:value #:derived #:kind
+   #:mount #:value #:derived #:kind #:read #:write #:of #:key #:served
    #:contents #:holding #:verb #:savedp #:livep #:announces #:refreshes #:moved
    #:entries #:entry #:make-entry #:erase-entry #:works #:takes
-   #:name #:parent #:owner #:describes #:full-name #:child #:slots
+   #:name #:parent #:owner #:describes #:full-name #:child
    #:detach #:announced #:reading #:depend #:undepend #:as-value #:let-go
    #:reads #:writes
    #:root #:make-root #:at #:erase #:walk #:paths #:split-name
@@ -21,11 +21,14 @@ thing that was written. A DERIVED works one out from what it read and keeps it
 until something it read moves -- or, where the world behind it answers and nothing
 here can see that move, asks every time.
 
-MOUNT is also the verb: what puts a thing at a name. What a class answers is
-CONTENTS, (SETF CONTENTS), HOLDING, VERB, SAVEDP, LIVEP, ANNOUNCES, REFRESHES and
-MOVED; a mount answers ENTRIES, ENTRY, MAKE-ENTRY and ERASE-ENTRY; a derived may
-answer WORKS and TAKES instead of being given READS and WRITES. Everything else
-here is called and not specialised."))
+MOUNT is also the verb: what puts a thing at a name. A kind of mount answers for
+the names under it by methods on READ and WRITE, one per name; each such name is a
+derived under every mount of that kind, live unless the kind's LIVEP says it is
+worked out and kept. What a class answers besides is CONTENTS, (SETF CONTENTS),
+HOLDING, VERB, SAVEDP, LIVEP, ANNOUNCES, REFRESHES and MOVED; a mount may answer
+ENTRIES, ENTRY, MAKE-ENTRY and ERASE-ENTRY for what it lists from the world; a
+derived may answer WORKS and TAKES. Everything else here is called and not
+specialised."))
 (in-package #:pine/fs)
 
 (defvar *reading* nil)
@@ -46,6 +49,7 @@ here is called and not specialised."))
   ((name      :initarg :name      :reader name      :initform nil)
    (parent    :initarg :parent    :accessor parent    :initform nil)
    (owner     :initarg :owner     :accessor owner     :initform nil)
+   (of        :initarg :of        :reader of          :initform nil)
    (describes :initarg :describes :accessor describes :initform nil)
    (readers   :initform (d:no-set) :reader readers)
    (saw       :initform nil        :accessor saw)
@@ -58,7 +62,11 @@ here is called and not specialised."))
 (defvar *owner* nil
   "Whose what is mounted now is: the package of the system starting, while it does.")
 
-(defgeneric livep (x) (:method ((x standing)) nil))
+(defgeneric livep (x &optional name)
+  (:documentation "Whether the world behind X answers, so it is asked every time.
+With NAME, whether that name under X is: a name answered by method is, unless the
+kind says it is worked out and kept.")
+  (:method ((x standing) &optional name) (declare (ignore name)) nil))
 (defgeneric announces (x) (:method ((x standing)) nil))
 (defgeneric refreshes (x) (:method ((x standing)) nil))
 (defgeneric moved (x))
@@ -79,18 +87,13 @@ the same entry every time; ENTRIES answers them all, already made."))
   ((held :initarg :held :accessor held :initform nil))
   (:documentation "Holds what was written, until it is written again."))
 
-(defclass slot (value)
-  ((object-of :initarg :object :reader object-of)
-   (slot-of   :initarg :slot   :reader slot-of)
-   (into      :initarg :into   :reader into-of :initform nil))
-  (:documentation "A value held in a lisp object's slot."))
-
 (defclass derived (standing)
   ((reads     :initarg :reads     :accessor reads    :initform nil)
    (writes    :initarg :writes    :accessor writes   :initform nil)
+   (key       :initarg :key       :reader  key       :initform nil)
    (in        :initarg :in        :reader  in-of     :initform nil)
    (waits     :initarg :waits     :accessor waits-of :initform nil)
-   (live      :initarg :live      :reader  livep     :initform nil)
+   (live      :initarg :live      :reader  live-of   :initform nil)
    (announces :initarg :announces :reader  announces :initform nil)
    (refreshes :initarg :refreshes :reader  refreshes :initform nil)
    (cached    :initform +unread+ :accessor cached)
@@ -100,14 +103,70 @@ the same entry every time; ENTRIES answers them all, already made."))
    (waiting   :initform nil :accessor waiting)
    (scheduled :initform nil :accessor scheduled))
   (:documentation "Works its value out and remembers it until something it read
-moves. LIVE says the world behind it answers and nothing here sees that move, so it
-is asked every time. IN is another image, and READS is then a form worked out
-there."))
+moves. KEY, with OF, says it is a name a mount answers for by method. LIVE says
+the world behind it answers and nothing here sees that move, so it is asked every
+time. IN is another image, and READS is then a form worked out there."))
 
 (defmethod savedp ((x value)) t)
 
-(defmethod livep ((d mount))
-  (and (or (names-of d) (each-of d) (entries-of d)) t))
+(defmethod livep ((n derived) &optional name)
+  (declare (ignore name))
+  (live-of n))
+
+(defmethod livep ((d mount) &optional name)
+  (if name
+      t
+      (and (or (names-of d) (each-of d) (entries-of d)) t)))
+
+(defgeneric read (mount name)
+  (:documentation "What MOUNT answers for NAME, a keyword. A method on a kind of
+mount and a name is what stands at that name under every mount of that kind.")
+  (:method ((d mount) name) (declare (ignore name)) nil))
+
+(defgeneric write (mount name value)
+  (:documentation "What writing NAME under MOUNT means.")
+  (:method ((d mount) name value)
+    (declare (ignore value))
+    (error "~a answers ~(~a~), and takes no writing there." (full-name d) name)))
+
+(defvar *served* (make-hash-table :test 'eq :synchronized t)
+  "What each kind of mount answers by method, worked out once per class for as
+long as the methods stay the same.")
+
+(defun %methods ()
+  (append (reverse (sb-mop:generic-function-methods #'read))
+          (reverse (sb-mop:generic-function-methods #'write))))
+
+(defun served (d)
+  "The names D answers for by a method on READ or WRITE, as keywords, in the order
+they were said."
+  (let* ((class (class-of d))
+         (all (%methods))
+         (had (gethash class *served*)))
+    (if (and had (eql (car had) (length all)))
+        (cdr had)
+        (let ((names (loop :for m :in all
+                           :for (on key) := (sb-mop:method-specializers m)
+                           :when (and (typep on 'class) (typep d on)
+                                      (typep key 'sb-mop:eql-specializer))
+                             :collect (sb-mop:eql-specializer-object key))))
+          (setf names (remove-duplicates names :from-end t))
+          (setf (gethash class *served*) (cons (length all) names))
+          names))))
+
+(defun %key-of (d name)
+  (find name (served d)
+        :key (lambda (k) (string-downcase (symbol-name k))) :test #'equal))
+
+(defun %doc (d key)
+  (let ((m (find-if (lambda (m)
+                      (destructuring-bind (on k &rest more) (sb-mop:method-specializers m)
+                        (declare (ignore more))
+                        (and (typep on 'class) (typep d on)
+                             (typep k 'sb-mop:eql-specializer)
+                             (eq key (sb-mop:eql-specializer-object k)))))
+                    (%methods))))
+    (and m (documentation m t))))
 
 (defun kind (x)
   (typecase x (mount :mount) (value :value) (derived :derived)))
@@ -171,13 +230,28 @@ nothing."
 
 (defun %listed (d) (mapcar #'princ-to-string (funcall (names-of d))))
 
+(defun %answered (d key)
+  "The derived under D for a name it answers by method, made once."
+  (let ((name (string-downcase (symbol-name key))))
+    (child d name
+           (lambda ()
+             (make-instance 'derived :name name :key key :of d :parent d
+                                     :live (livep d name)
+                                     :describes (%doc d key))))))
+
+(defun %answering (d)
+  (loop :for key :in (served d)
+        :unless (d:lookup (by-name d) (string-downcase (symbol-name key)))
+          :collect (%answered d key)))
+
 (defgeneric entries (x)
-  (:documentation "What is under X, in order.")
+  (:documentation "What is under X, in order: what was mounted, then what it
+answers for by method.")
   (:method ((x standing)) nil)
   (:method ((d mount))
     (cond ((entries-of d) (funcall (entries-of d)))
           ((names-of d) (remove nil (mapcar (lambda (each) (%kid d each)) (%listed d))))
-          (t (d:as :list (beneath d))))))
+          (t (append (d:as :list (beneath d)) (%answering d))))))
 
 (defgeneric entry (x name)
   (:documentation "What X has under NAME, or nothing.")
@@ -187,7 +261,9 @@ nothing."
       (cond ((entries-of d)
              (find name (funcall (entries-of d)) :key #'name :test #'equal))
             ((each-of d) (%kid d name))
-            (t (d:lookup (by-name d) name))))))
+            (t (or (d:lookup (by-name d) name)
+                   (let ((key (%key-of d name)))
+                     (and key (%answered d key)))))))))
 
 (defgeneric depend (x on)
   (:method (x (on standing))
@@ -297,14 +373,6 @@ makes a file on the disk.")
 owners put there.")
   (:method ((x standing) owner) (declare (ignore owner)) nil))
 
-(defun slots (object into &rest pairs)
-  "One value under INTO per slot of OBJECT named in PAIRS."
-  (loop :for (name slot) :on pairs :by #'cddr
-        :collect (mount (make-instance 'slot
-                                       :name (string-downcase (string name))
-                                       :object object :slot slot :into into)
-                        into)))
-
 (defgeneric verb (x name arguments)
   (:documentation "What writing (:toggle) and its like means.")
   (:method ((x standing) name arguments)
@@ -331,26 +399,26 @@ otherwise an instruction to VERB."
   (and (d:seqp v) (plusp (d:size v)) (eq :quoted (d:lookup v 0))))
 
 (defgeneric works (n)
-  (:documentation "What a derived works out to. Answered by a class, or by the
-READS it was given.")
+  (:documentation "What a derived works out to: what the mount it is under answers
+for its name, or what a class answers, or the READS it was given.")
   (:method ((n derived))
-    (let ((f (reads n))) (and f (funcall f)))))
+    (cond ((key n) (read (of n) (key n)))
+          ((reads n) (funcall (reads n))))))
 
 (defgeneric takes (n value)
-  (:documentation "What writing a derived means. Answered by a class, or by the
-WRITES it was given.")
+  (:documentation "What writing a derived means: what the mount it is under does
+with its name, or what a class answers, or the WRITES it was given.")
   (:method ((n derived) value)
-    (let ((f (writes n)))
-      (unless f (error "~a is worked out, and takes no writing." (full-name n)))
-      (funcall f value))))
+    (cond ((key n) (write (of n) (key n) value))
+          ((writes n) (funcall (writes n) value))
+          (t (error "~a is worked out, and takes no writing." (full-name n))))))
 
 (defgeneric contents (x)
   (:documentation "What X holds: a mount the names under it, a value what was
 written, a derived what it works out to.")
   (:method ((d mount))
     (if (names-of d) (%listed d) (mapcar #'name (entries d))))
-  (:method ((x value)) (held x))
-  (:method ((x slot)) (slot-value (object-of x) (slot-of x))))
+  (:method ((x value)) (held x)))
 
 (defgeneric holding (x)
   (:documentation "Which of :BRANCH, :HELD, :WORKING or :ABSENT stands here.")
@@ -361,12 +429,7 @@ written, a derived what it works out to.")
   (:method (v (d mount))
     (declare (ignore v))
     (error "~a is a mount; what is written is what is under it." (full-name d)))
-  (:method (v (x value)) (setf (held x) v))
-  (:method (v (x slot))
-    (setf (slot-value (object-of x) (slot-of x)) v)
-    (let ((o (object-of x)))
-      (when (and (kind o) (not (eq o (into-of x)))) (moved o)))
-    v))
+  (:method (v (x value)) (setf (held x) v)))
 
 (defmethod (setf contents) :around (v (x standing))
   (cond ((%verbp v) (verb x (d:lookup v 0) (d:as :list (fset:subseq v 1))))

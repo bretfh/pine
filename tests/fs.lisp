@@ -198,13 +198,9 @@ what a crash costs is everything since the image came up."
     (ignore-errors (delete-file file))
     (unwind-protect
          (with-tree
-           (let ((s (store:open-store file))
-                 (thing (make-instance 'job:thread :name "held" :on-fault :leave
-                                                   :runs (lambda () nil))))
+           (let ((s (store:open-store file)))
              (store:keeping s)
-             (fs:mount thing (fs:root))
-             (fs:slots thing thing "state" 'job:state)
-             (setf (fs:contents (fs:at "/held/state")) :awake)
+             (pine::write "/held/state" :awake)
              (is (equal '(("/held/state")) (%paths s "/held%"))
                  "written through, before any shutdown")
              (store:close-store s)))

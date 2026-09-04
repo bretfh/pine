@@ -154,20 +154,24 @@ and pine places nothing again."))
   "The system itself, where it runs: /proc/tiles."
   (at /proc/tiles))
 
+(defclass chosen (derived) ()
+  (:documentation "/wm/layout: which layout is in force, by name. Writing another's
+name lays the windows out that way: pine write /wm/layout wide."))
+
+(defmethod fs:livep ((n chosen) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n chosen))
+  (let ((s (%system)))
+    (when s (string-downcase (class-name (class-of (layout-of s)))))))
+
+(defmethod fs:takes ((n chosen) value)
+  (let ((s (%system)) (l (layout value)))
+    (when (and s l)
+      (setf (layout-of s) l)
+      (%placed s))))
+
 (defun %layout ()
-  "Which layout is in force, by name: pine write /wm/layout wide."
-  (make-instance 'derived :name "layout" :live t
-              :reads (lambda ()
-                       (let ((s (%system)))
-                         (when s
-                           (string-downcase
-                            (class-name (class-of (layout-of s)))))))
-              :writes (lambda (value)
-                        (let ((s (%system)) (l (layout value)))
-                          (when (and s l)
-                            (setf (layout-of s) l)
-                            (%placed s))))
-              :describes "which layout is in force"))
+  (make-instance 'chosen :name "layout" :describes "which layout is in force"))
 
 (defun %area (s)
   (declare (ignore s))

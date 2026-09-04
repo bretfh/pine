@@ -62,16 +62,23 @@ handed, or TELL and take the reply as a message." (of c)))))
     (format stream "~a ~a" (name j) (state j))))
 
 (defmethod initialize-instance :after ((j job) &key)
-  (fs:slots j j "state" 'state "tries" 'tries)
-  (fs:mount (make-instance 'fs:derived :name "said" :live t
-                                        :reads (lambda () (said j))
-                                        :describes "the last lines it said")
-             j)
-  (fs:mount (make-instance 'fs:derived :name "tell" :live t
-                                        :writes (lambda (value) (tell j value))
-                                        :describes "write here to give it something")
-             j)
   (fs:mount j (%proc)))
+
+(defmethod fs:read ((j job) (name (eql :state)))
+  "Which of stopped, starting, running, stopping, failed or held it is."
+  (state j))
+
+(defmethod fs:read ((j job) (name (eql :tries)))
+  "How many times it has been started."
+  (tries j))
+
+(defmethod fs:read ((j job) (name (eql :said)))
+  "The last lines it said."
+  (said j))
+
+(defmethod fs:write ((j job) (name (eql :tell)) value)
+  "Give it something."
+  (tell j value))
 
 (defun %proc () (fs:at "/proc"))
 

@@ -42,7 +42,7 @@ rows, what says the world behind it moved, and how often to ask again."))
 path resolves, and says :ABSENT rather than NIL."))
 
 (defmethod fs:holding ((n unanswered)) :absent)
-(defmethod fs:livep ((n unanswered)) t)
+(defmethod fs:livep ((n unanswered) &optional name) (declare (ignore name)) t)
 
 (defun %said (name) (string-downcase (princ-to-string name)))
 
@@ -134,7 +134,7 @@ not this machine is the one that can answer it."
                                :reads (lambda () (fs:reading n) (funcall reads))
                                :parent n :writes writes)))
 
-(defmethod fs:livep ((d device)) t)
+(defmethod fs:livep ((d device) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:contents ((d device)) (words d))
 

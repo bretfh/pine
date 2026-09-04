@@ -6,16 +6,21 @@ laid over it did, and the frame read this document -- so saying so here is the
 edge, and whatever else is reading it hears the same way."
   (fs:moved document))
 
+(defclass typed (fs:derived) ()
+  (:documentation "/edit/key: where a key arrives. Writing a chord here is typing
+it, so a keyboard, a test and another pine all press keys the same way."))
+
+(defmethod fs:livep ((n typed) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n typed)) (ui:spelled (ui:pending)))
+
+(defmethod fs:takes ((n typed) value)
+  (fs:writing
+    (dolist (k (ui:chord (princ-to-string value)))
+      (dispatch k))))
+
 (defun %key ()
-  "Where a key arrives. Writing a chord here is typing it, so a keyboard, a test and
-another pine all press keys the same way."
-  (make-instance 'fs:derived :name "key" :live t
-              :reads (lambda () (ui:spelled (ui:pending)))
-              :writes (lambda (value)
-                        (fs:writing
-                          (dolist (k (ui:chord (princ-to-string value)))
-                            (dispatch k))))
-              :describes "write a chord here to type it"))
+  (make-instance 'typed :name "key" :describes "write a chord here to type it"))
 
 (defun %sources ()
   (completes :command

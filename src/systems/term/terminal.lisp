@@ -214,9 +214,22 @@ screen; writing it is typing at the program."
       (setf (fd-of term) fd (pid-of term) pid))
     (setf (vt:term-input-fn vt) (lambda (said) (send term said))
           (job:runs term) (%reading term))
-    (fs:slots term term "wide" 'wide "tall" 'tall)
     (job:supervise term)
     (job:start term)
     (%shown term)
     term))
 
+
+(defmethod fs:read ((tm terminal) (name (eql :wide)))
+  "How many columns it has."
+  (wide tm))
+
+(defmethod fs:write ((tm terminal) (name (eql :wide)) value)
+  (setf (wide tm) value))
+
+(defmethod fs:read ((tm terminal) (name (eql :tall)))
+  "How many lines it has."
+  (tall tm))
+
+(defmethod fs:write ((tm terminal) (name (eql :tall)) value)
+  (setf (tall tm) value))

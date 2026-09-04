@@ -274,48 +274,61 @@ the place they were looking at."
   (let ((i (parse-integer (princ-to-string name) :junk-allowed t)))
     (when i (find i (faults) :key #'id))))
 
-(defun %fault (name)
-  "One fault, at a place. Writing a restart's name takes it: the thread is still
-standing there, here or in another image, so this is the same act as taking one in
-the debugger."
-  (when (%at name)
-    (flet ((it () (%at name)))
-      (make-instance 'fs:mount :name name
-                  :names (constantly '("said" "offers" "taken"))
-                  :each (lambda (field)
-                          (cond ((equal field "said")
-                                 (make-instance 'fs:derived :name field :live t
-                                             :reads (lambda ()
-                                                      (let ((f (it)))
-                                                        (and f (princ-to-string (condition-of f)))))))
-                                ((equal field "offers")
-                                 (make-instance 'fs:derived :name field :live t
-                                             :reads (lambda ()
-                                                      (let ((f (it)))
-                                                        (when f (defer f) (offers f))))))
-                                ((equal field "taken")
-                                 (make-instance 'fs:derived :name field :live t
-                                             :reads (lambda () (let ((f (it))) (and f (taken f))))
-                                             :writes (lambda (value)
-                                                       (let ((f (it)))
-                                                         (when f (take f (princ-to-string value)))))))))))))
+(defclass fault-mount (fs:mount) ()
+  (:documentation "One fault at /fault/<id>. Writing a restart's name takes it: the
+thread is still standing there, here or in another image, so this is the same act
+as taking one in the debugger."))
 
-(defun %expected ()
-  (make-instance 'fs:derived :name "expected" :live t
-                 :reads (lambda ()
-                          (loop :for (why broke at) :in (expecteds)
-                                :collect (list :why why :at at
-                                               :said (princ-to-string broke))))
-                 :writes (lambda (value)
-                           (unless value (forget-expected)))
-                 :describes "what was let go of, and why nothing was an answer"))
+(defmethod fs:livep ((n fault-mount) &optional name) (declare (ignore name)) t)
 
-(fs:mount (lambda ()
-            (make-instance 'fs:mount
-                           :names (lambda () (cons "expected" (mapcar #'id (faults))))
-                           :each (lambda (name)
-                                   (if (equal name "expected") (%expected) (%fault name)))
-                           :describes "what has broken, and what it stands in"))
+(defun %it (n) (%at (fs:name n)))
+
+(defmethod fs:read ((n fault-mount) (name (eql :said)))
+  "What broke, as it said it."
+  (let ((f (%it n))) (and f (princ-to-string (condition-of f)))))
+
+(defmethod fs:read ((n fault-mount) (name (eql :offers)))
+  "The restarts it is standing in."
+  (let ((f (%it n))) (when f (defer f) (offers f))))
+
+(defmethod fs:read ((n fault-mount) (name (eql :taken)))
+  "Which restart was taken; writing one takes it."
+  (let ((f (%it n))) (and f (taken f))))
+
+(defmethod fs:write ((n fault-mount) (name (eql :taken)) value)
+  (let ((f (%it n))) (when f (take f (princ-to-string value)))))
+
+(defclass expected (fs:derived) ()
+  (:documentation "What was let go of, and why nothing was an answer. Writing
+nothing here forgets them."))
+
+(defmethod fs:livep ((n expected) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n expected))
+  (loop :for (why broke at) :in (expecteds)
+        :collect (list :why why :at at :said (princ-to-string broke))))
+
+(defmethod fs:takes ((n expected) value)
+  (unless value (forget-expected)))
+
+(defclass broken (fs:mount) ()
+  (:documentation "/fault: every fault that has stood, by number, and what was
+expected."))
+
+(defmethod fs:livep ((d broken) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:entry ((d broken) name)
+  (let ((name (princ-to-string name)))
+    (cond ((equal name "expected")
+           (fs:child d name (lambda () (make-instance 'expected :name name :parent d))))
+          ((%at name)
+           (fs:child d name (lambda () (make-instance 'fault-mount :name name :parent d)))))))
+
+(defmethod fs:entries ((d broken))
+  (cons (fs:entry d "expected")
+        (remove nil (mapcar (lambda (f) (fs:entry d (id f))) (faults)))))
+
+(fs:mount (lambda () (make-instance 'broken :describes "what has broken, and what it stands in"))
           "/fault")
 
 

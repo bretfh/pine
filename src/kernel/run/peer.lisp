@@ -160,19 +160,31 @@ asking that pine to say when it moves."))
 (defun remote (p where name &optional (kind :dir))
   "What stands at WHERE in another pine, of the kind it says: a dir listing what that
 pine lists, or a leaf whose read and write cross to it."
-  (if (eq kind :dir)
-      (make-instance 'remote-dir :name name :peer p :where where :describes (uri p)
-                     :names (lambda () (%crossed p where (list :entries)))
-                     :each (lambda (child)
-                             (let* ((child (princ-to-string child))
-                                    (kind (%crossed p where (list :entry child))))
-                               (when kind
-                                 (remote p (%under where child) child kind)))))
-      (make-instance 'remote-leaf :name name :peer p :where where :describes (uri p)
-                     :live t
-                     :reads (lambda () (said:took (%crossed p where (list :contents))))
-                     :writes (lambda (value)
-                               (%crossed p where (list :write (said:said value)))))))
+  (make-instance (if (eq kind :dir) 'remote-dir 'remote-leaf)
+                 :name name :peer p :where where :describes (uri p)))
+
+(defmethod fs:livep ((n remote-dir) &optional name) (declare (ignore name)) t)
+(defmethod fs:livep ((n remote-leaf) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:entries ((n remote-dir))
+  (remove nil (mapcar (lambda (child) (fs:entry n child))
+                      (%crossed (peer-of n) (where-of n) (list :entries)))))
+
+(defmethod fs:entry ((n remote-dir) name)
+  (let ((child (princ-to-string name)))
+    (fs:child n child
+              (lambda ()
+                (let ((kind (%crossed (peer-of n) (where-of n) (list :entry child))))
+                  (when kind
+                    (let ((it (remote (peer-of n) (%under (where-of n) child) child kind)))
+                      (setf (fs:parent it) n)
+                      it)))))))
+
+(defmethod fs:works ((n remote-leaf))
+  (said:took (%crossed (peer-of n) (where-of n) (list :contents))))
+
+(defmethod fs:takes ((n remote-leaf) value)
+  (%crossed (peer-of n) (where-of n) (list :write (said:said value))))
 
 (defmethod watch:watch ((n remote) tells &key every name tells-when poll for)
   "Watching a place in another pine is asking that pine to say when it moves. The

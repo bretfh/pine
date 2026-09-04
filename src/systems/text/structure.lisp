@@ -23,16 +23,17 @@
         :while at
         :when (typep at 'document) :do (return at)))
 
+(defmethod fs:read ((r region) (name (eql :text)))
+  "What it covers."
+  (covered r))
+
+(defmethod fs:write ((r region) (name (eql :text)) value)
+  (setf (covered r) value))
+
 (defun %region (under name covers)
   (let ((r (fs:child under name
                      (lambda ()
-                       (let ((r (make-instance 'region :name name :parent under
-                                                       :covers covers)))
-                         (fs:mount (make-instance 'fs:derived :name "text" :live t
-                                                   :reads (lambda () (covered r))
-                                                   :writes (lambda (v) (setf (covered r) v)))
-                                    r)
-                         r)))))
+                       (make-instance 'region :name name :parent under :covers covers)))))
     (setf (covers r) covers)
     r))
 

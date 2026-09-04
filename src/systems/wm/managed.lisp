@@ -104,20 +104,43 @@ be. Until something places it there is nothing to say."
 what pine wants done about it. Nothing under src/ writes the placement: a window
 manager is a system that does, and the answer is total -- a window it does not name
 is hidden. What is wanted is taken once, so nothing is done twice."
-  (let ((all (list (make-instance 'fs:derived :name "said" :live t
-                               :reads (lambda () (told c))
-                               :writes (lambda (value)
-                                         (setf (said c) value)
-                                         (fs:moved c))
-                               :describes "what the compositor handed over")
-                   (make-instance 'fs:derived :name "placement" :live t
-                               :reads (lambda () (where c))
-                               :writes (lambda (value)
-                                         (setf (where c) (d:as :list value))
-                                         (fs:moved c))
-                               :describes "where each window goes")
-                   (make-instance 'fs:derived :name "wants" :live t
-                               :reads (lambda () (take c))
-                               :writes (lambda (value) (asked c value))
-                               :describes "what pine wants done about it"))))
-    (setf (compositor:parts c) (append (compositor:parts c) all))))
+  (setf (compositor:parts c)
+        (append (compositor:parts c)
+                (list (make-instance 'handed :name "said" :of c
+                                     :describes "what the compositor handed over")
+                      (make-instance 'placement :name "placement" :of c
+                                     :describes "where each window goes")
+                      (make-instance 'wanted :name "wants" :of c
+                                     :describes "what pine wants done about it")))))
+
+(defclass handed (fs:derived) ()
+  (:documentation "/wm/said: what the process holding the connection last saw."))
+
+(defmethod fs:livep ((n handed) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n handed)) (told (fs:of n)))
+
+(defmethod fs:takes ((n handed) value)
+  (setf (said (fs:of n)) value)
+  (fs:moved (fs:of n)))
+
+(defclass placement (fs:derived) ()
+  (:documentation "/wm/placement: where each window goes. What a window manager
+writes; a window it does not name is hidden."))
+
+(defmethod fs:livep ((n placement) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n placement)) (where (fs:of n)))
+
+(defmethod fs:takes ((n placement) value)
+  (setf (where (fs:of n)) (d:as :list value))
+  (fs:moved (fs:of n)))
+
+(defclass wanted (fs:derived) ()
+  (:documentation "/wm/wants: what pine wants done about the windows, taken once."))
+
+(defmethod fs:livep ((n wanted) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n wanted)) (take (fs:of n)))
+
+(defmethod fs:takes ((n wanted) value) (asked (fs:of n) value))

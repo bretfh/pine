@@ -127,10 +127,15 @@ something is written here, and what was written after. Saved only once written."
               :do (setf (gethash k out) (%as-face plist))))
     out))
 
+(defclass in-force (fs:derived) ()
+  (:documentation "Every face in force, by name, worked out once and kept until a
+face or the theme moves."))
+
+(defmethod fs:works ((n in-force)) (%in-force (fs:of n)))
+
 (defmethod initialize-instance :after ((d face-dir) &key)
   (setf (in-force-of d)
-        (make-instance 'fs:derived :name "in force" :parent d
-                       :reads (lambda () (%in-force d)))))
+        (make-instance 'in-force :name "in force" :parent d :of d)))
 
 (defmethod fs:entries ((d face-dir))
   (let ((had (call-next-method)))

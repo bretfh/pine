@@ -14,11 +14,6 @@ using cannot be had by turning something on afterwards and doing it again.")
   "How many samples an instrument keeps. Enough for a p95 that means something,
 small enough that a hundred instruments cost nothing to hold.")
 
-(defparameter +fields+ '("count" "per-second" "mean" "p50" "p95" "worst" "last"
-                         "total" "seconds")
-  "What an instrument answers for, as paths. Milliseconds where it is a duration,
-because that is what a person reads a frame in.")
-
 (defclass instrument (fs:mount)
   ((kind  :initarg :kind :reader kind-of)
    (count :initform 0   :reader count-of)
@@ -39,11 +34,21 @@ steps in four millisecond jumps, which cannot see a frame, let alone a swap."
     (+ (* seconds 1000000000) nanoseconds)))
 
 (defmethod initialize-instance :after ((it instrument) &key)
-  (setf (at-of it) (now))
-  (dolist (field +fields+)
-    (fs:mount (make-instance 'fs:derived :name field :live t
-                              :reads (lambda () (%field (reading it) field)))
-               it)))
+  (setf (at-of it) (now)))
+
+(macrolet ((field (name &optional doc)
+             `(defmethod fs:read ((it instrument) (name (eql ,name)))
+                ,@(when doc (list doc))
+                (%field (reading it) ,(string-downcase (symbol-name name))))))
+  (field :count "How many samples, or what they counted.")
+  (field :per-second)
+  (field :mean "Milliseconds, where it is a duration.")
+  (field :p50)
+  (field :p95)
+  (field :worst)
+  (field :last)
+  (field :total)
+  (field :seconds "How long it has been measured for."))
 
 (defun %metric () (fs:at "/metric"))
 

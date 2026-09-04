@@ -35,11 +35,17 @@ from this: a key it was never told about is one it will not hand over."
                 (setf *pending* (if (eq answer :pending) typed nil))
                 (unless (eq answer :pending) (return answer))))))
 
+(defclass pressed (fs:derived) ()
+  (:documentation "/wm/key: where a chord the compositor took arrives. Writing one
+here is pressing it, so a keyboard, a test and another pine all press the same
+way."))
+
+(defmethod fs:livep ((n pressed) &optional name) (declare (ignore name)) t)
+
+(defmethod fs:works ((n pressed)) (ui:spelled (pending)))
+
+(defmethod fs:takes ((n pressed) value) (dispatch value))
+
 (defun keys-node ()
-  "Where a chord the compositor took arrives. Writing one here is pressing it, so a
-keyboard, a test and another pine all press the same way."
-  (make-instance 'fs:derived :name "key" :live t
-              :reads (lambda () (ui:spelled (pending)))
-              :writes #'dispatch
-              :describes "write a chord here to press it"))
+  (make-instance 'pressed :name "key" :describes "write a chord here to press it"))
 
