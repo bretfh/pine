@@ -39,8 +39,15 @@ crosses because it is there, not because somebody remembered to list it."
 (defun tag (widget)
   (intern (symbol-name (class-name (class-of widget))) :keyword))
 
+(defun %widgets ()
+  "Every kind of widget there is, found in the class graph, so one written in a
+config crosses the wire and comes back like the rest."
+  (labels ((under (c) (cons c (mapcan #'under (c2mop:class-direct-subclasses c)))))
+    (under (find-class 'widget))))
+
 (defun %class (tag)
-  (or (find-symbol (symbol-name tag) :pine/ui)
+  (or (find (symbol-name tag) (%widgets)
+            :key (lambda (c) (symbol-name (class-name c))) :test #'string=)
       (error "no widget crosses the wire as ~s" tag)))
 
 (defun %ordered (props)

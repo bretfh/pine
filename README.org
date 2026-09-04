@@ -9,40 +9,39 @@ widgets, to managing your windows (wayland only & leveraging river's protocol).
 Highly experimental and subject to change but im using it for my own needs.
 
 [[file:doc/architecture.org][doc/architecture.org]] is what it is and how it is
-put together so far. 
+put together so far.
 
 * The shape of it
 
-Everything addressable is a node, and the tree of classes under =node= is the
-system:
+Everything is at a name in one tree, and three kinds of thing stand at a name:
 
-: node                     a name, where it sits, what is under it
-: |- value                 holds one
-: |- derived               works one out, and recomputes when its inputs change
-: |  \- surface            works out a widget tree; a role says where it goes
-: |- mount                 a namespace from somewhere else, grafted in
-: |  |- directory          a directory on this machine
-: |  \- peer               another pine, here or on another machine
-: |- job                   something that runs
-: |  |- thread             blocks on something
-: |  |- actor              takes messages in order
-: |  |- program            an os child that is not lisp
-: |  |- image              a lisp we can evaluate in
-: |  \- system             a package pine loaded
-: \- document              text, and the structure its mode gives it
-:    \- region             a span of one, with its own sub-regions
+: mount        serves what is under it: /dev/audio, /text/notes, /proc/edit
+: value        holds what was written: /dev/audio/volume, once you have set it
+: derived      is worked out from what it read, and again only when that moves
 
-A =peer= is another pine instance mounted: another pine that you can read and
-write to.
+A kind of mount answers for the names under it by methods on =read= and
+=write=, one per name, and =ls= lists them. Everything pine has is a class that
+serves a subtree that way, and a directory on disk or another pine is mounted the
+same way:
+
+: mount                    serves a subtree
+: |- job                   something that runs, at /proc/<name>
+: |  |- thread, actor, program, image
+: |  \- system             a package pine loaded; it starts and stops
+: |- document              text, and the structure its mode gives it, at /text/<name>
+: |  \- region             a span of one, with its own sub-regions
+: |- device                something the machine has, at /dev/<name>
+: |- surface               a widget tree and where it goes, at /ui/surface/<name>
+: |- directory             a directory on this machine
+: \- peer                  another pine, here or on another machine
 
 * The protocol
 
-Four primary behaviors pine provides onto it's ns, it's virtual fs tree which
-provides all of it's behavior within and to peers or through json for handling
-with other languages or through the cli via text/json. A node represents a
-persistent immutable value, text of a file, text of a remote file, or even
-values from evaluation. Nodes answers by their class, so the same call reaches a
-document, a running job, a device or another machine through the same interface:
+Four verbs, on the tree, from inside pine, from the command line, and as a line
+of json each way over a socket for anything else. A read answers now; a write
+makes the place if nothing stands there; a watch says so whenever it moves; ls
+lists what is under a name. Which class answers is the mount's business, so the
+same four words reach a document, a running job, a device or another machine:
 
 : ./pine read  /dev/audio/volume
 : ./pine write /dev/net/wifi "cafe-guest"
@@ -77,10 +76,11 @@ each is written in the same language as everything You load in systems with use:
 : ./pine use desk     # a bar, and the panels it opens
 : ./pine use wm       # the compositor, in the namespace
 
-Dropping one takes its entire tree out of pine; surfaces, its commands with
-it, and then paths it added stop resolving:
+What a system mounts while it starts is its, and dropping it takes that back:
+its surfaces, its devices, the jobs it started, the chords it bound. What its
+file defined at the top level stays defined, the way a defun does:
 
-: ./pine drop
+: ./pine drop desk
 
 Pine is designed with niri and river in mind, but the idea is pine be unbiased
 to work with an existing wm or more directly with river's protocol:
@@ -94,39 +94,44 @@ A layout is a class with one =arrange= method, so a config writes its own.
 
 * Making it yours
 
-=pine/user= is the primary package in interfacing with pine.
-=~/.config/pine/init.lisp= is the daemon's entrypoint for reading configurations.
+=~/.config/pine/init.lisp= is read into =pine/user=, a package that uses =cl=
+and =pine=. An app is a package of its own that uses the same two, and takes a
+system's words as it needs them: =(use-package '(#:pine/ui #:pine/mode
+#:pine/host))=. The words are symbols the compiler resolved, so one misspelled
+is a build that fails rather than one that quietly is not in the language.
 
-It is a =defpackage=, in =src/user.lisp=, and a system loaded later puts its own
-vocabulary there as it loads. So the words are symbols the compiler resolved,
-and a word misspelled is a build that fails rather than one that quietly is not
-in the language.
+There are six sentences to say, and each is said one way, by a config and by
+pine's own bar, editor and window manager alike:
 
 #+begin_src lisp
-  (defpackage #:notes (:use #:pine/user))
+  (defpackage #:notes (:use #:cl #:pine))
   (in-package #:notes)
 
-  (defclass notes (system) ())                    ; a system
-  (defmethod start ((s notes)) (attach (make-instance 'diary :name "notes")))
+  (defclass notes (system) ())                    ; a system: at /proc/notes once used
+  (defmethod start ((s notes))
+    (mount (make-instance 'mount) "/notes")       ; a thing stands at a name
+    (defcommand "note" (title said)               ; a command, run by name
+      (:describes "write something down")
+      (write (format nil "/notes/~a" title) said))
+    (bind 'text "C-c n" "note")                   ; a chord, in a mode
+    (defsurface sticky (:as 'overlay)             ; a surface: what to draw, where
+      (label (read "/notes/today" :else ""))))
 
-  (defclass note (text) ())                       ; a mode
-  (defmethod structure ((m note) d) ...)          ; how its text divides
-  (defmethod press ((m note) d key) ...)          ; what a key means in it
+  (defclass note (prose) ())                      ; a mode: what kind of text
+  (defmethod handles ((m note)) '("*.note"))      ; which files are that kind
+  (defmethod regions ((m note) document) ...)     ; what its text divides into
 
-  (defclass diary (derived) ())                   ; a kind of node
-  (defmethod contents ((n diary)) ...)
-
-  (defclass ticker (overlay) ())                  ; a kind of surface
-  (defmethod anchor ((r ticker) w h) ...)         ; where it goes
-  (defmethod shows ((r ticker)) :always)          ; :always or :when-asked
+  (defdevice vcs :describes "the checkout")       ; a device: something the machine has
+  (defbacking vcs (:needs "git")                  ; one way of answering it here
+    (branch :reads (sh "git rev-parse --abbrev-ref HEAD")))
 
   (defclass column-of-two (layout) ())            ; a way to lay windows out
   (defmethod arrange ((l column-of-two) windows area) ...)
-
-  (defsurface clock (:as 'bar)
-    (row (label (read "/dev/clock/hour")) (label ":")
-         (label (read "/dev/clock/minute"))))
 #+end_src
+
+A thing that serves a subtree of its own is a class under =mount=, answering
+for each name under it with a method on =read= or =write=; that is how a job,
+a document and a device are written, and it is the same for yours.
 
 You can see what a config draws before you run it. =make shot= renders the frame
 and every surface as PNGs, with no display and no compositor:
@@ -134,9 +139,11 @@ and every surface as PNGs, with no display and no compositor:
 : make shot CONFIG=~/.config/pine/init.lisp
 
 - [[file:examples/init.lisp][examples/init.lisp]] is a config to copy.
-- [[file:examples/notes.lisp][examples/notes.lisp]] is a small app created at =/notes=, a mode that divides its
-  text into headings, a role and a surface of its own, its own commands and a
-  chord bound to the keyboard. 
+- [[file:examples/notes/notes.lisp][examples/notes/notes.lisp]] is a small app: a
+  place at =/notes=, a mode that divides its text into headings, a role and a
+  surface of its own, its own commands and a chord bound to the keyboard.
+- [[file:examples/vcs/vcs.lisp][examples/vcs/vcs.lisp]] is an app that brings a
+  device of its own, answered by git or by jj, whichever this machine has.
 
 : ./pine use notes
 : ./pine run note today "it works"

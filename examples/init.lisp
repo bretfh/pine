@@ -61,12 +61,13 @@
 (defclass sidebar (layout) ())
 
 (defmethod arrange ((l sidebar) windows area)
-  (destructuring-bind (x y width height) area
-    (loop :for id :in windows
-          :for i :from 0
-          :collect (if (zerop i)
-                       (list id x y 320 height)
-                       (list id (+ x 320) y (- width 320) height)))))
+  (loop :for id :in windows
+        :for i :from 0
+        :collect (if (zerop i)
+                     (placed id :x (x-of area) :y (y-of area)
+                                :wide 320 :tall (tall-of area))
+                     (placed id :x (+ (x-of area) 320) :y (y-of area)
+                                :wide (- (wide-of area) 320) :tall (tall-of area)))))
 
 ;; A role is a class too, and it is the whole of what a kind of surface means:
 ;; one ANCHOR method puts a new one on screen and nothing showing it needs knowledge

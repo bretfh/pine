@@ -7,7 +7,7 @@
    #:overlay #:anchor #:placing #:inset #:defsurface #:column #:label)
   (:local-nicknames (#:fs #:pine/fs))
   (:shadow #:note)
-  (:export #:notes #:note #:journal #:sticky))
+  (:export #:notes #:note #:sticky))
 (in-package #:notes)
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
@@ -16,17 +16,11 @@
 ;;; package of its own. Nothing under src/ names this file, and this file names
 ;;; nothing private. It is the editor's equal, and that is the whole point.
 
-;;; A kind of node. Its children are the entries, so an entry is a place: read it
-;;; for what it says, write it to say something else, and anything watching one
-;;; hears about it -- from this image or from another machine.
-
-(defclass journal (mount) ()
-  (:documentation "Everything written down. /notes is one of these.
-
-There is no map of entries here. An entry is a node under this one, which is a
-place, is saved, and is watched, and keeping the text in a variable beside the tree
-would be keeping it twice -- one of them the copy that persists and one of them the
-copy anything else can reach."))
+;;; A place. /notes is a mount and each note a value under it: read one for what
+;;; it says, write it to say something else, and anything watching it hears --
+;;; from this image or from another machine. There is no map of notes beside the
+;;; tree: keeping the text in a variable would be keeping it twice, one copy that
+;;; persists and one anything else can reach.
 
 ;;; A mode. The chain is class inheritance, so this is prose with one thing of
 ;;; its own to say: what its text divides into.
@@ -97,7 +91,7 @@ corner of the screen showing the last one."))
 
 
 (defmethod start ((s notes))
-  (mount (make-instance 'journal :describes "what has been written down") "/notes")
+  (mount (make-instance 'mount :describes "what has been written down") "/notes")
   (defcommand "note" (title said)
     (:describes "write something down"
      :asks '((:prompt "Note: ")))
