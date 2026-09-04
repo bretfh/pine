@@ -137,26 +137,36 @@ long as the methods stay the same.")
   (append (reverse (sb-mop:generic-function-methods #'read))
           (reverse (sb-mop:generic-function-methods #'write))))
 
+(defun %count ()
+  (+ (length (sb-mop:generic-function-methods #'read))
+     (length (sb-mop:generic-function-methods #'write))))
+
+(defun %served (d)
+  "What D answers for by method, as (key . name) pairs in the order they were
+said, worked out once per class and again only when a method is added. Asked on
+every lookup of a name, so nothing here conses until it has to."
+  (let* ((class (class-of d))
+         (count (%count))
+         (had (gethash class *served*)))
+    (if (and had (eql (car had) count))
+        (cdr had)
+        (let ((keys (loop :for m :in (%methods)
+                          :for (on key) := (sb-mop:method-specializers m)
+                          :when (and (typep on 'class) (typep d on)
+                                     (typep key 'sb-mop:eql-specializer))
+                            :collect (sb-mop:eql-specializer-object key))))
+          (let ((pairs (loop :for key :in (remove-duplicates keys :from-end t)
+                             :collect (cons key (string-downcase (symbol-name key))))))
+            (setf (gethash class *served*) (cons count pairs))
+            pairs)))))
+
 (defun served (d)
   "The names D answers for by a method on READ or WRITE, as keywords, in the order
 they were said."
-  (let* ((class (class-of d))
-         (all (%methods))
-         (had (gethash class *served*)))
-    (if (and had (eql (car had) (length all)))
-        (cdr had)
-        (let ((names (loop :for m :in all
-                           :for (on key) := (sb-mop:method-specializers m)
-                           :when (and (typep on 'class) (typep d on)
-                                      (typep key 'sb-mop:eql-specializer))
-                             :collect (sb-mop:eql-specializer-object key))))
-          (setf names (remove-duplicates names :from-end t))
-          (setf (gethash class *served*) (cons (length all) names))
-          names))))
+  (mapcar #'car (%served d)))
 
 (defun %key-of (d name)
-  (find name (served d)
-        :key (lambda (k) (string-downcase (symbol-name k))) :test #'equal))
+  (car (find name (%served d) :key #'cdr :test #'string=)))
 
 (defun %doc (d key)
   (let ((m (find-if (lambda (m)
@@ -240,8 +250,8 @@ nothing."
                                      :describes (%doc d key))))))
 
 (defun %answering (d)
-  (loop :for key :in (served d)
-        :unless (d:lookup (by-name d) (string-downcase (symbol-name key)))
+  (loop :for (key . name) :in (%served d)
+        :unless (d:lookup (by-name d) name)
           :collect (%answered d key)))
 
 (defgeneric entries (x)

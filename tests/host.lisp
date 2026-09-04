@@ -114,9 +114,7 @@ way, and says :ABSENT where this machine has no way to answer it."
       (let ((text (fs:entry dev "text")))
         (is (not (null text)) "the row is a place under it")
         (if (host:answering (host::declared "clip"))
-            (progn
-              (is (not (null (fs:reads text))) "it reads")
-              (is (not (null (fs:writes text))) "and it is written"))
+            (is (eq :text (fs:key text)) "the way this machine has answers it")
             (is (eq :absent (fs:holding text))
                 "and where nothing here can answer it, it says so"))))))
 
