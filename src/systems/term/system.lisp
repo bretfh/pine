@@ -1,14 +1,3 @@
-(defpackage #:pine/term
-  (:use #:cl)
-  (:local-nicknames (#:edit #:pine/edit)
-                    (#:d #:pine/data)
-                    (#:text #:pine/text)
-                    (#:fs #:pine/fs)
-                    (#:job #:pine/run/job) (#:system #:pine/run/system)
-                    (#:command #:pine/run/command)
-                    (#:terminal #:pine/term/terminal))
-  (:export
-   #:current))
 (in-package #:pine/term)
 
 (defvar *counter* 0)
@@ -22,19 +11,19 @@ shows any other and a command acts on one the same way."))
 
 (defun current ()
   (let ((it (text:current)))
-    (and (typep it 'terminal:terminal) it)))
+    (and (typep it 'terminal) it)))
 
 (defun %fit (term win)
   "Give the program the size of the window showing it, so what it draws is what
 fits."
   (when (and term win)
-    (terminal:resize term (max 1 (edit:across win)) (max 1 (edit:down win)))))
+    (resize term (max 1 (edit:across win)) (max 1 (edit:down win)))))
 
 (defun %open (&key runs name)
   (let* ((name (or name (format nil "*shell*~[~:;-~:*~d~]"
                                  (d:swap *counter* #'1+))))
          (win (edit:focused))
-         (term (terminal:open-terminal name :runs runs
+         (term (open-terminal name :runs runs
                                             :wide (if win (edit:across win) 80)
                                             :tall (if win (edit:down win) 24))))
     (setf (text:current) term)
@@ -50,7 +39,7 @@ fits."
 (command:defcommand "terminal-interrupt" ()
     (:describes "interrupt what the terminal is running" :on '(shell "C-c C-c"))
   (let ((term (current)))
-    (when term (terminal:send term (string (code-char 3))) t)))
+    (when term (send term (string (code-char 3))) t)))
 
 (command:defcommand "terminal-close" ()
     (:describes "end this terminal" :on '(shell "C-c C-k"))
@@ -62,14 +51,14 @@ fits."
       t)))
 
 (command:defcommand "terminals" () (:describes "every terminal there is")
-  (loop :for each :in (terminal:terminals)
-        :collect (list (fs:name each) (terminal:runs each)
+  (loop :for each :in (terminals)
+        :collect (list (fs:name each) (runs each)
                        (job:state each))))
 
 (defmethod job:start ((s term)) s)
 
 (defmethod job:stop ((s term))
-  (dolist (each (terminal:terminals))
+  (dolist (each (terminals))
     (job:stop each)
     (job:forget (fs:name each))
     (text:kill (fs:name each)))

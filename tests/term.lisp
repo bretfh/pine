@@ -30,7 +30,7 @@ what the terminal is asked to colour."
     (is (typep term 'text:document))
     (is (typep term 'job:job))
     (is (job:alivep term))
-    (is (typep (text:mode-of term) 'pine/term/terminal:shell))
+    (is (typep (text:mode-of term) 'pine/term:shell))
     (is (eq term (text:current)))))
 
 (test writing-a-terminal-is-typing-at-the-program
@@ -49,9 +49,9 @@ what the terminal is asked to colour."
 
 (test a-terminals-size-is-a-node
   (with-terminal (term)
-    (is (eql (pine/term/terminal:wide term)
+    (is (eql (pine/term:wide term)
              (fs:contents (fs:at term "wide"))))
-    (pine/term/terminal:resize term 100 30)
+    (pine/term:resize term 100 30)
     (is (eql 100 (fs:contents (fs:at term "wide"))))
     (is (eql 30 (fs:contents (fs:at term "tall"))))))
 
@@ -96,7 +96,7 @@ thing, painted one way."
       (pine/run/command:run "terminal-close")
       (is (null (fs:at "/text" name)))
       (is (null (job:named name)))
-      (is (null (pine/term/terminal:terminals))))))
+      (is (null (pine/term:terminals))))))
 
 (test a-terminal-runs-a-program-and-its-screen-is-the-document
   "The whole of what a terminal is for, through the pty: what is typed reaches the
@@ -106,6 +106,6 @@ program and what it wrote is text a window shows."
     (setf (text:text term) (format nil "echo from-the-program~%"))
     (is (until (lambda () (search "from-the-program" (text:text term)))
                :seconds 5))
-    (pine/term/terminal:resize term 100 30)
+    (pine/term:resize term 100 30)
     (is (eql 100 (fs:contents (fs:at term "wide"))))
     (is (eql 30 (fs:contents (fs:at term "tall"))))))

@@ -1,15 +1,17 @@
-(defpackage #:pine/term/terminal
+(defpackage #:pine/term
   (:use #:cl)
-  (:local-nicknames (#:text #:pine/text)
+  (:local-nicknames (#:text #:pine/text) (#:edit #:pine/edit)
                     (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
+                    (#:system #:pine/run/system) (#:command #:pine/run/command)
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
   (:export
-   #:terminal #:shell #:open-terminal #:terminals #:send
-   #:resize #:runs #:wide))
-(in-package #:pine/term/terminal)
+   #:current #:terminal #:shell #:open-terminal #:terminals #:send
+   #:resize #:runs #:wide)
+  (:documentation "Programs with screens of their own, as documents."))
+(in-package #:pine/term)
 
 (defvar *shell* nil
   "What a terminal runs when nobody says. The login shell, as the environment
