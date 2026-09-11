@@ -1,99 +1,57 @@
 (in-package #:pine)
 
 (defun %cursor ()
-  "Where a command given no place looks: the node a session was moved to by CD, or
-the root. A default for an argument nobody supplied, and nothing more -- it is not
-a place a name can be measured from, so it reaches neither a config nor the wire."
-  (or (and session:*session* (session:in session:*session*)) (fs:root)))
+  (or (and listener:*listener* (listener:in listener:*listener*)) (fs:root)))
 
 (defun at (where &rest names)
-  "The node WHERE names, and NAMES on from there."
   (apply #'fs:at where names))
 
 (defun %leaf (where)
-  "Somewhere to write: what stands at WHERE, or a value made there."
-  (if (fs:kind where) where (fs:mount (make-instance 'fs:value) where)))
+  (or (fs:at where) (fs:make where :value)))
 
 (defun read (where &key (else nil elsep) await)
-  "What stands at WHERE, and which of four things that is.
-
-:HELD is a value, and NIL is one of them. :ABSENT is nothing standing there at all.
-:BRANCH is a name with things under it and nothing of its own, which is what /dev is.
-:WORKING is one being worked out, and what came back is what it last worked out to.
-All three answered NIL and nothing said which, so every caller guessed, and every one
-of them guessed the same way: OR, which reads a written NIL as an absence.
-
-AWAIT waits for the working-out rather than taking what stands, for as many seconds
-as it says. A read does not wait otherwise: what is worked out is asked for, what
-stands comes back, and WATCH is how anybody hears the new answer.
-
-Which it is is the node's own answer, not a walk of what is under it: a live one
-holds what the world says and is never asked what it has beneath.
-
-ELSE is what to say instead of nothing, said once where it is read rather than as an
-OR at every call site. It does not change the second answer: what to say and what was
-found are two questions."
   (let ((n (fs:at where)))
     (if (null n)
         (values (if elsep else nil) :absent)
-        (let* ((fs:*awaiting* (or await fs:*awaiting*))
-               (fs:*waiting-on* (if (numberp await) await fs:*waiting-on*))
+        (let* ((fs:*await-inline* (or await fs:*await-inline*))
+               (fs:*give-up-seconds* (if (numberp await) await fs:*give-up-seconds*))
                (value (fs:contents n)))
           (values (if (and (null value) elsep) else value)
-                  (fs:holding n))))))
+                  (fs:kind n)
+                  (fs:pendingp n))))))
 
 (defun standsp (where)
-  "Whether anything stands at WHERE."
   (and (fs:at where) t))
 
 (defun write (where value)
-  "Put VALUE at WHERE, making the place if nothing has been put there yet: a read
-finds what is there and a write makes what is not.
-
-A value, whatever it looks like. TOGGLE and the three below it are the words for
-telling a place to do something; this one is for putting something there, so a seq
-beginning with a keyword goes down as the seq it is."
   (setf (fs:contents (%leaf where)) (fs:as-value value)))
 
 (defun ls (where)
-  "The names directly under WHERE, and none where nothing stands.
-
-The fourth verb. It was a command and not a word, so a session could say it and a
-config could not."
   (let ((n (fs:at where)))
-    (if n (mapcar #'fs:name (fs:entries n)) (list))))
+    (if n (mapcar #'fs:name (fs:children n)) (list))))
 
 (defun watch (where tells &rest options)
-  "Say TELLS whenever what stands at WHERE moves. It is given the node and what it
-now holds.
-
-WHERE names a place the way the other three verbs do. Watching one nothing stands
-at is a mistake rather than a silence: the watcher would be told about a node the
-world is going to replace."
   (let ((n (fs:at where)))
     (unless n (error 'fs:absent :where where))
     (apply #'watch:watch n tells options)))
 
 (defun toggle (where)
-  "Flip what stands at WHERE.
-
-A write, like the three below it: the four of them are what NODE:VERB has always
-done, said in words rather than by writing a seq that begins with a keyword. That
-spelling worked from the shell and not from lisp, which is why the mute button in
-a config could mute and never unmute."
   (fs:verb (%leaf where) :toggle nil))
 
 (defun include (where value)
-  "Put VALUE into the set at WHERE."
   (fs:verb (%leaf where) :conj (list value)))
 
 (defun exclude (where value)
-  "Take VALUE out of the set at WHERE."
   (fs:verb (%leaf where) :disj (list value)))
 
 (defun blend (where map)
-  "Merge MAP into the map at WHERE."
   (fs:verb (%leaf where) :merge (list map)))
+
+(defun %behind (n)
+  (cond ((fs:volatile-p n) :the-world)
+        ((typep n 'fs:derived) :worked-out)
+        ((and (fs:persistent-p n) fs:*backing-store*) :the-store)
+        (t :this-image)))
 
 (defun describe (where)
   (let ((n (fs:at where)))
@@ -101,21 +59,22 @@ a config could mute and never unmute."
       (list :name (fs:full-name n)
             :class (string-downcase (princ-to-string (class-name (class-of n))))
             :describes (fs:describes n)
-            :under (mapcar #'fs:name (fs:entries n))
-            :saved (fs:savedp n)
-            :live (fs:livep n)
+            :takes (fs:taking n)
+            :under (mapcar #'fs:name (fs:children n))
+            :behind (%behind n)
+            :live (fs:volatile-p n)
             :owner (fs:owner n)))))
 
-(command:defcommand "pwd" () (:describes "where this session is")
+(command:defcommand "pwd" () (:describes "where this listener is")
                     (fs:full-name (%cursor)))
 
 (command:defcommand "ls" (&optional where) (:describes "what is under a node")
                     (let ((n (if where (fs:at where) (%cursor))))
-                      (if n (mapcar #'fs:name (fs:entries n)) (list))))
+                      (if n (mapcar #'fs:name (fs:children n)) (list))))
 
 (command:defcommand "cd" (&optional where) (:describes "go to a node")
                     (let ((n (if where (fs:at where) (fs:root))))
-                      (when (and n session:*session*) (setf (session:in session:*session*) n))
+                      (when (and n listener:*listener*) (setf (listener:in listener:*listener*) n))
                       (and n (fs:full-name n))))
 
 (command:defcommand "cat" (where) (:describes "what a node holds")
@@ -141,7 +100,7 @@ a config could mute and never unmute."
                     (:describes "what answers from the world, not the store")
                     (let (out)
                       (fs:walk (fs:root)
-                                 (lambda (n) (when (fs:livep n) (push (fs:full-name n) out))))
+                                 (lambda (n) (when (fs:volatile-p n) (push (fs:full-name n) out))))
                       (nreverse out)))
 
 (command:defcommand "mount" (what name)
@@ -157,15 +116,15 @@ a config could mute and never unmute."
                                                     port
                                                   (parse-integer (princ-to-string port))))))
 
-(command:defcommand "use" (name) (:describes "load a system and start it")
+(command:defcommand "use" (name) (:describes "load a module and start it")
                     (let ((s (use name))) (and s (job:name s))))
 
-(command:defcommand "drop" (name) (:describes "stop a system and take it off")
+(command:defcommand "drop" (name) (:describes "stop a module and take it off")
                     (let ((s (drop name))) (and s (job:name s))))
 
 (command:defcommand "systems" () (:describes "what pine has loaded, and what it can")
-                    (list :running (mapcar #'job:name (system:systems))
-                          :available (system:kinds)))
+                    (list :running (mapcar #'job:name (module:modules))
+                          :available (module:kinds)))
 
 (command:defcommand "jobs" () (:describes "what is running")
                     (loop :for j :in (job:jobs)
@@ -200,16 +159,13 @@ a config could mute and never unmute."
 (command:defcommand "faults" () (:describes "what has broken here")
                     (loop :for f :in (fault:faults)
                           :collect (list (fault:label f)
-                                         (if (fault:standingp f) :standing :done)
+                                         (if (fault:suspendedp f) :suspended :done)
                                          (princ-to-string (fault:condition-of f)))))
 
 (command:defcommand "take" (restart)
-                    (:describes "hand a standing fault one of its restarts")
-                    (let ((f (first (fault:standing))))
+                    (:describes "hand a suspended fault one of its restarts")
+                    (let ((f (first (fault:suspended))))
                       (and f (fault:take f (princ-to-string restart)))))
-
-(command:defcommand "snapshot" () (:describes "write the tree to its store")
-                    (and store:*store* (store:snapshot store:*store*)))
 
 (command:defcommand "metrics" ()
                     (:describes "how long what pine does is taking")

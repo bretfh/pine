@@ -1,27 +1,23 @@
 (in-package #:pine/edit)
 
-(defgeneric definition (mode document &optional of)
-  (:documentation "Where what is at point is defined, as (FILE LINE COL KIND).")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
+(defgeneric definition (mode buffer &optional of)
+  (:method ((m mode:mode) buffer &optional of)
+    (declare (ignore buffer of))
     nil))
 
-(defgeneric references (mode document &optional of)
-  (:documentation "Every place that mentions what is at point.")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
+(defgeneric references (mode buffer &optional of)
+  (:method ((m mode:mode) buffer &optional of)
+    (declare (ignore buffer of))
     nil))
 
-(defgeneric arglist (mode document &optional of)
-  (:documentation "What the call at point takes.")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
+(defgeneric arglist (mode buffer &optional of)
+  (:method ((m mode:mode) buffer &optional of)
+    (declare (ignore buffer of))
     nil))
 
-(defgeneric explains (mode document &optional of)
-  (:documentation "What the name at point is.")
-  (:method ((m mode:mode) document &optional of)
-    (declare (ignore document of))
+(defgeneric explains (mode buffer &optional of)
+  (:method ((m mode:mode) buffer &optional of)
+    (declare (ignore buffer of))
     nil))
 
 (defun %placed (source kind)
@@ -36,8 +32,8 @@
               (values 0 0))
         (list (namestring file) line col kind)))))
 
-(defmethod definition ((m mode:lisp) document &optional of)
-  (let ((s (symbol-at document of)))
+(defmethod definition ((m mode:lisp) buffer &optional of)
+  (let ((s (symbol-at buffer of)))
     (when (symbolp s)
       (loop :for kind :in +kinds+
             :append (loop :for source
@@ -48,8 +44,8 @@
                           :for placed := (%placed source kind)
                           :when placed :collect placed)))))
 
-(defmethod references ((m mode:lisp) document &optional of)
-  (let ((s (symbol-at document of)))
+(defmethod references ((m mode:lisp) buffer &optional of)
+  (let ((s (symbol-at buffer of)))
     (when (and s (symbolp s))
       (loop :for (nil . source) :in (fault:or-nothing "nothing may call it"
                                       (sb-introspect:who-calls s))
@@ -57,8 +53,6 @@
             :when placed :collect placed))))
 
 (defun %qualified (prefix)
-  "A name written with its package: the package, whether it was written with one
-colon or two, and the part after them. Nothing when it is a plain name."
   (let ((at (position #\: prefix)))
     (when at
       (let* ((twice (and (< (1+ at) (length prefix))
@@ -75,12 +69,6 @@ colon or two, and the part after them. Nothing when it is a plain name."
                    names)))
 
 (defun %names-in (where &key externals)
-  "Every name in WHERE, downcased, each of them once.
-
-A hash table because it is scratch this call owns and throws away, which is what
-one is for. Collected with PUSHNEW instead, every name was compared against every
-name already seen -- over a package that inherits Common Lisp that is hundreds of
-thousands of string comparisons, for one keystroke of a completion."
   (let ((seen (make-hash-table :test 'equal)))
     (flet ((note (s) (setf (gethash (string-downcase (symbol-name s)) seen) t)))
       (if externals
@@ -88,10 +76,7 @@ thousands of string comparisons, for one keystroke of a completion."
           (do-symbols (s where) (note s))))
     (loop :for name :being :the :hash-keys :of seen :collect name)))
 
-(defmethod mode:complete ((m mode:lisp) document prefix)
-  "Every name that starts this way. A name written with its package completes in
-that package -- pine's own source is written that way, so a completion that only
-knew the document's package would be no use in it."
+(defmethod mode:complete ((m mode:lisp) buffer prefix)
   (when (plusp (length prefix))
     (let ((qualified (%qualified prefix))
           (out nil))
@@ -104,34 +89,34 @@ knew the document's package would be no use in it."
                              (format nil "~(~a~a~a~)" said (if twice "::" ":") name))
                            (%matching rest (%names-in where :externals
                                                       (not twice))))))))
-        (t (setf out (%matching prefix (%names-in (text:package-of document))))))
+        (t (setf out (%matching prefix (%names-in (text:package-of buffer))))))
       (sort out #'string<))))
 
-(defmethod arglist ((m mode:lisp) document &optional of)
-  (multiple-value-bind (s token) (symbol-at document of)
+(defmethod arglist ((m mode:lisp) buffer &optional of)
+  (multiple-value-bind (s token) (symbol-at buffer of)
     (when (and s (symbolp s) (fboundp s))
       (format nil "~(~a ~a~)" token
               (or (fault:or-nothing "a function may have no lambda list kept"
                     (sb-introspect:function-lambda-list s))
                   "()")))))
 
-(defmethod explains ((m mode:lisp) document &optional of)
-  (multiple-value-bind (s token) (symbol-at document of)
+(defmethod explains ((m mode:lisp) buffer &optional of)
+  (multiple-value-bind (s token) (symbol-at buffer of)
     (when (and s (symbolp s))
       (let ((said (or (documentation s 'function) (documentation s 'variable)))
-            (args (arglist m document of)))
+            (args (arglist m buffer of)))
         (cond ((and args said) (format nil "~a  ~a" args said))
               (args args)
               (said (format nil "~a: ~a" token said))
               (t (format nil "~a is not defined" token)))))))
 
-(defun prefix-at (document)
-  (let* ((text (text:text document))
-         (at (offset-of document))
+(defun prefix-at (buffer)
+  (let* ((text (text:text buffer))
+         (at (offset-of buffer))
          (from (token-start text at)))
     (subseq text from (min at (length text)))))
 
-(defun put-completion (document prefix choice)
-  (let ((line (text:at-line document)) (col (text:at-col document)))
-    (text:delete-region document line (max 0 (- col (length prefix))) line col)
-    (text:insert document choice)))
+(defun put-completion (buffer prefix choice)
+  (let ((line (text:at-line buffer)) (col (text:at-col buffer)))
+    (text:delete-region buffer line (max 0 (- col (length prefix))) line col)
+    (text:insert buffer choice)))

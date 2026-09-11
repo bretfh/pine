@@ -8,9 +8,7 @@
    (needle  :initarg :needle  :accessor needle  :initform "")
    (forward :initarg :forward :accessor forward :initform t)
    (from    :initarg :from    :reader from)
-   (wrapped :initform nil     :accessor wrapped))
-  (:documentation "A search as it stands: what has been typed, which way it is
-going, and where it started so quitting can go back."))
+   (wrapped :initform nil     :accessor wrapped)))
 
 (defmethod print-object ((s a-search) stream)
   (print-unreadable-object (s stream :type t)
@@ -26,7 +24,6 @@ going, and where it started so quitting can go back."))
       (and (%look s (text:at-line (of s)) (text:at-col (of s))) t)))
 
 (defun banner (&optional (s (searching)))
-  "The line the echo area shows while a search is running."
   (when s
     (format nil "~:[Failing ~;~]I-search~:[ backward~;~]~:[~; [wrapped]~]: ~a"
             (%found s) (forward s) (wrapped s) (needle s))))
@@ -36,20 +33,19 @@ going, and where it started so quitting can go back."))
   s)
 
 (defun %land (s line col)
-  (let ((document (of s)))
-    (text:goto document line col)
-    (text:forget-spans document)
-    (text:span document line col (+ col (length (needle s))) :match)))
+  (let ((buffer (of s)))
+    (text:goto buffer line col)
+    (text:forget-spans buffer)
+    (text:span buffer line col (+ col (length (needle s))) :match)))
 
 (defun %seek (s &key (from-point t))
-  "Look from where point is, and wrap once rather than failing at the end."
-  (let* ((document (of s))
-         (line (if from-point (text:at-line document) 0))
-         (col (if from-point (text:at-col document) 0)))
+  (let* ((buffer (of s))
+         (line (if from-point (text:at-line buffer) 0))
+         (col (if from-point (text:at-col buffer) 0)))
     (multiple-value-bind (at-line at-col) (%look s line col)
       (cond (at-line (%land s at-line at-col))
             (t (multiple-value-bind (wrap-line wrap-col)
-                   (%look s (if (forward s) 0 (1- (text:line-count document)))
+                   (%look s (if (forward s) 0 (1- (text:line-count buffer)))
                           (if (forward s) 0 most-positive-fixnum))
                  (when wrap-line
                    (setf (wrapped s) t)
@@ -57,9 +53,6 @@ going, and where it started so quitting can go back."))
     (%show s)))
 
 (defun %grow (s said)
-  "Add what the key types to what is being looked for. What it types and not the
-name it goes by: SPC is a key called SPC and what it puts in is a space, so taking
-the first letter of the name searched for an S."
   (setf (needle s) (concatenate 'string (needle s) said)
         (wrapped s) nil)
   (%seek s)
@@ -75,26 +68,24 @@ the first letter of the name searched for an S."
     :again))
 
 (defun step-search (s forward)
-  "Again, in this direction. With nothing typed yet, the last search comes back."
   (setf (forward s) forward)
   (when (zerop (length (needle s)))
     (setf (needle s) *last*))
   (unless (zerop (length (needle s)))
-    (let ((document (of s)))
-      (text:goto document (text:at-line document)
-                (max 0 (+ (text:at-col document) (if forward 1 -1))))))
+    (let ((buffer (of s)))
+      (text:goto buffer (text:at-line buffer)
+                (max 0 (+ (text:at-col buffer) (if forward 1 -1))))))
   (%seek s)
   :again)
 
 (defun took (s &key (keep t))
-  "End the search: keep where it landed, or go back to where it started."
-  (let ((document (of s)))
-    (text:forget-spans document)
-    (unless keep (text:goto document (first (from s)) (second (from s))))
+  (let ((buffer (of s)))
+    (text:forget-spans buffer)
+    (unless keep (text:goto buffer (first (from s)) (second (from s))))
     (when (plusp (length (needle s))) (setf *last* (needle s)))
     (setf *search* nil)
     (log:note "~:[quit~;~a~]" keep (needle s))
-    document))
+    buffer))
 
 (defun %reading (k)
   (let ((s (searching)))
@@ -111,11 +102,9 @@ the first letter of the name searched for an S."
       (t (took s) (dispatch k) nil))))
 
 (defun start (&key (forward t))
-  "Search as you type. Every key narrows it, C-s and C-r step and turn round, RET
-keeps where it landed and C-g goes back."
-  (let* ((document (text:current))
-         (s (make-instance 'a-search :of document :forward forward
-                                     :from (text:point document))))
+  (let* ((buffer (text:current))
+         (s (make-instance 'a-search :of buffer :forward forward
+                                     :from (text:point buffer))))
     (setf *search* s)
     (ui:take-next #'%reading)
     (%show s)
@@ -140,7 +129,7 @@ keeps where it landed and C-g goes back."
     (:describes "replace one string with another"
      :asks '((:prompt "Replace: "))
      :on '(text "M-%"))
-  (let ((document (text:current))
+  (let ((buffer (text:current))
         (from (princ-to-string from)))
     (if (zerop (length from))
         (log:note "there is nothing to replace")
@@ -150,14 +139,14 @@ keeps where it landed and C-g goes back."
                        (let ((n 0))
                          (loop
                            (multiple-value-bind (line col)
-                               (text:find-in (text:lines document) from
-                                             (text:at-line document)
-                                             (text:at-col document))
+                               (text:find-in (text:lines buffer) from
+                                             (text:at-line buffer)
+                                             (text:at-col buffer))
                              (unless line (return))
-                             (text:goto document line col)
-                             (text:delete-region document line col line
+                             (text:goto buffer line col)
+                             (text:delete-region buffer line col line
                                                  (+ col (length from)))
-                             (text:insert document to)
+                             (text:insert buffer to)
                              (incf n)))
                          (log:note "replaced ~d" n)
                          n)))

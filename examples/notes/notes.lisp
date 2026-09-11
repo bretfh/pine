@@ -40,17 +40,17 @@
 (defun %headingp (line)
   (and (plusp (length line)) (char= #\* (char line 0))))
 
-(defmethod regions ((m note) document)
+(defmethod regions ((m note) buffer)
   "Every heading, and the lines under it, as spans. What comes back is put
-in the namespace under the document, so /text/x.note/heading/Today is a place you
+in the namespace under the buffer, so /text/x.note/heading/Today is a place you
 can read, write and watch."
   (let ((found NIL)
-        (n (line-count document)))
+        (n (line-count buffer)))
     (dotimes (at n)
-      (let ((said (line document at)))
+      (let ((said (line buffer at)))
         (when (%headingp said)
           (push (list (string-trim " *" said) at) found))))
-    (flet ((ends (at) (cons at (length (line document at)))))
+    (flet ((ends (at) (cons at (length (line buffer at)))))
       (let ((all (nreverse found)))
         (when all
           (list (covering "heading"
@@ -71,11 +71,11 @@ can read, write and watch."
   (:documentation "A note stuck to the corner of the screen."))
 
 (defmethod anchor ((r sticky) width height)
-  (placing :edges '(:top :right) :wide width :tall height
+  (placing :edges '(:top :right) :width width :height height
            :margin (inset :top 16 :right 16)))
 
 (defun %latest ()
-  "The last thing written down, read through the namespace rather than out of the
+  "The last thing written height, read through the namespace rather than out of the
 node behind it. That is what makes the surface follow it: what a surface reads is
 what it is worked out again for, and a place is what it can read."
   (let ((title (first (last (read "/notes" :else (list))))))
@@ -85,19 +85,19 @@ what it is worked out again for, and a place is what it can read."
 ;;; /proc/notes. What it puts up while it starts is its, so there is no STOP:
 ;;; the place, the surface and the chord all go when it does.
 
-(defclass notes (system) ()
-  (:documentation "Notes: a place to write things down, and a note stuck to the
+(defclass notes (module) ()
+  (:documentation "Notes: a place to write things height, and a note stuck to the
 corner of the screen showing the last one."))
 
 
 (defmethod start ((s notes))
-  (mount (make-instance 'mount :describes "what has been written down") "/notes")
+  (mount (make-instance 'mount :describes "what has been written height") "/notes")
   (defcommand "note" (title said)
-    (:describes "write something down"
+    (:describes "write something height"
      :asks '((:prompt "Note: ")))
     (write (format NIL "/notes/~a" title) (or said ""))
     title)
-  (defcommand "notes" () (:describes "everything written down")
+  (defcommand "notes" () (:describes "everything written height")
     (read "/notes" :else (list)))
   (defcommand "forget-note" (title) (:describes "take one back off")
     (erase (format NIL "/notes/~a" title))
@@ -106,6 +106,6 @@ corner of the screen showing the last one."))
   (defsurface sticky (:as 'sticky)
     (let ((latest (%latest)))
       (column :class "sticky"
-              (label (or (first latest) "nothing written down"))
+              (label (or (first latest) "nothing written height"))
               (label (or (second latest) "")))))
   s)

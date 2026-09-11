@@ -1,21 +1,12 @@
 (in-package #:pine/ui)
 
-(defparameter +skip+ '(:key :of :parts :hovered :pad)
-  "What does not cross: the identity the daemon keeps, what a widget stands for,
-what PARTS already says, a flag the far side sets itself, and the shorthand that
-sets two others.")
+(defparameter +skip+ '(:key :of :parts :hovered :pad))
 
-(defparameter +thunks+ '(:click :changed)
-  "Slots holding a function. A closure cannot cross, so it goes as an id and what
-it meant stays where it was made.")
+(defparameter +thunks+ '(:on-click :on-change))
 
-(defvar *known* (make-hash-table :test 'eq :synchronized t)
-  "What each widget class carries, worked out once.")
+(defvar *known* (make-hash-table :test 'eq :synchronized t))
 
 (defun %slots (class)
-  "The slots this class carries, as (initarg reader default). Direct slots up the
-precedence list rather than the effective ones: an effective slot has no readers to
-ask about, and what crosses is what somebody can read back."
   (c2mop:ensure-finalized class)
   (let (out)
     (dolist (each (c2mop:class-precedence-list class) (nreverse out))
@@ -30,8 +21,6 @@ ask about, and what crosses is what somebody can read back."
                   out)))))))
 
 (defun %known (class)
-  "What this class carries, taken from its own slots. A property added to a widget
-crosses because it is there, not because somebody remembered to list it."
   (let ((name (class-name class)))
     (or (gethash name *known*)
         (setf (gethash name *known*) (%slots class)))))
@@ -40,8 +29,6 @@ crosses because it is there, not because somebody remembered to list it."
   (intern (symbol-name (class-name (class-of widget))) :keyword))
 
 (defun %widgets ()
-  "Every kind of widget there is, found in the class graph, so one written in a
-config crosses the wire and comes back like the rest."
   (labels ((under (c) (cons c (mapcan #'under (c2mop:class-direct-subclasses c)))))
     (under (find-class 'widget))))
 
@@ -51,30 +38,17 @@ config crosses the wire and comes back like the rest."
       (error "no widget crosses the wire as ~s" tag)))
 
 (defun %ordered (props)
-  "PROPS in key order, so two forms saying the same thing are EQUAL: whether a frame
-may go as a patch is decided by comparing it with the one before."
   (let ((pairs (loop :for (k v) :on props :by #'cddr :collect (cons k v))))
     (loop :for (k . v) :in (sort pairs #'string< :key (lambda (p)
                                                         (symbol-name (car p))))
           :append (list k v))))
 
 (defun %widget-form-p (v)
-  "Whether a slot's value is a widget written down: a centerbox holds its start,
-middle and end in slots of its own, and they cross the way a part does."
   (and (consp v) (keywordp (first v)) (find-symbol (symbol-name (first v))
                                                    :pine/ui)
        (consp (rest v)) (listp (second v))))
 
 (defun to-wire (widget &key on-action (at nil))
-  "A widget as plain data.
-
-ON-ACTION is given the closure, the widget holding it and the slot it was in, and
-answers the id to put in its place. All three, because what a closure crosses as
-has to say which widget and which of its slots -- one widget may carry both a
-click and a change.
-
-AT is where this widget sits, root first, as the numbers to walk down by. It is
-what identifies one that stands for nothing of its own."
   (when widget
     (let ((props nil))
       (dolist (spec (%known (class-of widget)))
@@ -96,8 +70,6 @@ what identifies one that stands for nothing of its own."
                                        :at (append at (list i))))))))
 
 (defun from-wire (form &key on-action)
-  "Build a widget back from wire FORM, restoring the rect it was arranged at.
-ON-ACTION, given an id, answers what to do about it."
   (when form
     (destructuring-bind (tag props &rest parts) form
       (let* ((rect (getf props :rect))

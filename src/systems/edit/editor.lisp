@@ -1,16 +1,11 @@
 (in-package #:pine/edit)
 
-(defmethod text:reparsed ((document text:document))
-  "A parse that has landed says the document moved. Its text did not, but what is
-laid over it did, and the frame read this document -- so saying so here is the
-edge, and whatever else is reading it hears the same way."
-  (fs:moved document))
+(defmethod text:reparsed ((buffer text:buffer))
+  (fs:touch buffer))
 
-(defclass typed (fs:derived) ()
-  (:documentation "/edit/key: where a key arrives. Writing a chord here is typing
-it, so a keyboard, a test and another pine all press keys the same way."))
+(defclass typed (fs:derived) ())
 
-(defmethod fs:livep ((n typed) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n typed) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n typed)) (ui:spelled (ui:pending)))
 
@@ -29,12 +24,12 @@ it, so a keyboard, a test and another pine all press keys the same way."))
                    (mapcar (lambda (c) (cons (command:name c)
                                              (command:describes c)))
                            (command:commands))))
-  (completes :document
+  (completes :buffer
                  (lambda (typed)
                    (declare (ignore typed))
                    (mapcar (lambda (d) (cons (fs:name d)
                                              (or (text:file-of d) "")))
-                           (text:documents))))
+                           (text:buffers))))
   (completes :mode
                  (lambda (typed)
                    (declare (ignore typed))
@@ -49,8 +44,6 @@ it, so a keyboard, a test and another pine all press keys the same way."))
   (completes :window
                  (lambda (typed)
                    (declare (ignore typed))
-                   "What the compositor says there is. Read through the namespace:
-the editor has never heard of a window manager, and does not have to."
                    (let ((n (fs:at "/wm/windows")))
                      (when n
                        (flet ((field (id what)
@@ -74,8 +67,6 @@ the editor has never heard of a window manager, and does not have to."
     :asking))
 
 (defmethod command:asking ((s edit) c)
-  "An editor has somebody looking at it, so the question goes on the screen and
-the command runs again when they answer."
   (%asking c))
 
 (defmethod ui:confirming ((s edit) question thunk)
@@ -85,9 +76,6 @@ the command runs again when they answer."
   :asking)
 
 (defun %editor ()
-  "The editor, laid out for whatever is showing it. The screen says how big it is by
-writing /surface/editor/size, and this follows that the way it follows anything
-else it read."
   (let* ((s (fs:at "/ui/surface" "editor"))
          (size (and s (ui:size s)))
          (*font* (getf size :font)))
@@ -95,7 +83,6 @@ else it read."
                   :lines (or (getf size :lines) *lines*))))
 
 (defun type-text (text)
-  "Type TEXT a character at a time, the way a keyboard does."
   (loop :for ch :across text
         :do (dispatch (ui:make-key (string ch))))
   (text:point (text:current)))
@@ -105,11 +92,11 @@ else it read."
   (setf command:*at* s)
   (fs:mount (%key) "/edit/key")
   (let ((scratch (or (fs:at "/text" "scratch")
-                     (text:make-document "scratch"
+                     (text:make-buffer "scratch"
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
     (seed scratch))
-  (ui:make-surface "editor" #'%editor :as 'ui:window :starts :up)
+  (ui:make-surface "editor" #'%editor :as 'ui:toplevel :starts :up)
   s)
 
 (defmethod job:stop ((s edit))
@@ -117,5 +104,5 @@ else it read."
   (ui:take-next nil)
   (took-all)
   (text:forget-all)
-  (dolist (win (windows)) (fs:detach (fs:parent win) (fs:name win)))
+  (dolist (win (panes)) (fs:detach (fs:parent win) (fs:name win)))
   s)

@@ -1,7 +1,6 @@
 (in-package #:pine/wayland)
 
-(defparameter +all-edges+ '(:top :bottom :left :right)
-  "Every edge, as the protocol spells a bitfield: a list of what is set.")
+(defparameter +all-edges+ '(:top :bottom :left :right))
 
 (defclass window ()
   ((of      :initarg :of      :reader of)
@@ -9,13 +8,11 @@
    (id      :initarg :id      :reader id)
    (title   :initform ""      :accessor title)
    (app     :initform ""      :accessor app)
-   (wide    :initform 0       :accessor wide)
-   (tall    :initform 0       :accessor tall)
+   (width    :initform 0       :accessor width)
+   (height    :initform 0       :accessor height)
    (hidden  :initform nil     :accessor hidden)
    (clip    :initform nil     :accessor clip)
-   (stack   :initform nil     :accessor stack))
-  (:documentation "One window the compositor handed over, and the node that says
-where it sits."))
+   (stack   :initform nil     :accessor stack)))
 
 (defclass wm ()
   ((manager :initarg :manager :reader manager)
@@ -33,16 +30,7 @@ where it sits."))
    (pending :initform nil     :accessor pending)
    (placedp :initform nil     :accessor placedp)
    (asking  :initform nil     :accessor asking)
-   (dirty   :initform t       :accessor dirty))
-  (:documentation "Pine as the compositor's window manager. It is told what there
-is, says so, and puts each window where the answer says.
-
-LAYERS is the compositor's layer shell support, which on a compositor of this kind
-exists only because the window manager asked for it: bars and panels map because
-pine said it knows what to do about them.
-
-Where that answer comes from is not this file's business: it asks, and what asks
-is a write and a read of the daemon's namespace."))
+   (dirty   :initform t       :accessor dirty)))
 
 (defun managingp (w) (and w (manager w) t))
 
@@ -64,33 +52,28 @@ is a write and a read of the daemon's namespace."))
   (setf (dirty w) t))
 
 (defun said (w)
-  "What there is, as plain data: the windows, the outputs and what has the
-keyboard. This is what crosses to whoever decides.
-
-An output says the area left after the bars have taken their strip, where the
-compositor says so: a window laid out over the bar is a window laid out wrong."
   (list :windows (loop :for each :in (reverse (windows w))
                        :collect (list :id (id each) :title (title each)
                                       :app (app each)
-                                      :size (list (wide each) (tall each))
+                                      :size (list (width each) (height each))
                                       :hidden (hidden each)))
         :outputs (loop :for each :in (outputs w)
                        :collect (list :name (getf each :name)
                                       :position (list (getf each :x)
                                                       (getf each :y))
-                                      :size (list (getf each :wide)
-                                                  (getf each :tall))
+                                      :size (list (getf each :width)
+                                                  (getf each :height))
                                       :area (or (getf each :area)
                                                 (list (getf each :x)
                                                       (getf each :y)
-                                                      (getf each :wide)
-                                                      (getf each :tall)))))
+                                                      (getf each :width)
+                                                      (getf each :height)))))
         :focused (and (focused w) (id (focused w)))))
 
-(defun %shown (w it x y wide tall clip stack)
-  (unless (and (= wide (wide it)) (= tall (tall it)))
-    (setf (wide it) wide (tall it) tall)
-    (river-window-v1.propose-dimensions (of it) wide tall))
+(defun %shown (w it x y width height clip stack)
+  (unless (and (= width (width it)) (= height (height it)))
+    (setf (width it) width (height it) height)
+    (river-window-v1.propose-dimensions (of it) width height))
   (unless (node-of it)
     (setf (node-of it) (river-window-v1.get-node (of it))))
   (when (hidden it)
@@ -101,7 +84,7 @@ compositor says so: a window laid out over the bar is a window laid out wrong."
     (if clip
         (destructuring-bind (cx cy cw ch) clip
           (river-window-v1.set-clip-box (of it) cx cy cw ch))
-        (river-window-v1.set-clip-box (of it) 0 0 wide tall)))
+        (river-window-v1.set-clip-box (of it) 0 0 width height)))
   (river-node-v1.set-position (node-of it) x y)
   (river-window-v1.set-tiled (of it) +all-edges+)
   (setf (stack it) stack)
@@ -121,16 +104,13 @@ compositor says so: a window laid out over the bar is a window laid out wrong."
   it)
 
 (defun apply-layout (w layout)
-  "Put each window where the layout says. The answer is total: a window it does
-not name is hidden, which is what makes changing what is on screen one write
-rather than a difference against what was there before."
   (let ((named nil))
     (dolist (each layout)
-      (destructuring-bind (id x y wide tall &key clip stack) each
+      (destructuring-bind (id x y width height &key clip stack) each
         (let ((it (%by-id w id)))
           (when it
             (push it named)
-            (%shown w it x y wide tall clip stack)))))
+            (%shown w it x y width height clip stack)))))
     (dolist (it (windows w) w)
       (unless (member it named) (%gone it)))))
 
@@ -143,7 +123,7 @@ rather than a difference against what was there before."
            (fault:or-nothing "the window is already gone from the compositor"
              (river-window-v1.destroy (of it))))
           (:dimensions (width height)
-           (setf (wide it) width (tall it) height))
+           (setf (width it) width (height it) height))
           (:dimensions-hint (min-width min-height max-width max-height)
            (declare (ignore min-width min-height max-width max-height)))
           (:parent (parent) (declare (ignore parent)))
@@ -165,8 +145,6 @@ rather than a difference against what was there before."
         (wl-proxy-hooks (of it))))
 
 (defun %layer-output (w out)
-  "Ask about this output's layer surfaces: where they leave room, and let it be
-where a bar with no output of its own goes."
   (let ((it (and (layers w)
                  (river-layer-shell-v1.get-output (layers w)
                                                   (getf out :proxy)))))
@@ -180,7 +158,7 @@ where a bar with no output of its own goes."
     it))
 
 (defun %output-events (w proxy)
-  (let ((out (list :proxy proxy :name 0 :x 0 :y 0 :wide 0 :tall 0
+  (let ((out (list :proxy proxy :name 0 :x 0 :y 0 :width 0 :height 0
                    :layer nil :area nil)))
     (push out (outputs w))
     (%layer-output w out)
@@ -188,7 +166,7 @@ where a bar with no output of its own goes."
             (:wl-output (name) (setf (getf out :name) name))
             (:position (x y) (setf (getf out :x) x (getf out :y) y))
             (:dimensions (width height)
-             (setf (getf out :wide) width (getf out :tall) height)
+             (setf (getf out :width) width (getf out :height) height)
              (setf (dirty w) t))
             (:removed ()
              (setf (outputs w) (remove out (outputs w)))
@@ -197,13 +175,11 @@ where a bar with no output of its own goes."
     out))
 
 (defun wants-chords (w chords)
-  "Say which chords the window manager wants. Taken up on the next manage cycle,
-because that is the only place the protocol lets a binding be enabled."
   (setf (wanted w) chords)
   (when (manager w) (river-window-manager-v1.manage-dirty (manager w)))
   chords)
 
-(defun eat-next (w) (eat-next (chords w)))
+(defmethod eat-next ((w wm)) (eat-next (chords w)))
 
 (defun %seat-events (w proxy)
   (push proxy (seats w))
@@ -226,26 +202,17 @@ because that is the only place the protocol lets a binding be enabled."
   proxy)
 
 (defun cycle (w)
-  "Ask for a cycle. A manage sequence is always followed by a render one, which
-is where anything of the window manager's own is committed."
   (when (and w (manager w))
     (river-window-manager-v1.manage-dirty (manager w))
     t))
 
 (defun laid (w layout)
-  "Take an answer about where the windows go. It arrives after the cycle that
-asked for it, so this asks for another one.
-
-An answer naming nothing is still an answer: a workspace with no windows on it
-hides every window, and that is not the same as never having been told."
   (setf (pending w) layout (placedp w) t (asking w) nil)
   (when (manager w)
     (river-window-manager-v1.manage-dirty (manager w)))
   layout)
 
 (defun %default-output (w)
-  "Say which output a layer surface goes on when it does not ask. Window
-management state, so only here."
   (unless (defaultp w)
     (let ((out (find-if (lambda (each) (getf each :layer)) (outputs w))))
       (when out
@@ -253,12 +220,6 @@ management state, so only here."
         (setf (defaultp w) t)))))
 
 (defun %manage (w)
-  "One manage cycle: put the windows where the last answer said, finish, and ask
-for a fresh answer if anything moved.
-
-The answer comes from another image, so it is never waited for here: a manager
-that waits is one the compositor gives up on, and it says so after three
-seconds."
   (%default-output w)
   (when (wanted w) (ask-for (chords w) (wanted w)) (setf (wanted w) nil))
   (when (placedp w) (apply-layout w (pending w)))
@@ -285,8 +246,6 @@ seconds."
       (focus w (id (nth (mod (+ at by) (length all)) all))))))
 
 (defun take (w wants)
-  "Do what the daemon asked for. What it asks for is a value, so this is a case
-over data and not a protocol of its own."
   (dolist (each wants w)
     (let ((verb (first each)) (arguments (rest each)))
       (case verb
@@ -304,8 +263,6 @@ over data and not a protocol of its own."
     (setf (dirty w) t)))
 
 (defun open-manager (d &key on-said on-render on-chord)
-  "Become the compositor's window manager, if it is asking for one. Answers
-nothing where the compositor manages its own windows."
   (let* ((it (of d))
          (registry (wl-display.get-registry it))
          (found nil)

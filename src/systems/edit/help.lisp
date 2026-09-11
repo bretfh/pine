@@ -1,12 +1,12 @@
 (in-package #:pine/edit)
 
 (defparameter +settings+
-  '((:tab-width      . "how wide a tab is drawn")
+  '((:tab-width      . "how width a tab is drawn")
     (:indent         . "how far a body indents")
     (:comment        . "what starts a comment on a line")
     (:grammar        . "which language the parse follows")
     (:overwrite      . "whether typing writes over what is there")
-    (:aside          . "whether a window follows this document")))
+    (:aside          . "whether a pane follows this buffer")))
 
 (command:defcommand "describe-key" ()
     (:describes "what a chord runs" :on '(text "C-h k"))
@@ -34,7 +34,7 @@
      (when c (log:note "~a" (or (command:describes c) (command:name c)))))))
 
 (command:defcommand "describe-mode" ()
-    (:describes "what this document's mode is" :on '(text "C-h m"))
+    (:describes "what this buffer's mode is" :on '(text "C-h m"))
   (let ((m (text:mode-of (text:current))))
     (show-listing
      "*help*"
@@ -59,19 +59,19 @@
       (command:describes c))))
 
 (command:defcommand "describe-settings" ()
-    (:describes "every setting, and what this document reads" :on '(text "C-h v"))
-  (let ((document (text:current)))
+    (:describes "every setting, and what this buffer reads" :on '(text "C-h v"))
+  (let ((buffer (text:current)))
     (show-listing
      "*help*"
-     (cons (format nil "settings in ~a" (fs:name document))
+     (cons (format nil "settings in ~a" (fs:name buffer))
            (cons ""
                  (loop :for (key . says) :in +settings+
                        :collect (format nil "~(~16a~) ~12a ~a" key
-                                        (mode:says document key "")
+                                        (mode:says buffer key "")
                                         says)))))))
 
 (command:defcommand "set-local" (key value)
-    (:describes "a setting, for this document only"
+    (:describes "a setting, for this buffer only"
      :asks '((:prompt "Setting: " :category :setting :must-match t)))
   (declare (ignore value))
   (let ((key (if (keywordp key)
@@ -85,15 +85,15 @@
                                   (error () said))))))
     :asking))
 
-(command:defcommand "list-documents" ()
-    (:describes "every document there is" :on '(text "C-x C-b"))
-  (show-listing "*documents*"
+(command:defcommand "list-buffers" ()
+    (:describes "every buffer there is" :on '(text "C-x C-b"))
+  (show-listing "*buffers*"
                 (mapcar (lambda (d)
                           (cons (format nil "~a~30t~a" (fs:name d)
                                         (or (text:file-of d) ""))
                                 d))
-                        (text:documents))
-                (lambda (d) (when (fs:kind d) (setf (text:current) d)))))
+                        (text:buffers))
+                (lambda (d) (when (fs:nodep d) (setf (text:current) d)))))
 
 (command:defcommand "list-jobs" ()
     (:describes "what this image is running" :on '(text "C-x j"))
@@ -114,7 +114,7 @@
    "*faults*"
    (loop :for f :in (fault:faults)
          :collect (cons (format nil "~10a ~a"
-                                (if (fault:standingp f) :standing :done)
+                                (if (fault:suspendedp f) :suspended :done)
                                 (fault:condition-of f))
                         f))
    (lambda (f) (when f (command:run "debugger")))))

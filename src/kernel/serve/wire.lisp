@@ -1,47 +1,35 @@
 (defpackage #:pine/serve/wire
   (:use #:cl)
-  (:local-nicknames (#:json #:pine/serve/json) (#:said #:pine/said)
+  (:local-nicknames (#:json #:pine/serve/json) (#:serial #:pine/serial)
                     (#:peer #:pine/run/peer))
   (:export
-   #:asked #:answered #:evented #:serve #:request #:answer #:eventp))
+   #:decode-request #:encode-reply #:encode-event #:serve #:encode-request #:decode-reply #:eventp))
 (in-package #:pine/serve/wire)
 
-(defparameter +doing+
+(defparameter +methods+
   '(("read"  . :contents)
     ("write" . :write)
     ("ls"    . :entries)
     ("verb"  . :verb)
     ("watch" . :watch)
     ("eval"  . :evaluate)
-    ("ping"  . :ping))
-  "What a line may ask for, and the question it is. One word each, and every one
-of them names a place, which is why there is no permission logic here: what may be
-done is a question about the path.")
+    ("ping"  . :ping)))
 
 (defun %word (it) (and it (string-downcase (princ-to-string it))))
 
-(defun asked (line)
-  "One line of json, as the message the tree takes.
-
-What FROM-JSON answers is already the shape a place takes, so it goes on as it is:
-spelling it again would wrap a map in the escape that means `a list which looks
-like one', and what landed would be the list and not the map. It reads back the
-same either way, which is why it has to be said here.
-
-Answers the id it was asked under as well, because a connection carries answers
-and events together and whoever asked has to be able to tell which is which."
+(defun decode-request (line)
   (let* ((it (com.inuoe.jzon:parse line))
          (id (gethash "id" it))
          (doing (%word (gethash "do" it)))
          (path (gethash "path" it))
-         (kind (cdr (assoc doing +doing+ :test #'equal))))
+         (kind (cdr (assoc doing +methods+ :test #'equal))))
     (values
      (cond ((null doing) (list :no "a line says what to do"))
            ((and (equal doing "eval") (not (peer:evaluatingp)))
             (list :no "this way in does not evaluate"))
            ((null kind) (list :no (format nil "~a is not something to do; there ~
                                               is ~{~a~^, ~}"
-                                          doing (mapcar #'car +doing+))))
+                                          doing (mapcar #'car +methods+))))
            ((eq kind :ping) (list :ping))
            ((eq kind :evaluate)
             (let ((form (gethash "form" it)))
@@ -67,24 +55,12 @@ and events together and whoever asked has to be able to tell which is which."
     out))
 
 (defun %held (said)
-  "What an answer carries. One thing for the questions that name a place, and the
-whole of what it said for the ones that do not: evaluating answers what it
-answered, what it printed and what it broke on, and all three are wanted.
-
-What comes out of the tree is already spelled -- everything RECEIVED answers is --
-so it is not spelled again here. Spelling twice wraps a map in the escape that
-means `a list which looks like one', and the far side is handed the list."
   (if (or (= 2 (length said)) (%placep said)) (second said) (rest said)))
 
 (defun %placep (said)
   (and (= 4 (length said)) (eq (third said) :kind)))
 
-(defun answered (id said)
-  "What came back, as one line. An answer carries the id it answers.
-
-A value with no spelling is refused rather than printed: something that reads as
-a string but was an object is a lie the far side cannot catch, and the whole
-point of this is that the far side can trust what it reads."
+(defun encode-reply (id said)
   (com.inuoe.jzon:stringify
    (if (and (consp said) (eq :ok (first said)))
        (handler-case (let ((kind (and (%placep said) (fourth said))))
@@ -97,13 +73,10 @@ point of this is that the far side can trust what it reads."
          (error (c) (%object "id" (or id (quote null))
                              "no" (princ-to-string c))))
        (%object "id" (or id (quote null)) "no"
-                (if (consp said) (princ-to-string (second said)) "no answer")))))
+                (if (consp said) (princ-to-string (second said)) "no decode-reply")))))
 
-(defun request (id message)
-  "A message the tree takes, as the line that asks for it. The other side of
-ASKED, here so that the two cannot drift apart: what a client sends and what a
-daemon reads are one table read twice."
-  (let ((word (car (rassoc (first message) +doing+))))
+(defun encode-request (id message)
+  (let ((word (car (rassoc (first message) +methods+))))
     (unless word (error "~s is not something this speaks." (first message)))
     (com.inuoe.jzon:stringify
      (case (first message)
@@ -112,56 +85,42 @@ daemon reads are one table read twice."
                            "form" (let ((*print-readably* nil))
                                     (prin1-to-string (second message)))))
        (:write (%object "id" id "do" word "path" (second message)
-                        "value" (json:as-json (said:said (third message)))))
+                        "value" (json:as-json (serial:encode (third message)))))
        (:verb (%object "id" id "do" word "path" (second message)
                        "verb" (%word (third message))
                        "with" (coerce (mapcar (lambda (a)
-                                                (json:as-json (said:said a)))
+                                                (json:as-json (serial:encode a)))
                                               (cdddr message))
                                       'vector)))
        (t (%object "id" id "do" word "path" (second message)))))))
 
 (defun eventp (it) (and (hash-table-p it) (nth-value 1 (gethash "event" it))))
 
-(defun answer (line)
-  "One line from a daemon, as what it said: the answer, the id it answers, and
-whether it is an event nobody asked for now."
+(defun decode-reply (line)
   (let ((it (com.inuoe.jzon:parse line)))
     (cond ((eventp it)
            (values (list :moved (gethash "path" it)) nil t))
           ((nth-value 1 (gethash "ok" it))
-           (values (list :ok (said:took (json:from-json (gethash "ok" it))))
+           (values (list :ok (serial:decode (json:from-json (gethash "ok" it))))
                    (gethash "id" it) nil))
           (t (values (list :no (princ-to-string (gethash "no" it)))
                      (gethash "id" it) nil)))))
 
-(defun evented (said)
-  "A watch firing, as one line. No id: nobody asked for this one now."
+(defun encode-event (said)
   (com.inuoe.jzon:stringify
    (%object "event" (%word (first said)) "path" (or (second said) (quote null)))))
 
 (defun serve (in ask say &key done)
-  "Read lines from IN, ask ASK what they mean, and hand the answers to SAY.
-
-ASK is given the message and answers what the tree said, so this file knows how
-to frame a question and nothing about what any of them mean. SAY writes one line,
-and is given rather than written to because an event is written by whichever
-thread moved the place, and two threads sharing a stream need somewhere that
-knows it. DONE is called when there are no more lines, which is where whoever
-opened this lets go of what the caller left.
-
-One line each way. A shell can write one with echo and read one with read, which
-is the whole reason it is lines and not a length and a body."
   (unwind-protect
        (loop :for line := (read-line in nil nil)
              :while line
              :unless (zerop (length (string-trim '(#\Space #\Tab #\Return) line)))
                :do (multiple-value-bind (message id)
-                       (handler-case (asked line)
+                       (handler-case (decode-request line)
                          (error (c) (values (list :no (princ-to-string c)) nil)))
                      (let ((said (if (eq :no (first message))
                                      message
                                      (handler-case (funcall ask message)
                                        (error (c) (list :no (princ-to-string c)))))))
-                       (funcall say (answered id said)))))
+                       (funcall say (encode-reply id said)))))
     (when done (funcall done))))

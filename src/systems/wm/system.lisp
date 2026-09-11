@@ -2,13 +2,11 @@
 
 (defvar *terminal* "alacritty")
 
-(defclass wm (system:system)
-  ((compositor :initform nil :accessor compositor-of))
-  (:documentation "The compositor, in the namespace at /wm, and the commands that
-act on it. Which compositor it is is one class under COMPOSITOR."))
+(defclass wm (module:module)
+  ((compositor :initform nil :accessor compositor-of)))
 
 (defun current ()
-  (let ((s (system:named "wm"))) (and s (compositor-of s))))
+  (let ((s (module:named "wm"))) (and s (compositor-of s))))
 
 (fs:mount (lambda () (make-instance 'fs:mount :describes "the compositor, and what places its windows"))
           "/wm")
@@ -20,24 +18,9 @@ act on it. Which compositor it is is one class under COMPOSITOR."))
   (or (%said "terminal") *terminal*))
 
 (defun places ()
-  "The name of the system that says where the windows go, or nothing. Core does
-not know what is behind the name: it is a system, and it is used the way any of
-them is. A config writes it because /wm cannot exist until the compositor has
-handed the windows over, which is after the config was read."
   (%said "places"))
 
 (defun %under ()
-  "Which compositor this session is under, as a class. Pine managing one and pine
-talking to one are the same protocol with two subclasses under it, and this is
-where a third is added.
-
-Who manages the windows is written at /wm/manages rather than held here: the screen
-finds a compositor asking for a manager before this system exists, and a path is
-what it can reach that a package it cannot name is not.
-
-:PINE or :COMPOSITOR, and not a yes and a no. ENSURE makes the node to read it, so
-a place written NIL and a place nobody has written are the same node holding the
-same thing, and the answer to which one it was decided who lays out the screen."
   (cond ((eq :pine (%said "manages"))
          'managed)
         ((uiop:getenv "NIRI_SOCKET") 'niri)
@@ -113,12 +96,11 @@ same thing, and the answer to which one it was decided who lays out the screen."
     (fs:mount (wkeys:keys-node) under))
   (let ((places (places)))
     (when places
-      (when (system:named places) (system:drop places))
-      (system:use places)))
+      (when (module:named places) (module:drop places))
+      (module:use places)))
   s)
 
 (defmethod job:stop ((s wm))
-  "What places the windows goes first."
   (let ((places (places)))
-    (when (and places (system:named places)) (system:drop places)))
+    (when (and places (module:named places)) (module:drop places)))
   s)

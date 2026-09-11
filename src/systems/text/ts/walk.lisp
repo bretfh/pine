@@ -1,17 +1,11 @@
 (in-package #:pine/text)
 
 (defun %viewport-bytes (src from-line to-line)
-  "The byte range covering lines FROM-LINE to TO-LINE inclusive."
   (let ((last (1- (index-line-count src))))
     (values (line-start src (max 0 (min from-line last)))
             (line-start src (1+ (max 0 (min to-line last)))))))
 
 (defun %form-at-or-before (root byte count)
-  "Index of the last of ROOT's named nodes starting at or before BYTE.
-
-The nodes are in source order, so this is a binary search: finding the window
-by descending from the root would touch every form in the file, and each node
-call through the by-value TSNode binding allocates."
   (let ((lo 0) (hi (1- count)))
     (loop :while (< lo hi)
           :do (let ((mid (ceiling (+ lo hi) 2)))
@@ -21,7 +15,6 @@ call through the by-value TSNode binding allocates."
     lo))
 
 (defun %forms-in-window (root lo-byte hi-byte)
-  "ROOT's top-level named nodes that intersect [LO-BYTE, HI-BYTE)."
   (let ((count (ts-node-named-count root)))
     (when (plusp count)
       (loop :for i :from (%form-at-or-before root lo-byte count) :below count
@@ -31,7 +24,6 @@ call through the by-value TSNode binding allocates."
               :collect form))))
 
 (defun %hl-window (ps tree from-line to-line)
-  "Walk the top-level forms covering lines FROM-LINE to TO-LINE, and cache them."
   (let ((src (ps-byte-index ps))
         (root (ts-tree-root-node tree)))
     (multiple-value-bind (lo-byte hi-byte) (%viewport-bytes src from-line to-line)
@@ -45,9 +37,6 @@ call through the by-value TSNode binding allocates."
         hl))))
 
 (defun %hl-window-incremental (ps tree from-line to-line)
-  "Re-walk only the forms the edit touched and keep the rest of the window's
-cached tuples. Sound because the caller has established that no line moved, so
-every cached tuple outside the re-walked lines still describes its own line."
   (destructuring-bind (lo hi delta) (ps-hl-pending ps)
     (declare (ignore delta))
     (let* ((src (ps-byte-index ps))
@@ -84,15 +73,12 @@ every cached tuple outside the re-walked lines still describes its own line."
         merged))))
 
 (defun %window-edit-is-local-p (ps from-line to-line)
-  "True when the pending edit moved no line and lands inside FROM-LINE..TO-LINE,
-which is what makes the window's cached tuples still usable."
   (let ((pending (ps-hl-pending ps)))
     (and pending
          (destructuring-bind (lo hi delta) pending
            (and (zerop delta) (>= lo from-line) (<= hi to-line))))))
 
 (defun %shift-tuples (tuples offset)
-  "TUPLES with every line moved from band-relative to buffer coordinates."
   (if (zerop offset)
       tuples
       (mapcar (lambda (tuple)
@@ -112,10 +98,6 @@ which is what makes the window's cached tuples still usable."
     hl))
 
 (defun %hl-incremental (ps tree)
-  "Re-walk only the top-level forms covering the recorded edit and merge with
-the cached tuples: keep lines above, shift lines below by the edit's delta.
-The re-walk window is widened to whole lines and whole top-level forms (to a
-fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
   (destructuring-bind (lo hi delta) (ps-hl-pending ps)
     (let* ((src (ps-byte-index ps))
            (root (ts-tree-root-node tree))
@@ -168,19 +150,6 @@ fixpoint), so cached tuples are dropped exactly where fresh ones are emitted."
         merged))))
 
 (defun parse-highlights (ps &key from-line to-line)
-  "Highlights (line start-col end-col face) from PS's persistent tree, in the
-buffer's own line numbers.
-
-The source is PS's own lines and byte index, the ones its tree was parsed from,
-so a caller cannot hand this a text the tree does not describe. Cache identity
-is EQ on the  the seq is immutable, so an unchanged buffer is one
-comparison rather than a walk over the file.
-
-With FROM-LINE and TO-LINE, walks only the tree covering those lines. The
-descent from the root still runs, so quote state, form depth and head kind stay
-exact. Without a range, the whole buffer is walked and cached, and when exactly
-one edit was recorded since the last call only the changed top-level forms are
-re-walked. Anything unexpected falls back to the full walk."
   (let* ((tree (ps-tree ps))
          (lines (ps-lines ps))
          (offset (ps-offset ps))

@@ -63,7 +63,7 @@ repl: libs
 
 # load everything and say so, without running anything
 check: libs
-	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" --eval "(princ :loaded)" --eval "(terpri)"'
+	$(IN) '$(ENV) $(SBCL) --non-interactive --eval "(asdf:load-system :pine/all)" >/dev/null 2>&1; $(ENV) $(SBCL) --non-interactive --load bench/check.lisp'
 
 # the layers pine is built out of, lowest first. each is loaded on its own, in an
 # image with nothing else in it.
@@ -87,7 +87,7 @@ layers: libs
 # a pine in this terminal: the tree, what its config declares, and its surfaces on
 # the compositor you are under
 daemon: libs
-	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --noinform --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))" --eval "(setf pine/run/log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
+	$(IN) '$(ENV) sbcl --dynamic-space-size 4096 --noinform --no-userinit --eval "(require :asdf)" --eval "(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))" --eval "(setf pine/fs/log:*to* *standard-output*)" --eval "(pine:daemon)" --eval "(loop (sleep 60))"'
 
 # the frame and every surface as PNGs, with no display and no compositor
 shot: libs

@@ -25,8 +25,8 @@ machine does; a key is ten a second and a device tick is one.")
 (defvar *counts* (d:no-map))
 (defvar *factor* nil)
 
-(defun bad (what) (d:swap *wrong* (lambda (m) (d:with m what (1+ (or (d:lookup m what) 0))))))
-(defun did (what) (d:swap *counts* (lambda (m) (d:with m what (1+ (or (d:lookup m what) 0))))))
+(defun bad (what) (sb-ext:atomic-update *wrong* (lambda (m) (d:with m what (1+ (or (d:lookup m what) 0))))))
+(defun did (what) (sb-ext:atomic-update *counts* (lambda (m) (d:with m what (1+ (or (d:lookup m what) 0))))))
 (defun tally (what) (or (d:lookup *counts* what) 0))
 
 (defun %at (name) (fs:at nil name))
@@ -49,7 +49,7 @@ whether the *graph* ever hands anybody a number that was never true."
   (let ((below (loop :for i :below *width*
                      :collect (let ((name (format nil "l0/~d" i)))
                                 (fs:attach
-                                 (make-instance 'fs:derived :name (format nil "~d" i) :reads
+                                 (make-instance 'fs:derived :name (format nil "~d" i) :recompute
                                               (lambda ()
                                                 (fs:contents (%at "n"))))
                                  (fs:ensure nil "l0"))
@@ -62,7 +62,7 @@ whether the *graph* ever hands anybody a number that was never true."
                                  (b (nth (mod (1+ (* 2 i)) (length below)) below))
                                  (name (format nil "l~d/~d" layer i)))
                             (fs:attach
-                             (make-instance 'fs:derived :name (format nil "~d" i) :reads
+                             (make-instance 'fs:derived :name (format nil "~d" i) :recompute
                                           (lambda ()
                                             (+ (fs:contents (%at a))
                                                (fs:contents (%at b)))))
@@ -70,7 +70,7 @@ whether the *graph* ever hands anybody a number that was never true."
                             name))))
     (let ((top below))
       (fs:attach
-       (make-instance 'fs:derived :name "all" :reads (lambda ()
+       (make-instance 'fs:derived :name "all" :recompute (lambda ()
                             (loop :for each :in top
                                   :sum (fs:contents (%at each)))))
        (fs:root)))))
@@ -107,10 +107,10 @@ anybody's reader set."
                   (handler-case
                       (let ((under (fs:ensure nil "churn")))
                         (fs:attach
-                         (make-instance 'fs:derived :name name :reads (lambda () (fs:contents (%at "n"))))
+                         (make-instance 'fs:derived :name name :recompute (lambda () (fs:contents (%at "n"))))
                          under)
-                        (fs:contents (fs:entry under name))
-                        (fs:erase-entry under name)
+                        (fs:contents (fs:child under name))
+                        (fs:unlink under name)
                         (did :churn))
                     (error () (bad :churn-broke)))
                   (when (> n 100000) (setf n 0)))))))
@@ -118,7 +118,7 @@ anybody's reader set."
 (defun loose ()
   "Readers of /n that stand nowhere: a churner's node erased and left behind."
   (let ((n 0))
-    (d:do-each (each (fs::readers (%at "n")) n)
+    (d:do-each (each (fs::dependents (%at "n")) n)
       (unless (fs:over each) (incf n)))))
 
 (defun main ()

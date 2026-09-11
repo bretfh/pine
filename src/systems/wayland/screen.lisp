@@ -1,13 +1,9 @@
 (in-package #:pine/wayland)
 
 (defconstant +left+ #x110)
-(defparameter +settling+ 10
-  "Turns of the loop between passes over what is up. A surface can go without
-saying so, and a pane with nothing behind it is a window nothing can close.")
+(defparameter +settling+ 10)
 
-(defgeneric pointing (s sh &rest event)
-  (:documentation "What the pointer did. The screen holds the connection and says
-one arrived; what it was for is answered beside the other hands."))
+(defgeneric pointing (s sh &rest event))
 (defgeneric keyboard-said (s sh &rest event))
 (defgeneric typed (s said))
 (defgeneric chorded (s said))
@@ -24,9 +20,7 @@ one arrived; what it was for is answered beside the other hands."))
    (keys    :initform (make-keys) :reader keys)
    (pointer :initform (make-pointer) :reader pointer)
    (turns   :initform 0       :accessor turns)
-   (done    :initform nil     :accessor done))
-  (:documentation "The display this pine paints on. A THREAD, because a compositor
-connection is a thing you block on."))
+   (done    :initform nil     :accessor done)))
 
 (defun availablep () (and (uiop:getenv "WAYLAND_DISPLAY") t))
 
@@ -34,7 +28,6 @@ connection is a thing you block on."))
   (apply #'fs:at "/ui/surface" name under))
 
 (defun tell (s thunk)
-  "Do something that is not drawing, off the thread holding the connection."
   (let ((to (says s)))
     (when to (job:tell to thunk) t)))
 
@@ -48,21 +41,19 @@ connection is a thing you block on."))
 
 (defun %windowp (name)
   (let ((it (%named name)))
-    (and it (typep (ui:role it) '(or ui:window ui:tile)) t)))
+    (and it (typep (ui:role it) '(or ui:toplevel ui:tile)) t)))
 
 (defun %where (name)
   (let ((n (%at name "where")))
     (and n (fs:contents n))))
 
 (defun %sizing (p cell-w cell-h)
-  (list :wide (wide p) :tall (tall p)
-        :cols (max 1 (floor (wide p) (max 1 (or cell-w 9))))
-        :lines (max 1 (floor (tall p) (max 1 (or cell-h 18))))
+  (list :width (width p) :height (height p)
+        :cols (max 1 (floor (width p) (max 1 (or cell-w 9))))
+        :lines (max 1 (floor (height p) (max 1 (or cell-h 18))))
         :font *font-size*))
 
 (defun %say-size (s name p &key cell-w cell-h now)
-  "How big this surface came out. Opening one says it and waits: where it goes is
-worked out from the size."
   (let ((said (%sizing p cell-w cell-h))
         (n (%at name "size")))
     (flet ((put ()
@@ -71,8 +62,6 @@ worked out from the size."
       (if now (put) (tell s #'put)))))
 
 (defun open-one (s name)
-  "Put a surface up. What has to be told to the compositor is only ever the thread
-holding it."
   (let ((tree (%tree name)))
     (when (and tree (null (d:lookup (up s) name)))
       (let ((p (make-instance 'pane
@@ -81,9 +70,9 @@ holding it."
                               (lambda (p)
                                 (multiple-value-bind (cw ch) (cell p)
                                   (%say-size s name p :cell-w cw :cell-h ch))))))
-        (when (eq p (d:lookup (d:swap (slot-value s 'up) (lambda (m) (if (nth-value 1 (d:lookup m name)) m (d:with m name p)))) name))
-          (multiple-value-bind (wide tall) (measure p)
-            (setf (wide p) wide (tall p) tall)
+        (when (eq p (d:lookup (sb-ext:atomic-update (slot-value s 'up) (lambda (m) (if (nth-value 1 (d:lookup m name)) m (d:with m name p)))) name))
+          (multiple-value-bind (width height) (measure p)
+            (setf (width p) width (height p) height)
             (multiple-value-bind (cw ch) (cell p)
               (%say-size s name p :cell-w cw :cell-h ch :now t)))
           (let ((where (%where name))
@@ -95,8 +84,6 @@ holding it."
                          (log:note "~a is up" name)))))))))
 
 (defun moved (s name)
-  "The surface worked itself out again. How big it is is not said here: that is a
-write to a node the surface reads, and on every repaint it never settles."
   (let ((p (d:lookup (up s) name))
         (tree (%tree name)))
     (cond ((and p tree)
@@ -110,20 +97,21 @@ write to a node the surface reads, and on every repaint it never settles."
       (unless (d:lookup (up s) name) (open-one s name))
       (let ((p (d:lookup (up s) name)))
         (when p
-          (d:swap (slot-value s 'up) #'d:without name)
+          (sb-ext:atomic-update (slot-value s 'up) (lambda (old) (d:without old name)))
           (hand (pump s) (lambda () (close-pane p)))))))
 
 (defun %unlisten (s name)
   (dolist (w (d:lookup (watching s) name))
     (fault:or-nothing "a watch already let go of is let go of"
       (watch:unwatch w)))
-  (d:swap (slot-value s 'watching) #'d:without name))
+  (sb-ext:atomic-update (slot-value s 'watching) (lambda (old) (d:without old name))))
+
+(defun follows (name)
+  (%at name "tree"))
 
 (defun %listen (s name)
-  "Hear about this surface. A config read again puts a new node under the same
-name, and the old one is something nothing writes."
   (%unlisten s name)
-  (let ((it (%named name)))
+  (let ((it (follows name)))
     (when it
       (let ((on-tree (watch:watch it (lambda (of said)
                                        (declare (ignore of said))
@@ -131,8 +119,7 @@ name, and the old one is something nothing writes."
                                   :tells-when :always :poll nil
                                   :name (format nil "screen<-~a" name)))
             (shown (%at name "shown")))
-        (d:swap (slot-value s 'watching) #'d:with name
-                 (list* on-tree
+        (sb-ext:atomic-update (slot-value s 'watching) (lambda (old) (d:with old name (list* on-tree
                         (when shown
                           (list (watch:watch shown
                                              (lambda (of said)
@@ -140,15 +127,14 @@ name, and the old one is something nothing writes."
                                                (toggled s name))
                                              :poll nil
                                              :name (format nil "screen<-~a/shown"
-                                                            name))))))))))
+                                                            name))))))))))))
 
 (defun %settle (s)
-  "Take down what /surface no longer says."
   (d:do-each (name (d:keys (up s)))
     (unless (fs:at "/ui/surface" name)
       (let ((p (d:lookup (up s) name)))
         (%unlisten s name)
-        (d:swap (slot-value s 'up) #'d:without name)
+        (sb-ext:atomic-update (slot-value s 'up) (lambda (old) (d:without old name)))
         (when p
           (close-pane p)
           (log:note "~a is gone" name))))))
@@ -169,8 +155,6 @@ name, and the old one is something nothing writes."
                 (when woke (drain-wake (pump s)))))))
 
 (defun %managing (s said)
-  "What the compositor handed over, and where it all goes. Off the thread holding
-it: river kills a manager that waits."
   (tell s
         (lambda ()
           (let ((where (fs:at "/wm/said")))
@@ -187,7 +171,6 @@ it: river kills a manager that waits."
                              (laid it layout)))))))))
 
 (defun %rendering (s)
-  "A render sequence is open: commit pine's own furniture."
   (d:do-each (p (d:vals (up s)))
     (when (and (chromep p) (dirty p))
       (fault:attempt (lambda () (render p))
@@ -199,23 +182,19 @@ it: river kills a manager that waits."
 
 (defun %names ()
   (let ((n (fs:at "/ui/surface")))
-    (and n (mapcar #'fs:name (fs:entries n)))))
+    (and n (mapcar #'fs:name (fs:children n)))))
 
 (defun %managing-windows (s)
-  "Where the compositor asked for a manager, say so and load the one that is it.
-A wm already up is the wrong one, so it goes first."
   (when (wm-of s)
     (fault:attempt
      (lambda ()
        (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
-       (when (system:named "wm") (system:drop "wm"))
-       (system:use "wm")
+       (when (module:named "wm") (module:drop "wm"))
+       (module:use "wm")
        (chords-wanted s))
      "taking the windows over")))
 
 (defun %rebound (s name p)
-  "A pane over a surface node that has just been replaced. The pane stays where the
-compositor put it; what it draws is the new node's to say."
   (multiple-value-bind (cw ch) (cell p)
     (%say-size s name p :cell-w cw :cell-h ch :now t))
   (let ((tree (%tree name)))
@@ -223,12 +202,11 @@ compositor put it; what it draws is the new node's to say."
       (hand (pump s) (lambda () (setf (tree p) tree) (%shows s p))))))
 
 (defun took-up (s name)
-  "One surface, watched and shown, however it came to be declared."
   (%listen s name)
   (let ((p (d:lookup (up s) name)))
     (cond ((not (%shownp name))
            (when p
-             (d:swap (slot-value s 'up) #'d:without name)
+             (sb-ext:atomic-update (slot-value s 'up) (lambda (old) (d:without old name)))
              (hand (pump s) (lambda () (close-pane p)))))
           (p (%rebound s name p))
           (t (open-one s name)))))
@@ -241,7 +219,6 @@ compositor put it; what it draws is the new node's to say."
   s)
 
 (defun %attend (s)
-  "Everything that touches the connection, on the thread that owns it."
   (let ((d (connect)))
     (setf (display-of s) d
           (pump s) (make-pump))
@@ -271,7 +248,7 @@ compositor put it; what it draws is the new node's to say."
     (fault:or-nothing "a pane whose compositor has gone cannot be told"
       (close-pane p)))
   (d:do-each (name (d:keys (up s)))
-    (d:swap (slot-value s 'up) #'d:without name))
+    (sb-ext:atomic-update (slot-value s 'up) (lambda (old) (d:without old name))))
   (when (says s) (fault:or-nothing "one already stopped stays stopped"
                    (job:stop (says s))))
   (when (pump s) (close-pump (pump s)))
@@ -280,22 +257,18 @@ compositor put it; what it draws is the new node's to say."
   s)
 
 (defmethod job:start :before ((s screen))
-  (setf (job:runs s)
+  (setf (job:body s)
         (lambda ()
           (unwind-protect (progn (%attend s) (%loop s))
             (%shut s)))))
 
 (defun open-screen (&key (name "screen"))
-  "Paint this pine's surfaces: what is declared and shown is on screen."
   (let ((s (make-instance 'screen :name name :on-fault :restart)))
     (job:supervise s)
     (job:start s)
     s))
 
 (defmethod ui:declared ((it ui:surface))
-  "A surface declared while a screen is up goes up on it. The screen finds itself
-in the namespace: the surface layer holds no pointer to whatever is painting, and
-there being nothing painting is not a case anybody has to write down."
   (let ((s (job:named "screen")))
     (when (and (typep s 'screen) (job:alivep s))
       (tell s (lambda () (took-up s (fs:name it)))))))
@@ -309,7 +282,4 @@ there being nothing painting is not a case anybody has to write down."
     s))
 
 (defmethod pine:opening ((what (eql :display)))
-  "Loading this is what says pine can paint. Nothing writes a closure anywhere:
-the method is here, in the file that knows how, and there being no display to
-open is answered here too."
   (when (availablep) (open-screen)))

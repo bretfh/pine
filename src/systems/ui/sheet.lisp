@@ -1,5 +1,9 @@
 (in-package #:pine/ui)
 
+(defclass styling (fs:value) ())
+
+(defmethod fs:persistent-p ((n styling)) nil)
+
 (defun css-color (role) (color role))
 
 (defun css-glass (role &optional (a (metric :opacity 0.4)))
@@ -11,8 +15,6 @@
 (defun css-mono () (format nil "~s, monospace" (metric :font "Maple Mono NF")))
 
 (defgeneric selector (it)
-  (:documentation "IT as a selector: a symbol is one class, a list of symbols a
-compound, a string the selector as written.")
   (:method ((it string)) it)
   (:method ((it symbol)) (format nil ".~(~a~)" (symbol-name it)))
   (:method ((it cons)) (format nil "~{.~(~a~)~}" (mapcar #'symbol-name it))))
@@ -21,8 +23,6 @@ compound, a string the selector as written.")
   (and (find-if (lambda (c) (member c '(#\Space #\, #\: #\.))) s :start from) t))
 
 (defun %path-segment (sel)
-  "The path segment a selector is written at. One class is its own name, so
-.editor-view is the path /style/editor-view."
   (let ((s (selector sel)))
     (if (and (plusp (length s)) (char= #\. (char s 0)) (not (%compound s 1)))
         (subseq s 1)
@@ -32,28 +32,21 @@ compound, a string the selector as written.")
   (if (%compound segment) segment (format nil ".~a" segment)))
 
 (defun styles ()
-  "What is written at /ui/style, as (SELECTOR PROPS), by selector."
   (let ((at (fs:at "/ui/style"))
         (acc nil))
     (when at
-      (dolist (each (fs:entries at))
+      (dolist (each (fs:children at))
         (let ((props (fs:contents each)))
           (when (consp props)
             (push (list (%selector (fs:name each)) props) acc)))))
     (sort acc #'string< :key #'first)))
 
 (defun style (selector properties)
-  "One rule, put on the sheet. What a config says on top of the theme."
   (first (put-rules (list (list selector properties)))))
 
 (defun put-rules (pairs)
-  "Put (SELECTOR PROPS) pairs at /ui/style/?selector, replacing what stood there.
-
-What PINE:STYLE calls, so a config saying one rule and a frontend taking a whole
-sheet off the wire arrive the same way. This is also the far end of BROADCAST,
-where a frontend puts what the daemon sent into its own tree."
   (dolist (each pairs)
-    (let ((n (fs:mount (make-instance 'fs:value)
+    (let ((n (fs:mount (make-instance 'styling)
                        (format nil "/ui/style/~a" (%path-segment (first each))))))
       (setf (fs:contents n) (second each))
       (setf (fs:owner n) fs:*owner*)))
@@ -94,8 +87,6 @@ where a frontend puts what the daemon sent into its own tree."
                                :color (p :fg))))))
 
 (defmethod fs:works ((s sheet))
-  "The stylesheet in cascade order: what pine ships, then what is at /ui/style.
-Compiled as it is worked out, and the compiled rules kept beside."
   (let ((cascade (append (built-in) (styles))))
     (setf (compiled s) (%compiled cascade))
     cascade))

@@ -9,85 +9,71 @@
   name)
 
 (defun %on-the-host (where)
-  "The place on this machine's filesystem that WHERE names, whether or not a file
-is there yet: opening one that is not is a document on a place, not on a file."
   (let ((at (fs:at "/file"))
         (names (fs:split-name (namestring where))))
     (loop :while (and at (rest names))
-          :do (setf at (fs:entry at (pop names))))
+          :do (setf at (fs:child at (pop names))))
     (and at names (fs:node-for at (first names)))))
 
 (defun %place (where)
-  "The node WHERE names, or a place on the host where the tree has none. AT says
-what a node, a path and a name each mean, so there is nothing to ask here."
   (or (fs:at where) (%on-the-host where)))
 
-(defun visit (document where)
-  "Open DOCUMENT onto WHERE: a file on the host, or any node in the tree. What it
-shows is whatever stands there, so /metric/frame reads like a file does."
+(defun visit (buffer where)
   (let ((n (%place where)))
     (when n
-      (setf (source document) n)
-      (%recently (origin document))
-      (setf (text document) (or (fs:contents n) ""))
-      (let ((m (mode:mode-for (origin document))))
-        (when m (setf (mode-of document) m)))
-      (let ((had (visited document)))
-        (if had (goto document (first had) (second had))
-            (goto document 0 0)))
-      (restructure document)
-      (setf (modified document) nil))
-    document))
+      (setf (source buffer) n)
+      (%recently (origin buffer))
+      (setf (text buffer) (or (fs:contents n) ""))
+      (let ((m (mode:mode-for (origin buffer))))
+        (when m (setf (mode-of buffer) m)))
+      (let ((had (visited buffer)))
+        (if had (goto buffer (first had) (second had))
+            (goto buffer 0 0)))
+      (restructure buffer)
+      (setf (modified buffer) nil))
+    buffer))
 
-(defmethod visiting ((document document) where)
-  "Writing a document's source opens it onto what stands there. The document
-declares that somebody might know how; this is the somebody."
-  (visit document where))
+(defmethod visiting ((buffer buffer) where)
+  (visit buffer where))
 
-(defun save (document &optional where)
-  "Write what DOCUMENT holds back where it came from. Whatever stands there says
-what writing means: a file is written, a device is acted on."
-  (when where (setf (source document) (%place where)))
-  (let ((n (source document)))
+(defun save (buffer &optional where)
+  (when where (setf (source buffer) (%place where)))
+  (let ((n (source buffer)))
     (when n
-      (mode:saving (mode-of document) document)
-      (setf (fs:contents n) (text document))
-      (setf (modified document) nil)
-      (origin document))))
+      (mode:saving (mode-of buffer) buffer)
+      (setf (fs:contents n) (text buffer))
+      (setf (modified buffer) nil)
+      (origin buffer))))
 
-(defun revert (document)
-  (let ((n (source document)))
+(defun revert (buffer)
+  (let ((n (source buffer)))
     (when (and n (fs:contents n))
-      (leaving document)
-      (visit document n))))
+      (leaving buffer)
+      (visit buffer n))))
 
 (defun %syntax ()
-  "Load tree-sitter. A grammar that will not load is a fault like any other: the
-text still opens, uncoloured."
   (let ((it (make-ts-runtime)))
     (fault:attempt (lambda () (ensure-ts it)) "loading tree-sitter")
     (when (ts-loaded-p it)
       (setf *runtime* it))))
 
-(command:defcommand "documents" () (:describes "every document there is")
-  (mapcar #'fs:name (documents)))
+(command:defcommand "buffers" () (:describes "every buffer there is")
+  (mapcar #'fs:name (buffers)))
 
 (command:defcommand "structure" (&optional name)
-    (:describes "what this document's mode makes of it")
+    (:describes "what this buffer's mode makes of it")
   (let ((d (if name (fs:at (root) name) (current))))
     (when d (mapcar #'fs:name (regions d)))))
 
 (defmethod job:start ((s text))
   (%syntax)
   (root)
-  (let ((scratch (make-document "scratch" :mode (make-instance 'mode:lisp))))
+  (let ((scratch (make-buffer "scratch" :mode (make-instance 'mode:lisp))))
     (setf (current) scratch))
   s)
 
 (defmethod job:stop ((s text))
-  "What it put up goes by what OWNED was told as it went up. The documents are its
-own doing rather than a path it attached, so they are named here."
   (forget-all)
-  (dolist (d (documents)) (kill (fs:name d)))
+  (dolist (d (buffers)) (kill (fs:name d)))
   s)
 

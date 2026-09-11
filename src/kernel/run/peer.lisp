@@ -3,65 +3,30 @@
   (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:image #:pine/run/image)
                     (#:actors #:pine/run/actors) (#:watch #:pine/run/watch)
-                    (#:fault #:pine/run/fault) (#:said #:pine/said) (#:log #:pine/fs/log))
+                    (#:fault #:pine/run/fault) (#:serial #:pine/serial) (#:log #:pine/fs/log))
   (:export
    #:reach #:serve #:named #:received #:telling #:forget-watches #:watches
    #:evaluatingp #:*trusted* #:*evaluates*))
 (in-package #:pine/run/peer)
 
 (defvar *timeout* 30)
-(defvar *trusted* nil
-  "Whether this way in is one somebody asked for.
-
-Off unless a transport says otherwise, and a transport says so by existing at all:
-the socket sits under the runtime directory and cannot be opened by anybody who
-could not already start a lisp as this user, and a port is one nothing opens
-unless the person running pine wrote it down. Both are a decision somebody made.
-
-The default is the point. A way in added later that has not thought about this
-gets a namespace it can read and write, and not a lisp it can evaluate in --
-rather than the other way round, which is what a daemon that turned a port on for
-you was.")
-(defvar *evaluates* t
-  "Whether a way in this image trusts may be given a form to evaluate.
-
-On, because the other end of one could already run a lisp as this user: refusing
-would protect nothing and would take the one verb a person at a terminal most
-wants. A pine answering somewhere it is less sure of turns this off and still
-answers reads and writes.
-
-Here and not in the file that reads a line off a socket, because there is more
-than one way in and what may be asked must not depend on which one somebody
-used.")
-(defvar *waits* nil
-  "Whether this way in waits for work it asked for, on its own thread.")
+(defvar *trusted* nil)
+(defvar *evaluates* t)
+(defvar *waits-inline* nil)
 (defclass asked (job:thread)
   ((answered    :initform nil :accessor answered)
    (done        :initform nil :accessor done)
    (output      :initform (make-string-output-stream) :reader output)
    (ready       :initform (bordeaux-threads:make-semaphore) :reader ready)
-   (standing-in :initform (list nil) :reader standing-in))
-  (:documentation "Work another pine asked for, at /proc/ask-<token>: what it came
-to, what it printed, and the fault it stands in."))
+   (suspended-in :initform (list nil) :reader suspended-in)))
 
 (defvar *counter* 0)
-(defvar *telling* nil
-  "How to reach whoever is asking, where they left a way to be reached. A watch
-fires on another thread long after the question that asked for it, so what answers
-a question and what carries an event are two different things, and only the second
-needs this.")
-(defvar *watching* nil
-  "Where the watches made while answering are collected, so whoever opened the
-connection can let them go when it closes. A watch outlives the question that
-asked for it and must not outlive the asker.")
+(defvar *telling* nil)
+(defvar *watching* nil)
 
 (defclass peer (image:image)
   ((uri :initarg :uri :accessor uri)
-   (ref :initform nil :accessor ref))
-  (:documentation "Another pine: an image you can evaluate in and a namespace you
-can graft. One class because it is one thing, and that is why a read of
-/host/laptop/dev/audio/volume and a read of /dev/audio/volume are the same act."))
-
+   (ref :initform nil :accessor ref)))
 
 (defun peers () (remove-if-not (lambda (j) (typep j 'peer)) (job:jobs)))
 
@@ -93,8 +58,6 @@ can graft. One class because it is one thing, and that is why a read of
   p)
 
 (defun reach (name &key host port (actor "tree"))
-  "Get to another pine. What comes back is a job you can start and stop and a
-namespace you can mount."
   (let ((p (make-instance 'peer :name name :on-fault :leave
                                 :uri (%uri (or host actors:*host*) port actor)
                                 :describes (%uri (or host actors:*host*) port
@@ -110,15 +73,12 @@ namespace you can mount."
                                    :token (getf answer :token))
                   (values nil (getf answer :said-broke) (getf answer :offers)
                           (or (getf answer :said) "")))
-                 (t (values (mapcar #'said:took (getf answer :answered))
+                 (t (values (mapcar #'serial:decode (getf answer :answered))
                             nil nil
                             (or (getf answer :said) ""))))))
         (t (values nil (format nil "~a" said) nil ""))))
 
 (defmethod image:evaluate ((p peer) form &key (timeout *timeout*))
-  "Work in a pine reached over the network. The far side answers at once with a
-token and goes on; this side asks after it until it is done or TIMEOUT is up. The
-far side never waits, so nothing else asking it is held behind this."
   (let ((said (%ask p (list :evaluate form) :timeout timeout)))
     (if (and (consp said) (eq :ok (first said)) (eq :working (second said)))
         (let ((token (getf (cddr said) :token))
@@ -150,29 +110,25 @@ far side never waits, so nothing else asking it is held behind this."
 
 (defclass remote ()
   ((peer  :initarg :peer  :reader peer-of)
-   (where :initarg :where :reader where-of))
-  (:documentation "Somewhere in another pine's namespace. Watching it is a method:
-asking that pine to say when it moves."))
+   (where :initarg :where :reader where-of)))
 
 (defclass remote-dir (remote fs:mount) ())
 (defclass remote-leaf (remote fs:derived) ())
 
 (defun remote (p where name &optional (kind :dir))
-  "What stands at WHERE in another pine, of the kind it says: a dir listing what that
-pine lists, or a leaf whose read and write cross to it."
   (make-instance (if (eq kind :dir) 'remote-dir 'remote-leaf)
                  :name name :peer p :where where :describes (uri p)))
 
-(defmethod fs:livep ((n remote-dir) &optional name) (declare (ignore name)) t)
-(defmethod fs:livep ((n remote-leaf) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n remote-dir) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n remote-leaf) &optional name) (declare (ignore name)) t)
 
-(defmethod fs:entries ((n remote-dir))
-  (remove nil (mapcar (lambda (child) (fs:entry n child))
+(defmethod fs:children ((n remote-dir))
+  (remove nil (mapcar (lambda (child) (fs:child n child))
                       (%crossed (peer-of n) (where-of n) (list :entries)))))
 
-(defmethod fs:entry ((n remote-dir) name)
+(defmethod fs:child ((n remote-dir) name)
   (let ((child (princ-to-string name)))
-    (fs:child n child
+    (fs:ensure-child n child
               (lambda ()
                 (let ((kind (%crossed (peer-of n) (where-of n) (list :entry child))))
                   (when kind
@@ -181,33 +137,25 @@ pine lists, or a leaf whose read and write cross to it."
                       it)))))))
 
 (defmethod fs:works ((n remote-leaf))
-  (said:took (%crossed (peer-of n) (where-of n) (list :contents))))
+  (serial:decode (%crossed (peer-of n) (where-of n) (list :contents))))
 
 (defmethod fs:takes ((n remote-leaf) value)
-  (%crossed (peer-of n) (where-of n) (list :write (said:said value))))
+  (%crossed (peer-of n) (where-of n) (list :write (serial:encode value))))
 
 (defmethod watch:watch ((n remote) tells &key every name tells-when poll for)
-  "Watching a place in another pine is asking that pine to say when it moves. The
-near side and the far side were two paths; this is the near one, and it is the verb
-rather than something beside it."
   (declare (ignore every tells-when poll for))
   (listen-to (peer-of n) (where-of n)
              (lambda (where said) (declare (ignore where)) (funcall tells n said))
              :name name))
 
 (defmethod fs:mount ((what peer) where)
-  "Graft another pine's namespace here. From now on a read of a path under it is a
-read, and a write is a write."
   (fs:mount (remote what "/" (job:name what) :dir) where))
 
 (defun local-uri (name)
-  "Where an actor in this image is reached from another one."
   (%uri actors:*host* (or (actors:remoting) 0) name))
 
 (defun listen-to (p where tells &key name)
-  "Ask another pine to say so whenever a place in it moves. What comes back is a
-job: stopping it is how you stop listening."
-  (let* ((name (or name (format nil "watch-~d" (d:swap *counter* #'1+))))
+  (let* ((name (or name (format nil "watch-~d" (sb-ext:atomic-update *counter* (lambda (old) (1+ old))))))
          (j (make-instance 'job:actor
                            :name name :on-fault :leave :dispatcher :pinned
                            :describes (format nil "~a of ~a" where (job:name p))
@@ -220,41 +168,26 @@ job: stopping it is how you stop listening."
     j))
 
 (defun %to-uri (uri)
-  "Reaching somebody who is an actor with an address of their own."
   (let ((to (sento.remoting:make-remote-ref (actors:actors) uri)))
     (lambda (said) (sento.actor:tell to said))))
 
 (defmacro telling ((how &optional watches trusted waits) &body body)
-  "Answer with HOW as the way back to whoever is asking, collecting the watches
-they make into WATCHES. What a transport binds around its dispatch.
-
-TRUSTED is the transport saying whether the other end carries this user's own
-name. It is said here, where everything else about the connection is said, so
-that what may be asked is one question with one answer however the words arrived."
   `(let ((*telling* ,how)
          (*watching* (or ,watches *watching*))
          (*trusted* ,trusted)
-         (*waits* ,waits))
+         (*waits-inline* ,waits))
      ,@body))
 
 (defun evaluatingp ()
-  "Whether this way in may be given a form to evaluate."
   (and *trusted* *evaluates*))
 
 (defun watches () (and *watching* (cdr *watching*)))
 
 (defun forget-watches (&optional (held *watching*))
-  "Let go of the watches made through one connection. Whoever opened it calls
-this when it closes: a watch telling somebody who has gone is one that fires for
-the life of the image and reaches nobody."
   (dolist (w (cdr held) t)
     (fault:or-nothing "a watch already let go of is let go of" (watch:unwatch w))))
 
 (defun %watching (where &optional uri)
-  "Say so whenever a place moves, to whoever asked.
-
-Where they are an actor with an address, that address; otherwise back the way the
-question came, which is the only way there is for anything on a stream."
   (let ((n (fs:at (fs:root) (string-left-trim "/" (princ-to-string where))))
         (to (if uri (%to-uri uri) *telling*)))
     (cond ((null n) (list :no (format nil "nothing at ~a" where)))
@@ -269,33 +202,21 @@ question came, which is the only way there is for anything on a stream."
                (list :ok (fs:full-name n)))))))
 
 (defun %done (uri)
-  "Somebody with an address says they are finished. Their watches go with them:
-one telling an address nobody is listening at fires for the life of the image and
-reaches no one."
   (let ((held (remove uri (watch:watchers) :key #'watch:for :test-not #'equal)))
     (dolist (w held) (fault:or-nothing "a watch already let go of is let go of"
                        (watch:unwatch w)))
     (list :ok (length held))))
 
 (defun %said (n)
-  "What stands at N, spelled. A value that has no spelling is an object standing
-for itself -- a widget, a document, a compositor -- and the answer is to say so
-and name the place, rather than a nil that reads as an empty one."
   (let ((value (fs:contents n)))
-    (if (said:sayablep value)
-        (list :ok (said:said value) :kind (fs:holding n))
+    (if (serial:encodablep value)
+        (list :ok (serial:encode value) :kind (fs:kind n))
         (list :no (format nil "~a holds a ~(~a~), which has no spelling; what is ~
                                under it may"
                           (fs:full-name n)
                           (class-name (class-of value)))))))
 
 (defun %place (where message)
-  "A place another pine is asking about. A write makes it if nothing stands there,
-the way a write does here; a read and a verb do not, because there is nothing to
-read and nothing to tell.
-
-What crosses is spelled rather than handed over: whoever is asking may be a lisp
-with fset loaded, and may just as well be a shell."
   (let* ((name (string-left-trim "/" (princ-to-string where)))
          (n (if (eq :write (first message))
                 (fs:mount (make-instance 'fs:value) (concatenate 'string "/" name))
@@ -305,42 +226,36 @@ with fset loaded, and may just as well be a shell."
         (case (first message)
           (:contents (%said n))
           (:write    (setf (fs:contents n)
-                           (fs:as-value (said:took (second message))))
+                           (fs:as-value (serial:decode (second message))))
                      (%said n))
           (:verb     (fs:verb n (second message)
-                                (mapcar #'said:took (cddr message)))
+                                (mapcar #'serial:decode (cddr message)))
                      (%said n))
-          (:entries  (list :ok (mapcar #'fs:name (fs:entries n))))
-          (:entry    (let ((it (fs:entry n (second message))))
+          (:entries  (list :ok (mapcar #'fs:name (fs:children n))))
+          (:entry    (let ((it (fs:child n (second message))))
                        (if it
                            (list :ok (if (typep it 'fs:mount) :dir :leaf))
                            (list :no (format nil "nothing at ~a under ~a"
                                              (second message) where)))))
           (t (list :no "no such question about a place"))))))
 
-(defvar *brief-eval* 0.02
-  "How long the peer answers an :EVALUATE inline before it hands back a token.
-Fast work finishes inside this and is one round trip; slow work detaches, and the
-one actor that answers every peer is held no longer than this by any of them.")
+(defvar *brief-eval-seconds* 0.02)
 
 (defun %work (form &optional (budget 0))
-  "Start FORM on a thread that stands in whatever breaks, and answer within BUDGET.
-What finishes in time comes back as its value; what does not comes back as a token
-to ask after, so nothing waits on the far side for work it started."
-  (let* ((token (d:swap *counter* #'1+))
+  (let* ((token (sb-ext:atomic-update *counter* (lambda (old) (1+ old))))
          (j (make-instance 'asked :name (%ask-name token) :on-fault :leave
                                   :describes "work another pine asked for")))
-    (setf (job:runs j)
+    (setf (job:body j)
           (lambda ()
             (unwind-protect
                  (let ((*standard-output* (output j))
-                       (fault:*keeping* (standing-in j)))
+                       (fault:*keeping* (suspended-in j)))
                    (fault:with-debugger
                      (fault:attempt
                       (lambda () (setf (answered j) (multiple-value-list (eval form))
                                        (done j) t))
                       "answering a peer")))
-              (fault:changed)
+              (fault:wake)
               (setf (job:stopping j) t)
               (bordeaux-threads:signal-semaphore (ready j)))))
     (job:start j)
@@ -354,39 +269,21 @@ to ask after, so nothing waits on the far side for work it started."
 (defun %ask-name (token) (format nil "ask-~d" token))
 
 (defun %answered (token)
-  "What the work asked for under TOKEN came to, or :WORKING while it has not. One
-that came to something is forgotten as it is told; one standing in a fault stays
-until the fault is taken."
   (let ((j (job:named (%ask-name token))))
     (if (null j)
         (list :no (format nil "nothing was asked under ~a" token))
-        (let ((f (car (standing-in j))))
+        (let ((f (car (suspended-in j))))
           (cond (f (list :ok :said-broke (princ-to-string (fault:condition-of f))
                          :offers (fault:offers f) :token token
                          :said (get-output-stream-string (output j))))
                 ((done j)
-                 (let ((said (list :ok :answered (mapcar #'said:said (answered j))
+                 (let ((said (list :ok :answered (mapcar #'serial:encode (answered j))
                                    :said (get-output-stream-string (output j)))))
                    (job:forget (job:name j))
                    said))
                 (t (list :ok :working)))))))
 
 (defun received (message)
-  "What somebody asking gets back. Whatever breaks in here is answered rather than
-thrown: this is the edge of the image, and on the other side of it is somebody who
-can do nothing with a dropped connection but can do something with a sentence.
-
-It is kept as a fault too, from where it was signalled, so what broke answering is
-in the debugger with everything else that broke.
-
-One table for every way in. What differs between a peer over sento and a shell on
-a socket is how the words arrive and how an event goes back, which is TELLING, and
-nothing else.
-
-One line is one piece of news, however many places it moves. A line that writes
-four of them tells whoever is listening once, at the end, with all four -- so a
-store writes once and a watcher is woken once, and nothing is worked out from a
-half-done line."
   (block answering
     (handler-bind ((error (lambda (c)
                             (fault:report c "answering what was asked here")
@@ -398,13 +295,13 @@ half-done line."
   (case (first message)
     (:ping (list :ok :pong))
     (:evaluate (cond ((not (evaluatingp)) (list :no "this way in does not evaluate"))
-                     (*waits* (%work (second message) *timeout*))
-                     (t (%work (second message) *brief-eval*))))
+                     (*waits-inline* (%work (second message) *timeout*))
+                     (t (%work (second message) *brief-eval-seconds*))))
     (:watch (%watching (second message) (third message)))
     (:done (%done (second message)))
     (:answer (%answered (second message)))
     (:take (let* ((j (job:named (%ask-name (third message))))
-                  (f (and j (car (standing-in j))))
+                  (f (and j (car (suspended-in j))))
                   (taken (and f (fault:take f (second message)))))
              (when j (job:forget (job:name j)))
              (list :ok taken)))
@@ -413,12 +310,6 @@ half-done line."
     (t (list :no "no such question"))))
 
 (defun serve (&key (name "tree"))
-  "Answer another pine's questions about this one: reads and writes of places, and
-work to do in this image. Pinned, because a fault it stands in would otherwise take
-a shared worker with it.
-
-Trusted, because there is no port to reach this on until somebody asked for one.
-Opening it is the decision; this is only where the decision is carried."
   (let ((j (make-instance 'job:actor :name name :on-fault :leave
                                      :dispatcher :pinned
                                      :describes "what another pine may ask here"

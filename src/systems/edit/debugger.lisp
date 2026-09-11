@@ -1,24 +1,22 @@
 (in-package #:pine/edit)
 
-(defvar *standing* nil)
+(defvar *shown* nil)
 (defparameter *name* "*debugger*")
 
 (defclass offered ()
   ((of       :initarg :of       :reader of)
    (restarts :initarg :restarts :reader restarts :initform nil)
-   (fault    :initarg :fault    :reader fault-of :initform nil))
-  (:documentation "A fault put up as something to act on: what broke, and the
-restarts still being offered where it broke."))
+   (fault    :initarg :fault    :reader fault-of :initform nil)))
 
 (defmethod print-object ((s offered) stream)
   (print-unreadable-object (s stream :type t)
     (format stream "~a, ~d restart~:p" (of s) (length (restarts s)))))
 
-(defun standing () *standing*)
+(defun shown () *shown*)
 
 (defun %text (s)
   (with-output-to-string (out)
-    (let ((all (fault:standing)))
+    (let ((all (fault:suspended)))
       (when (rest all)
         (format out "fault ~d of ~d (Tab: next)~%~%"
                 (1+ (or (position (fault-of s) all) 0)) (length all))))
@@ -32,8 +30,6 @@ restarts still being offered where it broke."))
         (format out "~%~a~%" (fault:backtrace-of f))))))
 
 (defun %follow (f)
-  "Work goes where the fault is, so a fix after a break lands in the image that
-broke. What the target was is kept, and putting the debugger away puts it back."
   (let ((where (and f (fault:where f))))
     (when where
       (unless (target-was)
@@ -46,19 +42,15 @@ broke. What the target was is kept, and putting the debugger away puts it back."
       (setf (target) (unless (eq was :here) was))
       (setf (target-was) nil))))
 
-(defun %front (document)
-  (setf (text:current) document)
-  (show (focused) document)
-  document)
+(defun %front (buffer)
+  (setf (text:current) buffer)
+  (show (focused) buffer)
+  buffer)
 
 (defun %takes-the-front ()
-  "A fault takes the keyboard from nothing that is already using it: not from a
-question standing, and not from the debugger already up, which a node that throws
-every frame would otherwise take again every frame."
-  (and (null *standing*) (not (askingp))))
+  (and (null *shown*) (not (askingp))))
 
 (defun put-up (condition &key restarts fault (front (%takes-the-front)))
-  "Put a fault up as a document you can act on rather than a line you cannot."
   (%follow fault)
   (let* ((s (make-instance 'offered
                            :of condition
@@ -67,50 +59,45 @@ every frame would otherwise take again every frame."
                                          (mapcar #'princ-to-string
                                                  (compute-restarts condition)))
                            :fault fault))
-         (document (or (fs:at "/text" *name*)
-                       (text:make-document *name*
+         (buffer (or (fs:at "/text" *name*)
+                       (text:make-buffer *name*
                                           :mode (make-instance 'debugger)))))
-    (setf *standing* s)
-    (unless (typep (text:mode-of document) 'debugger)
-      (setf (text:mode-of document) (make-instance 'debugger)))
-    (setf (text:text document) (%text s))
-    (text:goto document 0 0)
-    (when front (%front document))
-    document))
+    (setf *shown* s)
+    (unless (typep (text:mode-of buffer) 'debugger)
+      (setf (text:mode-of buffer) (make-instance 'debugger)))
+    (setf (text:text buffer) (%text s))
+    (text:goto buffer 0 0)
+    (when front (%front buffer))
+    buffer))
 
 (defmethod fault:faulted ((f fault:fault))
-  "A fault somebody can still do something about goes up in front of them. A
-window is what says somebody is there to look; with none, it is said instead,
-which is what the layer below already does."
-  (if (and (fault:standingp f) (focused))
+  (if (and (fault:suspendedp f) (focused))
       (put-up (fault:condition-of f) :fault f)
       (call-next-method)))
 
 (defun choose (n)
-  "Take the nth restart: the thread standing in the fault is handed it and goes."
-  (let ((s (standing)))
+  (let ((s (shown)))
     (when (and s (nth n (restarts s)))
       (let ((name (nth n (restarts s)))
             (f (fault-of s)))
-        (setf *standing* nil)
+        (setf *shown* nil)
         (if f
             (progn (fault:take f name) (log:note "took ~a" name))
             (log:note "~a" name))
-        (unless (fault:standing) (%back))
+        (unless (fault:suspended) (%back))
         name))))
 
 (defun next ()
-  "The fault after this one, of the ones still standing."
-  (let* ((all (fault:standing))
-         (s (standing))
+  (let* ((all (fault:suspended))
+         (s (shown))
          (at (position (and s (fault-of s)) all))
          (f (nth (mod (1+ (or at -1)) (max 1 (length all))) all)))
     (when f (put-up (fault:condition-of f) :fault f :front t))))
 
 (defun away ()
-  (setf *standing* nil)
+  (setf *shown* nil)
   (%back)
-  (when (fs:at "/text" *name*) (command:run "kill-document" (list *name*)))
+  (when (fs:at "/text" *name*) (command:run "kill-buffer" (list *name*)))
   t)
 
 (command:defcommand "debugger-abort" ()
@@ -127,8 +114,8 @@ which is what the layer below already does."
               (or (parse-integer (princ-to-string n) :junk-allowed t) 0))))
 
 (command:defcommand "debugger" ()
-    (:describes "the last fault, as a document" :on '(text "C-x e"))
-  (let ((f (or (first (fault:standing)) (first (fault:faults)))))
+    (:describes "the last fault, as a buffer" :on '(text "C-x e"))
+  (let ((f (or (first (fault:suspended)) (first (fault:faults)))))
     (if f
         (fs:name (put-up (fault:condition-of f) :fault f :front t))
         (log:note "nothing has faulted"))))

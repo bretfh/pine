@@ -6,18 +6,15 @@
   (:export
    #:job #:thread #:tick #:actor #:program #:start
    #:stop #:alivep #:tell #:ask #:jobs
-   #:named #:supervise #:supervised #:sweep #:attend #:emit #:asked-for
-   #:stoppingp #:stoppedp #:heldp #:forget #:name #:state #:tries #:told #:kinds
-   #:took #:runs #:stopping #:argv #:ref #:started #:again
+   #:named #:supervise #:supervised #:sweep #:attend #:emit
+   #:stoppingp #:stoppedp #:giving-up-p #:forget #:name #:state #:tries #:make-job #:kinds
+   #:handle #:body #:stopping #:argv #:ref #:started #:again
    #:repeat #:cancel #:ticks))
 (in-package #:pine/run/job)
 
 (defvar *out-kept* 200)
-(defvar *asking* 5)
-(defvar *stopping* 2
-  "Seconds to wait for a thread asked to stop. It is asked and then joined: a
-thread blocked on a stream reads to the end of what it has and then looks, so the
-wait is for that look and not for a clock.")
+(defvar *ask-seconds* 5)
+(defvar *stop-seconds* 2)
 (define-condition blocking-ask (error)
   ((of :initarg :of :reader of))
   (:report (lambda (c stream)
@@ -30,32 +27,27 @@ handed, or TELL and take the reply as a message." (of c)))))
    (tries     :initform 0        :accessor tries)
    (supervised :initform nil     :accessor supervisedp)
    (on-fault :initarg :on-fault :accessor on-fault :initform :restart)
-   (took      :initform nil      :accessor took)
+   (handle      :initform nil      :accessor handle)
    (exit-of   :initform nil      :accessor exit-of)
    (since     :initform nil      :accessor since)
    (fault     :initform nil      :accessor fault)
-   (said      :initform nil :reader said))
-  (:documentation "Something that runs; its state and tries are nodes under it."))
+   (stopping  :initform nil      :accessor stopping)
+   (said      :initform nil :reader said)))
 
 (defclass thread (job)
-  ((runs     :initarg :runs   :accessor runs)
-   (stopping :initform nil :accessor stopping))
-  (:documentation "Blocks on something, in a thread of its own."))
+  ((body     :initarg :body   :accessor body)))
 
 (defclass tick (job)
-  ((runs    :initarg :runs  :accessor runs)
-   (seconds :initarg :every :accessor seconds))
-  (:documentation "Repeats on the wheel, taking no thread."))
+  ((body    :initarg :body  :accessor body)
+   (seconds :initarg :every :accessor seconds)))
 
 (defclass actor (job)
   ((receive    :initarg :receive    :accessor receive)
-   (dispatcher :initarg :dispatcher :accessor dispatcher :initform :shared))
-  (:documentation "Takes messages one at a time, in the order they were sent."))
+   (dispatcher :initarg :dispatcher :accessor dispatcher :initform :shared)))
 
 (defclass program (job)
   ((argv :initarg :argv :accessor argv)
-   (env  :initarg :env  :accessor env :initform nil))
-  (:documentation "An os child that is not lisp."))
+   (env  :initarg :env  :accessor env :initform nil)))
 
 (defmethod print-object ((j job) stream)
   (print-unreadable-object (j stream :type t)
@@ -64,59 +56,52 @@ handed, or TELL and take the reply as a message." (of c)))))
 (defmethod initialize-instance :after ((j job) &key)
   (fs:mount j (%proc)))
 
+(defmethod fs:names ((j job))
+  '((:state . "which of stopped, starting, running, stopping, failed or given up it is")
+    (:tries . "how many times it has been started")
+    (:said  . "the last lines it said")
+    (:tell  . "give it something")))
+
 (defmethod fs:read ((j job) (name (eql :state)))
-  "Which of stopped, starting, running, stopping, failed or held it is."
   (state j))
 
 (defmethod fs:read ((j job) (name (eql :tries)))
-  "How many times it has been started."
   (tries j))
 
 (defmethod fs:read ((j job) (name (eql :said)))
-  "The last lines it said."
   (said j))
 
 (defmethod fs:write ((j job) (name (eql :tell)) value)
-  "Give it something."
   (tell j value))
 
 (defun %proc () (fs:at "/proc"))
 
 (defun jobs ()
-  (remove-if-not (lambda (each) (typep each 'job)) (fs:entries (%proc))))
+  (remove-if-not (lambda (each) (typep each 'job)) (fs:children (%proc))))
 
 (defun named (name)
-  (let ((it (fs:entry (%proc) (princ-to-string name))))
+  (let ((it (fs:child (%proc) (princ-to-string name))))
     (and (typep it 'job) it)))
 
 (defun again (j)
-  "Start J afresh: asking for one by name forgets what it tried before."
   (setf (tries j) 0)
   (start j)
   j)
 
 (defun emit (j line)
-  (d:swap (slot-value j 'said) #'d:capped line *out-kept*)
+  (sb-ext:atomic-update (slot-value j 'said) (lambda (old) (d:capped old line *out-kept*)))
   line)
 
 (defgeneric alivep (job)
-  (:documentation "Whether it is running now, asked of the thing itself.")
   (:method ((j job)) (eq :running (state j))))
 
 (defgeneric start (job)
-  (:documentation "Run it.")
   (:method :before ((j job))
     (incf (tries j))
     (setf (state j) :starting (fault j) nil (since j) (get-universal-time)))
   (:method :after ((j job))
     (when (eq :starting (state j)) (setf (state j) :running)))
   (:method :around ((j job))
-    "One that would not start is one that failed, and says so where it stands.
-
-Left where the :BEFORE put it, a job whose START threw stayed :STARTING for ever:
-SWEEP starts what is :RUNNING or :FAILED and gives up on what has tried too often,
-and :STARTING is neither. A window manager on a compositor pine does not know how
-to talk to sat there saying it was starting for the life of the image."
     (handler-bind ((error (lambda (c)
                             (setf (fault j) c (state j) :failed))))
       (call-next-method)))
@@ -124,75 +109,61 @@ to talk to sat there saying it was starting for the life of the image."
     (error "~a says nothing about how it starts." (fs:full-name j))))
 
 (defgeneric stoppedp (job)
-  (:documentation "Whether asking it to stop worked.
-
-Asked of the kind, because only some kinds can say. An actor is gone when the
-context has let it go, and what it was is no longer worth reading; a thread is a
-thread, and one that never looks between reads is still running whatever pine has
-written down about it.")
   (:method ((j job)) t)
   (:method ((j thread))
-    (let ((it (took j)))
+    (let ((it (handle j)))
       (not (and (typep it 'bordeaux-threads:thread)
                 (bordeaux-threads:thread-alive-p it))))))
 
 (defgeneric stop (job)
-  (:documentation "Let it go.")
   (:method :before ((j job)) (setf (state j) :stopping))
   (:method :after ((j job))
-    "Stopped where it really stopped. One that was asked and did not go is still
-running, and calling it stopped leaves it holding what it holds with nothing left
-in the tree that names it."
     (if (stoppedp j)
-        (setf (state j) :stopped (took j) nil)
+        (setf (state j) :stopped (handle j) nil)
         (setf (state j) :stopping)))
   (:method ((j job))
     (error "~a says nothing about how it stops." (fs:full-name j))))
 
 (defun stoppingp (j)
-  "Whether this thread has been asked to stop. A loop that blocks on a stream cannot
-be interrupted, so what can look between reads has to."
-  (and (typep j 'thread) (stopping j)))
+  (and (stopping j) t))
 
 (defmethod alivep ((j thread))
-  (let ((it (took j)))
+  (let ((it (handle j)))
     (and (typep it 'bordeaux-threads:thread) (bordeaux-threads:thread-alive-p it))))
 
-(defmethod alivep ((j tick)) (and (took j) t))
+(defmethod alivep ((j tick)) (and (handle j) t))
 
 (defmethod start ((j thread))
   (setf (stopping j) nil)
-  (setf (took j)
+  (setf (handle j)
         (actors:blocking
          (name j)
          (lambda ()
-           (unwind-protect (fault:attempt (runs j) (name j))
+           (unwind-protect (fault:attempt (body j) (name j))
              (setf (state j) (if (stopping j) :stopped :failed))))))
   j)
 
 (defmethod start ((j tick))
-  (setf (took j) (actors:schedule (seconds j) (runs j) (name j)))
+  (setf (handle j) (actors:schedule (seconds j) (body j) (name j)))
   j)
 
 (defmethod stop ((j thread))
   (setf (stopping j) t)
-  (let ((it (took j)))
+  (let ((it (handle j)))
     (when (typep it 'bordeaux-threads:thread)
-      (sb-thread:join-thread it :timeout *stopping* :default nil)))
+      (sb-thread:join-thread it :timeout *stop-seconds* :default nil)))
   j)
 
 (defmethod stop ((j tick))
-  (let ((it (took j))) (when it (actors:unschedule it) (setf (took j) nil))) j)
+  (let ((it (handle j))) (when it (actors:unschedule it) (setf (handle j) nil))) j)
 
 (defun ticks () (remove-if-not (lambda (j) (typep j 'tick)) (jobs)))
 
 (defun repeat (seconds thunk &key (as (gensym "REPEAT-")) (what "a tick"))
-  "A tick called AS, running THUNK every SECONDS. Asking again under one name
-replaces what was there."
   (let ((name (substitute #\. #\/ (princ-to-string as))))
     (let ((had (named name)))
       (when (typep had 'tick) (stop had) (forget name)))
-    (let ((j (make-instance 'tick :name name :every seconds :runs thunk
+    (let ((j (make-instance 'tick :name name :every seconds :body thunk
                                   :on-fault :leave :describes what)))
       (start j)
       j)))
@@ -204,10 +175,10 @@ replaces what was there."
       (forget (name j)))
     j))
 
-(defmethod alivep ((j actor)) (and (took j) t))
+(defmethod alivep ((j actor)) (and (handle j) t))
 
 (defmethod start ((j actor))
-  (setf (took j)
+  (setf (handle j)
         (sento.actor-context:actor-of
          (actors:actors)
          :name (name j)
@@ -218,29 +189,23 @@ replaces what was there."
   j)
 
 (defmethod stop ((j actor))
-  (let ((it (took j)))
+  (let ((it (handle j)))
     (when it
       (fault:or-nothing "an actor that has already stopped is gone"
         (sento.actor-context:stop (actors:actors) it :wait t))))
   j)
 
-(defun ref (j) (took j))
+(defun ref (j) (handle j))
 
 (defun %in-receive-p ()
-  "True on a thread inside a receive. Read in value position: act:*self* is a symbol
-macro, so BOUNDP answers about the macro name and is false anywhere."
   (and sento.actor:*self* t))
 
 (defgeneric tell (to message)
-  (:documentation "Give something to a job. What that means is the kind's: an
-actor takes a message, and a program is written to.")
   (:method ((j actor) message)
-    (when (took j) (sento.actor:tell (took j) message))
+    (when (handle j) (sento.actor:tell (handle j) message))
     message)
   (:method ((j program) message)
-    "A line on its standard input. A program you cannot write to is half a job:
-its output is already a place, and this is the other side of it."
-    (let ((it (took j)))
+    (let ((it (handle j)))
       (when it
         (let ((in (uiop:process-info-input it)))
           (when in
@@ -253,9 +218,9 @@ its output is already a place, and this is the other side of it."
   (:method ((name string) message) (tell (named name) message)))
 
 (defgeneric ask (of message &key timeout)
-  (:method ((j actor) message &key (timeout *asking*))
+  (:method ((j actor) message &key (timeout *ask-seconds*))
     (when (%in-receive-p) (error 'blocking-ask :of (name j)))
-    (sento.actor:ask-s (took j) message :time-out timeout))
+    (sento.actor:ask-s (handle j) message :time-out timeout))
   (:method ((it null) message &key timeout)
     (declare (ignore message timeout))
     nil)
@@ -263,15 +228,16 @@ its output is already a place, and this is the other side of it."
     (ask (named name) message :timeout timeout)))
 
 (defmethod alivep ((j program))
-  (let ((it (took j)))
+  (let ((it (handle j)))
     (and it (uiop:process-alive-p it))))
 
 (defmethod start ((j program))
+  (setf (stopping j) nil)
   (let ((it (uiop:launch-program (argv j)
                                  :input :stream
                                  :output :stream :error-output :output
                                  :environment (env j))))
-    (setf (took j) it)
+    (setf (handle j) it)
     (let ((stream (uiop:process-info-output it)))
       (actors:blocking
        (format nil "~a out" (name j))
@@ -283,19 +249,11 @@ its output is already a place, and this is the other side of it."
     j))
 
 (defmethod stop ((j program))
-  (let ((it (took j)))
+  (setf (stopping j) t)
+  (let ((it (handle j)))
     (when it
       (when (uiop:process-alive-p it)
         (uiop:terminate-process it :urgent t))
       (setf (exit-of j) (uiop:wait-process it))))
   j)
 
-(defun asked-for (said key default)
-  "What SAID says about KEY, or DEFAULT where it says nothing.
-
-GETF and not: a key nobody gave answers NIL, and NIL handed to MAKE-INSTANCE is a
-slot set to NIL rather than a slot left at what the class says. A program started
-by a write to /proc took :ON-FAULT NIL that way, and nothing ever started it
-again."
-  (let ((said (getf said key :none)))
-    (if (eq said :none) default said)))

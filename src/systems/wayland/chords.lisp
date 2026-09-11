@@ -1,30 +1,20 @@
 (in-package #:pine/wayland)
 
 (defparameter +river-modifiers+
-  '((:shift . :shift) (:ctrl . :ctrl) (:meta . :mod1) (:super . :mod4))
-  "What pine calls a modifier and what river does. Its mod1 is what a keyboard
-calls alt and pine calls meta; its mod4 is super. The protocol spells a bitfield
-as the list of what is set, so that is what a chord comes to.")
+  '((:shift . :shift) (:ctrl . :ctrl) (:meta . :mod1) (:super . :mod4)))
 
 (defclass chords ()
   ((of     :initarg :of   :reader of)
    (seat   :initform nil  :accessor seat)
    (eating :initform nil  :accessor eating)
    (bound  :initform nil  :accessor bound)
-   (told   :initarg :told :accessor told :initform nil))
-  (:documentation "The chords a compositor is holding for pine.
-
-A key it was never asked for is one it gives to whatever has focus; a key it was
-asked for it hands here instead, whatever is focused. That is the whole of why
-this exists: it is the only way a window manager hears a key that was not typed
-at it."))
+   (told   :initarg :told :accessor told :initform nil)))
 
 (defun make-chords (of &key told) (make-instance 'chords :of of :told told))
 
 (defun usablep (c) (and c (of c) t))
 
 (defun mask (k)
-  "The modifiers a key is held with, as the protocol spells them."
   (loop :for (mine . theirs) :in +river-modifiers+
         :when (ecase mine
                 (:shift (ui:shift k)) (:ctrl (ui:ctrl k))
@@ -32,21 +22,16 @@ at it."))
           :collect theirs))
 
 (defun keysym (k)
-  "The keysym a key is, as xkb numbers it. A name it does not know is no chord."
   (let ((said (xkb:xkb-keysym-from-name (ui:keysym-name (ui:sym k)) '())))
     (when (and said (plusp said)) said)))
 
 (defun every-key (chords)
-  "Every distinct key any of these chords is spelled with. A compositor says which
-key was pressed only for a key it was asked for, so the second key of a chord has
-to be asked for as much as the first."
   (let ((all nil))
     (dolist (chord chords (nreverse all))
       (dolist (k (ui:chord chord))
         (pushnew k all :test #'eq)))))
 
 (defun attend (c proxy)
-  "Take this seat, and the object that lets the next key be taken with it."
   (when (and (usablep c) (null (seat c)))
     (setf (seat c) proxy)
     (setf (eating c)
@@ -67,8 +52,6 @@ to be asked for as much as the first."
   (setf (bound c) nil))
 
 (defun ask-for (c chords)
-  "Ask the compositor for every key these chords are spelled with, and enable
-each. Only inside a manage sequence: that is where the protocol allows it."
   (when (and (usablep c) (seat c))
     (forget c)
     (dolist (k (every-key chords))
@@ -86,10 +69,9 @@ each. Only inside a manage sequence: that is where the protocol allows it."
     (log:note "~d chord~:p asked of the compositor" (length (bound c))))
   c)
 
-(defun eat-next (c)
-  "Take the next key from whatever has focus too: pine is part way through a chord
-and the rest of it is not the focused window's to see."
-  (when (and (usablep c) (eating c))
-    (fault:or-nothing "the compositor may have taken the seat back"
-      (river-xkb-bindings-seat-v1.ensure-next-key-eaten (eating c))))
-  c)
+(defgeneric eat-next (it)
+  (:method ((c chords))
+    (when (and (usablep c) (eating c))
+      (fault:or-nothing "the compositor may have taken the seat back"
+        (river-xkb-bindings-seat-v1.ensure-next-key-eaten (eating c))))
+    c))

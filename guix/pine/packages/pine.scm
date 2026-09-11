@@ -35,8 +35,9 @@
          sbcl-cl-cancel sbcl-precise-time sbcl-wayflan)))
 
 (define (pine-source-select? file stat)
-  (not (or (member (basename file)
-                   '(".git" ".cache" "www" "systems" "ocicl" ".pine.bin"))
+  (not (or (and (member (basename file)
+                        '(".git" ".cache" "www" "systems" "ocicl" ".pine.bin"))
+                (not (string-suffix? "/src/systems" file)))
            (string-suffix? "/lib/tree-sitter" file)
            (string-suffix? "/lib/libpine-pty.so" file)
            (string-suffix? "/lib/pine-pty-helper" file)

@@ -1,13 +1,9 @@
 (in-package #:pine/wayland)
 
-(defvar *namespace* "gtk-layer-shell"
-  "What the compositor knows this surface as. Its blur and shadow rules commonly
-match on this one.")
+(defvar *namespace* "gtk-layer-shell")
 
 (defvar *font-size* 15)
-(defparameter +window+ '(900 . 600)
-  "How big a window is until the compositor says otherwise. A toplevel is sized by
-whoever is showing it, and until it does the client picks.")
+(defparameter +window+ '(900 . 600))
 
 (defclass pane ()
   ((name-of :initarg :name    :reader name-of)
@@ -15,40 +11,31 @@ whoever is showing it, and until it does the client picks.")
    (surface :initform nil     :accessor surface)
    (took    :initform nil     :accessor took)
    (tree    :initarg :tree    :accessor tree :initform nil)
-   (wide    :initarg :wide    :accessor wide :initform 0)
-   (tall    :initarg :tall    :accessor tall :initform 0)
+   (width    :initarg :width    :accessor width :initform 0)
+   (height    :initarg :height    :accessor height :initform 0)
    (hover   :initform nil     :accessor hover)
    (kind    :initform nil     :accessor kind)
    (node-of :initform nil     :accessor node-of)
    (where   :initform nil     :accessor where)
    (dirty   :initform nil     :accessor dirty)
    (on-resize :initarg :on-resize :accessor on-resize :initform nil)
-   (configuredp :initform nil :accessor configuredp))
-  (:documentation "One of the daemon's surfaces, on screen. TOOK is what the
-compositor gave it, and KIND says which: a layer surface where the compositor has
-a layer shell, an xdg toplevel for a window, and where pine is the window manager
-itself, one of the surfaces it hands out for its own furniture.
-
-Which one is what the role said, not something this file decides."))
+   (configuredp :initform nil :accessor configuredp)))
 
 (defun chromep (s) (eq :chrome (kind s)))
 
 (defun %sized (s width height)
-  "The compositor said how big this is. What is laid out for it is laid out
-somewhere else, so that somewhere has to be told: a frame worked out for the size
-before is a frame that does not fill the surface it lands in."
-  (let ((was-wide (wide s)) (was-tall (tall s)))
-    (unless (zerop width) (setf (wide s) width))
-    (unless (zerop height) (setf (tall s) height))
+  (let ((was-width (width s)) (was-height (height s)))
+    (unless (zerop width) (setf (width s) width))
+    (unless (zerop height) (setf (height s) height))
     (setf (configuredp s) t)
     (when (and (on-resize s)
-               (or (/= was-wide (wide s)) (/= was-tall (tall s))))
+               (or (/= was-width (width s)) (/= was-height (height s))))
       (funcall (on-resize s) s))
     s))
 
 (defmethod print-object ((s pane) stream)
   (print-unreadable-object (s stream :type t)
-    (format stream "~a ~dx~d" (name-of s) (wide s) (tall s))))
+    (format stream "~a ~dx~d" (name-of s) (width s) (height s))))
 
 (defun %canvas (data width height stride)
   (let ((it (cl-cairo2:create-image-surface-for-data data :argb32 width height
@@ -59,9 +46,7 @@ before is a frame that does not fill the surface it lands in."
             it)))
 
 (defun %blit (s)
-  "The buffer: draw the tree into shared memory and hand it over. The tree is
-arranged as it is painted, so what a click lands on is what was drawn there."
-  (let ((width (wide s)) (height (tall s)))
+  (let ((width (width s)) (height (height s)))
     (when (and (plusp width) (plusp height) (tree s) (surface s)
                (configuredp s))
       (let* ((stride (* width 4))
@@ -105,17 +90,10 @@ arranged as it is painted, so what a click lands on is what was drawn there."
     s))
 
 (defun paint (s)
-  "Show what this pane holds now.
-
-Furniture pine hands itself is not painted here: a window manager's own surfaces
-are rendering state, and rendering state is committed inside a render sequence and
-nowhere else. This says it wants one; RENDER is what runs there."
   (cond ((chromep s) (setf (dirty s) t) nil)
         (t (%blit s))))
 
 (defun render (s)
-  "Commit this pane inside a render sequence. Only furniture is: everything else
-answers to the compositor rather than to us."
   (when (and (chromep s) (took s))
     (river-shell-surface-v1.sync-next-commit (took s))
     (%blit s)
@@ -131,7 +109,6 @@ answers to the compositor rather than to us."
   s)
 
 (defun measure (s &key (avail 3840))
-  "How big the tree wants to be, measured the way it will be painted."
   (let* ((it (cl-cairo2:create-image-surface :argb32 1 1))
          (m (make-instance 'canvas :context (cl-cairo2:create-context it)
                                           :size *font-size*)))
@@ -143,8 +120,6 @@ answers to the compositor rather than to us."
       (cl-cairo2:destroy it))))
 
 (defun cell (s)
-  "How big one character cell is on this surface, so what is laid out in cells
-lands in them."
   (declare (ignore s))
   (let* ((it (cl-cairo2:create-image-surface :argb32 1 1))
          (m (make-instance 'canvas :context (cl-cairo2:create-context it)
@@ -153,8 +128,6 @@ lands in them."
       (cl-cairo2:destroy it))))
 
 (defun %layer (where)
-  "Which layer an anchoring goes on. A surface anchored to every edge is the
-background; one that keeps a strip for itself is furniture; anything else floats."
   (let ((edges (getf where :edges)))
     (cond ((null edges) :top)
           ((= 4 (length edges)) :background)
@@ -168,8 +141,8 @@ background; one that keeps a strip for itself is furniture; anything else floats
               (layer sh) surface nil (%layer where) *namespace*)))
     (setf (surface s) surface (took s) it)
     (zwlr-layer-surface-v1.set-anchor it (getf where :edges))
-    (zwlr-layer-surface-v1.set-size it (or (getf where :wide) 0)
-                                    (or (getf where :tall) 0))
+    (zwlr-layer-surface-v1.set-size it (or (getf where :width) 0)
+                                    (or (getf where :height) 0))
     (zwlr-layer-surface-v1.set-exclusive-zone it (or (getf where :reserve) 0))
     (destructuring-bind (top right bottom left) (or (getf where :margin)
                                                     '(0 0 0 0))
@@ -185,11 +158,6 @@ background; one that keeps a strip for itself is furniture; anything else floats
     s))
 
 (defun %open-chrome (s where)
-  "Furniture on a compositor that has no layer shell of its own: pine is the
-window manager there, and a window manager's own surfaces come from it.
-
-Nothing configures one, so it is drawn at the size it measured to. Nothing is
-committed here either: that happens in a render sequence."
   (let* ((sh (shell s))
          (surface (wl-compositor.create-surface (compositor sh)))
          (it (river-window-manager-v1.get-shell-surface (chrome sh)
@@ -202,8 +170,8 @@ committed here either: that happens in a render sequence."
     s))
 
 (defun %open-window (s title)
-  (when (zerop (wide s)) (setf (wide s) (car +window+)))
-  (when (zerop (tall s)) (setf (tall s) (cdr +window+)))
+  (when (zerop (width s)) (setf (width s) (car +window+)))
+  (when (zerop (height s)) (setf (height s) (cdr +window+)))
   (let* ((sh (shell s))
          (surface (wl-compositor.create-surface (compositor sh)))
          (xdg (xdg-wm-base.get-xdg-surface (toplevel sh) surface))
@@ -227,15 +195,9 @@ committed here either: that happens in a render sequence."
     s))
 
 (defun open-pane (s where &key (windowp nil) (title "pine"))
-  "Put a pane up. WHERE is what the role answered: which edges it is anchored to,
-how big, and what strip it keeps. A window is anchored to nothing, so the
-compositor sizes it.
-
-The pane is made before this, wherever the asking was done, and only the telling
-happens here: the thread that owns the compositor is the only one that may."
   (let ((sh (shell s)))
-    (when (plusp (or (getf where :wide) 0)) (setf (wide s) (getf where :wide)))
-    (when (plusp (or (getf where :tall) 0)) (setf (tall s) (getf where :tall)))
+    (when (plusp (or (getf where :width) 0)) (setf (width s) (getf where :width)))
+    (when (plusp (or (getf where :height) 0)) (setf (height s) (getf where :height)))
     (setf (where s) where)
     (cond (windowp (setf (kind s) :window) (%open-window s title))
           ((layer sh) (setf (kind s) :layer) (%open-layer s where))
@@ -259,15 +221,14 @@ happens here: the thread that owns the compositor is the only one that may."
   s)
 
 (defun resize (s width height)
-  (unless (and (= width (wide s)) (= height (tall s)))
-    (setf (wide s) width (tall s) height)
+  (unless (and (= width (width s)) (= height (height s)))
+    (setf (width s) width (height s) height)
     (when (and (took s) (typep (took s) 'zwlr-layer-surface-v1))
       (zwlr-layer-surface-v1.set-size (took s) width height))
     (paint s))
   s)
 
 (defun place (s where)
-  "Put a layer surface where the role now says it goes."
   (let ((it (took s)))
     (when (and it (typep it 'zwlr-layer-surface-v1))
       (zwlr-layer-surface-v1.set-anchor it (getf where :edges))

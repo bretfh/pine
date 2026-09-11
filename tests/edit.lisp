@@ -16,7 +16,7 @@ images, and there is one."
   (when (edit:searching) (edit:took (edit:searching)))
   (ui:take-next nil)
   (let ((scratch (or (fs:at "/text" "scratch")
-                     (text:make-document "scratch"
+                     (text:make-buffer "scratch"
                                         :mode (make-instance 'mode:lisp)))))
     (setf (text:current) scratch)
     (setf (text:text scratch) "")
@@ -24,20 +24,20 @@ images, and there is one."
     (edit:show (edit:focused) scratch)
     scratch))
 
-(test the-editor-starts-with-a-document-in-a-window
+(test the-editor-starts-with-a-buffer-in-a-window
   (let ((scratch (editing)))
     (is (eq scratch (text:current)))
     (is (typep (text:mode-of scratch) 'mode:lisp))
     (is (eq scratch (edit:shows (edit:focused))))
     (is (fs:at "/proc/edit") "and it is a job you can see")))
 
-(test typing-lands-in-the-document-and-in-the-frame
+(test typing-lands-in-the-buffer-and-in-the-frame
   (editing)
   (pine/edit:type-text "(defun hello () 42)")
   (is (equal "(defun hello () 42)" (text:text (text:current))))
   (let ((rows (edit:rows :cols 60 :lines 10)))
     (is (somewhere rows "(defun hello"))
-    (is (somewhere rows "scratch") "the modeline says which document")))
+    (is (somewhere rows "scratch") "the modeline says which buffer")))
 
 (test a-chord-written-to-key-is-a-chord-typed
   (editing)
@@ -112,8 +112,8 @@ the path a person is on; a test that reaches past /key proves nothing about it."
   (command:run "run-command")
   (is (edit:askingp))
   (is (typep (text:mode-of (text:current)) 'edit:prompt))
-  (pine/edit:type-text "beginning-of-doc")
-  (is (member "beginning-of-document" (edit:matching)
+  (pine/edit:type-text "beginning-of-buf")
+  (is (member "beginning-of-buffer" (edit:matching)
               :key #'edit:name-of :test #'equal))
   (is (somewhere (edit:rows :cols 60 :lines 12) "M-x")
       "the frame shows the question")
@@ -133,19 +133,19 @@ narrows it, what TAB fills in, what C-n chooses and what RET does with it."
     (is (edit:askingp))
     (typed-in "begin")
     (is (member "beginning-of-line" (names) :test #'equal) "typing narrows")
-    (is (not (member "save-document" (names) :test #'equal)))
+    (is (not (member "save-buffer" (names) :test #'equal)))
     (is (somewhere (edit:rows :cols 90 :lines 24) "beginning-of-line")
         "and the candidates are on screen")
     (clear)
     (typed "M-x")
-    (typed-in "doc begin")
-    (is (member "beginning-of-document" (names) :test #'equal)
+    (typed-in "buf begin")
+    (is (member "beginning-of-buffer" (names) :test #'equal)
         "words in any order, in any place")
     (clear)
     (typed "M-x")
-    (typed-in "beginning-of-docu")
+    (typed-in "beginning-of-buf")
     (typed "TAB")
-    (is (equal "beginning-of-document" (edit:so-far)) "TAB fills in the rest")
+    (is (equal "beginning-of-buffer" (edit:so-far)) "TAB fills in the rest")
     (clear)
     (typed "M-x")
     (typed-in "list-")
@@ -155,9 +155,9 @@ narrows it, what TAB fills in, what C-n chooses and what RET does with it."
     (is (eql 0 (edit:chosen)))
     (clear)
     (typed "M-x")
-    (typed-in "list-documents")
+    (typed-in "list-buffers")
     (typed "Return")
-    (is (equal "*documents*" (fs:name (text:current))) "and RET runs it")
+    (is (equal "*buffers*" (fs:name (text:current))) "and RET runs it")
     (clear)
     (typed "C-x" "C-f")
     (is (edit:filep edit::*prompt*) "a file question knows it is one")
@@ -167,7 +167,7 @@ narrows it, what TAB fills in, what C-n chooses and what RET does with it."
     (clear)))
 
 (test a-space-typed-at-key-is-the-space-key
-  "A chord written down separates keys with spaces, so a space on its own has to
+  "A chord written height separates keys with spaces, so a space on its own has to
 still be the space key. /key is the one door everything types through."
   (let ((doc (editing)))
     (typed "a" " " "b")
@@ -196,7 +196,7 @@ still be the space key. /key is the one door everything types through."
     (is (null (edit:searching)))))
 
 (test a-long-file-scrolls-under-the-window
-  "A window shows part of a document. Point going out of it has to bring it along,
+  "A window shows part of a buffer. Point going out of it has to bring it along,
 or everything past the first screenful is unreachable."
   (let ((doc (editing))
         (edit:*cols* 60)
@@ -218,26 +218,26 @@ or everything past the first screenful is unreachable."
       (is (shows "line-0") "and back")
       (typed "C-v")
       (edit:rows :cols 60 :lines 10)
-      (is (not (shows "line-0")) "a page down moved it")
+      (is (not (shows "line-0")) "a page height moved it")
       (typed "M-v")
       (edit:rows :cols 60 :lines 10)
       (is (shows "line-0") "and a page back returned it"))))
 
 (test a-listing-row-stands-for-a-thing
   (editing)
-  (command:run "list-documents")
-  (is (equal "*documents*" (fs:name (text:current))))
-  (is (typep (edit:place) 'text:document))
+  (command:run "list-buffers")
+  (is (equal "*buffers*" (fs:name (text:current))))
+  (is (typep (edit:place) 'text:buffer))
   (is (typep (text:mode-of (text:current)) 'edit:listing)))
 
 (test windows-split-and-close
   (editing)
-  (command:run "split-window-below")
-  (is (= 2 (length (edit:windows))))
+  (command:run "split-pane-below")
+  (is (= 2 (length (edit:panes))))
   (is (> (length (edit:rows :cols 40 :lines 20)) 10) "the frame draws both")
-  (command:run "other-window")
-  (command:run "delete-other-windows")
-  (is (= 1 (length (edit:windows)))))
+  (command:run "other-pane")
+  (command:run "delete-other-panes")
+  (is (= 1 (length (edit:panes)))))
 
 (test evaluating-a-form-answers-beside-it
   (let ((doc (editing)))
@@ -249,7 +249,7 @@ or everything past the first screenful is unreachable."
 
 (test a-name-written-with-its-package-completes
   "Pine's own source is written in package-qualified names. A completion that only
-knew the document's package would be no use in the thing it is written in."
+knew the buffer's package would be no use in the thing it is written in."
   (let ((doc (editing)))
     (flet ((completing (text col)
              (setf (text:text doc) text)
@@ -257,8 +257,8 @@ knew the document's package would be no use in the thing it is written in."
              (command:run "complete-symbol")
              (setf (text:current) doc)
              (text:text doc)))
-      (is (equal "(pine/text:make-document"
-                 (completing "(pine/text:make-docu" 29)))
+      (is (equal "(pine/text:make-buffer"
+                 (completing "(pine/text:make-buf" 29)))
       (is (search "prefix-at" (completing "(pine/edit::prefix-a" 25))
           "and two colons reach what a package keeps to itself")
       (is (equal "(nosuchpackage:thi" (completing "(nosuchpackage:thi" 18))
@@ -293,17 +293,17 @@ prompt. A command that asks a question has to be able to take the answer."
              (text:goto d 0 0)
              (typed "x")
              (is (text:modified d))
-             (command:run "save-document")
+             (command:run "save-buffer")
              (is (not (text:modified d)))
              (is (search "x(defun one" (uiop:read-file-string file)))
              (text:goto d 0 0)
              (typed "y" "y")
-             (command:run "revert-document" '("yes"))
+             (command:run "revert-buffer" '("yes"))
              (setf (text:current) d)
              (is (not (search "yy" (text:text d))) "reverted")
              (text:goto d 0 0)
              (typed "z")
-             (command:run "revert-document" '("no"))
+             (command:run "revert-buffer" '("no"))
              (setf (text:current) d)
              (is (search "z" (text:text d)) "and no means no")
              (text:kill (fs:name d))))
@@ -313,12 +313,12 @@ prompt. A command that asks a question has to be able to take the answer."
   (editing)
   (is (fs:at "/ui/surface/editor"))
   (pine:drop :edit)
-  (is (null (system:named "edit")))
+  (is (null (module:named "edit")))
   (is (null (fs:at "/ui/surface/editor")))
   (setf *editing* nil))
 
-(test two-files-with-one-name-are-two-documents
-  "A document was named by the file's own name and any document already at that
+(test two-files-with-one-name-are-two-buffers
+  "A buffer was named by the file's own name and any buffer already at that
 name was reused, so opening src/ui/system.lisp after src/wm/system.lisp pointed
 the first one at the second file and the first was gone."
   (let ((a #p"/tmp/pine-test-a/") (b #p"/tmp/pine-test-b/"))
@@ -335,16 +335,16 @@ the first one at the second file and the first was gone."
       (pine/text::root)
       (let* ((path-a (namestring (merge-pathnames "system.lisp" a)))
              (path-b (namestring (merge-pathnames "system.lisp" b)))
-             (name-a (pine/edit::%document-name path-a))
-             (doc-a (text:make-document name-a)))
+             (name-a (pine/edit::%buffer-name path-a))
+             (doc-a (text:make-buffer name-a)))
         (text:visit doc-a path-a)
-        (let* ((name-b (pine/edit::%document-name path-b))
-               (doc-b (or (fs:at "/text" name-b) (text:make-document name-b))))
+        (let* ((name-b (pine/edit::%buffer-name path-b))
+               (doc-b (or (fs:at "/text" name-b) (text:make-buffer name-b))))
           (text:visit doc-b path-b)
           (is (not (eq doc-a doc-b)) "they are two")
           (is (equal "(this is A)" (text:text doc-a)) "and the first still is")
           (is (equal "(this is B)" (text:text doc-b)))
-          (is (equal name-a (pine/edit::%document-name path-a))
+          (is (equal name-a (pine/edit::%buffer-name path-a))
               "while opening the same file again is still one"))))))
 
 (test a-chord-bound-before-its-mode-loads-is-there-when-it-arrives
@@ -411,11 +411,11 @@ hanging off the window just taken away."
   (edit:only (edit:focused))
   (let ((top (edit:focused)))
     (edit:split top :below)
-    (let ((lower (second (edit:windows))))
+    (let ((lower (second (edit:panes))))
       (edit:split lower :beside)
-      (is (= 3 (length (edit:windows))) "one above, two beside each other below")
-      (edit:close-window (first (edit:windows)))
-      (is (= 2 (length (edit:windows)))
+      (is (= 3 (length (edit:panes))) "one above, two beside each other below")
+      (edit:close-pane (first (edit:panes)))
+      (is (= 2 (length (edit:panes)))
           "closing the one above leaves the two that were below it")))
   (edit:only (edit:focused)))
 
@@ -434,23 +434,23 @@ of the name searched for an S."
     (is (search "a b" (edit:banner)) "and what it says it is looking for")
     (edit:took (edit:searching))))
 
-(test each-document-is-evaluated-in-what-it-says-it-is-written-in
-  "One session for the image took whichever document asked first and kept its
+(test each-buffer-is-evaluated-in-what-it-says-it-is-written-in
+  "One session for the image took whichever buffer asked first and kept its
 package for ever, so M-: in a second file read its names in the first file's."
   (editing)
-  (let ((a (text:make-document "%probe-a"))
-        (b (text:make-document "%probe-b")))
+  (let ((a (text:make-buffer "%probe-a"))
+        (b (text:make-buffer "%probe-b")))
     (unwind-protect
          (progn
            (setf (text:text a) "(in-package #:pine/user)")
            (setf (text:text b) "(in-package #:cl-user)")
            (is (eq (find-package :pine/user)
-                   (session:package-of (pine/edit::evaluating a))))
+                   (listener:package-of (pine/edit::evaluating a))))
            (is (eq (find-package :cl-user)
-                   (session:package-of (pine/edit::evaluating b)))
+                   (listener:package-of (pine/edit::evaluating b)))
                "and the second is read in its own, not the first's")
            (is (eq (find-package :pine/user)
-                   (session:package-of (pine/edit::evaluating a)))
+                   (listener:package-of (pine/edit::evaluating a)))
                "and asking again does not take the other's"))
       (text:kill "%probe-a")
       (text:kill "%probe-b"))))
@@ -465,18 +465,18 @@ supposed not to do."
     (pine::write "/probe/here" 42)
     (let ((s (pine:console)))
       (unwind-protect
-           (let ((e (session:evaluate s (session:read s "(cat /probe/here)"))))
-             (is (null (session:fault e)) "~a" (session:fault e))
-             (is (equal '(42) (session:answered e))
+           (let ((e (listener:evaluate s (listener:read s "(cat /probe/here)"))))
+             (is (null (listener:fault e)) "~a" (listener:fault e))
+             (is (equal '(42) (listener:answered e))
                  "the command was given the place, not the form for it"))
-        (session:close s)))))
+        (listener:close s)))))
 
 (defun %broke (what)
   (pine/edit::put-up (make-condition 'simple-error :format-control what)))
 
 (test a-fault-does-not-take-the-keyboard-from-a-question
   "A fault in some other thread put the debugger up and made it the current
-document. The question was still standing and still drawn, and every key after
+buffer. The question was still standing and still drawn, and every key after
 that went into the backtrace: the prompt was there, asking, and unreachable."
   (editing)
   (pine/edit::away)
@@ -497,7 +497,7 @@ that went into the backtrace: the prompt was there, asking, and unreachable."
 
 (test a-fault-a-frame-takes-the-front-once
   "A node that throws throws again every time it is worked out. Taking the front
-for each was a document nobody could type in for as long as it went on."
+for each was a buffer nobody could type in for as long as it went on."
   (editing)
   (pine/edit::away)
   (unwind-protect
@@ -516,7 +516,7 @@ for each was a document nobody could type in for as long as it went on."
 (test the-prompt-offers-candidates-every-time-it-is-asked
   "Asked, put away and asked again at the same directory. What MATCHING read was
 *PROMPT*, which the graph cannot see move: a frame taken while no question stood
-worked the node out to nothing, what had been typed had not changed, and so
+worked the node out to nothing, what had been typed had not on-change, and so
 nothing ever said it was stale again. The second question offered nothing, and so
 did every one after it for the life of the image."
   (editing)

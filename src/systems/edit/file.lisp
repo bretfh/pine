@@ -1,18 +1,12 @@
 (in-package #:pine/edit)
 
 (defun %same-file-p (origin path)
-  "Whether two names stand for one file. Compared as the disk resolves them, so a
-link and what it points at are not two documents."
   (and origin
        (or (equal origin path)
            (let ((a (probe-file origin)) (b (probe-file path)))
              (and a b (equal (namestring a) (namestring b)))))))
 
-(defun %document-name (path)
-  "What to call a document opened on PATH: the file's own name, unless another
-document is already open on a different file with the same one, which takes
-NAME<2>. Two files called system.lisp are two documents; opening one of them
-twice is still one."
+(defun %buffer-name (path)
   (let ((base (or (fault:or-nothing "a node's path is not a file name"
                     (file-namestring (pathname path)))
                   path)))
@@ -23,19 +17,19 @@ twice is still one."
             :do (return name))))
 
 (command:defcommand "find-file" (path)
-    (:describes "open a file in a document"
+    (:describes "open a file in a buffer"
      :asks (list (list :prompt "Find  " :category :file :history :files))
      :on '(text "C-x C-f"))
   (let ((path (expanded (princ-to-string path))))
     (if (uiop:directory-exists-p path)
         (log:note "~a is a directory" path)
-        (let* ((name (%document-name path))
-               (document (or (fs:at "/text" name) (text:make-document name))))
-          (text:visit document path)
-          (setf (text:current) document)
+        (let* ((name (%buffer-name path))
+               (buffer (or (fs:at "/text" name) (text:make-buffer name))))
+          (text:visit buffer path)
+          (setf (text:current) buffer)
           (let ((win (focused)))
-            (when win (show win document)))
-          (fs:full-name document)))))
+            (when win (show win buffer)))
+          (fs:full-name buffer)))))
 
 (command:defcommand "find-recent" ()
     (:describes "a file opened here before" :on '(text "C-x C-r"))
@@ -47,57 +41,57 @@ twice is still one."
                :asking)
         (log:note "nothing has been opened yet"))))
 
-(command:defcommand "save-document" ()
-    (:describes "write the document back where it came from"
+(command:defcommand "save-buffer" ()
+    (:describes "write the buffer back where it came from"
      :on '(text "C-x C-s"))
-  (let ((document (text:current)))
-    (if (text:source document)
-        (text:save document)
+  (let ((buffer (text:current)))
+    (if (text:source buffer)
+        (text:save buffer)
         (command:run "write-file"))))
 
 (command:defcommand "write-file" (path)
-    (:describes "write the document to a file you name"
+    (:describes "write the buffer to a file you name"
      :asks (list (list :prompt "Write  " :category :file :history :files))
      :on '(text "C-x C-w"))
-  (let ((document (text:current)))
-    (text:save document (expanded (princ-to-string path)))
-    (log:note "wrote ~a" (text:origin document))
-    (text:origin document)))
+  (let ((buffer (text:current)))
+    (text:save buffer (expanded (princ-to-string path)))
+    (log:note "wrote ~a" (text:origin buffer))
+    (text:origin buffer)))
 
-(command:defcommand "revert-document" (&optional said)
+(command:defcommand "revert-buffer" (&optional said)
     (:describes "the file again, as it is on disk"
      :asks '((:prompt "Revert from disk? " :candidates ("yes" "no")
               :must-match t)))
-  (let ((document (text:current)))
+  (let ((buffer (text:current)))
     (cond ((not (equal "yes" (princ-to-string (or said "no")))) nil)
-          ((text:source document)
-           (and (text:revert document)
-                (log:note "reverted ~a" (text:origin document))
+          ((text:source buffer)
+           (and (text:revert buffer)
+                (log:note "reverted ~a" (text:origin buffer))
                 t))
           (t (log:note "~a is on nothing to read again"
-                       (fs:name document))))))
+                       (fs:name buffer))))))
 
-(command:defcommand "switch-to-document" (name)
-    (:describes "show a document here, making it if there is none"
-     :asks '((:prompt "Document: " :category :document))
+(command:defcommand "switch-to-buffer" (name)
+    (:describes "show a buffer here, making it if there is none"
+     :asks '((:prompt "Document: " :category :buffer))
      :on '(text "C-x b"))
   (let* ((name (princ-to-string name))
-         (document (or (fs:at "/text" name) (text:make-document name))))
-    (setf (text:current) document)
-    (fs:full-name document)))
+         (buffer (or (fs:at "/text" name) (text:make-buffer name))))
+    (setf (text:current) buffer)
+    (fs:full-name buffer)))
 
-(command:defcommand "new-document" (name)
-    (:describes "an empty document"
+(command:defcommand "new-buffer" (name)
+    (:describes "an empty buffer"
      :asks '((:prompt "Document name: "))
      :on '(text "C-x n"))
-  (let ((document (text:make-document (princ-to-string name))))
-    (setf (text:current) document)
-    (show (focused) document)
-    (fs:full-name document)))
+  (let ((buffer (text:make-buffer (princ-to-string name))))
+    (setf (text:current) buffer)
+    (show (focused) buffer)
+    (fs:full-name buffer)))
 
-(command:defcommand "kill-document" (&optional name)
-    (:describes "forget a document"
-     :asks '((:prompt "Kill document: " :category :document :must-match t))
+(command:defcommand "kill-buffer" (&optional name)
+    (:describes "forget a buffer"
+     :asks '((:prompt "Kill buffer: " :category :buffer :must-match t))
      :on '(text "C-x k"))
   (let* ((name (princ-to-string (or name (fs:name (text:current)))))
          (gone (fs:at "/text" name)))
@@ -105,7 +99,7 @@ twice is still one."
       (text:forget name)
       (text:kill name)
       (let ((instead (text:current)))
-        (dolist (win (windows))
+        (dolist (win (panes))
           (when (eq gone (shows win))
             (show win instead)))))
     (and gone t)))

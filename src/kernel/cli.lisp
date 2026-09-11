@@ -30,15 +30,9 @@
   serve                 speak the wire on stdin and stdout, a line each way
   shell                 a pine in this terminal, with no daemon")
 
-(defvar *held* nil
-  "The connection this run is using, opened once. A verb is one question and then
-the process goes, so there is one of these and it is closed by leaving.")
+(defvar *held* nil)
 (defvar *asked* 0)
-(defparameter +last+ -1
-  "The id of the question asked last of all, when there are no more lines to
-relay. Answers come back in the order they were asked, so seeing this one back
-means everything before it has been answered and nothing is left to wait for.
-Without it the process goes while the last answers are still in flight.")
+(defparameter +last+ -1)
 
 (defun usage () *usage*)
 
@@ -48,10 +42,6 @@ Without it the process goes while the last answers are still in flight.")
   t)
 
 (defun %connect (&optional (path (socket:where)))
-  "A stream to the daemon, or nothing where none is answering.
-
-A socket and a line of text. Nothing here knows what an actor is, which is the
-point: what a client of pine needs is what any language has."
   (pine/run/fault:or-nothing "nothing may be answering there"
     (let ((it (make-instance 'sb-bsd-sockets:local-socket :type :stream)))
       (sb-bsd-sockets:socket-connect it path)
@@ -69,40 +59,25 @@ point: what a client of pine needs is what any language has."
   t)
 
 (defun listeningp (&optional (path (socket:where)))
-  "Whether anything is answering there at all. Asked at once rather than waited
-for: a daemon that is not there and one that is busy are two different things to
-be told, and answering the second for both is the one thing a command line must
-not get wrong."
   (let ((it (%connect path)))
     (when it (close it) t)))
 
 (defun ask (message &key stream)
-  "Ask the daemon something and answer what it said.
-
-Nothing means nothing is answering. An event arriving while we wait is not the
-answer to this, so it is passed over: the id says which line is ours."
   (let ((to (or stream (held))))
     (when to
       (pine/run/fault:or-nothing "the daemon may go while we are asking it"
         (let ((mine (incf *asked*)))
-          (write-line (wire:request mine message) to)
+          (write-line (wire:encode-request mine message) to)
           (force-output to)
           (loop :for line := (read-line to nil nil)
                 :while line
-                :do (multiple-value-bind (said id eventp) (wire:answer line)
+                :do (multiple-value-bind (said id eventp) (wire:decode-reply line)
                       (unless (or eventp (and id (not (eql id mine))))
                         (return said)))))))))
 
 (defun runningp () (and (ask (list :ping)) t))
 
 (defun %read-whole (text &key syntax)
-  "TEXT as one form, or nothing if it is not one. What is read has to account for
-all of it: reading only the front of `1 2' and writing 1 is losing half of what
-somebody typed without saying so.
-
-SYNTAX reads it the way a config is read, so pine eval takes the spelling a config
-taught. A value is read without it: /a/b as a value is the name of a place, and a
-path object is not what crosses the wire."
   (handler-case
       (multiple-value-bind (said at)
           (let ((*read-eval* nil)
@@ -117,8 +92,6 @@ path object is not what crosses the wire."
     (error () (values nil nil))))
 
 (defun %value (text)
-  "What a word on the command line means. A form is read as one, so t is true and
-42 is a number; anything that is not one whole form stays the words it was."
   (if (null text)
       nil
       (multiple-value-bind (said wholep) (%read-whole text)
@@ -131,9 +104,6 @@ path object is not what crosses the wire."
               (t said))))))
 
 (defun %verb (value)
-  "Whether what was typed is a verb a node takes rather than a value to put in it:
-(:stop), (:restart). It crosses as its own message, because what a node is told to
-do and what it is given are two questions."
   (and (consp value) (keywordp (first value)) value))
 
 (defun %nobody ()
@@ -172,33 +142,17 @@ do and what it is given are two questions."
                         t)))))))
 
 (defun %watch (where)
-  "Say so whenever a place moves, until this is interrupted. The event comes back
-down the connection the question went up, so there is nothing here to be reached
-at and nothing to leave behind: letting go of the socket is letting go of the
-watch."
   (let ((to (held)))
     (when (%say (ask (list :watch where)))
       (loop :for line := (read-line to nil nil)
             :while line
-            :do (multiple-value-bind (said id eventp) (wire:answer line)
+            :do (multiple-value-bind (said id eventp) (wire:decode-reply line)
                   (declare (ignore id))
                   (when eventp
                     (format t "~a~%" (second said))
                     (finish-output)))))))
 
 (defun %serve ()
-  "Hand this terminal's own streams to the daemon, a line each way.
-
-A pipe and not a translation: what is written here is already what the daemon
-takes, so nothing between reads it. What is on the other end may be a shell, and
-it needs no lisp, no fset and no actor system to say what it wants.
-
-Nothing but the wire is written to the wire. Standard output is the protocol here,
-so everything a library has to say about itself goes to standard error instead: a
-banner printed over an answer is a line the far side cannot parse and cannot know
-it was owed. The first thing written is a fresh line, because whatever ran before
-this may have left one half finished, and the first answer must not be the end of
-somebody else's sentence."
   (let ((out *standard-output*)
         (*standard-output* *error-output*)
         (to (held)))
@@ -211,22 +165,19 @@ somebody else's sentence."
                       (lambda ()
                         (loop :for line := (read-line to nil nil)
                               :while line
-                              :for id := (nth-value 1 (wire:answer line))
+                              :for id := (nth-value 1 (wire:decode-reply line))
                               :until (eql id +last+)
                               :do (write-line line out)
                                   (finish-output out))))))
          (loop :for line := (read-line *standard-input* nil nil)
                :while line
                :do (write-line line to) (force-output to))
-         (write-line (wire:request +last+ (list :ping)) to)
+         (write-line (wire:encode-request +last+ (list :ping)) to)
          (force-output to)
          (pine/run/actors:joined reader)
          (let-go))))))
 
 (defun %park ()
-  "Block until this process is killed. A semaphore nobody holds and nobody signals
-waits on nothing at all, where a loop round a sleep wakes for ever to find out
-that nothing has happened."
   (sb-thread:wait-on-semaphore (sb-thread:make-semaphore)))
 
 (defun %self ()
@@ -241,9 +192,6 @@ that nothing has happened."
               "--end-toplevel-options"))))
 
 (defun %waiting-on-it (readyp seconds)
-  "Wait for another process to answer, or not to. The one place pine looks in a
-loop instead of waiting: what it is waiting for is a socket a separate process has
-not opened yet, so there is nothing here to be woken by."
   (loop :with due := (+ (get-universal-time) seconds)
         :until (funcall readyp)
         :do (sleep 0.2)
@@ -279,9 +227,6 @@ not opened yet, so there is nothing here to be woken by."
                                     (list ,@(rest arguments)))))
 
 (defun %wants (verb rest n what)
-  "Whether VERB was given the N words it needs, and say what is missing if not.
-A verb short of a word answered about NIL, or read NIL as a form and came back
-with a backtrace where it owed a sentence."
   (cond ((>= (length rest) n) t)
         (t (format t "pine: ~a wants ~a~%usage: pine ~a ~a~%" verb what verb what)
            nil)))

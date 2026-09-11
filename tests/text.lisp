@@ -42,12 +42,12 @@
            (is (command:named "probe-nothing"))
            (is (eq (command:named "probe-nothing")
                    (mode:binding (make-instance 'mode:lisp) "C-probe"))
-               "a lisp document inherits what text binds"))
+               "a lisp buffer inherits what text binds"))
       (command:forget "probe-nothing"))))
 
-(test a-document-holds-text-and-a-point
+(test a-buffer-holds-text-and-a-point
   (with-tree
-    (let ((doc (text:make-document "probe")))
+    (let ((doc (text:make-buffer "probe")))
       (setf (text:text doc) (format nil "one~%two"))
       (is (equal (format nil "one~%two") (text:text doc)))
       (is (= 2 (text:line-count doc)))
@@ -59,12 +59,12 @@
 
 (test the-structure-a-mode-gives-text-is-in-the-namespace
   (with-tree
-    (let ((doc (text:make-document "probe" :mode (make-instance 'mode:lisp))))
+    (let ((doc (text:make-buffer "probe" :mode (make-instance 'mode:lisp))))
       (setf (text:text doc)
             (format nil "(defun hello () 1)~%(defun goodbye () 2)"))
       (text:restructure doc)
       (let ((form (fs:at doc "defun/hello")))
-        (is (not (null form)) "a form is a place under the document")
+        (is (not (null form)) "a form is a place under the buffer")
         (is (search "defun hello" (fs:contents (fs:at form "text"))))
         (setf (fs:contents (fs:at form "text")) "(defun hello () 3)")
         (is (search "3" (text:text doc)) "writing a region replaces that span")
@@ -72,7 +72,7 @@
 
 (test a-region-keeps-its-identity-across-a-restructure
   (with-tree
-    (let ((doc (text:make-document "probe" :mode (make-instance 'mode:lisp))))
+    (let ((doc (text:make-buffer "probe" :mode (make-instance 'mode:lisp))))
       (setf (text:text doc) "(defun hello () 1)")
       (text:restructure doc)
       (let ((was (fs:at doc "defun/hello")))
@@ -90,7 +90,7 @@
              (with-open-file (o file :direction :output :if-exists :supersede)
                (write-string "(defun probe () 1)" o))
              (fs:mount #p"/" "/file")
-             (let ((doc (text:make-document "visit")))
+             (let ((doc (text:make-buffer "visit")))
                (text:visit doc (namestring file))
                (is (equal "(defun probe () 1)" (text:text doc)))
                (is (typep (text:mode-of doc) 'mode:lisp)
@@ -124,7 +124,7 @@ wrong stretch, so writing it replaces something it was never standing for."
 or two headings of one text, were one node covering the last of them -- and writing
 it replaced text it was never standing for."
   (with-tree
-    (let ((doc (text:make-document "test-regions")))
+    (let ((doc (text:make-buffer "test-regions")))
       (setf (text:text doc) "one
 two
 three
@@ -142,12 +142,12 @@ four")
 (test a-region-that-is-still-there-is-the-node-it-was
   "Built again, a region keeps its identity, so a watcher on one goes on watching."
   (with-tree
-    (let ((doc (text:make-document "test-region-identity")))
+    (let ((doc (text:make-buffer "test-region-identity")))
       (setf (text:text doc) "one two three")
       (pine/text::%build doc (list (mode:covering "only" '(0 . 0) '(0 . 3))))
-      (let ((first-time (d:lookup (fs::memo doc) "only")))
+      (let ((first-time (d:lookup (fs::dentries doc) "only")))
         (pine/text::%build doc (list (mode:covering "only" '(0 . 4) '(0 . 7))))
-        (let ((now (d:lookup (fs::memo doc) "only")))
+        (let ((now (d:lookup (fs::dentries doc) "only")))
           (is (eq first-time now) "the same node")
           (is (equal '((0 . 4) (0 . 7)) (pine/text::covers now))
               "standing over where it stands now"))))))
@@ -178,28 +178,28 @@ replace text it was never standing for, which is the one thing regions exist to
 stop. The names it is kept under go with it: typing one a character at a time says
 a different name on every key."
   (with-tree
-    (let ((doc (text:make-document "%probe-structure"
+    (let ((doc (text:make-buffer "%probe-structure"
                                    :mode (make-instance 'mode:lisp))))
       (setf (text:text doc) "(defun alpha () 1)")
       (text:restructure doc)
-      (let ((head (fs:entry doc "defun")))
+      (let ((head (fs:child doc "defun")))
         (is (not (null head)) "the forms are grouped under what they are")
-        (is (not (null (fs:entry head "alpha"))) "and named by what they define")
+        (is (not (null (fs:child head "alpha"))) "and named by what they define")
         (setf (text:text doc) "(defun beta () 1)")
         (text:restructure doc)
-        (is (not (null (fs:entry head "beta"))) "the one it names now is there")
-        (is (null (fs:entry head "alpha"))
+        (is (not (null (fs:child head "beta"))) "the one it names now is there")
+        (is (null (fs:child head "alpha"))
             "and the one it has stopped naming is gone")
-        (is (equal '("beta") (d:keys (fs::memo head)))
+        (is (equal '("beta") (d:keys (fs::dentries head)))
             "and is not kept under the name it had")))))
 
-(test killing-a-document-lets-go-of-the-thread-that-parsed-it
+(test killing-a-buffer-lets-go-of-the-thread-that-parsed-it
   "Told :STOP and stopped in the next breath, whether the actor ever read that
 message was a race. A job also puts itself among the jobs as it is made, and one
 nothing supervises was one nothing could take out again."
   (booted)
   (with-tree
-    (let* ((doc (text:make-document "%probe-parsed"
+    (let* ((doc (text:make-buffer "%probe-parsed"
                                     :mode (make-instance 'mode:lisp)))
            (p (text:parser-for doc)))
       (if (null p)
@@ -208,4 +208,4 @@ nothing supervises was one nothing could take out again."
             (is (not (null (job:named name))) "the parse runs on a job")
             (text:kill (fs:name doc))
             (is (null (job:named name))
-                "and killing the document takes that job with it"))))))
+                "and killing the buffer takes that job with it"))))))

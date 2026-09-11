@@ -6,10 +6,10 @@
   (with-tree
     (let ((held (list 40)))
       (host:defdevice %probe-volume :describes "rows, not a class each")
-      (host:defbacking %probe-volume ()
+      (host:defdriver %probe-volume ()
         (volume :reads (first held) :writes (lambda (v) (setf (first held) v)))
         (muted  :reads nil))
-      (let ((dev (fs:mount (host:made "%probe-volume") (fs:root))))
+      (let ((dev (fs:mount (host:make-device "%probe-volume") (fs:root))))
         (is (equal '("volume" "muted") (fs:contents dev)))
         (is (= 40 (fs:contents (fs:at "/%probe-volume/volume"))))
         (setf (fs:contents (fs:at "/%probe-volume/volume")) 55)
@@ -21,21 +21,21 @@
 (test a-device-says-what-it-wants-watched
   (with-tree
     (host:defdevice %probe-watched :describes "what it wants watched")
-    (host:defbacking %probe-watched (:announces '("some stream") :refreshes 5)
+    (host:defdriver %probe-watched (:announces '("some stream") :refreshes 5)
       (one :reads 1))
-    (let ((dev (host:made "%probe-watched")))
-      (is (equal '("some stream") (fs:announces dev)))
-      (is (eql 5 (fs:refreshes dev))))))
+    (let ((dev (host:make-device "%probe-watched")))
+      (is (equal '("some stream") (fs:notified-by dev)))
+      (is (eql 5 (fs:polls dev))))))
 
 (test the-shell-answers-what-a-line-said
   (is (equal "hello" (sh:sh "echo hello")))
   (is (equal '("a" "b") (sh:lines (format nil "a~%b~%"))))
   (is (equal '("a" "b") (sh:words "a b")))
   (is (= 42 (sh:number-in "load 42 now")))
-  (is (equal "a" (sh:firstp (format nil "a~%b")))))
+  (is (equal "a" (sh:first-line (format nil "a~%b")))))
 
 (test an-answer-stands-for-a-breath
-  (let ((pine/host/shell:*breath* 10))
+  (let ((pine/host/shell:*breath-seconds* 10))
     (let ((first-said (sh:sh "date +%s%N")))
       (is (equal first-said (sh:sh "date +%s%N"))
           "the same line asked twice in a breath forks once"))))
@@ -46,7 +46,7 @@ apart are asking about the same moment. A thing done twice is done twice, and a
 write routed through the memo happened once however many times it was asked for:
 muting twice inside a quarter of a second muted once, and two windows closed one
 after the other closed one."
-  (let ((pine/host/shell:*breath* 10))
+  (let ((pine/host/shell:*breath-seconds* 10))
     (is (equal (sh:sh "date +%s%N") (sh:sh "date +%s%N"))
         "asked twice in a breath, once")
     (is (not (equal (sh:did "date +%s%N") (sh:did "date +%s%N")))
@@ -71,7 +71,7 @@ not an answer, because a double-quoted shell word still spells $(...)."
 
 (test the-clock-is-the-time-as-paths
   (with-tree
-    (let ((clock (host:made "clock")))
+    (let ((clock (host:make-device "clock")))
       (fs:mount clock (fs:root))
       (host::tick)
       (is (integerp (fs:contents (fs:at "/clock/year"))))
@@ -79,9 +79,9 @@ not an answer, because a double-quoted shell word still spells $(...)."
 
 (test the-environment-reads-and-writes-through
   (with-tree
-    (let ((env (host:made "env")))
+    (let ((env (host:make-device "env")))
       (fs:mount env (fs:root))
-      (let ((n (fs:entry env "PATH")))
+      (let ((n (fs:child env "PATH")))
         (is (not (null n)))
         (is (equal (uiop:getenv "PATH") (fs:contents n)))))))
 
@@ -92,13 +92,13 @@ the first time, which is a clock that never ticks."
   (with-tree
     (let ((n (cons 0 nil)))
       (host:defdevice %probe-count :describes "counts every time it is read")
-      (host:defbacking %probe-count ()
-        (count :reads (d:swap (car n) #'1+)))
-      (let ((dev (fs:mount (host:made "%probe-count") (fs:root))))
+      (host:defdriver %probe-count ()
+        (count :reads (sb-ext:atomic-update (car n) (lambda (old) (1+ old)))))
+      (let ((dev (fs:mount (host:make-device "%probe-count") (fs:root))))
         (is (eql 1 (fs:contents (fs:at "/%probe-count/count"))))
         (is (eql 1 (fs:contents (fs:at "/%probe-count/count")))
             "and it is remembered until something says otherwise")
-        (fs:moved dev)
+        (fs:touch dev)
         (is (eql 2 (fs:contents (fs:at "/%probe-count/count")))
             "the device moved, so the reading is read again")))))
 
@@ -109,13 +109,13 @@ nothing copied anywhere else can come in, and nothing killed here can go out.
 Which program does the copying is the machine's business: the reading stands either
 way, and says :ABSENT where this machine has no way to answer it."
   (with-tree
-    (let ((dev (fs:mount (host:made "clip") (fs:root))))
+    (let ((dev (fs:mount (host:make-device "clip") (fs:root))))
       (is (equal '("text") (fs:contents dev)))
-      (let ((text (fs:entry dev "text")))
+      (let ((text (fs:child dev "text")))
         (is (not (null text)) "the row is a place under it")
-        (if (host:answering (host::declared "clip"))
+        (if (host:driver-for (host::device-class "clip"))
             (is (eq :text (fs:key text)) "the way this machine has answers it")
-            (is (eq :absent (fs:holding text))
+            (is (eq :absent (fs:kind text))
                 "and where nothing here can answer it, it says so"))))))
 
 (test a-device-nothing-on-this-machine-can-answer-still-stands
@@ -124,12 +124,12 @@ way, and says :ABSENT where this machine has no way to answer it."
 why READ has always had three."
   (with-tree
     (host:defdevice %probe-thermostat :describes "nothing here can answer this")
-    (host:defbacking %probe-thermostat (:needs "no-such-program-anywhere")
+    (host:defdriver %probe-thermostat (:needs "no-such-program-anywhere")
       (target :reads (sh:sh "no-such-program-anywhere get") :writes (sh:sh "x"))
       (mode   :reads (sh:sh "no-such-program-anywhere mode")))
-    (let ((dev (fs:mount (host:made "%probe-thermostat")
+    (let ((dev (fs:mount (host:make-device "%probe-thermostat")
                             (fs:at "/dev"))))
-      (is (null (host:answering (host::declared "%probe-thermostat")))
+      (is (null (host:driver-for (host::device-class "%probe-thermostat")))
           "no backing this machine can use")
       (is (equal '("target" "mode") (fs:contents dev))
           "and it still says what it would answer")
@@ -146,9 +146,9 @@ which every device write got wrong, silently, because nothing here wrote to one.
   (with-tree
     (let ((heard :nothing))
       (host:defdevice %probe-lamp :describes "a lamp to write to")
-      (host:defbacking %probe-lamp ()
+      (host:defdriver %probe-lamp ()
         (level :reads 0 :writes (lambda (said) (setf heard said) t)))
-      (fs:mount (host:made "%probe-lamp") (fs:at "/dev"))
+      (fs:mount (host:make-device "%probe-lamp") (fs:at "/dev"))
       (pine:write "/dev/%probe-lamp/level" 42)
       (is (eql 42 heard) "what was written reached the backing"))))
 
@@ -158,11 +158,11 @@ knows less does not take the others away, or a surface written against the fulle
 backing would break on a machine with the thinner one."
   (with-tree
     (host:defdevice %probe-radio :describes "two ways, one thinner")
-    (host:defbacking %probe-radio (:needs "no-such-fat-program")
+    (host:defdriver %probe-radio (:needs "no-such-fat-program")
       (station :reads "fat") (signal :reads "fat") (preset :reads "fat"))
-    (host:defbacking %probe-radio ()
+    (host:defdriver %probe-radio ()
       (station :reads "thin"))
-    (let ((dev (fs:mount (host:made "%probe-radio")
+    (let ((dev (fs:mount (host:make-device "%probe-radio")
                             (fs:at "/dev"))))
       (is (equal '("station" "signal" "preset") (fs:contents dev))
           "every reading either backing declares")
@@ -196,11 +196,11 @@ things -- and /file, which is the whole filesystem, standing for the life of the
 image with nothing that named them."
   (booted)
   (with-tree
-    (system:use "host")
+    (module:use "host")
     (is (not (null (fs:at "/sh"))) "it put /sh up")
     (is (not (null (fs:at "/file"))) "and the filesystem")
     (is (not (null (fs:at "/sys"))) "and the machine")
-    (system:drop "host")
+    (module:drop "host")
     (is (null (fs:at "/sh")) "and /sh goes with it")
     (is (null (fs:at "/file")) "and so does the filesystem")
     (is (null (fs:at "/sys")) "and so does the machine")))

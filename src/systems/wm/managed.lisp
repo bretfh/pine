@@ -1,27 +1,13 @@
 (in-package #:pine/wm)
 
-(defparameter +verbs+ '("close" "exit" "next" "previous")
-  "What this compositor takes. A verb is a node: writing /wm/close closes the
-focused window, and that is the whole of the protocol for it. Nothing here is
-about arrangement -- that is whatever writes /wm/placement.")
+(defparameter +verbs+ '("close" "exit" "next" "previous"))
 
 (defclass managed (compositor)
   ((said  :initform nil :accessor said)
    (wants :initform nil :accessor wants)
-   (where :initform nil :accessor where))
-  (:documentation "A compositor pine is the window manager of.
-
-The other subclass talks to one; this one is told what there is and says where it
-goes. Same protocol, because from the namespace they are the same thing: outputs,
-windows with titles, one of them focused, and verbs it takes.
-
-Where they go is not decided here. PLACEMENT is a place a system writes, and
-writing it is the whole of being a window manager."))
+   (where :initform nil :accessor where)))
 
 (defun told (c)
-  "What the wayland side last said: (:windows ((:id .. :title .. :app .. :size ..
-:hidden ..) ...) :outputs ((:name .. :position .. :size .. :area ..) ...)
-:focused id)."
   (said c))
 
 (defun windows-of (c) (getf (told c) :windows))
@@ -34,14 +20,12 @@ writing it is the whole of being a window manager."))
 (defun placement (c) (where c))
 
 (defun asked (c said)
-  "Ask the wayland side for something. What it takes it takes once."
-  (d:swap (slot-value c 'wants) (lambda (all) (append all (list said))))
+  (sb-ext:atomic-update (slot-value c 'wants) (lambda (all) (append all (list said))))
   said)
 
 (defun take (c)
-  "Everything asked for since the last time, and forget it."
   (loop :for had := (wants c)
-        :when (d:cas (slot-value c 'wants) had nil) :do (return had)))
+        :when (d:cas-p (slot-value c 'wants) had nil) :do (return had)))
 
 (defmethod outputs ((c managed)) (getf (told c) :outputs))
 
@@ -66,8 +50,6 @@ writing it is the whole of being a window manager."))
   (getf (%window c id) :title))
 
 (defmethod rect ((c managed) id)
-  "Where a window is: what was last placed for it, which is what it was told to
-be. Until something places it there is nothing to say."
   (let ((each (find (princ-to-string id) (placement c)
                     :key (lambda (e) (princ-to-string (first e)))
                     :test #'equal)))
@@ -94,10 +76,6 @@ be. Until something places it there is nothing to say."
       t)))
 
 (defmethod initialize-instance :after ((c managed) &key)
-  "What the process holding the connection last saw, where each window goes, and
-what pine wants done about it. Nothing under src/ writes the placement: a window
-manager is a system that does, and the answer is total -- a window it does not name
-is hidden. What is wanted is taken once, so nothing is done twice."
   (setf (parts c)
         (append (parts c)
                 (list (make-instance 'handed :name "said" :of c
@@ -107,33 +85,29 @@ is hidden. What is wanted is taken once, so nothing is done twice."
                       (make-instance 'wanted :name "wants" :of c
                                      :describes "what pine wants done about it")))))
 
-(defclass handed (fs:derived) ()
-  (:documentation "/wm/said: what the process holding the connection last saw."))
+(defclass handed (fs:derived) ())
 
-(defmethod fs:livep ((n handed) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n handed) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n handed)) (told (fs:of n)))
 
 (defmethod fs:takes ((n handed) value)
   (setf (said (fs:of n)) value)
-  (fs:moved (fs:of n)))
+  (fs:touch (fs:of n)))
 
-(defclass placement (fs:derived) ()
-  (:documentation "/wm/placement: where each window goes. What a window manager
-writes; a window it does not name is hidden."))
+(defclass placement (fs:derived) ())
 
-(defmethod fs:livep ((n placement) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n placement) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n placement)) (where (fs:of n)))
 
 (defmethod fs:takes ((n placement) value)
   (setf (where (fs:of n)) (d:as :list value))
-  (fs:moved (fs:of n)))
+  (fs:touch (fs:of n)))
 
-(defclass wanted (fs:derived) ()
-  (:documentation "/wm/wants: what pine wants done about the windows, taken once."))
+(defclass wanted (fs:derived) ())
 
-(defmethod fs:livep ((n wanted) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n wanted) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n wanted)) (take (fs:of n)))
 

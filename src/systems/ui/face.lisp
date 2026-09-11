@@ -1,12 +1,8 @@
 (in-package #:pine/ui)
 
-(defvar *in-force* nil
-  "The face table for the render running on this thread. Bound for the extent of one
-render: finding the table is three reads and finding a face in it is one, so a paint
-that asks per cell spends most of its time asking where to look.")
+(defvar *in-force* nil)
 
-(defparameter +plain+ :default
-  "The face a space that has not said resolves in.")
+(defparameter +plain+ :default)
 
 (defparameter +theme+ :ef-dream)
 
@@ -17,11 +13,9 @@ that asks per cell spends most of its time asking where to look.")
    (italic    :initarg :italic    :accessor italic    :initform nil)
    (underline :initarg :underline :accessor underline :initform nil)))
 
-(defclass theme (fs:value) ()
-  (:documentation "A theme at /ui/theme/<name>: (:palette … :metrics … :faces …),
-the faces by name, each as a plist."))
+(defclass theme (fs:value) ())
 
-(defmethod fs:savedp ((th theme)) nil)
+(defmethod fs:persistent-p ((th theme)) nil)
 
 (defun palette (th) (getf (fs:contents th) :palette))
 (defun metrics (th) (getf (fs:contents th) :metrics))
@@ -36,31 +30,26 @@ the faces by name, each as a plist."))
 (defun %themes () (fs:at "/ui/theme"))
 
 (defun themes ()
-  (sort (loop :for each :in (fs:entries (%themes))
+  (sort (loop :for each :in (fs:children (%themes))
               :when (typep each 'theme) :collect (%as-keyword (fs:name each)))
         #'string< :key #'symbol-name))
 
 (defun theme (name)
-  (let ((it (fs:entry (%themes) (string-downcase (symbol-name (%as-keyword name))))))
+  (let ((it (fs:child (%themes) (string-downcase (symbol-name (%as-keyword name))))))
     (if (typep it 'theme)
         it
         (error "no theme called ~s" name))))
 
 (defun active ()
-  "The theme in force here: /ui/theme/active, which is a value like any other."
   (or (let ((n (fs:at "/ui/theme/active")))
         (and n (fs:contents n)))
       +theme+))
 
 (defun %role (plist name)
-  "What PLIST says for NAME, by name: a role reads the same whichever package
-spelled it."
   (loop :for (k v) :on plist :by #'cddr
         :when (string= k name) :return (values v t)))
 
 (defgeneric hex (color palette)
-  (:documentation "COLOR as the hex it stands for: a literal, or a role the palette
-names.")
   (:method ((color null) palette) (declare (ignore palette)) nil)
   (:method ((color string) palette) (declare (ignore palette)) color)
   (:method ((color symbol) palette)
@@ -68,7 +57,6 @@ names.")
         (error "color ~s is not in the palette" color))))
 
 (defun build (name palette-plist metrics-plist specs)
-  "Declare a theme at /ui/theme/<name>."
   (let* ((palette (loop :for (role h) :on palette-plist :by #'cddr
                         :append (list (%as-keyword role) h)))
          (metrics (loop :for (key v) :on metrics-plist :by #'cddr
@@ -89,16 +77,13 @@ names.")
                          :underline (getf m :underline))))
 
 (defun %themed (name)
-  "The active theme's face called NAME as a plist, or nothing."
   (let ((key (find-symbol (string-upcase name) :keyword)))
     (and key (getf (faces (theme (active))) key))))
 
 (defclass face-node (fs:value)
-  ((written :initform nil :accessor written))
-  (:documentation "One face in force at /ui/face/<name>: the active theme's until
-something is written here, and what was written after. Saved only once written."))
+  ((written :initform nil :accessor written)))
 
-(defmethod fs:savedp ((n face-node)) (written n))
+(defmethod fs:persistent-p ((n face-node)) (written n))
 
 (defmethod (setf fs:contents) :after (value (n face-node))
   (declare (ignore value))
@@ -110,26 +95,22 @@ something is written here, and what was written after. Saved only once written."
       (%themed (fs:name n))))
 
 (defclass face-dir (fs:mount)
-  ((in-force :accessor in-force-of))
-  (:documentation "Every face in force, one entry each."))
+  ((in-force :accessor in-force-of)))
 
 (defun %face-node (d name)
-  (fs:child d name (lambda () (make-instance 'face-node :name name :parent d))))
+  (fs:ensure-child d name (lambda () (make-instance 'face-node :name name :parent d))))
 
 (defun %in-force (&optional d)
-  "Face name to face: what is at D, or the active theme's where there is no D."
   (let ((out (make-hash-table :test 'eq)))
     (if d
-        (dolist (n (fs:entries d))
+        (dolist (n (fs:children d))
           (let ((f (%as-face (fs:contents n))))
             (when f (setf (gethash (%as-keyword (fs:name n)) out) f))))
         (loop :for (k plist) :on (faces (theme (active))) :by #'cddr
               :do (setf (gethash k out) (%as-face plist))))
     out))
 
-(defclass in-force (fs:derived) ()
-  (:documentation "Every face in force, by name, worked out once and kept until a
-face or the theme moves."))
+(defclass in-force (fs:derived) ())
 
 (defmethod fs:works ((n in-force)) (%in-force (fs:of n)))
 
@@ -137,7 +118,7 @@ face or the theme moves."))
   (setf (in-force-of d)
         (make-instance 'in-force :name "in force" :parent d :of d)))
 
-(defmethod fs:entries ((d face-dir))
+(defmethod fs:children ((d face-dir))
   (let ((had (call-next-method)))
     (append had
             (loop :for (key) :on (faces (theme (active))) :by #'cddr
@@ -145,35 +126,28 @@ face or the theme moves."))
                   :unless (find name had :key #'fs:name :test #'equal)
                     :collect (%face-node d name)))))
 
-(defmethod fs:entry ((d face-dir) name)
+(defmethod fs:child ((d face-dir) name)
   (or (call-next-method)
       (let ((name (princ-to-string name)))
         (and (%themed name) (%face-node d name)))))
 
 (defun faces-in-force ()
-  "Face name to face, worked out once and kept until what it read moves: NAMED is
-on the path every painted cell takes."
   (or *in-force*
       (let ((d (fs:at "/ui/face")))
         (if d (fs:contents (in-force-of d)) (%in-force)))))
 
 (defmacro with-faces (&body body)
-  "Run BODY with the faces in force worked out once."
   `(let ((*in-force* (faces-in-force))) ,@body))
 
 (defun in-force (name)
-  "The face called NAME, as the render running here sees it. The class and the
-look-up are one word because they are one idea."
   (gethash name (faces-in-force)))
 
 (defun attrs (f)
-  "bit 0 bold, bit 1 italic, bit 2 underline."
   (if f
       (logior (if (bold f) 1 0) (if (italic f) 2 0) (if (underline f) 4 0))
       0))
 
 (defun color (role)
-  "The hex of a palette ROLE in the active theme."
   (or (%role (palette (theme (active))) role)
       (error "the active theme has no color ~s" role)))
 
@@ -182,8 +156,6 @@ look-up are one word because they are one idea."
     (if found v default)))
 
 (defun unhex (h)
-  "A #rrggbb string as (r g b), or nothing for anything else. A face's FG and BG are
-hex; this is how a canvas reads one."
   (when (and (stringp h) (>= (length h) 7) (char= (char h 0) #\#))
     (list (parse-integer h :start 1 :end 3 :radix 16)
           (parse-integer h :start 3 :end 5 :radix 16)

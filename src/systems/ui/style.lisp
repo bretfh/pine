@@ -1,11 +1,9 @@
 (in-package #:pine/ui)
 
 (defclass property (fs:value)
-  ((parser :initarg :parser :reader parser))
-  (:documentation "One key a resolved style may hold, at /ui/property/<key>, and
-how it is worked out from the css props that matched."))
+  ((parser :initarg :parser :reader parser)))
 
-(defmethod fs:savedp ((p property)) nil)
+(defmethod fs:persistent-p ((p property)) nil)
 
 (fs:mount (lambda () (make-instance 'fs:mount :describes "what a resolved style may hold"))
           "/ui/property")
@@ -13,14 +11,12 @@ how it is worked out from the css props that matched."))
 (defun %properties () (fs:at "/ui/property"))
 
 (defun property (key parser)
-  "Say that a style may hold KEY, worked out by PARSER from the matched props.
-Adding a property is one of these, not an edit to RESOLVE."
   (fs:mount (lambda () (make-instance 'property :held (list :key key) :parser parser))
             (format nil "/ui/property/~a" (string-downcase (symbol-name key))))
   key)
 
 (defun %each-property ()
-  (remove-if-not (lambda (each) (typep each 'property)) (fs:entries (%properties))))
+  (remove-if-not (lambda (each) (typep each 'property)) (fs:children (%properties))))
 
 (defun properties ()
   (sort (mapcar (lambda (p) (getf (fs:contents p) :key)) (%each-property))
@@ -42,9 +38,6 @@ Adding a property is one of these, not an edit to RESOLVE."
         (t nil)))
 
 (defun segments (s)
-  "A selector string as its segments, or nothing when it names an element. Pine
-draws widgets, not elements: a selector that names one matches nothing, and saying
-so here is better than a rule that silently never fires."
   (let ((segments (mapcar #'%segment (%words s))))
     (unless (member nil segments) segments)))
 
@@ -53,9 +46,6 @@ so here is better than a rule that silently never fires."
                       (uiop:split-string text :separator '(#\,)))))
 
 (defun specificity (segments)
-  "How particular a selector is: how many segments it constrains, then how many
-classes across them. A rule that says more wins over one that says less, whatever
-order they were written in."
   (list (length segments)
         (reduce #'+ segments :key (lambda (s) (length (getf s :classes)))
                              :initial-value 0)))
@@ -66,9 +56,7 @@ order they were written in."
       (or (> as bs) (and (= as bs) (> ac bc))))))
 
 (defclass sheet (fs:derived)
-  ((compiled :initform nil :accessor compiled))
-  (:documentation "The stylesheet at /ui/sheet, and what it compiles to. Worked out
-in PINE/UI/SHEET, where what pine ships and what was written are put together."))
+  ((compiled :initform nil :accessor compiled)))
 
 (defun %compiled (cascade)
   (loop :for (text props) :in cascade
@@ -77,7 +65,6 @@ in PINE/UI/SHEET, where what pine ships and what was written are put together.")
                       :collect (list segments props (specificity segments) at))))
 
 (defun rules ()
-  "Every rule, compiled, kept until what the sheet read moves."
   (let ((s (fs:at "/ui/sheet")))
     (when s (fs:contents s) (compiled s))))
 
@@ -88,7 +75,6 @@ in PINE/UI/SHEET, where what pine ships and what was written are put together.")
              (subsetp (getf segment :classes) classes :test #'string=)))))
 
 (defun %above (segments chain)
-  "Each segment matches some ancestor, left to right, root first."
   (if (null segments)
       t
       (loop :for tail :on chain
@@ -102,7 +88,6 @@ in PINE/UI/SHEET, where what pine ships and what was written are put together.")
        (%above (butlast segments) (butlast chain))))
 
 (defun %props (chain hover)
-  "The props of every rule matching CHAIN, merged least particular first."
   (let ((found (loop :for rule :in (rules)
                      :when (%matches (first rule) chain hover) :collect rule)))
     (let ((merged nil))
@@ -115,9 +100,6 @@ in PINE/UI/SHEET, where what pine ships and what was written are put together.")
               :do (setf (getf merged k) v))))))
 
 (defun resolve (chain &key hover)
-  "The style for a widget with this chain of class-sets, root first. A map: what it
-holds is what is declared at /ui/property, so nothing here has to be edited to
-carry something new."
   (let ((props (%props chain hover))
         (out (d:no-map)))
     (dolist (p (%each-property) out)
@@ -125,7 +107,6 @@ carry something new."
         (when v (setf out (d:with out (getf (fs:contents p) :key) v)))))))
 
 (defun classes (it)
-  "A :class value as a list of class names."
   (typecase it
     (null nil)
     (symbol (list (string-downcase (symbol-name it))))
@@ -154,8 +135,6 @@ carry something new."
         (list (num 0) (num 1) (num 2) (if (= n 4) (float (num 3)) 1.0))))))
 
 (defun %color (s)
-  "(r g b a): the three numbers the rest of pine paints with, and how much of it
-shows. Nothing for transparent, none, or unparsable."
   (cond ((or (null s) (equal s "transparent") (equal s "none")) nil)
         ((and (stringp s) (plusp (length s)) (char= (char s 0) #\#))
          (let ((rgb (unhex s)))
@@ -165,7 +144,6 @@ shows. Nothing for transparent, none, or unparsable."
         (t nil)))
 
 (defun %box (v)
-  "The four sides of a css box shorthand, expanded per css rules."
   (let ((l (%lengths v)))
     (case (length l)
       (0 nil)

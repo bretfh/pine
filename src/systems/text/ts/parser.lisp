@@ -3,9 +3,8 @@
 (defvar *runtime* nil)
 (defvar *counter* 0)
 
-
 (defclass parser ()
-  ((document-of :initarg :document :reader document-of)
+  ((buffer-of :initarg :buffer :reader buffer-of)
    (language-of :initarg :language :reader language-of)
    (state-of    :initarg :state    :reader state-of)
    (running     :initarg :running  :reader running)
@@ -15,29 +14,18 @@
 
 (defmethod print-object ((p parser) stream)
   (print-unreadable-object (p stream :type t)
-    (format stream "~a ~(~a~) at ~d" (fs:name (document-of p)) (language-of p)
+    (format stream "~a ~(~a~) at ~d" (fs:name (buffer-of p)) (language-of p)
             (parsed p))))
 
-(defun parsers () (remove nil (mapcar #'parser (documents))))
+(defun parsers () (remove nil (mapcar #'parser (buffers))))
 
-(defgeneric band (document)
-  (:documentation "The band of lines something is showing of DOCUMENT, as
-(FROM . TO), or nothing. Past a few thousand lines only that band is given to
-tree-sitter at all.
+(defgeneric band (buffer)
+  (:method (buffer) (declare (ignore buffer)) nil))
 
-Answered above, by whatever is showing it. The parse has no business knowing what
-a window is, and nothing showing a document has to tell it that it exists.")
-  (:method (document) (declare (ignore document)) nil))
-
-(defgeneric reparsed (document)
-  (:documentation "Say DOCUMENT's parse is fresh again. Whatever is drawn from the
-parse is worked out again here.")
-  (:method (document) (declare (ignore document)) nil))
+(defgeneric reparsed (buffer)
+  (:method (buffer) (declare (ignore buffer)) nil))
 
 (defun %kept (had edit)
-  "What stays of the runs already walked. The lines the edit replaced go; the ones
-above it are where they were, and the ones below it move by as many lines as the
-edit added or took away."
   (cond ((null had) (d:no-map))
         ((null edit) had)
         (t (destructuring-bind (at old new bytes) (first edit)
@@ -50,8 +38,6 @@ edit added or took away."
                        (t (setf out (d:with out (+ line delta) runs))))))))))
 
 (defun %merged (had runs band)
-  "HAD with the band walked again: the lines in it are what the walk says now, and
-the lines outside it are what they were."
   (let ((out had))
     (when band
       (dolist (at (d:keys had))
@@ -69,34 +55,34 @@ the lines outside it are what they were."
         (push (cons line run) out)))))
 
 (defun %parse (p tick)
-  (let* ((document (document-of p))
+  (let* ((buffer (buffer-of p))
          (ps (state-of p))
-         (lines (lines document))
-         (edit (edit-of document))
-         (shown (band document)))
-    (setf (ps-package ps) (package-of document))
+         (lines (lines buffer))
+         (edit (edit-of buffer))
+         (shown (band buffer)))
+    (setf (ps-package ps) (package-of buffer))
     (parse-lines! ps lines :edit (first edit) :from (second edit)
                                    :viewport shown)
-    (setf (edit-of document) nil)
+    (setf (edit-of buffer) nil)
     (let ((runs (if shown
                     (parse-highlights ps :from-line (car shown)
                                             :to-line (cdr shown))
                     (parse-highlights ps))))
-      (d:swap (slot-value p 'found)
+      (sb-ext:atomic-update (slot-value p 'found)
                (lambda (had) (%merged (%kept had edit) runs shown))))
     (meter:counted :parse-lines (if shown (- (cdr shown) (car shown))
-                                   (line-count document)))
+                                   (line-count buffer)))
     (setf (banded p) shown)
     (setf (parsed p) tick)
-    (reparsed document)
+    (reparsed buffer)
     (%flat (found p))))
 
-(defun currentp (p)
-  (and (= (parsed p) (tick (document-of p)))
-       (equal (banded p) (band (document-of p)))))
+(defun freshp (p)
+  (and (= (parsed p) (tick (buffer-of p)))
+       (equal (banded p) (band (buffer-of p)))))
 
 (defun %current (p tick)
-  (unless (currentp p) (%parse p tick))
+  (unless (freshp p) (%parse p tick))
   p)
 
 (defun %receive (p message)
@@ -119,25 +105,23 @@ the lines outside it are what they were."
       (:stop (free-parse-state (state-of p)))
       (t (error "A parser has no handler for ~s." message)))))
 
-(defun %grammar (document)
-  "Which language a document is parsed as: what it says it is written in, else what
-its mode says."
-  (or (for-readtable (readtable-of document))
-      (mode:says (mode-of document) :grammar nil)))
+(defun %grammar (buffer)
+  (or (for-readtable (readtable-of buffer))
+      (mode:says (mode-of buffer) :grammar nil)))
 
-(defun %make (document language)
+(defun %make (buffer language)
   (multiple-value-bind (lib fn) (grammar-of language)
     (let ((ps (and lib (make-parse-state *runtime* language lib fn
                                                  :syntax (for language)))))
       (when ps
-        (let ((p (make-instance 'parser :document document :language language
+        (let ((p (make-instance 'parser :buffer buffer :language language
                                         :state ps :running nil)))
           (setf (slot-value p 'running)
                 (job:start
                  (make-instance 'job:actor
                                 :name (format nil "parse-~a-~d"
-                                              (fs:name document)
-                                              (d:swap *counter* #'1+))
+                                              (fs:name buffer)
+                                              (sb-ext:atomic-update *counter* (lambda (old) (1+ old))))
                                 :dispatcher :pinned
                                 :receive (lambda (message) (%receive p message)))))
           p)))))
@@ -147,63 +131,50 @@ its mode says."
   (free-parse-state (state-of p))
   p)
 
-(defun parser-for (document)
-  "The parser for DOCUMENT, made once. The thread drawing a frame and the one that
-just finished a parse both ask, so the one that lands is the one everybody gets and
-the other is freed rather than left holding a foreign parser."
-  (let* ((language (%grammar document))
-         (had (parser document)))
+(defun parser-for (buffer)
+  (let* ((language (%grammar buffer))
+         (had (parser buffer)))
     (when (and had (not (eq language (language-of had))))
-      (forget document)
+      (forget buffer)
       (setf had nil))
     (when (and language *runtime*)
       (or had
-          (let ((mine (%make document language)))
+          (let ((mine (%make buffer language)))
             (when mine
-              (cond ((d:cas (slot-value document 'parser) nil mine)
-                     (job:tell (running mine) (list :parse (tick document)))
+              (cond ((d:cas-p (slot-value buffer 'parser) nil mine)
+                     (job:tell (running mine) (list :parse (tick buffer)))
                      mine)
-                    (t (%dispose mine) (parser document)))))))))
+                    (t (%dispose mine) (parser buffer)))))))))
 
-(defun note (document)
-  "Tell the parser it has fallen behind: the document moved, or what shows it is
-showing lines it has not been asked about."
-  (let ((p (parser-for document)))
-    (when (and p (or (/= (parsed p) (tick document))
-                     (not (equal (banded p) (band document)))))
-      (job:tell (running p) (list :parse (tick document))))
+(defun note (buffer)
+  (let ((p (parser-for buffer)))
+    (when (and p (or (/= (parsed p) (tick buffer))
+                     (not (equal (banded p) (band buffer)))))
+      (job:tell (running p) (list :parse (tick buffer))))
     p))
 
-(defun highlights (document)
-  "Every run walked so far, the band just walked included. What was coloured before
-stays coloured while the next band is being walked, so paging does not blink through
-plain text."
+(defun highlights (buffer)
   (meter:timing (:highlights)
-    (let ((p (note document)))
+    (let ((p (note buffer)))
       (when p (%flat (found p))))))
 
-(defun indent (document from to &key (width 2) then)
-  (let ((p (note document)))
+(defun indent (buffer from to &key (width 2) then)
+  (let ((p (note buffer)))
     (when p
       (job:tell (running p)
-                (list :indent (tick document) from to width then))
+                (list :indent (tick buffer) from to width then))
       p)))
 
-(defun motion (document kind then)
-  (let ((p (note document)))
+(defun motion (buffer kind then)
+  (let ((p (note buffer)))
     (when p
       (job:tell (running p)
-                (list :motion (tick document) kind
-                      (at-line document) (at-col document) then))
+                (list :motion (tick buffer) kind
+                      (at-line buffer) (at-col buffer) then))
       p)))
 
-(defun forget (document)
-  "Let go of a document's parse: the tree, the parser and the thread it ran on.
-
-Freed here and not asked for by a message. Told :STOP and stopped in the next
-breath, whether the actor ever read that message was a race -- and losing it left
-a TSParser, a tree and a foreign buffer for every document that had been open."
-  (let* ((doc (if (stringp document) (fs:at "/text" document) document))
+(defun forget (buffer)
+  (let* ((doc (if (stringp buffer) (fs:at "/text" buffer) buffer))
          (p (and doc (parser doc))))
     (when p
       (setf (parser doc) nil)
@@ -211,10 +182,8 @@ a TSParser, a tree and a foreign buffer for every document that had been open."
       (job:forget (job:name (running p))))
     p))
 
-(defmethod killing :after ((document document))
-  "A document that goes takes its parse with it. Said here, where the parse is,
-rather than by whoever kills documents."
-  (forget document))
+(defmethod killing :after ((buffer buffer))
+  (forget buffer))
 
 (defun forget-all ()
-  (dolist (doc (documents) t) (forget doc)))
+  (dolist (doc (buffers) t) (forget doc)))

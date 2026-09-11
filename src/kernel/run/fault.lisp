@@ -4,46 +4,27 @@
                     (#:log #:pine/fs/log))
   (:export
    #:fault #:borrowed #:take #:resume #:faulted
-   #:faults #:standing #:attempt #:or-nothing #:report #:id #:defer
+   #:faults #:suspended #:attempt #:or-nothing #:report #:id #:defer
    #:expected #:expecteds #:forget-expected
-   #:borrow #:await #:changed #:wait-until #:forget-faults
+   #:borrow #:await #:wake #:wait-until #:forget-faults
    #:with-debugger #:condition-of #:label #:backtrace-of #:offers
-   #:taken #:where #:token #:standingp #:*waiting*
+   #:taken #:where #:token #:suspendedp #:*unattended-seconds*
    #:*debugging* #:*keeping*))
 (in-package #:pine/run/fault)
 
-(defvar *kept* 50)
+(defvar *faults-kept* 50)
 (defvar *faults* nil)
-(defvar *expected* nil
-  "What OR-NOTHING let go of, newest first: the reason, what broke, and when.")
+(defvar *expected* nil)
 (defvar *counter* 0)
-(defparameter +leaving+ '("EXIT")
-  "Restarts that end the image rather than the work. A fault asks what to do about
-what broke, and /fault is written to answer it; taking the whole image down is not
-one of the answers, so it is not one of the ones offered.")
+(defparameter +leaving+ '("EXIT"))
 (defvar *debugging* nil)
-(defvar *keeping* nil
-  "Where to put the fault this piece of work stands in, for whoever asked for the
-work.
-
-A cell bound around one call on the thread doing it, so what comes back is that
-call's fault. Looked for instead by watching what is standing and taking whatever
-is new, a peer asking this image to evaluate something was answered with whatever
-else happened to break on another thread while it ran.")
+(defvar *keeping* nil)
 (defvar *noticing* (bordeaux-threads:make-lock "pine-faults"))
 (defvar *noticed* (bordeaux-threads:make-condition-variable))
-(defvar *waiting* 120
-  "Seconds a fault stands unattended before it gives up. One number: a caller
-waiting on a fault in another image waits at least this long too, or the fault is
-still standing when the call that would answer it has already timed out.")
+(defvar *unattended-seconds* 120)
 
 (defun expected (why condition)
-  "Keep what was let go of, and the reason it was allowed to go.
-
-The condition itself and not what it says about itself: printing one runs its own
-report, and a report that breaks inside the handler for a break is a fault where
-there was meant to be none."
-  (d:swap *expected* #'d:capped (list why condition (get-universal-time)) *kept*)
+  (sb-ext:atomic-update *expected* (lambda (old) (d:capped old (list why condition (get-universal-time)) *faults-kept*)))
   nil)
 
 (defun expecteds () *expected*)
@@ -51,25 +32,12 @@ there was meant to be none."
 (defun forget-expected () (setf *expected* nil))
 
 (defmacro or-nothing (why &body body)
-  "BODY, or nothing if it will not go, because WHY says that is an answer here.
-
-The other half of ATTEMPT. ATTEMPT is for work that was meant to happen: it
-breaking is a fault and a fault is kept. This is for a question with no answer --
-a process already reaped, a file that is not there, a symbol nothing was compiled
-from -- where nothing broke and there is nothing to keep.
-
-WHY is written down and not optional. The difference between this and swallowing
-a fault is entirely whether whoever wrote it knew which one they were doing, and a
-reason is the only evidence of that -- so the reason is kept, at /expected, with
-what it was given instead of an answer. Declared ignorable, it went nowhere: this
-was IGNORE-ERRORS with a sentence beside it, and the rule saying a fault is never
-swallowed without a reason was one nothing could check."
   (let ((c (gensym "BROKE")))
     `(handler-case (progn ,@body)
        (error (,c) (expected ,why ,c)))))
 
 (defclass fault ()
-  ((id        :initform (d:swap *counter* #'1+) :reader id)
+  ((id        :initform (sb-ext:atomic-update *counter* (lambda (old) (1+ old))) :reader id)
    (condition-of :initarg :condition :reader condition-of)
    (label     :initarg :label     :reader label     :initform nil)
    (backtrace-of :initarg :backtrace :reader backtrace-of :initform "")
@@ -78,31 +46,24 @@ swallowed without a reason was one nothing could check."
    (at-time   :initform (get-universal-time) :reader at-time)
    (deferred  :initform nil       :accessor deferred)
    (lock      :initarg :lock      :reader lock      :initform nil)
-   (told      :initarg :told      :reader told      :initform nil)
-   (choice    :initform nil       :accessor choice))
-  (:documentation "Something that broke, the restarts it is standing in, and where
-the thread holding them is. A fault with a LOCK is one a thread is still standing
-in; taking one of its offers lets that thread go."))
+   (make-job      :initarg :told      :reader make-job      :initform nil)))
 
 (defclass borrowed (fault)
   ((where :initarg :where :reader where)
-   (token :initarg :token :reader token :initform nil))
-  (:documentation "A fault standing in another image. WHERE is that image and TOKEN
-is its own name for it, so taking a restart here is one act in both."))
+   (token :initarg :token :reader token :initform nil)))
 
 (defmethod where ((f fault)) (declare (ignore f)) nil)
 
 (defmethod print-object ((f fault) stream)
   (print-unreadable-object (f stream :type t)
-    (format stream "~@[~a: ~]~a~:[~; standing~]" (label f) (condition-of f) (standingp f))))
+    (format stream "~@[~a: ~]~a~:[~; suspended~]" (label f) (condition-of f) (suspendedp f))))
 
-(defun standingp (f) (and (lock f) (null (taken f))))
+(defun suspendedp (f) (and (lock f) (null (taken f))))
 
 (defun faults () *faults*)
 
-(defun standing ()
-  "The faults whose thread is still there, waiting to be told what to do."
-  (remove-if-not #'standingp (faults)))
+(defun suspended ()
+  (remove-if-not #'suspendedp (faults)))
 
 (defun forget-faults () (setf *faults* nil))
 
@@ -111,10 +72,6 @@ is its own name for it, so taking a restart here is one act in both."))
     (with-output-to-string (s) (sb-debug:print-backtrace :stream s :count 25))))
 
 (defun %offers (condition)
-  "The restarts this fault is standing in, less the ones that end the image.
-
-ABORT stays: on the thread a piece of work runs on it abandons that work, which is
-a real answer and the one another pine is given when it asks for one."
   (mapcar (lambda (r) (princ-to-string (restart-name r)))
           (remove-if (lambda (r)
                        (let ((it (restart-name r)))
@@ -123,25 +80,14 @@ a real answer and the one another pine is given when it asks for one."
                      (compute-restarts condition))))
 
 (defgeneric faulted (fault)
-  (:documentation "Say a fault happened, to whoever can do something about it.
-
-Answered above: an editor with somebody looking at it puts up the debugger. With
-nobody there it is said, because a fault nobody was told about is one nobody can
-act on.")
   (:method (fault) (log:note "~a" (condition-of fault))))
 
-(defun changed ()
-  "Say what is standing has moved, so anybody waiting on it looks again."
+(defun wake ()
   (bordeaux-threads:with-lock-held (*noticing*)
     (sb-thread:condition-broadcast *noticed*))
   t)
 
-(defun wait-until (readyp &optional (seconds *waiting*))
-  "Wait until READYP answers something, woken by CHANGED, and answer what it said.
-
-For somebody who has to hear that a thread faulted the moment it does. The thread
-cannot tell them: under the debugger it is still standing in the fault, holding
-the frames, and it will not run again until somebody takes a restart."
+(defun wait-until (readyp &optional (seconds *unattended-seconds*))
   (bordeaux-threads:with-lock-held (*noticing*)
     (loop :with due := (+ (get-universal-time) seconds)
           :for said := (funcall readyp)
@@ -150,98 +96,69 @@ the frames, and it will not run again until somebody takes a restart."
               (when (> (get-universal-time) due) (return (funcall readyp))))))
 
 (defun %noted (f)
-  (d:swap *faults* #'d:capped f *kept*)
+  (sb-ext:atomic-update *faults* (lambda (old) (d:capped old f *faults-kept*)))
   (when *keeping* (setf (car *keeping*) f))
-  (changed)
+  (wake)
   (handler-case (faulted f)
     (error (broke)
       (log:note "~a, and saying so broke too: ~a" (condition-of f) broke)))
   f)
 
 (defun report (condition &optional label)
-  "Keep a fault, with the restarts and the backtrace of wherever it was signalled --
-which is why this runs under handler-bind and not handler-case."
   (%noted (make-instance 'fault :condition condition :label label
                                 :backtrace (%backtrace)
                                 :offers (%offers condition))))
 
 (defun borrow (image condition offers &key token label)
-  "A fault another image is standing in. It stands here too, offering what it offers
-there."
   (%noted (make-instance 'borrowed :condition condition :label label
                                    :offers offers :where image :token token
                                    :lock (bordeaux-threads:make-lock)
                                    :told (bordeaux-threads:make-condition-variable))))
 
 (defun defer (f)
-  "Say somebody is reading this fault, so it is not given up on while they decide."
   (setf (deferred f) t)
   f)
 
-(defgeneric resume (image fault restart)
-  (:documentation "Tell IMAGE to take one of the restarts it is standing in."))
+(defgeneric resume (image fault restart))
 
 (defgeneric take (fault restart)
-  (:documentation "Take one of the restarts a fault is standing in, and let the
-thread holding them go. Here or in another image, one act.")
   (:method ((f fault) restart)
     (when (and (lock f) (member restart (offers f) :test #'equal))
       (bordeaux-threads:with-lock-held ((lock f))
-        (setf (choice f) restart
-              (taken f) restart)
-        (bordeaux-threads:condition-notify (told f)))
+        (setf (taken f) restart)
+        (bordeaux-threads:condition-notify (make-job f)))
       restart))
   (:method ((f borrowed) restart)
-    "Taken there first, and said to be taken here after.
-
-Said first, whoever was waiting for this image to finish with that one was let go
-while the restart was still on its way: the next thing written down the pipe
-arrived where the child was reading which restart to take, and was swallowed as
-the answer."
     (when (member restart (offers f) :test #'equal)
       (resume (where f) f restart)
       (setf (taken f) restart)
       (when (lock f)
         (bordeaux-threads:with-lock-held ((lock f))
-          (bordeaux-threads:condition-notify (told f))))
+          (bordeaux-threads:condition-notify (make-job f))))
       restart)))
 
 (defun %stand (f seconds)
-  "Wait, holding the frames the fault was signalled in, until someone chooses a
-restart. Unattended, it gives up after a while rather than standing for ever.
-
-TAKEN as well as CHOICE, because a fault standing in another image is answered by
-being taken there: nothing here ever sets its choice, so waiting only on that is
-waiting out the whole timeout on a fault somebody already dealt with."
   (bordeaux-threads:with-lock-held ((lock f))
     (loop :with due := (+ (get-universal-time) seconds)
-          :until (or (choice f) (taken f))
-          :do (bordeaux-threads:condition-wait (told f) (lock f) :timeout 1)
+          :until (taken f)
+          :do (bordeaux-threads:condition-wait (make-job f) (lock f) :timeout 1)
               (when (deferred f) (setf due (+ (get-universal-time) seconds)))
               (when (> (get-universal-time) due) (return))))
-  (or (choice f) (taken f)))
+  (taken f))
 
-(defun await (f &optional (seconds *waiting*))
-  "Wait for someone to take one of the restarts F is standing in, and say which."
+(defun await (f &optional (seconds *unattended-seconds*))
   (when (lock f) (%stand f seconds)))
 
 (defun attempt (thunk &optional label)
-  "Run THUNK; a fault is kept, with its restarts, and the thunk unwinds.
-
-The fault is noted before anything unwinds, because a restart is only there while
-the frame that established it is: reported after the unwind, what is left to offer
-is the toplevel's, and taking one of those is leaving rather than going on.
-
-With the debugger on, the thread stops where it faulted and waits."
   (if *debugging*
-      (%standing thunk label)
+      (%suspend thunk label)
       (block attempting
         (handler-bind ((error (lambda (c)
                                 (report c label)
                                 (return-from attempting nil))))
           (funcall thunk)))))
 
-(defun %standing (thunk label)
+(defun %suspend (thunk label)
   (block attempting
     (handler-bind
         ((error
@@ -252,7 +169,7 @@ With the debugger on, the thread stops where it faulted and waits."
                                       :offers (%offers c)
                                       :lock (bordeaux-threads:make-lock)
                                       :told (bordeaux-threads:make-condition-variable)))))
-               (let ((name (%stand f *waiting*)))
+               (let ((name (%stand f *unattended-seconds*)))
                  (when name
                    (let ((r (find name (compute-restarts c)
                                   :key (lambda (each)
@@ -263,46 +180,38 @@ With the debugger on, the thread stops where it faulted and waits."
       (funcall thunk))))
 
 (defmacro with-debugger (&body body)
-  "Inside, a fault stops its thread where it happened instead of unwinding."
   `(let ((*debugging* t)) ,@body))
 
 (defun %at (name)
-  "The fault this path names. By its own number and not by where it sits in the
-ring: a fault that arrives while somebody is reading one moves every other one
-along, and the restart they then write would be taken on whatever had slid into
-the place they were looking at."
   (let ((i (parse-integer (princ-to-string name) :junk-allowed t)))
     (when i (find i (faults) :key #'id))))
 
-(defclass fault-mount (fs:mount) ()
-  (:documentation "One fault at /fault/<id>. Writing a restart's name takes it: the
-thread is still standing there, here or in another image, so this is the same act
-as taking one in the debugger."))
+(defclass fault-mount (fs:mount) ())
 
-(defmethod fs:livep ((n fault-mount) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n fault-mount) &optional name) (declare (ignore name)) t)
 
 (defun %it (n) (%at (fs:name n)))
 
+(defmethod fs:names ((n fault-mount))
+  '((:said   . "what broke, as it said it")
+    (:offers . "the restarts it is suspended in")
+    (:taken  . "which restart was taken; writing one takes it")))
+
 (defmethod fs:read ((n fault-mount) (name (eql :said)))
-  "What broke, as it said it."
   (let ((f (%it n))) (and f (princ-to-string (condition-of f)))))
 
 (defmethod fs:read ((n fault-mount) (name (eql :offers)))
-  "The restarts it is standing in."
   (let ((f (%it n))) (when f (defer f) (offers f))))
 
 (defmethod fs:read ((n fault-mount) (name (eql :taken)))
-  "Which restart was taken; writing one takes it."
   (let ((f (%it n))) (and f (taken f))))
 
 (defmethod fs:write ((n fault-mount) (name (eql :taken)) value)
   (let ((f (%it n))) (when f (take f (princ-to-string value)))))
 
-(defclass expected (fs:derived) ()
-  (:documentation "What was let go of, and why nothing was an answer. Writing
-nothing here forgets them."))
+(defclass expected (fs:derived) ())
 
-(defmethod fs:livep ((n expected) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n expected) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n expected))
   (loop :for (why broke at) :in (expecteds)
@@ -311,26 +220,23 @@ nothing here forgets them."))
 (defmethod fs:takes ((n expected) value)
   (unless value (forget-expected)))
 
-(defclass broken (fs:mount) ()
-  (:documentation "/fault: every fault that has stood, by number, and what was
-expected."))
+(defclass broken (fs:mount) ())
 
-(defmethod fs:livep ((d broken) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((d broken) &optional name) (declare (ignore name)) t)
 
-(defmethod fs:entry ((d broken) name)
+(defmethod fs:child ((d broken) name)
   (let ((name (princ-to-string name)))
     (cond ((equal name "expected")
-           (fs:child d name (lambda () (make-instance 'expected :name name :parent d))))
+           (fs:ensure-child d name (lambda () (make-instance 'expected :name name :parent d))))
           ((%at name)
-           (fs:child d name (lambda () (make-instance 'fault-mount :name name :parent d)))))))
+           (fs:ensure-child d name (lambda () (make-instance 'fault-mount :name name :parent d)))))))
 
-(defmethod fs:entries ((d broken))
-  (cons (fs:entry d "expected")
-        (remove nil (mapcar (lambda (f) (fs:entry d (id f))) (faults)))))
+(defmethod fs:children ((d broken))
+  (cons (fs:child d "expected")
+        (remove nil (mapcar (lambda (f) (fs:child d (id f))) (faults)))))
 
 (fs:mount (lambda () (make-instance 'broken :describes "what has broken, and what it stands in"))
           "/fault")
-
 
 (setf pine/fs:*broke*
       (lambda (c where)

@@ -3,10 +3,7 @@
 (defparameter +bodies+ '("def" "with-" "do-" "when" "unless" "let" "loop" "lambda"
                          "case" "cond" "dolist" "dotimes" "handler" "unwind"
                          "if" "progn" "block" "flet" "labels" "eval-when"
-                         "multiple-value-bind" "destructuring-bind")
-  "Heads whose rest is a body, so it indents rather than lining up under the first
-argument. A name, not a table of every macro: what a config defines is not known
-here, and looking it up in the image is the parser's business, not this file's.")
+                         "multiple-value-bind" "destructuring-bind"))
 
 (defun bodyp (name)
   (and name (some (lambda (p)
@@ -25,7 +22,6 @@ here, and looking it up in the image is the parser's business, not this file's."
     (when (< start end) (values (subseq text start end) end))))
 
 (defun head (text)
-  "The head of a form written at the start of TEXT, and what it names."
   (let ((open (position #\( text)))
     (when open
       (multiple-value-bind (word after) (%word-at text (1+ open))
@@ -33,7 +29,6 @@ here, and looking it up in the image is the parser's business, not this file's."
           (values word (%word-at text after)))))))
 
 (defun %depth (text depth in-string)
-  "Where the depth and the string state stand after TEXT."
   (let ((i 0) (n (length text)))
     (loop :while (< i n)
           :do (let ((ch (char text i)))
@@ -50,12 +45,10 @@ here, and looking it up in the image is the parser's business, not this file's."
               (incf i))
     (values depth in-string)))
 
-(defun forms (document)
-  "Every toplevel form in DOCUMENT: its head, what it names, and the lines it
-covers."
+(defun forms (buffer)
   (let ((depth 0) (in-string nil) (start nil) (head nil) (name nil) (found nil))
-    (dotimes (at (line-count document) (nreverse found))
-      (let ((text (line document at)))
+    (dotimes (at (line-count buffer) (nreverse found))
+      (let ((text (line buffer at)))
         (when (and (null start) (zerop depth) (plusp (length text))
                    (char= #\( (char text 0)))
           (setf start at)
@@ -66,11 +59,9 @@ covers."
           (push (list head name start at) found)
           (setf start nil depth 0))))))
 
-(defmethod mode:regions ((m mode:lisp) document)
-  "Toplevel forms, grouped by what they are and named by what they define. So
-/text/init.lisp/defcommand/hello is that form, and writing it replaces it."
+(defmethod mode:regions ((m mode:lisp) buffer)
   (let ((by-head (d:no-map)))
-    (dolist (form (forms document))
+    (dolist (form (forms buffer))
       (destructuring-bind (head name from to) form
         (let* ((head (or head "form"))
                (name (or name (princ-to-string from)))
@@ -80,7 +71,7 @@ covers."
                         (append had
                                 (list (mode:covering
                                        name (cons from 0)
-                                       (cons to (length (line document to)))))))))))
+                                       (cons to (length (line buffer to)))))))))))
     (let (out)
       (d:do-map (head kids by-head (nreverse out))
         (push (mode:covering head
@@ -89,12 +80,10 @@ covers."
                              kids)
               out)))))
 
-(defun %opens (document at)
-  "The column of the innermost list still open at the start of line AT, and whether
-its head is a body form."
+(defun %opens (buffer at)
   (let ((depth 0) (in-string nil) (stack nil))
     (dotimes (line at)
-      (let ((text (line document line))
+      (let ((text (line buffer line))
             (i 0))
         (let ((n (length text)))
           (loop :while (< i n)
@@ -116,10 +105,8 @@ its head is a body form."
                     (incf i)))))
     (first stack)))
 
-(defmethod mode:indent ((m mode:lisp) document at)
-  "Where this line starts: inside a body form, its opener plus the mode's indent;
-inside a call, one past the opener. Top level is column zero."
-  (let ((open (%opens document at)))
+(defmethod mode:indent ((m mode:lisp) buffer at)
+  (let ((open (%opens buffer at)))
     (if (null open)
         0
         (destructuring-bind (col head) open

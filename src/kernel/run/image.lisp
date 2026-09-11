@@ -37,50 +37,24 @@
                                              :test (function equal))))
                                 (when r (invoke-restart r))))))))
                    (eval form))))
-       (force-output))))"
-  "The child's read and eval loop. It stays inside HANDLER-BIND while it blocks on
-READ, so the restarts it offers are the ones still there. Every line it means is
-marked, because the systems it loads say things on the same stream.")
+       (force-output))))")
 
-(defclass image (job:job) ()
-  (:documentation "A lisp we can evaluate in. Where it is and how a form gets there
-is the transport's business; that a fault in it stands rather than unwinding is
-not."))
+(defclass image (job:job) ())
 
 (defclass child (image job:program)
   ((systems :initarg :systems :accessor systems :initform '(:pine))
    (readyp  :initform nil :accessor readyp)
-   (held    :initform nil :accessor held
-            :documentation "The fault this child is standing in, or nothing. The
-fault itself and not a flag, because whoever wants the pipe next has to wait for
-it to be answered, and a fault is a thing you can wait on.")
-   (turn    :initform (bordeaux-threads:make-lock "pine-image") :reader turn))
-  (:documentation "An image started here, over pipes, that dies with pine.
+   (held    :initform nil :accessor held)
+   (turn    :initform (bordeaux-threads:make-lock "pine-image") :reader turn)))
 
-One caller at a time holds the pipe: two threads writing forms down it interleave
-and steal each other's replies. While the child stands in a fault the pipe belongs
-to whoever will take a restart, because the next thing the child reads is which one
-and a form written then would be swallowed as the answer."))
-
-(defmethod job:told ((kind (eql :image)) name said)
+(defmethod job:make-job ((kind (eql :image)) name said)
   (make-instance 'child :name name
-                        :on-fault (job:asked-for said :on-fault :restart)
+                        :on-fault (getf said :on-fault :restart)
                         :systems (or (getf said :systems) '(:pine))))
 
-(defgeneric evaluate (image form &key timeout)
-  (:documentation "Do work in IMAGE and answer what it said:
-
-  (values ANSWERED FAULT OFFERS SAID)
-
-ANSWERED is what the form answered, as a list. FAULT is what broke, as text, and
-OFFERS the restarts that image is still standing in."))
+(defgeneric evaluate (image form &key timeout))
 
 (defun borrowing (image said offers &key token)
-  "Stand here in a fault that is standing there. Nobody has to be told: taking one
-of its offers is TAKE, and TAKE on a borrowed fault is RESUME on the image.
-
-The only thread this needs is one that gives up: a child blocked on READ waits for
-an answer that may never come, so unattended the fault takes ABORT for it."
   (let ((f (fault:borrow image
                          (make-condition 'simple-error
                                          :format-control "~a: ~a"
@@ -92,7 +66,7 @@ an answer that may never come, so unattended the fault takes ABORT for it."
      (format nil "~a fault" (job:name image))
      (lambda ()
        (unless (fault:await f)
-         (fault:or-nothing "the image it was standing in has gone"
+         (fault:or-nothing "the image it was suspended in has gone"
            (fault:take f "ABORT")))))
     f))
 
@@ -110,20 +84,14 @@ an answer that may never come, so unattended the fault takes ABORT for it."
   (let ((it (uiop:launch-program (job:argv j)
                                  :input :stream :output :stream
                                  :error-output :output)))
-    (setf (job:took j) it)
+    (setf (job:handle j) it)
     (wait-ready j)
     j))
 
-(defun %in (j) (uiop:process-info-input (job:took j)))
-(defun %out (j) (uiop:process-info-output (job:took j)))
+(defun %in (j) (uiop:process-info-input (job:handle j)))
+(defun %out (j) (uiop:process-info-output (job:handle j)))
 
 (defun %line (j seconds)
-  "The next line the child wrote, or nothing if it writes none in that long.
-
-The descriptor is waited on, not the clock looked at. READ-LINE on a pipe blocks,
-so a caller that wants a deadline cannot have one by reading and looking: what it
-counted before was lines, not seconds, and a child that said nothing at all was
-waited on for ever."
   (let ((stream (%out j)))
     (cond ((listen stream) (read-line stream nil nil))
           ((typep stream 'sb-sys:fd-stream)
@@ -133,8 +101,6 @@ waited on for ever."
           (t (read-line stream nil nil)))))
 
 (defun %until (j seconds sees)
-  "Read what the child says until SEES answers something, or SECONDS run out. A
-line it has nothing to say about is the child's own output and is emitted."
   (loop :with due := (+ (get-universal-time) seconds)
         :for line := (%line j (- due (get-universal-time)))
         :while line
@@ -152,8 +118,6 @@ line it has nothing to say about is the child's own output and is emitted."
        (string= *said* line :end2 (length *said*))))
 
 (defun answered (line)
-  "What a marked line from the child says: a value, or a fault with the restarts
-that image is still offering."
   (let* ((*read-eval* nil)
          (text (if (saidp line) (subseq line (length *said*)) line))
          (value (handler-case (read-from-string text) (error () text))))
@@ -165,12 +129,6 @@ that image is still offering."
   (%until j seconds (lambda (line) (and (saidp line) line))))
 
 (defun %drained (j)
-  "Read what the child has already said, without waiting for any more.
-
-Nothing reads the pipe between one evaluation and the next, so a child that says
-something while nobody is asking fills it and stops -- and a child stopped inside
-a write is one the next question never reaches. What it said goes where everything
-else it says goes."
   (loop :for line := (%line j 0)
         :while line
         :do (job:emit j line))
@@ -182,13 +140,11 @@ else it says goes."
     (terpri in)
     (force-output in)))
 
-(defun %settle (j &optional (seconds fault:*waiting*))
-  "Wait for whoever is standing in this child's fault to answer it. HELD is that
-fault, so this waits on the fault rather than looking at a flag over and over."
+(defun %settle (j &optional (seconds fault:*unattended-seconds*))
   (let ((f (held j)))
     (when f (fault:await f seconds))))
 
-(defmethod evaluate ((j child) form &key (timeout fault:*waiting*))
+(defmethod evaluate ((j child) form &key (timeout fault:*unattended-seconds*))
   (%settle j)
   (bordeaux-threads:with-lock-held ((turn j))
     (%say j form)
@@ -207,17 +163,13 @@ fault, so this waits on the fault rather than looking at a flag over and over."
   (bordeaux-threads:with-lock-held ((turn j))
     (unwind-protect
          (progn (%say j (list :take restart))
-                (let ((line (%hear j fault:*waiting*)))
+                (let ((line (%hear j fault:*unattended-seconds*)))
                   (when line (answered line))))
       (setf (held j) nil)
       (%drained j))))
 
-
 (setf fs:*elsewhere*
       (lambda (where form)
-        "Work a node out in another image. A fault there is already standing here
-with its restarts, because EVALUATE borrowed it; this signals so the node keeps what
-it last worked out to rather than being written an answer nobody worked out."
         (let ((i (if (typep where 'image) where (job:named (princ-to-string where)))))
           (unless (typep i 'image)
             (error "~a is not an image to work anything out in." where))

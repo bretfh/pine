@@ -6,27 +6,16 @@
 
 (defconstant +language-version+ 15)
 
-(defparameter +whole-file-lines+ 4096
-  "Buffers this many lines or fewer are parsed entire. Above it only a band
-around the window is, since the cost of a parse follows how many nodes the root holds
-and the cost of a byte index follows the line count.")
+(defparameter +whole-file-lines+ 4096)
 
-(defparameter +band-lines+ 512
-  "The band's granularity: it covers whole multiples of this many lines, so
-scrolling within one moves it not at all.")
+(defparameter +band-lines+ 512)
 
-(defparameter +read-chunk+ 8192
-  "Bytes served per read call.")
+(defparameter +read-chunk+ 8192)
 
-(defvar *reading* nil
-  "(LINES INDEX SCRATCH SIZE) the read callback is serving, bound per parse.
-The callback runs on the thread inside ts_parser_parse, synchronously, so this
-is bound per thread rather than passed through the payload pointer.")
+(defvar *reading* nil)
 
 (defparameter +library-suffix+
-  #+darwin ".dylib" #-darwin ".so"
-  "What a shared library is called here. The loader's own search takes the
-suffix off our hands; the paths below are spelled out, so they cannot.")
+  #+darwin ".dylib" #-darwin ".so")
 
 (cffi:define-foreign-library libtree-sitter
   (t (:default "libtree-sitter")))
@@ -104,18 +93,10 @@ suffix off our hands; the paths below are spelled out, so they cannot.")
    (loading     :reader loading
                 :initform (bordeaux-threads:make-recursive-lock "pine-grammars"))
    (grammars    :reader grammars
-                :initform (d:map :loaded (d:no-map) :missing (d:no-set))))
-  (:documentation "The grammars this image has loaded: (map :loaded (map LANGUAGE ENTRY)
- :missing (set LANGUAGE)). A hit is a slot read."))
+                :initform (d:map :loaded (d:no-map) :missing (d:no-set)))))
 
 (defclass ts-entry ()
-  ((language-ptr :initarg :language-ptr :accessor entry-language-ptr))
-  (:documentation "One loaded grammar: the language pointer, kept so a per-buffer
-parser can set-language.
-
-The pointer and nothing else. A parser was kept here too, made once to ask whether
-the grammar would be taken and never used again, because a TSParser is not
-something two buffers share and every one of them makes its own."))
+  ((language-ptr :initarg :language-ptr :accessor entry-language-ptr)))
 
 (defclass parse-state ()
   ((language :initarg :language :accessor ps-language)
@@ -136,10 +117,7 @@ something two buffers share and every one of them makes its own."))
    (lines      :initform nil :accessor ps-lines)
    (scratch    :initform nil :accessor ps-scratch)
    (band       :initform nil :accessor ps-band)
-   (band-lines :initform nil :accessor ps-band-lines))
-  (:documentation "One buffer's parser, its persistent tree, and the lines the
-tree reflects. Per-buffer because a TSParser is not thread-safe and different
-buffers parse concurrently."))
+   (band-lines :initform nil :accessor ps-band-lines)))
 
 (defun make-ts-runtime () (make-instance 'ts-runtime))
 
@@ -150,18 +128,12 @@ buffers parse concurrently."))
 (defun ts-language-version-max () +language-version+)
 
 (defun ts-node-is-null (node)
-  "True when NODE is tree-sitter's null node."
   (logbitp 0 (%ts-node-is-null node)))
 
 (defun ts-node-type (node)
   (cffi:foreign-string-to-lisp (%ts-node-type node) :encoding :ascii))
 
 (defun ensure-ts (runtime)
-  "Load libtree-sitter once. A pine built without it still edits, so this
-reports rather than refuses and LIBS-LOADED stays false. Whether it is here is
-asked of the loader, not of this  cffi's LOAD-FOREIGN-LIBRARY closes the
-library it is about to open, so a second runtime loading it again unmaps the
-copy the first one is still pointing into."
   (unless (libs-loaded runtime)
     (handler-case
         (progn (unless (cffi:foreign-symbol-pointer "ts_parser_new")
@@ -172,9 +144,6 @@ copy the first one is still pointing into."
   runtime)
 
 (defun grammar-library-candidates (library-name)
-  "Places a grammar shared library may live: the loader's search path (Guix
-puts grammars under lib/tree-sitter/, not lib/), and pine's own tree, which is
-where a build outside Guix puts them."
   (let ((file (concatenate 'string library-name +library-suffix+))
         (env (sb-ext:posix-getenv "GUIX_ENVIRONMENT")))
     (remove nil
@@ -190,11 +159,6 @@ where a build outside Guix puts them."
                   (cffi:load-foreign-library candidate))))
 
 (defun grammar-language-pointer (library-name fn-name)
-  "Call FN-NAME for its TSLanguage*, loading grammar LIBRARY-NAME first when the
-symbol is not already here, or NIL. The symbol decides, not a table: cffi's
-LOAD-FOREIGN-LIBRARY dlcloses before it dlopens, so loading a grammar that is
-already loaded unmaps it and every TSLanguage* handed out before points into a
-mapping that is gone."
   (handler-case
       (let ((fn (or (cffi:foreign-symbol-pointer fn-name)
                     (and (load-grammar-library library-name)
@@ -205,9 +169,6 @@ mapping that is gone."
        c (format nil "loading the ~a grammar" library-name)))))
 
 (defun claim-language (parser lang language)
-  "Give PARSER the grammar LANG, and say so when it will not take it. A parser
-with no language answers every parse with a null tree, so the refusal names the
-two pointers and the grammar's ABI against the range this tree-sitter speaks."
   (or (ts-parser-set-language parser lang)
       (progn
         (pine/run/fault:report

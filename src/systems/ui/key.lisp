@@ -1,7 +1,6 @@
 (in-package #:pine/ui)
 
-(defvar *interned* (make-hash-table :test 'equal :synchronized t)
-  "The one key for each chord, so KEY= is EQ.")
+(defvar *interned* (make-hash-table :test 'equal :synchronized t))
 (defvar *pending* nil)
 (defvar *last* nil)
 (defvar *taking* nil)
@@ -12,14 +11,11 @@
     ("Tab" . "TAB") ("ISO_Left_Tab" . "TAB")
     ("BackSpace" . "DEL")
     ("Esc" . "Escape")
-    ("Prior" . "PageUp") ("Next" . "PageDown"))
-  "What a key is called here, whatever it was called where it came from.")
+    ("Prior" . "PageUp") ("Next" . "PageDown")))
 
 (defparameter +as-keysym+
   '(("SPC" . "space") ("RET" . "Return") ("TAB" . "Tab")
-    ("DEL" . "BackSpace") ("PageUp" . "Prior") ("PageDown" . "Next"))
-  "And back again. A compositor asked for a chord has to be asked in xkb's
-spelling, not this one.")
+    ("DEL" . "BackSpace") ("PageUp" . "Prior") ("PageDown" . "Next")))
 
 (defstruct (key (:constructor %key) (:copier nil))
   (sym "" :type string :read-only t)
@@ -29,21 +25,14 @@ spelling, not this one.")
   (super nil :read-only t))
 
 (defun %named (sym)
-  "One name for a key however it was spelled. A keyboard says what xkb calls it, a
-config says what emacs calls it, and C-SPC in a keymap has to be the key that
-arrives as `space'."
   (if (< (length sym) 2)
       sym
       (or (cdr (assoc sym +named+ :test #'string-equal)) sym)))
 
 (defun keysym-name (sym)
-  "What xkb calls this key. %NAMED took xkb's spelling and made it pine's; this
-takes it back, so a chord can be asked of a compositor in the spelling it knows."
   (or (cdr (assoc sym +as-keysym+ :test #'string=)) sym))
 
 (defun make-key (sym &key ctrl meta shift super)
-  "The one key for this chord. Two threads parsing the same chord get the same
-object, which is what lets KEY= be EQ."
   (let* ((sym (%named sym))
          (id (list sym ctrl meta shift super)))
     (or (gethash id *interned*)
@@ -68,7 +57,6 @@ object, which is what lets KEY= be EQ."
     (make-key (subseq spec i) :ctrl ctrl :meta meta :shift shift :super super)))
 
 (defun spelled (keys)
-  "A chord as it is written: C-x C-s."
   (format nil "~{~a~^ ~}"
           (mapcar (lambda (k)
                     (with-output-to-string (s)
@@ -80,10 +68,6 @@ object, which is what lets KEY= be EQ."
                   (alexandria:ensure-list keys))))
 
 (defun chord (spec)
-  "The keys a chord names. Written down, a space is what separates one key from the
-next, so a space on its own is the space key rather than nothing at all: /key is the
-one door everything types through, and a door that swallows what it is given is
-worse than one that asks for a name."
   (let ((keys (remove "" (uiop:split-string spec :separator '(#\Space))
                       :test #'string=)))
     (if (and (null keys) (plusp (length spec)))
@@ -91,9 +75,6 @@ worse than one that asks for a name."
         (mapcar #'parse keys))))
 
 (defun typed (k)
-  "What this key types, or nothing where it types nothing. SPC is a key with a
-name and a space is what it puts in: a chord written down has to mean the same
-thing as the key that arrived."
   (unless (or (key-ctrl k) (key-meta k) (key-super k))
     (let ((sym (key-sym k)))
       (cond ((equal sym "SPC") " ")
@@ -110,7 +91,6 @@ thing as the key that arrived."
 
 (defun pending () *pending*)
 (defun last-said ()
-  "What the last key that arrived turned out to mean. A modeline reads it."
   *last*)
 (defun taking () *taking*)
 
@@ -118,13 +98,9 @@ thing as the key that arrived."
 (defun (setf last-said) (value) (setf *last* value) value)
 
 (defun take-next (fn)
-  "Hand the next key to FN instead of the keymap. FN answers :again to keep taking
-them. An incremental search is exactly this: a reader that re-installs itself until
-something ends it."
   (setf *taking* fn))
 
 (defun reading (k)
-  "Give K to whoever asked to read the next one, if anybody did."
   (let ((take (taking)))
     (when take
       (setf *taking* nil)

@@ -5,11 +5,11 @@
                     (#:meter #:pine/run/meter) (#:mode #:pine/mode)
                     (#:fs #:pine/fs)
                     (#:path #:pine/fs/path)
-                    (#:system #:pine/run/system))
+                    (#:module #:pine/run/module))
   (:export
    #:of #:line #:line-count #:inserted #:region
-   #:move-by #:leading #:find-in #:document #:make-document
-   #:documents #:kill #:killing #:current
+   #:move-by #:leading #:find-in #:buffer #:make-buffer
+   #:buffers #:kill #:killing #:current
    #:scratch #:asidep #:showing #:lines #:text
    #:point #:at-line #:at-col #:mark #:mode-of
    #:source #:file-of #:origin #:modified #:goto
@@ -21,12 +21,11 @@
    #:make-parse-state #:free-parse-state #:parse-lines! #:parse-highlights #:language
    #:declare-language #:for #:grammar-of #:parser-for #:highlights
    #:note #:forget #:forget-all #:band #:reparsed
-   #:indent #:motion #:currentp #:running #:*runtime* #:session #:parser))
+   #:indent #:motion #:freshp #:running #:*runtime* #:listener #:parser))
 (in-package #:pine/text)
 
 (defvar *recent* nil)
 (defparameter +recent-kept+ 50)
 
-(defclass text (system:system) ()
-  (:documentation "Documents, and what their modes make of them."))
+(defclass text (module:module) ())
 

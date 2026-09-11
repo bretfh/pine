@@ -1,27 +1,27 @@
 (defpackage #:pine/fs/store
   (:use #:cl)
   (:local-nicknames (#:d #:pine/data) (#:fs #:pine/fs)
-                    (#:said #:pine/said) (#:log #:pine/fs/log))
+                    (#:serial #:pine/serial) (#:log #:pine/fs/log))
   (:export
-   #:open-store #:close-store #:snapshot #:restore #:stale
-   #:keeping #:*store*))
+   #:open-store #:close-store #:keeping #:store #:*store*))
 (in-package #:pine/fs/store)
 
 (defvar *schema*
   "create table if not exists node (path text primary key, value text not null,
                                     at integer)")
 (defvar *store* nil)
-(defvar *putting-back* nil
-  "Whether this thread is putting values back out of the store. Bound rather than
-turned off, so a write from another thread while a restore runs is still heard.")
 
 (defclass store ()
   ((file-of :initarg :file :reader file-of)
-   (db      :initarg :db   :reader db)))
+   (db      :initarg :db   :reader db)
+   (lock    :initform (bordeaux-threads:make-recursive-lock "store") :reader lock)))
 
 (defmethod print-object ((s store) stream)
   (print-unreadable-object (s stream :type t)
     (write-string (princ-to-string (file-of s)) stream)))
+
+(defmacro with-store ((s) &body body)
+  `(bordeaux-threads:with-recursive-lock-held ((lock ,s)) ,@body))
 
 (defun %trouble (what)
   (log:note "~a" what)
@@ -36,54 +36,44 @@ turned off, so a write from another thread while a restore runs is still heard."
     (setf *store* (make-instance 'store :file file :db db))))
 
 (defun close-store (s)
+  (when (eq s fs:*backing-store*) (setf fs:*backing-store* nil))
   (sqlite:disconnect (db s))
   (when (eq s *store*) (setf *store* nil))
   s)
 
-(defun storablep (value) (said:sayablep value))
+(defun keeping (&optional (s *store*))
+  (setf fs:*backing-store* s
+        (fs:on-forget :store) (when s (lambda (path) (fs:store-delete s path))))
+  s)
 
 (defun written (value)
-  "Printed as if from the keyword package, so every symbol that is not one carries
-the package it is in."
   (let ((*print-readably* nil) (*print-circle* nil)
+        (*print-length* nil) (*print-level* nil)
         (*package* (find-package :keyword)))
-    (prin1-to-string (said:said value))))
+    (prin1-to-string (serial:encode value))))
 
 (defun read-back (text)
   (let ((*read-eval* nil) (*package* (find-package :keyword)))
-    (handler-case (values (said:took (read-from-string text)) t)
+    (handler-case (values (serial:decode (read-from-string text)) t)
       (error (c)
         (%trouble (format nil "a value in the store will not read back: ~a" c))
         (values nil nil)))))
 
-(defun snapshot (s &optional (root (fs:root)))
-  "Write down every saved value standing now. Nothing is taken out here: what went
-was taken out as it went."
-  (let ((n 0))
-    (sqlite:with-transaction (db s)
-      (fs:walk root
-               (lambda (each)
-                 (when (and (fs:savedp each) (storablep (fs:contents each)))
-                   (sqlite:execute-non-query
-                    (db s)
-                    "insert or replace into node (path, value, at) values (?, ?, ?)"
-                    (fs:full-name each) (written (fs:contents each))
-                    (get-universal-time))
-                   (incf n)))))
-    n))
+(defmethod fs:store-get ((s store) path)
+  (let ((row (with-store (s)
+               (sqlite:execute-single (db s)
+                                      "select value from node where path = ?" path))))
+    (if row (read-back row) (values nil nil))))
 
-(defun keep (n)
-  "Write this value where it will be found again, now rather than at shutdown."
-  (let ((s *store*))
-    (when (and s (fs:savedp n) (storablep (fs:contents n)))
-      (handler-case
-          (sqlite:execute-non-query
-           (db s) "insert or replace into node (path, value, at) values (?, ?, ?)"
-           (fs:full-name n) (written (fs:contents n)) (get-universal-time))
-        (error (c)
-          (%trouble (format nil "~a did not reach the store: ~a"
-                            (fs:full-name n) c))))
-      n)))
+(defmethod (setf fs:store-get) (value (s store) path)
+  (handler-case
+      (with-store (s)
+        (sqlite:execute-non-query
+         (db s) "insert or replace into node (path, value, at) values (?, ?, ?)"
+         path (written value) (get-universal-time)))
+    (error (c)
+      (%trouble (format nil "~a did not reach the store: ~a" path c))))
+  value)
 
 (defun %like (text)
   (with-output-to-string (out)
@@ -91,62 +81,46 @@ was taken out as it went."
           :do (when (find ch "%_\\") (write-char #\\ out))
               (write-char ch out))))
 
-(defun forget (path)
-  (let ((s *store*))
-    (when s
-      (sqlite:execute-non-query
-       (db s)
-       "delete from node where path = ? or path like ? escape '\\'"
-       path (concatenate 'string (%like path) "/%")))
-    path))
+(defmethod fs:store-list ((s store) path)
+  (let* ((prefix (if (string= path "/") "/" (concatenate 'string path "/")))
+         (at (length prefix))
+         (out nil))
+    (dolist (row (with-store (s)
+                   (sqlite:execute-to-list
+                    (db s) "select path from node where path like ? escape '\\'"
+                    (concatenate 'string (%like prefix) "%")))
+             (nreverse out))
+      (let* ((said (first row))
+             (rest (subseq said at))
+             (cut (position #\/ rest))
+             (name (if cut (subseq rest 0 cut) rest)))
+        (when (and (plusp (length name)) (not (member name out :test #'equal)))
+          (push name out))))))
 
-(defun kept (moved)
-  (let ((s *store*))
-    (when (and s (not *putting-back*))
-      (sqlite:with-transaction (db s)
-        (loop :for n :in moved
-              :when (fs:kind n) :do (keep n))))))
+(defmethod fs:store-transaction ((s store) thunk)
+  (with-store (s) (sqlite:with-transaction (db s) (funcall thunk))))
 
-(defun keeping (&optional (s *store*))
-  (setf (fs:on-commit :store) (when s #'kept)
-        (fs:on-forget :store) (when s #'forget))
-  s)
+(defmethod fs:store-any-p ((s store) path)
+  (let ((prefix (if (string= path "/") "/" (concatenate 'string path "/"))))
+    (and (with-store (s)
+           (sqlite:execute-single
+            (db s) "select 1 from node where path like ? escape '\\' limit 1"
+            (concatenate 'string (%like prefix) "%")))
+         t)))
 
-(defun restore (s &optional (root (fs:root)))
-  "Put values back into what already stands. A path nothing stands at any more is
-left in the store rather than conjured: what it stood for is what knew how to read
-it."
-  (let ((n 0)
-        (*putting-back* t))
-    (loop :for (path text) :in (sqlite:execute-to-list
-                                (db s) "select path, value from node")
-          :do (multiple-value-bind (value okp) (read-back text)
-                (let* ((names (fs:split-name path))
-                       (at (and names okp (apply #'fs:at root names))))
-                  (when (and at (fs:savedp at))
-                    (setf (fs:contents at) (fs:as-value value))
-                    (incf n))))
-          :finally (return n))))
+(defmethod fs:store-delete ((s store) path)
+  (with-store (s)
+    (sqlite:execute-non-query
+     (db s)
+     "delete from node where path = ? or path like ? escape '\\'"
+     path (concatenate 'string (%like path) "/%")))
+  path)
 
-(defun stale (s &optional (root (fs:root)))
-  (loop :for (path) :in (sqlite:execute-to-list (db s) "select path from node")
-        :for names := (fs:split-name path)
-        :unless (and names (apply #'fs:at root names))
-          :collect path))
-
-(defclass persisting (fs:derived) ()
-  (:documentation "/store: where this pine persists. Writing it writes the tree
-down."))
+(defclass persisting (fs:derived) ())
 
 (defmethod fs:works ((n persisting))
-  (let ((s *store*)) (and s (princ-to-string (file-of s)))))
-
-(defmethod fs:takes ((n persisting) value)
-  (declare (ignore value))
-  (and *store* (snapshot *store*)))
+  (let ((s fs:*backing-store*)) (and s (princ-to-string (file-of s)))))
 
 (fs:mount (lambda ()
-            (make-instance 'persisting
-                           :describes "where this pine persists, and writing it
-writes the tree down"))
+            (make-instance 'persisting :describes "where this pine persists"))
           "/store")

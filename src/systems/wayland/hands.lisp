@@ -37,7 +37,7 @@
   (let ((found (over s)))
     (if (typep found 'ui:slider)
         (progn (setf (pointer-drag (pointer s)) found) (drag s))
-        (click s))))
+        (on-click s))))
 
 (defun drag (s)
   (let ((slider (pointer-drag (pointer s)))
@@ -51,10 +51,10 @@
   (let ((slider (pointer-drag (pointer s))))
     (when slider
       (setf (pointer-drag (pointer s)) nil)
-      (let ((fn (ui:changed slider)))
+      (let ((fn (ui:on-change slider)))
         (when fn (tell s (lambda () (funcall fn (ui:held slider)))))))))
 
-(defun click (s)
+(defun on-click (s)
   (let* ((at (pointer s))
          (p (pointer-focus at)))
     (when (and p (tree p))
@@ -93,11 +93,7 @@
                   (setf (fs:contents n) said)
                   (log:note "nothing at /key"))))))
 
-
 (defmethod chorded ((s screen) said)
-  "A chord the compositor took rather than giving to whatever has focus. It goes
-to /wm/key, which is what says what it means; if that leaves the window manager
-part way through a chord, the next key has to come here too."
   (tell s
         (lambda ()
           (let ((n (fs:at "/wm/key")))
@@ -109,9 +105,7 @@ part way through a chord, the next key has to come here too."
                                   (lambda () (eat-next (wm-of s))))))))))
   t)
 
-
 (defmethod chords-wanted ((s screen))
-  "Which chords the compositor is to take. What is bound is what is asked for."
   (let ((it (wm-of s)))
     (when it
       (let ((chords (fault:or-nothing "pine/wm may not be loaded here"

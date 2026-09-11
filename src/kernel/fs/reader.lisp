@@ -6,8 +6,7 @@
 (in-package #:pine/fs/reader)
 
 (defvar +stops+
-  '(#\Space #\Tab #\Newline #\Return #\Page #\( #\) #\" #\' #\` #\, #\;)
-  "What ends a path.")
+  '(#\Space #\Tab #\Newline #\Return #\Page #\( #\) #\" #\' #\` #\, #\;))
 
 (defun %token (stream)
   (with-output-to-string (out)

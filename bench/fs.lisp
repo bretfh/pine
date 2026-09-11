@@ -71,7 +71,7 @@
   (format t "~&~%what is worked out~%~%")
   (fresh)
   (pine::write "/n" 1)
-  (let ((twice (fs:attach (make-instance 'fs:derived :name "twice" :reads
+  (let ((twice (fs:attach (make-instance 'fs:derived :name "twice" :recompute
                                          (lambda ()
                                            (* 2 (fs:contents (fs:at "/n")))))
                             (fs:root)))

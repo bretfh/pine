@@ -35,6 +35,33 @@ directly: what is on the screen."
   (typed "h" "e" "l" "l" "o")
   (is (search "hello" (on-screen))))
 
+(test typing-tells-whoever-shows-the-editor
+  "Every other test here reads the tree, which works it out on the spot: they say
+the tree is right when it is asked for, never that anything asked. This is the one
+that says the frontend was told.
+
+Whichever node the screen chose is the node this types at, so choosing the wrong
+one fails here. A surface is a mount, and a mount moves only when something is put
+under it: watching one, nothing a buffer does is ever heard."
+  (editing)
+  (quiet)
+  (let ((s (make-instance (quote pine/wayland:screen) :name "test-screen")))
+    (pine/wayland::%listen s "editor")
+    (let ((watched (pine/run/watch::watches
+                    (first (d:lookup (pine/wayland::watching s) "editor")))))
+      (pine/wayland::%unlisten s "editor")
+      (let* ((told 0)
+             (w (watch:watch watched
+                             (lambda (of said) (declare (ignore of said)) (incf told))
+                             :tells-when :always :poll nil
+                             :name "test<-editor")))
+        (unwind-protect
+             (progn (typed "h" "e" "l" "l" "o")
+                    (until (lambda () (plusp told)))
+                    (is (plusp told)
+                        "~a moved when the buffer did" (fs:full-name watched)))
+          (watch:unwatch w))))))
+
 (test what-is-typed-at-a-prompt-shows-up-on-the-screen
   "The frame follows what it read. A prompt keeps its text where nothing reads it,
 and then nothing you type is drawn: the question stands there and the editor looks
@@ -62,7 +89,7 @@ dead. This is that, asserted against the screen."
 written in the nodes under it, and a frame taken while none stood read none of
 them. Asked after that, the question was standing, what had been typed went into
 it, and the screen went on showing what it showed before -- so the binding looked
-dead, and so did the next one, for as long as no document moved."
+dead, and so did the next one, for as long as no buffer moved."
   (editing)
   (quiet)
   (is (not (search "M-x" (on-screen))) "nothing is being asked")
@@ -76,7 +103,7 @@ dead, and so did the next one, for as long as no document moved."
 
 (test a-prompt-inside-a-prompt-does-not-strand-you
   "Answering restores what was current. If that is the prompt itself, every key
-after it edits a document nothing shows."
+after it edits a buffer nothing shows."
   (let ((doc (editing)))
     (quiet)
     (typed "M-x")
@@ -118,7 +145,7 @@ screen is a picture until pine is restarted."
   (let ((p (text:note doc)))
     (when p
       (loop :repeat (round (/ seconds 0.01))
-            :until (text:currentp p)
+            :until (text:freshp p)
             :do (sleep 0.01)))
     p))
 
@@ -150,7 +177,7 @@ that was there a keystroke ago."
 
 (defun in-language (name text)
   (let ((doc (or (fs:at "/text" name)
-                 (text:make-document name :mode (make-instance 'mode:lisp)))))
+                 (text:make-buffer name :mode (make-instance 'mode:lisp)))))
     (setf (text:text doc) text)
     (text:goto doc 0 0)
     (edit:show (edit:focused) doc)
@@ -172,7 +199,7 @@ that was there a keystroke ago."
           (pine/text:free-parse-state ps))))))
 
 (test an-edit-is-answered-before-its-parse-is
-  "The document commits on the thread that typed; the parse happens elsewhere. So
+  "The buffer commits on the thread that typed; the parse happens elsewhere. So
 what is there is what was typed, whatever the colours are doing."
   (editing)
   (quiet)
@@ -184,7 +211,7 @@ what is there is what was typed, whatever the colours are doing."
 
 (test the-colours-that-settle-match-a-fresh-walk
   "A wrong edit descriptor makes a plausible wrong tree rather than an error, so
-every verb is driven through a real document and what settles is compared with a
+every verb is driven through a real buffer and what settles is compared with a
 parse of the same lines from scratch."
   (editing)
   (quiet)
@@ -210,37 +237,37 @@ parse of the same lines from scratch."
 
 (test every-parser-started-at-once-produces-a-tree
   "Starting a parser is a grammar load, a TSParser and a language claim, each on
-whichever thread asked. A document opened at the same moment as nine others is the
+whichever thread asked. A buffer opened at the same moment as nine others is the
 case that has to hold."
   (editing)
   (quiet)
   (let ((names (loop :for i :from 0 :below 10
                      :collect (format nil "async-many-~d" i))))
     (dolist (name names)
-      (let ((doc (text:make-document name :mode (make-instance 'mode:lisp))))
+      (let ((doc (text:make-buffer name :mode (make-instance 'mode:lisp))))
         (setf (text:text doc) "(defun f (x) x)")))
     (dolist (name names)
       (is (until (lambda () (text:highlights (fs:at "/text" name))) :seconds 10)
           "~a never got colours" name))
     (dolist (name names) (text:kill name))))
 
-(test a-faulted-parser-leaves-the-document-editable
-  "The isolation claim: the parser faults and the document goes on taking edits."
+(test a-faulted-parser-leaves-the-buffer-editable
+  "The isolation claim: the parser faults and the buffer goes on taking edits."
   (editing)
   (quiet)
   (let* ((doc (in-language "async-wedge" "(defun f (x) x)"))
          (p (text:parser-for doc)))
-    (is (not (null p)) "a lisp document should have a parser")
+    (is (not (null p)) "a lisp buffer should have a parser")
     (job:tell (text:running p) '(:no-such-verb))
     (text:goto doc 0 15)
     (dotimes (i 5) (text:insert doc "q"))
     (is (until (lambda () (= 5 (count #\q (text:text doc)))))
-        "the document stopped editing after its parser faulted")
+        "the buffer stopped editing after its parser faulted")
     (is (stringp (text:text (fs:at "/text" "scratch")))
         "and the rest of pine stopped answering")
     (text:kill "async-wedge")))
 
-(test killing-a-document-takes-its-parser-with-it
+(test killing-a-buffer-takes-its-parser-with-it
   (editing)
   (quiet)
   (let ((before (length (sb-thread:list-all-threads))))
@@ -249,7 +276,7 @@ case that has to hold."
     (text:kill "async-kill")
     (is (until (lambda () (<= (length (sb-thread:list-all-threads)) before))
                :seconds 5)
-        "killing the document left its parser running")))
+        "killing the buffer left its parser running")))
 
 (test indenting-answers-without-waiting-for-the-parse
   "TAB tells the parser and comes back. The line takes its column when the parse

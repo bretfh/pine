@@ -2,15 +2,14 @@
   (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell #:pine/wayland/protocol)
   (:local-nicknames (#:ui #:pine/ui) (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:watch #:pine/run/watch)
-                    (#:system #:pine/run/system) (#:fault #:pine/run/fault)
+                    (#:module #:pine/run/module) (#:fault #:pine/run/fault)
                     (#:log #:pine/fs/log) (#:wayflan #:xyz.shunter.wayflan.wire)
                     (#:shm #:posix-shm))
   (:export
    #:canvas #:context #:with-canvas #:rgb #:every-surface
    #:screen #:wm-of #:tell #:pointing #:keyboard-said #:typed #:chorded #:chords-wanted
-   #:keysym #:mask #:every-key)
-  (:documentation "The display pine paints its surfaces on: pixels, through cairo,
-and wayland, through wayflan."))
+   #:follows
+   #:keysym #:mask #:every-key))
 (in-package #:pine/wayland)
 
 (defvar *font* "Maple Mono NF")
@@ -24,13 +23,9 @@ and wayland, through wayflan."))
 (defclass canvas (ui:medium)
   ((context :initarg :context :reader context)
    (font    :initarg :font    :accessor font    :initform *font*)
-   (size    :initarg :size    :accessor size    :initform 14))
-  (:documentation "Pixels, through cairo. The other medium PAINT dispatches on: a
-widget is measured, arranged and painted the same way, and what it lands on is what
-says whether that is cells or pixels."))
+   (size    :initarg :size    :accessor size    :initform 14)))
 
 (defmacro with-canvas ((it) &body body)
-  "Draw onto a canvas, with cairo's context bound for the extent of it."
   `(let ((cl-cairo2:*context* (context ,it)))
      ,@body))
 
@@ -98,8 +93,6 @@ says whether that is cells or pixels."))
     (cl-cairo2:destroy p)))
 
 (defun %shadow (style x y width height radius)
-  "A feathered drop shadow, drawn as low-alpha rings around the shape, so a panel
-reads as floating over what is behind it."
   (let ((said (d:lookup style :shadow)))
     (when said
       (destructuring-bind (ox oy blur colour) said
@@ -113,8 +106,6 @@ reads as floating over what is behind it."
                     (cl-cairo2:fill-path)))))))
 
 (defun %ink (widget style)
-  "The colour this widget's content is drawn in: what its style says, else what its
-face says, else the plain one."
   (or (d:lookup style :fg)
       (multiple-value-bind (fr fg fb) (ui:ink (or (ui:face widget) :default))
         (list fr fg fb))))
@@ -207,8 +198,6 @@ face says, else the plain one."
   (dolist (part (ui:parts widget)) (ui:paint part m)))
 
 (defmethod ui:paint ((widget ui:cells) (m canvas))
-  "Rows that are already laid out. A run carries its own colours, so this is the
-one place a canvas paints what a grid worked out."
   (multiple-value-bind (x y) (%rect widget)
     (multiple-value-bind (cw ch) (ui:text-size m "M" (%size m widget))
       (with-canvas (m)

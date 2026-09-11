@@ -11,14 +11,9 @@
 
 (defclass display ()
   ((of :initarg :of :reader of)
-   (fd :initarg :fd :reader fd))
-  (:documentation "A compositor connection, and the descriptor to wait on. The
-socket is opened here rather than by WL-DISPLAY-CONNECT because a display built
-by that keeps its descriptor where a client cannot read it, and there is then
-nothing to wait on."))
+   (fd :initarg :fd :reader fd)))
 
 (defun path ()
-  "The compositor's socket, as the environment names it."
   (let ((name (uiop:getenv "WAYLAND_DISPLAY"))
         (dir (uiop:getenv "XDG_RUNTIME_DIR")))
     (unless (and name (plusp (length name)))
@@ -44,8 +39,6 @@ nothing to wait on."))
 (defun disconnect (d) (wl-display-disconnect (of d)))
 
 (defun wait (d p timeout)
-  "Wait on the connection and the pump at once, which is the whole reason the
-descriptor is held. Answers whether the pump is what woke us."
   (cffi:with-foreign-object (fds '(:struct pollfd) 2)
     (let ((connection (cffi:mem-aptr fds '(:struct pollfd) 0))
           (queue (cffi:mem-aptr fds '(:struct pollfd) 1)))

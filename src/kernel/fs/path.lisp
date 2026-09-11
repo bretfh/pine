@@ -23,8 +23,6 @@
 (defun pathp (x) (typep x 'path))
 
 (defun patternp (p)
-  "Whether this path names one place or a shape of them: * is any one name, ** is
-any run of them, and ?name is one that is captured."
   (and (pathp p) (some (lambda (s) (not (typep s 'literal))) (segments p))))
 
 (defun %segment (text)
@@ -49,7 +47,6 @@ any run of them, and ?name is one that is captured."
   (:method ((s binding)) (concatenate 'string "?" (value s))))
 
 (defun whole (p)
-  "The path as it is written: /a/b/c."
   (if (rootp p)
       "/"
       (format nil "~{/~a~}" (mapcar #'segment-text (segments p)))))
@@ -83,6 +80,9 @@ any run of them, and ?name is one that is captured."
 
 (defmethod fs:at ((p path) &rest names)
   (apply #'fs:at (fs:root) (append (%spelled p) names)))
+
+(defmethod fs:make ((p path) kind &rest names)
+  (apply #'fs:make (fs:root) kind (append (%spelled p) names)))
 
 (defmethod fs:mount (what (where path))
   (fs:mount what (whole where)))

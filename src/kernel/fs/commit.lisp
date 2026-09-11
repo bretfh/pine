@@ -5,13 +5,10 @@
 (defvar *moving* nil)
 
 (defun %tell (tells said)
-  "Tell one listener, and let it break on its own: a write is not wrong because
-somebody listening to it is."
   (handler-case (funcall tells said)
     (error (c) (when *broke* (funcall *broke* c nil)) nil)))
 
 (defun %went (path)
-  "Say PATH and everything under it went, to whoever keeps a copy of the tree."
   (dolist (each *forgetting* path)
     (%tell (cdr each) path)))
 
@@ -32,12 +29,12 @@ somebody listening to it is."
 (defun forget-listeners ()
   (setf *listening* nil *forgetting* nil))
 
-(defun %told (moved)
-  (when moved
-    (let ((moved (remove-duplicates (reverse moved))))
+(defun %told (touch)
+  (when touch
+    (let ((touch (remove-duplicates (reverse touch))))
       (loop :for (nil . tells) :in *listening*
-            :do (%tell tells moved)
-            :finally (return moved)))))
+            :do (%tell tells touch)
+            :finally (return touch)))))
 
 (defun %announce (x)
   (if *moving*
@@ -46,10 +43,12 @@ somebody listening to it is."
   x)
 
 (defmacro writing (&body body)
-  "Batch every write inside BODY into one telling."
-  (let ((mine (gensym "MOVING")) (outer (gensym "OUTER")))
+  (let ((mine (gensym "MOVING")) (outer (gensym "OUTER")) (batch (gensym "BATCH")))
     `(let* ((,outer *moving*)
-            (,mine (or ,outer (cons :moving nil))))
+            (,mine (or ,outer (cons :moving nil)))
+            (,batch (if ,outer *store-batch* (cons :keep nil))))
        (unwind-protect
-            (let ((*moving* ,mine)) ,@body)
-         (unless ,outer (%told (cdr ,mine)))))))
+            (let ((*moving* ,mine) (*store-batch* ,batch)) ,@body)
+         (unless ,outer
+           (%told (cdr ,mine))
+           (store-flush (cdr ,batch)))))))

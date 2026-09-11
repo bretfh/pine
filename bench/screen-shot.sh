@@ -53,7 +53,7 @@ env $env PINE_FRAME_DUMP=/tmp/pine-frame sbcl --dynamic-space-size 2048 --noinfo
   --eval '(require :asdf)' --eval '(require :sb-introspect)' \
   --eval '(handler-bind ((warning (function muffle-warning))) (asdf:load-system :pine/all))' \
   --eval "(setf pine/run/actors:*port* $port)" \
-  --eval '(setf pine/run/log:*to* *standard-output*)' \
+  --eval '(setf pine/fs/log:*to* *standard-output*)' \
   --eval '(pine:daemon :store nil :config nil)' \
   --eval '(pine:write "/wm-places" "tiles")' \
   --eval '(pine/run/command:defcommand "chord-ran" () (:describes "a mark a chord leaves") (pine:write "/chord-ran" t))' \

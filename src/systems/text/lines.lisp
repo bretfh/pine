@@ -3,20 +3,15 @@
 (defvar *word-characters* "-_*+/<>=?!%&")
 
 (defun of (text)
-  "TEXT as lines. Immutable with structural sharing, so an edit shares every line it
-did not touch and two readers never see one change underneath them."
   (let ((split (uiop:split-string (or text "") :separator '(#\Newline))))
     (d:as :seq (or split (list "")))))
 
 (defun joined (lines) (format nil "~{~a~^~%~}" (d:as :list lines)))
 
 (defgeneric line-count (of)
-  (:documentation "How many lines OF has. A lines value answers for itself and a
-document answers for the lines it holds, because they are the same question.")
   (:method (of) (d:size of)))
 
 (defgeneric line (of n)
-  (:documentation "The Nth line of OF, or the empty string past the end.")
   (:method (of n) (d:lookup of n "")))
 
 (defun clamp (lines at col)
@@ -96,11 +91,6 @@ document answers for the lines it holds, because they are the same question.")
   (values at col))
 
 (defun %step-word (lines at col n)
-  "A word at a time, across lines the way a character at a time is.
-
-At the end of a line there is no word left to step over, so a step that stayed on
-the line it started on was a motion that did nothing, however many times it was
-asked for."
   (flet ((onward ()
            (loop :for text := (line lines at)
                  :while (and (>= col (length text)) (< at (1- (d:size lines))))
@@ -137,8 +127,6 @@ asked for."
       (length text)))
 
 (defun foldp (needle)
-  "Whether a search ignores case: it does until you type a capital, which is how you
-ask for an exact one."
   (notany #'upper-case-p needle))
 
 (defun find-in (lines needle at col &key (forward t) (test nil test-p))

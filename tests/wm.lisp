@@ -15,7 +15,7 @@
 it is a value, so nothing here needs a compositor."
   (editing)
   (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
-  (unless (system:named "wm") (pine:use :wm))
+  (unless (module:named "wm") (pine:use :wm))
   (let ((c (pine/wm:current)))
     (setf (fs:contents (fs:at "/wm/said")) +said+)
     c))
@@ -23,7 +23,7 @@ it is a value, so nothing here needs a compositor."
 (defun %tiled ()
   "The same, with one of the window managers pine ships loaded on top."
   (let ((c (%managed)))
-    (when (system:named "tiles") (pine:drop :tiles))
+    (when (module:named "tiles") (pine:drop :tiles))
     (pine:use :tiles)
     (setf (fs:contents (fs:at "/wm/said")) +said+)
     c))
@@ -66,14 +66,14 @@ it is a value, so nothing here needs a compositor."
   "The substrate has outputs, windows and what has the keyboard. Where they go is
 a system you load."
   (%managed)
-  (when (system:named "tiles") (pine:drop :tiles))
+  (when (module:named "tiles") (pine:drop :tiles))
   (is (null (fs:contents (fs:at "/wm/placement"))))
   (is (null (fs:at "/wm/layout"))
       "and there is no layout in core to speak of"))
 
 (test a-window-manager-is-something-that-writes-the-placement
   (%managed)
-  (when (system:named "tiles") (pine:drop :tiles))
+  (when (module:named "tiles") (pine:drop :tiles))
   (setf (fs:contents (fs:at "/wm/placement"))
         '((1 0 0 640 720) (2 640 0 640 720)))
   (is (equal '((1 0 0 640 720) (2 640 0 640 720))
@@ -120,12 +120,12 @@ a system you load."
               :test #'equal))
   (let* ((l (make-instance 'pine/wm:tall :share 1/4 :gaps 4))
          (one (first (pine/wm:arrange
-                      l '(1 2) (pine/wm:area :wide 1280 :tall 720)))))
+                      l '(1 2) (pine/wm:area :width 1280 :height 720)))))
     (is (typep one 'pine/wm:placed) "a layout answers PLACED, not a list")
     (is (equal '(1 4 4 312 712)
                (list (pine/wm:id-of one) (pine/wm:x-of one)
-                     (pine/wm:y-of one) (pine/wm:wide-of one)
-                     (pine/wm:tall-of one)))
+                     (pine/wm:y-of one) (pine/wm:width-of one)
+                     (pine/wm:height-of one)))
         "the share and the gaps are what the layout was made with")))
 
 (defclass %clipped (pine/wm:layout) ()
@@ -134,7 +134,7 @@ a system you load."
 (defmethod pine/wm:arrange ((l %clipped) windows (a pine/wm:area))
   (declare (ignore a))
   (loop :for id :in windows
-        :collect (pine/wm:placed id :x 0 :y 0 :wide 100 :tall 100
+        :collect (pine/wm:placed id :x 0 :y 0 :width 100 :height 100
                                           :clip '(0 0 50 50) :stack :bottom)))
 
 (test a-layout-can-clip-and-stack-and-it-reaches-what-shows-a-window
@@ -144,11 +144,11 @@ answered was a list of five and the two keywords APPLY-LAYOUT destructures after
 were never written. Nothing caught it, because every shape of that list is a list."
   (%tiled)
   (let* ((out (pine/wm:arrange (make-instance '%clipped) '(7)
-                                     (pine/wm:area :wide 800 :tall 600)))
+                                     (pine/wm:area :width 800 :height 600)))
          (plain (pine/wm::%plainly (first out))))
     (is (equal '(7 0 0 100 100 :clip (0 0 50 50) :stack :bottom) plain))
-    (destructuring-bind (id x y wide tall &key clip stack) plain
-      (declare (ignore id x y wide tall))
+    (destructuring-bind (id x y width height &key clip stack) plain
+      (declare (ignore id x y width height))
       (is (equal '(0 0 50 50) clip) "exactly what APPLY-LAYOUT reads")
       (is (eq :bottom stack)))))
 
@@ -157,12 +157,12 @@ were never written. Nothing caught it, because every shape of that list is a lis
 that asks for a manager says so after. The wm goes away and comes back a
 different class in between, so what places the windows has to come with it."
   (editing)
-  (when (system:named "tiles") (pine:drop :tiles))
-  (when (system:named "wm") (pine:drop :wm))
+  (when (module:named "tiles") (pine:drop :tiles))
+  (when (module:named "wm") (pine:drop :wm))
   (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/places")) "tiles")
   (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :compositor)
   (pine:use :wm)
-  (is (system:named "tiles") "the config's answer is used when the wm comes up")
+  (is (module:named "tiles") "the config's answer is used when the wm comes up")
   (setf (fs:contents (fs:mount (make-instance 'fs:value) "/wm/manages")) :pine)
   (pine:drop :wm)
   (pine:use :wm)
@@ -205,7 +205,7 @@ different class in between, so what places the windows has to come with it."
   (is (equal '((:focus "3")) (fs:contents (fs:at "/wm/wants")))))
 
 (test the-window-manager-has-chords-of-its-own
-  "A chord the compositor took was not typed at anything: there is no document in
+  "A chord the compositor took was not typed at anything: there is no buffer in
 it, and the mode that answers is the window manager's."
   (%managed)
   (mode:bind 'pine/wm/keys:wm "s-c" "wm-close-window")

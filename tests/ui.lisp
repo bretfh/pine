@@ -7,7 +7,7 @@
 knows the roles by name."))
 
 (defmethod ui:anchor ((r ticker) width height)
-  (ui:placing :edges '(:bottom :right) :wide width :tall height
+  (ui:placing :edges '(:bottom :right) :width width :height height
               :margin '(4 4 4 4)))
 
 (defmethod ui:shows ((r ticker)) :always)
@@ -16,7 +16,7 @@ knows the roles by name."))
   (ui:with-pass
     (ui:with-faces
       (ui:dress tree)
-      (let ((m (ui:make-grid cols lines)))
+      (let ((m (ui:make-cell-grid cols lines)))
         (ui:measure tree m cols lines)
         (ui:lay tree m 0 0 cols lines)
         (ui:paint tree m)
@@ -74,7 +74,7 @@ both, so they have to be the same three numbers."
   (with-tree
     (let ((tree (ui:column :pad 2 (ui:label "ab"))))
       (ui:with-pass
-        (let ((m (ui:make-grid 40 40)))
+        (let ((m (ui:make-cell-grid 40 40)))
           (multiple-value-bind (cw ch) (ui:measure tree m 40 40)
             (is (equal '(6 5) (list cw ch)))))))))
 
@@ -84,7 +84,7 @@ both, so they have to be the same three numbers."
       (setf (fs:contents volume) 40)
       (let ((s (ui:slider volume :low 0 :high 100)))
         (is (= 40 (ui:held s)))
-        (funcall (ui:changed s) 75)
+        (funcall (ui:on-change s) 75)
         (is (= 75 (fs:contents volume)))))))
 
 (test a-click-lands-on-what-was-drawn-there
@@ -157,11 +157,11 @@ listed one node's children. The matcher was written and nothing called it."
 
 (test the-part-on-top-is-the-part-a-click-lands-on
   "A stack paints its parts in the order they were written and the last is on top.
-Answering with the first that covered a place gave the click to what was behind."
-  (let* ((under (ui:button :class "under" :click "under" (ui:label "xxxx")))
-         (over (ui:button :class "over" :click "over" (ui:label "yyyy")))
+Answering with the first that covered a place gave the on-click to what was behind."
+  (let* ((under (ui:button :class "under" :on-click "under" (ui:label "xxxx")))
+         (over (ui:button :class "over" :on-click "over" (ui:label "yyyy")))
          (both (ui:stack under over))
-         (g (ui:make-grid 8 2)))
+         (g (ui:make-cell-grid 8 2)))
     (ui:with-pass
       (ui:dress both)
       (ui:measure both g 8 2)
@@ -176,14 +176,14 @@ Answering with the first that covered a place gave the click to what was behind.
                  (destructuring-bind (tag props &rest parts) it
                    (declare (ignore tag))
                    (loop :for (k v) :on props :by #'cddr
-                         :when (and (member k '(:click :changed)) (stringp v))
+                         :when (and (member k '(:on-click :on-change)) (stringp v))
                            :do (push v out))
                    (mapc #'walk parts)))))
       (walk form))
     (nreverse out)))
 
 (test a-widget-crosses-as-what-it-stands-for
-  "A click that crossed during a repaint has to mean the widget it was on.
+  "A on-click that crossed during a repaint has to mean the widget it was on.
 Numbered by counting the walk, every id after a row that went was the id of a
 different widget -- so a listing that lost a row ran the wrong row's action for
 every row below it."
@@ -194,13 +194,13 @@ every row below it."
               "probe-ids"
               (lambda ()
                 (ui:rows (path:path "/probe/rows")
-                         (lambda () (ui:button :click (ui:here)
+                         (lambda () (ui:button :on-click (ui:here)
                                                (ui:label "x"))))))))
-      (is (equal '("/probe/rows/beta/click" "/probe/rows/gamma/click")
+      (is (equal '("/probe/rows/beta/on-click" "/probe/rows/gamma/on-click")
                  (%ids-in (fs:contents (fs:at "/ui/surface/probe-ids/wire"))))
           "an id says what its row is for, not where it fell in the walk")
       (fs:erase "/probe/rows/beta")
-      (is (equal '("/probe/rows/gamma/click")
+      (is (equal '("/probe/rows/gamma/on-click")
                  (%ids-in (fs:contents (fs:at "/ui/surface/probe-ids/wire"))))
           "and the row that stayed keeps the id it had when the one above went")
       (pine/ui::forget-surface (fs:name s)))))
@@ -213,15 +213,15 @@ identity: the second thing in the first row."
               "probe-shape"
               (lambda ()
                 (ui:column (ui:row (ui:label "x")
-                                   (ui:button :click "mute" (ui:label "m"))))))))
-      (is (equal '("@0.1/click")
+                                   (ui:button :on-click "mute" (ui:label "m"))))))))
+      (is (equal '("@0.1/on-click")
                  (%ids-in (fs:contents (fs:at "/ui/surface/probe-shape/wire"))))
           "where it sits, root first")
       (pine/ui::forget-surface (fs:name s)))))
 
 (test the-sheet-follows-the-theme-it-was-worked-out-of
   "Set by hand, nothing could see the stylesheet go stale: writing /theme/active
-changed every face and left the sheet holding the colours of the theme before,
+on-change every face and left the sheet holding the colours of the theme before,
 because the colours in it were read once when somebody remembered to say so."
   (with-tree
     (flet ((sheet () (fs:contents (fs:at "/ui/sheet"))))

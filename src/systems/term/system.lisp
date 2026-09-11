@@ -2,37 +2,30 @@
 
 (defvar *counter* 0)
 
-(defclass term (system:system) ()
-  (:documentation "Programs with screens of their own, as documents.
-
-A terminal is a document and a thread at once, so a window shows one the way it
-shows any other and a command acts on one the same way."))
-
+(defclass term (module:module) ())
 
 (defun current ()
   (let ((it (text:current)))
     (and (typep it 'terminal) it)))
 
 (defun %fit (term win)
-  "Give the program the size of the window showing it, so what it draws is what
-fits."
   (when (and term win)
-    (resize term (max 1 (edit:across win)) (max 1 (edit:down win)))))
+    (resize term (max 1 (edit:width win)) (max 1 (edit:height win)))))
 
 (defun %open (&key runs name)
   (let* ((name (or name (format nil "*shell*~[~:;-~:*~d~]"
-                                 (d:swap *counter* #'1+))))
+                                 (sb-ext:atomic-update *counter* (lambda (old) (1+ old))))))
          (win (edit:focused))
          (term (open-terminal name :runs runs
-                                            :wide (if win (edit:across win) 80)
-                                            :tall (if win (edit:down win) 24))))
+                                            :width (if win (edit:width win) 80)
+                                            :height (if win (edit:height win) 24))))
     (setf (text:current) term)
     (when win (edit:show win term))
     (%fit term win)
     term))
 
 (command:defcommand "terminal" (&optional line)
-    (:describes "a program with a screen of its own, in a document"
+    (:describes "a program with a screen of its own, in a buffer"
      :on '(text "C-x t"))
   (fs:full-name (%open :runs (and line (princ-to-string line)))))
 

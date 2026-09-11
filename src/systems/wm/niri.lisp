@@ -7,15 +7,11 @@
     ("consume"   "consume-or-expel-window-left")
     ("workspace" "focus-workspace")
     ("window"    "focus-window" "--id")
-    ("exit"      "quit" "--skip-confirmation"))
-  "What pine calls a thing to do and the words niri is told to do it in. Words and
-not a line: an id or a workspace comes from whoever wrote the place, and a value
-spliced into a line of shell is a value that can say anything the shell can.")
+    ("exit"      "quit" "--skip-confirmation")))
 
-(defclass niri (compositor) ()
-  (:documentation "niri, over its own json protocol."))
+(defclass niri (compositor) ())
 
-(defmethod fs:announces ((c niri)) (list "niri msg --json event-stream"))
+(defmethod fs:notified-by ((c niri)) (list "niri msg --json event-stream"))
 
 (defun json (text)
   (when (and text (plusp (length text)))
@@ -31,8 +27,6 @@ spliced into a line of shell is a value that can say anything the shell can.")
 (defmethod windows ((c niri)) (%list "windows"))
 
 (defmethod outputs ((c niri))
-  "What niri says about the screens. Its answer is keyed by connector name, and
-the mode it is in is what the size comes from."
   (let ((said (json (sh:sh "niri msg --json outputs"))))
     (when (hash-table-p said)
       (loop :for name :being :the :hash-keys :of said :using (:hash-value out)
@@ -83,9 +77,6 @@ the mode it is in is what the size comes from."
 (defmethod verbs ((c niri)) (mapcar #'car +actions+))
 
 (defmethod act ((c niri) verb &rest arguments)
-  "Told and not asked. An answer stands for a breath, so an action routed through
-the memo happened once however many times it was asked for: closing two windows
-one after the other closed one, and focusing back to where you were did nothing."
   (let ((action (cdr (assoc (princ-to-string verb) +actions+ :test #'equal))))
     (when action
       (apply #'sh:argv "niri" "msg" "action" (append action arguments))

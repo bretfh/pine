@@ -6,11 +6,11 @@
 
 (defun delimiterp (ch) (find ch +delimiters+))
 
-(defun offset-of (document &optional (line (text:at-line document))
-                                     (col (text:at-col document)))
+(defun offset-of (buffer &optional (line (text:at-line buffer))
+                                     (col (text:at-col buffer)))
   (let ((at 0))
     (dotimes (i line)
-      (incf at (1+ (length (text:line document i)))))
+      (incf at (1+ (length (text:line buffer i)))))
     (+ at col)))
 
 (defun line-col (text offset)
@@ -35,26 +35,17 @@
           :do (decf from))
     from))
 
-(defun symbol-at (document &optional of)
-  (let* ((text (text:text document))
-         (token (or of (token-at text (offset-of document)))))
+(defun symbol-at (buffer &optional of)
+  (let* ((text (text:text buffer))
+         (token (or of (token-at text (offset-of buffer)))))
     (when token
       (values (multiple-value-bind (*package* *readtable*)
-                  (text:reading document)
+                  (text:reading buffer)
                 (fault:or-nothing "a token that is not a form is just a token"
                   (read-from-string token)))
               token))))
 
 (defun quoted (text)
-  "A bit per place in TEXT: whether a paren there is inside a string.
-
-Walked once, and the walk is the only one. Asked place by place instead, every ask
-walked the text from the beginning again -- so finding the form before point cost
-the length of the document squared, which on a hundred kilobytes is thousands of
-millions of steps for one C-x C-e.
-
-A comment is followed but not marked: a quote inside one opens no string, and what
-this answers is only whether a place is inside one."
   (let* ((n (length text))
          (mask (make-array (1+ n) :element-type 'bit :initial-element 0))
          (in nil) (escaped nil) (comment nil))
@@ -113,14 +104,14 @@ this answers is only whether a place is inside one."
 
 (defun went ()
   (let ((back (first *went*)))
-    (when back (d:swap *went* #'rest))
+    (when back (sb-ext:atomic-update *went* (lambda (old) (rest old))))
     back))
 
-(defun %remember (document)
-  (d:swap *went*
+(defun %remember (buffer)
+  (sb-ext:atomic-update *went*
            (lambda (all)
-             (cons (list (fs:name document) (text:at-line document)
-                         (text:at-col document))
+             (cons (list (fs:name buffer) (text:at-line buffer)
+                         (text:at-col buffer))
                    all))))
 
 (defun visit (place)
@@ -133,8 +124,6 @@ this answers is only whether a place is inside one."
     place))
 
 (defun images ()
-  "Every image work can be done in: the children this pine runs, and the pines it
-has reached. Two relationships, one protocol."
   (remove-if-not (lambda (j) (typep j 'image:image)) (job:jobs)))
 
 (defun image-named (name)
@@ -153,45 +142,37 @@ has reached. Two relationships, one protocol."
 (defun (setf target-was) (name)
   (setf (fs:contents (%at "was")) name))
 
-(defun evaluating (document)
-  "The session this document's forms are evaluated in.
-
-One per document, and what it reads in is what the document says it is written in,
-asked again each time because the document may have said something else since. One
-session for the image took whichever document asked first and kept its package for
-ever, so M-: in a second file read its names in the first file's."
-  (let ((s (or (text:session document)
-               (setf (text:session document)
-                     (session:open-session :name (fs:name document))))))
-    (setf (session:package-of s) (text:package-of document)
-          (session:readtable-of s) (text:readtable-of document))
+(defun evaluating (buffer)
+  (let ((s (or (text:listener buffer)
+               (setf (text:listener buffer)
+                     (listener:open-listener :name (fs:name buffer))))))
+    (setf (listener:package-of s) (text:package-of buffer)
+          (listener:readtable-of s) (text:readtable-of buffer))
     s))
 
-(defun %there (document text)
-  "Evaluate in the image the target names, and say what it said the way a session
-here would."
+(defun %there (buffer text)
   (let* ((where (target)) (i (image-named where)))
     (cond ((null i) (format nil "no image named ~a" where))
           (t (multiple-value-bind (*package* *readtable*)
-                 (text:reading document)
+                 (text:reading buffer)
                (multiple-value-bind (answered broke)
                    (image:evaluate i (read-from-string text))
                  (if broke
                      (format nil "~a" broke)
                      (format nil "~{~s~^, ~}" answered))))))))
 
-(defun evaluate (document text at)
+(defun evaluate (buffer text at)
   (let* ((where (target))
-         (s (unless where (evaluating document)))
-         (e (when s (session:evaluate s (session:read s text))))
-         (said (cond (where (%there document text))
-                     ((and e (session:fault e)) (format nil "~a" (session:fault e)))
-                     (t (format nil "~{~s~^, ~}" (session:answered e))))))
+         (s (unless where (evaluating buffer)))
+         (e (when s (listener:evaluate s (listener:read s text))))
+         (said (cond (where (%there buffer text))
+                     ((and e (listener:fault e)) (format nil "~a" (listener:fault e)))
+                     (t (format nil "~{~s~^, ~}" (listener:answered e))))))
     (log:note "~a" said)
-    (text:forget-overlays document)
-    (text:overlay document (line-col (text:text document) at)
+    (text:forget-overlays buffer)
+    (text:overlay buffer (line-col (text:text buffer) at)
                     (format nil "=> ~a" said)
-                    (if (and e (session:fault e)) :error :comment))
+                    (if (and e (listener:fault e)) :error :comment))
     (or e said)))
 
 (command:defcommand "find-definition" ()
@@ -204,11 +185,11 @@ here would."
   (let ((back (went)))
     (when back
       (destructuring-bind (name line col) back
-        (let ((document (fs:at "/text" name)))
-          (when document
-            (setf (text:current) document)
-            (show (focused) document)
-            (text:goto document line col)))))))
+        (let ((buffer (fs:at "/text" name)))
+          (when buffer
+            (setf (text:current) buffer)
+            (show (focused) buffer)
+            (text:goto buffer line col)))))))
 
 (command:defcommand "find-references" ()
     (:describes "every place that mentions what is at point" :on '(code "M-?"))
@@ -230,15 +211,15 @@ here would."
 
 (command:defcommand "complete-symbol" ()
     (:describes "finish the name at point" :on '(code "M-TAB" "C-M-i"))
-  (let* ((document (text:current))
-         (prefix (prefix-at document))
+  (let* ((buffer (text:current))
+         (prefix (prefix-at buffer))
          (found (and (plusp (length prefix))
-                     (mode:complete (text:mode-of (text:current)) document prefix))))
+                     (mode:complete (text:mode-of (text:current)) buffer prefix))))
     (cond ((null found) (log:note "no completions"))
-          ((null (rest found)) (put-completion document prefix (first found)))
+          ((null (rest found)) (put-completion buffer prefix (first found)))
           (t (ask "Complete: " :must-match t :candidates found
                          :then (lambda (choice)
-                                 (put-completion document prefix choice)))
+                                 (put-completion buffer prefix choice)))
              :asking))))
 
 (command:defcommand "arglist" ()
@@ -252,28 +233,28 @@ here would."
 
 (command:defcommand "eval-last-expression" ()
     (:describes "evaluate the form before point" :on '(code "C-x C-e"))
-  (let* ((document (text:current)) (text (text:text document)))
-    (multiple-value-bind (from to) (form-before text (offset-of document))
+  (let* ((buffer (text:current)) (text (text:text buffer)))
+    (multiple-value-bind (from to) (form-before text (offset-of buffer))
       (if from
-          (evaluate document (subseq text from to) to)
+          (evaluate buffer (subseq text from to) to)
           (log:note "no form before point")))))
 
 (command:defcommand "eval-defun" ()
     (:describes "evaluate the definition point is in" :on '(code "C-M-x"))
-  (let* ((document (text:current)) (text (text:text document)))
-    (multiple-value-bind (from to) (form-around text (offset-of document))
+  (let* ((buffer (text:current)) (text (text:text buffer)))
+    (multiple-value-bind (from to) (form-around text (offset-of buffer))
       (if from
-          (evaluate document (subseq text from to) to)
+          (evaluate buffer (subseq text from to) to)
           (log:note "point is in no definition")))))
 
 (command:defcommand "load-file" ()
-    (:describes "compile this document's file and load it" :on '(code "C-c C-l"))
-  (let* ((document (text:current)) (file (text:file-of document)))
-    (cond ((null file) (log:note "~a has no file" (fs:name document)))
+    (:describes "compile this buffer's file and load it" :on '(code "C-c C-l"))
+  (let* ((buffer (text:current)) (file (text:file-of buffer)))
+    (cond ((null file) (log:note "~a has no file" (fs:name buffer)))
           (t (fault:attempt
               (lambda ()
                 (multiple-value-bind (*package* *readtable*)
-                    (text:reading document)
+                    (text:reading buffer)
                   (load (compile-file file))))
               (format nil "loading ~a" file))
              (log:note "loaded ~a" file)
@@ -294,18 +275,18 @@ here would."
      :asks '((:prompt "Eval: " :history :eval))
      :on '(text "M-:"))
   (let* ((s (evaluating (text:current)))
-         (e (session:evaluate s (session:read s (princ-to-string form)))))
-    (if (session:fault e)
-        (log:note "~a" (session:fault e))
-        (log:note "~{~s~^, ~}" (session:answered e)))
-    (first (session:answered e))))
+         (e (listener:evaluate s (listener:read s (princ-to-string form)))))
+    (if (listener:fault e)
+        (log:note "~a" (listener:fault e))
+        (log:note "~{~s~^, ~}" (listener:answered e)))
+    (first (listener:answered e))))
 
-(command:defcommand "eval-document" ()
-    (:describes "evaluate every form in this document" :on '(code "C-c C-k"))
-  (let* ((document (text:current)) (text (text:text document)) (n 0))
+(command:defcommand "eval-buffer" ()
+    (:describes "evaluate every form in this buffer" :on '(code "C-c C-k"))
+  (let* ((buffer (text:current)) (text (text:text buffer)) (n 0))
     (fault:attempt
      (lambda ()
-       (multiple-value-bind (*package* *readtable*) (text:reading document)
+       (multiple-value-bind (*package* *readtable*) (text:reading buffer)
          (let ((at 0))
            (loop (multiple-value-bind (form next)
                      (read-from-string text nil :eof :start at)
@@ -313,6 +294,6 @@ here would."
                    (eval form)
                    (incf n)
                    (setf at next))))))
-     (format nil "evaluating ~a" (fs:name document)))
+     (format nil "evaluating ~a" (fs:name buffer)))
     (log:note "~d form~:p" n)
     n))

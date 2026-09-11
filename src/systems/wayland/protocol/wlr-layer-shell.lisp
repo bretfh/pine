@@ -1,8 +1,5 @@
 (defpackage #:pine/wayland/protocol
-  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell)
-  (:documentation "Wayland protocol bindings, generated from the XML the
-compositor ships: wlr layer shell, and river's window management, xkb bindings
-and layer shell."))
+  (:use #:cl #:wayflan-client #:wayflan-client.xdg-shell))
 (in-package #:pine/wayland/protocol)
 
 (xyz.shunter.wayflan.client.scanner:wl-include

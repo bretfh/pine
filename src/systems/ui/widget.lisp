@@ -21,19 +21,11 @@
    (top     :initform 0 :accessor top)
    (left    :initform 0 :accessor left)
    (bottom  :initform 0 :accessor bottom)
-   (right   :initform 0 :accessor right))
-  (:documentation "An immutable value that crosses a wire, not a node: nothing you
-draw is in the namespace, only the surface that works it out.
-
-PARTS is what it holds, and it is one slot rather than a method per container, so
-measure, arrange, paint, hit-testing and the wire cannot disagree about it. TOP LEFT
-BOTTOM RIGHT is where it was arranged."))
+   (right   :initform 0 :accessor right)))
 
 (defclass label (widget)
   ((content :initarg :content :accessor content :initform "")
-   (changed :initarg :changed :accessor changed :initform nil))
-  (:documentation "A run of text. With CHANGED it is a field: what is typed into it
-is written back where it came from."))
+   (on-change :initarg :on-change :accessor on-change :initform nil)))
 
 (defclass rule (widget)
   ((glyph   :initarg :glyph   :accessor glyph   :initform (code-char #x2500))
@@ -49,14 +41,11 @@ is written back where it came from."))
   ((spacing :initarg :spacing :accessor spacing :initform 1)
    (align   :initarg :align   :accessor align   :initform :start)))
 
-(defclass stack (widget) ()
-  (:documentation "Parts in one place: each is given the whole rect and they are
-painted in the order they were written, so the last is on top."))
+(defclass stack (widget) ())
 
 (defclass box (widget)
-  ((wide  :initarg :wide  :accessor wide  :initform 0)
-   (align :initarg :align :accessor align :initform :left))
-  (:documentation "A cell of a fixed width."))
+  ((fixed-width :initarg :fixed-width :accessor fixed-width :initform 0)
+   (align :initarg :align :accessor align :initform :left)))
 
 (defclass center (widget) ())
 
@@ -64,33 +53,26 @@ painted in the order they were written, so the last is on top."))
   ((upright :initarg :upright :accessor upright :initform t)
    (start   :initarg :start   :accessor start   :initform nil)
    (middle  :initarg :middle  :accessor middle  :initform nil)
-   (end     :initarg :end     :accessor end     :initform nil))
-  (:documentation "Start at one end, end at the other, and the middle in what is
-left between them. Centring the middle in the whole box instead is what puts a bar's
-apps on top of its workspaces once there are enough workspaces."))
+   (end     :initarg :end     :accessor end     :initform nil)))
 
 (defclass scroll (widget)
   ((offset :initarg :offset :accessor offset :initform 0)
-   (tall   :initarg :tall   :accessor tall   :initform 10))
-  (:documentation "A clipped window onto something taller."))
+   (fixed-height :initarg :fixed-height :accessor fixed-height :initform 10)))
 
 (defclass action (widget)
-  ((click :initarg :click :accessor click :initform nil))
-  (:documentation "Does something when it is clicked."))
+  ((on-click :initarg :on-click :accessor on-click :initform nil)))
 
 (defclass choice (widget)
-  ((click  :initarg :click  :accessor click  :initform nil)
+  ((on-click  :initarg :on-click  :accessor on-click  :initform nil)
    (before :initarg :before :accessor before :initform "> ")
-   (after  :initarg :after  :accessor after  :initform "  "))
-  (:documentation "A row of a listing: it can be chosen, and it stands for
-something -- OF is what."))
+   (after  :initarg :after  :accessor after  :initform "  ")))
 
 (defclass slider (widget)
   ((value   :initarg :value   :accessor held    :initform 0)
    (low     :initarg :low     :accessor low     :initform 0)
    (high    :initarg :high    :accessor high    :initform 100)
    (track   :initarg :track   :accessor track   :initform 16)
-   (changed :initarg :changed :accessor changed :initform nil)))
+   (on-change :initarg :on-change :accessor on-change :initform nil)))
 
 (defclass ring (widget)
   ((value     :initarg :value     :accessor held      :initform 0)
@@ -111,25 +93,19 @@ something -- OF is what."))
   ((rows    :initarg :rows    :accessor rows-of :initform nil)
    (caret   :initarg :caret   :accessor caret   :initform nil)
    (over    :initarg :over    :accessor over    :initform nil)
-   (opacity :initarg :opacity :accessor opacity :initform 1.0))
-  (:documentation "A leaf holding rows that are already laid out, each (text .
-runs). Measure and arrange are one step and paint blits them. CARET is (row . col)
-or nothing; OVER is how many leading rows are drawn above the rect rather than in
-it, which is what floats a completion list over the buffer."))
+   (opacity :initarg :opacity :accessor opacity :initform 1.0)))
 
 (defmethod parts ((w centerbox))
   (remove nil (list (start w) (middle w) (end w))))
 
 (defun placed (w)
-  "Whether W carries an arranged rect."
   (or (plusp (right w)) (plusp (bottom w))))
 
 (defun width (w) (- (right w) (left w)))
 
-(defun height (w) (1+ (- (bottom w) (top w))))
+(defun height (w) (- (bottom w) (top w)))
 
 (defun fraction (w)
-  "The filled part of a slider or a ring, 0..1, clamped."
   (let* ((span (max 1 (- (high w) (low w))))
          (v (max 0 (min span (- (or (held w) 0) (low w))))))
     (/ v span)))

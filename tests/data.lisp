@@ -24,7 +24,7 @@ land a thousand increments and not fewer."
         (threads nil))
     (dotimes (i 4)
       (push (bordeaux-threads:make-thread
-             (lambda () (dotimes (n 250) (d:swap (car cell) #'1+))))
+             (lambda () (dotimes (n 250) (sb-ext:atomic-update (car cell) (lambda (old) (1+ old))))))
             threads))
     (mapc #'bordeaux-threads:join-thread threads)
     (is (= 1000 (car cell)))))
@@ -41,7 +41,7 @@ retry that built the function again would build it once per contending thread."
            (index () (push :index order) (prog1 i (incf i)))
            (adder () (push :function order) (incf fn-built) #'+)
            (by () (push :argument order) 5))
-      (is (= 15 (d:swap (svref (where) (index)) (adder) (by))))
+      (is (= 15 (sb-ext:atomic-update (svref (where) (index)) (lambda (old) (funcall (adder) old (by))))))
       (is (equal '(:place :index :function :argument) (reverse order)))
       (is (= 15 (svref v 0)) "and it wrote the place it read")
       (is (= 1 i) "the index moved once")
@@ -53,10 +53,10 @@ retry that built the function again would build it once per contending thread."
     (flet ((where () (push :place order) v)
            (had () (push :old order) :was)
            (fresh () (push :new order) :now))
-      (is (d:cas (svref (where) 0) (had) (fresh)))
+      (is (d:cas-p (svref (where) 0) (had) (fresh)))
       (is (equal '(:place :old :new) (reverse order)))
       (is (eq :now (svref v 0)))
-      (is (not (d:cas (svref v 0) :was :never))))))
+      (is (not (d:cas-p (svref v 0) :was :never))))))
 
 (test do-map-binds-what-it-was-given
   (let ((seen nil))
@@ -90,8 +90,8 @@ that looks like it ran."
 left is nothing. Four threads pushing while one takes lose nothing between them."
   (booted)
   (let ((cell (cons nil nil)))
-    (d:swap (car cell) (lambda (had) (cons 1 had)))
-    (d:swap (car cell) (lambda (had) (cons 2 had)))
+    (sb-ext:atomic-update (car cell) (lambda (had) (cons 1 had)))
+    (sb-ext:atomic-update (car cell) (lambda (had) (cons 2 had)))
     (is (equal '(2 1) (d:emptied (car cell))))
     (is (null (car cell)))
     (is (null (d:emptied (car cell)))))
@@ -101,7 +101,7 @@ left is nothing. Four threads pushing while one takes lose nothing between them.
     (dotimes (i 4)
       (push (bordeaux-threads:make-thread
              (lambda () (dotimes (n 250)
-                          (d:swap (car cell) (lambda (had) (cons n had))))))
+                          (sb-ext:atomic-update (car cell) (lambda (had) (cons n had))))))
             threads))
     (loop :repeat 200
           :do (setf taken (append (d:emptied (car cell)) taken)))
@@ -131,13 +131,14 @@ not; a map built a piece at a time must not turn into a seq at the first nothing
   (signals error (d:with (list 1 2) 0 :x)))
 
 (test contains-means-one-thing
-  "What a map holds is its values, the way a seq holds its elements. Whether it
-has a key is what LOOKUP answers second."
-  (is (d:contains (d:map :k :v) :v))
-  (is (not (d:contains (d:map :k :v) :k)))
+  "Membership, spelled the way every other language spells it: a map is asked
+about its keys, a seq and a set and a list about their elements."
+  (is (d:contains (d:map :k :v) :k))
+  (is (not (d:contains (d:map :k :v) :v)))
   (is (d:contains (d:seq :a :b) :b))
+  (is (d:contains (d:set :a :b) :b))
   (is (d:contains (list :a :b) :b))
-  (is (d:contains (d:map :k (d:seq 1 2)) (d:seq 1 2)) "by value, not by identity"))
+  (is (d:contains (d:map (d:seq 1 2) :v) (d:seq 1 2)) "by value, not by identity"))
 
 (test merged-says-so-rather-than-dropping-one
   (is (equal '((:a . 2) (:b . 3))
@@ -192,7 +193,7 @@ gap is lost."
     (dotimes (i 8)
       (push (bordeaux-threads:make-thread
              (lambda () (dotimes (n 50)
-                          (d:swap (car box)
+                          (sb-ext:atomic-update (car box)
                                   (lambda (m) (d:with m "n" (1+ (or (d:lookup m "n") 0))))))))
             threads))
     (mapc #'bordeaux-threads:join-thread threads)

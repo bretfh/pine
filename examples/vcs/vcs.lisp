@@ -21,7 +21,7 @@
 
 (defun %how-many (said)
   "How many lines a program printed. LINES is not a word the language has: it means
-a document's lines in one package and splitting text in another, and pine will not
+a buffer's lines in one package and splitting text in another, and pine will not
 let one word be both."
   (if (plusp (length said)) (1+ (count #\Newline said)) 0))
 
@@ -45,13 +45,13 @@ let one word be both."
 last thing done"
   :refreshes 5)
 
-(defbacking vcs (:needs "git")
+(defdriver vcs (:needs "git")
   (branch :reads (sh "git -C ~a rev-parse --abbrev-ref HEAD 2>/dev/null" (%at))
           :writes (lambda (said) (sh "git -C ~a switch ~a" (%at) said) T))
   (dirty :reads (%how-many (sh "git -C ~a status --porcelain 2>/dev/null" (%at))))
   (head :reads (sh "git -C ~a log -1 --format=%s 2>/dev/null" (%at))))
 
-(defbacking vcs (:needs "jj")
+(defdriver vcs (:needs "jj")
   (branch :reads (sh "jj -R ~a log -r @ --no-graph -T bookmarks 2>/dev/null" (%at))
           :writes (lambda (said) (sh "jj -R ~a bookmark set ~a" (%at) said) T))
   (dirty :reads (%how-many (sh "jj -R ~a diff --name-only 2>/dev/null" (%at))))
@@ -65,14 +65,14 @@ last thing done"
   (:documentation "A strip in the corner saying where the work is."))
 
 (defmethod anchor ((r board) width height)
-  (placing :edges '(:bottom :left) :wide width :tall height
+  (placing :edges '(:bottom :left) :width width :height height
            :margin (inset :bottom 12 :left 12)))
 
 ;;; The system. It declares a place, a device, a surface, two commands and a
 ;;; chord, and defines no STOP: what it put up while it started is its, and goes
 ;;; when it does.
 
-(defclass vcs (system) ()
+(defclass vcs (module) ()
   (:documentation "What is being worked on: the checkout at /work, and a board
 in the corner saying where it is and what is uncommitted."))
 

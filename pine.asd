@@ -3,7 +3,7 @@
                 :depends-on (#:fset)
                 :serial t
                 :pathname "src/kernel/value/"
-                :components ((:file "data") (:file "said")))
+                :components ((:file "data") (:file "serial")))
 
 (asdf:defsystem #:pine/fs
                 :description "The tree: dirs, values and what is derived from them,
@@ -29,7 +29,7 @@ and other images"
                              (:file "actors") (:file "job") (:file "proc")
                              (:file "watch")
                              (:file "command") (:file "image") (:file "peer")
-                             (:file "session") (:file "system")))
+                             (:file "listener") (:file "module")))
 
 (asdf:defsystem #:pine/serve
                 :description "The wire: the four verbs as lines and as json, and the
@@ -115,7 +115,7 @@ the parse behind it"
                 :serial t
                 :pathname "src/systems/edit/"
                 :components ((:file "system")
-                             (:file "mode") (:file "window") (:file "matching")
+                             (:file "mode") (:file "pane") (:file "matching")
                              (:file "prompt") (:file "keys") (:file "render")
                              (:file "listing") (:file "isearch") (:file "commands")
                              (:file "file") (:file "help") (:file "eval")
@@ -196,7 +196,7 @@ the parse behind it"
                              (:file "ui") (:file "text")
                              (:file "host") (:file "edit") (:file "term")
                              (:file "wm") (:file "config") (:file "app")
-                             (:file "draw"))
+                             (:file "draw") (:file "symbols") (:file "vocabulary"))
                 :perform (asdf:test-op (o c)
                                        (unless (uiop:symbol-call :fiveam :run! :pine)
                                          (error "pine tests failed"))))

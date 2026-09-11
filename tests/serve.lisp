@@ -3,7 +3,7 @@
 (def-suite* :pine/serve :in :pine)
 
 (defun %through-the-wire (value)
-  "VALUE written down, sent, and read back, the way it crosses to somebody who is
+  "VALUE written height, sent, and read back, the way it crosses to somebody who is
 not a lisp: as json, and as json again on the way out."
   (let* ((out (pine/serve/json:render value))
          (back (pine/serve/json:parse out)))
@@ -42,7 +42,7 @@ asked about where it landed."
     (flet ((wrote (json)
              (pine/run/peer::received
               (multiple-value-bind (message id)
-                  (pine/serve/wire:asked
+                  (pine/serve/wire:decode-request
                    (format nil "{\"id\":1,\"do\":\"write\",\"path\":\"/probe\",~
                                 \"value\":~a}" json))
                 (declare (ignore id))
@@ -61,7 +61,7 @@ asked about where it landed."
   "This is the edge of the image. On the other side of it is somebody who can do
 nothing with a dropped connection and something with a sentence."
   (flet ((said (line)
-           (multiple-value-bind (message id) (pine/serve/wire:asked line)
+           (multiple-value-bind (message id) (pine/serve/wire:decode-request line)
              (declare (ignore id))
              message)))
     (is (eq :no (first (said "{\"do\":\"sing\",\"path\":\"/x\"}"))))

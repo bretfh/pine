@@ -17,7 +17,7 @@
 no compositor: this is the same drawing, in a file you can look at.
 
 PINE_CONFIG names a config to read, and then it is that config's surfaces."
-  (pine:start)
+  (pine:boot)
   (if +config+
       (progn (pine:load-config +config+)
              (dolist (f (pine/run/fault:faults))
@@ -28,9 +28,9 @@ PINE_CONFIG names a config to read, and then it is that config's surfaces."
   (dolist (each (pine/ui:surfaces))
     (setf (pine/ui:shown each) t))
   (pine/edit:type-text "(defun hello (who) (format t \"hi ~a\" who))")
-  (dolist (each (pine/paint/shot:every-surface :into +into+ :width 1200 :height 1400))
+  (dolist (each (pine/wayland:every-surface :into +into+ :width 1200 :height 1400))
     (when each (format t "~&~a~%" each)))
-  (pine:stop))
+  (pine:leave))
 
 (main)
 (sb-ext:exit)

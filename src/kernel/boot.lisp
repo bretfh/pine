@@ -10,7 +10,7 @@
   (:import-from #:pine/run/fault #:attempt)
   (:import-from #:pine/run/job #:start #:stop)
   (:import-from #:pine/run/peer #:reach #:serve)
-  (:import-from #:pine/run/system #:drop #:system #:use)
+  (:import-from #:pine/run/module #:drop #:module #:use)
   (:import-from #:pine/run/watch #:unwatch)
   (:local-nicknames (#:d #:pine/data)
                     (#:fs #:pine/fs)
@@ -22,8 +22,8 @@
                     (#:watch #:pine/run/watch)
                     (#:command #:pine/run/command)
                     (#:image #:pine/run/image)
-                    (#:peer #:pine/run/peer) (#:system #:pine/run/system)
-                    (#:session #:pine/run/session))
+                    (#:peer #:pine/run/peer) (#:module #:pine/run/module)
+                    (#:listener #:pine/run/listener))
   (:export
    #:boot #:leave #:main #:daemon #:quit #:console #:opening #:load-config #:spawn
    #:at #:read #:write #:watch #:ls #:standsp #:toggle #:include #:exclude #:blend
@@ -31,20 +31,13 @@
    #:seq #:map #:set #:note #:mount
    #:contents #:derived #:describes #:name #:value
    #:erase #:root
-   #:defcommand #:run #:attempt #:start #:stop #:system #:unwatch))
+   #:defcommand #:run #:attempt #:start #:stop #:module #:unwatch))
 (in-package #:pine)
 
 (defgeneric opening (what)
-            (:documentation "Open WHAT, if anything loaded here knows how.
-
-:DISPLAY is the one pine asks for. A frontend answers it in its own file, so an
-image built without one has nothing to unset and nothing to check -- there is
-simply no method, which is the truth about that image.")
             (:method (what) (declare (ignore what)) nil))
 
 (defun spawn (name &key (systems '(:pine)))
-  "Another lisp of pine's own, supervised. Work can be done in it, and a fault it
-stands in comes back here with the restarts it is still offering."
   (let ((j (make-instance 'image:child :name (princ-to-string name)
                           :systems systems)))
     (job:supervise j)
@@ -59,7 +52,6 @@ stands in comes back here with the restarts it is still offering."
   (job:attend)
   (when store
     (store:open-store store)
-    (store:restore store:*store*)
     (store:keeping))
   (fs:root))
 
@@ -67,14 +59,11 @@ stands in comes back here with the restarts it is still offering."
   (fault:or-nothing "there may be no socket to close"
     (pine/serve/socket:close-socket))
   (fs:forget-listeners)
-  (dolist (s (session:sessions)) (session:close s))
-  (dolist (j (system:systems)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
+  (dolist (s (listener:listeners)) (listener:close s))
+  (dolist (j (module:modules)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
   (watch:forget-all)
   (dolist (j (job:jobs)) (fault:attempt (lambda () (job:stop j)) (job:name j)))
-  (when store:*store*
-    (fault:attempt (lambda () (store:snapshot store:*store*))
-                   "writing the tree down")
-    (store:close-store store:*store*))
+  (when store:*store* (store:close-store store:*store*))
   (actors:leave)
   t)
 
@@ -85,10 +74,6 @@ stands in comes back here with the restarts it is still offering."
   (merge-pathnames "pine/tree.db" (uiop:xdg-data-home)))
 
 (defun %the-used (c)
-  "A name USE-PACKAGE will not take because the reader already made one here --
-read before the package was used, or in a form that never ran. One that is only
-a symbol means nothing and the used package's is taken; one with a function, a
-value or a class is a real conflict and stays one."
   (let* ((mine (find-package '#:pine/user))
          (had (find-if (lambda (s) (eq (symbol-package s) mine))
                        (sb-ext:name-conflict-symbols c)))
@@ -108,7 +93,7 @@ value or a class is a real conflict and stays one."
        (lambda ()
          (handler-bind ((sb-kernel:redefinition-with-defmethod #'muffle-warning)
                         (sb-ext:name-conflict #'%the-used))
-           (fs:writing (load file))))
+           (let ((fs:*declaring* t)) (fs:writing (load file)))))
        (format nil "reading ~a" file))
       (let ((broke (- (length (fault:faults)) before)))
         (when (plusp broke)
@@ -118,11 +103,11 @@ value or a class is a real conflict and stays one."
 
 (defun quit (&optional (grace 5))
   (job:start (make-instance 'job:thread :name "quit-watchdog" :on-fault :leave
-                            :runs (lambda ()
+                            :body (lambda ()
                                      (sleep grace)
                                      (sb-ext:exit :abort t :code 0))))
   (job:start (make-instance 'job:thread :name "quit" :on-fault :leave
-                            :runs (lambda ()
+                            :body (lambda ()
                                      (sleep 0.2)
                                      (fault:or-nothing
                                       "leaving anyway"
@@ -131,38 +116,19 @@ value or a class is a real conflict and stays one."
   t)
 
 (defun console ()
-  "The session a pine in this terminal reads its forms in: the language, the
-syntax a config is read in, and where CD has moved to.
-
-The readtable and not only the package, so /dev/audio/volume means at the prompt
-what it means in the file. Without it a config taught you a spelling the prompt
-answered with an error."
-  (session:open-session :name "console" :in (fs:root)
+  (listener:open-listener :name "console" :in (fs:root)
                         :package (find-package '#:pine/user)
                         :readtable (named-readtables:find-readtable
                                     'pine/fs/reader:syntax)))
 
 (defun main (&key (store (store-file)))
-  "A pine in this terminal, with no daemon: the namespace, and a repl on it."
   (boot :store store)
   (let ((s (console)))
-    (unwind-protect (session:interact s)
+    (unwind-protect (listener:interact s)
       (leave))))
 
 (defun daemon (&key (store (store-file)) (remoting actors:*port*)
                     (config (config-file)))
-  "A pine other images talk to. The store is opened after the config: a surface a
-config declares takes the name it is declared under, so a panel restored before the
-config would be the value node the surface then replaced.
-
-Peers are answered last of all. What crosses that way is a read, a write and work
-to do in this image, and opening it before the config has been read is answering
-for a pine the person running it has not finished describing.
-
-REMOTING is the port other pines reach this one on. A daemon has one because that
-is what makes it a daemon: REACH, MOUNT and evaluating in another image are the
-whole of what a peer is, and none of them can happen to a pine nothing can get to.
-Say NIL for one that answers only on its socket."
   (boot :remoting remoting)
   (command:defcommand "quit" () (:describes "stop this pine")
                       (quit))
@@ -172,8 +138,8 @@ Say NIL for one that answers only on its socket."
   (load-config config)
   (when store
     (store:open-store store)
-    (log:note "~d node~:p came back" (store:restore store:*store*))
-    (store:keeping))
+    (store:keeping)
+    (log:note "keeping ~a" store))
   (peer:serve)
   (fault:attempt (lambda () (pine/serve/socket:open-socket))
                  "answering on a socket")

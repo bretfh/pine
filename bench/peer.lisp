@@ -6,7 +6,7 @@
   (:local-nicknames (#:fs #:pine/fs)
                     (#:mount #:pine/fs/mount) (#:peer #:pine/run/peer)
                     (#:image #:pine/run/image) (#:actors #:pine/run/actors)
-                    (#:said #:pine/said))
+                    (#:serial #:pine/serial))
   (:export #:main))
 (in-package #:pine/bench/peer)
 
@@ -46,9 +46,9 @@ be one the clock could have said."
   (pine::write "/dev/net/wifi" "cafe-guest")
   (let ((under (fs:ensure "/many")))
     (dotimes (i 100) (fs:attach (make-instance 'fs:value :name (format nil "kid~d" i)) under)))
-  (dolist (wide '(16 256 2048))
-    (let ((under (fs:ensure (format nil "/cold~d" wide))))
-      (dotimes (i wide) (fs:attach (make-instance 'fs:value :name (format nil "kid~d" i)) under))))
+  (dolist (width '(16 256 2048))
+    (let ((under (fs:ensure (format nil "/cold~d" width))))
+      (dotimes (i width) (fs:attach (make-instance 'fs:value :name (format nil "kid~d" i)) under))))
   (peer:serve)
 
   (format t "~&~%what one message costs to spell~%~%")
@@ -67,18 +67,18 @@ be one the clock could have said."
     (cost "deserialize it again" *runs*
           (lambda () (rseri:deserialize *serializer* bytes)))
     (cost "spell a value pine's own way" *runs*
-          (lambda () (said:took (said:said 41)))))
+          (lambda () (serial:decode (serial:encode 41)))))
 
   (let ((p (peer:reach "self" :port (actors:remoting))))
     (mount:mount p (fs:root) "host")
     (assert (equal 41 (fs:contents (fs:at "/host/dev/audio/volume"))))
 
     (format t "~&~%walking to a child, by how many it stands among~%~%")
-    (dolist (wide '(16 256 2048))
+    (dolist (width '(16 256 2048))
       (let ((i -1))
-        (cost (format nil "cold walk, one of ~d" wide) wide
+        (cost (format nil "cold walk, one of ~d" width) width
               (lambda () (assert (fs:at (format nil "/host/cold~d/kid~d"
-                                                  wide (incf i))))))))
+                                                  width (incf i))))))))
     (cost "walk to one already walked" *runs*
           (lambda () (fs:at "/host/cold256/kid1")))
 
@@ -92,9 +92,9 @@ be one the clock could have said."
     (cost "write, through a mount" *runs*
           (lambda () (setf (fs:contents (fs:at "/host/dev/audio/volume")) 41)))
     (cost "list 2 children, through a mount" *runs*
-          (lambda () (fs:entries (fs:at "/host/dev"))))
+          (lambda () (fs:children (fs:at "/host/dev"))))
     (cost "list 100 children, through a mount" *runs*
-          (lambda () (fs:entries (fs:at "/host/many"))))
+          (lambda () (fs:children (fs:at "/host/many"))))
     (cost "evaluate (+ 2 2) over there" *runs*
           (lambda () (image:evaluate p '(+ 2 2))))
     (format t "~&~%")

@@ -7,7 +7,7 @@
   (with-tree
     (let* ((n (cons 0 nil))
            (j (make-instance 'job:tick :name "ticker" :every 0.05
-                                         :runs (lambda () (d:swap (car n) #'1+)))))
+                                         :body (lambda () (sb-ext:atomic-update (car n) (lambda (old) (1+ old)))))))
       (unwind-protect
            (progn
              (job:supervise j)
@@ -25,7 +25,7 @@
 (test a-job-made-before-boot-is-at-proc
   (booted)
   (let ((j (make-instance 'job:tick :name "probe" :every 0.05
-                                      :runs (lambda () nil))))
+                                      :body (lambda () nil))))
     (unwind-protect
          (progn (is (not (null (fs:at "/proc"))))
                 (job:supervise j)
@@ -42,8 +42,8 @@ returned without being asked to is failed, and the next sweep starts it."
   (with-tree
     (let* ((runs (cons 0 nil))
            (j (make-instance 'job:thread :name "flaky" :on-fault :restart
-                                         :runs (lambda ()
-                                                  (d:swap (car runs) #'1+)))))
+                                         :body (lambda ()
+                                                  (sb-ext:atomic-update (car runs) (lambda (old) (1+ old)))))))
       (unwind-protect
            (progn
              (job:supervise j)
@@ -61,7 +61,7 @@ returned without being asked to is failed, and the next sweep starts it."
     (let ((j nil))
       (setf j (make-instance 'job:thread
                              :name "quiet" :on-fault :restart
-                             :runs (lambda ()
+                             :body (lambda ()
                                       (loop :until (job:stoppingp j)
                                             :do (sleep 0.01)))))
       (unwind-protect
@@ -81,7 +81,7 @@ returned without being asked to is failed, and the next sweep starts it."
          (j (make-instance 'job:actor
                            :name "orderly" :on-fault :leave
                            :receive (lambda (m)
-                                      (d:swap (car said) (lambda (all) (cons m all)))))))
+                                      (sb-ext:atomic-update (car said) (lambda (all) (cons m all)))))))
     (unwind-protect
          (progn
            (job:start j)
@@ -104,8 +104,8 @@ returned without being asked to is failed, and the next sweep starts it."
                             (error "a probe"))
                           (setf took :past-it))
                         "probing"))))
-    (is (until (lambda () (fault:standing))))
-    (let ((f (first (fault:standing))))
+    (is (until (lambda () (fault:suspended))))
+    (let ((f (first (fault:suspended))))
       (is (not (null f)))
       (is (member "CARRY-ON" (fault:offers f) :test #'equal))
       (is (null (fault:where f)) "it is standing in this image")
@@ -159,7 +159,7 @@ returned without being asked to is failed, and the next sweep starts it."
            (is (equal '(:describes "made while starting" :asks nil :on nil)
                       (fs:contents (fs:at "/cmd/probe-home")))
                "and what it holds is what it is")
-           (pine/run/system::%take-down "pine/test/probe")
+           (pine/run/module::%take-down "pine/test/probe")
            (is (null (command:named "probe-home")) "it goes with the system")
            (is (not (null (command:named "probe-file"))) "what a file defined stays"))
       (command:forget "probe-file"))))
@@ -171,25 +171,25 @@ says nothing until somebody runs the verb."
   (with-tree
     (let ((s (pine:console)))
       (unwind-protect
-           (is (eq (fs:root) (session:in s))
+           (is (eq (fs:root) (listener:in s))
                "a relative name typed there is measured from the root")
-        (session:close s)))))
+        (listener:close s)))))
 
 (test a-session-evaluates-and-runs-commands
   (command:defcommand "probe-say" () (:describes "a word") :said)
   (unwind-protect
-       (let ((s (session:open-session :name "probe"
+       (let ((s (listener:open-listener :name "probe"
                                       :package (find-package :pine/test))))
-         (is (equal '(4) (session:answered (session:evaluate s '(+ 2 2)))))
-         (is (equal '(:said) (session:answered
-                              (session:evaluate s '(|probe-say|)))))
-         (is (session:fault (session:evaluate s '(error "no"))))
-         (session:close s))
+         (is (equal '(4) (listener:answered (listener:evaluate s '(+ 2 2)))))
+         (is (equal '(:said) (listener:answered
+                              (listener:evaluate s '(|probe-say|)))))
+         (is (listener:fault (listener:evaluate s '(error "no"))))
+         (listener:close s))
     (command:forget "probe-say")))
 
 (test another-pine-is-mounted-and-evaluated-in
   "Remoting is asked for when the actor system is made, so this test takes the
-image's one down and puts a listening one in its place."
+image's one height and puts a listening one in its place."
   (unwind-protect
        (progn
          (actors:leave)
@@ -209,7 +209,7 @@ image's one down and puts a listening one in its place."
                     (is (equal 77 (fs:contents
                                    (fs:at "/dev/audio/volume"))))
                     (is (equal '("audio")
-                               (mapcar #'fs:name (fs:entries (fs:at "/host/dev")))))
+                               (mapcar #'fs:name (fs:children (fs:at "/host/dev")))))
                     (is (equal '(4) (image:evaluate p '(+ 2 2))))
                     (fault:forget-faults)
                     (multiple-value-bind (answered broke offers)
@@ -299,12 +299,12 @@ on whatever slid into the place that was being read."
         "it still names the one it named")))
 
 (test a-thread-that-will-not-stop-is-not-called-stopped
-  "Asked and not gone, it is still running whatever pine has written down, and
+  "Asked and not gone, it is still running whatever pine has written height, and
 calling it stopped leaves it holding what it holds with nothing naming it."
   (booted)
   (let* ((running t)
          (j (make-instance 'job:thread :name "test-stubborn" :on-fault :leave
-                           :runs (lambda () (loop :while running
+                           :body (lambda () (loop :while running
                                                    :do (sleep 0.02))))))
     (unwind-protect
          (progn
@@ -312,7 +312,7 @@ calling it stopped leaves it holding what it holds with nothing naming it."
            (until (lambda () (job:alivep j)))
            (job:stop j)
            (is (eq :stopping (job:state j)) "it says what is true")
-           (is (not (null (job:took j))) "and still knows what to look at")
+           (is (not (null (job:handle j))) "and still knows what to look at")
            (setf running nil)
            (until (lambda () (not (job:alivep j))))
            (job:stop j)
@@ -331,35 +331,35 @@ signalled that no method applied."
 of INTERACT and, in a shell, took the image with it."
   (let* ((in (make-string-input-stream ")(+ 1 2)"))
          (out (make-string-output-stream))
-         (s (session:open-session :name "test-reader" :input in :output out)))
+         (s (listener:open-listener :name "test-reader" :input in :output out)))
     (unwind-protect
-         (progn (finishes (session:interact s))
+         (progn (finishes (listener:interact s))
                 (is (search "3" (get-output-stream-string out))
                     "and it went on to read the form after it"))
-      (session:close s))))
+      (listener:close s))))
 
 (test a-fault-at-a-repl-reaches-the-fault-system
   "It was kept on the evaluation and nowhere else, so the debugger buffer could
 not show what somebody had just typed."
   (let* ((in (make-string-input-stream "(error \"repl-fault\")"))
          (out (make-string-output-stream))
-         (s (session:open-session :name "test-repl-fault" :input in :output out))
+         (s (listener:open-listener :name "test-repl-fault" :input in :output out))
          (before (length (fault:faults))))
     (unwind-protect
-         (progn (session:interact s)
+         (progn (listener:interact s)
                 (is (= 1 (- (length (fault:faults)) before))
                     "it is one of the faults")
                 (is (search "repl-fault"
                             (princ-to-string
                              (fault:condition-of (first (fault:faults)))))))
-      (session:close s))))
+      (listener:close s))))
 
 (test a-watcher-on-a-collection-does-not-fire-on-every-read
   "EQUAL asks whether two maps are the same object. Two structurally equal ones
 are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
-           (n (fs:mount (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (d:map :a 1)))
+           (n (fs:mount (make-instance 'fs:derived :name "coll" :live t :recompute (lambda () (d:map :a 1)))
                            (fs:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -372,7 +372,7 @@ are not, so a bar reading a map was pushed at every tick."
   (with-tree
     (let* ((fires 0)
            (which (list (d:map :a 1)))
-           (n (fs:mount (make-instance 'fs:derived :name "coll" :live t :reads (lambda () (first which)))
+           (n (fs:mount (make-instance 'fs:derived :name "coll" :live t :recompute (lambda () (first which)))
                            (fs:root)))
            (w (watch:watch n (lambda (of said) (declare (ignore of said))
                                (incf fires))
@@ -398,7 +398,7 @@ answer for every window there had ever been."
 the rest of its life."
   (with-tree
     (let ((j (make-instance 'job:thread :name "never"
-                                        :runs (lambda () (error "never runs")))))
+                                        :body (lambda () (error "never runs")))))
       (job:supervise j)
       (unwind-protect
            (let ((pine/run/job::*tries* 3)
@@ -407,13 +407,13 @@ the rest of its life."
                    (job:tries j) 3
                    (pine/run/job::since j) nil)
              (job:sweep)
-             (is (job:heldp j) "given up on rather than started again")
+             (is (job:giving-up-p j) "given up on rather than started again")
              (is (search "gave up" (princ-to-string (pine/run/job::fault j)))
                  "and where it stands says why")
              (job:sweep)
-             (is (job:heldp j) "and a later pass leaves it alone")
+             (is (job:giving-up-p j) "and a later pass leaves it alone")
              (job:again j)
-             (is (not (job:heldp j))
+             (is (not (job:giving-up-p j))
                  "asking for it by name takes it out of being held")
              (is (< (job:tries j) 3)
                  "and forgets what it tried before"))
@@ -457,22 +457,22 @@ image, and it is DERIVE :IN."
       (job:supervise kid)
       (job:start kid)
       (unwind-protect
-           (let ((n (make-instance 'fs:derived :name "sum" :reads '(+ 20 22) :in kid)))
+           (let ((n (make-instance 'fs:derived :name "sum" :recompute '(+ 20 22) :in kid)))
              (fs:mount n (fs:root))
              (is (eql 42 (fs:contents n))
                  "worked out over there, and what came back is a value")
-             (is (null (fs::saw n))
+             (is (null (fs::depends-on n))
                  "and it read nothing here, because what it read is that image's"))
         (job:stop kid)
         (job:forget "elsewhere")))))
 
 (test a-job-asked-for-without-saying-takes-what-the-class-says
-  "GETF answers NIL for a key nobody gave, and NIL handed to MAKE-INSTANCE is a
-slot set to NIL rather than one left at what the class says. A program started by
-a write to /proc took :ON-FAULT NIL that way, so nothing ever started it again."
-  (is (eq :restart (job:asked-for '(:name "x") :on-fault :restart)))
-  (is (eq :leave (job:asked-for '(:on-fault :leave) :on-fault :restart)))
-  (is (null (job:asked-for '(:on-fault nil) :on-fault :restart))
+  "A program started by a write to /proc took :ON-FAULT NIL and nothing ever
+started it again. GETF's own default answers all three cases, which is why there
+is no wrapper here."
+  (is (eq :restart (getf '(:name "x") :on-fault :restart)))
+  (is (eq :leave (getf '(:on-fault :leave) :on-fault :restart)))
+  (is (null (getf '(:on-fault nil) :on-fault :restart))
       "and one that was given NIL means NIL"))
 
 (defclass %wont-start (job:job) ())

@@ -7,13 +7,7 @@
 
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
-(defclass desk (system) ()
-  (:documentation "The desktop: a bar along the top, and the panels it opens.
-
-Nothing here is privileged, and nothing here is written in a language a config is
-not. It names no package of pine's: what it reads and writes, it says by path, and
-what it draws, it says in the words pine offers."))
-
+(defclass desk (module) ())
 
 (defun %at (name) (at (format nil "/ui/surface/~a/shown" name)))
 
@@ -34,17 +28,17 @@ what it draws, it says in the words pine offers."))
 (defun %workspaces ()
   (rows /wm/workspaces
         (lambda ()
-          (button :class "workspace" :click (here)
+          (button :class "workspace" :on-click (here)
                   (label (path:leaf (here)))))))
 
 (defun %title () (label /wm/focused :class "title"))
 
 (defun %sound ()
-  (button :class "sound" :click (lambda () (%toggle "sound"))
+  (button :class "sound" :on-click (lambda () (%toggle "sound"))
           (row (label "vol ") (label /dev/audio/volume))))
 
 (defun %battery ()
-  (button :class "battery" :click (lambda () (%toggle "power"))
+  (button :class "battery" :on-click (lambda () (%toggle "power"))
           (row (label /dev/power/battery) (label "%"))))
 
 (defun %bar ()
@@ -56,7 +50,7 @@ what it draws, it says in the words pine offers."))
              :center (row :class "middle" (%title))
              :end (row :class "right" (%sound) (%battery)
                        (button :class "clock-button"
-                               :click (lambda () (%toggle "calendar"))
+                               :on-click (lambda () (%toggle "calendar"))
                                (%clock)))))
           :as 'bar :starts :up))
 
@@ -66,7 +60,7 @@ what it draws, it says in the words pine offers."))
             (column :class "panel sound-panel"
                     (label "sound")
                     (slider /dev/audio/volume)
-                    (button :class "mute" :click (lambda () (toggle /dev/audio/muted))
+                    (button :class "mute" :on-click (lambda () (toggle /dev/audio/muted))
                             (label "mute"))))
           :as 'panel))
 
@@ -82,7 +76,7 @@ what it draws, it says in the words pine offers."))
                           (lambda (verb i)
                             (declare (ignore i))
                             (button :class "verb"
-                                    :click (path:path (format nil "/dev/power/~a"
+                                    :on-click (path:path (format nil "/dev/power/~a"
                                                          verb))
                                     :confirm (format nil "~a?" verb)
                                     (label verb))))))

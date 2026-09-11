@@ -20,10 +20,6 @@
           :test #'string=))
 
 (defun %scored (tokens name)
-  "How well NAME answers TOKENS: every token must be somewhere in it, in any order
-and in any case. The score is where they were found, so what matches earliest is
-offered first, and a name that begins with the first token beats one that merely
-contains it. Nothing when a token is missing."
   (let ((score 0) (from-the-start nil))
     (loop :for token :in tokens
           :for first := t :then nil
@@ -61,8 +57,6 @@ contains it. Nothing when a token is missing."
         shortest)))
 
 (defun expanded (text)
-  "TEXT as a path a person typed: ~ is home, and a second / starts again from the
-root, so an absolute path typed over a directory means that path."
   (let* ((text (or text ""))
          (over (search "//" text :from-end t))
          (text (if over (subseq text (1+ over)) text)))

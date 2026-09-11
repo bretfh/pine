@@ -5,43 +5,29 @@
                     (#:fault #:pine/run/fault))
   (:export
    #:sh #:did #:argv #:feed #:lines #:words #:number-in
-   #:firstp #:has #:run-line #:launch #:streaming #:last-said
-   #:sh-node #:forget-all #:*breath*))
+   #:first-line #:has #:run-line #:launch #:streaming #:last-said
+   #:sh-node #:forget-all #:*breath-seconds*))
 (in-package #:pine/host/shell)
 
-(defvar *sh* nil
-  "The shell: /sh once it stands there, and what it keeps either way.")
-(defparameter *breath* 1/4
-  "Seconds an answer stands for. What a bar reads is read again next frame, not
-three times in this one.")
-(defparameter *kept* 100)
+(defvar *sh* nil)
+(defparameter *breath-seconds* 1/4)
+(defparameter *ran-kept* 100)
 (defparameter *lines-kept* 20)
-(defparameter *asked-kept* 256
-  "How many answers stand at once. One is good for a breath and after that is only
-taking up room, and the table is keyed by the line: without a cap a bar that asks
-about a window holds an answer for every window there has ever been.")
+(defparameter *asked-kept* 256)
 
 (defparameter *out*
   '("GUIX_ENVIRONMENT" "CL_SOURCE_REGISTRY" "ASDF_OUTPUT_TRANSLATIONS"
-    "LD_LIBRARY_PATH")
-  "What pine's own build put in the environment and a program it launches should
-not inherit.")
+    "LD_LIBRARY_PATH"))
 
 (defparameter +tethered+
   "~a & pine_child=$!; trap 'kill $pine_child 2>/dev/null' EXIT; ~
-   cat >/dev/null; kill $pine_child 2>/dev/null"
-  "A stream, tied to the image that asked for it. The shell holding it reads a pipe
-pine keeps the other end of, so pine going -- stopped, crashed or killed outright --
-closes that end and the stream goes with it.")
+   cat >/dev/null; kill $pine_child 2>/dev/null")
 
 (defclass shell (fs:mount)
   ((ran     :initform nil :accessor ran-of)
    (said    :initform nil :accessor said-of)
    (asked   :initform (d:no-map) :accessor asked-of)
-   (streams :initform nil :accessor streams))
-  (:documentation "Every shell line that has been run and what it said; what each
-line last said, kept for a breath; and the streams whose lines say the world
-moved."))
+   (streams :initform nil :accessor streams)))
 
 (defclass stream-node (fs:derived)
   ((line :initarg :line :reader line)
@@ -51,20 +37,17 @@ moved."))
 (defun ran () (ran-of *sh*))
 
 (defun %noted (line)
-  (d:swap (slot-value *sh* 'ran) #'d:capped line *kept*)
-  (fs:moved *sh*)
+  (sb-ext:atomic-update (slot-value *sh* 'ran) (lambda (old) (d:capped old line *ran-kept*)))
+  (fs:touch *sh*)
   line)
 
 (defun %kept (line out)
-  "Keep what a line said, so /sh can answer for it without running it again, and
-say the place moved. What a line last said is not a node, so nothing else can see
-it change."
-  (d:swap (slot-value *sh* 'said)
+  (sb-ext:atomic-update (slot-value *sh* 'said)
           (lambda (all)
             (d:capped (cl:remove line all :key #'car :test #'equal)
-                      (cons line out) *kept*)))
-  (let ((n (d:lookup (fs::memo *sh*) line)))
-    (when n (fs:moved n)))
+                      (cons line out) *ran-kept*)))
+  (let ((n (d:lookup (fs::dentries *sh*) line)))
+    (when n (fs:touch n)))
   out)
 
 (defun last-said (line) (cdr (assoc line (said-of *sh*) :test #'equal)))
@@ -77,20 +60,15 @@ it change."
     (declare (ignore err code))
     (%kept line out)))
 
-(defun %breathed () (* *breath* internal-time-units-per-second))
+(defun %breathed () (* *breath-seconds* internal-time-units-per-second))
 
 (defun %forget-stale (now)
-  "Let go of the answers whose breath has passed. Done when the table has grown
-rather than on every ask, so a line that is asked about every frame costs a lookup
-and nothing else."
   (let ((old (%breathed)))
     (d:do-map (line had (asked-of *sh*))
       (when (> (- now (cdr had)) old)
-        (d:swap (slot-value *sh* 'asked) #'d:without line)))))
+        (sb-ext:atomic-update (slot-value *sh* 'asked) (lambda (old) (d:without old line)))))))
 
 (defun asked (line)
-  "What a line says, remembered for a breath, so a panel reading three things out of
-one command runs it once and a bar built twice in a frame does not fork twice."
   (let* ((now (get-internal-real-time))
          (had (d:lookup (asked-of *sh*) line)))
     (cond ((and had (< (- now (cdr had)) (%breathed)))
@@ -99,37 +77,17 @@ one command runs it once and a bar built twice in a frame does not fork twice."
                (%forget-stale now))
              (meter:counted :sh-fork)
              (let ((said (%output line)))
-               (d:swap (slot-value *sh* 'asked) #'d:with line (cons said now))
+               (sb-ext:atomic-update (slot-value *sh* 'asked) (lambda (old) (d:with old line (cons said now))))
                said)))))
 
 (defun sh (format &rest arguments)
-  "Ask the machine something and answer what it said.
-
-A question, and remembered as one: two things reading /sys/cpu a moment apart are
-asking about the same moment. Telling the machine to do something is DID or ARGV,
-which are not."
   (meter:timing (:sh) (asked (apply #'format nil format arguments))))
 
 (defun did (format &rest arguments)
-  "Tell the machine to do something, through a shell, and answer what it said.
-
-Not remembered. An answer stands for a breath because a question asked twice in
-one frame has one answer; a thing done twice is done twice, and routing a write
-through the memo made muting twice inside a quarter of a second mute once."
   (meter:counted :sh-fork)
   (meter:timing (:sh) (%output (apply #'format nil format arguments))))
 
 (defun argv (&rest words)
-  "Run a program with these arguments and answer what it said. No shell.
-
-What a word says is what the program is given, so a value that came out of a
-config or off a socket is an argument and can never be a line of shell. Written
-into one it could say anything: a sink named `x; rm -rf ~' is a name a device
-takes, and quoting it is not an answer -- a double-quoted shell word still spells
-$(...).
-
-Not remembered either, for DID's reason. WITH a pipe or a redirect in it, a line
-is a shell line and SH is the one that runs it."
   (meter:counted :sh-fork)
   (meter:timing (:sh)
     (multiple-value-bind (out err code)
@@ -140,8 +98,6 @@ is a shell line and SH is the one that runs it."
       out)))
 
 (defun feed (line text)
-  "Give a program TEXT on its standard input. Not remembered: this is telling the
-machine something, and telling it twice is twice."
   (meter:counted :sh-fork)
   (with-input-from-string (in (princ-to-string text))
     (uiop:run-program (list "sh" "-c" line) :input in :output nil
@@ -167,7 +123,7 @@ machine something, and telling it twice is twice."
         (fault:or-nothing "what a program printed may not be a form"
           (read-from-string (subseq text start end)))))))
 
-(defun firstp (text) (first (lines text)))
+(defun first-line (text) (first (lines text)))
 
 (defun has (command) (plusp (length (sh "command -v ~a 2>/dev/null" command))))
 
@@ -186,7 +142,6 @@ machine something, and telling it twice is twice."
                             :output nil :error-output nil))
 
 (defun run-line (line)
-  "Run somebody's own program. This is what /sh remembers; asking a question is not."
   (%noted line)
   (launch (list "sh" "-l" "-c" (concatenate 'string "exec " line)))
   t)
@@ -206,8 +161,8 @@ machine something, and telling it twice is twice."
                :for said := (handler-case (read-line out nil nil)
                               (stream-error () nil))
                :while said
-               :do (d:swap (slot-value n 'said) #'d:capped said *lines-kept*)
-                   (fs:moved n))))))
+               :do (sb-ext:atomic-update (slot-value n 'said) (lambda (old) (d:capped old said *lines-kept*)))
+                   (fs:touch n))))))
   n)
 
 (defun quiet (n)
@@ -223,16 +178,14 @@ machine something, and telling it twice is twice."
   n)
 
 (defun streaming (line)
-  "A command whose output says the world moved, listened to for as long as pine
-runs."
-  (let ((n (fs:child *sh* (format nil "stream:~a" line)
+  (let ((n (fs:ensure-child *sh* (format nil "stream:~a" line)
                      (lambda ()
                        (make-instance 'stream-node :name line :parent *sh*
                                                    :line line)))))
     (pushnew n (streams *sh*))
     (hear n)))
 
-(defmethod fs:livep ((n stream-node) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((n stream-node) &optional name) (declare (ignore name)) t)
 
 (defmethod fs:works ((n stream-node)) (first (said n)))
 
@@ -240,16 +193,7 @@ runs."
   (if value (hear n) (quiet n))
   value)
 
-(defclass spoken (fs:derived) ()
-  (:documentation "One line at /sh/<line>: what it last said, and a place to tell it
-to run.
-
-Reading is not running. Every line is a place whether or not one has ever been
-run, and a read used to run it -- so /sh was a shell anything that could reach the
-namespace could type into, by asking it a question. A read is the one thing every
-way in may always do; running something is a write, and this is where it is said.
-
-One that has not run answers nothing. That is what ABSENT is for."))
+(defclass spoken (fs:derived) ())
 
 (defmethod fs:works ((n spoken)) (last-said (fs:name n)))
 
@@ -257,21 +201,19 @@ One that has not run answers nothing. That is what ABSENT is for."))
   (declare (ignore value))
   (run-line (fs:name n)))
 
-(defmethod fs:livep ((s shell) &optional name) (declare (ignore name)) t)
+(defmethod fs:volatile-p ((s shell) &optional name) (declare (ignore name)) t)
 
-(defmethod fs:entry ((s shell) name)
+(defmethod fs:child ((s shell) name)
   (let ((name (princ-to-string name)))
-    (fs:child s name (lambda () (make-instance 'spoken :name name :parent s)))))
+    (fs:ensure-child s name (lambda () (make-instance 'spoken :name name :parent s)))))
 
-(defmethod fs:entries ((s shell))
-  (mapcar (lambda (line) (fs:entry s line)) (ran-of s)))
+(defmethod fs:children ((s shell))
+  (mapcar (lambda (line) (fs:child s line)) (ran-of s)))
 
 (defun %shell ()
   (make-instance 'shell :name "sh" :describes "running something, and what it said"))
 
 (defun sh-node ()
-  "The shell, to put at /sh: the one there is, since what it has run is the image's
-and not a tree's."
   *sh*)
 
 (defun forget-all ()

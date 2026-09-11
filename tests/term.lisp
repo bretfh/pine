@@ -25,9 +25,9 @@ what the terminal is asked to colour."
      (unwind-protect (progn ,@body)
        (ignore-errors (pine/run/command:run "terminal-close")))))
 
-(test a-terminal-is-a-document-and-a-job-at-once
+(test a-terminal-is-a-buffer-and-a-job-at-once
   (with-terminal (term)
-    (is (typep term 'text:document))
+    (is (typep term 'text:buffer))
     (is (typep term 'job:job))
     (is (job:alivep term))
     (is (typep (text:mode-of term) 'pine/term:shell))
@@ -49,13 +49,13 @@ what the terminal is asked to colour."
 
 (test a-terminals-size-is-a-node
   (with-terminal (term)
-    (is (eql (pine/term:wide term)
-             (fs:contents (fs:at term "wide"))))
+    (is (eql (pine/term:width term)
+             (fs:contents (fs:at term "width"))))
     (pine/term:resize term 100 30)
-    (is (eql 100 (fs:contents (fs:at term "wide"))))
-    (is (eql 30 (fs:contents (fs:at term "tall"))))))
+    (is (eql 100 (fs:contents (fs:at term "width"))))
+    (is (eql 30 (fs:contents (fs:at term "height"))))))
 
-(test the-colour-a-program-asked-for-is-spans-on-the-document
+(test the-colour-a-program-asked-for-is-spans-on-the-buffer
   "A terminal's colour is not a thing of its own: it is spans over the text, which
 is what a search that has just landed says and what a parse says. One kind of
 thing, painted one way."
@@ -82,7 +82,7 @@ thing, painted one way."
       (is (find-if (lambda (run) (equal '(172 66 66) (subseq run 1 4))) runs)
           "the cell the grid painted carries the program's own red"))))
 
-(test the-frame-draws-a-terminal-like-any-document
+(test the-frame-draws-a-terminal-like-any-buffer
   (with-terminal (term)
     (setf (text:text term) (format nil "echo drawn-in-the-frame~%"))
     (is (until (lambda () (search "drawn-in-the-frame" (text:text term)))
@@ -90,7 +90,7 @@ thing, painted one way."
     (edit:show (edit:focused) term)
     (is (somewhere (edit:rows :cols 80 :lines 24) "drawn-in-the-frame"))))
 
-(test closing-one-takes-its-job-and-its-document-with-it
+(test closing-one-takes-its-job-and-its-buffer-with-it
   (let ((term (%terminal)))
     (let ((name (fs:name term)))
       (pine/run/command:run "terminal-close")
@@ -98,7 +98,7 @@ thing, painted one way."
       (is (null (job:named name)))
       (is (null (pine/term:terminals))))))
 
-(test a-terminal-runs-a-program-and-its-screen-is-the-document
+(test a-terminal-runs-a-program-and-its-screen-is-the-buffer
   "The whole of what a terminal is for, through the pty: what is typed reaches the
 program and what it wrote is text a window shows."
   (with-terminal (term)
@@ -107,5 +107,5 @@ program and what it wrote is text a window shows."
     (is (until (lambda () (search "from-the-program" (text:text term)))
                :seconds 5))
     (pine/term:resize term 100 30)
-    (is (eql 100 (fs:contents (fs:at term "wide"))))
-    (is (eql 30 (fs:contents (fs:at term "tall"))))))
+    (is (eql 100 (fs:contents (fs:at term "width"))))
+    (is (eql 30 (fs:contents (fs:at term "height"))))))

@@ -1,11 +1,6 @@
 (in-package #:pine/text)
 
 (defun load-language-entry (language library fn-name)
-  "The language pointer for LANGUAGE, if this machine has its grammar.
-
-A parser is made to ask whether the grammar will be taken and let go of again once
-it has answered. Kept, it was a TSParser per grammar that nothing ever used --
-every buffer makes its own, because a TSParser is not something two threads share."
   (unless library (return-from load-language-entry nil))
   (let ((lang (grammar-language-pointer library fn-name)))
     (when (and lang (not (cffi:null-pointer-p lang)))
@@ -19,25 +14,18 @@ every buffer makes its own, because a TSParser is not something two threads shar
 (defun %grammars (runtime) (grammars runtime))
 
 (defun %note-loaded (runtime language entry)
-  (d:swap (slot-value runtime 'grammars)
+  (sb-ext:atomic-update (slot-value runtime 'grammars)
            (lambda (state)
              (d:with state :loaded
                       (d:with (d:lookup state :loaded) language entry)))))
 
 (defun %note-missing (runtime language)
-  (d:swap (slot-value runtime 'grammars)
+  (sb-ext:atomic-update (slot-value runtime 'grammars)
            (lambda (state)
              (d:with state :missing
                       (d:with (d:lookup state :missing) language)))))
 
 (defun ensure-language (runtime language library fn-name)
-  "LANGUAGE's ts-entry, loaded the first time it is asked for, or NIL when its
-grammar is not here. A grammar already loaded is a slot read; only the loading
-itself is one thread at a time, because the loader's table is one table.
-
-The library and the C function come from the language's own declaration, which is
-why they are handed in: what grammars exist is something written rather than a
-list compiled in here."
   (or (d:lookup (d:lookup (%grammars runtime) :loaded) language)
       (bordeaux-threads:with-recursive-lock-held ((loading runtime))
         (unless (libs-loaded runtime) (ensure-ts runtime))
@@ -59,9 +47,6 @@ list compiled in here."
                          nil))))))))))
 
 (defun make-parse-state (runtime language lib fn &key syntax package)
-"A parse-state for LANGUAGE, or nil if the grammar is unavailable. SYNTAX is
-the compiled rules the walk follows; PACKAGE is the one a head symbol resolves
-in, so a macro defined in the buffer's own package is found."
   (let ((entry (ensure-language runtime language lib fn)))
     (when entry
       (let ((parser (ts-parser-new)))
@@ -85,17 +70,13 @@ in, so a macro defined in the buffer's own package is found."
       (setf (ps-scratch ps) nil))))
 
 (defun ps-read-buffer (ps)
-  "PS's foreign read buffer, allocated on first use."
   (or (ps-scratch ps)
       (setf (ps-scratch ps) (cffi:foreign-alloc :unsigned-char :count +read-chunk+))))
 
 (defun ps-offset (ps)
-  "The buffer line PS's tree starts at."
   (let ((band (ps-band ps))) (if band (car band) 0)))
 
 (defun %fill-scratch (lines index byte scratch size)
-  "Copy up to SIZE bytes of LINES from byte offset BYTE into SCRATCH. Answers
-how many were written, which is zero at the end of the buffer."
   (multiple-value-bind (line offset) (byte-line index byte)
     (let ((written 0)
           (n (d:size lines)))
@@ -137,7 +118,6 @@ how many were written, which is zero at the end of the buffer."
       (cffi:null-pointer))))
 
 (defun call-with-input (lines index scratch fn)
-  "Call FN with a TSInput reading LINES through INDEX, as a foreign value."
   (let ((*reading* (list lines index scratch +read-chunk+)))
     (cffi:with-foreign-object (input '(:struct ts-input))
       (setf (cffi:foreign-slot-value input '(:struct ts-input) 'payload)
@@ -151,16 +131,12 @@ how many were written, which is zero at the end of the buffer."
       (funcall fn (cffi:mem-ref input '(:struct ts-input))))))
 
 (defun %set-point (object type slot point)
-  "Write POINT into OBJECT's TSPoint SLOT. TYPE is OBJECT's own foreign type:
-ts-input-edit and ts-range both hold points, at different offsets."
   (let ((p (cffi:foreign-slot-pointer object type slot)))
     (setf (cffi:foreign-slot-value p '(:struct ts-point) 'row)    (car point)
           (cffi:foreign-slot-value p '(:struct ts-point) 'column) (cdr point))))
 
 (defun %tree-edit (tree start-byte old-end-byte new-end-byte
                    start-row old-end-row new-end-row)
-  "Shift TREE's positions for a change spanning whole lines. Columns are zero
-because the span runs from the start of one line to the start of another."
   (cffi:with-foreign-object (edit '(:struct ts-input-edit))
     (setf (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'start-byte) start-byte
           (cffi:foreign-slot-value edit '(:struct ts-input-edit) 'old-end-byte) old-end-byte
@@ -171,9 +147,6 @@ because the span runs from the start of one line to the start of another."
     (ts-tree-edit tree edit)))
 
 (defun %changed-row-span (old-tree new-tree)
-  "Union of changed line rows between OLD-TREE and NEW-TREE as (values lo hi),
-or nil when tree-sitter reports no changed ranges. The edit span alone
-under-approximates: an opened string quote recolours everything after it."
   (cffi:with-foreign-object (len :uint32)
     (let ((ranges (ts-tree-get-changed-ranges old-tree new-tree len)))
       (unwind-protect
@@ -190,10 +163,6 @@ under-approximates: an opened string quote recolours everything after it."
           (cffi:foreign-free ranges))))))
 
 (defun %record-hl-edit (ps old new start-row old-end-row new-end-row)
-  "Note one edit for incremental highlighting: rows from tree-sitter's changed
-ranges unioned with the raw edit's rows (a pure line insert shifts everything
-below while changing no named ranges), plus the line delta. A second edit before
-the next highlight call, or any failure here, marks the cache stale."
   (when (ps-hl-cache ps)
     (if (ps-hl-pending ps)
         (setf (ps-hl-stale ps) t)
@@ -209,7 +178,6 @@ the next highlight call, or any failure here, marks the cache stale."
           (error () (setf (ps-hl-stale ps) t))))))
 
 (defun %band (lines viewport)
-  "The line band to parse for VIEWPORT over LINES, or NIL for all of them."
   (let ((n (d:size lines)))
     (when (and viewport (> n +whole-file-lines+))
       (cons (max 0 (* +band-lines+ (floor (car viewport) +band-lines+)))
@@ -217,7 +185,6 @@ the next highlight call, or any failure here, marks the cache stale."
                                                      +band-lines+))))))))
 
 (defun %band-lines (lines band)
-  "The subsequence of LINES that BAND covers, or LINES itself when BAND is nil."
   (if band
       (fset:subseq lines (car band)
                    (min (d:size lines) (1+ (cdr band))))

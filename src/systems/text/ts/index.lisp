@@ -1,9 +1,6 @@
 (in-package #:pine/text)
 
-(defparameter +compact-after+ 64
-  "Pending edits to carry before rebuilding the base. A query costs one pass over
-the pending list, and a rebuild costs a pass over the file, so this trades a
-bounded per-query cost against an amortised per-edit one.")
+(defparameter +compact-after+ 64)
 
 (defstruct (byte-index (:constructor %make-index))
 
@@ -28,7 +25,6 @@ bounded per-query cost against an amortised per-edit one.")
           (t 4))))
 
 (defun string-bytes (string)
-  "STRING's length in UTF-8 bytes, counted rather than encoded."
   (let ((n 0))
     (declare (type (unsigned-byte 62) n))
     (loop :for ch :across string :do (incf n (%char-bytes ch)))
@@ -37,7 +33,6 @@ bounded per-query cost against an amortised per-edit one.")
 (defun %line-byte-length (line) (string-bytes line))
 
 (defun build-index (lines)
-  "A fresh index over LINES, with no pending edits."
   (let* ((n (d:size lines))
          (starts (make-array (1+ n) :element-type '(unsigned-byte 62)))
          (offset 0)
@@ -55,8 +50,6 @@ bounded per-query cost against an amortised per-edit one.")
   (d:size (byte-index-lines index)))
 
 (defun %shift (index line)
-  "The byte shift the pending edits apply at LINE, and the base line LINE came
-from."
   (let ((shift 0) (base-line line))
     (declare (type integer shift))
     (dolist (edit (byte-index-pending index) (values shift base-line))
@@ -66,28 +59,24 @@ from."
           (decf base-line line-delta))))))
 
 (defun line-start (index line)
-  "The byte offset LINE begins at."
   (let ((starts (byte-index-starts index)))
     (multiple-value-bind (shift base-line) (%shift index line)
       (let ((clamped (max 0 (min base-line (1- (length starts))))))
         (max 0 (+ (aref starts clamped) shift))))))
 
 (defun index-total (index)
-  "The whole buffer's byte length."
   (let ((shift 0))
     (dolist (edit (byte-index-pending index))
       (incf shift (second edit)))
     (max 0 (+ (byte-index-base-total index) shift))))
 
 (defun line-bytes (index line)
-  "LINE's own byte length, without its newline."
   (let ((lines (byte-index-lines index)))
     (if (< line (d:size lines))
         (%line-byte-length (d:lookup lines line))
         0)))
 
 (defun byte-line (index byte)
-  "The line BYTE falls in, and its byte offset within that line."
   (let ((n (index-line-count index)))
     (if (zerop n)
         (values 0 0)
@@ -101,9 +90,6 @@ from."
           (values lo (max 0 (- byte (line-start index lo))))))))
 
 (defun %byte-offset-to-col (line offset)
-  "(values COL BYTES): the character column OFFSET bytes into LINE, and the byte
-offset COL itself begins at. The two differ when OFFSET falls inside a character,
-and only the pair is safe to resume a count from."
   (let ((bytes 0) (col 0))
     (loop :for ch :across line
           :while (< bytes offset)
@@ -112,15 +98,12 @@ and only the pair is safe to resume a count from."
     (values col bytes)))
 
 (defun %col-to-byte-offset (line col)
-  "The byte offset COL characters into LINE."
   (let ((bytes 0))
     (loop :for i :below (min col (length line))
           :do (incf bytes (%char-bytes (char line i))))
     bytes))
 
 (defun line-string (index line)
-  "LINE's text, or the empty string past the end. Memoised on the last line
-asked for, which a walk asks about once per node."
   (if (= line (byte-index-memo-line index))
       (byte-index-memo-text index)
       (let* ((lines (byte-index-lines index))
@@ -134,10 +117,6 @@ asked for, which a walk asks about once per node."
         text)))
 
 (defun %col-at (index line offset)
-  "The character column OFFSET bytes into LINE.
-
-Carried forward from the last column asked for on this line: a walk emits spans
-left to right, so counting resumes rather than starting over."
   (let ((text (line-string index line)))
     (if (>= offset (byte-index-memo-offset index))
         (let ((bytes (byte-index-memo-offset index))
@@ -154,16 +133,13 @@ left to right, so counting resumes rather than starting over."
           col))))
 
 (defun source-line-col (index byte)
-  "The (values line character-column) that BYTE falls at."
   (multiple-value-bind (line offset) (byte-line index byte)
     (values line (%col-at index line offset))))
 
 (defun source-byte (index line col)
-  "The byte offset of LINE at character column COL."
   (+ (line-start index line) (%col-to-byte-offset (line-string index line) col)))
 
 (defun source-substring (index start-byte end-byte)
-  "The characters between two byte offsets, spanning lines, newlines included."
   (if (>= start-byte end-byte)
       ""
       (multiple-value-bind (start-line start-offset) (byte-line index start-byte)
@@ -188,7 +164,6 @@ left to right, so counting resumes rather than starting over."
                         (when (< line end-line) (write-char #\Newline out)))))))))
 
 (defun source-char-at (index byte)
-  "The character at BYTE, or nil past the end."
   (multiple-value-bind (line offset) (byte-line index byte)
     (let* ((text (line-string index line))
            (col (%col-at index line offset)))
@@ -197,7 +172,6 @@ left to right, so counting resumes rather than starting over."
             (t nil)))))
 
 (defun forget-line (index)
-  "Drop the memoised line, so the next question about one reads it afresh."
   (setf (byte-index-memo-line index) -1
         (byte-index-memo-text index) ""
         (byte-index-memo-offset index) 0
@@ -205,15 +179,6 @@ left to right, so counting resumes rather than starting over."
   index)
 
 (defun index-edit (index lines line byte-delta line-delta)
-  "INDEX over LINES after an edit at LINE that changed the buffer by BYTE-DELTA
-bytes and LINE-DELTA lines.
-
-A pending shift can only move whole lines, so it describes an edit within one
-line and nothing else. A newline splits a line and the new one starts in the
-middle of the old, at an offset no shift can name; a join is the same in reverse.
-Those rebuild the base. That is a pass over the file, but it happens on the
-parser's thread and only when the line count actually changes, while ordinary
-typing stays a cons."
   (if (not (zerop line-delta))
       (build-index lines)
       (let ((pending (cons (list line byte-delta line-delta)
@@ -227,5 +192,4 @@ typing stays a cons."
                    index)))))
 
 (defun compact-index (index)
-  "Rebuild INDEX's base from the lines it now describes."
   (build-index (byte-index-lines index)))

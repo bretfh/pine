@@ -24,8 +24,7 @@
 is printed above the numbers, so a number can never appear without saying where it
 came from."
   (declare (ignore options))
-  `(d:swap *workloads* #'d:with ,(string-downcase (string name))
-            (list :drives ,drives :run (lambda () ,@body))))
+  `(sb-ext:atomic-update *workloads* (lambda (old) (d:with old ,(string-downcase (string name)) (list :drives ,drives :run (lambda () ,@body))))))
 
 (defun %lisp-text (lines)
   (format nil "~{~a~^~%~}"
@@ -35,12 +34,12 @@ came from."
 (defun %sized ()
   "Say how big the surface came out, the way the screen would."
   (setf (fs:contents (fs:at nil "surface/editor/size"))
-        (list :wide (* 9 +cols+) :tall (* 18 +lines+)
+        (list :width (* 9 +cols+) :height (* 18 +lines+)
               :cols +cols+ :lines +lines+ :font 15)))
 
 (defun %parsed (d &key (seconds 60))
-  "Wait for the parse to catch up with the document. Setting a workload up is not
-the workload: what is timed below starts from a document already walked."
+  "Wait for the parse to catch up with the buffer. Setting a workload up is not
+the workload: what is timed below starts from a buffer already walked."
   (let ((p (text:parser-for d)))
     (when p
       (loop :repeat (round (/ seconds 0.02))
@@ -49,11 +48,11 @@ the workload: what is timed below starts from a document already walked."
     p))
 
 (defun %shown (name lines)
-  "A document of LINES lines, in the window, parsed once before anything is timed."
-  (let ((d (text:make-document name :mode (make-instance 'mode:lisp)))
+  "A buffer of LINES lines, in the window, parsed once before anything is timed."
+  (let ((d (text:make-buffer name :mode (make-instance 'mode:lisp)))
         (w (edit:focused)))
     (setf (fs:contents d) (%lisp-text lines))
-    (setf (edit:across w) +cols+ (edit:down w) +lines+)
+    (setf (edit:width w) +cols+ (edit:height w) +lines+)
     (edit:show w d)
     (setf (text:current) d)
     (text:goto d 10 0)
@@ -70,7 +69,7 @@ the workload: what is timed below starts from a document already walked."
   (pine:use :edit))
 
 (workload typing ()
-    "a key at a time through the keymap into a document being shown, and the tree
+    "a key at a time through the keymap into a buffer being shown, and the tree
 the screen is handed after each: the key, the parse, the surface and the wire a
 keystroke really makes"
   (%ready)
@@ -81,7 +80,7 @@ keystroke really makes"
     (%parsed d :seconds 30)))
 
 (workload paging ()
-    "page down and back through a document being shown: the band moves, so the
+    "page down and back through a buffer being shown: the band moves, so the
 parse and the highlight walk are re-driven at every screen"
   (%ready)
   (let ((d (%shown "paging" *size*))
@@ -103,7 +102,7 @@ parse and the highlight walk are re-driven at every screen"
     (funcall (getf (d:lookup *workloads* "typing") :run))))
 
 (workload cold ()
-    "what the first of everything costs: the first parse of a document, and the
+    "what the first of everything costs: the first parse of a buffer, and the
 first tree the screen is handed"
   (%ready)
   (%shown "cold" *size*)
@@ -123,10 +122,10 @@ surface built, the tree written down, and what came out the same as before"
               (sleep 1/20))))
 
 (workload many ()
-    "two hundred documents and the frame that has to keep working with them open"
+    "two hundred buffers and the frame that has to keep working with them open"
   (%ready)
   (dotimes (n 200)
-    (let ((d (text:make-document (format nil "many-~d" n)
+    (let ((d (text:make-buffer (format nil "many-~d" n)
                                 :mode (make-instance 'mode:lisp))))
       (setf (fs:contents d) (%lisp-text 50))))
   (let ((d (%shown "many-shown" *size*)))

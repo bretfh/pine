@@ -7,13 +7,13 @@
 (defun app ()
   "The example app, loaded the way pine's own are: an asdf system, by its name."
   (editing)
-  (unless (system:named "notes") (pine:use :notes))
-  (system:named "notes"))
+  (unless (module:named "notes") (pine:use :notes))
+  (module:named "notes"))
 
 (test an-app-is-a-system-like-any-other
   (is (not (null (app))))
   (is (not (null (fs:at "/proc/notes"))))
-  (is (member "notes" (mapcar #'job:name (system:systems)) :test #'equal)))
+  (is (member "notes" (mapcar #'job:name (module:modules)) :test #'equal)))
 
 (test its-own-kind-of-node-is-a-place
   (app)
@@ -42,23 +42,23 @@
 
 (test its-own-mode-gives-its-text-structure
   (app)
-  (let ((document (text:make-document "diary.note")))
-    (setf (text:text document)
+  (let ((buffer (text:make-buffer "diary.note")))
+    (setf (text:text buffer)
           (format nil "* Today~%it works~%* Tomorrow~%it still does~%"))
-    (setf (text:mode-of document) (mode:mode-for "diary.note"))
+    (setf (text:mode-of buffer) (mode:mode-for "diary.note"))
     (is (string-equal "notes"
                       (package-name
                        (symbol-package
-                        (class-name (class-of (text:mode-of document))))))
+                        (class-name (class-of (text:mode-of buffer))))))
         "the mode that claims the file is the app's own")
-    (text:restructure document)
+    (text:restructure buffer)
     (is (equal '("Today" "Tomorrow")
-               (mapcar #'fs:name (text:regions (fs:at document "heading")))))
+               (mapcar #'fs:name (text:regions (fs:at buffer "heading")))))
     (is (equal (format nil "* Today~%it works")
-               (fs:contents (fs:at document "heading/Today/text"))))
-    (setf (fs:contents (fs:at document "heading/Today/text"))
+               (fs:contents (fs:at buffer "heading/Today/text"))))
+    (setf (fs:contents (fs:at buffer "heading/Today/text"))
           (format nil "* Today~%it really works"))
-    (is (search "it really works" (text:text document))
+    (is (search "it really works" (text:text buffer))
         "and writing one replaces that span")
     (text:kill "diary.note")))
 
@@ -92,7 +92,7 @@
   (app)
   (pine:drop :notes)
   (setf *app* t)
-  (is (null (system:named "notes")))
+  (is (null (module:named "notes")))
   (is (null (fs:at "/notes")))
   (is (null (fs:at "/ui/surface" "sticky")))
   (is (null (command:named "note")))
@@ -103,15 +103,15 @@
 (defun vcs-app ()
   "The other example: an app that brings a device of its own."
   (editing)
-  (unless (system:named "vcs") (pine:use :vcs))
-  (system:named "vcs"))
+  (unless (module:named "vcs") (pine:use :vcs))
+  (module:named "vcs"))
 
 (test an-app-can-bring-a-device-of-its-own
   "A device used to be a function PINE/HOST/DEVICE exported, so /dev was a closed
 list and nothing anybody wrote could add to it. A declaration is a thing a package
 that uses PINE/USER and nothing else can make."
   (vcs-app)
-  (is (not (null (host::declared "vcs"))) "the app declared one")
+  (is (not (null (host::device-class "vcs"))) "the app declared one")
   (is (not (null (fs:at "/dev/vcs"))) "and it stands in the namespace")
   (is (equal '("branch" "dirty" "head") (fs:contents (fs:at "/dev/vcs")))
       "every reading either of its backings declares")
@@ -126,7 +126,7 @@ that uses PINE/USER and nothing else can make."
   (vcs-app)
   (pine:drop :vcs)
   (setf *vcs* t)
-  (is (null (system:named "vcs")))
+  (is (null (module:named "vcs")))
   (is (null (fs:at "/dev/vcs")) "the device it put under /dev")
   (is (null (fs:at "/work")) "the place it put up")
   (is (null (fs:at "/ui/surface" "board")) "its surface")
@@ -153,17 +153,17 @@ half worked and nothing said which half."
       (is (member :probe-key (ui:properties)) "the style key is there")
       (is (member :probe-theme (pine/ui::themes)) "the theme is there")
       (is (member :probe-category (pine/edit::sources)) "the prompt source is there")
-      (is (not (null (host::declared "%probe-owned"))) "the declaration is there")
+      (is (not (null (host::device-class "%probe-owned"))) "the declaration is there")
       (is (not (null (fs:at "/ui/surface" "probe-surface"))) "the surface is there")
       (is (not (null (mode:binding (make-instance 'mode:text) "C-c C-probe")))
           "the chord is there")
 
-      (pine/run/system::%take-down home)
+      (pine/run/module::%take-down home)
 
       (is (not (member :probe-key (ui:properties))) "and the style key goes")
       (is (not (member :probe-theme (pine/ui::themes))) "and the theme goes")
       (is (not (member :probe-category (pine/edit::sources))) "and the source goes")
-      (is (not (null (host::declared "%probe-owned")))
+      (is (not (null (host::device-class "%probe-owned")))
           "the declaration stays: a class was loaded, not put up")
       (is (null (fs:at "/ui/surface" "probe-surface")) "and the surface goes")
       (is (null (mode:binding (make-instance 'mode:text) "C-c C-probe"))
@@ -171,20 +171,20 @@ half worked and nothing said which half."
 
 (test a-surface-that-has-gone-leaves-no-closure-behind
   "What a widget meant crosses the wire as an id and stays on the surface under
-it. A click on an id of a surface that has gone runs nothing."
+it. A on-click on an id of a surface that has gone runs nothing."
   (with-tree
     (let ((home "pine/test/probe-acts")
           (ran nil))
       (let ((fs:*owner* home))
         (ui:make-surface "probe-acts"
-                         (lambda () (ui:button :click (lambda () (setf ran t))
+                         (lambda () (ui:button :on-click (lambda () (setf ran t))
                                                (ui:label "hi")))
                          :as 'ui:panel))
       (let ((id (first (d:keys (pine/ui::acts (fs:at "/ui/surface" "probe-acts"))))))
         (fs:contents (fs:at "/ui/surface/probe-acts/wire"))
         (let ((id (or id (first (d:keys (pine/ui::acts (fs:at "/ui/surface" "probe-acts")))))))
-          (is (not (null id)) "the click crossed as an id")
-          (pine/run/system::%take-down home)
+          (is (not (null id)) "the on-click crossed as an id")
+          (pine/run/module::%take-down home)
           (is (null (fs:at "/ui/surface" "probe-acts")) "the surface goes")
           (pine/ui::act "probe-acts" (list id))
           (is (null ran) "and its closures went with it"))))))
@@ -198,7 +198,7 @@ second, pine write /x '1 2' read 1 and wrote it, losing the rest without saying 
   (is (= 42 (pine/cli::%value "42")) "one whole form is still that form")
   (is (eq :k (pine/cli::%value ":k")))
   (is (eq t (pine/cli::%value "t")))
-  (is (equal "wide" (pine/cli::%value "wide")) "and a bare word is a word"))
+  (is (equal "width" (pine/cli::%value "width")) "and a bare word is a word"))
 
 (test nothing-answering-is-told-apart-from-not-answering
   "A timeout against a daemon that is up and busy read as no daemon at all, which

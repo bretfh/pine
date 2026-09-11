@@ -35,7 +35,7 @@
         (setf below name)))
     below))
 
-(defun wide (n)
+(defun width (n)
   (k:write "/n" 1)
   (dotimes (i n)
     (k:make (format nil "/wide/~d" i) :derived (lambda () (k:read "/n"))))
@@ -70,7 +70,7 @@
          (lambda () (k:write "/n" (random 100)) (k:read last))))
 
   (fresh)
-  (let ((places (wide 1000)))
+  (let ((places (width 1000)))
     (graph:all-worked places)
     (say "read one of a thousand, nothing moved" *runs*
          (lambda () (k:read "/wide/500")))

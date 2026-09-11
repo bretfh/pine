@@ -4,9 +4,7 @@
 
 (defparameter +roles+
   '(:form :body :here :quoted :skip :operand :package :name :binding-name
-    :bindings :binding :vars :var :lambda-list :types :slots :slot :path)
-  "How a position of a form is walked. A rule composes these; anything in a
-:shape or :fields position that is not one of them names a face to paint with.")
+    :bindings :binding :vars :var :lambda-list :types :slots :slot :path))
 
 (declaim (optimize (speed 3) (safety 1)))
 
@@ -29,7 +27,7 @@
 (defun ts-type= (node &rest types)
   (member (ts-node-type node) types :test #'string=))
 
-(defstruct (language (:conc-name lang-) (:predicate languagep))
+(defstruct (rules (:conc-name rules-) (:predicate rulesp))
   name
   grammar
   (indent-width 2)
@@ -42,30 +40,20 @@
   raw)
 
 (defun node-rule (lang type)
-  (or (gethash type (lang-nodes lang)) (lang-otherwise lang)))
+  (or (gethash type (rules-nodes lang)) (rules-otherwise lang)))
 
 (defun head-rule (lang name &optional package)
-  "What a form headed by NAME does to its elements.
-
-The written rule first, then whatever the language can work out about the name
-and remembers. A language with nothing to say answers nothing, and a head with
-no rule is an ordinary call.
-
-PACKAGE is where the buffer's text reads its symbols, because that is where the
-symbol is: a macro a config defined lives in the config's package, not in CL.
-The memo is keyed by it for the same reason, since the same name somewhere else
-is a different symbol."
   (when name
-    (let ((written (gethash name (lang-heads lang))))
+    (let ((written (gethash name (rules-heads lang))))
       (or written
           (let ((key (cons name (and package (package-name package)))))
-            (multiple-value-bind (known found) (d:lookup (lang-memo lang) key)
+            (multiple-value-bind (known found) (d:lookup (rules-memo lang) key)
               (cond (found (unless (eq known :none) known))
-                    ((null (lang-infer lang))
-                     (d:swap (lang-memo lang) #'d:with key :none)
+                    ((null (rules-infer lang))
+                     (sb-ext:atomic-update (rules-memo lang) (lambda (old) (d:with old key :none)))
                      nil)
-                    (t (let ((answer (funcall (lang-infer lang) name package)))
-                         (d:swap (lang-memo lang) #'d:with key (or answer :none))
+                    (t (let ((answer (funcall (rules-infer lang) name package)))
+                         (sb-ext:atomic-update (rules-memo lang) (lambda (old) (d:with old key (or answer :none))))
                          answer)))))))))
 
 (defstruct (ctx (:conc-name ctx-) (:copier nil))
@@ -74,9 +62,6 @@ is a different symbol."
 
 (defun %deeper (ctx &key (depth (1+ (ctx-depth ctx))) (quoted (ctx-quoted ctx))
                          (head (ctx-head ctx)) (index (ctx-index ctx)))
-  "CTX one level in. The accumulator is a slot of the copy, so what a nested
-walk emits has to be carried back: EMIT pushes onto the ctx it was given, and
-%WALK hands the list back up."
   (let ((next (copy-structure ctx)))
     (setf (ctx-depth next) depth (ctx-quoted next) quoted
           (ctx-head next) head (ctx-index next) index)
@@ -87,15 +72,9 @@ walk emits has to be carried back: EMIT pushes onto the ctx it was given, and
                                      (ts-node-end-byte node))))
 
 (defun %to-the-end (src line)
-  "The column a run reaches when it reaches the end of LINE. A number written in
-here instead cut every run short on a line longer than the number: nine hundred and
-ninety nine characters is a line generated code has, and a minified one has more."
   (length (line-string src line)))
 
 (defun %emit (start-byte end-byte face ctx)
-  "Paint bytes START..END. A span crossing a line becomes one run per line; a
-zero-width one paints nothing, since a comment's extent ends at column 0 of the
-next line and that would straddle the incremental window's boundary."
   (when face
     (let ((src (ctx-src ctx)) (acc (ctx-acc ctx)))
       (multiple-value-bind (sl sc) (source-line-col src start-byte)
@@ -112,15 +91,13 @@ next line and that would straddle the incremental window's boundary."
   (%emit (ts-node-start-byte node) (ts-node-end-byte node) face ctx))
 
 (defun %delimiters (node ctx &optional (open 1))
-  "The opening and closing tokens, faced by form depth. OPEN is how wide the
-opener is: a set opens with two characters."
   (let ((s (ts-node-start-byte node)) (e (ts-node-end-byte node))
         (face (delimiter-face (ctx-depth ctx))))
     (%emit s (+ s open) face ctx)
     (%emit (1- e) e face ctx)))
 
 (defun %constant-p (name ctx)
-  (let ((set (lang-constants (ctx-syntax ctx))))
+  (let ((set (rules-constants (ctx-syntax ctx))))
     (and set (gethash name set) t)))
 
 (defun %operand-face (node ctx)
@@ -155,9 +132,6 @@ opener is: a set opens with two characters."
            (%walk node (%deeper ctx))))))
 
 (defun %segment-face (text lastp)
-  "What one segment of a path paints. A binder is a binder wherever it sits, a
-pattern operator is an operator, and what leads up to the leaf recedes the way
-a package prefix does."
   (let ((n (length text)))
     (cond ((and (>= n 1) (char= #\? (char text 0))) :variable-param)
           ((or (string= text "*") (string= text "**")) :keyword)
@@ -166,9 +140,6 @@ a package prefix does."
           (t :namespace))))
 
 (defun %path (node ctx)
-  "A path is one object painted in parts. The whole node takes the separators'
-face first and each part paints over it, which is what the per-column rule of
-a later property winning is for."
   (%emit-node node :quote ctx)
   (let* ((parts (ts-named-nodes node))
          (last (car (last parts))))

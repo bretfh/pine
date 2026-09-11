@@ -3,15 +3,11 @@
 (named-readtables:in-readtable pine/fs/reader:syntax)
 
 (defclass lang (fs:value)
-  ((compiled :initarg :compiled :reader compiled))
-  (:documentation "A language at /lang/<name>: what was declared for it, and
-beside it what that compiles to."))
+  ((compiled :initarg :compiled :reader compiled)))
 
-(defmethod fs:savedp ((l lang)) nil)
+(defmethod fs:persistent-p ((l lang)) nil)
 
 (defgeneric infers (language name package)
-  (:documentation "What LANGUAGE guesses a form headed by NAME does, where the
-declaration says nothing. A method on the language's name.")
   (:method (language name package)
     (declare (ignore language name package))
     nil))
@@ -98,7 +94,7 @@ declaration says nothing. A method on the language's name.")
   (let* ((options (d:lookup raw :options))
          (indent (d:lookup options :indent))
          (infer (lambda (head package) (infers name head package))))
-    (make-language
+    (make-rules
      :name name
      :grammar (d:lookup options :grammar)
      :indent-width (or (d:lookup indent :width) 2)
@@ -115,14 +111,13 @@ declaration says nothing. A method on the language's name.")
 (defun %langs () (fs:at "/lang"))
 
 (defun declare-language (name raw &key parent)
-  "Declare a language at /lang/<name>."
   (let ((full (%inherit (and parent (%raw parent)) raw)))
     (fs:mount (lambda () (make-instance 'lang :held full :compiled (%compile name full)))
               (format nil "/lang/~a" (string-downcase (string name))))
     name))
 
 (defun %declared (name)
-  (let ((it (fs:entry (%langs) (string-downcase (string name)))))
+  (let ((it (fs:child (%langs) (string-downcase (string name)))))
     (and (typep it 'lang) it)))
 
 (defun %raw (name)
@@ -132,28 +127,23 @@ declaration says nothing. A method on the language's name.")
   (let ((it (%declared name))) (and it (compiled it))))
 
 (defun languages ()
-  (sort (loop :for each :in (fs:entries (%langs))
+  (sort (loop :for each :in (fs:children (%langs))
               :when (typep each 'lang)
                 :collect (intern (string-upcase (fs:name each)) :keyword))
         #'string< :key #'string))
 
 (defmethod readtable-of ((name symbol))
-  "The readtable a language is written in, when it says: a language whose
-reader is not the standard one names it here."
   (let ((said (d:lookup (d:lookup (%raw name) :options) :readtable)))
     (when said (fault:or-nothing "a declaration may name no readtable"
                  (named-readtables:find-readtable said)))))
 
 (defun for-readtable (readtable)
-  "The language written in READTABLE. This is what a buffer's own
-(in-readtable) picks: the file says what it is written in, and the grammar
-follows it rather than the path it happens to be under."
   (when readtable
     (find-if (lambda (name) (eq readtable (readtable-of name))) (languages))))
 
 (defun grammar-of (name)
   (let* ((lang (for name))
-         (g (and lang (lang-grammar lang))))
+         (g (and lang (rules-grammar lang))))
     (when g (values (d:lookup g :lib) (d:lookup g :fn)))))
 
 (defun %state (runtime name)

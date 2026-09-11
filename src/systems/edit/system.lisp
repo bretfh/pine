@@ -4,12 +4,12 @@
                     (#:fault #:pine/run/fault) (#:image #:pine/run/image)
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
                     (#:meter #:pine/run/meter) (#:mode #:pine/mode)
-                    (#:fs #:pine/fs) (#:session #:pine/run/session)
-                    (#:system #:pine/run/system) (#:text #:pine/text) (#:ui #:pine/ui))
+                    (#:fs #:pine/fs) (#:listener #:pine/run/listener)
+                    (#:module #:pine/run/module) (#:text #:pine/text) (#:ui #:pine/ui))
   (:export
-   #:prompt #:listing #:windows #:focused #:focus
-   #:shows #:scrolled #:sideways #:across #:down
-   #:split #:close-window #:only #:seed #:show
+   #:prompt #:listing #:panes #:focused #:focus
+   #:shows #:scrolled #:sideways #:width #:height
+   #:split #:close-pane #:only #:seed #:show
    #:follow #:name-of #:annotation #:matches #:askingp
    #:ask #:cancel #:so-far #:asked #:candidates
    #:chosen #:matching #:filep #:dispatch #:rows #:completes
@@ -18,8 +18,5 @@
    #:banner #:arglist #:type-text))
 (in-package #:pine/edit)
 
-(defclass edit (system:system) ()
-  (:documentation "Windows onto documents, the chords that act on them, and the
-surface pine shows. A system like any other: nothing in the substrate names
-it."))
+(defclass edit (module:module) ())
 

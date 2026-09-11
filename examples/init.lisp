@@ -43,7 +43,7 @@
 (bind 'text "C-c h" "hello")
 
 ;; The window manager has chords of its own, bound the same way. A chord in TEXT
-;; is what a key means in a document, so it is heard while a document has the
+;; is what a key means in a buffer, so it is heard while a buffer has the
 ;; keyboard; a chord in WM is one the compositor takes and hands over whatever is
 ;; focused, which is what makes it a window manager's rather than an editor's.
 
@@ -65,9 +65,9 @@
         :for i :from 0
         :collect (if (zerop i)
                      (placed id :x (x-of area) :y (y-of area)
-                                :wide 320 :tall (tall-of area))
+                                :width 320 :height (height-of area))
                      (placed id :x (+ (x-of area) 320) :y (y-of area)
-                                :wide (- (wide-of area) 320) :tall (tall-of area)))))
+                                :width (- (width-of area) 320) :height (height-of area)))))
 
 ;; A role is a class too, and it is the whole of what a kind of surface means:
 ;; one ANCHOR method puts a new one on screen and nothing showing it needs knowledge
@@ -79,7 +79,7 @@
 (defmethod shows ((r ticker)) :always)
 
 (defmethod anchor ((r ticker) width height)
-  (placing :edges '(:bottom :right) :wide width :tall height
+  (placing :edges '(:bottom :right) :width width :height height
            :margin (inset :right 12 :bottom 12)))
 
 (defsurface ticker (:as 'ticker)
@@ -90,18 +90,18 @@
 ;; writing one of their names makes it the default. A row per thing is MAPCAR.
 
 (defun sink-row (sink)
-  (choice :class "sink" :click (map /dev/audio/sink (getf sink :name))
+  (choice :class "sink" :on-click (map /dev/audio/sink (getf sink :name))
           (label (getf sink :name)
                  :class (if (getf sink :default) "sink-name on" "sink-name"))))
 
 ;; A surface reads nodes and follows them: nothing subscribes to anything, and a
-;; write two levels down works this out again exactly once.
+;; write two levels height works this out again exactly once.
 
 (defsurface sound (:as 'panel)
   (column :class "panel" :align :stretch
           (label "Sound" :class "panel-title")
           (row :align :center :spacing 12
-               (button :class "mute" :click (lambda () (toggle /dev/audio/muted))
+               (button :class "mute" :on-click (lambda () (toggle /dev/audio/muted))
                        (label (if (read /dev/audio/muted) "muted" "on")))
                (slider /dev/audio/volume :class "level" :low 0 :high 100 :expand 1)
                (label (format nil "~d%" (read /dev/audio/volume :else 0))))

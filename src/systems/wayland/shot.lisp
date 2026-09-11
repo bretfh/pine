@@ -3,8 +3,6 @@
 (defparameter +background+ '(30 30 46))
 
 (defun %measured (tree &key (width 800) (height 600) (font 14))
-  "How big TREE wants to be in pixels, and the canvas it was measured on. The
-measurement is cairo's, so it is the one the paint will use."
   (let* ((s (cl-cairo2:create-image-surface :argb32 1 1))
          (m (make-instance 'canvas
                            :context (cl-cairo2:create-context s)
@@ -19,8 +17,6 @@ measurement is cairo's, so it is the one the paint will use."
 
 (defun draw (tree path &key (width 800) (height 600) (font 14)
                             (background +background+))
-  "Draw TREE onto a PNG. No display and no compositor: this is what would land on
-the screen, in a file you can look at."
   (let* ((s (cl-cairo2:create-image-surface :argb32 width height))
          (context (cl-cairo2:create-context s))
          (m (make-instance 'canvas :context context :size font)))
@@ -44,9 +40,6 @@ the screen, in a file you can look at."
       (cl-cairo2:destroy s))))
 
 (defun every-surface (&key (into "/tmp/") (width 800) (height 600))
-  "Every surface that is up, each as a PNG at the size it asked for. A bar is drawn
-as tall and as narrow as it measured, rather than stretched to fill a window it
-would never be given."
   (loop :for each :in (ui:surfaces)
         :when (ui:shown each)
           :collect (let ((tree (ui:tree each)))

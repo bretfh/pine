@@ -48,7 +48,7 @@ readtable, and a fault in it is a fault like any other rather than a crash."
     (is (not (null l)) "it is offered like the ones pine ships")
     (is (equal '((1 0 0 320 720) (2 320 0 960 720))
                (mapcar #'pine/wm::%plainly
-                       (tiles:arrange l '(1 2) (tiles:area :wide 1280 :tall 720)))))))
+                       (tiles:arrange l '(1 2) (tiles:area :width 1280 :height 720)))))))
 
 (test a-surface-a-config-declared-crosses-the-wire
   (editing)
@@ -88,8 +88,8 @@ language and not the syntax, so /dev/audio/volume was an error at the prompt."
   (let ((s (pine:console)))
     (unwind-protect
          (is (eq (named-readtables:find-readtable 'pine/fs/reader:syntax)
-                 (pine/run/session::readtable-of s)))
-      (pine/run/session:close s))))
+                 (pine/run/listener::readtable-of s)))
+      (pine/run/listener:close s))))
 
 (defpackage #:pine/test/probe-words (:use) (:export #:%probe-word #:%probe-taken))
 (defun pine/test/probe-words:%probe-word () :from-the-package)

@@ -2,12 +2,7 @@
 
 (defparameter +form-openers+
   '(("list_lit" . 1) ("defun" . 1) ("loop_macro" . 1) ("set_lit" . 2)
-    ("map_lit" . 1) ("seq_lit" . 1))
-  "Node types whose first token opens a form, and how wide that opener is.
-
-A type table rather than a first-character test: a set opens with two
-characters, and a first-character test cannot tell a form from anything else
-that happens to start with a bracket.")
+    ("map_lit" . 1) ("seq_lit" . 1)))
 
 (defun %in-window-p (node ctx)
   (let ((hi (ctx-hi-byte ctx)))
@@ -18,7 +13,6 @@ that happens to start with a bracket.")
 (defun %at (rule key) (and rule (d:lookup rule key)))
 
 (defun %head-name (head ctx)
-  "The symbol naming what a form is, downcased, or NIL when its head is not one."
   (let ((type (ts-node-type head)))
     (cond ((string= type "sym_lit") (%text head ctx))
           ((string= type "package_lit")
@@ -34,8 +28,6 @@ that happens to start with a bracket.")
           (t (%walk head (%deeper ctx))))))
 
 (defun %walk-head-form (node ctx)
-  "A form: its head says what its elements are. Quoted, it is data, and its head
-is an element like any other."
   (let ((elements (ts-named-nodes node)))
     (cond
       ((null elements))
@@ -83,7 +75,6 @@ is an element like any other."
                                              :index i)))))))))
 
 (defun %fields (rule node ctx)
-  "Walk RULE's named fields, answering where each began so the rest skips them."
   (let ((fields (%at rule :fields))
         (covered nil))
     (when (d:mapp fields)
@@ -96,8 +87,6 @@ is an element like any other."
     covered))
 
 (defun %walk-quote (node ctx spec)
-  "A quote paints its marker and walks what it quotes. :INTO says whether the
-inside is quoted, which a comma inside a backquote is not."
   (let* ((value (ts-field node (or (d:lookup spec :value) "value")))
          (as (d:lookup spec :as))
          (into (d:lookup spec :into)))
@@ -117,14 +106,7 @@ inside is quoted, which a comma inside a backquote is not."
     (%apply-rule (node-rule (ctx-syntax ctx) (ts-node-type node)) node ctx)))
 
 (defun walk-highlights (syntax root src &key lo-byte hi-byte forms package)
-  "Highlights (line start-col end-col face) for the parse tree ROOT, following
-SYNTAX's rules and reading source through SRC.
-
-LO-BYTE / HI-BYTE restrict the walk to subtrees intersecting that byte window.
-FORMS names the top-level forms to walk instead of descending from ROOT, which
-is how a window avoids enumerating every form in the file; a top-level form has
-no enclosing context, so depth and quote state start where they would anyway."
-  (when (languagep syntax)
+  (when (rulesp syntax)
     (let ((ctx (make-ctx :syntax syntax :src src :acc (cons :acc nil)
                          :package package
                          :lo-byte lo-byte :hi-byte hi-byte)))
@@ -134,10 +116,7 @@ no enclosing context, so depth and quote state start where they would anyway."
       (nreverse (cdr (ctx-acc ctx))))))
 
 (defun body-form-p (syntax head-name &optional package)
-  "True when a form headed by HEAD-NAME indents its body rather than aligning
-its arguments under the first one. One source with the walk: a rule that walks
-what follows as a body is a rule that indents it as one."
-  (and head-name (stringp head-name) (languagep syntax)
+  (and head-name (stringp head-name) (rulesp syntax)
        (let ((rule (head-rule syntax head-name package)))
          (and rule
               (or (eq :body (d:lookup rule :rest))
@@ -158,14 +137,9 @@ what follows as a body is a rule that indents it as one."
   (source-char-at src (ts-node-start-byte node)))
 
 (defun %opener-width (node)
-  "How wide NODE's opening token is, or NIL when NODE does not open a form."
   (cdr (assoc (ts-node-type node) +form-openers+ :test #'string=)))
 
 (defun %enclosing-form (node lstart)
-  "Nearest ancestor of NODE that opens with a bracket and begins before byte
-LSTART (so its opener is on an earlier line than the line starting at LSTART).
-The root/source_file node is excluded: it begins at byte 0, which is often a
-paren, but it is not a form."
 
   (loop for n = node then (ts-node-parent n)
         for depth from 0 below 4096
@@ -177,19 +151,11 @@ paren, but it is not a form."
         finally (return nil)))
 
 (defun %head-node (form)
-  "The node naming what FORM is.
-
-Usually the first named node, but not always: the grammar gives a DEFUN a header
-of its own, and the head sits inside it under the KEYWORD field. Taking the
-first named node there answers the whole header text, which only ever worked
-because the body test was a string prefix."
   (when (plusp (ts-node-named-count form))
     (let ((first (ts-node-named-nth form 0)))
       (or (ts-field first "keyword") first))))
 
 (defun %form-head-name (form src)
-  "Downcased text of FORM's head when it is a single-line symbol, else nil (a
-nested head is not a body operator)."
   (let ((head (%head-node form)))
     (when head
       (let ((hs (ts-node-start-byte head))
@@ -198,9 +164,6 @@ nested head is not a body operator)."
           (string-downcase (source-substring src hs he)))))))
 
 (defun %align-first (form open-col src)
-  "Align under element 0 when it sits on the opener's line, else one past the
-opener. A map and a seq have no head: every element is an element, so there is
-no argument to align under and the first thing in it is the first thing."
   (if (plusp (ts-node-named-count form))
       (let* ((first (ts-node-named-nth form 0))
              (fb (ts-node-start-byte first)))
@@ -210,19 +173,10 @@ no argument to align under and the first thing in it is the first thing."
       (1+ open-col)))
 
 (defun %headless-p (form)
-  "Whether FORM's opening word is none of its named elements, so there is nothing
-to align its elements under but the first of them.
-
-A collection is one: every element is an element. A LOOP is the other: the
-grammar gives the word itself no node, so its first named element is its first
-clause, and aligning under the first argument would put the second clause one
-past the paren instead of under the first."
   (member (ts-node-type form) '("map_lit" "seq_lit" "set_lit" "loop_macro")
           :test #'string=))
 
 (defun %align-column (form open-col src)
-  "Align under the first argument when it shares the head's line; otherwise one
-past the open paren."
   (if (>= (ts-node-named-count form) 2)
       (let* ((head (ts-node-named-nth form 0))
              (arg  (ts-node-named-nth form 1))
@@ -234,17 +188,10 @@ past the open paren."
       (1+ open-col)))
 
 (defun %elements-before (form lstart)
-  "How many of FORM's arguments begin before byte LSTART: which argument the
-line being indented is."
   (loop :for i :from 1 :below (ts-node-named-count form)
         :count (< (ts-node-start-byte (ts-node-named-nth form i)) lstart)))
 
 (defun parse-indent (ps line &key (width 2))
-  "Target indentation column for LINE from PS's persistent tree, or nil to leave
-the line as-is (inside a multiline string). 0 at top level. No reparse.
-
-WIDTH is what the buffer's mode says a body indents by, so a mode that indents
-by four does, rather than by the two that used to be written here."
   (let ((tree (ps-tree ps)) (src (ps-byte-index ps)) (lang (ps-syntax ps))
         (line (- line (ps-offset ps))))
     (when (and tree src (<= 0 line))

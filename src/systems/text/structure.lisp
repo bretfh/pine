@@ -1,15 +1,14 @@
 (in-package #:pine/text)
 
 (defun covered (r)
-  (let ((doc (%document r)))
+  (let ((doc (%buffer r)))
     (when doc
       (destructuring-bind (from to) (covers r)
         (region (lines doc) (car from) (cdr from)
                       (car to) (cdr to))))))
 
 (defun (setf covered) (value r)
-  "Writing a region replaces the text it covers."
-  (let ((doc (%document r)))
+  (let ((doc (%buffer r)))
     (when doc
       (destructuring-bind (from to) (covers r)
         (delete-region doc (car from) (cdr from) (car to) (cdr to))
@@ -18,54 +17,37 @@
         (restructure doc))))
   value)
 
-(defun %document (r)
+(defun %buffer (r)
   (loop :for at := r :then (fs:parent at)
         :while at
-        :when (typep at 'document) :do (return at)))
+        :when (typep at 'buffer) :do (return at)))
+
+(defmethod fs:names ((r region))
+  '((:text . "what it covers")))
 
 (defmethod fs:read ((r region) (name (eql :text)))
-  "What it covers."
   (covered r))
 
 (defmethod fs:write ((r region) (name (eql :text)) value)
   (setf (covered r) value))
 
 (defun %region (under name covers)
-  (let ((r (fs:child under name
+  (let ((r (fs:ensure-child under name
                      (lambda ()
                        (make-instance 'region :name name :parent under :covers covers)))))
     (setf (covers r) covers)
     r))
 
 (defun %cleared (under)
-  "Take the regions off UNDER. What the mode says now is the whole answer, so one
-it no longer says is one that stands for nothing."
-  (dolist (each (fs:entries under) under)
+  (dolist (each (fs:children under) under)
     (when (typep each 'region) (fs:detach under (fs:name each)))))
 
 (defun %forgotten (under kept)
-  "Let go of the regions UNDER no longer has.
-
-A region is kept under its name so that one still there is the same node it was
-and a watcher on it goes on watching. One the mode has stopped naming is not still
-there: typing a name a character at a time says a different one on every key, and
-every one of them stayed for as long as the image ran."
-  (dolist (name (d:keys (fs::memo under)) under)
+  (dolist (name (d:keys (fs::dentries under)) under)
     (unless (member name kept :test #'equal)
-      (d:swap (slot-value under 'fs::memo) #'d:without name))))
+      (sb-ext:atomic-update (slot-value under 'fs::dentries) (lambda (old) (d:without old name))))))
 
 (defun %build (under said)
-  "Put the spans the mode said into the namespace under UNDER, keeping the node that
-was already at each name so anything watching one keeps watching it.
-
-Two spans a mode gives one name are two places, and the second takes NAME<2>. One
-node standing for both would cover only the last of them, and writing it would
-replace text it was never standing for.
-
-Every level is cleared and every level is forgotten. Only the top was, so a span
-inside one that the mode stopped saying stayed where it was with the extent it had
-before the edit -- and writing it replaced text it was never standing for, which
-is the one thing this is written to stop."
   (%cleared under)
   (let ((seen (d:no-map))
         (kept nil))
@@ -81,29 +63,23 @@ is the one thing this is written to stop."
     (%forgotten under kept)))
 
 (defun restructure (doc)
-  "Ask the mode what this text divides into, and put it in the namespace. Regions
-are nodes with identity, so one that is still there is the same node it was and a
-watcher on it goes on watching."
   (let ((said (mode:regions (mode-of doc) doc)))
     (%build doc said)
     said))
 
 (defun fresh-structure (doc)
-  "Build the regions again where the text has moved since they were built. A region
-worked out before an edit covers the wrong span, and writing one replaces text it
-was never standing for."
   (unless (eql (structured doc) (tick doc))
     (setf (structured doc) (tick doc))
     (restructure doc))
   doc)
 
-(defmethod fs:entries ((doc document))
+(defmethod fs:children ((doc buffer))
   (fresh-structure doc)
   (call-next-method))
 
-(defmethod fs:entry ((doc document) name)
+(defmethod fs:child ((doc buffer) name)
   (fresh-structure doc)
   (call-next-method))
 
 (defun regions (doc)
-  (remove-if-not (lambda (n) (typep n 'region)) (fs:entries doc)))
+  (remove-if-not (lambda (n) (typep n 'region)) (fs:children doc)))

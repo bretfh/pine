@@ -1,10 +1,10 @@
 (defpackage #:pine/edit/commands
   (:use #:cl #:pine)
   (:shadowing-import-from #:pine #:read #:write #:map #:set)
-  (:import-from #:pine/edit #:askingp #:cancel #:down #:focused #:scrolled #:indenting)
+  (:import-from #:pine/edit #:askingp #:cancel #:height #:focused #:scrolled #:indenting)
   (:import-from #:pine/mode #:says #:setting)
   (:import-from #:pine/text
-   #:at-col #:at-line #:current #:delete-back #:delete-region #:document
+   #:at-col #:at-line #:current #:delete-back #:delete-region #:buffer
    #:forget-spans #:goto #:indent-line #:insert #:leading #:line #:line-count
    #:lines #:mark #:mode-of #:motion #:move #:move-by #:newline #:point #:redo
    #:region-of #:span #:undo)
@@ -29,8 +29,6 @@
   string)
 
 (defun yank ()
-  "What to put back: what the desktop is holding when that is not what pine killed
-last, so what was copied in another program pastes here."
   (let* ((n (%clip))
          (theirs (and n (attempt (lambda () (contents n)) "pasting"))))
     (if (and theirs (plusp (length theirs)) (not (equal theirs (first *kill-ring*))))
@@ -40,8 +38,6 @@ last, so what was copied in another program pastes here."
 (defun counting () *count*)
 
 (defun times (&optional (default 1))
-  "How many times the next command runs, and forget it. A prefix argument is spent
-by whoever asks for it."
   (let ((held (counting)))
     (setf *count* nil)
     (cond ((null held) default)
@@ -50,25 +46,25 @@ by whoever asks for it."
           (t held))))
 
 (defun %case-word (by)
-  (let* ((document (current)) (line (at-line document)) (col (at-col document)))
+  (let* ((buffer (current)) (line (at-line buffer)) (col (at-col buffer)))
     (multiple-value-bind (to-line to-col)
-        (move-by :word (lines document) line col 1)
+        (move-by :word (lines buffer) line col 1)
       (when (= line to-line)
-        (let ((word (delete-region document line col to-line to-col)))
-          (insert document (funcall by word)))))))
+        (let ((word (delete-region buffer line col to-line to-col)))
+          (insert buffer (funcall by word)))))))
 
-(defun %go (document kind)
-  (or (motion document kind
-                     (lambda (line col) (goto document line col)))
+(defun %go (buffer kind)
+  (or (motion buffer kind
+                     (lambda (line col) (goto buffer line col)))
       (note "the parse says nothing there")))
 
-(defun %laying-out (document)
+(defun %laying-out (buffer)
   (lambda (targets)
     (loop :for (line . at) :in targets
-          :do (indent-line document line at))))
+          :do (indent-line buffer line at))))
 
-(defun %indent (document from to)
-  (indenting document from to (%laying-out document)))
+(defun %indent (buffer from to)
+  (indenting buffer from to (%laying-out buffer)))
 
 (defcommand "forward-sexp" ()
     (:describes "over the form after point" :on '(code "C-M-f"))
@@ -87,11 +83,11 @@ by whoever asks for it."
 
 (defcommand "mark-sexp" ()
     (:describes "the region is the form after point")
-  (let ((document (current)))
-    (motion document :forward-sexp
+  (let ((buffer (current)))
+    (motion buffer :forward-sexp
                    (lambda (line col)
-                     (setf (mark document) (point document))
-                     (goto document line col)))))
+                     (setf (mark buffer) (point buffer))
+                     (goto buffer line col)))))
 
 (defcommand "forward-char" ()
     (:describes "point one character on" :on '(text "C-f" "Right"))
@@ -126,11 +122,11 @@ by whoever asks for it."
   (goto (current) (at-line (current))
             (length (line (current) (at-line (current))))))
 
-(defcommand "beginning-of-document" ()
+(defcommand "beginning-of-buffer" ()
     (:describes "point to the first line" :on '(text "M-<"))
   (goto (current) 0 0))
 
-(defcommand "end-of-document" ()
+(defcommand "end-of-buffer" ()
     (:describes "point to the last line" :on '(text "M->"))
   (move (current) :text 1))
 
@@ -145,7 +141,7 @@ by whoever asks for it."
 
 (defcommand "universal-argument" ()
     (:describes "the next command, four times" :on '(text "C-u"))
-  (d:swap *count* (lambda (had)
+  (sb-ext:atomic-update *count* (lambda (had)
                      (cond ((null had) :more)
                            ((eq had :more) 16)
                            ((integerp had) (* had 4))
@@ -154,7 +150,7 @@ by whoever asks for it."
 
 (defcommand "negative-argument" ()
     (:describes "the next command, backwards" :on '(text "M--"))
-  (d:swap *count* (lambda (had) (if (integerp had) (- had) :minus)))
+  (sb-ext:atomic-update *count* (lambda (had) (if (integerp had) (- had) :minus)))
   (note "C--"))
 
 (macrolet ((digits ()
@@ -164,7 +160,7 @@ by whoever asks for it."
                         `(defcommand ,(format nil "digit-argument-~d" n) ()
                              (:describes "a digit of the count the next command takes"
                               :on '(text ,(format nil "M-~d" n)))
-                           (d:swap *count*
+                           (sb-ext:atomic-update *count*
                                     (lambda (had)
                                       (cond ((integerp had) (+ (* 10 had) ,n))
                                             ((eq had :minus) (- ,n))
@@ -174,10 +170,10 @@ by whoever asks for it."
 
 (defcommand "newline" ()
     (:describes "break the line at point" :on '(text "RET"))
-  (let ((document (current)))
-    (newline document)
-    (%indent document (at-line document) (at-line document))
-    (point document)))
+  (let ((buffer (current)))
+    (newline buffer)
+    (%indent buffer (at-line buffer) (at-line buffer))
+    (point buffer)))
 
 (defcommand "indent-line" ()
     (:describes "indent this line as the parse says" :on '(text "TAB"))
@@ -197,13 +193,13 @@ by whoever asks for it."
 
 (defcommand "delete-char" ()
     (:describes "take the character at point" :on '(text "Delete" "C-d"))
-  (let* ((document (current))
-         (line (at-line document))
-         (col (at-col document)))
-    (if (< col (length (line document line)))
-        (delete-region document line col line (1+ col))
-        (when (< (1+ line) (line-count document))
-          (delete-region document line col (1+ line) 0)))))
+  (let* ((buffer (current))
+         (line (at-line buffer))
+         (col (at-col buffer)))
+    (if (< col (length (line buffer line)))
+        (delete-region buffer line col line (1+ col))
+        (when (< (1+ line) (line-count buffer))
+          (delete-region buffer line col (1+ line) 0)))))
 
 (defcommand "set-mark" ()
     (:describes "put the mark at point" :on '(text "C-SPC"))
@@ -211,19 +207,19 @@ by whoever asks for it."
 
 (defcommand "kill-region" ()
     (:describes "take the region and keep it" :on '(text "C-w"))
-  (let* ((document (current)) (taken (region-of document)))
+  (let* ((buffer (current)) (taken (region-of buffer)))
     (when taken
       (kill taken)
-      (destructuring-bind (line col) (mark document)
-        (delete-region document line col
-                           (at-line document) (at-col document))
-        (setf (mark document) nil)))
+      (destructuring-bind (line col) (mark buffer)
+        (delete-region buffer line col
+                           (at-line buffer) (at-col buffer))
+        (setf (mark buffer) nil)))
     taken))
 
 (defcommand "copy-region" ()
     (:describes "keep the region without taking it" :on '(text "M-w"))
-  (let* ((document (current)) (taken (region-of document)))
-    (when taken (kill taken) (setf (mark document) nil))
+  (let* ((buffer (current)) (taken (region-of buffer)))
+    (when taken (kill taken) (setf (mark buffer) nil))
     taken))
 
 (defcommand "yank" ()
@@ -242,88 +238,88 @@ by whoever asks for it."
 
 (defcommand "kill-line" ()
     (:describes "take the rest of the line and keep it" :on '(text "C-k"))
-  (let* ((document (current))
-         (line (at-line document))
-         (col (at-col document))
-         (text (line document line)))
+  (let* ((buffer (current))
+         (line (at-line buffer))
+         (col (at-col buffer))
+         (text (line buffer line)))
     (kill (if (< col (length text))
-              (delete-region document line col line (length text))
-              (when (< (1+ line) (line-count document))
-                (delete-region document line col (1+ line) 0))))))
+              (delete-region buffer line col line (length text))
+              (when (< (1+ line) (line-count buffer))
+                (delete-region buffer line col (1+ line) 0))))))
 
 (defcommand "kill-word" ()
     (:describes "take the word after point and keep it" :on '(text "M-d"))
-  (let* ((document (current))
-         (line (at-line document))
-         (col (at-col document)))
+  (let* ((buffer (current))
+         (line (at-line buffer))
+         (col (at-col buffer)))
     (multiple-value-bind (to-line to-col)
-        (move-by :word (lines document) line col 1)
-      (kill (delete-region document line col to-line to-col)))))
+        (move-by :word (lines buffer) line col 1)
+      (kill (delete-region buffer line col to-line to-col)))))
 
 (defcommand "backward-kill-word" ()
     (:describes "take the word before point and keep it" :on '(text "M-DEL"))
-  (let* ((document (current))
-         (line (at-line document))
-         (col (at-col document)))
+  (let* ((buffer (current))
+         (line (at-line buffer))
+         (col (at-col buffer)))
     (multiple-value-bind (from-line from-col)
-        (move-by :word (lines document) line col -1)
-      (kill (delete-region document from-line from-col line col)))))
+        (move-by :word (lines buffer) line col -1)
+      (kill (delete-region buffer from-line from-col line col)))))
 
 (defcommand "open-line" ()
     (:describes "a fresh line below, point where it is" :on '(text "C-o"))
-  (let ((document (current)))
-    (newline document)
-    (move document :char -1)))
+  (let ((buffer (current)))
+    (newline buffer)
+    (move buffer :char -1)))
 
 (defcommand "transpose-chars" ()
     (:describes "swap the two characters around point" :on '(text "C-t"))
-  (let* ((document (current))
-         (line (at-line document))
-         (col (at-col document))
-         (text (line document line)))
+  (let* ((buffer (current))
+         (line (at-line buffer))
+         (col (at-col buffer))
+         (text (line buffer line)))
     (when (and (plusp col) (<= col (length text)))
-      (let ((taken (delete-region document line (1- col) line col)))
-        (goto document line (min (length (line document line)) col))
-        (insert document taken)))))
+      (let ((taken (delete-region buffer line (1- col) line col)))
+        (goto buffer line (min (length (line buffer line)) col))
+        (insert buffer taken)))))
 
-(defcommand "mark-whole-document" ()
+(defcommand "mark-whole-buffer" ()
     (:describes "the region is everything" :on '(text "C-x h"))
-  (let ((document (current)))
-    (setf (mark document) (list 0 0))
-    (move document :text 1)))
+  (let ((buffer (current)))
+    (setf (mark buffer) (list 0 0))
+    (move buffer :text 1)))
 
 (defcommand "exchange-point-and-mark" ()
     (:describes "point and mark swap places" :on '(text "C-x C-x"))
-  (let* ((document (current)) (mark (mark document)) (at (point document)))
+  (let* ((buffer (current)) (mark (mark buffer)) (at (point buffer)))
     (when mark
-      (setf (mark document) at)
-      (goto document (first mark) (second mark)))))
+      (setf (mark buffer) at)
+      (goto buffer (first mark) (second mark)))))
 
 (defcommand "indent-region" ()
     (:describes "indent every line of the region" :on '(text "C-M-\\"))
-  (let* ((document (current)) (span (mark document)))
+  (let* ((buffer (current)) (span (mark buffer)))
     (when span
-      (%indent document
-               (min (first span) (at-line document))
-               (max (first span) (at-line document))))))
+      (%indent buffer
+               (min (first span) (at-line buffer))
+               (max (first span) (at-line buffer))))))
 
-(defcommand "format-document" ()
+(defcommand "format-buffer" ()
     (:describes "indent every line of it" :on '(code "C-c TAB"))
-  (let ((document (current)))
-    (%indent document 0 (max 0 (1- (line-count document))))
-    (line-count document)))
+  (let ((buffer (current)))
+    (%indent buffer 0 (max 0 (1- (line-count buffer))))
+    (line-count buffer)))
 
 (defcommand "comment-line" ()
     (:describes "comment this line, or uncomment it" :on '(text "M-;"))
-  (let* ((document (current))
-         (line (at-line document))
-         (text (line document line))
-         (mark (says (mode-of document) :comment ";;"))
+  (let* ((buffer (current))
+         (line (at-line buffer))
+         (text (line buffer line))
+         (mark (says (mode-of buffer) :comment ";;"))
          (from (leading text))
          (body (subseq text from)))
-    (goto document line 0)
-    (delete-region document line 0 line (length text))
-    (insert document
+    (goto buffer line 0)
+    (delete-region buffer line 0 line (length text))
+    (insert buffer
                 (concatenate 'string
                              (make-string from :initial-element #\Space)
                              (if (and (>= (length body) (length mark))
@@ -344,22 +340,22 @@ by whoever asks for it."
   (%case-word #'string-capitalize))
 
 (defcommand "insert-tab" () (:describes "a tab's worth of spaces")
-  (let* ((document (current))
-         (width (max 1 (says document :tab-width 8))))
-    (insert document (make-string width :initial-element #\Space))
+  (let* ((buffer (current))
+         (width (max 1 (says buffer :tab-width 8))))
+    (insert buffer (make-string width :initial-element #\Space))
     width))
 
 (defcommand "overwrite" ()
     (:describes "type over what is there" :on '(text "M-o"))
-  (let* ((document (current)) (on (not (says document :overwrite nil))))
-    (setf (setting document :overwrite) on)
+  (let* ((buffer (current)) (on (not (says buffer :overwrite nil))))
+    (setf (setting buffer :overwrite) on)
     (note "overwrite is ~:[off~;on~]" on)
     on))
 
 (defcommand "refresh" () (:describes "draw everything again")
   (let ((n 0))
     (dolist (each (surfaces) n)
-      (attempt (lambda () (fs:moved each)) (name each))
+      (attempt (lambda () (fs:touch each)) (name each))
       (incf n))))
 
 (defcommand "keyboard-quit" ()
@@ -370,25 +366,25 @@ by whoever asks for it."
   (if (askingp) (cancel) (note "quit")))
 
 (defcommand "recenter" ()
-    (:describes "point to the middle of the window" :on '(text "C-l"))
+    (:describes "point to the middle of the pane" :on '(text "C-l"))
   (let ((win (focused)))
     (setf (scrolled win)
-          (max 0 (- (at-line (current)) (floor (down win) 2))))
-    (fs:moved win)))
+          (max 0 (- (at-line (current)) (floor (height win) 2))))
+    (fs:touch win)))
 
 (defcommand "scroll-up" ()
     (:describes "a screenful on" :on '(text "C-v" "PageDown"))
-  (let* ((win (focused)) (document (current))
-         (step (max 1 (- (down win) 2))))
+  (let* ((win (focused)) (buffer (current))
+         (step (max 1 (- (height win) 2))))
     (setf (scrolled win)
-          (min (max 0 (1- (line-count document)))
+          (min (max 0 (1- (line-count buffer)))
                (+ (scrolled win) step)))
-    (goto document (+ (at-line document) step) (at-col document))))
+    (goto buffer (+ (at-line buffer) step) (at-col buffer))))
 
 (defcommand "scroll-down" ()
     (:describes "a screenful back" :on '(text "M-v" "PageUp"))
-  (let* ((win (focused)) (document (current))
-         (step (max 1 (- (down win) 2))))
+  (let* ((win (focused)) (buffer (current))
+         (step (max 1 (- (height win) 2))))
     (setf (scrolled win) (max 0 (- (scrolled win) step)))
-    (goto document (max 0 (- (at-line document) step))
-              (at-col document))))
+    (goto buffer (max 0 (- (at-line buffer) step))
+              (at-col buffer))))

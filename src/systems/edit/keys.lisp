@@ -2,9 +2,9 @@
 
 (defun bindings (m) (mode:bindings m))
 
-(defun %dispatch (document k)
-  (let ((m (text:mode-of document)))
-    (multiple-value-bind (said typed ran) (mode:dispatch m document k
+(defun %dispatch (buffer k)
+  (let ((m (text:mode-of buffer)))
+    (multiple-value-bind (said typed ran) (mode:dispatch m buffer k
                                                           (ui:pending))
       (cond ((eq said :pending)
              (setf (ui:pending) typed)
@@ -12,8 +12,8 @@
             ((and (consp said) (eq :insert (car said)))
              (setf (ui:pending) nil)
              (setf (ui:last-said) "insert")
-             (unless (mode:typing m document (cdr said))
-               (text:insert document (cdr said)))
+             (unless (mode:typing m buffer (cdr said))
+               (text:insert buffer (cdr said)))
              :inserted)
             (t
              (setf (ui:pending) nil)
@@ -23,9 +23,7 @@
              said)))))
 
 (defun dispatch (k)
-  "What a key means: whoever asked to read the next one, else this document's mode
-and the chords its class inherits."
   (meter:timing (:key)
     (or (ui:reading k)
-        (let ((document (text:current)))
-          (and document (%dispatch document k))))))
+        (let ((buffer (text:current)))
+          (and buffer (%dispatch buffer k))))))

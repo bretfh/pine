@@ -6,10 +6,10 @@
 
 (defstruct (was (:constructor was (lines at col))) lines at col)
 
-(defclass document (fs:mount)
+(defclass buffer (fs:mount)
   ((lines    :initform (of "") :accessor lines)
    (text-node :initform nil :accessor text-node)
-   (session  :initform nil :accessor session)
+   (listener :initform nil :accessor listener)
    (parser   :initform nil :accessor parser)
    (at-line  :initform 0   :accessor at-line)
    (at-col   :initform 0   :accessor at-col)
@@ -27,69 +27,39 @@
    (overlays :initform nil :accessor overlays)
    (edit-of  :initform nil :accessor edit-of)
    (modified :initform nil :accessor modified)
-   (settings :initform (d:no-map) :accessor settings))
-  (:documentation "Text, and the structure its mode gives it.
-
-An emacs buffer is characters with a flat property list laid over them. This is a
-document: what its mode makes of the text is in the namespace under it, as regions
-with identity, so a form or a heading is a place anything can read and write.
-
-STRUCTURED and DECLARED are both what was worked out of the text and the TICK it
-was worked out at. What the text says about itself -- what it divides into, what
-package and readtable it is written in -- can only become something else when the
-text does, and TICK is the text saying it did.
-
-SPANS and OVERLAYS are what is laid over the text without being in it: a colour
-on part of a line, and something shown after one. A search that has just landed
-says a span, a parse says spans, and a terminal says one for every run of colour
-its program asked for -- the same few numbers a cell is painted with, whoever
-worked them out. They belong to the document, so they go when it does."))
+   (settings :initform (d:no-map) :accessor settings)))
 
 (defclass region (fs:mount)
-  ((covers :initarg :covers :accessor covers))
-  (:documentation "A stretch of a document: its sub-regions, and under TEXT what it
-covers, which writing replaces."))
+  ((covers :initarg :covers :accessor covers)))
 
-(defmethod print-object ((doc document) stream)
+(defmethod print-object ((doc buffer) stream)
   (print-unreadable-object (doc stream :type t)
     (format stream "~a ~d:~d" (fs:name doc) (at-line doc) (at-col doc))))
 
-(fs:mount (lambda () (make-instance 'fs:mount :describes "documents, and terminals"))
+(fs:mount (lambda () (make-instance 'fs:mount :describes "buffers, and terminals"))
           "/text")
 
 (defun root () (fs:at "/text"))
 
-(defmethod line ((doc document) n) (line (lines doc) n))
-(defmethod line-count ((doc document)) (line-count (lines doc)))
+(defmethod line ((doc buffer) n) (line (lines doc) n))
+(defmethod line-count ((doc buffer)) (line-count (lines doc)))
 (defun text (doc)
-  (when (text-node doc) (fs:reading (text-node doc)))
+  (when (text-node doc) (fs:depend-on (text-node doc)))
   (joined (lines doc)))
 (defun point (doc) (list (at-line doc) (at-col doc)))
 
 (defgeneric (setf text) (value doc)
-  (:method (value (doc document))
+  (:method (value (doc buffer))
     (%remember doc)
     (setf (edit-of doc) nil)
     (setf (lines doc) (of (princ-to-string value)))
-    (changed doc)
+    (on-change doc)
     value))
 
 (defun %bytes (text)
   (length (sb-ext:string-to-octets (or text "") :external-format :utf-8)))
 
 (defun %kept-declaration (doc at old new)
-  "Keep what the document says it is written in, where an edit cannot have changed
-it.
-
-Each answer sits on one line, and it was the last line that said so. An edit above
-it cannot take that place, however many lines it adds -- it only moves it. An edit
-below it can take that place only by putting the word there, and that is the lines
-of the edit to read and nothing else. An edit on the line itself is the one case
-that costs a fresh answer.
-
-A fresh answer is a walk of the whole document, and typing moves TICK on every
-key. Without this that walk is on every keystroke, which measured at twenty
-milliseconds of a twenty-one millisecond frame."
   (let ((had (declared doc)))
     (when had
       (setf (car had) (tick doc))
@@ -107,112 +77,95 @@ milliseconds of a twenty-one millisecond frame."
                              (t (list key value line word)))
                   :when kept :collect kept)))))
 
-(defun changed (doc &optional at old new)
-  "Say the text moved. AT, OLD and NEW say where and by how much, where the caller
-knows; without them everything worked out of the text is given up."
+(defun on-change (doc &optional at old new)
   (setf (modified doc) t)
   (incf (tick doc))
   (if (and at old new)
       (%kept-declaration doc at old new)
       (setf (declared doc) nil))
-  (fs:announced doc)
-  (when (text-node doc) (fs:moved (text-node doc)))
+  (fs:commit doc)
+  (when (text-node doc) (fs:touch (text-node doc)))
   doc)
 
 (defun %edited (doc had at old new bytes)
-  "What the last edit did, for whoever reads this document: at AT, OLD lines became
-NEW and it grew by BYTES, counted from HAD."
   (setf (edit-of doc) (list (list at old new bytes) had)))
 
-(defgeneric visiting (document where)
-  (:documentation "Open DOCUMENT onto WHERE. Answered above, by whatever knows how
-to turn a name into somewhere text is kept. Nothing here does, so a document on
-its own is a document and not a view of anything.")
-  (:method (document where) (declare (ignore document where)) nil))
+(defgeneric visiting (buffer where)
+  (:method (buffer where) (declare (ignore buffer where)) nil))
 
-(defgeneric showing (document)
-  (:documentation "Say DOCUMENT is the one being shown now. Whatever is showing
-documents hangs a method here; a document does not have to know that anything is.")
-  (:method (document) (declare (ignore document)) nil))
+(defgeneric showing (buffer)
+  (:method (buffer) (declare (ignore buffer)) nil))
 
-(defgeneric killing (document)
-  (:documentation "Say DOCUMENT is about to go, while it is still here to be
-asked. Whatever keeps something per document -- a parse, a window, a watcher --
-lets it go here.")
-  (:method (document) (declare (ignore document)) nil))
+(defgeneric killing (buffer)
+  (:method (buffer) (declare (ignore buffer)) nil))
 
-(defun make-document (name &rest initargs &key (class 'document) &allow-other-keys)
-  "A document, of whatever class. A terminal is one, and so is anything else that
-is text plus something of its own."
+(defun make-buffer (name &rest initargs &key (class 'buffer) &allow-other-keys)
   (let ((doc (apply #'make-instance class :name name
                     (alexandria:remove-from-plist initargs :class))))
     (fs:mount doc (root))
-    (setf (text-node doc) (fs:entry doc "text"))
+    (setf (text-node doc) (fs:child doc "text"))
     doc))
 
-(defmethod fs:read ((doc document) (name (eql :text)))
-  "What it says."
+(defmethod fs:names ((doc buffer))
+  '((:text    . "what it says")
+    (:at-line . "the line point is on")
+    (:at-col  . "the column point is at")
+    (:tick    . "how many times it has been edited")
+    (:source  . "where it reads and writes")
+    (:mode    . "what kind of text it is; writing another kind's name makes it that")))
+
+(defmethod fs:read ((doc buffer) (name (eql :text)))
   (text doc))
 
-(defmethod fs:write ((doc document) (name (eql :text)) value)
+(defmethod fs:write ((doc buffer) (name (eql :text)) value)
   (setf (text doc) value))
 
-(defmethod fs:read ((doc document) (name (eql :at-line)))
-  "The line point is on."
+(defmethod fs:read ((doc buffer) (name (eql :at-line)))
   (at-line doc))
 
-(defmethod fs:write ((doc document) (name (eql :at-line)) value)
+(defmethod fs:write ((doc buffer) (name (eql :at-line)) value)
   (setf (at-line doc) value))
 
-(defmethod fs:read ((doc document) (name (eql :at-col)))
-  "The column point is at."
+(defmethod fs:read ((doc buffer) (name (eql :at-col)))
   (at-col doc))
 
-(defmethod fs:write ((doc document) (name (eql :at-col)) value)
+(defmethod fs:write ((doc buffer) (name (eql :at-col)) value)
   (setf (at-col doc) value))
 
-(defmethod fs:read ((doc document) (name (eql :tick)))
-  "How many times it has been edited."
+(defmethod fs:read ((doc buffer) (name (eql :tick)))
   (tick doc))
 
-(defmethod fs:read ((doc document) (name (eql :source)))
-  "Where it reads and writes."
+(defmethod fs:read ((doc buffer) (name (eql :source)))
   (origin doc))
 
-(defmethod fs:write ((doc document) (name (eql :source)) value)
+(defmethod fs:write ((doc buffer) (name (eql :source)) value)
   (visiting doc (princ-to-string value)))
 
-(defmethod fs:read ((doc document) (name (eql :mode)))
-  "What kind of text it is; writing another kind's name makes it that."
+(defmethod fs:read ((doc buffer) (name (eql :mode)))
   (string-downcase (symbol-name (class-name (class-of (mode-of doc))))))
 
-(defmethod fs:write ((doc document) (name (eql :mode)) value)
+(defmethod fs:write ((doc buffer) (name (eql :mode)) value)
   (let ((class (find (string-downcase (princ-to-string value)) (mode:modes)
                      :key (lambda (c) (string-downcase (symbol-name (class-name c))))
                      :test #'equal)))
     (unless class (error "no mode called ~a" value))
     (setf (mode-of doc) (make-instance class))
-    (fs:moved doc)
+    (fs:touch doc)
     value))
 
-(defun documents ()
-  (remove-if-not (lambda (n) (typep n 'document)) (fs:entries (root))))
+(defun buffers ()
+  (remove-if-not (lambda (n) (typep n 'buffer)) (fs:children (root))))
 
 (defun scratch ()
   (or (fs:at (root) "scratch")
-      (make-document "scratch" :mode (make-instance 'mode:lisp))))
+      (make-buffer "scratch" :mode (make-instance 'mode:lisp))))
 
 (defun kill (name)
-  "Take a document off, and say the paths under it went.
-
-ERASE-CHILD and not DETACH: a document keeps where point is and how many times it
-has been edited as nodes of its own, and those outlive the image. Taken off
-without a word, every document ever opened left its rows in the store for ever."
   (let ((doc (fs:at (root) name)))
     (when doc
       (killing doc)
-      (fs:erase-entry (root) (fs:name doc))
-      (when (eq doc *current*) (setf *current* (or (first (documents)) (scratch)))))
+      (fs:unlink (root) (fs:name doc))
+      (when (eq doc *current*) (setf *current* (or (first (buffers)) (scratch)))))
     doc))
 
 (defun current () *current*)
@@ -224,25 +177,20 @@ without a word, every document ever opened left its rows in the store for ever."
   *current*)
 
 (defun asidep (doc)
-  (and (typep doc 'document) (mode:says doc :aside nil) t))
+  (and (typep doc 'buffer) (mode:says doc :aside nil) t))
 
-(defmethod mode:setting ((doc document) key)
-  "What this document reads for KEY: its own, then its mode's.
-
-Whether it has one of its own is D:LOOKUP's second value, not whether the first is
-NIL. Turning a setting off writes NIL, and asking the mode about that was asking
-about a key the document had answered."
+(defmethod mode:setting ((doc buffer) key)
   (multiple-value-bind (said saidp) (d:lookup (settings doc) key)
     (if saidp said (mode:setting (mode-of doc) key))))
 
-(defmethod (setf mode:setting) (value (doc document) key)
+(defmethod (setf mode:setting) (value (doc buffer) key)
   (setf (settings doc) (d:with (settings doc) key value))
   value)
 
 (defun goto (doc at col)
   (multiple-value-bind (at col) (clamp (lines doc) at col)
     (setf (at-line doc) at (at-col doc) col)
-    (fs:announced doc)
+    (fs:commit doc)
     (point doc)))
 
 (defun move (doc unit n)
@@ -251,9 +199,7 @@ about a key the document had answered."
     (goto doc at col)))
 
 (defun %remember (doc)
-  (d:swap (slot-value doc 'done) #'d:capped
-           (was (lines doc) (at-line doc) (at-col doc))
-           *undo-kept*)
+  (sb-ext:atomic-update (slot-value doc 'done) (lambda (old) (d:capped old (was (lines doc) (at-line doc) (at-col doc)) *undo-kept*)))
   (setf (undone doc) nil)
   doc)
 
@@ -264,14 +210,14 @@ about a key the document had answered."
   (when it
     (setf (lines doc) (was-lines it))
     (setf (at-line doc) (was-at it) (at-col doc) (was-col it))
-    (changed doc))
+    (on-change doc))
   (and it (point doc)))
 
 (defun undo (doc)
   (let ((all (done doc)))
     (when all
       (setf (done doc) (rest all))
-      (d:swap (slot-value doc 'undone)
+      (sb-ext:atomic-update (slot-value doc 'undone)
                (lambda (u) (cons (was (lines doc) (at-line doc)
                                       (at-col doc))
                                  u)))
@@ -281,7 +227,7 @@ about a key the document had answered."
   (let ((all (undone doc)))
     (when all
       (setf (undone doc) (rest all))
-      (d:swap (slot-value doc 'done)
+      (sb-ext:atomic-update (slot-value doc 'done)
                (lambda (u) (cons (was (lines doc) (at-line doc)
                                       (at-col doc))
                                  u)))
@@ -296,18 +242,12 @@ about a key the document had answered."
       (%edited doc had at 1 (1+ (count #\Newline string)) (%bytes string))
       (setf (lines doc) fresh)
       (setf (at-line doc) line (at-col doc) col)
-      (changed doc at 1 (1+ (count #\Newline string)))
+      (on-change doc at 1 (1+ (count #\Newline string)))
       (point doc))))
 
 (defun newline (doc) (insert doc (string #\Newline)))
 
 (defun delete-back (doc &optional (n 1))
-  "Take back N characters, and say where.
-
-Said without a span, everything worked out of the text was given up -- including
-what the text says it is written in, which is a walk of the whole document.
-Backspace paid for that walk on every key, which is the walk %KEPT-DECLARATION is
-written to avoid."
   (%remember doc)
   (let ((to (at-line doc)))
     (multiple-value-bind (at col)
@@ -316,7 +256,7 @@ written to avoid."
           (cut (lines doc) at col (at-line doc) (at-col doc))
         (setf (lines doc) fresh)
         (setf (at-line doc) line (at-col doc) col)
-        (changed doc at (1+ (- to at)) 1)
+        (on-change doc at (1+ (- to at)) 1)
         taken))))
 
 (defun delete-region (doc from-line from-col to-line to-col)
@@ -327,7 +267,7 @@ written to avoid."
       (%edited doc had from-line (1+ (- to-line from-line)) 1 (- (%bytes taken)))
       (setf (lines doc) fresh)
       (goto doc line col)
-      (changed doc from-line (1+ (- to-line from-line)) 1)
+      (on-change doc from-line (1+ (- to-line from-line)) 1)
       taken)))
 
 (defun region-of (doc)
@@ -336,19 +276,13 @@ written to avoid."
       (region (lines doc) at col (at-line doc) (at-col doc)))))
 
 (defun span (doc line from to face)
-  "Colour part of a line, for as long as somebody wants it there. FACE is a face
-name or the numbers themselves: (FG BG ATTR), where a colour is (R G B) or
-nothing for whatever the theme says."
   (push (list line from to face) (spans doc))
-  (fs:moved doc)
+  (fs:touch doc)
   doc)
 
 (defun (setf spans) (runs doc)
-  "All of them at once. A terminal works out every run of colour on its screen
-whenever the program writes, and saying so a line at a time would move the
-document a hundred times for one keystroke."
   (setf (slot-value doc 'spans) runs)
-  (fs:moved doc)
+  (fs:touch doc)
   runs)
 
 (defun forget-spans (doc)
@@ -356,15 +290,13 @@ document a hundred times for one keystroke."
   doc)
 
 (defun overlay (doc line text face)
-  "Text shown after a line without being in it. What an evaluation answers is put
-here, so the document is what was typed and nothing else."
   (push (list line text face) (overlays doc))
-  (fs:moved doc)
+  (fs:touch doc)
   doc)
 
 (defun forget-overlays (doc)
   (setf (overlays doc) nil)
-  (fs:moved doc)
+  (fs:touch doc)
   doc)
 
 (defun mark-at (doc name) (d:lookup (marks doc) name))
@@ -392,7 +324,7 @@ here, so the document is what was typed and nothing else."
         (setf (lines doc) (d:with was at fresh)))
       (when (= at (at-line doc))
         (setf (at-col doc) (max 0 (+ (at-col doc) (- target had)))))
-      (changed doc at 1 1))
+      (on-change doc at 1 1))
     target))
 
 (defun origin (doc)
@@ -409,5 +341,5 @@ here, so the document is what was typed and nothing else."
   (setf (slot-value doc 'source) n
         (slot-value doc 'file-of) (and (typep n 'fs:file)
                                        (namestring (fs:truename-of n))))
-  (fs:moved doc)
+  (fs:touch doc)
   n)

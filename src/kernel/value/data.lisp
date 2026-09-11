@@ -7,8 +7,9 @@
    #:size #:keys #:vals #:pairs #:do-each
    #:do-pairs #:do-map #:as #:merged #:contains
    #:no-map
-   #:no-seq #:no-set #:capped #:swap #:cas
-   #:emptied #:same))
+   #:no-seq #:no-set #:capped
+   #:cas-p #:emptied
+   #:same))
 (in-package #:pine/data)
 
 (defvar +no-map+ (fset:empty-map))
@@ -35,11 +36,6 @@
 (defun collectionp (x) (or (mapp x) (seqp x) (setp x)))
 
 (defgeneric lookup (collection key &optional default)
-  (:documentation "What COLLECTION holds at KEY, or DEFAULT where it holds nothing,
-and whether anything was there.
-
-Two values, because a collection may hold NIL and holding it is not the same as
-holding nothing. Whoever only wants the value reads the first and never knows.")
   (:method ((c fset:map) key &optional default)
     (multiple-value-bind (value foundp) (fset:lookup c key)
       (if foundp (values value t) (values default nil))))
@@ -64,27 +60,13 @@ holding nothing. Whoever only wants the value reads the first and never knows.")
           (if tail (values (second tail) t) (values default nil))))))
 
 (defgeneric with (collection key &optional value)
-  (:documentation "COLLECTION with VALUE at KEY, or with KEY in it where that is
-what the kind means. What comes back is the same kind that went in.
-
-The building half of this vocabulary is the fset kinds and nothing, because
-building one a piece at a time and sharing what did not move is what they are for.
-A list says so rather than being copied behind your back.")
   (:method ((c fset:map) key &optional value) (fset:with c key value))
   (:method ((c fset:seq) key &optional (value nil valuep))
-    "Given a value it is put at that index; given only a thing, that thing goes on
-the end. Asked of what was handed over and not of what the thing looks like, the
-way the NULL method asks: told to decide by type, (with (seq) 5) put NIL at index
-five and padded the four before it, so a seq of numbers was one WITH could not
-build and INCLUDE on one quietly wrecked it."
     (if valuep (fset:with c key value) (fset:with-last c key)))
   (:method ((c fset:set) key &optional value)
     (declare (ignore value))
     (fset:with c key))
   (:method ((c null) key &optional (value nil valuep))
-    "Nothing is the empty one of whichever kind is being built: given a value it is
-a map, and given only a key it is a seq. Asked of what was handed over, not of
-whether the value happens to be NIL."
     (if valuep (fset:with +no-map+ key value) (fset:with-last +no-seq+ key)))
   (:method ((c cons) key &optional value)
     (declare (ignore key value))
@@ -105,26 +87,13 @@ whether the value happens to be NIL."
   (:method ((c sequence)) (length c))
   (:method ((c hash-table)) (hash-table-count c)))
 
-
 (defgeneric contains (collection value)
-  (:documentation "Whether VALUE is one of the things COLLECTION holds.
-
-What a map holds is its values, the way a seq holds its elements. Whether a map has
-a key is LOOKUP's second answer, which is a different question and is asked with a
-different word.")
   (:method ((c fset:set) value) (fset:contains? c value))
   (:method ((c fset:seq) value) (and (fset:position value c) t))
-  (:method ((c fset:map) value)
-    (block found
-      (fset:do-map (k v c) (declare (ignore k))
-        (when (fset:equal? v value) (return-from found t)))))
+  (:method ((c fset:map) value) (nth-value 1 (fset:lookup c value)))
   (:method ((c null) value) (declare (ignore value)) nil)
   (:method ((c cons) value) (and (cl:member value c :test #'fset:equal?) t))
-  (:method ((c hash-table) value)
-    (block found
-      (maphash (lambda (k v) (declare (ignore k))
-                 (when (fset:equal? v value) (return-from found t)))
-               c))))
+  (:method ((c hash-table) value) (nth-value 1 (gethash value c))))
 
 (defgeneric keys (collection)
   (:method ((c fset:map)) (fset:convert 'list (fset:domain c)))
@@ -148,8 +117,6 @@ different word.")
   (loop :for key :in (keys collection) :collect (cons key (lookup collection key))))
 
 (defmacro do-map ((key value collection &optional result) &body body)
-  "Every pair in a map. Nothing is the empty map and walks none of them; anything
-that is not a map at all says so, the way the other two walks here do."
   (let ((c (gensym)) (k (gensym)) (v (gensym)))
     `(let ((,c ,collection))
        (cond ((mapp ,c)
@@ -185,12 +152,6 @@ that is not a map at all says so, the way the other two walks here do."
              (t (error "~s is not something to walk in pairs." ,c))))))
 
 (defmacro do-each ((value collection &optional result) &body body)
-  "Every value in a collection: a map's values, a seq's elements, a set's members,
-a list's. KEYS and VALS answer lists, so a walk over one has to be a walk and not
-a shape this quietly steps over.
-
-VALUE is bound by a LET of its own, so a declaration at the head of the body is
-about what the walk binds and not about a variable of the same name further out."
   (let ((c (gensym)) (k (gensym)) (v (gensym)))
     (flet ((each () `(let ((,value ,v))
                        (declare (ignorable ,value))
@@ -214,16 +175,9 @@ about what the walk binds and not about a variable of the same name further out.
   (:method ((kind (eql :vector)) collection) (fset:convert 'vector collection)))
 
 (defun same (a b)
-  "Whether A and B are the same value. Two maps holding the same things are the
-same map: EQUAL asks whether they are the same object, which for anything built
-here is a question about the last edit rather than about the value."
   (fset:equal? a b))
 
 (defun merged (&rest collections)
-  "Every map laid over the ones before it, the later winning where both say.
-
-Maps, and nothing standing for the empty one. Two seqs have no one answer here,
-and quietly keeping the second is worse than saying there is none."
   (reduce (lambda (a b)
             (cond ((null b) a)
                   ((and (mapp a) (mapp b)) (fset:map-union a b))
@@ -231,54 +185,10 @@ and quietly keeping the second is worse than saying there is none."
           collections :initial-value +no-map+))
 
 (defun capped (list value n)
-  "LIST with VALUE in front of it, no longer than N: the newest N of something
-there is no point keeping all of. Takes what it is given first, so it is what
-SWAP is handed rather than something wrapped in a lambda.
-
-Walks as far as the cap and no further: what is past it is dropped rather than
-counted, so a ring that is already full costs its length and not twice it."
   (let ((next (cons value list)))
     (if (nthcdr n next) (cl:subseq next 0 n) next)))
 
-(defmacro swap (place function &rest arguments &environment env)
-  "Replace what PLACE holds with FUNCTION of it, and answer that.
-
-A place, not a cell: a slot, a global, anywhere a value is kept. FUNCTION runs
-again if another thread got there first, so it must be pure. Every value in pine
-is immutable, so this is the whole of how one is replaced, and there is no box
-to hold it in.
-
-PLACE's subforms are evaluated once, left to right, and so are FUNCTION and
-ARGUMENTS: a retry runs the function again and nothing else. Two things follow
-from the compare being EQ on the place itself:
-
-A global is compared in whatever dynamic binding is in force here, not the
-global one, so a variable this replaces must be one nothing rebinds.
-
-A number is compared by identity, which holds for a fixnum and stops holding
-above MOST-POSITIVE-FIXNUM. A counter this replaces must be one that cannot
-reach it."
-  (multiple-value-bind (temps values old new cas-form read-form)
-      (sb-ext:get-cas-expansion place env)
-    (let ((fn (gensym "FN"))
-          (args (loop :repeat (length arguments) :collect (gensym "ARG"))))
-      `(let* (,@(mapcar #'list temps values)
-              (,fn ,function)
-              ,@(mapcar #'list args arguments))
-         (loop :for ,old := ,read-form
-               :for ,new := (funcall ,fn ,old ,@args)
-               :until (eq ,old ,cas-form)
-               :finally (return ,new))))))
-
 (defmacro emptied (place &environment env)
-  "Take what PLACE holds, leaving nothing there, and answer what was there.
-
-The other half of SWAP. A queue two threads share is pushed with one and emptied
-with the other, and neither of them holds a lock: what the emptier gets is exactly
-what was there when it looked, and anything handed over after that is still there
-for the next look.
-
-PLACE's subforms are evaluated once, and the same two rules about EQ hold."
   (multiple-value-bind (temps values old new cas-form read-form)
       (sb-ext:get-cas-expansion place env)
     `(let* (,@(mapcar #'list temps values)
@@ -287,10 +197,7 @@ PLACE's subforms are evaluated once, and the same two rules about EQ hold."
              :until (eq ,old ,cas-form)
              :finally (return ,old)))))
 
-(defmacro cas (place old new &environment env)
-  "Put NEW in PLACE if OLD is still what it holds. Answers whether it was.
-
-PLACE's subforms, OLD and NEW are each evaluated once, left to right."
+(defmacro cas-p (place old new &environment env)
   (multiple-value-bind (temps values old-var new-var cas-form read-form)
       (sb-ext:get-cas-expansion place env)
     (declare (ignore read-form))
@@ -298,5 +205,4 @@ PLACE's subforms, OLD and NEW are each evaluated once, left to right."
             (,old-var ,old)
             (,new-var ,new))
        (eq ,old-var ,cas-form))))
-
 

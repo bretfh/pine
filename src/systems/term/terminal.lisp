@@ -4,18 +4,15 @@
                     (#:ui #:pine/ui)
                     (#:d #:pine/data) (#:fs #:pine/fs)
                     (#:job #:pine/run/job) (#:log #:pine/fs/log)
-                    (#:system #:pine/run/system) (#:command #:pine/run/command)
+                    (#:module #:pine/run/module) (#:command #:pine/run/command)
                     (#:mode #:pine/mode) (#:fault #:pine/run/fault)
                     (#:vt #:pine/vt))
   (:export
    #:current #:terminal #:shell #:open-terminal #:terminals #:send
-   #:resize #:runs #:wide)
-  (:documentation "Programs with screens of their own, as documents."))
+   #:resize #:runs #:width))
 (in-package #:pine/term)
 
-(defvar *shell* nil
-  "What a terminal runs when nobody says. The login shell, as the environment
-names it.")
+(defvar *shell* nil)
 
 (defparameter *chunk* 65536)
 (defparameter +waiting+ 100)
@@ -26,41 +23,29 @@ names it.")
     ("PageUp" . :page-up) ("PageDown" . :page-down)
     ("Delete" . :delete) ("Insert" . :insert)
     ("RET" . #\Return) ("TAB" . #\Tab) ("DEL" . #\Rubout) ("SPC" . #\Space)
-    ("Escape" . #\Escape))
-  "What a terminal calls the keys pine names.")
+    ("Escape" . #\Escape)))
 
-(defclass terminal (text:document job:thread)
+(defclass terminal (text:buffer job:thread)
   ((vt-of  :initarg :vt   :reader vt-of)
    (fd-of  :initform nil  :accessor fd-of)
    (pid-of :initform nil  :accessor pid-of)
    (runs   :initarg :runs :reader runs)
-   (wide   :initarg :wide :accessor wide :initform 80)
-   (tall   :initarg :tall :accessor tall :initform 24))
-  (:documentation "A program's screen, as a document you can read, and the thread
-blocked on its pty.
-
-Both, because it is both: a DOCUMENT is what a window shows and what a command
-acts on, and a THREAD is where something blocks. The same reason a PEER is an
-IMAGE and a MOUNT."))
+   (width   :initarg :width :accessor width :initform 80)
+   (height   :initarg :height :accessor height :initform 24)))
 
 (defmethod print-object ((term terminal) stream)
   (print-unreadable-object (term stream :type t)
     (format stream "~a ~dx~d~:[ (ended)~;~]" (fs:name term)
-            (wide term) (tall term) (fd-of term))))
+            (width term) (height term) (fd-of term))))
 
 (defun terminals ()
-  (remove-if-not (lambda (n) (typep n 'terminal)) (fs:entries (fs:at "/text"))))
+  (remove-if-not (lambda (n) (typep n 'terminal)) (fs:children (fs:at "/text"))))
 
 (defun %rgb (colour)
-  "A colour the program asked for, as the three numbers a cell is painted with.
-An index is one of the 256 a terminal has; anything else is already the numbers."
   (let ((said (if (integerp colour) (vt:color-index-to-rgb colour) colour)))
     (when said (coerce said 'list))))
 
 (defun %face (props)
-  "A run of the program's colour, as a face: what a cell is painted with, and
-nothing else. The same three numbers a theme's face works out to, so the grid
-paints one the way it paints the other."
   (list (%rgb (getf props :fg))
         (%rgb (getf props :bg))
         (logior (if (getf props :bold) 1 0)
@@ -68,10 +53,6 @@ paints one the way it paints the other."
                 (if (getf props :underline) 4 0))))
 
 (defun screen (term)
-  "What is on the screen now: the text, and the runs of colour over it.
-
-The colour is spans on the document, which is what a search that has just landed
-says and what a parse says. One kind of thing, painted one way."
   (let ((vt (vt-of term))
         (rows nil)
         (spans nil))
@@ -86,19 +67,15 @@ says and what a parse says. One kind of thing, painted one way."
     (values (format nil "~{~a~^~%~}" (nreverse rows)) (nreverse spans))))
 
 (defun %shown (term)
-  "Put what the screen says into the document, and say so. Point follows the
-program's cursor: what you are looking at is where it is writing."
   (multiple-value-bind (text spans) (screen term)
     (setf (text:lines term) (text:of text))
     (setf (text:spans term) spans))
   (text:goto term (vt:term-cursor-y (vt-of term)) (vt:term-cursor-x (vt-of term)))
   (setf (text:modified term) nil)
-  (fs:moved term)
+  (fs:touch term)
   term)
 
 (defun %escape (term k)
-  "The bytes a terminal sends for a key. Control and meta are what the terminal
-protocol says they are, not what an editor would do with them."
   (let* ((sym (ui:sym k))
          (said (cdr (assoc sym +named+ :test #'equal)))
          (mods (append (when (ui:ctrl k) '(:ctrl))
@@ -117,8 +94,6 @@ protocol says they are, not what an editor would do with them."
           (t (ui:typed k)))))
 
 (defun send (term said)
-  "Give a program what was typed at it. A key becomes what a terminal sends for
-it; anything else goes as it stands."
   (let ((fd (fd-of term)))
     (when fd
       (let ((text (etypecase said
@@ -130,13 +105,7 @@ it; anything else goes as it stands."
                          "giving a program what was typed at it")))))
   term)
 
-(defclass shell (mode:text) ()
-  (:documentation "Text a program is writing. A key is not an edit: it goes to the
-program, and what comes back is the text.
-
-This is what a mode is for. Nothing about the document is special -- PRESS and
-INSERT are methods, and the keymap this class inherits is still in force for what
-they do not take."))
+(defclass shell (mode:text) ())
 
 (defmethod mode:setting ((m shell) key)
   (case key
@@ -150,12 +119,12 @@ they do not take."))
 (defmethod mode:typing ((m shell) (term terminal) string)
   (send term string))
 
-(defun resize (term wide tall)
-  (when (and (plusp wide) (plusp tall)
-             (or (/= wide (wide term)) (/= tall (tall term))))
-    (setf (wide term) wide (tall term) tall)
-    (vt:term-resize (vt-of term) wide tall)
-    (when (fd-of term) (vt:pty-set-size (fd-of term) tall wide))
+(defun resize (term width height)
+  (when (and (plusp width) (plusp height)
+             (or (/= width (width term)) (/= height (height term))))
+    (setf (width term) width (height term) height)
+    (vt:term-resize (vt-of term) width height)
+    (when (fd-of term) (vt:pty-set-size (fd-of term) height width))
     (%shown term))
   term)
 
@@ -173,8 +142,6 @@ they do not take."))
   term)
 
 (defun %reading (term)
-  "Read what the program wrote until it stops writing or we are asked to stop.
-This is what a thread is for: a pty read blocks, and nothing else here does."
   (lambda ()
     (loop :until (job:stopping term)
           :do (when (vt:pty-wait (fd-of term) +waiting+)
@@ -187,7 +154,6 @@ This is what a thread is for: a pty read blocks, and nothing else here does."
     (%ended term)))
 
 (defmethod (setf text:text) (value (term terminal))
-  "Writing a terminal is typing at it: the text is the program's, not yours."
   (send term (princ-to-string value))
   value)
 
@@ -199,39 +165,38 @@ This is what a thread is for: a pty read blocks, and nothing else here does."
 (defun shell ()
   (or *shell* (uiop:getenv "SHELL") "/bin/sh"))
 
-(defun open-terminal (name &key runs (wide 80) (tall 24))
-  "A program with a screen of its own, in a document. Reading it is reading the
-screen; writing it is typing at the program."
+(defun open-terminal (name &key runs (width 80) (height 24))
   (let* ((runs (or runs (shell)))
-         (vt (vt:make-term :width wide :height tall))
-         (term (text:make-document (princ-to-string name)
+         (vt (vt:make-term :width width :height height))
+         (term (text:make-buffer (princ-to-string name)
                                   :class 'terminal
                                   :mode (make-instance 'shell)
-                                  :vt vt :runs runs :wide wide :tall tall
+                                  :vt vt :runs runs :width width :height height
                                   :on-fault :leave
                                   :describes runs)))
-    (multiple-value-bind (fd pid) (vt:spawn-pty-process runs :rows tall
-                                                             :cols wide)
+    (multiple-value-bind (fd pid) (vt:spawn-pty-process runs :rows height
+                                                             :cols width)
       (unless fd (error "no pty for ~a" runs))
       (setf (fd-of term) fd (pid-of term) pid))
     (setf (vt:term-input-fn vt) (lambda (said) (send term said))
-          (job:runs term) (%reading term))
+          (job:body term) (%reading term))
     (job:supervise term)
     (job:start term)
     (%shown term)
     term))
 
+(defmethod fs:names ((tm terminal))
+  '((:width  . "how many columns it has")
+    (:height . "how many lines it has")))
 
-(defmethod fs:read ((tm terminal) (name (eql :wide)))
-  "How many columns it has."
-  (wide tm))
+(defmethod fs:read ((tm terminal) (name (eql :width)))
+  (width tm))
 
-(defmethod fs:write ((tm terminal) (name (eql :wide)) value)
-  (setf (wide tm) value))
+(defmethod fs:write ((tm terminal) (name (eql :width)) value)
+  (setf (width tm) value))
 
-(defmethod fs:read ((tm terminal) (name (eql :tall)))
-  "How many lines it has."
-  (tall tm))
+(defmethod fs:read ((tm terminal) (name (eql :height)))
+  (height tm))
 
-(defmethod fs:write ((tm terminal) (name (eql :tall)) value)
-  (setf (tall tm) value))
+(defmethod fs:write ((tm terminal) (name (eql :height)) value)
+  (setf (height tm) value))

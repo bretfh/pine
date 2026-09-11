@@ -12,16 +12,9 @@
    (on-pointer  :initarg :on-pointer  :accessor on-pointer  :initform nil)
    (on-keyboard :initarg :on-keyboard :accessor on-keyboard :initform nil)
    (chrome     :initform nil :accessor chrome)
-   (showing    :initform nil :accessor showing))
-  (:documentation "What the compositor advertised, and what is up on it. One
-connection: a bar, a panel and a window are surfaces on the same shell, which is
-why the editor and the desktop are one program.
-
-CHROME is where furniture comes from on a compositor with no layer shell of its
-own: the window manager hands it out, and pine is the window manager there."))
+   (showing    :initform nil :accessor showing)))
 
 (defun at-surface (s surface)
-  "What pine surface a wayland surface is showing."
   (cdr (assoc surface (showing s))))
 
 (defun show (s surface shown) (push (cons surface shown) (showing s)))
@@ -47,8 +40,6 @@ own: the window manager hands it out, and pine is the window manager there."))
     (:name (name) (declare (ignore name)))))
 
 (defun open-shell (d &key on-pointer on-keyboard)
-  "Bind what pine paints with: a compositor, shared memory, the two shells and a
-seat. A compositor that has no layer shell can still show a window."
   (let* ((s (make-instance 'shell :display d :on-pointer on-pointer
                                   :on-keyboard on-keyboard))
          (it (of d))

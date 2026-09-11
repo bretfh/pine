@@ -42,19 +42,19 @@
   (pine:start)
   (pine:use :text)
   (pine:use :edit)
-  (let* ((d (text:make-document "frame" :mode (make-instance 'mode:lisp)))
+  (let* ((d (text:make-buffer "frame" :mode (make-instance 'mode:lisp)))
          (w (edit:focused)))
     (setf (fs:contents d) (text-of *lines*))
-    (setf (edit:across w) +cols+ (edit:down w) +rows+)
+    (setf (edit:width w) +cols+ (edit:height w) +rows+)
     (edit:show w d)
     (setf (text:current) d)
     (text:goto d 10 0)
     (setf (fs:contents (fs:at nil "surface/editor/size"))
-          (list :wide (* 9 +cols+) :tall (* 18 +rows+)
+          (list :width (* 9 +cols+) :height (* 18 +rows+)
                 :cols +cols+ :lines +rows+ :font 15))
     (waited d)
 
-    (format t "~&~%a document of ~:d lines, a window of ~d rows~%~%" *lines* +rows+)
+    (format t "~&~%a buffer of ~:d lines, a window of ~d rows~%~%" *lines* +rows+)
 
     (let ((runs (text:highlights d)))
       (format t "~&~40@a ~:d~%" "highlight runs the parser has walked"

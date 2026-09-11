@@ -10,12 +10,12 @@ OR, which reads a written NIL as an absence."
     (pine::write "/held" nil)
     (multiple-value-bind (value state) (pine::read "/held")
       (is (null value))
-      (is (eq :held state) "somebody wrote NIL here, and that is what it holds"))
+      (is (eq :file state) "somebody wrote NIL here, and that is what it holds"))
     (multiple-value-bind (value state) (pine::read "/nobody-wrote-this")
       (is (null value))
       (is (eq :absent state) "and nothing stands here at all"))
     (fs:mount (make-instance 'fs:mount) "/branch/under")
-    (is (eq :branch (nth-value 1 (pine::read "/branch")))
+    (is (eq :dir (nth-value 1 (pine::read "/branch")))
         "a branch holds nothing by being one")
     (is (pine::standsp "/held"))
     (is (not (pine::standsp "/nobody-wrote-this")))))
@@ -29,13 +29,13 @@ an OR at every call site."
     (is (eql 0 (pine::read "/nobody-wrote-this" :else 0)))
     (pine::write "/held" 50)
     (is (eql 50 (pine::read "/held" :else 0)) "and stands aside for a real one")
-    (is (eq :held (nth-value 1 (pine::read "/held" :else 0)))
+    (is (eq :file (nth-value 1 (pine::read "/held" :else 0)))
         "ELSE says what to answer, not what was found")))
 
 (test a-verb-is-a-word-in-lisp-and-not-only-on-the-shell
   "NODE:VERB could be reached only by writing a seq whose head is a keyword, which
 pine write spelled and lisp had no way to say. So a config's mute button, which is
-a click that writes T, could mute and never unmute."
+a on-click that writes T, could mute and never unmute."
   (with-tree
     (pine::write "/muted" nil)
     (pine::toggle "/muted")
@@ -93,7 +93,7 @@ never met this one."
     (let ((w (fs:mount (make-instance 'fs:value) "/window/width"))
           (runs 0))
       (setf (fs:contents w) 80)
-      (let ((line (make-instance 'fs:derived :name "line" :reads
+      (let ((line (make-instance 'fs:derived :name "line" :recompute
                                (lambda ()
                                  (incf runs)
                                  (make-string (fs:contents w)
@@ -104,14 +104,14 @@ never met this one."
         (is (= 1 runs) "what it worked out is kept")
         (setf (fs:contents w) 20)
         (is (= 20 (length (fs:contents line)))
-            "a write two levels down stirs it")
+            "a write two levels height stirs it")
         (is (= 2 runs) "exactly once")))))
 
 (test a-derived-node-takes-a-function-for-writing
   (with-tree
     (let ((held (list 41)))
-      (let ((n (make-instance 'fs:derived :name "probe" :reads (lambda () (first held))
-                            :writes (lambda (v) (setf (first held) (* 2 v))))))
+      (let ((n (make-instance 'fs:derived :name "probe" :recompute (lambda () (first held))
+                            :on-write (lambda (v) (setf (first held) (* 2 v))))))
         (fs:mount n (fs:root))
         (is (= 41 (fs:contents n)))
         (setf (fs:contents n) 10)
@@ -121,7 +121,7 @@ never met this one."
   (with-tree
     (setf (fs:contents (fs:mount (make-instance 'fs:value) "/window/width")) 80)
     (is (equal "/window/width" (fs:full-name (fs:at "/window/width"))))
-    (is (member "window" (mapcar #'fs:name (fs:entries (fs:root))) :test #'equal))
+    (is (member "window" (mapcar #'fs:name (fs:children (fs:root))) :test #'equal))
     (is (null (fs:at "/window/nothing")))))
 
 (test a-path-is-a-place
@@ -142,114 +142,180 @@ never met this one."
   (sqlite:execute-to-list (pine/fs/store::db s)
                           "select path from node where path like ?" like))
 
-(test a-store-writes-through-and-comes-back
-  "Loading the code builds the shape and the store only fills it in. A path with
-nothing standing at it is left in the store, not conjured as a plain value: what
-it stood for is what knew how to read it."
-  (let ((file (merge-pathnames "pine-test-store.db" (uiop:temporary-directory))))
-    (ignore-errors (delete-file file))
-    (unwind-protect
-         (progn
-           (with-tree
-             (let ((s (store:open-store file)))
-               (store:keeping s)
-               (pine::write "/kept/note" "across")
-               (pine::write "/gone/away" "orphan")
-               (store:close-store s)))
-           (with-tree
-             (let ((s (store:open-store file)))
-               (fs:mount (make-instance 'fs:value) "/kept/note")
-               (is (eql 1 (store:restore s))
-                   "one node stood there to be filled in")
-               (is (equal "across" (fs:contents (fs:at "/kept/note"))))
-               (is (null (fs:at "/gone/away"))
-                   "and nothing was conjured where nothing stands")
-               (is (equal '("/gone/away") (store:stale s))
-                   "which the store can say")
-               (store:close-store s))))
-      (ignore-errors (delete-file file)))))
+(defmacro with-store-file ((name) &body body)
+  "A store file of its own, gone afterwards."
+  `(let ((,name (merge-pathnames (format nil "pine-test-~36r.db" (random (expt 2 40)))
+                                 (uiop:temporary-directory))))
+     (unwind-protect (progn ,@body)
+       (ignore-errors (delete-file ,name)))))
 
-(test a-node-written-nil-is-kept-the-same-way-by-both-paths
-  "The write-through persisted one and the snapshot skipped it, so a node written
-NIL survived a live write and went at the next clean shutdown. SAVEDP and STORABLEP
-are the whole test; whether the value happens to be NIL is not a third question."
-  (let ((file (merge-pathnames "pine-nil-store.db" (uiop:temporary-directory))))
-    (ignore-errors (delete-file file))
-    (unwind-protect
-         (progn
-           (with-tree
-             (let ((s (store:open-store file)))
-               (pine::write "/held" nil)
-               (is (plusp (store:snapshot s)) "the snapshot wrote it")
-               (store:close-store s)))
-           (with-tree
-             (let ((s (store:open-store file)))
-               (fs:mount (make-instance 'fs:value) "/held")
-               (store:restore s)
-               (is (eq :held (nth-value 1 (pine::read "/held")))
-                   "and it came back as a place holding NIL, not as one absent")
-               (store:close-store s))))
-      (ignore-errors (delete-file file)))))
+(test what-was-written-comes-back-where-nothing-declares-it
+  "The one thing a filesystem owes you. Nothing re-makes /notes on the second boot --
+no config, no system, no code at all -- and the note is still there, because the name
+is asked of the store when somebody asks for the name.
+
+The store used to fill in only what already stood, so a value at a path nobody
+declared could never come back, which is every value anybody ever wrote."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/notes/today" "it works")
+        (store:close-store s)))
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (is (equal "it works" (pine::read "/notes/today"))
+            "the note came back with nothing standing there to fill in")
+        (is (equal '("today") (pine::ls "/notes"))
+            "and the way to it was made as well as the leaf")
+        (is (member "notes" (pine::ls "/") :test #'equal)
+            "so it is listed from the root height")
+        (store:close-store s)))))
+
+(test a-declaration-is-not-somebody-s-data
+  "A config says the same thing on every boot, so what it says is not kept. Written
+height, the store put the old answer back over the config, and editing the config did
+nothing for ever after."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (let ((fs:*declaring* t)) (pine::write "/wm/terminal" "alacritty"))
+        (pine::write "/wm/chosen" "by hand")
+        (is (equal "alacritty" (pine::read "/wm/terminal"))
+            "it stands while this image runs")
+        (store:close-store s)))
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (is (eq :absent (nth-value 1 (pine::read "/wm/terminal")))
+            "and is gone next time, for the config to say again")
+        (is (equal "by hand" (pine::read "/wm/chosen"))
+            "while what somebody wrote is still there")
+        (store:close-store s)))))
+
+(test a-value-made-holding-something-is-not-a-value-somebody-wrote
+  "A default is code saying something, not a person writing it height."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (fs:mount (make-instance 'fs:value :held :a-default) "/held/by-code")
+        (store:close-store s)))
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (is (eq :absent (nth-value 1 (pine::read "/held/by-code")))
+            "nothing kept it")
+        (store:close-store s)))))
+
+(test what-the-world-answers-for-is-never-kept
+  "A device, a job, a command: the world says what they are, so the store has no
+business holding an answer that was true once."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/here/mine" "kept")
+        (is (equal '(("/here/mine")) (%paths s "/%"))
+            "one row, and it is the one somebody wrote: ~a" (%paths s "/%"))
+        (store:close-store s)))))
+
+(test a-node-written-nil-comes-back-holding-nil
+  "A node written NIL is one holding NIL, not one nobody ever wrote."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/held" nil)
+        (store:close-store s)))
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (is (eq :file (nth-value 1 (pine::read "/held")))
+            "it came back as a place holding NIL, not as one absent")
+        (store:close-store s)))))
 
 (test a-slot-is-kept-the-moment-it-is-written
-  "A slot says it is saved. Writing one has to reach the store as it happens, or
-what a crash costs is everything since the image came up."
-  (let ((file (merge-pathnames "pine-slot-store.db" (uiop:temporary-directory))))
-    (ignore-errors (delete-file file))
-    (unwind-protect
-         (with-tree
-           (let ((s (store:open-store file)))
-             (store:keeping s)
-             (pine::write "/held/state" :awake)
-             (is (equal '(("/held/state")) (%paths s "/held%"))
-                 "written through, before any shutdown")
-             (store:close-store s)))
-      (ignore-errors (delete-file file)))))
+  "Writing one has to reach the store as it happens, or what a crash costs is
+everything since the image came up."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/held/state" :awake)
+        (is (equal '(("/held/state")) (%paths s "/held%"))
+            "written through, before any shutdown")
+        (store:close-store s)))))
+
+(test taking-a-name-off-the-tree-is-not-forgetting-what-it-held
+  "A system going down takes its place off the tree. What somebody wrote into that
+place is not the system's to take with it: DETACH is taking it off, ERASE-ENTRY is
+the one that means it has gone."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/going/away" "kept")
+        (fs:detach (fs:at "/going") "away")
+        (is (equal '(("/going/away")) (%paths s "/going%"))
+            "still kept, with the name off the tree")
+        (is (equal "kept" (pine::read "/going/away"))
+            "and asking for it again is how it comes back")
+        (store:close-store s)))))
+
+(test rm-is-the-one-that-means-it-has-gone
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/notes/today" "it works")
+        (pine::write "/notes/other" "beside it")
+        (fs:erase "/notes/today")
+        (store:close-store s)))
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (is (eq :absent (nth-value 1 (pine::read "/notes/today"))) "gone for good")
+        (is (equal "beside it" (pine::read "/notes/other")) "and only that one")
+        (store:close-store s)))))
+
+(test a-write-to-a-name-nothing-stands-at-goes-to-whatever-is-behind-it
+  "Writing used to put a value in this image beside the backing, where nothing else
+could ever find it. The mount above makes the name, so what is behind the mount is
+what ends up holding it."
+  (with-store-file (file)
+    (with-tree
+      (let ((s (store:open-store file)))
+        (store:keeping s)
+        (pine::write "/made/here" "by the mount")
+        (is (equal '(("/made/here")) (%paths s "/made%"))
+            "it reached the store rather than standing only in this image")
+        (store:close-store s))))
+  (with-tree
+    (let ((where (merge-pathnames "pine-write-dir/" (uiop:temporary-directory))))
+      (unwind-protect
+           (progn
+             (ensure-directories-exist where)
+             (fs:mount where "/disk")
+             (pine::write "/disk/fresh.txt" "onto the disk")
+             (is (probe-file (merge-pathnames "fresh.txt" where))
+                 "a name made under a directory is a file"))
+        (ignore-errors (uiop:delete-directory-tree
+                        where :validate (constantly t)))))))
 
 (test a-walk-goes-all-the-way-down-and-stops-at-the-world
-  "What the snapshot is written on. Every store test drives the write-through, so
-a walk that stopped at the root would take all of them with it and none would
-say so."
   (with-tree
     (pine::write "/deep/down/here" "value")
     (let ((seen nil))
       (fs:walk (fs:root) (lambda (n) (push (fs:full-name n) seen)))
       (is (member "/deep/down/here" seen :test #'equal)
           "a value three deep is reached: ~a" (reverse seen)))
-    (is (not (fs:livep (fs:at "/deep/down" "here")))
+    (is (not (fs:volatile-p (fs:at "/deep/down" "here")))
         "a value kept here is not live")
-    (is (fs:livep (make-instance 'fs:derived :name "somewhere" :live t))
+    (is (fs:volatile-p (make-instance 'fs:derived :name "somewhere" :live t))
         "and a place, which the world answers for, is")))
-
-(test a-snapshot-writes-what-the-walk-reached
-  (let ((file (merge-pathnames "pine-walk-store.db" (uiop:temporary-directory))))
-    (ignore-errors (delete-file file))
-    (unwind-protect
-         (with-tree
-           (let ((s (store:open-store file)))
-             (pine::write "/walked/into/it" "kept")
-             (is (plusp (store:snapshot s)) "the snapshot found something")
-             (is (equal '(("/walked/into/it")) (%paths s "/walked%")))
-             (store:close-store s)))
-      (ignore-errors (delete-file file)))))
-
-(test a-snapshot-does-not-take-anything-out
-  "The snapshot is belt and braces over the write-through. A system stopping takes
-its nodes off the tree, and that is not a reason to forget what they held."
-  (let ((file (merge-pathnames "pine-snap-store.db" (uiop:temporary-directory))))
-    (ignore-errors (delete-file file))
-    (unwind-protect
-         (with-tree
-           (let ((s (store:open-store file)))
-             (store:keeping s)
-             (pine::write "/going/away" "kept")
-             (setf (fs:on-forget :store) nil)
-             (fs:erase "/going")
-             (store:snapshot s)
-             (is (equal '(("/going/away")) (%paths s "/going%"))
-                 "still there after a snapshot with it off the tree")
-             (store:close-store s)))
-      (ignore-errors (delete-file file)))))
 
 (test a-host-directory-reads-and-writes-through
   (with-tree
@@ -297,8 +363,8 @@ anybody can ask about would be a name anybody can grow it by."
     (let ((p (make-instance 'fs:mount :name "empty" :names (lambda () nil)
                                  :each (lambda (name) (declare (ignore name)) nil))))
       (fs:mount p (fs:root))
-      (is (null (fs:entry p "nobody")))
-      (is (null (d:keys (fs::memo p))) "and nothing was kept saying so")
+      (is (null (fs:child p "nobody")))
+      (is (null (d:keys (fs::dentries p))) "and nothing was kept saying so")
       (fs:mount p (fs:root))
       (is (equal "/empty" (fs:full-name p))
           "so renaming what is under it has something to rename"))))
@@ -394,21 +460,21 @@ somewhere is worked out for ever after whenever that place moves."
     (let* ((a (fs:mount (make-instance 'fs:value :name "a") (fs:root)))
            (b (fs:mount (make-instance 'fs:value :name "b") (fs:root)))
            (which (list a))
-           (dv (fs:mount (make-instance 'fs:derived :name "d" :reads (lambda ()
+           (dv (fs:mount (make-instance 'fs:derived :name "d" :recompute (lambda ()
                                                (fs:contents (first which))))
                             (fs:root))))
       (setf (fs:contents a) 1)
       (setf (fs:contents b) 2)
       (fs:contents dv)
       (setf which (list b))
-      (fs:moved dv)
+      (fs:touch dv)
       (fs:contents dv)
-      (is (zerop (d:size (pine/fs::readers a))) "a is no longer read")
-      (is (= 1 (d:size (pine/fs::readers b))))
+      (is (zerop (d:size (pine/fs::dependents a))) "a is no longer read")
+      (is (= 1 (d:size (pine/fs::dependents b))))
       (setf (fs:contents a) 99)
-      (is (not (pine/fs::stalep dv)) "and moving it does not stir d")
+      (is (not (pine/fs::dirtyp dv)) "and moving it does not stir d")
       (setf (fs:contents b) 99)
-      (is (pine/fs::stalep dv) "while moving what it does read still does"))))
+      (is (pine/fs::dirtyp dv) "while moving what it does read still does"))))
 
 (test two-nodes-that-read-each-other-do-not-run-the-stack-out
   (with-tree
@@ -416,7 +482,7 @@ somewhere is worked out for ever after whenever that place moves."
           (y (fs:mount (make-instance 'fs:value :name "y") (fs:root))))
       (fs:depend x y)
       (fs:depend y x)
-      (finishes (fs:moved x)))))
+      (finishes (fs:touch x)))))
 
 (test erasing-a-worked-out-child-leaves-nothing-behind
   "The memo is let go after the detach, not before: dropped first, the detach asks
@@ -425,9 +491,9 @@ for the child again and what is left is that second one with nothing over it."
     (let ((p (make-instance 'fs:mount :name "p" :names (constantly (list "kid"))
                              :each (lambda (n) (make-instance 'fs:mount :name n)))))
       (fs:mount p (fs:root))
-      (let ((before (fs:entry p "kid")))
-        (fs:erase-entry p "kid")
-        (let ((after (fs:entry p "kid")))
+      (let ((before (fs:child p "kid")))
+        (fs:unlink p "kid")
+        (let ((after (fs:child p "kid")))
           (is (not (eq before after)) "what comes back is a fresh one")
           (is (eq p (fs:parent after)) "standing where it should")
           (is (equal "/p/kid" (fs:full-name after))))))))
@@ -438,10 +504,10 @@ answers nothing, and what stands beside it is still worked out."
   (with-tree
     (fault:forget-faults)
     (let ((n (fs:mount (make-instance 'fs:value) "/probe-src"))
-          (broken (make-instance 'fs:derived :name "broken" :reads (lambda () (error "on purpose")))))
+          (broken (make-instance 'fs:derived :name "broken" :recompute (lambda () (error "on purpose")))))
       (setf (fs:contents n) "still here")
       (fs:mount broken (fs:root))
-      (let ((beside (make-instance 'fs:derived :name "beside" :reads (lambda () (fs:contents n)))))
+      (let ((beside (make-instance 'fs:derived :name "beside" :recompute (lambda () (fs:contents n)))))
         (fs:mount beside (fs:root))
         (is (null (fs:contents broken))
             "it answers nothing rather than unwinding into the reader")
@@ -454,12 +520,12 @@ answers nothing, and what stands beside it is still worked out."
             "the fault is kept rather than swallowed")))))
 
 (test a-node-that-threw-is-asked-again
-  "It puts nothing down, so it is stale. What threw once because the world was
+  "It puts nothing height, so it is stale. What threw once because the world was
 not ready answers the next time somebody asks, with nothing having stirred it."
   (with-tree
     (let ((broken (cons t nil))
           (runs 0))
-      (let ((n (make-instance 'fs:derived :name "probe" :reads
+      (let ((n (make-instance 'fs:derived :name "probe" :recompute
                             (lambda ()
                               (incf runs)
                               (when (car broken) (error "not yet"))
@@ -479,7 +545,7 @@ that node waits behind it for the life of the image."
     (let ((started (bordeaux-threads:make-semaphore))
           (go-on (bordeaux-threads:make-semaphore)))
       (let ((wedged (make-instance 'fs:derived
-                     :name "wedged" :reads
+                     :name "wedged" :recompute
                      (lambda ()
                        (bordeaux-threads:signal-semaphore started)
                        (bordeaux-threads:wait-on-semaphore go-on :timeout 30)
@@ -489,7 +555,7 @@ that node waits behind it for the life of the image."
                                        (lambda () (fs:contents wedged)))))
           (is (bordeaux-threads:wait-on-semaphore started :timeout 5)
               "the other thread has the claim")
-          (let ((fs:*waited* 1/10) (fs:*waiting-on* 1))
+          (let ((fs:*retry-seconds* 1/10) (fs:*give-up-seconds* 1))
             (is (null (fs:contents wedged))
                 "we give up rather than wait behind it"))
           (bordeaux-threads:signal-semaphore go-on)
@@ -504,18 +570,18 @@ out from every device it had ever read."
   (with-tree
     (let* ((r (fs:mount (make-instance 'fs:mount :name "r") (fs:root)))
            (src (fs:mount (make-instance 'fs:value :name "src") (fs:root)))
-           (had (make-instance 'fs:derived :name "d" :reads (lambda () (fs:contents src))))
-           (fresh (make-instance 'fs:derived :name "d" :reads (lambda () :fresh))))
+           (had (make-instance 'fs:derived :name "d" :recompute (lambda () (fs:contents src))))
+           (fresh (make-instance 'fs:derived :name "d" :recompute (lambda () :fresh))))
       (setf (fs:contents src) 1)
       (fs:mount had r)
       (fs:contents had)
-      (is (d:contains (fs::readers src) had) "it read SRC")
+      (is (d:contains (fs::dependents src) had) "it read SRC")
       (fs:mount fresh r)
-      (is (not (d:contains (fs::readers src) had))
+      (is (not (d:contains (fs::dependents src) had))
           "and it is out of SRC's readers once something stands in its place")
       (is (null (fs:parent had)) "and off the tree")
-      (is (eq fresh (fs:entry r "d")))
-      (is (equal (list fresh) (fs:entries r)) "listed once, not twice"))))
+      (is (eq fresh (fs:child r "d")))
+      (is (equal (list fresh) (fs:children r)) "listed once, not twice"))))
 
 (test a-node-given-up-on-does-not-stand
   "The version a reading is checked against is exact, so a node that was given up
@@ -525,11 +591,11 @@ because MARK answers out of the version slot once there is no value to answer ou
 of."
   (with-tree
     (let* ((src (fs:mount (make-instance 'fs:value :name "src") (fs:root)))
-           (d (make-instance 'fs:derived :name "d" :reads (lambda () (fs:contents src)))))
+           (d (make-instance 'fs:derived :name "d" :recompute (lambda () (fs:contents src)))))
       (setf (fs:contents src) 1)
       (fs:mount d (fs:root))
       (fs:contents d)
-      (let ((at (fs::mark d)))
+      (let ((at (fs::current-mtime d)))
         (is (fs::currentp d at) "it stands where it was worked out")
         (setf (fs:contents src) 2)
         (is (not (fs::currentp d at))
@@ -542,7 +608,7 @@ written at /face/keyword was one nothing was ever told about."
   (with-tree
     (let* ((r (fs:mount (make-instance 'fs:mount :name "r") (fs:root)))
            (runs 0)
-           (n (make-instance 'fs:derived :name "n" :reads (lambda () (incf runs) (length (fs:entries r))))))
+           (n (make-instance 'fs:derived :name "n" :recompute (lambda () (incf runs) (length (fs:children r))))))
       (fs:mount n (fs:root))
       (is (eql 0 (fs:contents n)))
       (is (eql 1 runs))
@@ -550,7 +616,7 @@ written at /face/keyword was one nothing was ever told about."
       (is (eql 1 runs))
       (fs:mount (make-instance 'fs:value :name "one") r)
       (is (eql 1 (fs:contents n)) "attaching one works it out again")
-      (fs:erase-entry r "one")
+      (fs:unlink r "one")
       (is (eql 0 (fs:contents n)) "and so does taking one off"))))
 
 (test a-path-nothing-stands-at-is-still-a-reading
@@ -558,7 +624,7 @@ written at /face/keyword was one nothing was ever told about."
 before anything is there is a question nothing can ever answer again: a config
 reading a device the host system has not put up yet never heard it arrive."
   (with-tree
-    (let ((n (make-instance 'fs:derived :name "waiting" :reads (lambda () (fs:at "/later/here")))))
+    (let ((n (make-instance 'fs:derived :name "waiting" :recompute (lambda () (fs:at "/later/here")))))
       (fs:mount n (fs:root))
       (is (null (fs:contents n)) "nothing stands there yet")
       (setf (fs:contents (fs:mount (make-instance 'fs:value) "/later/here")) :arrived)
@@ -585,13 +651,10 @@ it."
                (store:close-store s)))
            (with-tree
              (let ((s (store:open-store file)))
-               (fs:mount (make-instance 'fs:value) "/tags")
-               (fs:mount (make-instance 'fs:value) "/a_b")
-               (fs:mount (make-instance 'fs:value) "/axb")
-               (store:restore s)
+               (store:keeping s)
                (is (d:same (d:seq :urgent :later) (fs:contents (fs:at "/tags")))
                    "what was kept is what came back")
-               (pine/fs/store::forget "/a_b")
+               (fs:store-delete s "/a_b")
                (is (null (%exactly s "/a_b")) "the one named went")
                (is (%exactly s "/axb")
                    "and the one that only matched a pattern did not")
@@ -653,14 +716,14 @@ what stands, and WATCH is how anybody hears the new answer."
     (let* ((runs 0)
            (n (fs:mount
                (make-instance 'fs:derived :name "slow"
-                              :reads (lambda () (incf runs) (sleep 0.3) runs))
+                              :recompute (lambda () (incf runs) (sleep 0.3) runs))
                (fs:root))))
       (is (eql 1 (fs:contents n)) "the first read waits, and is what says it is slow")
       (is (fs::waits-of n) "and the node knows it now")
-      (fs:moved n)
+      (fs:touch n)
       (let ((at (get-internal-real-time)))
         (is (eql 1 (fs:contents n)) "a stale read hands back what stood")
-        (is (eq :working (fs:holding n)) "and says it is being worked out")
+        (is (fs:pendingp n) "and says it is being worked out")
         (is (< (- (get-internal-real-time) at)
                (* 0.1 internal-time-units-per-second))
             "without waiting for it"))
@@ -673,12 +736,12 @@ what stands, and WATCH is how anybody hears the new answer."
   (with-tree
     (let ((n (fs:mount
               (make-instance 'fs:derived :name "slow"
-                             :reads (lambda () (sleep 0.3) :answered))
+                             :recompute (lambda () (sleep 0.3) :answered))
               (fs:root))))
       (setf (fs::waits-of n) t)
       (is (eq :answered (pine::read "/slow" :await 5))
           "waited for, because it was asked to be")
-      (is (eq :held (nth-value 1 (pine::read "/slow")))
+      (is (not (nth-value 2 (pine::read "/slow")))
           "and it stands afterwards"))))
 
 (test nothing-worked-out-yet-is-told-from-holding-nothing
@@ -688,15 +751,112 @@ Those are not the same news, and every caller guessed."
   (with-tree
     (let ((n (fs:mount
               (make-instance 'fs:derived :name "cold"
-                             :waits t :reads (lambda () nil))
+                             :waits t :recompute (lambda () nil))
               (fs:root))))
       (declare (ignore n))
-      (multiple-value-bind (value kind) (pine::read "/cold")
+      (multiple-value-bind (value kind pending) (pine::read "/cold")
         (is (null value) "nothing, because nothing has worked it out")
-        (is (eq :working kind) "and it says that is what the nothing is"))
-      (is (until (lambda () (eq :held (nth-value 1 (pine::read "/cold"))))
+        (is (eq :dev kind) "it is answered from outside")
+        (is (not (null pending)) "and it says that is what the nothing is"))
+      (is (until (lambda () (not (nth-value 2 (pine::read "/cold"))))
                  :seconds 5)
           "and once it has been worked out it holds what it holds")
-      (multiple-value-bind (value kind) (pine::read "/cold")
+      (multiple-value-bind (value kind pending) (pine::read "/cold")
         (is (null value) "which is NIL")
-        (is (eq :held kind) "said as a value this time, and not as an absence")))))
+        (is (eq :dev kind))
+        (is (not pending) "said as a value this time, and not as an absence")))))
+
+(test a-name-says-what-it-takes-and-refuses-the-rest
+  "What a place holds it already answered; what a write must be it never did, so
+every wrapper clamped its own argument after the tree had taken it."
+  (with-tree
+    (fs:mount (make-instance 'fs:value :name "volume" :takes '(:number 0 100))
+              (fs:root))
+    (pine::write "/volume" 40)
+    (is (eql 40 (pine::read "/volume")))
+    (signals fs:not-taken (pine::write "/volume" 400))
+    (signals fs:not-taken (pine::write "/volume" "loud"))
+    (is (eql 40 (pine::read "/volume")) "and what it took last still stands")))
+
+(test what-a-name-takes-is-answered-like-anything-else-about-it
+  (with-tree
+    (fs:mount (make-instance 'fs:value :name "muted" :takes :flag) (fs:root))
+    (is (equal :flag (getf (pine::describe "/muted") :takes)))
+    (pine::write "/muted" t)
+    (pine::toggle "/muted")
+    (is (null (pine::read "/muted")) "a verb goes through the same gate")
+    (signals fs:not-taken (pine::write "/muted" 7))))
+
+(test a-name-that-said-nothing-about-it-takes-anything
+  "Saying what a name is for is a thing a domain does; a name that has not said so
+is not thereby closed."
+  (with-tree
+    (pine::write "/anything" 1)
+    (pine::write "/anything" "words")
+    (is (equal "words" (pine::read "/anything")))))
+
+(test a-recompute-that-lands-on-the-same-value-does-not-move-its-version
+  "Raising the version on every recompute is what makes one leaf write repaint
+everything downstream of it."
+  (with-tree
+    (pine::write "/n" 1)
+    (fs:mount (make-instance 'fs:derived :name "odd"
+                             :recompute (lambda () (oddp (pine::read "/n"))))
+              (fs:root))
+    (let ((n (fs:at "/odd")))
+      (is (eq t (fs:contents n)))
+      (let ((at (fs::current-mtime n)))
+        (pine::write "/n" 3)
+        (is (eq t (fs:contents n)) "the same answer")
+        (is (eql at (fs::current-mtime n))
+            "standing at the version it stood at, so what read it is not stirred")))))
+
+(test ten-readers-of-one-node-cause-one-working-out
+  "A recompute talks to the world. Ten readers of one node in one frame is ten
+shell-outs without the claim."
+  (with-tree
+    (let ((ran (cons 0 nil))
+          (go-on (bordeaux-threads:make-semaphore)))
+      (let ((n (make-instance 'fs:derived
+                              :name "slow"
+                              :recompute
+                              (lambda ()
+                                (sb-ext:atomic-update (car ran) (lambda (o) (1+ o)))
+                                (bordeaux-threads:wait-on-semaphore go-on :timeout 10)
+                                :answered))))
+        (fs:mount n (fs:root))
+        (let ((readers (loop :repeat 10
+                             :collect (actors:blocking
+                                       "reader" (lambda () (fs:contents n))))))
+          (sleep 1/5)
+          (dotimes (i 12) (bordeaux-threads:signal-semaphore go-on))
+          (mapc #'actors:joined readers))
+        (is (eql 1 (car ran)) "one working-out for ten readers")))))
+
+(test a-working-out-whose-source-moved-under-it-is-given-up
+  "Half one state and half another is not an answer. What it read is checked again
+after it lands, and a value read before a write and stored after one is thrown."
+  (with-tree
+    (let ((ran (cons 0 nil))
+          (started (bordeaux-threads:make-semaphore))
+          (go-on (bordeaux-threads:make-semaphore)))
+      (pine::write "/a" 1)
+      (let ((n (make-instance 'fs:derived
+                              :name "twice"
+                              :recompute
+                              (lambda ()
+                                (let ((v (pine::read "/a")))
+                                  (when (eql 1 (sb-ext:atomic-update
+                                                (car ran) (lambda (o) (1+ o))))
+                                    (bordeaux-threads:signal-semaphore started)
+                                    (bordeaux-threads:wait-on-semaphore go-on :timeout 10))
+                                  v)))))
+        (fs:mount n (fs:root))
+        (let ((reader (actors:blocking "reader" (lambda () (fs:contents n)))))
+          (is (bordeaux-threads:wait-on-semaphore started :timeout 10)
+              "it is inside the working-out")
+          (pine::write "/a" 2)
+          (bordeaux-threads:signal-semaphore go-on)
+          (actors:joined reader))
+        (is (eql 2 (fs:contents n)) "what it holds is what its source says now")
+        (is (< 1 (car ran)) "because the first working-out was given up")))))

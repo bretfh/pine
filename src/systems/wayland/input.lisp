@@ -3,11 +3,9 @@
 (defparameter +modifiers+
   '("Shift_L" "Shift_R" "Control_L" "Control_R" "Alt_L" "Alt_R"
     "Meta_L" "Meta_R" "Super_L" "Super_R" "Hyper_L" "Hyper_R"
-    "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift")
-  "Keys that never arm a repeat: holding a bare modifier repeats nothing.")
+    "Caps_Lock" "Num_Lock" "ISO_Level3_Shift" "ISO_Level5_Shift"))
 
 (defstruct (keys (:constructor make-keys))
-  "The keyboard as xkb sees it, and what is being held down."
   (context (xkb:xkb-context-new ()))
   keymap
   state
@@ -19,7 +17,6 @@
   (delay 400))
 
 (defstruct (pointer (:constructor make-pointer))
-  "Where the pointer is, and what it is over."
   (at-x 0) (at-y 0) (serial 0) focus drag)
 
 (defun now-ms ()
@@ -36,7 +33,6 @@
   (plusp (xkb:xkb-state-mod-name-is-active state name :mods-effective)))
 
 (defun chord (k code)
-  "The chord a keycode is, spelled the way pine spells one."
   (let* ((state (keys-state k))
          (sym (xkb:xkb-state-key-get-one-sym state code))
          (utf8 (xkb:xkb-state-key-get-utf8 state code))
@@ -54,8 +50,6 @@
               name))))
 
 (defun deadline (k)
-  "Milliseconds until the held key repeats again, or nothing when none is held.
-The only deadline the screen has: with no key down it waits as long as it takes."
   (let ((held (keys-held k)) (rate (keys-rate k)))
     (when (and held (plusp rate))
       (let ((due (max (+ (keys-since k) (keys-delay k))
@@ -63,7 +57,6 @@ The only deadline the screen has: with no key down it waits as long as it takes.
         (max 0 (- due (now-ms)))))))
 
 (defun repeating (k)
-  "The chord to send again, if the held one is due. Nothing otherwise."
   (let ((held (keys-held k)) (rate (keys-rate k)))
     (when (and held (plusp rate))
       (let ((now (now-ms)))
@@ -75,7 +68,6 @@ The only deadline the screen has: with no key down it waits as long as it takes.
 (defun heldp (k) (and (keys-held k) t))
 
 (defun keymap (k fd size)
-  "Take the keymap the compositor handed over."
   (let ((it (shm:make-shm fd)))
     (unwind-protect
          (shm:with-mmap (ptr it size :flags '(:private))
@@ -92,8 +84,6 @@ The only deadline the screen has: with no key down it waits as long as it takes.
     (xkb:xkb-state-update-mask (keys-state k) depressed latched locked 0 0 group)))
 
 (defun pressed (k code)
-  "What was pressed, and hold it for repeating. A bare modifier is not a press: it
-is what the next one is spelled with."
   (when (keys-state k)
     (multiple-value-bind (said name) (chord k (+ 8 code))
       (cond ((modifierp name) (forget-held k) nil)
